@@ -19,16 +19,9 @@ extern "C" {
 #[wasm_bindgen]
 pub fn register_data(name: &str, arr: js_sys::Int32Array) {
     // Globally register the data with the given name.
-    
-    // Initialize once
-    GLOBAL_MAP.set(Mutex::new(HashMap::new())).unwrap();
-
-    // Insert into the global map
-    {
-        let mut map = GLOBAL_MAP.get().unwrap().lock().unwrap();
-        map.insert(name.to_string(), arr.to_vec());
-    }
-
+    let map_mutex = GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = map_mutex.lock().unwrap();
+    map.insert(name.to_string(), arr.to_vec());
 }
 
 
@@ -98,7 +91,7 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
     // Begin render-specific things.
     // Get x and y data from the global map
     let (xs, ys) = {
-        let map = GLOBAL_MAP.get().unwrap().lock().unwrap();
+        let map = GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
         let xs = map.get("x").expect("No 'x' data registered").into_iter()
             .map(|&v| v as f32).collect::<Vec<f32>>();
         let ys = map.get("y").expect("No 'y' data registered").into_iter()
