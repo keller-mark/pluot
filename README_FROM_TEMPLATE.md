@@ -43,7 +43,7 @@ cd my-project
 
 ### 🛠️ Build with `wasm-pack build`
 
-```
+```sh
 wasm-pack build --target web
 ```
 

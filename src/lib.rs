@@ -1,12 +1,28 @@
-mod utils;
+mod set_panic_hook;
+mod plots;
 
 use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 use futures_intrusive::channel::shared::oneshot_channel;
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+static GLOBAL_MAP: OnceLock<Mutex<HashMap<String, Vec<i32>>>> = OnceLock::new();
+
+
 #[wasm_bindgen]
 extern "C" {
     fn alert(s: &str);
+
+}
+
+#[wasm_bindgen]
+pub fn register_data(name: &str, arr: js_sys::Int32Array) {
+    // Globally register the data with the given name.
+    let map_mutex = GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = map_mutex.lock().unwrap();
+    map.insert(name.to_string(), arr.to_vec());
 }
 
 
@@ -14,7 +30,7 @@ extern "C" {
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
-pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
+pub async fn render(width: u32, height: u32, plot_type: &str) -> js_sys::Uint8Array {
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
@@ -73,97 +89,38 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
     };
     let output_buffer = device.create_buffer(&output_buffer_desc);
 
-    // Begin render-specific things.
-    let vs_src = r#"
-        @vertex
-        fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-            let x = f32(i32(in_vertex_index) - 1);
-            let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
-            return vec4<f32>(x, y, 0.0, 1.0);
-        }
-    "#;
-
-    let fs_src = r#"
-        @fragment
-        fn fs_main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
-        }
-    "#;
-
-    let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
-    });
-
-    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
-    });
-
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
-
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: texture_desc.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-    // End render-specific things.
-
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Render Encoder"),
     });
 
-    {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_pipeline(&render_pipeline);
-        render_pass.draw(0..3, 0..1);
-
-        // End the renderpass.
-        drop(render_pass);
+    // Plot type-specific rendering logic.
+    match plot_type {
+        "triangle" => {
+            plots::render_triangle(
+                &device,
+                &texture_desc,
+                &view,
+                &queue,
+                &GLOBAL_MAP,
+                &mut encoder, width, height
+            ).await;
+        },
+        "scatterplot" => {
+            plots::render_scatterplot(
+                &device,
+                &texture_desc,
+                &view,
+                &queue,
+                &GLOBAL_MAP,
+                &mut encoder,
+                width,
+                height
+            ).await;
+        },
+        _ => panic!("Unsupported plot type"),
     }
 
+    // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &texture,

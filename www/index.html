@@ -19,20 +19,59 @@
       await wasm.default();
       await wasm.set_panic_hook();
 
-      const width = 512;
-      const height = 512;
-      const arr = await wasm.render(width, height);
-
-      console.log(arr);
+      
 
       // Render to a canvas
+      const width = 1000;
+      const height = 1000;
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       document.getElementById('root').appendChild(canvas);
       const ctx = canvas.getContext('2d');
-      const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
-      ctx.putImageData(imageData, 0, 0);
+
+
+      // Render once or every animation frame.
+      const renderOnce = true;
+      const replaceDataEachFrame = true;
+      const plotType = "scatterplot" // "scatterplot" or "triangle"
+
+      function replaceData() {
+        // Register some example data
+        const n = 10000;
+        const xs = new Int32Array(n);
+        const ys = new Int32Array(n);
+        for (let i = 0; i < n; i++) {
+          xs[i] = (Math.random()) * 1000.0;
+          ys[i] = (Math.random()) * 1000.0;
+        }
+        wasm.register_data("x", xs);
+        wasm.register_data("y", ys);
+      }
+      
+      // Define the function to render a single frame.
+      function renderFrame() {
+        if (replaceDataEachFrame) {
+          replaceData();
+        }
+
+        wasm.render(width, height, 'scatterplot').then(arr => {
+          const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
+          ctx.putImageData(imageData, 0, 0);
+        });
+      }
+      function animate() {
+        renderFrame();
+        requestAnimationFrame(animate);
+      }
+
+      // Initialize data and kick off the first render.
+      replaceData();
+      if(renderOnce) {
+        renderFrame();
+      } else {
+        requestAnimationFrame(animate);
+      }
 
     </script>
   </body>

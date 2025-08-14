@@ -1,4 +1,4 @@
-# pluot
+<h1 style="color: purple">pluot</h1>
 
 Implement once, pluot everywhere.
 Create declarative static and interactive plots using WGPU and Rust/WASM.
@@ -145,4 +145,32 @@ const arr = await render({
         dataset: 'my_dataset_key'
     }
 })
+```
+
+## Development
+
+### 🛠️ Build with `wasm-pack build`
+
+```sh
+wasm-pack build --target web
+```
+
+Test in browser:
+
+```sh
+http-server --cors="*" -p 3005 .
+```
+
+Open to http://localhost:3005/www/
+
+### 🔬 Test in Headless Browsers with `wasm-pack test`
+
+```
+wasm-pack test --headless --firefox
+```
+
+### 🎁 Publish to NPM with `wasm-pack publish`
+
+```
+wasm-pack publish
 ```
