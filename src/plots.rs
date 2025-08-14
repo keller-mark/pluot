@@ -1,17 +1,6 @@
-use wasm_bindgen::prelude::*;
-use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
-use futures_intrusive::channel::shared::oneshot_channel;
-
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-
 use crate::utils::RenderContext;
 
-
-pub async fn render_triangle(
-    context: &mut RenderContext<'_>,
-    encoder: &mut wgpu::CommandEncoder,
-) {
+pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
         @vertex
         fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
@@ -99,16 +88,12 @@ pub async fn render_triangle(
     }
 }
 
-pub async fn render_scatterplot(
-    context: &mut RenderContext<'_>,
-    encoder: &mut wgpu::CommandEncoder,
-) {
+pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
     let (xs, ys) = {
-        let map = context.global_map.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
-        let xs = map.get("x").expect("No 'x' data registered").into_iter()
+        let xs = context.data_map.get("x").expect("No 'x' data registered").into_iter()
             .map(|&v| v as f32).collect::<Vec<f32>>();
-        let ys = map.get("y").expect("No 'y' data registered").into_iter()
+        let ys = context.data_map.get("y").expect("No 'y' data registered").into_iter()
             .map(|&v| v as f32).collect::<Vec<f32>>();
         (xs, ys)
     };

@@ -101,7 +101,7 @@ pub async fn render(width: u32, height: u32, plot_type: &str) -> js_sys::Uint8Ar
         texture_desc: &texture_desc,
         view: &view,
         queue: &queue,
-        global_map: &GLOBAL_MAP,
+        data_map: GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap(),
         width,
         height,
     };
