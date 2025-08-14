@@ -1,6 +1,6 @@
 use crate::utils::RenderContext;
 
-pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
         @vertex
         fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
@@ -88,7 +88,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     }
 }
 
-pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
     let (xs, ys) = {
         let xs = context.data_map.get("x").expect("No 'x' data registered").into_iter()
