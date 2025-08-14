@@ -9,6 +9,8 @@ extern "C" {
     fn alert(s: &str);
 }
 
+
+
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
@@ -71,6 +73,7 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
     };
     let output_buffer = device.create_buffer(&output_buffer_desc);
 
+    // Begin render-specific things.
     let vs_src = r#"
         @vertex
         fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
@@ -131,6 +134,7 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
         multiview: None,
         cache: None,
     });
+    // End render-specific things.
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Render Encoder"),
