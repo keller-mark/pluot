@@ -4,6 +4,7 @@
     <meta content="text/html;charset=utf-8" http-equiv="Content-Type"/>
   </head>
   <body>
+    <div id="root"></div>
     <!-- Note the usage of `type=module` here as this is an ES6 module -->
     <script type="module">
       // Use ES module import syntax to import functionality from the module
@@ -18,7 +19,20 @@
       await wasm.default();
       await wasm.set_panic_hook();
 
-      console.log(await wasm.render(512, 512));
+      const width = 512;
+      const height = 512;
+      const arr = await wasm.render(width, height);
+
+      console.log(arr);
+
+      // Render to a canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      document.getElementById('root').appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
+      ctx.putImageData(imageData, 0, 0);
 
     </script>
   </body>

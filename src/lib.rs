@@ -2,6 +2,7 @@ mod utils;
 
 use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
+use futures_intrusive::channel::shared::oneshot_channel;
 
 #[wasm_bindgen]
 extern "C" {
@@ -11,7 +12,7 @@ extern "C" {
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
-pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
+pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
@@ -24,17 +25,11 @@ pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
         .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await
         .expect("No suitable GPU adapters found on the system!");
-    
-    // Requests a connection to a physical device, creating a logical device.
-    // Returns the Device together with a Queue that executes command buffers.
-    // Per the WebGPU specification, an Adapter may only be used once to create a device.
-    // If another device is wanted, call Instance::request_adapter() again to get a fresh Adapter.
-    // However, wgpu does not currently enforce this restriction.
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor::default())
         .await
         .expect("Failed to create device");
-    
+
     // Create a texture to render to.
     let texture_desc = TextureDescriptor {
         // Debug label of the texture. This will show up in graphics debuggers for easy identification.
@@ -42,11 +37,7 @@ pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
         // Size of the texture. All components must be greater than zero.
         // For a regular 1D/2D texture, the unused sizes will be 1.
         // For 2DArray textures, Z is the number of 2D textures in that array.
-        size: Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
+        size: Extent3d { width, height, depth_or_array_layers: 1 },
         // Mip count of texture. For a texture with no extra mips, this must be 1.
         mip_level_count: 1,
         // Sample count of texture. If this is not 1, texture must have [BindingType::Texture::multisampled] set to true.
@@ -63,20 +54,19 @@ pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
         view_formats: &[],
     };
     let texture = device.create_texture(&texture_desc);
-    
-    // Creates a view of this texture,
-    // specifying an interpretation of its texels and possibly a subset of its layers and mip levels.
-    // Texture views are needed to use a texture as a binding in a BindGroup
-    // or as an attachment in a RenderPass.
-    let view = texture.create_view(&Default::default());
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // Create a buffer to store the output
-    let u32_size = std::mem::size_of::<u32>() as u32;
-    let output_buffer_size = (u32_size * width * height) as wgpu::BufferAddress;
+    // Create a buffer to store the output (RGBA8)
+    let bytes_per_pixel: u32 = 4;
+    let unpadded_bytes_per_row = width * bytes_per_pixel;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
+    let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
+    let output_buffer_size = (padded_bytes_per_row as u64) * (height as u64);
+
     let output_buffer_desc = wgpu::BufferDescriptor {
+        label: Some("Output Buffer"),
         size: output_buffer_size,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        label: Some("Output Buffer"),
         mapped_at_creation: false,
     };
     let output_buffer = device.create_buffer(&output_buffer_desc);
@@ -154,12 +144,7 @@ pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0,
-                    }),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -170,6 +155,9 @@ pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
 
         render_pass.set_pipeline(&render_pipeline);
         render_pass.draw(0..3, 0..1);
+
+        // End the renderpass.
+        drop(render_pass);
     }
 
     encoder.copy_texture_to_buffer(
@@ -183,54 +171,41 @@ pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
             buffer: &output_buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                // Bytes per “row” in an image.
-                // A row is one row of pixels or of compressed blocks in the x direction.
-                // This value is required if there are multiple rows (i.e. height or depth is more than one pixel or pixel block for compressed textures)
-                // Must be a multiple of 256 for CommandEncoder::copy_buffer_to_texture and CommandEncoder::copy_texture_to_buffer. You must manually pad the image such that this is a multiple of 256. It will not affect the image data.
-                // Must be a multiple of the texture block size. For non-compressed textures, this is 1.
-                // TODO: pad to a multiple of 256
-                bytes_per_row: Some(u32_size * width),
+                // Must be 256-byte aligned on WebGPU
+                bytes_per_row: Some(padded_bytes_per_row),
                 rows_per_image: Some(height),
             },
         },
         texture_desc.size,
     );
 
-    // We finish the encoder, giving us a fully recorded command buffer.
     let command_buffer = encoder.finish();
-
-    // At this point nothing has actually been executed on the gpu. We have recorded a series of
-    // commands that we want to execute, but they haven't been sent to the gpu yet.
-    //
-    // Submitting to the queue sends the command buffer to the gpu. The gpu will then execute the
-    // commands in the command buffer in order.
     queue.submit([command_buffer]);
 
-    // We now map the output buffer so we can read it. Mapping tells wgpu that we want to read/write
-    // to the buffer directly by the CPU and it should not permit any more GPU operations on the buffer.
-    //
-    // Mapping requires that the GPU be finished using the buffer before it resolves, so mapping has a callback
-    // to tell you when the mapping is complete.
+    // Map and await completion without blocking the browser thread
     let buffer_slice = output_buffer.slice(..);
-    buffer_slice.map_async(wgpu::MapMode::Read, |_| {
-        // In this case we know exactly when the mapping will be finished,
-        // so we don't need to do anything in the callback.
+    let (sender, receiver) = oneshot_channel();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+        sender.send(res).ok();
     });
+    let _ =device.poll(wgpu::PollType::Poll);
+    receiver.receive().await.unwrap().unwrap();
 
-    // Wait for the GPU to finish working on the submitted work. This doesn't work on WebGPU, so we would need
-    // to rely on the callback to know when the buffer is mapped.
-    device.poll(wgpu::PollType::Wait).unwrap();
-
-    // We can now read the data from the buffer.
+    // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();
-    // Convert the data back to a slice of f32.
-    let result: &[f32] = bytemuck::cast_slice(&data);
+    let mut pixels = vec![0u8; (unpadded_bytes_per_row * height) as usize];
+    for y in 0..height {
+        let src_start = (y as usize) * (padded_bytes_per_row as usize);
+        let src_end = src_start + (unpadded_bytes_per_row as usize);
+        let dst_start = (y as usize) * (unpadded_bytes_per_row as usize);
+        let dst_end = dst_start + (unpadded_bytes_per_row as usize);
+        pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
+    }
+    drop(data);
+    output_buffer.unmap();
 
-    // Print out the result.
-    // println!("Result: {result:?}");
-
-    // Return the result as a Float32Array.
-    js_sys::Float32Array::from(result)
+    // Return a Uint8Array of RGBA bytes
+    js_sys::Uint8Array::from(pixels.as_slice())
 }
 
 #[wasm_bindgen]
