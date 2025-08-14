@@ -1,4 +1,6 @@
-use crate::utils::RenderContext;
+use std::convert::TryInto;
+
+use crate::{utils::RenderContext, zarr_get_js};
 
 pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
@@ -90,14 +92,10 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
-    let (xs, ys) = {
-        let xs = context.data_map.get("x").expect("No 'x' data registered").into_iter()
-            .map(|&v| v as f32).collect::<Vec<f32>>();
-        let ys = context.data_map.get("y").expect("No 'y' data registered").into_iter()
-            .map(|&v| v as f32).collect::<Vec<f32>>();
-        (xs, ys)
-    };
-    let n = xs.len();
+    let xs = zarr_get_js(&context.store_name, "x").to_vec();
+    let ys = zarr_get_js(&context.store_name, "y").to_vec();
+   
+    let n = xs.len().try_into().unwrap();
     assert_eq!(n, ys.len(), "x and y data must have the same length");
 
     // Pack positions into a contiguous vec2<f32> array for a storage buffer
@@ -105,8 +103,8 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     let (mut x_min, mut x_max) = (f32::INFINITY, f32::NEG_INFINITY);
     let (mut y_min, mut y_max) = (f32::INFINITY, f32::NEG_INFINITY);
     for i in 0..n {
-        let x = xs[i];
-        let y = ys[i];
+        let x = xs[i] as f32;
+        let y = ys[i] as f32;
         x_min = x_min.min(x); x_max = x_max.max(x);
         y_min = y_min.min(y); y_max = y_max.max(y);
         positions_bytes.extend_from_slice(&x.to_ne_bytes());

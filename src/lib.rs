@@ -6,34 +6,23 @@ use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 use futures_intrusive::channel::shared::oneshot_channel;
 
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-
 use crate::utils::RenderContext;
-
-static GLOBAL_MAP: OnceLock<Mutex<HashMap<String, Vec<i32>>>> = OnceLock::new();
-
 
 #[wasm_bindgen]
 extern "C" {
     fn alert(s: &str);
 
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+
+    #[wasm_bindgen(js_name = zarr_get)]
+    pub fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Int32Array;
 }
-
-#[wasm_bindgen]
-pub fn register_data(name: &str, arr: js_sys::Int32Array) {
-    // Globally register the data with the given name.
-    let map_mutex = GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut map = map_mutex.lock().unwrap();
-    map.insert(name.to_string(), arr.to_vec());
-}
-
-
 
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
-pub async fn render(width: u32, height: u32, plot_type: &str) -> js_sys::Uint8Array {
+pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) -> js_sys::Uint8Array {
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
@@ -97,11 +86,11 @@ pub async fn render(width: u32, height: u32, plot_type: &str) -> js_sys::Uint8Ar
     });
 
     let mut context = RenderContext {
+        store_name: store_name.to_string(),
         device: &device,
         texture_desc: &texture_desc,
         view: &view,
         queue: &queue,
-        data_map: GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap(),
         width,
         height,
     };
