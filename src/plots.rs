@@ -214,7 +214,7 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: context.texture_desc.format,
-                blend: Some(wgpu::BlendState::REPLACE),
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -236,6 +236,8 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
+                    // Set a white background for the scatterplot.
+                    // TODO: make this configurable.
                     load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                     store: wgpu::StoreOp::Store,
                 },

@@ -23,7 +23,7 @@
         console.log(`zarr_get called with store_name: ${store_name}, key: ${key}`);
 
         // Return fake data
-        const n = 10000;
+        const n = 50000;
         const xs = new Int32Array(n);
         for (let i = 0; i < n; i++) {
           xs[i] = (Math.random()) * 1000.0;

@@ -12,6 +12,7 @@ struct Uniforms {
 struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) quad_pos: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -60,5 +61,6 @@ fn vs_main(
     var out: VSOut;
     out.position = vec4<f32>(center_ndc + offset_ndc, 0.0, 1.0);
     out.color = u.color;
+    out.quad_pos = corner; // pass unit quad position for circular masking
     return out;
 }
