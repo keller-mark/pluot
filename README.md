@@ -7,7 +7,7 @@ Create declarative static and interactive plots using WGPU and Rust/WASM.
 
 ## How it works
 
-Plotting functions are implemented in Rust using WGPU.
+Plotting functions are implemented in Rust using [WGPU](https://github.com/gfx-rs/wgpu).
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
 
 - To render plots in the web browser, the Rust code is compiled to WebAssembly (WASM).
