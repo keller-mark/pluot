@@ -19,6 +19,17 @@
       await wasm.default();
       await wasm.set_panic_hook();
 
+      // Register some example data
+      const n = 1000;
+      const xs = new Int32Array(n);
+      const ys = new Int32Array(n);
+      for (let i = 0; i < n; i++) {
+        xs[i] = (Math.random()) * 20.0;
+        ys[i] = (Math.random()) * 20.0;
+      }
+      wasm.register_data("x", xs);
+      wasm.register_data("y", ys);
+
       const width = 512;
       const height = 512;
       const arr = await wasm.render(width, height);

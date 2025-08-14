@@ -1,4 +1,4 @@
-use rand::thread_rng;
+use rand::prelude::*;
 use rand_distr::{Normal, Distribution};
 
 // Generates two arrays of length N representing X and Y coordinates
@@ -19,7 +19,7 @@ fn generate_gaussian_points(
     sigma_x: f64,
     sigma_y: f64
 ) -> (Vec<f64>, Vec<f64>) {
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
 
     let normal_x = Normal::new(mean_x, sigma_x).expect("Invalid normal distribution for X");
     let normal_y = Normal::new(mean_y, sigma_y).expect("Invalid normal distribution for Y");
