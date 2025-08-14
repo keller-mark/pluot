@@ -5,16 +5,12 @@ use futures_intrusive::channel::shared::oneshot_channel;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+use crate::utils::RenderContext;
+
 
 pub async fn render_triangle(
-    device: &wgpu::Device,
-    texture_desc: &wgpu::TextureDescriptor<'_>,
-    view: &wgpu::TextureView,
-    queue: &wgpu::Queue,
-    global_map: &OnceLock<Mutex<HashMap<String, Vec<i32>>>>,
+    context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
-    width: u32,
-    height: u32,
 ) {
     let vs_src = r#"
         @vertex
@@ -32,23 +28,23 @@ pub async fn render_triangle(
         }
     "#;
 
-    let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Vertex Shader"),
         source: wgpu::ShaderSource::Wgsl(vs_src.into()),
     });
 
-    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Fragment Shader"),
         source: wgpu::ShaderSource::Wgsl(fs_src.into()),
     });
 
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
         bind_group_layouts: &[],
         push_constant_ranges: &[],
     });
 
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
         layout: Some(&render_pipeline_layout),
         vertex: wgpu::VertexState {
@@ -62,7 +58,7 @@ pub async fn render_triangle(
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
-                format: texture_desc.format,
+                format: context.texture_desc.format,
                 blend: Some(wgpu::BlendState::REPLACE),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -82,7 +78,7 @@ pub async fn render_triangle(
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view: &context.view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -104,18 +100,12 @@ pub async fn render_triangle(
 }
 
 pub async fn render_scatterplot(
-    device: &wgpu::Device,
-    texture_desc: &wgpu::TextureDescriptor<'_>,
-    view: &wgpu::TextureView,
-    queue: &wgpu::Queue,
-    global_map: &OnceLock<Mutex<HashMap<String, Vec<i32>>>>,
+    context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
-    width: u32,
-    height: u32,
 ) {
     // Get x and y data from the global map
     let (xs, ys) = {
-        let map = global_map.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
+        let map = context.global_map.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
         let xs = map.get("x").expect("No 'x' data registered").into_iter()
             .map(|&v| v as f32).collect::<Vec<f32>>();
         let ys = map.get("y").expect("No 'y' data registered").into_iter()
@@ -137,13 +127,13 @@ pub async fn render_scatterplot(
         positions_bytes.extend_from_slice(&x.to_ne_bytes());
         positions_bytes.extend_from_slice(&y.to_ne_bytes());
     }
-    let positions_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+    let positions_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Positions Storage Buffer"),
         size: positions_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&positions_buffer, 0, &positions_bytes);
+    context.queue.write_buffer(&positions_buffer, 0, &positions_bytes);
 
     // Create uniforms matching the WGSL layout
     // struct Uniforms {
@@ -154,8 +144,8 @@ pub async fn render_scatterplot(
     // }
     let point_size_px: f32 = 4.0;
     let _pad0: f32 = 0.0;
-    let viewport_w = width as f32;
-    let viewport_h = height as f32;
+    let viewport_w = context.width as f32;
+    let viewport_h = context.height as f32;
     let color = [1.0_f32, 1.0, 1.0, 1.0];
 
     let mut uniform_bytes: Vec<u8> = Vec::with_capacity(12 * 4);
@@ -164,16 +154,16 @@ pub async fn render_scatterplot(
     }
     for c in color { uniform_bytes.extend_from_slice(&c.to_ne_bytes()); }
 
-    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+    let uniform_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Uniform Buffer"),
         size: uniform_bytes.len() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+    context.queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
     // Create bind group layout and bind group for positions + uniforms
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    let bind_group_layout = context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Scatter BGL"),
         entries: &[
             wgpu::BindGroupLayoutEntry {
@@ -198,7 +188,7 @@ pub async fn render_scatterplot(
             },
         ],
     });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    let bind_group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Scatter BG"),
         layout: &bind_group_layout,
         entries: &[
@@ -288,24 +278,24 @@ pub async fn render_scatterplot(
         }
     "#;
 
-    let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Vertex Shader"),
         source: wgpu::ShaderSource::Wgsl(vs_src.into()),
     });
 
-    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Fragment Shader"),
         source: wgpu::ShaderSource::Wgsl(fs_src.into()),
     });
 
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
         bind_group_layouts: &[&bind_group_layout],
         push_constant_ranges: &[],
     });
 
     // TODO: Extract the shared render pipeline and render pass logic. There is a lot of duplication here.
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
         layout: Some(&render_pipeline_layout),
         vertex: wgpu::VertexState {
@@ -319,7 +309,7 @@ pub async fn render_scatterplot(
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
-                format: texture_desc.format,
+                format: context.texture_desc.format,
                 blend: Some(wgpu::BlendState::REPLACE),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -338,7 +328,7 @@ pub async fn render_scatterplot(
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view: &context.view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {

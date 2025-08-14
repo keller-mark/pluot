@@ -1,5 +1,6 @@
 mod set_panic_hook;
 mod plots;
+mod utils;
 
 use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
@@ -7,6 +8,8 @@ use futures_intrusive::channel::shared::oneshot_channel;
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+
+use crate::utils::RenderContext;
 
 static GLOBAL_MAP: OnceLock<Mutex<HashMap<String, Vec<i32>>>> = OnceLock::new();
 
@@ -93,29 +96,23 @@ pub async fn render(width: u32, height: u32, plot_type: &str) -> js_sys::Uint8Ar
         label: Some("Render Encoder"),
     });
 
+    let mut context = RenderContext {
+        device: &device,
+        texture_desc: &texture_desc,
+        view: &view,
+        queue: &queue,
+        global_map: &GLOBAL_MAP,
+        width,
+        height,
+    };
+
     // Plot type-specific rendering logic.
     match plot_type {
         "triangle" => {
-            plots::render_triangle(
-                &device,
-                &texture_desc,
-                &view,
-                &queue,
-                &GLOBAL_MAP,
-                &mut encoder, width, height
-            ).await;
+            plots::render_triangle(&mut context, &mut encoder).await;
         },
         "scatterplot" => {
-            plots::render_scatterplot(
-                &device,
-                &texture_desc,
-                &view,
-                &queue,
-                &GLOBAL_MAP,
-                &mut encoder,
-                width,
-                height
-            ).await;
+            plots::render_scatterplot(&mut context, &mut encoder).await;
         },
         _ => panic!("Unsupported plot type"),
     }
