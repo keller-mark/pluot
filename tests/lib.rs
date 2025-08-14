@@ -8,7 +8,8 @@ async fn test_render_triangle() {
     let width = 32;
     let height = 32;
     let plot_type = "triangle";
-    let result = render(width, height, plot_type).await;
+    let store_name = "my_store";
+    let result = render(width, height, plot_type, store_name).await;
     
     let result_vec = result.to_vec();
     assert_eq!(result_vec.len(), (width * height * 4) as usize);
