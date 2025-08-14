@@ -1,13 +1,16 @@
-use wasm_bindgen::prelude::*;
+use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 
-#[wasm_bindgen]
-pub fn set_panic_hook() {
-    // When the `console_error_panic_hook` feature is enabled, we can call the
-    // `set_panic_hook` function at least once during initialization, and then
-    // we will get better error messages if our code ever panics.
-    //
-    // For more details see
-    // https://github.com/rustwasm/console_error_panic_hook#readme
-    #[cfg(feature = "console_error_panic_hook")]
-    console_error_panic_hook::set_once();
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+// Struct to hold state required for render functions.
+pub struct RenderContext<'a> {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub texture_desc_format: &'a wgpu::TextureFormat,
+    pub view: wgpu::TextureView,
+    pub global_map: MutexGuard<'a, HashMap<String, Vec<i32>>>,
+    pub encoder: &'a wgpu::CommandEncoder,
+    pub width: u32,
+    pub height: u32,
 }

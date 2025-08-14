@@ -1,3 +1,8 @@
+<<<<<<< Updated upstream
+=======
+mod set_panic_hook;
+mod plots;
+>>>>>>> Stashed changes
 mod utils;
 
 use wasm_bindgen::prelude::*;
@@ -8,7 +13,6 @@ use futures_intrusive::channel::shared::oneshot_channel;
 extern "C" {
     fn alert(s: &str);
 }
-
 
 
 // This function should accept width and height as parameters,
@@ -140,6 +144,7 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
         label: Some("Render Encoder"),
     });
 
+<<<<<<< Updated upstream
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -162,6 +167,28 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
 
         // End the renderpass.
         drop(render_pass);
+=======
+    // Plot type-specific rendering logic.
+    let render_context = utils::RenderContext {
+        device,
+        queue,
+        texture_desc_format: &texture_desc.format,
+        view,
+        global_map: GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap(),
+        encoder: &encoder,
+        width,
+        height,
+    };
+
+    match plot_type {
+        "triangle" => {
+            plots::render_triangle(&render_context).await;
+        },
+        "scatterplot" => {
+            plots::render_scatterplot(&render_context).await;
+        },
+        _ => panic!("Unsupported plot type"),
+>>>>>>> Stashed changes
     }
 
     encoder.copy_texture_to_buffer(
