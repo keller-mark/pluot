@@ -1,5 +1,5 @@
 [package]
-name = "wasm-game-of-life"
+name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
