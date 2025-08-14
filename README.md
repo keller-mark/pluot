@@ -18,9 +18,9 @@ Plotting functions are implemented in Rust using WGPU.
 
 ## Principles
 
-The frontend should never "touch" the data.
+The frontend/client should never "touch" the data.
 In other words, it should never execute a `for` loop over the data (for rendering purposes).
-The frontend may, however, register data-loading functions that are called by the Rust code.
+The frontend/client does, however, need to register data-loading functions that will be called by the Rust code to retrieve data.
 
 
 The frontend will specify visual properties and data-related properties and expressions, for example colormaps, viewState (zoom/pan), data filtering expressions via parameters.
