@@ -10,8 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+  unit_tests:
+    runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
     - uses: nanasess/setup-chromedriver@master
@@ -26,7 +26,7 @@ jobs:
       with:
         tool: wasm-pack
     - uses: Swatinem/rust-cache@v2
-    - name: Build
+    - name: Compile Rust code to WASM
       run: wasm-pack build --target web
     - name: Run unit tests
-      run: wasm-pack test --headless --chrome --no-default-features --features wgsl
+      run: wasm-pack test --headless --chrome
