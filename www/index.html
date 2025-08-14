@@ -16,8 +16,9 @@
       import * as wasm from '/pkg/wasm_game_of_life.js';
       
       await wasm.default();
+      await wasm.set_panic_hook();
 
-      wasm.render(500, 500);
+      console.log(await wasm.render(512, 512));
 
     </script>
   </body>

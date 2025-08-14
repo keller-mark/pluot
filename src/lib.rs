@@ -11,7 +11,7 @@ extern "C" {
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
-pub async fn render(width: u32, height: u32) {
+pub async fn render(width: u32, height: u32) -> js_sys::Float32Array {
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
@@ -183,6 +183,12 @@ pub async fn render(width: u32, height: u32) {
             buffer: &output_buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
+                // Bytes per “row” in an image.
+                // A row is one row of pixels or of compressed blocks in the x direction.
+                // This value is required if there are multiple rows (i.e. height or depth is more than one pixel or pixel block for compressed textures)
+                // Must be a multiple of 256 for CommandEncoder::copy_buffer_to_texture and CommandEncoder::copy_texture_to_buffer. You must manually pad the image such that this is a multiple of 256. It will not affect the image data.
+                // Must be a multiple of the texture block size. For non-compressed textures, this is 1.
+                // TODO: pad to a multiple of 256
                 bytes_per_row: Some(u32_size * width),
                 rows_per_image: Some(height),
             },
@@ -221,7 +227,10 @@ pub async fn render(width: u32, height: u32) {
     let result: &[f32] = bytemuck::cast_slice(&data);
 
     // Print out the result.
-    println!("Result: {result:?}");
+    // println!("Result: {result:?}");
+
+    // Return the result as a Float32Array.
+    js_sys::Float32Array::from(result)
 }
 
 #[wasm_bindgen]
