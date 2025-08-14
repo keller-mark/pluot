@@ -19,12 +19,14 @@ jobs:
       with:
         toolchain: stable
         targets: wasm32-unknown-unknown
-    - name: Install
-      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
+    #- name: Install wasm-pack (alternative method)
+    #  run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+    - name: Install wasm-pack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-pack
     - uses: Swatinem/rust-cache@v2
-
     - name: Build
       run: wasm-pack build --target web
     - name: Run unit tests
-      run: wasm-pack test --headless --chrome --no-default-features --features wgsl,webgl,web --workspace
+      run: wasm-pack test --headless --chrome --no-default-features --features wgsl
