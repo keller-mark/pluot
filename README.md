@@ -146,3 +146,31 @@ const arr = await render({
     }
 })
 ```
+
+## Development
+
+### 🛠️ Build with `wasm-pack build`
+
+```sh
+wasm-pack build --target web
+```
+
+Test in browser:
+
+```sh
+http-server --cors="*" -p 3005 .
+```
+
+Open to http://localhost:3005/www/
+
+### 🔬 Test in Headless Browsers with `wasm-pack test`
+
+```
+wasm-pack test --headless --firefox
+```
+
+### 🎁 Publish to NPM with `wasm-pack publish`
+
+```
+wasm-pack publish
+```
