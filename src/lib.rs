@@ -1,4 +1,5 @@
-mod utils;
+mod set_panic_hook;
+mod plots;
 
 use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
@@ -29,7 +30,7 @@ pub fn register_data(name: &str, arr: js_sys::Int32Array) {
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
-pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
+pub async fn render(width: u32, height: u32, plot_type: &str) -> js_sys::Uint8Array {
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
@@ -88,257 +89,38 @@ pub async fn render(width: u32, height: u32) -> js_sys::Uint8Array {
     };
     let output_buffer = device.create_buffer(&output_buffer_desc);
 
-    // Begin render-specific things.
-    // Get x and y data from the global map
-    let (xs, ys) = {
-        let map = GLOBAL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap();
-        let xs = map.get("x").expect("No 'x' data registered").into_iter()
-            .map(|&v| v as f32).collect::<Vec<f32>>();
-        let ys = map.get("y").expect("No 'y' data registered").into_iter()
-            .map(|&v| v as f32).collect::<Vec<f32>>();
-        (xs, ys)
-    };
-    let n = xs.len();
-    assert_eq!(n, ys.len(), "x and y data must have the same length");
-
-    // Pack positions into a contiguous vec2<f32> array for a storage buffer
-    let mut positions_bytes: Vec<u8> = Vec::with_capacity(n * 2 * 4);
-    let (mut x_min, mut x_max) = (f32::INFINITY, f32::NEG_INFINITY);
-    let (mut y_min, mut y_max) = (f32::INFINITY, f32::NEG_INFINITY);
-    for i in 0..n {
-        let x = xs[i];
-        let y = ys[i];
-        x_min = x_min.min(x); x_max = x_max.max(x);
-        y_min = y_min.min(y); y_max = y_max.max(y);
-        positions_bytes.extend_from_slice(&x.to_ne_bytes());
-        positions_bytes.extend_from_slice(&y.to_ne_bytes());
-    }
-    let positions_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Positions Storage Buffer"),
-        size: positions_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&positions_buffer, 0, &positions_bytes);
-
-    // Create uniforms matching the WGSL layout
-    // struct Uniforms {
-    //   x_min, x_max, y_min, y_max : f32,
-    //   point_size_px: f32, _pad0: f32,
-    //   viewport_size: vec2<f32>,
-    //   color: vec4<f32>
-    // }
-    let point_size_px: f32 = 4.0;
-    let _pad0: f32 = 0.0;
-    let viewport_w = width as f32;
-    let viewport_h = height as f32;
-    let color = [1.0_f32, 1.0, 1.0, 1.0];
-
-    let mut uniform_bytes: Vec<u8> = Vec::with_capacity(12 * 4);
-    for f in [x_min, x_max, y_min, y_max, point_size_px, _pad0, viewport_w, viewport_h].iter() {
-        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
-    }
-    for c in color { uniform_bytes.extend_from_slice(&c.to_ne_bytes()); }
-
-    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Uniform Buffer"),
-        size: uniform_bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-    // Create bind group layout and bind group for positions + uniforms
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Scatter BGL"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-        ],
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Scatter BG"),
-        layout: &bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: positions_buffer.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: uniform_buffer.as_entire_binding() },
-        ],
-    });
-
-    let vs_src = r#"
-        struct Uniforms {
-            x_min: f32,
-            x_max: f32,
-            y_min: f32,
-            y_max: f32,
-            point_size_px: f32,   // diameter in pixels
-            _pad0: f32,
-            viewport_size: vec2<f32>, // (width, height) in pixels
-            color: vec4<f32>,     // rgba color for points
-        };
-
-        struct VSOut {
-            @builtin(position) position: vec4<f32>,
-            @location(0) color: vec4<f32>,
-        };
-
-        @group(0) @binding(0)
-        var<storage, read> positions: array<vec2<f32>>;
-
-        @group(0) @binding(1)
-        var<uniform> u: Uniforms;
-
-        // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
-        const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
-            vec2<f32>(-1.0, -1.0),
-            vec2<f32>( 1.0, -1.0),
-            vec2<f32>(-1.0,  1.0),
-            vec2<f32>( 1.0,  1.0)
-        );
-
-        // Map a data value v from [min,max] to NDC [-1,1]
-        fn to_ndc(v: f32, minv: f32, maxv: f32) -> f32 {
-            let t = (v - minv) / max(1e-12, (maxv - minv));
-            return t * 2.0 - 1.0;
-        }
-
-        @vertex
-        fn vs_main(
-            @builtin(instance_index) instance: u32,
-            @builtin(vertex_index) vid: u32
-        ) -> VSOut {
-            // Center of this point in data space
-            let p = positions[instance];
-            // Center in clip/NDC space (y increases up)
-            let center_ndc = vec2<f32>(
-                to_ndc(p.x, u.x_min, u.x_max),
-                to_ndc(p.y, u.y_min, u.y_max)
-            );
-
-            // Convert desired pixel radius to NDC
-            let radius_px = 0.5 * u.point_size_px;
-            // pixels -> NDC: ndc_per_px = 2 / viewport
-            let ndc_per_px = 2.0 / u.viewport_size;
-            let radius_ndc = vec2<f32>(radius_px * ndc_per_px.x, radius_px * ndc_per_px.y);
-
-            // Pick corner of quad and place around center
-            let corner = QUAD[vid & 3u]; // vid % 4
-            let offset_ndc = vec2<f32>(corner.x * radius_ndc.x, corner.y * radius_ndc.y);
-
-            var out: VSOut;
-            out.position = vec4<f32>(center_ndc + offset_ndc, 0.0, 1.0);
-            out.color = u.color;
-            return out;
-        }
-
-    "#;
-    
-    let fs_src = r#"
-        struct FSOut {
-            @location(0) color: vec4<f32>,
-        };
-
-        @fragment
-        fn fs_main(@location(0) color_in: vec4<f32>) -> FSOut {
-            var out: FSOut;
-            out.color = color_in;
-            return out;
-        }
-    "#;
-
-    let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
-    });
-
-    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
-    });
-
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
-    });
-
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: texture_desc.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-    // End render-specific things.
-
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Render Encoder"),
     });
 
-    {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_pipeline(&render_pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[]);
-        render_pass.draw(0..4, 0..(n as u32));
-
-        // End the renderpass.
-        drop(render_pass);
+    // Plot type-specific rendering logic.
+    match plot_type {
+        "triangle" => {
+            plots::render_triangle(
+                &device,
+                &texture_desc,
+                &view,
+                &queue,
+                &GLOBAL_MAP,
+                &mut encoder, width, height
+            ).await;
+        },
+        "scatterplot" => {
+            plots::render_scatterplot(
+                &device,
+                &texture_desc,
+                &view,
+                &queue,
+                &GLOBAL_MAP,
+                &mut encoder,
+                width,
+                height
+            ).await;
+        },
+        _ => panic!("Unsupported plot type"),
     }
 
+    // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &texture,

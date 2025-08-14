@@ -34,6 +34,7 @@
       // Render once or every animation frame.
       const renderOnce = true;
       const replaceDataEachFrame = true;
+      const plotType = "scatterplot" // "scatterplot" or "triangle"
 
       function replaceData() {
         // Register some example data
@@ -54,7 +55,7 @@
           replaceData();
         }
 
-        wasm.render(width, height).then(arr => {
+        wasm.render(width, height, 'scatterplot').then(arr => {
           const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
           ctx.putImageData(imageData, 0, 0);
         });

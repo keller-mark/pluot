@@ -1,4 +1,4 @@
-# pluot
+<h1 style="color: purple">pluot</h1>
 
 Implement once, pluot everywhere.
 Create declarative static and interactive plots using WGPU and Rust/WASM.
