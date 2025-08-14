@@ -27,7 +27,6 @@ import { init, render } from 'pluot';
 // How should this work in other languages?
 // What should this return? Arrow vector? TypedArray? Arrow table IPC?
 // Should this be more aware of tiling/multi-resolution data? How would it handle XYZCT imaging or volumetric or mesh data?
-
 async function dataGetter(dataKey, columnExpression, rowExpression) {
     // Given the key, return something like DeckGL's binary format.
     // If the underlying data format/provider supports it, we may only want to load a subset of rows or columns.
@@ -41,8 +40,20 @@ async function dataGetter(dataKey, columnExpression, rowExpression) {
         length: 10
     };
 }
-
 await init(dataGetter);
+// Alternative idea:
+// Should the data store be assumed to be a zarr store?
+// The rust code can then handle doing the zarr-gets and computing which Zarr keys to request.
+// It will mean the rust code must know which "kind" of zarr store it is dealing with.
+// Parquet tables/columns may need to be mapped to zarr either in the JS-side or in the Rust-side.
+// Can we assume the Zarr store corresponds to the root of a SpatialData object?
+// More coordination types will need to be defined at the view level (to take the place of the fileDef.options paths to individual elements, etc).
+// Then the data registration can be more like:
+await init({
+    'my_dataset': myStore,
+});
+
+
 
 const arr = await render({
     width: 500,
