@@ -17,6 +17,7 @@ bytemuck = "1.23.2"
 web-sys = "0.3.x"
 js-sys = "0.3.x"
 futures-intrusive = "0.5"
+once_cell = "1.21.3"
 
 # wgpu = "25" # Vello re-exports wgpu.
 vello = "0.5"

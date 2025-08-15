@@ -10,190 +10,9 @@ use vello::{
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
 
-pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
-    let vs_src = r#"
-        @vertex
-        fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-            let x = f32(i32(in_vertex_index) - 1);
-            let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
-            return vec4<f32>(x, y, 0.0, 1.0);
-        }
-    "#;
+const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
-    let fs_src = r#"
-        @fragment
-        fn fs_main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
-        }
-    "#;
-
-    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
-    });
-
-    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
-    });
-
-    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
-
-    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: context.texture_desc.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-    // 1) Offscreen triangle target
-    let tri_tex = context.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Triangle Offscreen Texture"),
-        size: wgpu::Extent3d { width: context.width, height: context.height, depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: context.texture_desc.format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    let tri_view = tri_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-    {
-        // Render triangle into tri_tex with transparent background.
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Triangle Offscreen Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &tri_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        render_pass.set_pipeline(&render_pipeline);
-        render_pass.draw(0..3, 0..1);
-    }
-
-    // 2) Vello: text offscreen target
-    let mut vello_renderer = Renderer::new(
-        context.device,
-        RendererOptions {
-            use_cpu: false,
-            antialiasing_support: AaSupport::all(),
-            num_init_threads: std::num::NonZeroUsize::new(1),
-            pipeline_cache: None,
-        },
-    ).expect("create vello renderer");
-
-    let text_tex = context.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Vello Text Overlay Texture"),
-        size: wgpu::Extent3d { width: context.width, height: context.height, depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        // Important: Use a non-sRGB UNORM format for Vello offscreen rendering.
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::STORAGE_BINDING,
-        view_formats: &[],
-    });
-    let text_view = text_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let mut scene = Scene::new();
-    // Load a font from bytes (you can replace this with any TTF/OTF you own).
-    let font_bytes: Cow<'static, [u8]> = Cow::from(include_bytes!("fonts/Inter-Bold.ttf").as_slice());
-    let blob = Blob::new(std::sync::Arc::new(font_bytes));
-    let peniko_font = Font::new(blob, 0);
-
-    // TODO: explore using Parley https://github.com/linebender/parley
-
-    // Reference: https://github.com/linebender/vello/blob/main/examples/scenes/src/simple_text.rs
-    // Build a simple “Hello, world” glyph run using Skrifa:
-    let font_ref = skrifa::FontRef::new(peniko_font.data.as_ref()).expect("parse font");
-
-    // choose a pixel size and compute scale factor from design units to px
-    let px_size: f32 = 64.0;
-
-    // map chars -> glyph ids, accumulate x advances
-    let cmap = font_ref.charmap();
-    let axes = font_ref.axes();
-    let font_size = skrifa::instance::Size::new(px_size);
-    let variations: &[(&str, f32)] = &[];
-    let var_loc = axes.location(variations.iter().copied());
-    let metrics = font_ref.metrics(font_size, &var_loc);
-    let line_height = metrics.ascent - metrics.descent + metrics.leading;
-    let glyph_metrics = font_ref.glyph_metrics(font_size, &var_loc);
-
-    let text = "Hello, world!";
-    let mut pen_x = 0_f32;
-    let mut pen_y = line_height;
-    let mut glyphs = Vec::with_capacity(text.len());
-
-    for ch in text.chars() {
-        if let Some(gid) = cmap.map(ch) {
-            // advance in *pixels*
-            let adv: f32 = glyph_metrics
-                .advance_width(gid)
-                .unwrap_or(0.0); // in px because we passed Size::new(px_size)
-            glyphs.push(vello::Glyph {
-                id: gid.to_u32(),
-                x: pen_x,
-                y: pen_y,
-            });
-            pen_x += adv;
-        }
-    }
-
-    // Draw the glyph run: white fill
-    scene
-        .draw_glyphs(&peniko_font)
-        .font_size(px_size)
-        .hint(true)
-        .brush(&Brush::Solid(Color::from_rgb8(240, 0, 245)))
-        .draw(Fill::NonZero, glyphs.into_iter());
-
-    // === 4) Render with Vello into our texture ===
-    let params = RenderParams {
-        base_color: Color::from_rgba8(0, 0, 0, 0), // transparent
-        width: context.width,
-        height: context.height,
-        antialiasing_method: AaConfig::Msaa16,
-    };
-    vello_renderer
-        .render_to_texture(context.device, context.queue, &scene, &text_view, &params)
-        .expect("vello render_to_texture");
-
+pub async fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, tri_tex: &wgpu::Texture, tri_view: &wgpu::TextureView) {
     // 3) Composition pass: sample tri_tex then text_tex and draw to swapchain
     let overlay_vs = r#"
         struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -306,7 +125,7 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         label: Some("BG Text"),
         layout: &overlay_bgl,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&text_view) },
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&context.vello_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&overlay_sampler) },
         ],
     });
@@ -340,12 +159,173 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     }
 }
 
+pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+    let vs_src = r#"
+        @vertex
+        fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
+            let x = f32(i32(in_vertex_index) - 1);
+            let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
+            return vec4<f32>(x, y, 0.0, 1.0);
+        }
+    "#;
+
+    let fs_src = r#"
+        @fragment
+        fn fs_main() -> @location(0) vec4<f32> {
+            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        }
+    "#;
+
+    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Vertex Shader"),
+        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
+    });
+
+    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Fragment Shader"),
+        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
+    });
+
+    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Render Pipeline Layout"),
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
+
+    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Render Pipeline"),
+        layout: Some(&render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &vs_module,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &fs_module,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: context.texture_desc.format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    });
+    // 1) Offscreen triangle target
+    let tri_tex = context.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Triangle Offscreen Texture"),
+        size: wgpu::Extent3d { width: context.width, height: context.height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: context.texture_desc.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let tri_view = tri_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+    {
+        // Render triangle into tri_tex with transparent background.
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Triangle Offscreen Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &tri_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        render_pass.set_pipeline(&render_pipeline);
+        render_pass.draw(0..3, 0..1);
+    }
+
+    // 2) Vello scene with text.
+    // Load a font from bytes (you can replace this with any TTF/OTF you own).
+    let font_bytes: Cow<'static, [u8]> = Cow::from(FONT_BYTES);
+    let blob = Blob::new(std::sync::Arc::new(font_bytes));
+    let peniko_font = Font::new(blob, 0);
+
+    // TODO: explore using Parley https://github.com/linebender/parley
+
+    // Reference: https://github.com/linebender/vello/blob/main/examples/scenes/src/simple_text.rs
+    // Build a simple “Hello, world” glyph run using Skrifa:
+    let font_ref = skrifa::FontRef::new(peniko_font.data.as_ref()).expect("parse font");
+
+    // choose a pixel size and compute scale factor from design units to px
+    let px_size: f32 = 64.0;
+
+    // map chars -> glyph ids, accumulate x advances
+    let cmap = font_ref.charmap();
+    let axes = font_ref.axes();
+    let font_size = skrifa::instance::Size::new(px_size);
+    let variations: &[(&str, f32)] = &[];
+    let var_loc = axes.location(variations.iter().copied());
+    let metrics = font_ref.metrics(font_size, &var_loc);
+    let line_height = metrics.ascent - metrics.descent + metrics.leading;
+    let glyph_metrics = font_ref.glyph_metrics(font_size, &var_loc);
+
+    let text = "Hello, world!";
+    let mut pen_x = 0_f32;
+    let mut pen_y = line_height;
+    let mut glyphs = Vec::with_capacity(text.len());
+
+    for ch in text.chars() {
+        if let Some(gid) = cmap.map(ch) {
+            // advance in *pixels*
+            let adv: f32 = glyph_metrics
+                .advance_width(gid)
+                .unwrap_or(0.0); // in px because we passed Size::new(px_size)
+            glyphs.push(vello::Glyph {
+                id: gid.to_u32(),
+                x: pen_x,
+                y: pen_y,
+            });
+            pen_x += adv;
+        }
+    }
+
+    // Draw the glyph run: white fill
+    context.vello_scene
+        .draw_glyphs(&peniko_font)
+        .font_size(px_size)
+        .hint(true)
+        .brush(&Brush::Solid(Color::from_rgb8(240, 0, 245)))
+        .draw(Fill::NonZero, glyphs.into_iter());
+
+    // === 4) Render with Vello into our texture ===
+    let params = RenderParams {
+        base_color: Color::from_rgba8(0, 0, 0, 0), // transparent
+        width: context.width,
+        height: context.height,
+        antialiasing_method: AaConfig::Msaa16,
+    };
+    context.vello_renderer
+        .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
+        .expect("vello render_to_texture");
+
+    overlay_pass(context, encoder, &tri_tex, &tri_view).await;
+}
 
 
 
 
 
-pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+
+pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
     let xs = zarr_get_js(&context.store_name, "x").to_vec();
     let ys = zarr_get_js(&context.store_name, "y").to_vec();
@@ -481,11 +461,24 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         cache: None,
     });
 
+    // 1) Offscreen scatterplot target
+    let scatter_tex = context.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scatterplot Offscreen Texture"),
+        size: wgpu::Extent3d { width: context.width, height: context.height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: context.texture_desc.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let scatter_view = scatter_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &context.view,
+                view: &scatter_view,
                 // depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -504,7 +497,71 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         render_pass.set_bind_group(0, &bind_group, &[]);
         render_pass.draw(0..4, 0..(n as u32));
 
-        // End the renderpass.
-        drop(render_pass);
     }
+
+    // 2) Vello scene with text.
+    // Load a font from bytes (you can replace this with any TTF/OTF you own).
+    let font_bytes: Cow<'static, [u8]> = Cow::from(FONT_BYTES);
+    let blob = Blob::new(std::sync::Arc::new(font_bytes));
+    let peniko_font = Font::new(blob, 0);
+
+    // TODO: explore using Parley https://github.com/linebender/parley
+
+    // Reference: https://github.com/linebender/vello/blob/main/examples/scenes/src/simple_text.rs
+    // Build a simple “Hello, world” glyph run using Skrifa:
+    let font_ref = skrifa::FontRef::new(peniko_font.data.as_ref()).expect("parse font");
+
+    // choose a pixel size and compute scale factor from design units to px
+    let px_size: f32 = 64.0;
+
+    // map chars -> glyph ids, accumulate x advances
+    let cmap = font_ref.charmap();
+    let axes = font_ref.axes();
+    let font_size = skrifa::instance::Size::new(px_size);
+    let variations: &[(&str, f32)] = &[];
+    let var_loc = axes.location(variations.iter().copied());
+    let metrics = font_ref.metrics(font_size, &var_loc);
+    let line_height = metrics.ascent - metrics.descent + metrics.leading;
+    let glyph_metrics = font_ref.glyph_metrics(font_size, &var_loc);
+
+    let text = "Hello, world!";
+    let mut pen_x = 0_f32;
+    let mut pen_y = line_height;
+    let mut glyphs = Vec::with_capacity(text.len());
+
+    for ch in text.chars() {
+        if let Some(gid) = cmap.map(ch) {
+            // advance in *pixels*
+            let adv: f32 = glyph_metrics
+                .advance_width(gid)
+                .unwrap_or(0.0); // in px because we passed Size::new(px_size)
+            glyphs.push(vello::Glyph {
+                id: gid.to_u32(),
+                x: pen_x,
+                y: pen_y,
+            });
+            pen_x += adv;
+        }
+    }
+
+    // Draw the glyph run: white fill
+    context.vello_scene
+        .draw_glyphs(&peniko_font)
+        .font_size(px_size)
+        .hint(true)
+        .brush(&Brush::Solid(Color::from_rgb8(240, 0, 245)))
+        .draw(Fill::NonZero, glyphs.into_iter());
+
+    // === 4) Render with Vello into our texture ===
+    let params = RenderParams {
+        base_color: Color::from_rgba8(0, 0, 0, 0), // transparent
+        width: context.width,
+        height: context.height,
+        antialiasing_method: AaConfig::Msaa16,
+    };
+    context.vello_renderer
+        .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
+        .expect("vello render_to_texture");
+
+    overlay_pass(context, encoder, &scatter_tex, &scatter_view).await;
 }

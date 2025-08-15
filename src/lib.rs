@@ -5,6 +5,10 @@ mod utils;
 use wasm_bindgen::prelude::*;
 use vello::wgpu;
 use vello::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
+use vello::{
+    peniko::{Blob, Brush, Color, Fill, Font},
+    AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
+};
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::utils::RenderContext;
@@ -67,6 +71,35 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     let texture = device.create_texture(&texture_desc);
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+    // Create vello scene and texture.
+    let mut vello_renderer = Renderer::new(
+        &device,
+        RendererOptions {
+            use_cpu: false,
+            antialiasing_support: AaSupport::all(),
+            num_init_threads: std::num::NonZeroUsize::new(1),
+            pipeline_cache: None,
+        },
+    ).expect("create vello renderer");
+
+    let vello_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Vello Text Overlay Texture"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        // Important: Use a non-sRGB UNORM format for Vello offscreen rendering.
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::STORAGE_BINDING,
+        view_formats: &[],
+    });
+    let vello_view = vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let mut vello_scene = Scene::new();
+
+
     // Create a buffer to store the output (RGBA8)
     let bytes_per_pixel: u32 = 4;
     let unpadded_bytes_per_row = width * bytes_per_pixel;
@@ -94,6 +127,10 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         queue: &queue,
         width,
         height,
+        vello_renderer: &mut vello_renderer,
+        vello_tex: &vello_tex,
+        vello_view: &vello_view,
+        vello_scene: &mut vello_scene,
     };
 
     // Plot type-specific rendering logic.
