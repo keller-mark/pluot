@@ -4,12 +4,13 @@ use std::borrow::Cow;
 use crate::{utils::RenderContext, zarr_get_js};
 
 use skrifa::MetadataProvider;
+use vello::wgpu;
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
 
-pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::wgpu::CommandEncoder) {
+pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
         @vertex
         fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
@@ -26,47 +27,47 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::w
         }
     "#;
 
-    let vs_module = context.device.create_shader_module(vello::wgpu::ShaderModuleDescriptor {
+    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Vertex Shader"),
-        source: vello::wgpu::ShaderSource::Wgsl(vs_src.into()),
+        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
     });
 
-    let fs_module = context.device.create_shader_module(vello::wgpu::ShaderModuleDescriptor {
+    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Fragment Shader"),
-        source: vello::wgpu::ShaderSource::Wgsl(fs_src.into()),
+        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
     });
 
-    let render_pipeline_layout = context.device.create_pipeline_layout(&vello::wgpu::PipelineLayoutDescriptor {
+    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
         bind_group_layouts: &[],
         push_constant_ranges: &[],
     });
 
-    let render_pipeline = context.device.create_render_pipeline(&vello::wgpu::RenderPipelineDescriptor {
+    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
         layout: Some(&render_pipeline_layout),
-        vertex: vello::wgpu::VertexState {
+        vertex: wgpu::VertexState {
             module: &vs_module,
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
             buffers: &[],
         },
-        fragment: Some(vello::wgpu::FragmentState {
+        fragment: Some(wgpu::FragmentState {
             module: &fs_module,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
-            targets: &[Some(vello::wgpu::ColorTargetState {
+            targets: &[Some(wgpu::ColorTargetState {
                 format: context.texture_desc.format,
-                blend: Some(vello::wgpu::BlendState::REPLACE),
-                write_mask: vello::wgpu::ColorWrites::ALL,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: vello::wgpu::PrimitiveState {
-            topology: vello::wgpu::PrimitiveTopology::TriangleList,
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
             ..Default::default()
         },
         depth_stencil: None,
-        multisample: vello::wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState::default(),
         multiview: None,
         cache: None,
     });
@@ -157,16 +158,16 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::w
     // End text rendering things.
 
     {
-        let mut render_pass = encoder.begin_render_pass(&vello::wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
-            color_attachments: &[Some(vello::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &context.view,
                 // depth_slice: None,
                 resolve_target: None,
-                ops: vello::wgpu::Operations {
+                ops: wgpu::Operations {
                     // Do not use LoadOp::Clear to clear the texture, as it already contains the Vello text.
-                    load: vello::wgpu::LoadOp::Load,
-                    store: vello::wgpu::StoreOp::Store,
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: None,
@@ -187,7 +188,7 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::w
 
 
 
-pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut vello::wgpu::CommandEncoder) {
+pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
     let xs = zarr_get_js(&context.store_name, "x").to_vec();
     let ys = zarr_get_js(&context.store_name, "y").to_vec();
@@ -207,10 +208,10 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut vello
         positions_bytes.extend_from_slice(&x.to_ne_bytes());
         positions_bytes.extend_from_slice(&y.to_ne_bytes());
     }
-    let positions_buffer = context.device.create_buffer(&vello::wgpu::BufferDescriptor {
+    let positions_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Positions Storage Buffer"),
         size: positions_bytes.len() as u64,
-        usage: vello::wgpu::BufferUsages::STORAGE | vello::wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     context.queue.write_buffer(&positions_buffer, 0, &positions_bytes);
@@ -234,33 +235,33 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut vello
     }
     for c in color { uniform_bytes.extend_from_slice(&c.to_ne_bytes()); }
 
-    let uniform_buffer = context.device.create_buffer(&vello::wgpu::BufferDescriptor {
+    let uniform_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Uniform Buffer"),
         size: uniform_bytes.len() as u64,
-        usage: vello::wgpu::BufferUsages::UNIFORM | vello::wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     context.queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
     // Create bind group layout and bind group for positions + uniforms
-    let bind_group_layout = context.device.create_bind_group_layout(&vello::wgpu::BindGroupLayoutDescriptor {
+    let bind_group_layout = context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Scatter BGL"),
         entries: &[
-            vello::wgpu::BindGroupLayoutEntry {
+            wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: vello::wgpu::ShaderStages::VERTEX,
-                ty: vello::wgpu::BindingType::Buffer {
-                    ty: vello::wgpu::BufferBindingType::Storage { read_only: true },
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
                 count: None,
             },
-            vello::wgpu::BindGroupLayoutEntry {
+            wgpu::BindGroupLayoutEntry {
                 binding: 1,
-                visibility: vello::wgpu::ShaderStages::VERTEX,
-                ty: vello::wgpu::BindingType::Buffer {
-                    ty: vello::wgpu::BufferBindingType::Uniform,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -268,73 +269,73 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut vello
             },
         ],
     });
-    let bind_group = context.device.create_bind_group(&vello::wgpu::BindGroupDescriptor {
+    let bind_group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Scatter BG"),
         layout: &bind_group_layout,
         entries: &[
-            vello::wgpu::BindGroupEntry { binding: 0, resource: positions_buffer.as_entire_binding() },
-            vello::wgpu::BindGroupEntry { binding: 1, resource: uniform_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 0, resource: positions_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: uniform_buffer.as_entire_binding() },
         ],
     });
 
-    let vs_module = context.device.create_shader_module(vello::wgpu::ShaderModuleDescriptor {
+    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Vertex Shader"),
-        source: vello::wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/scatterplot.vs.wgsl"))),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/scatterplot.vs.wgsl"))),
     });
 
-    let fs_module = context.device.create_shader_module(vello::wgpu::ShaderModuleDescriptor {
+    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Fragment Shader"),
-        source: vello::wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/scatterplot.fs.wgsl"))),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/scatterplot.fs.wgsl"))),
     });
 
-    let render_pipeline_layout = context.device.create_pipeline_layout(&vello::wgpu::PipelineLayoutDescriptor {
+    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
         bind_group_layouts: &[&bind_group_layout],
         push_constant_ranges: &[],
     });
 
     // TODO: Extract the shared render pipeline and render pass logic. There is a lot of duplication here.
-    let render_pipeline = context.device.create_render_pipeline(&vello::wgpu::RenderPipelineDescriptor {
+    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
         layout: Some(&render_pipeline_layout),
-        vertex: vello::wgpu::VertexState {
+        vertex: wgpu::VertexState {
             module: &vs_module,
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
             buffers: &[],
         },
-        fragment: Some(vello::wgpu::FragmentState {
+        fragment: Some(wgpu::FragmentState {
             module: &fs_module,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
-            targets: &[Some(vello::wgpu::ColorTargetState {
+            targets: &[Some(wgpu::ColorTargetState {
                 format: context.texture_desc.format,
-                blend: Some(vello::wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: vello::wgpu::ColorWrites::ALL,
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: vello::wgpu::PrimitiveState {
-            topology: vello::wgpu::PrimitiveTopology::TriangleStrip,
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
             ..Default::default()
         },
         depth_stencil: None,
-        multisample: vello::wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState::default(),
         multiview: None,
         cache: None,
     });
 
     {
-        let mut render_pass = encoder.begin_render_pass(&vello::wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
-            color_attachments: &[Some(vello::wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &context.view,
                 // depth_slice: None,
                 resolve_target: None,
-                ops: vello::wgpu::Operations {
+                ops: wgpu::Operations {
                     // Set a white background for the scatterplot.
                     // TODO: make this configurable.
-                    load: vello::wgpu::LoadOp::Clear(vello::wgpu::Color::WHITE),
-                    store: vello::wgpu::StoreOp::Store,
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: None,

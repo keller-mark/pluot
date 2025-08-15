@@ -3,6 +3,7 @@ mod plots;
 mod utils;
 
 use wasm_bindgen::prelude::*;
+use vello::wgpu;
 use vello::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 use futures_intrusive::channel::shared::oneshot_channel;
 
@@ -30,13 +31,13 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     
     // The InstanceDescriptor has fields for which backends wgpu will choose during instantiation,
     // and which DX12 shader compiler wgpu will use.
-    let instance = vello::wgpu::Instance::new(&vello::wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
     let adapter = instance
-        .request_adapter(&vello::wgpu::RequestAdapterOptions::default())
+        .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await
         .expect("No suitable GPU adapters found on the system!");
     let (device, queue) = adapter
-        .request_device(&vello::wgpu::DeviceDescriptor::default(), None)
+        .request_device(&wgpu::DeviceDescriptor::default(), None)
         .await
         .expect("Failed to create device");
 
@@ -53,7 +54,7 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         // Sample count of texture. If this is not 1, texture must have [BindingType::Texture::multisampled] set to true.
         sample_count: 1,
         // Dimensions of the texture.
-        dimension: vello::wgpu::TextureDimension::D2,
+        dimension: wgpu::TextureDimension::D2,
         // Format of the texture.
         format: TextureFormat::Rgba8Unorm,
         // Allowed usages of the texture. If used in other ways, the operation will panic.
@@ -64,24 +65,24 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         view_formats: &[],
     };
     let texture = device.create_texture(&texture_desc);
-    let view = texture.create_view(&vello::wgpu::TextureViewDescriptor::default());
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // Create a buffer to store the output (RGBA8)
     let bytes_per_pixel: u32 = 4;
     let unpadded_bytes_per_row = width * bytes_per_pixel;
-    let align = vello::wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
     let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
     let output_buffer_size = (padded_bytes_per_row as u64) * (height as u64);
 
-    let output_buffer_desc = vello::wgpu::BufferDescriptor {
+    let output_buffer_desc = wgpu::BufferDescriptor {
         label: Some("Output Buffer"),
         size: output_buffer_size,
-        usage: vello::wgpu::BufferUsages::COPY_DST | vello::wgpu::BufferUsages::MAP_READ,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     };
     let output_buffer = device.create_buffer(&output_buffer_desc);
 
-    let mut encoder = device.create_command_encoder(&vello::wgpu::CommandEncoderDescriptor {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Render Encoder"),
     });
 
@@ -108,15 +109,15 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
 
     // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(
-        vello::wgpu::TexelCopyTextureInfo {
+        wgpu::TexelCopyTextureInfo {
             texture: &texture,
             mip_level: 0,
-            origin: vello::wgpu::Origin3d::ZERO,
-            aspect: vello::wgpu::TextureAspect::All,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
         },
-        vello::wgpu::TexelCopyBufferInfo {
+        wgpu::TexelCopyBufferInfo {
             buffer: &output_buffer,
-            layout: vello::wgpu::TexelCopyBufferLayout {
+            layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 // Must be 256-byte aligned on WebGPU
                 bytes_per_row: Some(padded_bytes_per_row),
@@ -132,10 +133,10 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     // Map and await completion without blocking the browser thread
     let buffer_slice = output_buffer.slice(..);
     let (sender, receiver) = oneshot_channel();
-    buffer_slice.map_async(vello::wgpu::MapMode::Read, move |res| {
+    buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
         sender.send(res).ok();
     });
-    let _ = device.poll(vello::wgpu::Maintain::Wait);
+    let _ = device.poll(wgpu::Maintain::Wait);
     receiver.receive().await.unwrap().unwrap();
 
     // Read and depad rows into a tightly packed RGBA buffer
