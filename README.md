@@ -34,6 +34,11 @@ It should be fast enough for this not to matter.
 
 The WASM and JS bundle sizes should be relatively small.
 
+## Why not just use JS+WebGPU directly?
+
+This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
+It would also make CPU data processing operations more challenging.
+
 ## Non-goals
 
 - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
