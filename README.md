@@ -1,6 +1,6 @@
 # pluot
 
-Implement once, pluot everywhere.
+Implement once, pluot everywhere (across languages, regardless of whether static or interactive).
 Create declarative static and interactive plots using WGPU and Rust/WASM.
 
 
