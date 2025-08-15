@@ -20,7 +20,10 @@ use std::rc::Rc;
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
+    static VELLO_RENDERER: RefCell<Option<Renderer>> = RefCell::new(None);
 }
+
+
 
 async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // Check if already initialized
@@ -48,6 +51,30 @@ async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     (device, queue)
 }
 
+fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
+where
+    F: FnOnce(&mut Renderer) -> R,
+{
+    VELLO_RENDERER.with(|renderer| {
+        // Check if already initialized
+        if renderer.borrow().is_none() {
+            let vello_renderer = Renderer::new(
+                device,
+                RendererOptions {
+                    use_cpu: false,
+                    antialiasing_support: AaSupport::all(),
+                    num_init_threads: std::num::NonZeroUsize::new(1),
+                    pipeline_cache: None,
+                },
+            ).expect("create vello renderer");
+            
+            *renderer.borrow_mut() = Some(vello_renderer);
+        }
+        
+        f(renderer.borrow_mut().as_mut().unwrap())
+    })
+}
+
 #[wasm_bindgen]
 extern "C" {
     fn alert(s: &str);
@@ -56,7 +83,7 @@ extern "C" {
     fn log(s: &str);
 
     #[wasm_bindgen(js_name = zarr_get)]
-    pub fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Int32Array;
+    pub async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Int32Array;
 }
 
 // This function should accept width and height as parameters,
@@ -99,15 +126,6 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // Create vello scene and texture.
-    let mut vello_renderer = Renderer::new(
-        &device,
-        RendererOptions {
-            use_cpu: false,
-            antialiasing_support: AaSupport::all(),
-            num_init_threads: std::num::NonZeroUsize::new(1),
-            pipeline_cache: None,
-        },
-    ).expect("create vello renderer");
 
     let vello_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Vello Text Overlay Texture"),
@@ -154,13 +172,11 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         queue: &queue,
         width,
         height,
-        vello_renderer: &mut vello_renderer,
         vello_tex: &vello_tex,
         vello_view: &vello_view,
         vello_scene: &mut vello_scene,
     };
 
-    // Plot type-specific rendering logic.
     match plot_type {
         "triangle" => {
             plots::render_triangle(&mut context, &mut encoder).await;

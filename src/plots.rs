@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::borrow::Cow;
 
+use crate::with_vello_renderer;
 use crate::{utils::RenderContext, zarr_get_js};
 
 use skrifa::MetadataProvider;
@@ -12,7 +13,7 @@ use vello::{
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
-pub async fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, tri_tex: &wgpu::Texture, tri_view: &wgpu::TextureView) {
+pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, tri_tex: &wgpu::Texture, tri_view: &wgpu::TextureView) {
     // 3) Composition pass: sample tri_tex then text_tex and draw to swapchain
     let overlay_vs = r#"
         struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -313,11 +314,13 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         height: context.height,
         antialiasing_method: AaConfig::Msaa16,
     };
-    context.vello_renderer
-        .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
-        .expect("vello render_to_texture");
+    with_vello_renderer(context.device, |vello_renderer| {
+        vello_renderer
+            .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
+            .expect("vello render_to_texture");
+    });
 
-    overlay_pass(context, encoder, &tri_tex, &tri_view).await;
+    overlay_pass(context, encoder, &tri_tex, &tri_view);
 }
 
 
@@ -327,8 +330,8 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
 
 pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
-    let xs = zarr_get_js(&context.store_name, "x").to_vec();
-    let ys = zarr_get_js(&context.store_name, "y").to_vec();
+    let xs = zarr_get_js(&context.store_name, "x").await.to_vec();
+    let ys = zarr_get_js(&context.store_name, "y").await.to_vec();
    
     let n = xs.len().try_into().unwrap();
     assert_eq!(n, ys.len(), "x and y data must have the same length");
@@ -559,9 +562,11 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         height: context.height,
         antialiasing_method: AaConfig::Msaa16,
     };
-    context.vello_renderer
-        .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
-        .expect("vello render_to_texture");
+    with_vello_renderer(context.device, |vello_renderer| {
+        vello_renderer
+            .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
+            .expect("vello render_to_texture");
+    });
 
-    overlay_pass(context, encoder, &scatter_tex, &scatter_view).await;
+    overlay_pass(context, encoder, &scatter_tex, &scatter_view);
 }
