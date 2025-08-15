@@ -149,6 +149,11 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::w
         antialiasing_method: AaConfig::Msaa16,
     };
 
+    // Render the Vello scene first. This submits immediately to the queue.
+    vello_renderer
+        .render_to_texture(context.device, context.queue, &scene, context.view, &params)
+        .expect("vello render_to_texture");
+
     // End text rendering things.
 
     {
@@ -159,7 +164,8 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::w
                 // depth_slice: None,
                 resolve_target: None,
                 ops: vello::wgpu::Operations {
-                    load: vello::wgpu::LoadOp::Clear(vello::wgpu::Color::GREEN),
+                    // Do not use LoadOp::Clear to clear the texture, as it already contains the Vello text.
+                    load: vello::wgpu::LoadOp::Load,
                     store: vello::wgpu::StoreOp::Store,
                 },
             })],
@@ -170,10 +176,6 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut vello::w
 
         render_pass.set_pipeline(&render_pipeline);
         render_pass.draw(0..3, 0..1);
-
-        vello_renderer
-            .render_to_texture(context.device, context.queue, &scene, context.view, &params)
-            .expect("vello render_to_texture");
 
         // End the renderpass.
         drop(render_pass);
