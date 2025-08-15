@@ -7,7 +7,8 @@ Create declarative static and interactive plots using WGPU and Rust/WASM.
 
 ## How it works
 
-Plotting functions are implemented in Rust using WGPU.
+Plotting functions are implemented in Rust using [WGPU](https://github.com/gfx-rs/wgpu).
+These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
 
 - To render plots in the web browser, the Rust code is compiled to WebAssembly (WASM).
   - JavaScript wrapper code handles interactivity and data-loader registration.
@@ -18,8 +19,9 @@ Plotting functions are implemented in Rust using WGPU.
 
 ## Principles
 
-The frontend should never "touch" the data.
-The frontend may, however, register data-loading functions that are called by the Rust code.
+The frontend/client should never "touch" the data.
+In other words, it should never execute a `for` loop over the data (for rendering purposes).
+The frontend/client does, however, need to register data-loading functions that will be called by the Rust code to retrieve data.
 
 
 The frontend will specify visual properties and data-related properties and expressions, for example colormaps, viewState (zoom/pan), data filtering expressions via parameters.
@@ -29,6 +31,11 @@ For example, given a viewState, the Rust code may load certain chunks of data. G
 
 The Rust code should only be concerned with rendering a single plot, and should not care whether the caller is intending to use the result in a static or interactive context.
 It should be fast enough for this not to matter.
+
+## Non-goals
+
+- Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
+- Serving as a backend for a library such as Matplotlib.
 
 
 ## JS API
