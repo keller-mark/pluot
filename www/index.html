@@ -34,8 +34,6 @@
       await wasm.default();
       await wasm.set_panic_hook();
 
-      
-
       // Render to a canvas
       const width = 800;
       const height = 800;
@@ -45,14 +43,13 @@
       document.getElementById('root').appendChild(canvas);
       const ctx = canvas.getContext('2d');
 
-
       // Render once or every animation frame.
       const renderOnce = true;
       const plotType = "scatterplot" // "scatterplot" or "triangle"
       
       // Define the function to render a single frame.
       function renderFrame() {
-        wasm.render(width, height, 'scatterplot', 'my_store').then(arr => {
+        wasm.render(width, height, plotType, 'my_store').then(arr => {
           const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
           ctx.putImageData(imageData, 0, 0);
         });
