@@ -114,38 +114,44 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let mut instance_data: Vec<f32> = Vec::with_capacity(glyphs.len() * 8);
 
     for (g, (m, bmp)) in glyphs.iter().zip(rasters.into_iter()) {
-        let gw = m.width.max(1);
-        let gh = m.height.max(1);
+        // Actual bitmap dimensions
+        let gw = m.width.max(0) as usize;
+        let gh = m.height.max(0) as usize;
 
-        // Copy bitmap into atlas at x_cursor
-        for row in 0..gh {
-            let src = &bmp[row * gw..row * gw + gw];
-            let dst = &mut atlas[row * atlas_width + x_cursor..row * atlas_width + x_cursor + gw];
-            dst.copy_from_slice(src);
+        // Atlas pack dimensions (pad zero-size glyphs to avoid degenerate packing)
+        let gw_pad = gw.max(1);
+        let gh_pad = gh.max(1);
+
+        // Copy bitmap into atlas only if it has pixels
+        if gw > 0 && gh > 0 {
+            for row in 0..gh {
+                let src = &bmp[row * gw..row * gw + gw];
+                let dst = &mut atlas[row * atlas_width + x_cursor..row * atlas_width + x_cursor + gw];
+                dst.copy_from_slice(src);
+            }
+
+            // Compute screen-space rect in pixels (top-left)
+            let x_px = g.x as f32;
+            let y_px = (g.y + m.ymin as f32).round();
+            let w_px = gw as f32;
+            let h_px = gh as f32;
+
+            // Place with a small margin from top-left
+            let origin = glam::vec2(10.0, 10.0);
+            let rect_x = origin.x + x_px;
+            let rect_y = origin.y + y_px;
+
+            // UV rectangle (normalized) uses padded pack width/height
+            let u0 = (x_cursor as f32) / (atlas_width as f32);
+            let v0 = 0.0;
+            let u1 = ((x_cursor + gw_pad) as f32) / (atlas_width as f32);
+            let v1 = (gh_pad as f32) / (atlas_height as f32);
+
+            instance_data.extend_from_slice(&[rect_x, rect_y, w_px, h_px, u0, v0, u1, v1]);
         }
 
-        // Compute screen-space rect in pixels (top-left)
-        // fontdue's layout positions are baseline-based with PositiveYDown.
-        // Using g.x, g.y+m.ymin approximates top-left of glyph bitmap.
-        let x_px = g.x as f32;
-        let y_px = (g.y + m.ymin as f32).round();
-        let w_px = gw as f32;
-        let h_px = gh as f32;
-
-        // Place with a small margin from top-left
-        let origin = glam::vec2(10.0, 10.0);
-        let rect_x = origin.x + x_px;
-        let rect_y = origin.y + y_px;
-
-        // UV rectangle (normalized)
-        let u0 = (x_cursor as f32) / (atlas_width as f32);
-        let v0 = 0.0;
-        let u1 = ((x_cursor + gw) as f32) / (atlas_width as f32);
-        let v1 = (gh as f32) / (atlas_height as f32);
-
-        instance_data.extend_from_slice(&[rect_x, rect_y, w_px, h_px, u0, v0, u1, v1]);
-
-        x_cursor += gw;
+        // Advance pack cursor by padded width
+        x_cursor += gw_pad;
     }
 
     // 2) Upload atlas as a single-channel R8Unorm texture.
@@ -201,10 +207,13 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
     struct Uniforms {
         viewport: [f32; 2],
+        // Pad to 16-byte alignment before vec4; total struct size = 32 bytes.
+        _pad: [f32; 2],
         color: [f32; 4],
     }
     let uniforms = Uniforms {
         viewport: [context.width as f32, context.height as f32],
+        _pad: [0.0, 0.0],
         color: [0.0, 0.0, 0.0, 1.0], // black text
     };
     let uniform_buffer = context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -383,6 +392,9 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         cache: None,
     });
 
+    // Number of emitted instances (skip zero-sized glyphs)
+    let instance_count: u32 = (instance_data.len() / 8) as u32;
+
     // 8) Render
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -405,7 +417,7 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, instance_buffer.slice(..));
         // 4 vertices (triangle strip) per instance
-        pass.draw(0..4, 0..(glyphs.len() as u32));
+        pass.draw(0..4, 0..instance_count);
     }
 }
 
