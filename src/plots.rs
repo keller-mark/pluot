@@ -3,6 +3,8 @@ use std::borrow::Cow;
 
 use crate::{utils::RenderContext, zarr_get_js};
 
+use wgpu_text::{BrushBuilder};
+use wgpu_text::glyph_brush::{Section, Text};
 
 pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
@@ -67,6 +69,29 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     });
     // End render-specific things.
 
+
+    // Text rendering
+    // Build a text brush using an embedded TTF font.
+    // Place a font at: src/fonts/DejaVuSans.ttf (or change the path below).
+    let mut text_brush = BrushBuilder::using_font_bytes(include_bytes!("fonts/Inter-Bold.ttf"))
+        .expect("Failed to load font bytes")
+        .build(&context.device, context.texture_desc.format);
+
+    // Make sure brush knows the current viewport size (pixel coordinates).
+    text_brush.resize_view(context.width, context.height, &context.queue);
+
+    // Queue the "Hello world" text. Position is in screen pixels from top-left.
+    text_brush.queue(Section {
+        screen_position: (20.0, 40.0),
+        bounds: (context.width as f32, context.height as f32),
+        text: vec![
+            Text::new("Hello world")
+                .with_scale(36.0)
+                .with_color([0.0, 0.0, 0.0, 1.0]),
+        ],
+        ..Default::default()
+    });
+
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -86,6 +111,10 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
         render_pass.set_pipeline(&render_pipeline);
         render_pass.draw(0..3, 0..1);
+
+        // Draw queued text into this render pass.
+        // Ignore the result for brevity; you can handle it if you want to know if glyphs were dropped.
+        let _ = text_brush.draw(&mut render_pass);
 
         // End the renderpass.
         drop(render_pass);
