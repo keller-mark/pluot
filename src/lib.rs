@@ -3,6 +3,9 @@ mod plots;
 mod utils;
 
 use wasm_bindgen::prelude::*;
+
+use std::cell::RefCell;
+
 use vello::wgpu;
 use vello::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 use vello::{
@@ -12,11 +15,6 @@ use vello::{
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::utils::RenderContext;
-use std::sync::OnceLock;
-
-
-use std::cell::RefCell;
-use std::rc::Rc;
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);

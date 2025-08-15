@@ -13,7 +13,7 @@ use vello::{
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
-pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, tri_tex: &wgpu::Texture, tri_view: &wgpu::TextureView) {
+pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, background_tex: &wgpu::Texture, background_view: &wgpu::TextureView) {
     // 3) Composition pass: sample tri_tex then text_tex and draw to swapchain
     let overlay_vs = r#"
         struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -114,16 +114,16 @@ pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::Command
         ..Default::default()
     });
 
-    let bg_tri = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("BG Tri"),
+    let bg_background = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("BG background (pre-vello)"),
         layout: &overlay_bgl,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tri_view) },
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&background_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&overlay_sampler) },
         ],
     });
-    let bg_text = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("BG Text"),
+    let bg_foreground = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("BG foreground (vello scene)"),
         layout: &overlay_bgl,
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&context.vello_view) },
@@ -151,11 +151,11 @@ pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::Command
         render_pass.set_pipeline(&overlay_pipeline);
 
         // Draw triangles texture first
-        render_pass.set_bind_group(0, &bg_tri, &[]);
+        render_pass.set_bind_group(0, &bg_background, &[]);
         render_pass.draw(0..3, 0..1);
 
         // Then draw text texture on top
-        render_pass.set_bind_group(0, &bg_text, &[]);
+        render_pass.set_bind_group(0, &bg_foreground, &[]);
         render_pass.draw(0..3, 0..1);
     }
 }
@@ -281,7 +281,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
 
     let text = "Hello, world!";
     let mut pen_x = 0_f32;
-    let mut pen_y = line_height;
+    let pen_y = line_height;
     let mut glyphs = Vec::with_capacity(text.len());
 
     for ch in text.chars() {
@@ -529,7 +529,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
 
     let text = "Hello, world!";
     let mut pen_x = 0_f32;
-    let mut pen_y = line_height;
+    let pen_y = line_height;
     let mut glyphs = Vec::with_capacity(text.len());
 
     for ch in text.chars() {
