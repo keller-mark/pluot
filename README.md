@@ -38,6 +38,7 @@ The WASM and JS bundle sizes should be relatively small.
 
 - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
 - Serving as a backend for a library such as Matplotlib.
+- Multiple views per render function call, or coordinated multiple views. These should be achieved via the parent library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
 
 
 ## JS API
