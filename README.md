@@ -32,6 +32,8 @@ For example, given a viewState, the Rust code may load certain chunks of data. G
 The Rust code should only be concerned with rendering a single plot, and should not care whether the caller is intending to use the result in a static or interactive context.
 It should be fast enough for this not to matter.
 
+The WASM and JS bundle sizes should be relatively small.
+
 ## Non-goals
 
 - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
