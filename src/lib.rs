@@ -12,6 +12,41 @@ use vello::{
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::utils::RenderContext;
+use std::sync::OnceLock;
+
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+thread_local! {
+    static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
+}
+
+async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+    // Check if already initialized
+    let existing = GPU_CONTEXT.with(|ctx| ctx.borrow().clone());
+    if let Some(context) = existing {
+        return context;
+    }
+    
+    // Initialize GPU context
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions::default())
+        .await
+        .expect("No suitable GPU adapters found on the system!");
+    let (device, queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor::default(), None)
+        .await
+        .expect("Failed to create device");
+    
+    // Store the context
+    GPU_CONTEXT.with(|ctx| {
+        *ctx.borrow_mut() = Some((device.clone(), queue.clone()));
+    });
+    
+    (device, queue)
+}
 
 #[wasm_bindgen]
 extern "C" {
@@ -35,15 +70,7 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     
     // The InstanceDescriptor has fields for which backends wgpu will choose during instantiation,
     // and which DX12 shader compiler wgpu will use.
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .await
-        .expect("No suitable GPU adapters found on the system!");
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default(), None)
-        .await
-        .expect("Failed to create device");
+    let (device, queue) = get_or_init_gpu_context().await;
 
     // Create a texture to render to.
     let texture_desc = TextureDescriptor {
