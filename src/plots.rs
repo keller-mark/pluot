@@ -94,8 +94,8 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
-    let xs = zarr_get_js(&context.store_name, "x").to_vec();
-    let ys = zarr_get_js(&context.store_name, "y").to_vec();
+    let xs = zarr_get_js(&context.store_name, "x").await.to_vec();
+    let ys = zarr_get_js(&context.store_name, "y").await.to_vec();
    
     let n = xs.len().try_into().unwrap();
     assert_eq!(n, ys.len(), "x and y data must have the same length");

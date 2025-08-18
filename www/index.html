@@ -19,7 +19,7 @@
 
       // Define the global zarr_get function.
       // TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
-      window.zarr_get = (store_name, key) => {
+      window.zarr_get = async (store_name, key) => {
         console.log(`zarr_get called with store_name: ${store_name}, key: ${key}`);
 
         // Return fake data
@@ -28,7 +28,7 @@
         for (let i = 0; i < n; i++) {
           xs[i] = (Math.random()) * 1000.0;
         }
-        return xs;
+        return Promise.resolve(xs);
       };
       
       await wasm.default();

@@ -40,6 +40,10 @@ The WASM and JS bundle sizes should be relatively small.
 - Serving as a backend for a library such as Matplotlib.
 - Multiple views per render function call, or coordinated multiple views. These should be achieved via the parent library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
 
+## Why not just use JS+WebGPU directly?
+
+This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
+It would also make CPU data processing operations more challenging.
 
 ## JS API
 
