@@ -6,3 +6,7 @@ pkg/
 wasm-pack.log
 .DS_Store
 node_modules/
+
+dist/
+dist-tsc/
+tsconfig.tsbuildinfo

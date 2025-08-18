@@ -1,0 +1,4 @@
+packages:
+  - 'pkg'
+  - 'js/lib'
+  - 'js/demo'
