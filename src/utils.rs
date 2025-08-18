@@ -6,4 +6,6 @@ pub struct RenderContext<'a> {
     pub queue: &'a wgpu::Queue,
     pub width: u32,
     pub height: u32,
+    pub vger_tex: &'a wgpu::Texture,
+    pub vger_view: &'a wgpu::TextureView,
 }

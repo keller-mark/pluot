@@ -3,17 +3,19 @@ mod plots;
 mod utils;
 
 use wasm_bindgen::prelude::*;
-use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
+use wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
+use std::sync::Arc;
+
+use vger::Vger;
 
 use crate::utils::RenderContext;
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
+    static VGER_RENDERER: RefCell<Option<Vger>> = RefCell::new(None);
 }
-
-
 
 async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // Check if already initialized
@@ -39,6 +41,26 @@ async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     });
 
     (device, queue)
+}
+
+fn with_vger_renderer<F, R>(device: &wgpu::Device, queue: &wgpu::Queue, f: F) -> R
+where
+    F: FnOnce(&mut Vger) -> R,
+{
+    VGER_RENDERER.with(|renderer| {
+        // Check if already initialized
+        if renderer.borrow().is_none() {
+            let vger_renderer = Vger::new(
+                Arc::new(device.clone()).clone(),
+                Arc::new(queue.clone()).clone(),
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+
+            *renderer.borrow_mut() = Some(vger_renderer);
+        }
+
+        f(renderer.borrow_mut().as_mut().unwrap())
+    })
 }
 
 #[wasm_bindgen]
@@ -80,9 +102,9 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         // Dimensions of the texture.
         dimension: wgpu::TextureDimension::D2,
         // Format of the texture.
-        format: TextureFormat::Rgba8UnormSrgb,
+        format: TextureFormat::Rgba8Unorm,
         // Allowed usages of the texture. If used in other ways, the operation will panic.
-        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
         // Specifies what view formats will be allowed when calling Texture::create_view on this texture.
         // View formats of the same format as the texture are always allowed.
         // Note: currently, only the srgb-ness is allowed to change. (ex: Rgba8Unorm texture + Rgba8UnormSrgb view)
@@ -90,6 +112,23 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     };
     let texture = device.create_texture(&texture_desc);
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    // Create Vger scene and texture.
+
+    let vger_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Vger Text Overlay Texture"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        // Important: Use a non-sRGB UNORM format for Vger offscreen rendering.
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::STORAGE_BINDING,
+        view_formats: &[],
+    });
+    let vger_view = vger_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
     // Create a buffer to store the output (RGBA8)
     let bytes_per_pixel: u32 = 4;
@@ -118,6 +157,8 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         queue: &queue,
         width,
         height,
+        vger_tex: &vger_tex,
+        vger_view: &vger_view,
     };
 
     // Plot type-specific rendering logic.
