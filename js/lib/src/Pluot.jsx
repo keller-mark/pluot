@@ -1,3 +1,5 @@
+// TODO: once things are working with react,
+// convert to use plain vanilla JS.
 import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import * as wasm from 'pluot';
 import * as zarr from 'zarrita';
