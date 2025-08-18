@@ -17,6 +17,8 @@ thread_local! {
     static VGER_RENDERER: RefCell<Option<Vger>> = RefCell::new(None);
 }
 
+const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
+
 async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // Check if already initialized
     let existing = GPU_CONTEXT.with(|ctx| ctx.borrow().clone());
@@ -50,11 +52,15 @@ where
     VGER_RENDERER.with(|renderer| {
         // Check if already initialized
         if renderer.borrow().is_none() {
-            let vger_renderer = Vger::new(
+            let mut vger_renderer = Vger::new(
                 Arc::new(device.clone()).clone(),
                 Arc::new(queue.clone()).clone(),
                 wgpu::TextureFormat::Rgba8Unorm,
             );
+
+            let settings = fontdue::FontSettings::default();
+
+            vger_renderer.glyph_cache.font = fontdue::Font::from_bytes(FONT_BYTES, settings).unwrap();
 
             *renderer.borrow_mut() = Some(vger_renderer);
         }

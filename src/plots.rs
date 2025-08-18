@@ -314,7 +314,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
     //   viewport_size: vec2<f32>,
     //   color: vec4<f32>
     // }
-    let point_size_px: f32 = 4.0;
+    let point_size_px: f32 = 10.0;
     let _pad0: f32 = 0.0;
     let viewport_w = context.width as f32;
     let viewport_h = context.height as f32;
@@ -458,6 +458,9 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         vger.begin(512.0, 512.0, 1.0);
         let cyan = vger.color_paint(Color::CYAN);
         vger.fill_circle([100.0, 100.0], 20.0, cyan);
+
+        vger.translate([32.0, 256.0]);
+        vger.text("Hello, world!", 24, Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, None);
 
         let desc = wgpu::RenderPassDescriptor {
             label: None,

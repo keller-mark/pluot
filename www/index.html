@@ -23,7 +23,7 @@
         console.log(`zarr_get called with store_name: ${store_name}, key: ${key}`);
 
         // Return fake data
-        const n = 50000;
+        const n = 50;
         const xs = new Int32Array(n);
         for (let i = 0; i < n; i++) {
           xs[i] = (Math.random()) * 1000.0;
@@ -44,7 +44,7 @@
       const ctx = canvas.getContext('2d');
 
       // Render once or every animation frame.
-      const renderOnce = false;
+      const renderOnce = true;
       const plotType = "scatterplot" // "scatterplot" or "triangle"
       
       // Define the function to render a single frame.
