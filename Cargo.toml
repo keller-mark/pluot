@@ -3,6 +3,8 @@ name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
+#edition = "2021"
+#rust-version = "1.77"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -21,16 +23,30 @@ futures-intrusive = "0.5"
 once_cell = "1.21.3"
 # For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
-# Reference: https://github.com/mulimoen/rust-blosc-src/issues/23
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 zarrs = { version = "0.21.2", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
+async-trait = "0.1.74"
+
+# For testing with local modified version of the rust-blosc-src crate.
+#blosc-src = { path = "../rust-blosc-src" }
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
 # all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.7", optional = true }
+
+# Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
+[dependencies.getrandom_v03]
+package = "getrandom"
+version = "0.3"
+features = ["wasm_js"]
+
+[dependencies.getrandom_v02]
+package = "getrandom"
+version = "0.2"
+features = ["js"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"

@@ -37,11 +37,12 @@ impl AsyncZarritaStore {
     }
 }
 
+/*
 #[async_trait::async_trait]
 impl AsyncReadableStorageTraits for AsyncZarritaStore {
     async fn get(&self, key: &StoreKey) -> Result<MaybeAsyncBytes, StorageError> {
 
-        if !self.has(key).await {
+        if !self.has(key).await.expect("store.has failed") {
             return Ok(None);
         }
         // Use the zarr_get_js function to fetch the data
@@ -49,11 +50,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         let bytes = zarr_get_js(&store_name, key.as_str()).await;
         
         // TODO: Convert the js_sys::Uint8Array to AsyncBytes
-        if let Some(bytes) = bytes {
-            Ok(Some(bytes))
-        } else {
-            Ok(None)
-        }
+        Ok(Some(bytes))
     }
 
     async fn get_partial_values_key(
@@ -87,3 +84,4 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         Ok(None) // TODO: implement. can zarrita return a size?
     }
 }
+*/

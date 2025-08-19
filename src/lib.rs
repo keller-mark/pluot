@@ -12,7 +12,6 @@ use crate::utils::RenderContext;
 use crate::zarr::AsyncZarritaStore;
 
 /*
-// Testing rust-blosc-src import.
 use blosc_src::{
     blosc_cbuffer_metainfo, blosc_cbuffer_sizes, blosc_cbuffer_validate, blosc_compress_ctx,
     blosc_decompress_ctx, blosc_getitem, BLOSC_MAX_OVERHEAD, BLOSC_MAX_THREADS,
