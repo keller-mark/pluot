@@ -2,12 +2,27 @@
 // convert to use plain vanilla JS.
 import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import * as wasm from 'pluot';
-import * as zarr from 'zarrita';
+import { FetchStore, open as zarrOpen, root as zarrRoot, get as zarrGet } from 'zarrita';
 
+const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
+
+const stores = {
+    'my_store': new FetchStore(baseUrl),
+}
 
 // Define the global zarr_get function.
 // TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
 window.zarr_get = async (store_name, key) => {
+    return stores[store_name].get(key);
+    
+    //const umapX = await zarrOpen(zarrRoot(store).resolve('/umap/X'), { kind: "array" });
+    //const umapY = await zarrOpen(zarrRoot(store).resolve('/umap/Y'), { kind: "array" });
+    //const densmapX = await zarrOpen(zarrRoot(store).resolve('/densmap/X'), { kind: "array" });
+    //const densmapY = await zarrOpen(zarrRoot(store).resolve('/densmap/Y'), { kind: "array" });
+    //const target = await zarrOpen(zarrRoot(store).resolve('/umap/target'), { kind: "array" });
+
+
+    /*
     console.log(`zarr_get called with store_name: ${store_name}, key: ${key}`);
 
     // TODO: use zarrita here to create a zarr store and array.
@@ -19,7 +34,10 @@ window.zarr_get = async (store_name, key) => {
     xs[i] = (Math.random()) * 1000.0;
     }
     return Promise.resolve(xs);
+    */
 };
+
+console.log(await stores['my_store'].get('/umap/X/.zarray'));
 
 export function Pluot(props) {
     const {

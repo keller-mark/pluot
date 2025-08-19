@@ -1,6 +1,7 @@
 mod set_panic_hook;
 mod plots;
 mod utils;
+mod zarr;
 
 use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
@@ -8,6 +9,15 @@ use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
 
 use crate::utils::RenderContext;
+use crate::zarr::AsyncZarritaStore;
+
+/*
+// Testing rust-blosc-src import.
+use blosc_src::{
+    blosc_cbuffer_metainfo, blosc_cbuffer_sizes, blosc_cbuffer_validate, blosc_compress_ctx,
+    blosc_decompress_ctx, blosc_getitem, BLOSC_MAX_OVERHEAD, BLOSC_MAX_THREADS,
+};
+*/
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
@@ -48,8 +58,20 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 
+    // We need to define a `has` function, since the zarr_get_js function
+    // may return undefined, and wasm_bindgen does not allow
+    // Option<Uint8Array> as a return type annotation.
+    #[wasm_bindgen(js_name = zarr_has)]
+    pub async fn zarr_has_js(store_name: &str, key: &str) -> js_sys::Boolean;
+
     #[wasm_bindgen(js_name = zarr_get)]
-    pub async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Int32Array;
+    pub async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Uint8Array;
+
+    #[wasm_bindgen(js_name = zarr_get_range_from_offset)]
+    pub async fn zarr_get_range_from_offset_js(store_name: &str, key: &str, offset: u32, length: u32) -> js_sys::Uint8Array;
+
+    #[wasm_bindgen(js_name = zarr_get_range_from_end)]
+    pub async fn zarr_get_range_from_end_js(store_name: &str, key: &str, suffix_length: u32) -> js_sys::Uint8Array;
 }
 
 // This function should accept width and height as parameters,
