@@ -4,40 +4,35 @@ import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import * as wasm from 'pluot';
 import { FetchStore, open as zarrOpen, root as zarrRoot, get as zarrGet } from 'zarrita';
 
-const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
+//const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
+const baseUrl = 'http://localhost:3005/data/out/mnist.zarr';
 
 const stores = {
     'my_store': new FetchStore(baseUrl),
 }
 
+console.log(wasm);
+
 // Define the global zarr_get function.
 // TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
 window.zarr_get = async (store_name, key) => {
-    return stores[store_name].get(key);
-    
-    //const umapX = await zarrOpen(zarrRoot(store).resolve('/umap/X'), { kind: "array" });
-    //const umapY = await zarrOpen(zarrRoot(store).resolve('/umap/Y'), { kind: "array" });
-    //const densmapX = await zarrOpen(zarrRoot(store).resolve('/densmap/X'), { kind: "array" });
-    //const densmapY = await zarrOpen(zarrRoot(store).resolve('/densmap/Y'), { kind: "array" });
-    //const target = await zarrOpen(zarrRoot(store).resolve('/umap/target'), { kind: "array" });
-
-
-    /*
-    console.log(`zarr_get called with store_name: ${store_name}, key: ${key}`);
-
-    // TODO: use zarrita here to create a zarr store and array.
-
-    // Return fake data
-    const n = 50000;
-    const xs = new Int32Array(n);
-    for (let i = 0; i < n; i++) {
-    xs[i] = (Math.random()) * 1000.0;
-    }
-    return Promise.resolve(xs);
-    */
+    console.log(`zarr_get: store_name=${store_name}, key=${key}`);
+    return stores[store_name].get(`/${key}`);
 };
 
-console.log(await stores['my_store'].get('/umap/X/.zarray'));
+window.zarr_has = async (store_name, key) => {
+    console.log(`zarr_has: store_name=${store_name}, key=${key}`);
+    return stores[store_name].get(`/${key}`) !== undefined;
+};
+
+window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
+    return stores[store_name].getRange(`/${key}`, { offset, length });
+};
+window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
+    return stores[store_name].getRange(`/${key}`, { suffix_length });
+};
+
+console.log(await stores['my_store'].get('/umap/x_coords/zarr.json'));
 
 export function Pluot(props) {
     const {

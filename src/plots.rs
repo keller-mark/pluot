@@ -1,7 +1,9 @@
 use std::convert::TryInto;
 use std::borrow::Cow;
+use std::sync::Arc;
 
-use crate::{utils::RenderContext, zarr_get_js};
+
+use crate::{utils::RenderContext, zarr::AsyncZarritaStore, zarr_get_js, log};
 
 
 pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
@@ -96,9 +98,28 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     // Get x and y data from the global map
 
     // TODO: use zarrs
-    // See https://docs.rs/zarrs/latest/zarrs/array/struct.Array.html#method.async_open
-    let xs = zarr_get_js(&context.store_name, "x").await.to_vec();
-    let ys = zarr_get_js(&context.store_name, "y").await.to_vec();
+    let store = std::sync::Arc::new(AsyncZarritaStore::new(context.store_name.clone()));
+    let x_array_path = "/umap/x_coords";
+    let y_array_path = "/umap/y_coords";
+    let x_array = zarrs::array::Array::async_open(store.clone(), x_array_path).await.unwrap();
+    let y_array = zarrs::array::Array::async_open(store.clone(), y_array_path).await.unwrap();
+
+    log(&x_array.metadata().to_string_pretty());
+
+    // Read the whole array
+    let x_vec = x_array
+        .async_retrieve_array_subset_ndarray::<f64>(&x_array.subset_all())
+        .await
+        .unwrap();
+    let y_vec = y_array
+        .async_retrieve_array_subset_ndarray::<f64>(&y_array.subset_all())
+        .await
+        .unwrap();
+
+    // Convert data_all to f32
+    let xs: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
+    let ys: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+
    
     let n = xs.len().try_into().unwrap();
     assert_eq!(n, ys.len(), "x and y data must have the same length");

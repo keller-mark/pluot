@@ -10,3 +10,4 @@ node_modules/
 dist/
 dist-tsc/
 tsconfig.tsbuildinfo
+data/out/

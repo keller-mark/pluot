@@ -50,7 +50,7 @@ extern "C" {
     fn alert(s: &str);
 
     #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
+    pub fn log(s: &str);
 
     // We need to define a `has` function, since the zarr_get_js function
     // may return undefined, and wasm_bindgen does not allow

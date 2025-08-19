@@ -179,6 +179,11 @@ const arr = await render({
 ### 🛠️ Build with `wasm-pack build`
 
 ```sh
+# Install nightly version of wasm-bindgen CLI
+# Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
+cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
+
+
 wasm-pack build --target web
 ```
 
