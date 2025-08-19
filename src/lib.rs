@@ -8,15 +8,10 @@ use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
 
+
+
 use crate::utils::RenderContext;
 use crate::zarr::AsyncZarritaStore;
-
-/*
-use blosc_src::{
-    blosc_cbuffer_metainfo, blosc_cbuffer_sizes, blosc_cbuffer_validate, blosc_compress_ctx,
-    blosc_decompress_ctx, blosc_getitem, BLOSC_MAX_OVERHEAD, BLOSC_MAX_THREADS,
-};
-*/
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
@@ -181,7 +176,7 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
         sender.send(res).ok();
     });
-    let _ =device.poll(wgpu::PollType::Poll);
+    let _ = device.poll(wgpu::PollType::Poll);
     receiver.receive().await.unwrap().unwrap();
 
     // Read and depad rows into a tightly packed RGBA buffer

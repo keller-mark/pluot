@@ -25,8 +25,9 @@ once_cell = "1.21.3"
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
-zarrs = { version = "0.21.2", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
+zarrs = { path = "../zarrs/zarrs", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
 async-trait = "0.1.74"
+futures = "0.3.29"
 
 # For testing with local modified version of the rust-blosc-src crate.
 #blosc-src = { path = "../rust-blosc-src" }

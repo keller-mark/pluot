@@ -94,6 +94,9 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the global map
+
+    // TODO: use zarrs
+    // See https://docs.rs/zarrs/latest/zarrs/array/struct.Array.html#method.async_open
     let xs = zarr_get_js(&context.store_name, "x").await.to_vec();
     let ys = zarr_get_js(&context.store_name, "y").await.to_vec();
    
