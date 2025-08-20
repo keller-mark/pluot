@@ -1,9 +1,14 @@
 # pluot
 
 Implement once, pluot everywhere (across languages, regardless of whether static or interactive).
-Create declarative static and interactive plots using WGPU and Rust/WASM.
+<!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
 
-
+Unlock the following benefits:
+- Render static plots via Rust directly (no web browser needed)
+- Render static plots via Python (no web browser needed)
+- Render static plots via JavaScript
+- Render interactive plots via JavaScript
+- Bitmap (PNG/JPEG) or SVG output supported
 
 ## How it works
 
