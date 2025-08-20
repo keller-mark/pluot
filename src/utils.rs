@@ -1,6 +1,9 @@
 use crate::zarr::{AsyncZarritaStore};
 use std::sync::Arc;
 
+// TODO: define RenderParams here (rather than lib.rs).
+// Then, pass RenderParams via RenderContext.
+
 pub struct RenderContext<'a> {
     pub store: &'a Arc<AsyncZarritaStore>,
     pub device: &'a wgpu::Device,
