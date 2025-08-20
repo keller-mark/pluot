@@ -19,12 +19,12 @@ const stores = {
 // Define the global zarr_get function.
 // TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
 window.zarr_get = async (store_name, key) => {
-    console.log(`zarr_get: store_name=${store_name}, key=${key}`);
+    // console.log(`zarr_get: store_name=${store_name}, key=${key}`);
     return stores[store_name].get(`/${key}`);
 };
 
 window.zarr_has = async (store_name, key) => {
-    console.log(`zarr_has: store_name=${store_name}, key=${key}`);
+    // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
     return stores[store_name].get(`/${key}`) !== undefined;
 };
 
@@ -43,20 +43,19 @@ export function Pluot(props) {
         height,
         plotType = 'scatterplot',
         renderOnce = true,
+        logPerformance = false,
     } = props;
 
     const canvasRef = useRef(null);
     const [isWasmReady, setIsWasmReady] = useState(false);
 
     useLayoutEffect(() => {
-
         const initWasm = async () => {
             await wasm.default();
             await wasm.set_panic_hook();
             setIsWasmReady(true);
         };
         initWasm();
-        
     }, []);
 
     useEffect(() => {
@@ -66,10 +65,16 @@ export function Pluot(props) {
         }
         const ctx = canvas.getContext('2d');
 
+        // Start FPS tracking variables.
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let fps = 0;
+        // End FPS tracking variables.
+
         // Render once or every animation frame.
         // Define the function to render a single frame.
         function renderFrame() {
-            console.log('wasm.render');
+            // console.log('wasm.render');
             const renderParams = {
                 width,
                 height,
@@ -84,6 +89,25 @@ export function Pluot(props) {
             });
         }
         function animate() {
+            // Start FPS tracking logic.
+            const currentTime = performance.now();
+            frameCount++;
+            
+            // Calculate FPS every second
+            if (currentTime - lastTime >= 1000) {
+                // The division by 1000 converts the time difference from milliseconds to seconds.
+                // E.g., If 60 frames were rendered in 1000ms: 60 / (1000 / 1000) = 60 FPS
+                // E.g., If 30 frames were rendered in 500ms:  30 / (500  / 1000) = 60 FPS
+                // E.g., If 45 frames were rendered in 1500ms: 45 / (1500 / 1000) = 30 FPS
+                fps = (frameCount / ((currentTime - lastTime) / 1000));
+                if(logPerformance) {
+                    console.log(`Average FPS: ${fps}`);
+                }
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            // End FPS tracking logic.
+
             renderFrame();
             requestAnimationFrame(animate);
         }

@@ -23,7 +23,7 @@ export function lru<S extends zarr.Readable>(store: S, maxSize = 100) {
   let getRange = store.getRange ? store.getRange.bind(store) : undefined;
   function get(...args: Parameters<S["get"]>) {
     const [key, opts] = args;
-    console.log(`LRU get: ${key}`);
+    // console.log(`LRU get: ${key}`);
     const cacheKey = normalizeKey(key);
     const cached = cache.get(cacheKey);
     if (cached) return cached;

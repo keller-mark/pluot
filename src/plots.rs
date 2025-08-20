@@ -99,7 +99,8 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     let x_array = zarrs::array::Array::async_open(store.clone(), x_array_path).await.unwrap();
     let y_array = zarrs::array::Array::async_open(store.clone(), y_array_path).await.unwrap();
 
-    log(&x_array.metadata().to_string_pretty());
+    // Print the Zarr.json metadata to the JS console.
+    // log(&x_array.metadata().to_string_pretty());
 
     // Read the whole array
     let x_vec = x_array
