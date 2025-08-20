@@ -19,7 +19,7 @@ const stores = {
 // Define the global zarr_get function.
 // TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
 window.zarr_get = async (store_name, key) => {
-    // console.log(`zarr_get: store_name=${store_name}, key=${key}`);
+    console.log(`zarr_get: store_name=${store_name}, key=${key}`);
     return stores[store_name].get(`/${key}`);
 };
 
@@ -42,8 +42,8 @@ export function Pluot(props) {
         width,
         height,
         plotType = 'scatterplot',
-        renderOnce = true,
-        logPerformance = false,
+        renderOnce = false,
+        logPerformance = true,
     } = props;
 
     const canvasRef = useRef(null);

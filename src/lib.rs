@@ -27,6 +27,7 @@ pub struct RenderParams {
     pub store_name: String,
 }
 
+// Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
 thread_local! {

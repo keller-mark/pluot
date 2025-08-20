@@ -36,7 +36,8 @@ serde-wasm-bindgen = "0.6.5"
 uuid = { version = "1", features = ["v4", "js"] }
 zarrs = { path = "../zarrs/zarrs", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
 async-trait = "0.1.74"
-futures = "0.3.29"
+quick_cache = "0.6.16"
+
 
 # For testing with local modified version of the rust-blosc-src crate.
 #blosc-src = { path = "../rust-blosc-src" }
