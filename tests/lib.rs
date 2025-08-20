@@ -1,5 +1,6 @@
 use wasm_bindgen_test::*;
-use pluot::render;
+use wasm_bindgen::prelude::*;
+use pluot::{render, RenderParams};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -7,10 +8,15 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn test_render_triangle() {
     let width = 32;
     let height = 32;
-    let plot_type = "triangle";
-    let store_name = "my_store";
-    let result = render(width, height, plot_type, store_name).await;
-    
+    let params: JsValue = serde_wasm_bindgen::to_value(&RenderParams {
+        width,
+        height,
+        plot_type: "triangle".to_string(),
+        store_name: "my_store".to_string(),
+    })
+        .expect("Invalid parameters");
+    let result = render(params).await;
+
     let result_vec = result.to_vec();
     assert_eq!(result_vec.len(), (width * height * 4) as usize);
 

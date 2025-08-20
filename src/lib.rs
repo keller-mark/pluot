@@ -10,8 +10,22 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Arc};
 
+use serde::{Serialize, Deserialize};
+
 use crate::utils::RenderContext;
 use crate::zarr::{AsyncZarritaStore};
+
+
+
+#[derive(Serialize, Deserialize)]
+pub struct RenderParams {
+    pub width: u32,
+    pub height: u32,
+    #[serde(rename = "plotType")]
+    pub plot_type: String,
+    #[serde(rename = "storeName")]
+    pub store_name: String,
+}
 
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
@@ -86,7 +100,15 @@ extern "C" {
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 #[wasm_bindgen]
-pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) -> js_sys::Uint8Array {
+pub async fn render(params: JsValue) -> js_sys::Uint8Array {
+    let params: RenderParams = serde_wasm_bindgen::from_value(params)
+        .expect("Invalid parameters");
+    
+    let width = params.width;
+    let height = params.height;
+    let plot_type = &params.plot_type;
+    let store_name = &params.store_name;
+
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
@@ -154,7 +176,7 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
     };
 
     // Plot type-specific rendering logic.
-    match plot_type {
+    match plot_type.as_str() {
         "triangle" => {
             plots::render_triangle(&mut context, &mut encoder).await;
         },

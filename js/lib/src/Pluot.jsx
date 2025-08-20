@@ -69,10 +69,18 @@ export function Pluot(props) {
         // Render once or every animation frame.
         // Define the function to render a single frame.
         function renderFrame() {
-            console.log('wasm.render')
-            wasm.render(width, height, plotType, 'my_store').then(arr => {
-            const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
-            ctx.putImageData(imageData, 0, 0);
+            console.log('wasm.render');
+            const renderParams = {
+                width,
+                height,
+                plotType,
+                storeName: 'my_store',
+            };
+            wasm.render(renderParams).then(arr => {
+                // TODO: is there a more efficient way to do this?
+                // E.g., write to a webgl texture? or is this fast enough already?
+                const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
+                ctx.putImageData(imageData, 0, 0);
             });
         }
         function animate() {
