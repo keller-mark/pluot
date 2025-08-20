@@ -15,11 +15,10 @@ struct VSOut {
     @location(1) quad_pos: vec2<f32>,
 };
 
-@group(0) @binding(0)
-var<storage, read> positions: array<vec2<f32>>;
+@group(0) @binding(0) var<storage, read> x_coords: array<f32>;
+@group(0) @binding(1) var<storage, read> y_coords: array<f32>;
 
-@group(0) @binding(1)
-var<uniform> u: Uniforms;
+@group(0) @binding(2) var<uniform> u: Uniforms;
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
 const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
@@ -37,11 +36,11 @@ fn to_ndc(v: f32, minv: f32, maxv: f32) -> f32 {
 
 @vertex
 fn vs_main(
-    @builtin(instance_index) instance: u32,
-    @builtin(vertex_index) vid: u32
+    @builtin(instance_index) instance_index: u32,
+    @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Center of this point in data space
-    let p = positions[instance];
+    let p = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
     // Center in clip/NDC space (y increases up)
     let center_ndc = vec2<f32>(
         to_ndc(p.x, u.x_min, u.x_max),
@@ -55,7 +54,7 @@ fn vs_main(
     let radius_ndc = vec2<f32>(radius_px * ndc_per_px.x, radius_px * ndc_per_px.y);
 
     // Pick corner of quad and place around center
-    let corner = QUAD[vid & 3u]; // vid % 4
+    let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
     let offset_ndc = vec2<f32>(corner.x * radius_ndc.x, corner.y * radius_ndc.y);
 
     var out: VSOut;
