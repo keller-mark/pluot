@@ -49,7 +49,7 @@ The WASM and JS bundle sizes should be relatively small.
 
 This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
 It would also make CPU data processing operations more challenging.
-
+<!--
 ## JS API
 
 ```js
@@ -178,6 +178,8 @@ const arr = await render({
     }
 })
 ```
+
+-->
 
 ## Development
 
