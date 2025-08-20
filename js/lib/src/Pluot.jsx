@@ -11,7 +11,8 @@ const baseUrl = 'http://localhost:3005/data/out/mnist.zarr';
 const stores = {
     // TODO: wrap store in a cache.
     // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
-    'my_store': lru(new FetchStore(baseUrl)),
+    'mnist_store': lru(new FetchStore('http://localhost:3005/data/out/mnist.zarr')),
+    'gaussian_quantiles_store': lru(new FetchStore('http://localhost:3005/data/out/gaussian_quantiles.zarr')),
 }
 
 // console.log(wasm);
@@ -79,7 +80,7 @@ export function Pluot(props) {
                 width,
                 height,
                 plotType,
-                storeName: 'my_store',
+                storeName: 'gaussian_quantiles_store',
             };
             wasm.render(renderParams).then(arr => {
                 // TODO: is there a more efficient way to do this?

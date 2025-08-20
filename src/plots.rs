@@ -94,8 +94,8 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the Zarr store.
     let store = context.store;
-    let x_array_path = "/umap/x_coords";
-    let y_array_path = "/umap/y_coords";
+    let x_array_path = "/n_100000/x_coords";
+    let y_array_path = "/n_100000/y_coords";
     let x_array = zarrs::array::Array::async_open(store.clone(), x_array_path).await.unwrap();
     let y_array = zarrs::array::Array::async_open(store.clone(), y_array_path).await.unwrap();
 
