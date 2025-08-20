@@ -1,10 +1,7 @@
 use std::convert::TryInto;
 use std::borrow::Cow;
-use std::sync::Arc;
 
-
-use crate::{utils::RenderContext, zarr::AsyncZarritaStore, zarr_get_js, log};
-
+use crate::{utils::RenderContext, zarr::AsyncZarritaStore, log};
 
 pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
@@ -95,10 +92,8 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 }
 
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
-    // Get x and y data from the global map
-
-    // TODO: use zarrs
-    let store = std::sync::Arc::new(AsyncZarritaStore::new(context.store_name.clone()));
+    // Get x and y data from the Zarr store.
+    let store = context.store;
     let x_array_path = "/umap/x_coords";
     let y_array_path = "/umap/y_coords";
     let x_array = zarrs::array::Array::async_open(store.clone(), x_array_path).await.unwrap();
@@ -116,23 +111,25 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         .await
         .unwrap();
 
-    // Convert data_all to f32
-    let xs: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
-    let ys: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+    // More efficient version that eliminates intermediate vectors and redundant operations
+    let n = x_vec.len();
+    assert_eq!(n, y_vec.len(), "x and y data must have the same length");
 
-   
-    let n = xs.len().try_into().unwrap();
-    assert_eq!(n, ys.len(), "x and y data must have the same length");
-
-    // Pack positions into a contiguous vec2<f32> array for a storage buffer
+    // Pre-allocate the exact size needed
     let mut positions_bytes: Vec<u8> = Vec::with_capacity(n * 2 * 4);
     let (mut x_min, mut x_max) = (f32::INFINITY, f32::NEG_INFINITY);
     let (mut y_min, mut y_max) = (f32::INFINITY, f32::NEG_INFINITY);
+
+    // Single pass: convert, find min/max, and serialize directly
     for i in 0..n {
-        let x = xs[i] as f32;
-        let y = ys[i] as f32;
-        x_min = x_min.min(x); x_max = x_max.max(x);
-        y_min = y_min.min(y); y_max = y_max.max(y);
+        let x = x_vec[i] as f32;  // Only one conversion per value
+        let y = y_vec[i] as f32;  // Only one conversion per value
+        
+        x_min = x_min.min(x); 
+        x_max = x_max.max(x);
+        y_min = y_min.min(y); 
+        y_max = y_max.max(y);
+        
         positions_bytes.extend_from_slice(&x.to_ne_bytes());
         positions_bytes.extend_from_slice(&y.to_ne_bytes());
     }

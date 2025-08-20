@@ -7,17 +7,17 @@ use wasm_bindgen::prelude::*;
 use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
-
-
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock, Arc};
 
 use crate::utils::RenderContext;
-use crate::zarr::AsyncZarritaStore;
+use crate::zarr::{AsyncZarritaStore};
+
+static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
 }
-
-
 
 async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // Check if already initialized
@@ -43,6 +43,21 @@ async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     });
 
     (device, queue)
+}
+
+pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
+    let map_mutex = ZARR_STORES.get_or_init(|| Mutex::new(HashMap::new()));
+    let map = map_mutex.lock().unwrap();
+    
+    if let Some(store) = map.get(name) {
+        store.clone()
+    } else {
+        drop(map);
+        let mut map = map_mutex.lock().unwrap();
+        map.entry(name.to_string())
+            .or_insert_with(|| Arc::new(AsyncZarritaStore::new(name.to_string())))
+            .clone()
+    }
 }
 
 #[wasm_bindgen]
@@ -126,8 +141,10 @@ pub async fn render(width: u32, height: u32, plot_type: &str, store_name: &str) 
         label: Some("Render Encoder"),
     });
 
+    let store = get_or_init_store(store_name);
+
     let mut context = RenderContext {
-        store_name: store_name.to_string(),
+        store: &store,
         device: &device,
         texture_desc: &texture_desc,
         view: &view,

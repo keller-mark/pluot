@@ -1,5 +1,8 @@
+use crate::zarr::{AsyncZarritaStore};
+use std::sync::Arc;
+
 pub struct RenderContext<'a> {
-    pub store_name: String,
+    pub store: &'a Arc<AsyncZarritaStore>,
     pub device: &'a wgpu::Device,
     pub texture_desc: &'a wgpu::TextureDescriptor<'a>,
     pub view: &'a wgpu::TextureView,

@@ -66,6 +66,9 @@ importers:
       pluot:
         specifier: workspace:*
         version: link:../../pkg
+      quick-lru:
+        specifier: ^7.0.1
+        version: 7.0.1
       react:
         specifier: ^16.8.0 || ^17.0.0 || ^18.0.0
         version: 18.3.1
@@ -859,6 +862,10 @@ packages:
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
+
+  quick-lru@7.0.1:
+    resolution: {integrity: sha512-kLjThirJMkWKutUKbZ8ViqFc09tDQhlbQo2MNuVeLWbRauqYP96Sm6nzlQ24F0HFjUNZ4i9+AgldJ9H6DZXi7g==}
+    engines: {node: '>=18'}
 
   react-dom@18.3.1:
     resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
@@ -1862,6 +1869,8 @@ snapshots:
       source-map-js: 1.2.1
 
   punycode@2.3.1: {}
+
+  quick-lru@7.0.1: {}
 
   react-dom@18.3.1(react@18.3.1):
     dependencies:
