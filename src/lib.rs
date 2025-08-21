@@ -10,22 +10,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Arc};
 
-use serde::{Serialize, Deserialize};
-
+pub use crate::utils::RenderParams;
 use crate::utils::RenderContext;
 use crate::zarr::{AsyncZarritaStore};
 
 
-
-#[derive(Serialize, Deserialize)]
-pub struct RenderParams {
-    pub width: u32,
-    pub height: u32,
-    #[serde(rename = "plotType")]
-    pub plot_type: String,
-    #[serde(rename = "storeName")]
-    pub store_name: String,
-}
 
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
@@ -172,8 +161,7 @@ pub async fn render(params: JsValue) -> js_sys::Uint8Array {
         texture_desc: &texture_desc,
         view: &view,
         queue: &queue,
-        width,
-        height,
+        params: &params,
     };
 
     // Plot type-specific rendering logic.

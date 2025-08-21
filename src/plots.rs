@@ -149,16 +149,27 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     // }
     let point_size_px: f32 = 4.0;
     let _pad0: f32 = 0.0;
-    let viewport_w = context.width as f32;
-    let viewport_h = context.height as f32;
+    let viewport_w = context.params.width as f32;
+    let viewport_h = context.params.height as f32;
     let color = [1.0_f32, 0.0, 0.0, 1.0];
 
     let mut uniform_bytes: Vec<u8> = Vec::with_capacity(12 * 4);
 
-    let x_min = -3.0_f32;
-    let x_max = 3.0_f32;
-    let y_min = -3.0_f32;
-    let y_max = 3.0_f32;
+    let zoom = context.params.zoom.unwrap_or(0.0);
+    let target_x = context.params.target_x.unwrap_or(0.0);
+    let target_y = context.params.target_y.unwrap_or(0.0);
+    // Adjust the axis limits based on the zoom level.
+    let scale_factor = 2.0_f32.powf(-zoom);
+
+    // TODO: account for aspect ratio.
+    let x_min = target_x - (scale_factor / 2.0);
+    let x_max = target_x + (scale_factor / 2.0);
+    let y_min = target_y - (scale_factor / 2.0);
+    let y_max = target_y + (scale_factor / 2.0);
+
+    // Log the computed values for debugging.
+    log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
+
     for f in [x_min, x_max, y_min, y_max, point_size_px, _pad0, viewport_w, viewport_h].iter() {
         uniform_bytes.extend_from_slice(&f.to_ne_bytes());
     }

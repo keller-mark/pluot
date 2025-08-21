@@ -1,6 +1,42 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import wasm from "vite-plugin-wasm";
+import serveStatic from 'serve-static';
+import { resolve } from 'path';
+
+/**
+ * Vite plugins to serves contents of `packages/file-types/zarr/fixtures` during testing.
+ * Reference: https://github.com/hms-dbmi/viv/blob/d8b0ae/sites/avivator/vite.config.js#L12
+ */
+export function serveDemoFixtures() {
+  const serveOptions = {
+    setHeaders: (res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    },
+    dotfiles: 'allow',
+    acceptRanges: true,
+    immutable: true,
+    index: false,
+    maxAge: 1000 * 60 * 60 * 24, // 24 hours
+  };
+  const dirZarr = resolve(__dirname, '../../data/out');
+  console.log(`Serving demo data from: ${dirZarr}`);
+  const serveZarr = serveStatic(dirZarr, serveOptions);
+  return {
+    name: 'serve-demo-data-dir',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (/^\/@data\//.test(req.url)) {
+          req.url = req.url.replace('/@data/', '');
+          serveZarr(req, res, next);
+        } else {
+          next();
+        }
+      });
+    }
+  };
+}
+
 
 
 export default defineConfig({
@@ -8,9 +44,13 @@ export default defineConfig({
   build: {
     target: "esnext",
   },
-  plugins: [wasm(), react({
-    jsxRuntime: 'classic',
-  })],
+  plugins: [
+    wasm(),
+    react({
+      jsxRuntime: 'classic',
+    }),
+    serveDemoFixtures(),
+  ],
   // To enable .js files that contain JSX to be imported.
   // Reference: https://github.com/vitest-dev/vitest/issues/1564
   esbuild: {
