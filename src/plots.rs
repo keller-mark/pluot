@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::borrow::Cow;
 
 use crate::{utils::RenderContext, zarr::AsyncZarritaStore, log};
@@ -96,8 +95,10 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     let store = context.store;
     let x_array_path = "/n_1000000/x_coords";
     let y_array_path = "/n_1000000/y_coords";
+    let labels_array_path = "/n_1000000/class_labels";
     let x_array = zarrs::array::Array::async_open(store.clone(), x_array_path).await.unwrap();
     let y_array = zarrs::array::Array::async_open(store.clone(), y_array_path).await.unwrap();
+    let labels_array = zarrs::array::Array::async_open(store.clone(), labels_array_path).await.unwrap();
 
     // Print the Zarr.json metadata to the JS console.
     // log(&x_array.metadata().to_string_pretty());
@@ -112,6 +113,11 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         .await
         .unwrap();
 
+    let labels_vec = labels_array
+        .async_retrieve_array_subset_ndarray::<i64>(&labels_array.subset_all())
+        .await
+        .unwrap();
+
     // More efficient version that eliminates intermediate vectors and redundant operations
     let n = x_vec.len();
     assert_eq!(n, y_vec.len(), "x and y data must have the same length");
@@ -119,9 +125,11 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     // Convert to f32 and cast to bytes directly - no for loop needed
     let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
     let y_f32: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+    let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
 
     let x_bytes = bytemuck::cast_slice(&x_f32);
     let y_bytes = bytemuck::cast_slice(&y_f32);
+    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
 
     // Create separate buffers for X and Y coordinates
     let x_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
@@ -139,6 +147,16 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         mapped_at_creation: false,
     });
     context.queue.write_buffer(&y_buffer, 0, &y_bytes);
+
+    let labels_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Class labels Storage Buffer"),
+        size: labels_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    context.queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+
+
 
     // Create uniforms matching the WGSL layout
     // struct Uniforms {
@@ -198,8 +216,19 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         label: Some("Scatter BGL"),
         entries: &[
             wgpu::BindGroupLayoutEntry {
-                // The X coordinates buffer.
+                // The uniforms buffer.
                 binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The X coordinates buffer.
+                binding: 1,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -210,35 +239,36 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
             },
             wgpu::BindGroupLayoutEntry {
                 // The Y coordinates buffer.
-                binding: 1,
+                binding: 2,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                min_binding_size: None,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        },
-        wgpu::BindGroupLayoutEntry {
-            // The uniforms buffer.
-            binding: 2,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+            wgpu::BindGroupLayoutEntry {
+                // The class labels coordinates buffer.
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        },
         ],
     });
     let bind_group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Scatter BG"),
         layout: &bind_group_layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: x_buffer.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: y_buffer.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 2, resource: uniform_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: x_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: y_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: labels_buffer.as_entire_binding() },
         ],
     });
 

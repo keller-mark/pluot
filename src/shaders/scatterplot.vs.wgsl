@@ -10,12 +10,14 @@ struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) quad_pos: vec2<f32>,
+    @location(2) @interpolate(flat) instance_index: u32,
 };
 
-@group(0) @binding(0) var<storage, read> x_coords: array<f32>;
-@group(0) @binding(1) var<storage, read> y_coords: array<f32>;
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@group(0) @binding(1) var<storage, read> x_coords: array<f32>;
+@group(0) @binding(2) var<storage, read> y_coords: array<f32>;
 
-@group(0) @binding(2) var<uniform> u: Uniforms;
+
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
 const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
@@ -79,5 +81,6 @@ fn vs_main(
     out.position = vec4<f32>(center_ndc + offset_ndc, 0.0, 1.0);
     out.color = u.color;
     out.quad_pos = corner; // pass unit quad position for circular masking
+    out.instance_index = instance_index;
     return out;
 }

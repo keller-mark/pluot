@@ -195,7 +195,7 @@ export function Pluot(props) {
                     height={height}
                 />
             </div>
-            <input
+            {/*<input
                 type="range"
                 min={-5}
                 max={5}
@@ -205,7 +205,7 @@ export function Pluot(props) {
                     const newValue = parseFloat(e.target.value);
                     setZoom(newValue);
                 }}
-            />
+            />*/}
         </>
     );
 }
