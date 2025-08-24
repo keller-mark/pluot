@@ -168,9 +168,19 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     let y_max = target_y + (scale_factor / 2.0);
 
     // Log the computed values for debugging.
-    log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
+    // log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
 
-    for f in [x_min, x_max, y_min, y_max, point_size_px, _pad0, viewport_w, viewport_h].iter() {
+    let camera_view = context.params.camera_view.unwrap_or([
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+    
+    for f in camera_view.iter() {
+        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
+    }
+    for f in [point_size_px, _pad0, viewport_w, viewport_h].iter() {
         uniform_bytes.extend_from_slice(&f.to_ne_bytes());
     }
     for c in color { uniform_bytes.extend_from_slice(&c.to_ne_bytes()); }

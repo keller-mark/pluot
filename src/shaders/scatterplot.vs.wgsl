@@ -1,8 +1,5 @@
 struct Uniforms {
-    x_min: f32,
-    x_max: f32,
-    y_min: f32,
-    y_max: f32,
+    camera_view: mat4x4<f32>,
     point_size_px: f32,   // diameter in pixels
     _pad0: f32,
     viewport_size: vec2<f32>, // (width, height) in pixels
@@ -28,11 +25,6 @@ const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>( 1.0,  1.0)
 );
 
-// Map a data value v from [min,max] to NDC [-1,1]
-fn to_ndc(v: f32, minv: f32, maxv: f32) -> f32 {
-    let t = (v - minv) / max(1e-12, (maxv - minv));
-    return t * 2.0 - 1.0;
-}
 
 @vertex
 fn vs_main(
@@ -41,11 +33,37 @@ fn vs_main(
 ) -> VSOut {
     // Center of this point in data space
     let p = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
-    // Center in clip/NDC space (y increases up)
-    let center_ndc = vec2<f32>(
-        to_ndc(p.x, u.x_min, u.x_max),
-        to_ndc(p.y, u.y_min, u.y_max)
+
+    // View aspect ratio
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
+    let viewport_w = u.viewport_size.x;
+    let viewport_h = u.viewport_size.y;
+    let view_aspect_ratio = viewport_w / viewport_h;
+
+    // Model-view-projection matrix
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    let projection: mat4x4<f32> = mat4x4<f32>(
+        vec4<f32>(1.0 / view_aspect_ratio, 0.0, 0.0, 0.0), // Column 0
+        vec4<f32>(0.0, 1.0, 0.0, 0.0), // Column 1
+        vec4<f32>(0.0, 0.0, 1.0, 0.0), // Column 2
+        vec4<f32>(0.0, 0.0, 0.0, 1.0), // Column 3
     );
+    let model_view_projection = projection * u.camera_view;
+
+    // Compute clip space position
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/point.vs#L48
+    let clip_space_position = model_view_projection * vec4<f32>(p.x, p.y, 0.0, 1.0);
+    
+    // Convert to NDC
+    let center_ndc = clip_space_position.xy / clip_space_position.w;
+    
+    /*
+    // Snap to pixel grid to avoid sub-pixel jitter when zooming/panning
+    let pixel_pos = vec2<f32>(0.5, 0.5) * (ndc_position + vec2<f32>(1.0, 1.0)) * u.viewport_size;
+
+    pixel_pos = floor(pixel_pos + 0.5); // Snap to nearest pixel
+    let snapped_position = (pixel_pos / vec2<f32>(u.viewport_size.x, u.viewport_size.y)) * 2.0 - 1.0;
+    */
 
     // Convert desired pixel radius to NDC
     let radius_px = 0.5 * u.point_size_px;

@@ -14,6 +14,10 @@ pub struct RenderParams {
     pub target_x: Option<f32>,
     #[serde(rename = "targetY")]
     pub target_y: Option<f32>,
+
+    #[serde(rename = "cameraView")]
+    pub camera_view: Option<[f32; 16]>,
+
     // We need a plot ID for cacheing of certain intermediate expensive computations per plot.
     // Note that solely data-dependent computations should be cached via the (store_name, key) tuple.
     #[serde(rename = "plotId")]

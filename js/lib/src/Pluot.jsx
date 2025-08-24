@@ -3,8 +3,6 @@
 import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import * as wasm from 'pluot';
 import { FetchStore } from 'zarrita';
-import { select as d3_select } from 'd3-selection';
-import { zoom as d3_zoom, zoomIdentity as d3_zoomIdentity } from 'd3-zoom';
 import createDom2dCamera from "dom-2d-camera";
 import { mat4, vec4 } from 'gl-matrix';
 import { lru } from "./lru-store.js";
@@ -64,6 +62,7 @@ export function Pluot(props) {
     const [zoom, setZoom] = useState(0.0);
     const [targetX, setTargetX] = useState(0.0);
     const [targetY, setTargetY] = useState(0.0);
+    const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
 
     useLayoutEffect(() => {
         const initWasm = async () => {
@@ -83,17 +82,8 @@ export function Pluot(props) {
 
         function onCameraEvent(camera, event) {
             camera.tick();
-            
-            // Compute the plot's x and y range from the view matrix, though these could come from any source
             // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
-            const s = (2 / (2 / camera.view[0])) * (2 / (2 / camera.view[5]));
-            console.log(s, Math.log2(s));
-            const nextZoom = Math.log2(s);
-            setZoom(nextZoom);
-            const nextTargetX = camera.target[0]*2;
-            const nextTargetY = camera.target[1]*2;
-            setTargetX(nextTargetX);
-            setTargetY(nextTargetY);
+            setViewMatrix(mat4.clone(camera.view));
         }
 
         // Create a 2D camera for handling zoom and pan.
@@ -122,32 +112,10 @@ export function Pluot(props) {
                 onCameraEvent(camera, event);
             },
         });
-        camera.setView(mat4.clone(DEFAULT_VIEW));
 
-        /*
-        function zoomed(zoomEvent) {
-            if(zoomEvent && zoomEvent.transform) {
-                const scale = zoomEvent.transform.k;
-                const translateX = zoomEvent.transform.x;
-                const translateY = zoomEvent.transform.y;
-                console.log('zoomed', zoomEvent.transform);
-                // TODO: update the zoom state.
-                setZoom(prevZoom => Math.log2(2**prevZoom - (scale-1)));
-                setTargetX(prevTargetX => prevTargetX + (translateX / width));
-                setTargetY(prevTargetY => prevTargetY + (translateY / height));
-            }
-        }
+        // Set the initial view matrix.
+        camera.setView(viewMatrix);
 
-        const selection = d3_select(canvas);
-        selection.call(
-            d3_zoom()
-                .on("zoom", zoomed)
-        );
-
-        zoomed(d3_zoomIdentity);
-        */
-
-        // 
     }, [canvasRef]);
 
     useEffect(() => {
@@ -170,9 +138,10 @@ export function Pluot(props) {
             const renderParams = {
                 width,
                 height,
-                zoom,
-                targetX,
-                targetY,
+                zoom, // No longer used
+                targetX, // No longer used
+                targetY, // No longer used
+                cameraView: viewMatrix,
                 plotId: 'my_plot',
                 plotType,
                 storeName: 'gaussian_quantiles_store',
@@ -214,7 +183,7 @@ export function Pluot(props) {
         } else {
             requestAnimationFrame(animate);
         }
-    }, [isWasmReady, zoom, targetX, targetY]);
+    }, [isWasmReady, viewMatrix]);
 
     return (
         <>
