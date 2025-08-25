@@ -35,3 +35,19 @@ pub struct RenderContext<'a> {
     pub queue: &'a wgpu::Queue,
     pub params: &'a RenderParams,
 }
+
+impl Default for RenderParams {
+    fn default() -> Self {
+        Self {
+            width: 100,
+            height: 100,
+            zoom: None,
+            target_x: None,
+            target_y: None,
+            camera_view: None,
+            plot_id: "default_plot".to_string(),
+            plot_type: "triangle".to_string(),
+            store_name: "default_store".to_string(),
+        }
+    }
+}

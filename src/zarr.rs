@@ -1,9 +1,11 @@
 
-use crate::{zarr_has_js, zarr_get_js, zarr_get_range_from_offset_js, zarr_get_range_from_end_js};
+use crate::{
+    zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end,
+};
 
 
 use zarrs::storage::{
-    byte_range::ByteRange, Bytes, AsyncBytes,
+    byte_range::{ByteRange}, Bytes, AsyncBytes,
     AsyncReadableStorageTraits, MaybeAsyncBytes, StorageError,
     StoreKey,
 };
@@ -16,19 +18,6 @@ use std::sync::{Mutex, OnceLock, Arc};
 // and its unsync Cache was not cooperating with OnceLock/Mutex/RefCell/OnceCell/etc.
 use quick_cache::sync::Cache;
 
-
-pub fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> AsyncBytes {
-    // Copy data from Uint8Array into a Rust Vec<u8>
-    let mut vec = vec![0u8; u8arr.length() as usize];
-
-    // TODO: can this be done without copying?
-    // The issue is that the original Uint8Array is created via JS fetch() within zarrita fetchStore.
-
-    u8arr.copy_to(&mut vec);
-
-    // Convert Vec<u8> into Bytes
-    Bytes::from(vec)
-}
 
 static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, AsyncBytes>>>>> = OnceLock::new();
 
@@ -67,12 +56,13 @@ impl AsyncZarritaStore {
     pub async fn has(&self, key: &StoreKey) -> Result<bool, StorageError> {
         let store_name = self.store_name.clone();
 
-        let has = zarr_has_js(&store_name, key.as_str()).await;
-        Ok(has.is_truthy())
+        let has = zarr_has(&store_name, key.as_str()).await;
+        Ok(has)
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl AsyncReadableStorageTraits for AsyncZarritaStore {
     async fn get(&self, key: &StoreKey) -> Result<MaybeAsyncBytes, StorageError> {
 
@@ -90,15 +80,18 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
             return Ok(None);
         }
         // Use the zarr_get_js function to fetch the data
-        let js_bytes = zarr_get_js(&self.store_name, key.as_str()).await;
+        let bytes = zarr_get(&self.store_name, key.as_str()).await;
 
         // Store in cache
-        cache.insert(key.to_string(), convert_to_bytes(js_bytes.clone()));
+        cache.insert(key.to_string(), bytes.clone());
         
-        // TODO: Convert the js_sys::Uint8Array to AsyncBytes
-        Ok(Some(convert_to_bytes(js_bytes)))
+        Ok(Some(bytes))
     }
 
+    // TODO: This dual implementation should not be needed once the Rayon issue for Zarrs is resolved.
+    // See https://github.com/zarrs/zarrs/issues/242#issuecomment-3220384348
+    // For now, we use a fork of Zarrs (without Rayon) for WASM builds, and the main Zarrs for non-WASM builds.
+    #[cfg(target_arch = "wasm32")]
     async fn get_partial_values_key(
         &self,
         key: &StoreKey,
@@ -109,16 +102,42 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         // TODO: use the cache here.
     
         for byte_range in byte_ranges {
-            let js_bytes = match byte_range {
+            let bytes = match byte_range {
                 ByteRange::FromStart(start, Some(end)) => {
-                    zarr_get_range_from_offset_js(&self.store_name, key.as_str(), *start as u32, (*end - *start) as u32).await
+                    zarr_get_range_from_offset(&self.store_name, key.as_str(), *start as u32, (*end - *start) as u32).await
                 },
                 ByteRange::Suffix(suffix_length) => {
-                    zarr_get_range_from_end_js(&self.store_name, key.as_str(), *suffix_length as u32).await
+                    zarr_get_range_from_end(&self.store_name, key.as_str(), *suffix_length as u32).await
                 },
                 _ => panic!("Unsupported ByteRange variant"),
             };
-            results.push(convert_to_bytes(js_bytes));
+            results.push(bytes);
+        }
+        Ok(Some(results))
+    }
+
+    // Second implementation of get_partial_values_key, which assumes the main branch of Zarrs (with Rayon).
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn get_partial_values_key(
+        &self,
+        key: &StoreKey,
+        byte_ranges: &mut dyn zarrs::storage::byte_range::ByteRangeIterator,
+    ) -> Result<Option<Vec<AsyncBytes>>, StorageError> {
+        let mut results = Vec::new();
+
+        // TODO: use the cache here.
+    
+        for byte_range in byte_ranges {
+            let bytes = match byte_range {
+                ByteRange::FromStart(start, Some(end)) => {
+                    zarr_get_range_from_offset(&self.store_name, key.as_str(), start as u32, (end - start) as u32).await
+                },
+                ByteRange::Suffix(suffix_length) => {
+                    zarr_get_range_from_end(&self.store_name, key.as_str(), suffix_length as u32).await
+                },
+                _ => panic!("Unsupported ByteRange variant"),
+            };
+            results.push(bytes);
         }
         Ok(Some(results))
     }

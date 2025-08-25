@@ -176,7 +176,16 @@ const arr = await render({
 
 ## Development
 
-### 🛠️ Build with `wasm-pack build`
+### Build for WASM
+
+```sh
+git clone git@github.com:keller-mark/zarrs.git
+
+cd zarrs
+git checkout keller-mark/no-sync-or-send
+cd ..
+```
+
 
 ```sh
 # Install nightly version of wasm-bindgen CLI
@@ -184,7 +193,7 @@ const arr = await render({
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
 
-wasm-pack build --target web
+wasm-pack build --target web -- --features wasm
 ```
 
 Test in browser:
@@ -198,11 +207,61 @@ Open to http://localhost:3005/www/
 ### 🔬 Test in Headless Browsers with `wasm-pack test`
 
 ```
-wasm-pack test --headless --firefox
+wasm-pack test --headless --firefox -- --features wasm
 ```
 
 ### 🎁 Publish to NPM with `wasm-pack publish`
 
 ```
 wasm-pack publish
+```
+
+### Build for Python
+
+```sh
+uv sync --extra dev
+```
+
+```sh
+cd zarrs
+git checkout main
+cd ..
+```
+
+Build:
+
+```sh
+uv run maturin develop --features python --uv
+```
+
+Run tests:
+
+```sh
+uv run pytest
+```
+
+Use in REPL:
+
+```sh
+uv run python -m asyncio
+>>> from pluot import render_py
+>>> await render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
+```
+
+Try in Jupyter notebook:
+
+```sh
+uv run jupyter lab --notebook-dir python-notebooks
+```
+
+### Build for plain Rust
+
+```sh
+cargo build
+```
+
+Run tests:
+
+```sh
+cargo test --features test_plain_rust
 ```
