@@ -176,7 +176,7 @@ const arr = await render({
 
 ## Development
 
-### 🛠️ Build with `wasm-pack build`
+### Build for WASM
 
 ```sh
 # Install nightly version of wasm-bindgen CLI
@@ -184,7 +184,7 @@ const arr = await render({
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
 
-wasm-pack build --target web
+wasm-pack build --target web -- --features wasm
 ```
 
 Test in browser:
@@ -205,4 +205,18 @@ wasm-pack test --headless --firefox
 
 ```
 wasm-pack publish
+```
+
+### Build for Python
+
+```sh
+maturin develop --features python
+```
+
+```sh
+uv sync
+
+uv run python
+>>> import pluot_py_wrapper
+>>> pluot_py_wrapper.render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
 ```

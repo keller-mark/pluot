@@ -1,0 +1,26 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pluot-wrapper"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  'pytest>=6.2.4',
+  "maturin>=1.8.2",
+]
+
+
+[tool.maturin]
+features = ["pyo3/extension-module", "python"]
+# module-name = <package name>.<rust pymodule name>
+module-name = "pluot_wrapper.pluot_py_wrapper"

@@ -146,7 +146,7 @@ export function Pluot(props) {
                 plotType,
                 storeName: 'gaussian_quantiles_store',
             };
-            wasm.render(renderParams).then(arr => {
+            wasm.render_wasm(renderParams).then(arr => {
                 // TODO: is there a more efficient way to do this?
                 // E.g., write to a webgl texture? or is this fast enough already?
                 const imageData = new ImageData(new Uint8ClampedArray(arr), width, height);
@@ -190,7 +190,7 @@ export function Pluot(props) {
             <div style={{ width, height }}>
                 <canvas
                     ref={canvasRef}
-                    style={{ width, height }}
+                    style={{ width, height, border: '1px solid black' }}
                     width={width}
                     height={height}
                 />
