@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Define features to toggle which dependency is active
 wasm = ["wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-shared", "web-sys", "js-sys", "serde-wasm-bindgen", "console_error_panic_hook"]
-python = ["pyo3", "serde-pyobject", "futures"]
+python = ["pyo3", "serde-pyobject", "pyo3-async-runtimes", "tokio"]
 
 [dependencies]
 # WASM-specific dependencies
@@ -37,7 +37,8 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 # Python-specific dependencies
 pyo3 = { version = "0.23.3", optional = true, features = ["extension-module", "experimental-async", "serde"] }
 serde-pyobject = { version = "0.6.2", optional = true }
-futures = { version = "0.3.31", optional = true }
+pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], optional = true }
+tokio = { version = "1.47.1", optional = true }
 
 
 # Core dependencies

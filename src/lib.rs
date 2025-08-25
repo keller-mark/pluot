@@ -156,7 +156,6 @@ mod python {
     use pyo3::wrap_pyfunction;
     use pyo3::types::{PyBytes, PyDict, PyAny};
     use pyo3::ToPyObject;
-    use futures::executor;
 
     use serde_pyobject::from_pyobject;
     use super::{render, RenderParams};
@@ -217,9 +216,10 @@ mod python {
 
 
 
+    /*
     #[pyfunction]
     #[pyo3(signature = (**kwds))]
-    pub fn render_py<'a>(py: Python<'a>, kwds: Option<&Bound<'_, PyDict>>) -> PyResult<Bound<'a, PyBytes>> {
+    pub async fn render_py<'a>(kwds: Option<&Bound<'_, PyDict>>) -> PyResult<Py<PyBytes>> {
         // 1. Create the parameters struct from the direct inputs.
 
         /*let params = Python::with_gil(|py| {
@@ -228,18 +228,75 @@ mod python {
         let params: RenderParams = from_pyobject(kwds.unwrap().clone()).unwrap();
 
         // 2. Await the core async rendering logic.
-        let pixels = executor::block_on(render(params));
+        let pixels = render(params).await;
 
         // 3. Return the pixel data. PyO3 automatically converts a Vec<u8>
         //    into a Python `bytes` object. The `PyResult` handles errors.
-        /*
+       
         Python::with_gil(|py| {
-            Ok(PyBytes::new(py, &pixels))
+            Ok(PyBytes::new(py, &pixels).into_py(py))
         })
-        */
-        Ok(PyBytes::new(py, &pixels))
+        
+        //Ok(PyBytes::new(py, &pixels))
+    }
+    */
+
+    /*
+    #[pyfunction]
+    #[pyo3(signature = (**kwds))]
+    pub async fn render_py(kwds: Option<PyObject>) -> Vec<u8> {
+
+        let params: RenderParams = Python::with_gil(|py| {
+            if let Some(dict) = kwds {
+                from_pyobject::<RenderParams, _>(dict.into_bound(py))
+            } else {
+                Ok(RenderParams::default())
+            }
+        }).unwrap();
+
+        let pixels = render(params).await;
+        pixels
+    }
+    */
+
+    /*
+    #[pyfunction]
+    #[pyo3(signature = (**kwds))]
+    pub fn render_py(py: Python, kwds: Option<PyObject>) -> PyResult<Bound<PyAny>> {
+        let params: RenderParams = Python::with_gil(|py| {
+            if let Some(dict) = kwds {
+                from_pyobject::<RenderParams, _>(dict.into_bound(py))
+            } else {
+                Ok(RenderParams::default())
+            }
+        }).unwrap();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async {
+            let pixels = render(params).await;
+            Ok(pixels)
+        })
+    }
+    */
+    #[pyfunction]
+    #[pyo3(signature = (**kwds))]
+    pub fn render_py(py: Python, kwds: Option<PyObject>) -> PyResult<Bound<PyAny>> {
+        // Use the py parameter directly instead of Python::with_gil
+        let params: RenderParams = if let Some(dict) = kwds {
+            from_pyobject::<RenderParams, _>(dict.into_bound(py)).unwrap()
+        } else {
+            RenderParams::default()
+        };
+
+        println!("Plot type: {:?}", params.plot_type);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async {
+            let pixels = render(params).await;
+            Ok(pixels)
+        })
     }
 
+
+    
     // This function creates the Python module.
     #[pymodule]
     fn pluot_py_wrapper(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -369,7 +426,16 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
         sender.send(res).ok();
     });
-    let _ = device.poll(wgpu::PollType::Poll);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = device.poll(wgpu::PollType::Poll);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = device.poll(wgpu::PollType::Wait);
+    }
+        
     receiver.receive().await.unwrap().unwrap();
 
     // Read and depad rows into a tightly packed RGBA buffer

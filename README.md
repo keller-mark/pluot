@@ -179,6 +179,13 @@ const arr = await render({
 ### Build for WASM
 
 ```sh
+cd ../zarrs
+git checkout keller-mark/no-sync-or-send
+cd -
+```
+
+
+```sh
 # Install nightly version of wasm-bindgen CLI
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
@@ -210,13 +217,21 @@ wasm-pack publish
 ### Build for Python
 
 ```sh
-maturin develop --features python
+uv sync
+uv add maturin
 ```
 
 ```sh
-uv sync
+cd ../zarrs
+git checkout main
+```
 
-uv run python
+```sh
+uv run maturin develop --features python --uv
+```
+
+```sh
+uv run python -m asyncio
 >>> import pluot_py_wrapper
->>> pluot_py_wrapper.render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
+>>> await pluot_py_wrapper.render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
 ```
