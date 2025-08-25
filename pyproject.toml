@@ -41,4 +41,3 @@ cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs
 [tool.pytest.ini_options]
 pythonpath = ["python"]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"

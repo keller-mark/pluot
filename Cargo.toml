@@ -37,7 +37,7 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 
 
 # Python-specific dependencies
-pyo3 = { version = "0.23.3", optional = true, features = ["extension-module", "experimental-async", "serde"] }
+pyo3 = { version = "0.23.3", optional = true, features = ["extension-module"] }
 serde-pyobject = { version = "0.6.2", optional = true }
 pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], optional = true }
 # tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.

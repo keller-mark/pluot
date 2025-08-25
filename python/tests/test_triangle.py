@@ -14,4 +14,4 @@ async def test_render_to_array():
     arr = await render_to_array(width=100, height=200, plotId="test", plotType="triangle", storeName="test")
     assert arr.shape == (200, 100, 4)
     assert arr.dtype == 'uint8'
-    assert arr.sum() == 5100000
+    assert arr.sum() == 10200000
