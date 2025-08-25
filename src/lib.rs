@@ -352,7 +352,7 @@ mod plain_rust {
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end};
+pub use wasm::{log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end, render_wasm};
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub use python::{log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end};
