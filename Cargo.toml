@@ -3,28 +3,79 @@ name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
+#edition = "2021"
+#rust-version = "1.77"
+
+# Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Oz']
 
 [lib]
+name = "pluot"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["console_error_panic_hook"]
+default = []
+# Define features to toggle which dependency is active
+wasm = ["wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-shared", "web-sys", "js-sys", "serde-wasm-bindgen", "console_error_panic_hook"]
+python = ["pyo3", "serde-pyobject", "pyo3-async-runtimes", "tokio"]
+test_plain_rust = ["tokio"]
 
 [dependencies]
-wasm-bindgen = "0.2.84"
-wasm-bindgen-futures = "0.4.50"
-wgpu = "26.0.0"
-bytemuck = "1.23.2"
-web-sys = "0.3.x"
-js-sys = "0.3.x"
-futures-intrusive = "0.5"
-once_cell = "1.21.3"
-
+# WASM-specific dependencies
+wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen-futures = { version = "0.4.50", optional = true }
+wasm-bindgen-shared = { version = "0.2.100", optional = true }
+web-sys = { version = "0.3.77", optional = true }
+js-sys = { version = "0.3.77", optional = true }
+serde-wasm-bindgen = { version = "0.6.5", optional = true }
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
 # all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.7", optional = true }
+
+
+# Python-specific dependencies
+pyo3 = { version = "0.23.3", optional = true, features = ["extension-module"] }
+serde-pyobject = { version = "0.6.2", optional = true }
+pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], optional = true }
+# tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
+tokio = { version = "1.47.1", features = ["full"], optional = true }
+
+# Core dependencies
+wgpu = "26.0.0"
+bytemuck = "1.23.2"
+futures-intrusive = "0.5"
+once_cell = "1.21.3"
+# We can use serde to deserialize JSON object parameters passed to the `render` function.
+# Reference: https://docs.rs/serde-wasm-bindgen/latest/serde_wasm_bindgen/
+serde = { version = "1.0.x", features = ["derive"] }
+# For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
+# Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
+# We need to specify uuid with feature "js", which is used by zarrrs.
+uuid = { version = "1", features = ["v4", "js"] }
+zarrs = { path = "zarrs/zarrs", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
+async-trait = "0.1.74"
+quick_cache = "0.6.16"
+
+
+# For testing with local modified version of the rust-blosc-src crate.
+#blosc-src = { path = "../rust-blosc-src" }
+
+
+
+# Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
+[dependencies.getrandom_v03]
+package = "getrandom"
+version = "0.3"
+features = ["wasm_js"]
+
+[dependencies.getrandom_v02]
+package = "getrandom"
+version = "0.2"
+features = ["js"]
+
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
@@ -32,3 +83,20 @@ wasm-bindgen-test = "0.3.34"
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+# Enable link-time optimization.
+# This gives LLVM many more opportunities to inline and prune functions.
+# Not only will it make the .wasm smaller, but it will also make it faster at runtime!
+# The downside is that compilation will take longer.
+# Reference: https://rustwasm.github.io/book/reference/code-size.html
+lto = true
+
+# Need to use nightly version of `wasm-bindgen` and the other crates in its workspace.
+# Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
+[patch.crates-io]
+wasm-bindgen               = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-macro         = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-macro-support = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-shared        = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-futures        = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+js-sys                     = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+web-sys                    = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }

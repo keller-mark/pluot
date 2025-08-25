@@ -1,8 +1,6 @@
-use std::convert::TryInto;
 use std::borrow::Cow;
 
-use crate::{utils::RenderContext, zarr_get_js};
-
+use crate::{utils::RenderContext, zarr::AsyncZarritaStore, log};
 
 pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
@@ -93,32 +91,72 @@ pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 }
 
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
-    // Get x and y data from the global map
-    let xs = zarr_get_js(&context.store_name, "x").await.to_vec();
-    let ys = zarr_get_js(&context.store_name, "y").await.to_vec();
-   
-    let n = xs.len().try_into().unwrap();
-    assert_eq!(n, ys.len(), "x and y data must have the same length");
+    // Get x and y data from the Zarr store.
+    let store = context.store;
+    let x_array_path = "/n_1000000/x_coords";
+    let y_array_path = "/n_1000000/y_coords";
+    let labels_array_path = "/n_1000000/class_labels";
+    let x_array = zarrs::array::Array::async_open(store.clone(), x_array_path).await.unwrap();
+    let y_array = zarrs::array::Array::async_open(store.clone(), y_array_path).await.unwrap();
+    let labels_array = zarrs::array::Array::async_open(store.clone(), labels_array_path).await.unwrap();
 
-    // Pack positions into a contiguous vec2<f32> array for a storage buffer
-    let mut positions_bytes: Vec<u8> = Vec::with_capacity(n * 2 * 4);
-    let (mut x_min, mut x_max) = (f32::INFINITY, f32::NEG_INFINITY);
-    let (mut y_min, mut y_max) = (f32::INFINITY, f32::NEG_INFINITY);
-    for i in 0..n {
-        let x = xs[i] as f32;
-        let y = ys[i] as f32;
-        x_min = x_min.min(x); x_max = x_max.max(x);
-        y_min = y_min.min(y); y_max = y_max.max(y);
-        positions_bytes.extend_from_slice(&x.to_ne_bytes());
-        positions_bytes.extend_from_slice(&y.to_ne_bytes());
-    }
-    let positions_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Positions Storage Buffer"),
-        size: positions_bytes.len() as u64,
+    // Print the Zarr.json metadata to the JS console.
+    // log(&x_array.metadata().to_string_pretty());
+
+    // Read the whole array
+    let x_vec = x_array
+        .async_retrieve_array_subset_ndarray::<f64>(&x_array.subset_all())
+        .await
+        .unwrap();
+    let y_vec = y_array
+        .async_retrieve_array_subset_ndarray::<f64>(&y_array.subset_all())
+        .await
+        .unwrap();
+
+    let labels_vec = labels_array
+        .async_retrieve_array_subset_ndarray::<i64>(&labels_array.subset_all())
+        .await
+        .unwrap();
+
+    // More efficient version that eliminates intermediate vectors and redundant operations
+    let n = x_vec.len();
+    assert_eq!(n, y_vec.len(), "x and y data must have the same length");
+
+    // Convert to f32 and cast to bytes directly - no for loop needed
+    let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
+    let y_f32: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+    let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
+
+    let x_bytes = bytemuck::cast_slice(&x_f32);
+    let y_bytes = bytemuck::cast_slice(&y_f32);
+    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
+
+    // Create separate buffers for X and Y coordinates
+    let x_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("X Coordinates Storage Buffer"),
+        size: x_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    context.queue.write_buffer(&positions_buffer, 0, &positions_bytes);
+    context.queue.write_buffer(&x_buffer, 0, &x_bytes);
+
+    let y_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Y Coordinates Storage Buffer"),
+        size: y_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    context.queue.write_buffer(&y_buffer, 0, &y_bytes);
+
+    let labels_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Class labels Storage Buffer"),
+        size: labels_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    context.queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+
+
 
     // Create uniforms matching the WGSL layout
     // struct Uniforms {
@@ -129,12 +167,38 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     // }
     let point_size_px: f32 = 4.0;
     let _pad0: f32 = 0.0;
-    let viewport_w = context.width as f32;
-    let viewport_h = context.height as f32;
+    let viewport_w = context.params.width as f32;
+    let viewport_h = context.params.height as f32;
     let color = [1.0_f32, 0.0, 0.0, 1.0];
 
     let mut uniform_bytes: Vec<u8> = Vec::with_capacity(12 * 4);
-    for f in [x_min, x_max, y_min, y_max, point_size_px, _pad0, viewport_w, viewport_h].iter() {
+
+    let zoom = context.params.zoom.unwrap_or(0.0);
+    let target_x = context.params.target_x.unwrap_or(0.0);
+    let target_y = context.params.target_y.unwrap_or(0.0);
+    // Adjust the axis limits based on the zoom level.
+    let scale_factor = 2.0_f32.powf(-zoom);
+
+    // TODO: account for aspect ratio.
+    let x_min = target_x - (scale_factor / 2.0);
+    let x_max = target_x + (scale_factor / 2.0);
+    let y_min = target_y - (scale_factor / 2.0);
+    let y_max = target_y + (scale_factor / 2.0);
+
+    // Log the computed values for debugging.
+    // log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
+
+    let camera_view = context.params.camera_view.unwrap_or([
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+    
+    for f in camera_view.iter() {
+        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
+    }
+    for f in [point_size_px, _pad0, viewport_w, viewport_h].iter() {
         uniform_bytes.extend_from_slice(&f.to_ne_bytes());
     }
     for c in color { uniform_bytes.extend_from_slice(&c.to_ne_bytes()); }
@@ -152,7 +216,19 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         label: Some("Scatter BGL"),
         entries: &[
             wgpu::BindGroupLayoutEntry {
+                // The uniforms buffer.
                 binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The X coordinates buffer.
+                binding: 1,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -162,10 +238,22 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
-                binding: 1,
+                // The Y coordinates buffer.
+                binding: 2,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The class labels coordinates buffer.
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -177,8 +265,10 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         label: Some("Scatter BG"),
         layout: &bind_group_layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: positions_buffer.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: uniform_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: x_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: y_buffer.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: labels_buffer.as_entire_binding() },
         ],
     });
 

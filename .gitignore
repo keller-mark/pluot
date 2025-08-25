@@ -10,3 +10,12 @@ node_modules/
 dist/
 dist-tsc/
 tsconfig.tsbuildinfo
+data/out/
+
+zarrs/
+
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+*.so
+.venv/
