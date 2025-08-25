@@ -316,7 +316,7 @@ mod python {
     
     // This function creates the Python module.
     #[pymodule]
-    fn pluot_py_wrapper(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
         Ok(())
     }

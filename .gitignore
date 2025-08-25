@@ -13,3 +13,5 @@ tsconfig.tsbuildinfo
 data/out/
 
 zarrs/
+
+__pycache__/

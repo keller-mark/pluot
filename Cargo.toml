@@ -11,6 +11,7 @@ edition = "2018"
 wasm-opt = ['-Oz']
 
 [lib]
+name = "pluot"
 crate-type = ["cdylib", "rlib"]
 
 [features]
@@ -18,6 +19,7 @@ default = []
 # Define features to toggle which dependency is active
 wasm = ["wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-shared", "web-sys", "js-sys", "serde-wasm-bindgen", "console_error_panic_hook"]
 python = ["pyo3", "serde-pyobject", "pyo3-async-runtimes", "tokio"]
+test_plain_rust = ["tokio"]
 
 [dependencies]
 # WASM-specific dependencies
@@ -38,8 +40,8 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 pyo3 = { version = "0.23.3", optional = true, features = ["extension-module", "experimental-async", "serde"] }
 serde-pyobject = { version = "0.6.2", optional = true }
 pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], optional = true }
-tokio = { version = "1.47.1", optional = true }
-
+# tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
+tokio = { version = "1.47.1", features = ["full"], optional = true }
 
 # Core dependencies
 wgpu = "26.0.0"
@@ -78,8 +80,8 @@ features = ["js"]
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
 
-# For async tests
-tokio = { version = "1.47.1", features = ["full"] }
+[build-dependencies]
+pyo3-build-config = "0.24"
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

@@ -179,9 +179,11 @@ const arr = await render({
 ### Build for WASM
 
 ```sh
-cd ../zarrs
+git clone git@github.com:keller-mark/zarrs.git
+
+cd zarrs
 git checkout keller-mark/no-sync-or-send
-cd -
+cd ..
 ```
 
 
@@ -222,12 +224,15 @@ uv add maturin
 ```
 
 ```sh
-cd ../zarrs
+cd zarrs
 git checkout main
+cd ..
 ```
 
 ```sh
+uv sync --extra dev
 uv run maturin develop --features python --uv
+uv run pytest
 ```
 
 ```sh

@@ -28,4 +28,4 @@ jobs:
     - name: Compile Rust code
       run: cargo build --verbose
     - name: Run Rust unit tests
-      run: cargo test --verbose
+      run: cargo test --verbose --features test_plain_rust
