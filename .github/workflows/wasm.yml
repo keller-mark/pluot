@@ -37,4 +37,4 @@ jobs:
     - name: Compile Rust code to WASM
       run: wasm-pack build --target web -- --features wasm
     - name: Run unit tests
-      run: wasm-pack test --headless --chrome
+      run: wasm-pack test --headless --chrome -- --features wasm

@@ -308,6 +308,8 @@ mod python {
 // === Rust-only Bindings ===
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 mod plain_rust {
+    use core::panic;
+
     use super::{render, RenderParams};
 
     pub fn log(s: &str) {
@@ -315,19 +317,19 @@ mod plain_rust {
     }
 
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
-        return false;
+        panic!("zarr_has is not implemented in plain Rust mode.");
     }
 
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::AsyncBytes {
-        zarrs::storage::Bytes::from(vec![])
+        panic!("zarr_get is not implemented in plain Rust mode.");
     }
 
     pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::AsyncBytes {
-        zarrs::storage::Bytes::from(vec![])
+        panic!("zarr_get_range_from_offset is not implemented in plain Rust mode.");
     }
 
     pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::AsyncBytes {
-        zarrs::storage::Bytes::from(vec![])
+        panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
     }
 }
 
