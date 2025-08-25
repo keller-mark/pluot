@@ -150,7 +150,7 @@ mod wasm {
 }
 
 // === Python Bindings ===
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 mod python {
     use pyo3::prelude::*;
     use pyo3::wrap_pyfunction;
@@ -305,13 +305,41 @@ mod python {
     }
 }
 
+// === Rust-only Bindings ===
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
+mod plain_rust {
+    use super::{render, RenderParams};
+
+    pub fn log(s: &str) {
+        println!("{}", s);
+    }
+
+    pub async fn zarr_has(store_name: &str, key: &str) -> bool {
+        return false;
+    }
+
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::AsyncBytes {
+        zarrs::storage::Bytes::from(vec![])
+    }
+
+    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::AsyncBytes {
+        zarrs::storage::Bytes::from(vec![])
+    }
+
+    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::AsyncBytes {
+        zarrs::storage::Bytes::from(vec![])
+    }
+}
+
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub use python::{log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end};
 
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
+pub use plain_rust::{log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end};
 
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
