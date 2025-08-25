@@ -27,5 +27,5 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Compile Rust code
       run: cargo build --verbose
-    
-    # TODO: implement plain-rust unit tests.
+    - name: Run Rust unit tests
+      run: cargo test --verbose

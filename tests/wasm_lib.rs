@@ -1,6 +1,10 @@
+//! Test suite for the Web and headless browsers.
+
+#![cfg(target_arch = "wasm32")]
+
 use wasm_bindgen_test::*;
 use wasm_bindgen::prelude::*;
-use pluot::{render, RenderParams};
+use pluot::{render_wasm, RenderParams};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -20,7 +24,7 @@ async fn test_render_triangle() {
         store_name: "my_store".to_string(),
     })
         .expect("Invalid parameters");
-    let result = render(params).await;
+    let result = render_wasm(params).await;
 
     let result_vec = result.to_vec();
     assert_eq!(result_vec.len(), (width * height * 4) as usize);

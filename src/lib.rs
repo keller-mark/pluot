@@ -21,14 +21,8 @@ thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
 }
 
-async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
-    // Check if already initialized
-    let existing = GPU_CONTEXT.with(|ctx| ctx.borrow().clone());
-    if let Some(context) = existing {
-        return context;
-    }
-
-    // Initialize GPU context
+async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+    // Apparently this is expensive, so we try to cache it in the get_or_init_gpu_context function.
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
@@ -38,12 +32,35 @@ async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
         .request_device(&wgpu::DeviceDescriptor::default())
         .await
         .expect("Failed to create device");
+    (device, queue)
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+    // Check if already initialized
+    let existing = GPU_CONTEXT.with(|ctx| ctx.borrow().clone());
+    if let Some(context) = existing {
+        return context;
+    }
+
+    // Initialize GPU context
+    let (device, queue) = init_gpu_context().await;
 
     // Store the context
     GPU_CONTEXT.with(|ctx| {
         *ctx.borrow_mut() = Some((device.clone(), queue.clone()));
     });
 
+    (device, queue)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+    // The tokio::test will fail if we rely on thread_local to cache the GPU context.
+    // So we just create a new context each time for now.
+
+    // TODO: cache in a way that is compatible with tokio::test.
+    let (device, queue) = init_gpu_context().await;
     (device, queue)
 }
 
