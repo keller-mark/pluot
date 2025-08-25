@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pluot"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -12,14 +12,17 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  
+  "numpy",
+  "zarr",
+  "pillow==11.3.0"
 ]
 
 [project.optional-dependencies]
 dev = [
   'maturin>=1.9.3',
   'pytest>=6.2.4',
-  'pytest-asyncio>=1.1.0'
+  'pytest-asyncio>=1.1.0',
+  'jupyterlab>=3.0.0',
 ]
 
 

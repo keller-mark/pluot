@@ -219,8 +219,7 @@ wasm-pack publish
 ### Build for Python
 
 ```sh
-uv sync
-uv add maturin
+uv sync --extra dev
 ```
 
 ```sh
@@ -229,14 +228,40 @@ git checkout main
 cd ..
 ```
 
+Build:
+
 ```sh
-uv sync --extra dev
 uv run maturin develop --features python --uv
+```
+
+Run tests:
+
+```sh
 uv run pytest
 ```
 
+Use in REPL:
+
 ```sh
 uv run python -m asyncio
->>> import pluot_py_wrapper
->>> await pluot_py_wrapper.render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
+>>> from pluot import render_py
+>>> await render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
+```
+
+Try in Jupyter notebook:
+
+```sh
+uv run jupyter lab --notebook-dir python-notebooks
+```
+
+### Build for plain Rust
+
+```sh
+cargo build
+```
+
+Run tests:
+
+```sh
+cargo test --features test_plain_rust
 ```
