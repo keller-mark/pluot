@@ -18,7 +18,7 @@ jobs:
       with:
         repository: keller-mark/zarrs
         ref: keller-mark/no-sync-or-send
-        path: ../zarrs
+        path: ./zarrs
 
     - uses: nanasess/setup-chromedriver@master
     - uses: dtolnay/rust-toolchain@stable

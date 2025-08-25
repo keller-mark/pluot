@@ -11,3 +11,5 @@ dist/
 dist-tsc/
 tsconfig.tsbuildinfo
 data/out/
+
+zarrs/
