@@ -13,7 +13,6 @@ use crate::utils::RenderContext;
 use crate::zarr::{AsyncZarritaStore};
 
 
-
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
@@ -231,69 +230,6 @@ mod python {
         result
     }
 
-
-
-    /*
-    #[pyfunction]
-    #[pyo3(signature = (**kwds))]
-    pub async fn render_py<'a>(kwds: Option<&Bound<'_, PyDict>>) -> PyResult<Py<PyBytes>> {
-        // 1. Create the parameters struct from the direct inputs.
-
-        /*let params = Python::with_gil(|py| {
-            from_pyobject(kwds.unwrap().into_bound(py)).unwrap()
-        });*/
-        let params: RenderParams = from_pyobject(kwds.unwrap().clone()).unwrap();
-
-        // 2. Await the core async rendering logic.
-        let pixels = render(params).await;
-
-        // 3. Return the pixel data. PyO3 automatically converts a Vec<u8>
-        //    into a Python `bytes` object. The `PyResult` handles errors.
-       
-        Python::with_gil(|py| {
-            Ok(PyBytes::new(py, &pixels).into_py(py))
-        })
-        
-        //Ok(PyBytes::new(py, &pixels))
-    }
-    */
-
-    /*
-    #[pyfunction]
-    #[pyo3(signature = (**kwds))]
-    pub async fn render_py(kwds: Option<PyObject>) -> Vec<u8> {
-
-        let params: RenderParams = Python::with_gil(|py| {
-            if let Some(dict) = kwds {
-                from_pyobject::<RenderParams, _>(dict.into_bound(py))
-            } else {
-                Ok(RenderParams::default())
-            }
-        }).unwrap();
-
-        let pixels = render(params).await;
-        pixels
-    }
-    */
-
-    /*
-    #[pyfunction]
-    #[pyo3(signature = (**kwds))]
-    pub fn render_py(py: Python, kwds: Option<PyObject>) -> PyResult<Bound<PyAny>> {
-        let params: RenderParams = Python::with_gil(|py| {
-            if let Some(dict) = kwds {
-                from_pyobject::<RenderParams, _>(dict.into_bound(py))
-            } else {
-                Ok(RenderParams::default())
-            }
-        }).unwrap();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async {
-            let pixels = render(params).await;
-            Ok(pixels)
-        })
-    }
-    */
     #[pyfunction]
     #[pyo3(signature = (**kwds))]
     pub fn render_py(py: Python, kwds: Option<PyObject>) -> PyResult<Bound<PyAny>> {
@@ -311,8 +247,6 @@ mod python {
             Ok(pixels)
         })
     }
-
-
     
     // This function creates the Python module.
     #[pymodule]

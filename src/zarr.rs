@@ -3,11 +3,9 @@ use crate::{
     zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end,
 };
 
-
 use zarrs::storage::{
-    byte_range::{ByteRange}, Bytes, AsyncBytes,
+    byte_range::{ByteRange}, AsyncBytes, StoreKey,
     AsyncReadableStorageTraits, MaybeAsyncBytes, StorageError,
-    StoreKey,
 };
 
 use std::collections::HashMap;
