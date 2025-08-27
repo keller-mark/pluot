@@ -265,3 +265,9 @@ Run tests:
 ```sh
 cargo test --features test_plain_rust
 ```
+
+## Rust learning resources
+- Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
+- Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
+- Learnxinyminutes: https://learnxinyminutes.com/rust/
+- A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
