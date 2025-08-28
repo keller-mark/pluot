@@ -3,6 +3,7 @@ mod zarr;
 mod plots;
 mod render;
 mod bindings;
+pub mod d3_scale;
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
@@ -13,3 +14,4 @@ pub use crate::bindings::python::{render_py, log, zarr_has, zarr_get, zarr_get_r
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 pub use crate::bindings::plain_rust::{render, log, zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end};
+
