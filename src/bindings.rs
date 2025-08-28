@@ -93,8 +93,9 @@ pub mod wasm {
 pub mod python {
     use pyo3::prelude::*;
     use pyo3::wrap_pyfunction;
-    use pyo3::types::{PyBytes, PyDict, PyAny};
+    use pyo3::types::{PyBytes, PyDict, PyAny, PyTuple};
     use pyo3::ToPyObject;
+    use pyo3::IntoPyObject;
 
     use serde_pyobject::from_pyobject;
     use super::{render, RenderParams};
@@ -105,52 +106,66 @@ pub mod python {
 
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
         // Acquire the Python GIL. This must be done for all Python interactions.
-        let result = Python::with_gil(|py| {
-            let main_module = py.import_bound("__main__").unwrap();
+        let py_obj = Python::with_gil(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
 
-            let has_func = main_module.getattr("zarr_has").unwrap();
-            let result: bool = has_func.call1((store_name, key)).unwrap().extract().unwrap();
-            result
-        });
+            // Call the async function, which returns a coroutine
+            let coroutine = zarr_module.call_method1("zarr_has", (store_name, key)).unwrap();
 
-        result
+            // Convert the Python coroutine into a Rust future
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+
+        Python::with_gil(|py| py_obj.bind(py).extract::<bool>())
+            .expect("Failed to extract bool from Python object")
     }
 
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::AsyncBytes {
-        // Acquire the Python GIL. This must be done for all Python interactions.
-        let result = Python::with_gil(|py| {
-
-            let main_module = py.import_bound("__main__").unwrap();
-
-            let get_func = main_module.getattr("zarr_get").unwrap();
-            let result: Vec<u8> = get_func.call1((store_name, key)).unwrap().extract().unwrap();
-            zarrs::storage::Bytes::from(result)
-        });
-        result
+        let py_obj = Python::with_gil(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let coroutine = zarr_module.call_method1("zarr_get", (store_name, key)).unwrap();
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+    
+        let result = Python::with_gil(|py| py_obj.bind(py).extract::<Vec<u8>>())
+            .expect("Failed to extract bytes from Python object");
+        zarrs::storage::Bytes::from(result)
     }
 
     pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::AsyncBytes {
-        // Acquire the Python GIL. This must be done for all Python interactions.
-        let result = Python::with_gil(|py| {
-            let main_module = py.import_bound("__main__").unwrap();
-
-            let get_func = main_module.getattr("zarr_get_range_from_offset").unwrap();
-            let result: Vec<u8> = get_func.call1((store_name, key, offset, length)).unwrap().extract().unwrap();
-            zarrs::storage::Bytes::from(result)
-        });
-        result
+        let py_obj = Python::with_gil(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let coroutine = zarr_module.call_method1("zarr_get_range_from_offset", (store_name, key, offset, length)).unwrap();
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+    
+        let result = Python::with_gil(|py| py_obj.bind(py).extract::<Vec<u8>>())
+            .expect("Failed to extract bytes from Python object");
+        zarrs::storage::Bytes::from(result)
     }
 
     pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::AsyncBytes {
-        // Acquire the Python GIL. This must be done for all Python interactions.
-        let result = Python::with_gil(|py| {
-            let main_module = py.import_bound("__main__").unwrap();
-
-            let get_func = main_module.getattr("zarr_get_range_from_end").unwrap();
-            let result: Vec<u8> = get_func.call1((store_name, key, suffix_length)).unwrap().extract().unwrap();
-            zarrs::storage::Bytes::from(result)
-        });
-        result
+        let py_obj = Python::with_gil(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let coroutine = zarr_module.call_method1("zarr_get_range_from_end", (store_name, key, suffix_length)).unwrap();
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+    
+        let result = Python::with_gil(|py| py_obj.bind(py).extract::<Vec<u8>>())
+            .expect("Failed to extract bytes from Python object");
+        zarrs::storage::Bytes::from(result)
     }
 
     #[pyfunction]

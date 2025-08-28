@@ -224,7 +224,7 @@ uv sync --extra dev
 Build:
 
 ```sh
-uv run maturin develop --features python --uv
+uv run maturin develop --features python
 ```
 
 Run tests:
