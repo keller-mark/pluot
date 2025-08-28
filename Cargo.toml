@@ -64,7 +64,7 @@ quick_cache = "0.6.16"
 #blosc-src = { path = "../rust-blosc-src" }
 
 
-
+# Fixes for getrandom. May not be necessary here if added to upstream zarrs config.toml.
 # Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
 [dependencies.getrandom_v03]
 package = "getrandom"
@@ -89,6 +89,12 @@ opt-level = "s"
 # The downside is that compilation will take longer.
 # Reference: https://rustwasm.github.io/book/reference/code-size.html
 lto = true
+# Enable "codegen-units = 1" to tell `rustc` to optimize the whole crate at once.
+# This also gives LLVM more opportunities to inline and prune functions.
+# This will make the .wasm smaller and faster, but will also make compilation even longer
+codegen-units = 1
+
+
 
 # Need to use nightly version of `wasm-bindgen` and the other crates in its workspace.
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621

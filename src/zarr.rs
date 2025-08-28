@@ -86,36 +86,6 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         Ok(Some(bytes))
     }
 
-    // TODO: This dual implementation should not be needed once the Rayon issue for Zarrs is resolved.
-    // See https://github.com/zarrs/zarrs/issues/242#issuecomment-3220384348
-    // For now, we use a fork of Zarrs (without Rayon) for WASM builds, and the main Zarrs for non-WASM builds.
-    #[cfg(target_arch = "wasm32")]
-    async fn get_partial_values_key(
-        &self,
-        key: &StoreKey,
-        byte_ranges: &[ByteRange],
-    ) -> Result<Option<Vec<AsyncBytes>>, StorageError> {
-        let mut results = Vec::new();
-
-        // TODO: use the cache here.
-    
-        for byte_range in byte_ranges {
-            let bytes = match byte_range {
-                ByteRange::FromStart(start, Some(end)) => {
-                    zarr_get_range_from_offset(&self.store_name, key.as_str(), *start as u32, (*end - *start) as u32).await
-                },
-                ByteRange::Suffix(suffix_length) => {
-                    zarr_get_range_from_end(&self.store_name, key.as_str(), *suffix_length as u32).await
-                },
-                _ => panic!("Unsupported ByteRange variant"),
-            };
-            results.push(bytes);
-        }
-        Ok(Some(results))
-    }
-
-    // Second implementation of get_partial_values_key, which assumes the main branch of Zarrs (with Rayon).
-    #[cfg(not(target_arch = "wasm32"))]
     async fn get_partial_values_key(
         &self,
         key: &StoreKey,

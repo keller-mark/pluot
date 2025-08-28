@@ -176,16 +176,15 @@ const arr = await render({
 
 ## Development
 
-### Build for WASM
-
 ```sh
 git clone git@github.com:keller-mark/zarrs.git
 
 cd zarrs
-git checkout keller-mark/no-sync-or-send
+git checkout keller-mark/wasm
 cd ..
 ```
 
+### Build for WASM
 
 ```sh
 # Install nightly version of wasm-bindgen CLI
@@ -220,12 +219,6 @@ wasm-pack publish
 
 ```sh
 uv sync --extra dev
-```
-
-```sh
-cd zarrs
-git checkout main
-cd ..
 ```
 
 Build:
