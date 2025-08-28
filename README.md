@@ -37,8 +37,8 @@ The WASM and JS bundle sizes should be relatively small.
 ## Non-goals
 
 - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
-- Serving as a backend for a library such as Matplotlib.
 - Multiple views per render function call, or coordinated multiple views. These should be achieved via the parent library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
+- WebGL fallbacks. Instead, we can be patient and wait until WebGPU availability improves.
 
 ## Why not just use JS+WebGPU directly?
 
@@ -258,3 +258,9 @@ Run tests:
 ```sh
 cargo test --features test_plain_rust
 ```
+
+## Rust learning resources
+- Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
+- Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
+- Learnxinyminutes: https://learnxinyminutes.com/rust/
+- A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
