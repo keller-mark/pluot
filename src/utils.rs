@@ -18,6 +18,10 @@ pub struct RenderParams {
     #[serde(rename = "cameraView")]
     pub camera_view: Option<[f32; 16]>,
 
+    pub x_key: Option<String>,
+    pub y_key: Option<String>,
+    pub color_key: Option<String>,
+
     // We need a plot ID for cacheing of certain intermediate expensive computations per plot.
     // Note that solely data-dependent computations should be cached via the (store_name, key) tuple.
     #[serde(rename = "plotId")]
@@ -45,6 +49,9 @@ impl Default for RenderParams {
             target_x: None,
             target_y: None,
             camera_view: None,
+            x_key: None,
+            y_key: None,
+            color_key: None,
             plot_id: "default_plot".to_string(),
             plot_type: "triangle".to_string(),
             store_name: "default_store".to_string(),

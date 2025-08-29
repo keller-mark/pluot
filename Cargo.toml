@@ -46,6 +46,7 @@ tokio = { version = "1.47.1", features = ["full"], optional = true }
 # Core dependencies
 wgpu = "26.0.0"
 bytemuck = "1.23.2"
+futures = "0.3.31"
 futures-intrusive = "0.5"
 once_cell = "1.21.3"
 # We can use serde to deserialize JSON object parameters passed to the `render` function.

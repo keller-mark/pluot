@@ -50,6 +50,20 @@ export default defineConfig({
       jsxRuntime: 'classic',
     }),
     serveDemoFixtures(),
+    {
+      // Fix for error in Firefox:
+      //   DOMException: Worker.postMessage: The WebAssembly.Memory object cannot be serialized.
+      //   The Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy HTTP headers can be used to enable this.
+      // Reference: https://github.com/vitejs/vite/issues/3909#issuecomment-934044912
+      name: "configure-response-headers",
+      configureServer: (server) => {
+        server.middlewares.use((_req, res, next) => {
+          res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+          res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+          next();
+        });
+      },
+    },
   ],
   // To enable .js files that contain JSX to be imported.
   // Reference: https://github.com/vitest-dev/vitest/issues/1564

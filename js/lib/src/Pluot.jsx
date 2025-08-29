@@ -144,7 +144,16 @@ export function Pluot(props) {
                 cameraView: viewMatrix,
                 plotId: 'my_plot',
                 plotType,
+           
                 storeName: 'gaussian_quantiles_store',
+                x_key: "/n_1000000/x_coords",
+                y_key: "/n_1000000/y_coords",
+                color_key: "/n_1000000/class_labels",
+         
+                //storeName: 'mnist_store',
+                //x_key: "/densmap/x_coords",
+                //y_key: "/densmap/y_coords",
+                //color_key: "/densmap/class_labels",
             };
             wasm.render_wasm(renderParams).then(arr => {
                 // TODO: is there a more efficient way to do this?
