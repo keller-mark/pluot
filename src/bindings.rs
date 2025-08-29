@@ -178,8 +178,6 @@ pub mod python {
             RenderParams::default()
         };
 
-        println!("Plot type: {:?}", params.plot_type);
-
         pyo3_async_runtimes::tokio::future_into_py(py, async {
             let pixels = render(params).await;
             Ok(pixels)
