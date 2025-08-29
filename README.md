@@ -1,9 +1,14 @@
 # pluot
 
 Implement once, pluot everywhere (across languages, regardless of whether static or interactive).
-Create declarative static and interactive plots using WGPU and Rust/WASM.
+<!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
 
-
+Unlock the following benefits:
+- Render static plots via Rust directly (no web browser needed)
+- Render static plots via Python (no web browser needed)
+- Render static plots via JavaScript
+- Render interactive plots via JavaScript
+- Bitmap (PNG/JPEG) or SVG output supported
 
 ## How it works
 
@@ -45,7 +50,137 @@ The WASM and JS bundle sizes should be relatively small.
 This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
 It would also make CPU data processing operations more challenging.
 
+<!--
+## JS API
 
+```js
+
+import { init, render } from 'pluot';
+
+// How should this work in other languages?
+// What should this return? Arrow vector? TypedArray? Arrow table IPC?
+// Should this be more aware of tiling/multi-resolution data? How would it handle XYZCT imaging or volumetric or mesh data?
+async function dataGetter(dataKey, columnExpression, rowExpression) {
+    // Given the key, return something like DeckGL's binary format.
+    // If the underlying data format/provider supports it, we may only want to load a subset of rows or columns.
+    // For instance, if the data format is spatially-indexed, we may be able to load a subset of rows based on the rowExpression (e.g., derived from viewState and width/height).
+    return {
+        src: {
+            columnA: new Uint8Array([]),
+            columnB: new Uint8Array([]),
+            columnC: new Uint8Array([])
+        },
+        length: 10
+    };
+}
+await init(dataGetter);
+// Alternative idea:
+// Should the data store be assumed to be a zarr store?
+// The rust code can then handle doing the zarr-gets and computing which Zarr keys to request.
+// It will mean the rust code must know which "kind" of zarr store it is dealing with.
+// Parquet tables/columns may need to be mapped to zarr either in the JS-side or in the Rust-side.
+// Can we assume the Zarr store corresponds to the root of a SpatialData object?
+// More coordination types will need to be defined at the view level (to take the place of the fileDef.options paths to individual elements, etc).
+// Then the data registration can be more like:
+await init({
+    'my_dataset': myStore,
+});
+
+
+
+const arr = await render({
+    width: 500,
+    height: 500,
+    /*
+    viewState: {
+        // Frontend should manage this state
+        zoom: 0,
+        target: [2, 2],
+    },
+    // TODO: how to specify 2D vs. 3D?
+    coordinateSystem: 'CARTESIAN', // also support 'GENOMIC'
+    // Option 1: DeckGL-like API
+    // This delegates more flexibility to the client / caller.
+    layers: [
+        new ScatterplotLayer({
+            dataKey: 'my_dataset_key',
+        }),
+        new PolygonLayer({
+            
+        })
+    ],
+    */
+    // Option 2: Vitessce-like view-based API
+    // The rust code will know how to render a scatterplot.
+    // This delegates more responsibility to the rust code, and limits the flexibility.
+    // However that is OK because the intention is that the rust code should be where the plotting code lives.
+    // The Rust code can have its own internal deckGL-like APIs to render a scatterplot.
+    viewType: 'scatterplot',
+    // Pass any coordination values that the Rust code knows about.
+    // The rust code will use these 
+    coordinationValues: {
+        dataset: 'my_dataset_key',
+        embeddingType: 'UMAP',
+        pointLayer: [
+            {
+                obsType: 'cell',
+                obsSetFilter: [['cell_type', 'immune']],
+                obsSetSelection: [['cell_type', 'immune', 'B cell'], ['cell_type', 'immune', 'T cell']],
+                obsSetColor: [
+                    { path: ['cell_type', 'immune', 'B cell'], color: [255, 0, 0] }
+                ],
+                embeddingZoom: 0,
+                embeddingTargetX: 0,
+                embeddingTargetY: 0,
+                embeddingTargetZ: null,
+            },
+        ],
+        contourLayer: {
+            
+        }
+    },
+    // Another, more complex view type:
+    viewType: 'spatial',
+    coordinationValues: {
+        dataset: 'my_dataset_key',
+        // May have nested coordination values to support layer->channel pattern.
+        imageLayer: [
+            {
+                imageChannel: [
+                    {
+
+                    }
+                ]
+            }
+        ],
+        segmentationLayer: [
+            {
+                segmentationChannel: [
+                    {
+                        'test'
+                    }
+                ]
+            }
+        ]
+    },
+    // Simple statistical view type:
+    viewType: 'featureValueDistributionHistogram',
+    coordinationValues: {
+        dataset: 'my_dataset_key',
+        obsType: 'cell',
+        featureType: 'gene',
+        featureSelection: 'CD4',
+
+    },
+    // Genomic view type:
+    viewType: 'genomicProfiles',
+    coordinationValues: {
+        dataset: 'my_dataset_key'
+    }
+})
+```
+
+-->
 
 ## Development
 
