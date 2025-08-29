@@ -49,14 +49,6 @@ It would also make CPU data processing operations more challenging.
 
 ## Development
 
-```sh
-git clone git@github.com:keller-mark/zarrs.git
-
-cd zarrs
-git checkout keller-mark/wasm
-cd ..
-```
-
 ### Build for WASM
 
 ```sh

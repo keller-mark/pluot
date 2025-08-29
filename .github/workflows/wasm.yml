@@ -13,13 +13,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Checkout fork of Zarrs without Rayon iterators
-    - uses: actions/checkout@v4
-      with:
-        repository: keller-mark/zarrs
-        ref: keller-mark/no-sync-or-send
-        path: ./zarrs
-
     - uses: nanasess/setup-chromedriver@master
     - uses: dtolnay/rust-toolchain@stable
       with:

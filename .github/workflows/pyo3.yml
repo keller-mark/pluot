@@ -12,30 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
-    # Checkout main branch of Zarrs
-    - uses: actions/checkout@v4
-      with:
-        repository: zarrs/zarrs
-        ref: main
-        path: ./zarrs
-    
     - uses: astral-sh/setup-uv@v3
       with:
         version: "latest"
       env:
         UV_PYTHON: '3.12'
-    
     - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
         targets: wasm32-unknown-unknown
-   
     - uses: Swatinem/rust-cache@v2
-
     - name: Install dependencies
       run: uv sync --extra dev
     - name: Compile Rust code
-      run: uv run maturin develop --features python --uv
+      run: uv run maturin develop --features python
     - name: Run Python unit tests
       run: uv run pytest

@@ -56,7 +56,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
-zarrs = { path = "zarrs/zarrs", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
+zarrs = { git = "https://github.com/zarrs/zarrs.git", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 
@@ -84,12 +84,14 @@ wasm-bindgen-test = "0.3.34"
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+
 # Enable link-time optimization.
 # This gives LLVM many more opportunities to inline and prune functions.
 # Not only will it make the .wasm smaller, but it will also make it faster at runtime!
 # The downside is that compilation will take longer.
 # Reference: https://rustwasm.github.io/book/reference/code-size.html
 lto = true
+
 # Enable "codegen-units = 1" to tell `rustc` to optimize the whole crate at once.
 # This also gives LLVM more opportunities to inline and prune functions.
 # This will make the .wasm smaller and faster, but will also make compilation even longer

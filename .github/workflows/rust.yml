@@ -12,18 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
-    # Checkout main branch of Zarrs
-    - uses: actions/checkout@v4
-      with:
-        repository: zarrs/zarrs
-        ref: main
-        path: ./zarrs
-
     - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-
     - uses: Swatinem/rust-cache@v2
     - name: Compile Rust code
       run: cargo build --verbose
