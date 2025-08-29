@@ -21,6 +21,8 @@ pub struct RenderParams {
     pub x_key: Option<String>,
     pub y_key: Option<String>,
     pub color_key: Option<String>,
+    pub point_radius: Option<f32>,
+
 
     // We need a plot ID for cacheing of certain intermediate expensive computations per plot.
     // Note that solely data-dependent computations should be cached via the (store_name, key) tuple.
@@ -52,6 +54,7 @@ impl Default for RenderParams {
             x_key: None,
             y_key: None,
             color_key: None,
+            point_radius: None,
             plot_id: "default_plot".to_string(),
             plot_type: "triangle".to_string(),
             store_name: "default_store".to_string(),

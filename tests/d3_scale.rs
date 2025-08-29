@@ -1,5 +1,5 @@
 #![cfg(test)]
-use pluot::d3_scale::{Scale, ScaleLinear, ScaleContinuous};
+use pluot::d3::scale::{Scale, ScaleLinear, ScaleContinuous};
 
 // Reference: https://github.com/d3/d3-scale/blob/main/test/linear-test.js
 

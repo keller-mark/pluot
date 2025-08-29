@@ -3,7 +3,7 @@ mod zarr;
 mod plots;
 mod render;
 mod bindings;
-pub mod d3_scale;
+pub mod d3;
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]

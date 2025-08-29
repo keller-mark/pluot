@@ -152,10 +152,13 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // Plot type-specific rendering logic.
     match plot_type.as_str() {
         "triangle" => {
-            plots::render_triangle(&mut context, &mut encoder).await;
+            plots::triangle::render_triangle(&mut context, &mut encoder).await;
         },
         "scatterplot" => {
-            plots::render_scatterplot(&mut context, &mut encoder).await;
+            plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await;
+        },
+        "bioimage" => {
+            plots::bioimage::render_bioimage(&mut context, &mut encoder).await;
         },
         _ => panic!("Unsupported plot type"),
     }

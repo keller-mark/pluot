@@ -2,94 +2,6 @@ use std::borrow::Cow;
 
 use crate::{utils::RenderContext};
 
-pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
-    let vs_src = r#"
-        @vertex
-        fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-            let x = f32(i32(in_vertex_index) - 1);
-            let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
-            return vec4<f32>(x, y, 0.0, 1.0);
-        }
-    "#;
-
-    let fs_src = r#"
-        @fragment
-        fn fs_main() -> @location(0) vec4<f32> {
-            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
-        }
-    "#;
-
-    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
-    });
-
-    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
-    });
-
-    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
-
-    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: context.texture_desc.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-    // End render-specific things.
-
-    {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &context.view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_pipeline(&render_pipeline);
-        render_pass.draw(0..3, 0..1);
-
-        // End the renderpass.
-        drop(render_pass);
-    }
-}
-
 pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the Zarr store.
     let store = context.store;
@@ -174,13 +86,59 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
     //   viewport_size: vec2<f32>,
     //   color: vec4<f32>
     // }
+
+    // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = context.params.camera_view.unwrap_or([
+        // Column 0
         1.0, 0.0, 0.0, 0.0,
+        // Column 1
         0.0, 1.0, 0.0, 0.0,
+        // Column 2
         0.0, 0.0, 1.0, 0.0,
+        // Column 3
         0.0, 0.0, 0.0, 1.0,
     ]);
-    let point_size_px: f32 = 4.0;
+
+    let zoom = camera_view[0]; // Assuming uniform scaling in x/y, take the first element (x scaling).
+    let translate_x = camera_view[12];
+    let translate_y = camera_view[13];
+    
+    // Convert zoom level to scale factor
+    // scale_factor of 0 means zoom = 1.0 (no zoom)
+    // scale_factor of 1 means zoom = 0.5 (zoomed out to half)
+    // scale_factor of 2 means zoom = 0.25 (zoomed out to a quarter)
+    // scale_factor of 3 means zoom = 0.125 (zoomed out to an eighth)
+
+    // scale_factor of -1 means zoom = 2.0 (zoomed in to double)
+    // scale_factor of -2 means zoom = 4.0 (zoomed in to quadruple)
+    // scale_factor of -3 means zoom = 8.0 (zoomed in to octuple)
+    let scale_factor = (1.0/zoom).log2();
+
+    // X translation interpretation:
+    // A translate_x value of 1.0 means a point at x=-1.0 (left edge of viewport/screen-quad) is now at the center of the viewport.
+    // A translate_x value of 2.0 means a point at x=-1.0 is now at the right edge of the viewport.
+    // A translate_x value of -1.0 means a point at x=1.0 (right edge of viewport/screen-quad) is now at the center of the viewport.
+    
+    // Zoom interpretation:
+    // A zoom value of 0.5 means that points are scaled down by half, so a point at x=-1.0 is now at x=-0.5, and a point at x=1.0 is now at x=0.5.
+    // A zoom value of 0.25 means that points are scaled down by a quarter, so a point at x=-1.0 is now at x=-0.25, and a point at x=1.0 is now at x=0.25.
+    
+    // Zoom and translation combined interpretation:
+    // A translate_x value of 0.5 when zoom = 0.5 means a point at x=-1.0 is now at the center of the viewport, and a point at x=1.0 is now at the right of the viewport.
+    // When zoom = 0.5 AND translate_x = 0.5 AND translate_y = 0.5, all four screen-quad [-1 to 1] corner points are in the top right quadrant of the viewport.
+    // When zoom = 0.5 AND translate_x = -0.5 AND translate_y = -0.5, all four screen-quad [-1 to 1] corner points are in the bottom left quadrant of the viewport.
+    
+    let x_range = 2.0 / zoom; // The range of x values visible in the viewport
+    let y_range = 2.0 / zoom; // The range of y values visible in the viewport
+
+    let min_x = (-translate_x - 1.0) / zoom; // translation of (x=-1)
+    let max_x = (-translate_x + 1.0) / zoom; // translation of (x=1)
+    let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
+    let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
+
+
+
+    let point_size_px: f32 = context.params.point_radius.unwrap_or(5.0);
     let _pad0: f32 = 0.0;
     let viewport_w = context.params.width as f32;
     let viewport_h = context.params.height as f32;
