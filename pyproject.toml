@@ -1,0 +1,43 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pluot"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+dependencies = [
+  "numpy",
+  "zarr",
+  "pillow==11.3.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  'maturin>=1.9.3',
+  'pytest>=6.2.4',
+  'pytest-asyncio>=1.1.0',
+  'jupyterlab>=3.0.0',
+]
+
+
+[tool.maturin]
+features = ["pyo3/extension-module", "python"]
+# module-name = <package name>.<rust pymodule name>
+module-name = "pluot._internal"
+# Reference: https://www.maturin.rs/project_layout.html#mixed-rustpython-project
+python-source = "python"
+
+[tool.uv]
+# Rebuild package when any rust files change
+cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs"}]
+
+# Reference: https://github.com/apache/datafusion-python/blob/d6d6ea69a7bcc80ebf025ee8778df12ecbf874c5/pyproject.toml#L66C1-L68C48
+[tool.pytest.ini_options]
+pythonpath = ["python"]
+asyncio_mode = "auto"

@@ -2,31 +2,21 @@ name: Rust
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   unit_tests:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: nanasess/setup-chromedriver@master
     - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-        targets: wasm32-unknown-unknown
-    #- name: Install wasm-pack (alternative method)
-    #  run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-    - name: Install wasm-pack
-      uses: taiki-e/install-action@v2
-      with:
-        tool: wasm-pack
     - uses: Swatinem/rust-cache@v2
-    - name: Compile Rust code to WASM
-      run: wasm-pack build --target web
-    - name: Run unit tests
-      run: wasm-pack test --headless --chrome
+    - name: Compile Rust code
+      run: cargo build --verbose
+    - name: Run Rust unit tests
+      run: cargo test --verbose --features test_plain_rust

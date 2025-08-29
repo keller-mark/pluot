@@ -1,0 +1,34 @@
+{
+  "name": "root",
+  "private": true,
+  "version": "1.0.0",
+  "description": "",
+  "module": "dist/index.js",
+  "scripts": {
+    "start": "pnpm -r --parallel start",
+    "clean-start": "pnpm install && pnpm run clean && pnpm run build && pnpm run start",
+    "build:ci": "pnpm -r --workspace-concurrency 1 build",
+    "build": "pnpm -r build",
+    "start-tsc": "tsc -b --watch",
+    "build-tsc": "tsc --build",
+    "bundle:ci": "pnpm -r --workspace-concurrency 1 bundle",
+    "bundle": "pnpm -r bundle",
+    "test": "pnpm -r --workspace-concurrency 1 test",
+    "lint": "eslint \"packages/**/src/**/*.{js,jsx,ts,tsx}\" \"sites/*/src/**/*.{js,jsx,ts,tsx}\" \"examples/*/src/**/*.{js,jsx,ts,tsx}\"",
+    "lint-fix": "eslint --fix \"packages/**/src/**/*.{js,jsx,ts,tsx}\" \"sites/*/src/**/*.{js,jsx,ts,tsx}\" \"examples/*/src/**/*.{js,jsx,ts,tsx}\"",
+    "clean": "pnpm -r exec -- rm -rf dist dist-tsc tsconfig.tsbuildinfo",
+    "clean-deps": "pnpm -r exec -- rm -rf node_modules",
+    "clean-all": "pnpm run clean && pnpm run clean-deps"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "vitest": "^3.2.4",
+    "vite": "^6.1.1",
+    "jsdom": "^26.1.0",
+    "vitest-canvas-mock": "^0.3.3",
+    "typescript": "^5.9"
+  },
+  "packageManager": "pnpm@9.7.0"
+}
