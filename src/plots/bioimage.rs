@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use vello::wgpu;
 use crate::{utils::RenderContext};
 
 pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {

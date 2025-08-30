@@ -44,7 +44,7 @@ pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], option
 tokio = { version = "1.47.1", features = ["full"], optional = true }
 
 # Core dependencies
-wgpu = "26.0.0"
+#wgpu = "26.0.0"
 bytemuck = "1.23.2"
 futures = "0.3.31"
 futures-intrusive = "0.5"
@@ -59,6 +59,17 @@ uuid = { version = "1", features = ["v4", "js"] }
 zarrs = { git = "https://github.com/zarrs/zarrs.git", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
+
+# Vello
+vello = { git = "https://github.com/linebender/vello.git" }
+# From https://github.com/linebender/vello/blob/main/Cargo.toml
+# Metadata reader and glyph scaler for OpenType fonts. 
+skrifa = { version = "0.35.0", default-features = false, features = ["autohint_shaping"] }
+# Primitive types for styling vector graphics. 
+# The version of kurbo used below should be kept in sync with the version of kurbo used by peniko.
+peniko = { version = "0.4.0", default-features = false }
+# A Rust library for manipulating curves.
+kurbo = { version = "0.11.3", default-features = false }
 
 
 # For testing with local modified version of the rust-blosc-src crate.

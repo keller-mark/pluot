@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use vello::wgpu;
 use crate::{utils::RenderContext};
 
 pub async fn render_triangle(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
