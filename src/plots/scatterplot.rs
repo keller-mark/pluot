@@ -144,8 +144,6 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
     let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
     let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
-
-
     let point_size_px: f32 = context.params.point_radius.unwrap_or(5.0);
     let _pad0: f32 = 0.0;
     let viewport_w = context.params.width as f32;
