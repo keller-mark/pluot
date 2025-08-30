@@ -22,6 +22,7 @@ const stores = {
     // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
     'mnist_store': lru(new FetchStore('http://localhost:5173/@data/mnist.zarr')),
     'gaussian_quantiles_store': lru(new FetchStore('http://localhost:5173/@data/gaussian_quantiles.zarr')),
+    'ome_ngff': lru(new FetchStore('http://localhost:5173/@data/6001240_labels.ome.zarr')),
 }
 
 // console.log(wasm);
@@ -143,13 +144,15 @@ export function Pluot(props) {
                 targetY, // No longer used
                 cameraView: viewMatrix,
                 plotId: 'my_plot',
-                plotType,
-           
-                storeName: 'gaussian_quantiles_store',
-                x_key: "/n_1000000/x_coords",
-                y_key: "/n_1000000/y_coords",
-                color_key: "/n_1000000/class_labels",
-                point_radius: 6.0,
+                // plotType,
+                // storeName: 'gaussian_quantiles_store',
+                // x_key: "/n_1000000/x_coords",
+                // y_key: "/n_1000000/y_coords",
+                // color_key: "/n_1000000/class_labels",
+                // point_radius: 6.0,
+
+                plotType: 'bioimage',
+                storeName: 'ome_ngff',
          
                 //storeName: 'mnist_store',
                 //x_key: "/densmap/x_coords",

@@ -3,8 +3,7 @@ name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
-#edition = "2021"
-#rust-version = "1.77"
+exclude = ["data", "js", "python", "python-notebooks"]
 
 # Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
 [package.metadata.wasm-pack.profile.release]
@@ -70,6 +69,11 @@ skrifa = { version = "0.35.0", default-features = false, features = ["autohint_s
 peniko = { version = "0.4.0", default-features = false }
 # A Rust library for manipulating curves.
 kurbo = { version = "0.11.3", default-features = false }
+
+# For OME-Zarr image metadata parsing.
+# We use this fork which relaxes things by not using serde(deny_unknown_fields).
+ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.git", branch = "keller-mark/relaxed-ome-fields" }
+serde_json = "1.0.143"
 
 
 # For testing with local modified version of the rust-blosc-src crate.
