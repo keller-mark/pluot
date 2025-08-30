@@ -12,10 +12,8 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
     // Get the OME-NGFF metadata for the image.
     // See https://github.com/zarrs/ome_zarr_metadata/blob/main/src/v0_5.rs
-
     let group = zarrs::group::Group::async_open(store.clone(), "/")
         .await.expect("Open root group");
-
 
     log(&format!(
         "The group metadata is:\n{}\n",
@@ -55,10 +53,35 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let lowres_array = zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", lowres_dataset.path))
         .await.expect("Open lowres dataset array");
 
-    // TODO: do not assume the dimension order.
+    // Do not assume the dimension order, or that there are Z/C/T dims.
     let z_index = 0;
     let c_index = 0;
     let t_index = 0;
+
+    let x_dim_i = first_multiscale.axes.iter().position(|a| a.name == "x").expect("x axis");
+    let y_dim_i = first_multiscale.axes.iter().position(|a| a.name == "y").expect("y axis");
+    let z_dim_i = first_multiscale.axes.iter().position(|a| a.name == "z");
+    let c_dim_i = first_multiscale.axes.iter().position(|a| a.name == "c");
+    let t_dim_i = first_multiscale.axes.iter().position(|a| a.name == "t");
+
+    let img_w = lowres_array.shape()[x_dim_i];
+    let img_h = lowres_array.shape()[y_dim_i];
+    log(&format!("Image dimensions: {} x {}", img_w, img_h));
+
+    // Read the pixel data using a slice that selects the first z, c, and t indices.
+    
+    // This array is CZYX.
+    // TODO: do not assume 4D and dim order.
+    let arr_subset = zarrs::array_subset::ArraySubset::new_with_start_shape(
+        vec![0, 0, 0, 0], // start
+        vec![2, 1, img_h as u64, img_w as u64], // shape
+    ).expect("Compatible dimensionality");
+
+    // TODO: support other dtypes.
+    let arr = lowres_array.async_retrieve_array_subset_ndarray::<u16>(&arr_subset)
+        .await.expect("Read pixel data");
+
+    log(&format!("Read array with shape {:?} and dtype i16", arr.shape()));
 
 
     // Determine the visible region and the resolution level to use based on the camera view.
