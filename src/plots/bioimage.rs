@@ -41,16 +41,24 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
     let first_multiscale = &multiscales[0];
 
-    // Get the shape of each resolution level.
+    // Print the shape of each resolution level.
     for (i, dataset) in first_multiscale.datasets.iter().enumerate() {
-
-        let dataset_array = zarrs::array::Array::async_open(store.clone(), &format!("/{}", dataset.path))
+        // TODO: support Blosc-compressed arrays, and remove the _nc no-compression suffix here.
+        let dataset_array = zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", dataset.path))
             .await.expect("Open dataset array");
 
         log(&format!("Resolution level {}: {:?}", dataset.path, dataset_array.shape()));
     }
 
-    // For now, load the lowest resolution level.
+    // For now, load the lowest resolution level and render the pixels.
+    let lowres_dataset = &first_multiscale.datasets.last().expect("At least one dataset");
+    let lowres_array = zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", lowres_dataset.path))
+        .await.expect("Open lowres dataset array");
+
+    // TODO: do not assume the dimension order.
+    let z_index = 0;
+    let c_index = 0;
+    let t_index = 0;
 
 
     // Determine the visible region and the resolution level to use based on the camera view.
