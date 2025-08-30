@@ -149,6 +149,7 @@ export function Pluot(props) {
                 x_key: "/n_1000000/x_coords",
                 y_key: "/n_1000000/y_coords",
                 color_key: "/n_1000000/class_labels",
+                point_radius: 6.0,
          
                 //storeName: 'mnist_store',
                 //x_key: "/densmap/x_coords",

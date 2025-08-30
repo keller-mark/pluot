@@ -1,9 +1,16 @@
 use std::borrow::Cow;
 
 use vello::wgpu;
+use vello::{
+    peniko::{Blob, Brush, Color, Fill, Font},
+    kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
+    AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
+};
 use crate::{utils::RenderContext};
 
-pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+use skrifa::MetadataProvider;
+
+pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the Zarr store.
     let store = context.store;
     let x_array_path = context.params.x_key.as_ref().expect("X key not set");
@@ -273,11 +280,24 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         cache: None,
     });
 
+    // 1) Offscreen scatterplot target
+    let scatter_tex = context.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scatterplot Offscreen Texture"),
+        size: wgpu::Extent3d { width: context.params.width, height: context.params.height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: context.texture_desc.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let scatter_view = scatter_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &context.view,
+                view: &scatter_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -299,4 +319,26 @@ pub async fn render_scatterplot(context: &RenderContext<'_>, encoder: &mut wgpu:
         // End the renderpass.
         drop(render_pass);
     }
+
+
+
+    // 2) Vello scene with text.
+    crate::plots::text::add_text_to_scene(&mut context.vello_scene);
+
+
+    // === 4) Render with Vello into our texture ===
+    let params = vello::RenderParams {
+        base_color: Color::from_rgba8(0, 0, 0, 0), // transparent
+        width: context.params.width,
+        height: context.params.height,
+        antialiasing_method: AaConfig::Msaa16,
+    };
+    crate::render::with_vello_renderer(context.device, |vello_renderer| {
+        vello_renderer
+            .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
+            .expect("vello render_to_texture");
+    });
+
+    crate::render::overlay_pass(context, encoder, &scatter_tex, &scatter_view);
+
 }

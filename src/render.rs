@@ -142,7 +142,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         // Format of the texture.
         format: TextureFormat::Rgba8UnormSrgb,
         // Allowed usages of the texture. If used in other ways, the operation will panic.
-        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
         // Specifies what view formats will be allowed when calling Texture::create_view on this texture.
         // View formats of the same format as the texture are always allowed.
         // Note: currently, only the srgb-ness is allowed to change. (ex: Rgba8Unorm texture + Rgba8UnormSrgb view)
