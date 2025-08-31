@@ -40,9 +40,11 @@ window.zarr_has = async (store_name, key) => {
 };
 
 window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
+    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
     return stores[store_name].getRange(`/${key}`, { offset, length });
 };
 window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
+    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
     return stores[store_name].getRange(`/${key}`, { suffix_length });
 };
 

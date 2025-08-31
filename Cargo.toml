@@ -55,7 +55,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
-zarrs = { git = "https://github.com/zarrs/zarrs.git", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
+zarrs = { git = "https://github.com/zarrs/zarrs.git", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async", "filesystem"] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 

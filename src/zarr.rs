@@ -97,8 +97,8 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
     
         for byte_range in byte_ranges {
             let bytes = match byte_range {
-                ByteRange::FromStart(start, Some(end)) => {
-                    zarr_get_range_from_offset(&self.store_name, key.as_str(), start as u32, (end - start) as u32).await
+                ByteRange::FromStart(start, Some(len)) => {
+                    zarr_get_range_from_offset(&self.store_name, key.as_str(), start as u32, len as u32).await
                 },
                 ByteRange::Suffix(suffix_length) => {
                     zarr_get_range_from_end(&self.store_name, key.as_str(), suffix_length as u32).await

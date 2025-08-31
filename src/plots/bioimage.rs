@@ -54,7 +54,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         .await.expect("Open lowres dataset array");
 
     // Do not assume the dimension order, or that there are Z/C/T dims.
-    let z_index = 0;
+    let z_index = 99;
     let c_index = 0;
     let t_index = 0;
 
@@ -73,7 +73,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
     let arr_subset = zarrs::array_subset::ArraySubset::new_with_start_shape(
-        vec![0, 0, 0, 0], // start
+        vec![0, z_index, 0, 0], // start
         vec![1, 1, img_h as u64, img_w as u64], // shape
     ).expect("Compatible dimensionality");
 
@@ -81,7 +81,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let arr = lowres_array.async_retrieve_array_subset_ndarray::<u16>(&arr_subset)
         .await.expect("Read pixel data");
 
-    log(&format!("Read array with shape {:?} and dtype i16", arr.shape()));
+    log(&format!("Read array with shape {:?}", arr.shape()));
 
 
     // Store the ndarray::ArrayD in a WGPU texture.
