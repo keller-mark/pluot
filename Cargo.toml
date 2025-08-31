@@ -16,24 +16,10 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Define features to toggle which dependency is active
-wasm = ["wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-shared", "web-sys", "js-sys", "serde-wasm-bindgen", "console_error_panic_hook"]
 python = ["pyo3", "serde-pyobject", "pyo3-async-runtimes", "tokio"]
 test_plain_rust = ["tokio"]
 
 [dependencies]
-# WASM-specific dependencies
-wasm-bindgen = { version = "0.2.100", optional = true }
-wasm-bindgen-futures = { version = "0.4.50", optional = true }
-wasm-bindgen-shared = { version = "0.2.100", optional = true }
-web-sys = { version = "0.3.77", optional = true }
-js-sys = { version = "0.3.77", optional = true }
-serde-wasm-bindgen = { version = "0.6.5", optional = true }
-# The `console_error_panic_hook` crate provides better debugging of panics by
-# logging them with `console.error`. This is great for development, but requires
-# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
-# code size when deploying.
-console_error_panic_hook = { version = "0.1.7", optional = true }
-
 
 # Python-specific dependencies
 pyo3 = { version = "0.23.3", optional = true, features = ["extension-module"] }
@@ -79,15 +65,29 @@ serde_json = "1.0.143"
 # For testing with local modified version of the rust-blosc-src crate.
 #blosc-src = { path = "../rust-blosc-src" }
 
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.100" }
+wasm-bindgen-futures = { version = "0.4.50" }
+wasm-bindgen-shared = { version = "0.2.100" }
+web-sys = { version = "0.3.77" }
+js-sys = { version = "0.3.77" }
+serde-wasm-bindgen = { version = "0.6.5" }
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { version = "0.1.7" }
+
 
 # Fixes for getrandom. May not be necessary here if added to upstream zarrs config.toml.
 # Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
-[dependencies.getrandom_v03]
+[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom_v03]
 package = "getrandom"
 version = "0.3"
 features = ["wasm_js"]
 
-[dependencies.getrandom_v02]
+[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom_v02]
 package = "getrandom"
 version = "0.2"
 features = ["js"]

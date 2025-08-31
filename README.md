@@ -192,7 +192,7 @@ const arr = await render({
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
 
-wasm-pack build --target web -- --features wasm
+wasm-pack build --target web
 ```
 
 Test in browser:
@@ -206,7 +206,7 @@ Open to http://localhost:3005/www/
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```
-wasm-pack test --headless --firefox -- --features wasm
+wasm-pack test --headless --firefox
 ```
 
 ### Publish to NPM with `wasm-pack publish`
