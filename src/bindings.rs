@@ -28,7 +28,7 @@ pub mod wasm {
         async fn zarr_get_range_from_end_js(store_name: &str, key: &str, suffix_length: u32) -> js_sys::Uint8Array;
     }
 
-    fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::AsyncBytes {
+    fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
         // Copy data from Uint8Array into a Rust Vec<u8>
         let mut vec = vec![0u8; u8arr.length() as usize];
 
@@ -46,17 +46,17 @@ pub mod wasm {
         has.is_truthy()
     }
 
-    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_js(store_name, key).await;
         convert_to_bytes(js_bytes)
     }
 
-    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_range_from_offset_js(store_name, key, offset, length).await;
         convert_to_bytes(js_bytes)
     }
 
-    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_range_from_end_js(store_name, key, suffix_length).await;
         convert_to_bytes(js_bytes)
     }
@@ -122,7 +122,7 @@ pub mod python {
             .expect("Failed to extract bool from Python object")
     }
 
-    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         let py_obj = Python::with_gil(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
             let coroutine = zarr_module.call_method1("zarr_get", (store_name, key)).unwrap();
@@ -137,7 +137,7 @@ pub mod python {
         zarrs::storage::Bytes::from(result)
     }
 
-    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::Bytes {
         let py_obj = Python::with_gil(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
             let coroutine = zarr_module.call_method1("zarr_get_range_from_offset", (store_name, key, offset, length)).unwrap();
@@ -152,7 +152,7 @@ pub mod python {
         zarrs::storage::Bytes::from(result)
     }
 
-    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::Bytes {
         let py_obj = Python::with_gil(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
             let coroutine = zarr_module.call_method1("zarr_get_range_from_end", (store_name, key, suffix_length)).unwrap();
@@ -206,15 +206,15 @@ pub mod plain_rust {
         panic!("zarr_has is not implemented in plain Rust mode.");
     }
 
-    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         panic!("zarr_get is not implemented in plain Rust mode.");
     }
 
-    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::Bytes {
         panic!("zarr_get_range_from_offset is not implemented in plain Rust mode.");
     }
 
-    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::AsyncBytes {
+    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::Bytes {
         panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
     }
 }

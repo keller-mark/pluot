@@ -3,9 +3,11 @@ use crate::{
     zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end,
 };
 
+use futures::{stream, StreamExt, TryStreamExt};
 use zarrs::storage::{
-    byte_range::{ByteRange}, AsyncBytes, StoreKey,
-    AsyncReadableStorageTraits, MaybeAsyncBytes, StorageError,
+    byte_range::{ByteRange, ByteRangeIterator}, Bytes, StoreKey,
+    AsyncReadableStorageTraits, MaybeBytes, AsyncMaybeBytesIterator,
+    StorageError,
 };
 
 use std::collections::HashMap;
@@ -17,9 +19,9 @@ use std::sync::{Mutex, OnceLock, Arc};
 use quick_cache::sync::Cache;
 
 
-static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, AsyncBytes>>>>> = OnceLock::new();
+static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, Bytes>>>>> = OnceLock::new();
 
-fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, AsyncBytes>> {
+fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, Bytes>> {
     let map_mutex = ZARR_STORE_CACHES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = map_mutex.lock().unwrap();
     
@@ -77,7 +79,7 @@ impl AsyncZarritaStore {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl AsyncReadableStorageTraits for AsyncZarritaStore {
-    async fn get(&self, key: &StoreKey) -> Result<MaybeAsyncBytes, StorageError> {
+    async fn get(&self, key: &StoreKey) -> Result<MaybeBytes, StorageError> {
 
         // Normalize the key similar to lru_cache.ts
         // considering potential Range info.
@@ -101,13 +103,11 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         Ok(Some(bytes))
     }
 
-    // TODO: this part of the trait needs to be updated
-    // See https://github.com/zarrs/zarrs/commit/0bb5cd2b2593e8e9b30eca2bf10b34bf270266d5
-    async fn get_partial_values_key(
-        &self,
+    async fn get_byte_ranges<'a>(
+        &'a self,
         key: &StoreKey,
-        byte_ranges: &mut dyn zarrs::storage::byte_range::ByteRangeIterator,
-    ) -> Result<Option<Vec<AsyncBytes>>, StorageError> {
+        byte_ranges: ByteRangeIterator<'a>,
+    ) -> Result<AsyncMaybeBytesIterator<'a>, StorageError> {
         let mut results = Vec::new();
 
         // Iterate over the requested byte ranges (potentially multiple).
@@ -120,7 +120,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
             // Check the cache first
             let cache = get_or_init_store_cache(&self.store_name);
             if let Some(cached) = cache.get(&key_str) {
-                results.push(cached.clone());
+                results.push(Ok(cached.clone()));
             } else {
                 // Cache miss.
                 let bytes = match byte_range {
@@ -137,10 +137,10 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                 cache.insert(key_str, bytes.clone());
 
                 // Append to results
-                results.push(bytes);
+                results.push(Ok(bytes));
             }
         }
-        Ok(Some(results))
+        Ok(Some(Box::pin(stream::iter(results))))
     }
 
     async fn size_key(&self, key: &StoreKey) -> Result<Option<u64>, StorageError> {
