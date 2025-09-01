@@ -1,3 +1,4 @@
+use core::num;
 use std::borrow::Cow;
 
 use vello::wgpu;
@@ -68,20 +69,37 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let img_h = lowres_array.shape()[y_dim_i];
     log(&format!("Image dimensions: {} x {}", img_w, img_h));
 
+    let num_channels = 2;
+
     // Read the pixel data using a slice that selects the first z, c, and t indices.
     
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
-    let arr_subset = zarrs::array_subset::ArraySubset::new_with_start_shape(
+    let ch0_arr_slice = zarrs::array_subset::ArraySubset::new_with_start_shape(
         vec![0, z_index, 0, 0], // start
         vec![1, 1, img_h as u64, img_w as u64], // shape
     ).expect("Compatible dimensionality");
 
+    // This array is CZYX.
+    // TODO: do not assume 4D and dim order.
+    let ch1_arr_slice = zarrs::array_subset::ArraySubset::new_with_start_shape(
+        vec![1, z_index, 0, 0], // start
+        vec![1, 1, img_h as u64, img_w as u64], // shape
+    ).expect("Compatible dimensionality");
+
     // TODO: support other dtypes.
-    let arr = lowres_array.async_retrieve_array_subset_ndarray::<u16>(&arr_subset)
+    let ch0_arr = lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch0_arr_slice)
+        .await.expect("Read pixel data");
+    let ch1_arr = lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice)
         .await.expect("Read pixel data");
 
-    log(&format!("Read array with shape {:?}", arr.shape()));
+    log(&format!("Read array 0 with shape {:?}", ch0_arr.shape()));
+    log(&format!("Read array 1 with shape {:?}", ch1_arr.shape()));
+
+    // Concatenate the channel data into a single vector.
+    // TODO: is this the most efficient way / use the minimal number of copies?
+    let mut combined_pixel_data = ch0_arr.as_slice().expect("Contiguous array for ch0").to_vec();
+    combined_pixel_data.extend_from_slice(ch1_arr.as_slice().expect("Contiguous array for ch1"));
 
 
     // Store the ndarray::ArrayD in a WGPU texture.
@@ -96,7 +114,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let texture_size = wgpu::Extent3d {
         width: img_w as u32,
         height: img_h as u32,
-        depth_or_array_layers: 1,
+        depth_or_array_layers: num_channels as u32,
     };
     let image_texture = context.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Image Texture"),
@@ -109,7 +127,11 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let image_view = image_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let image_view = image_texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Image Texture View"),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
     
     // Upload the pixel data to the texture.
     context.queue.write_texture(
@@ -120,11 +142,11 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
             aspect: wgpu::TextureAspect::All,
         },
         // The pixel data as a byte slice.
-        bytemuck::cast_slice(arr.as_slice().expect("Contiguous array")),
+        bytemuck::cast_slice(&combined_pixel_data),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(unpadded_bytes_per_row),
-            rows_per_image: None,
+            rows_per_image: Some(img_h as u32),
         },
         texture_size,
     );
@@ -239,7 +261,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Uint,
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
                     multisampled: false,
                 },
                 count: None,
