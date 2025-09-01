@@ -13,7 +13,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: (Linux) Install Vulkan SDK
-      if: matrix.os == 'ubuntu-24.04'
       uses: ./.github/actions/install-vulkan-sdk
     - uses: dtolnay/rust-toolchain@stable
       with:
@@ -28,7 +27,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: (Linux) Install Vulkan SDK
-      if: matrix.os == 'ubuntu-24.04'
       uses: ./.github/actions/install-vulkan-sdk
     - uses: astral-sh/setup-uv@v3
       with:
