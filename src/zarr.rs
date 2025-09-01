@@ -33,6 +33,21 @@ fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, AsyncBytes>> {
     }
 }
 
+fn normalize_key(key: &str, byte_range: Option<ByteRange>) -> String {
+    // Reference: https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/lru-store.ts#L14
+    match byte_range {
+        Some(ByteRange::FromStart(start, Some(len))) => {
+            format!("{}:{}:{}", key, start, start + len - 1)
+        },
+        Some(ByteRange::Suffix(suffix_length)) => {
+            format!("{}:-{}", key, suffix_length)
+        },
+        None => key.to_string(),
+        _ => panic!("Unsupported ByteRange variant"),
+    }
+}
+
+
 // References:
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/storage_async.rs
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/store/memory_store.rs
@@ -64,9 +79,9 @@ impl AsyncZarritaStore {
 impl AsyncReadableStorageTraits for AsyncZarritaStore {
     async fn get(&self, key: &StoreKey) -> Result<MaybeAsyncBytes, StorageError> {
 
-        // TODO: normalize the key similar to lru_cache.ts
+        // Normalize the key similar to lru_cache.ts
         // considering potential Range info.
-        let key_str = key.as_str();
+        let key_str = normalize_key(key.as_str(), None);
 
         // Check the cache first
         let cache = get_or_init_store_cache(&self.store_name);
@@ -81,11 +96,13 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         let bytes = zarr_get(&self.store_name, key.as_str()).await;
 
         // Store in cache
-        cache.insert(key.to_string(), bytes.clone());
+        cache.insert(key_str.to_string(), bytes.clone());
         
         Ok(Some(bytes))
     }
 
+    // TODO: this part of the trait needs to be updated
+    // See https://github.com/zarrs/zarrs/commit/0bb5cd2b2593e8e9b30eca2bf10b34bf270266d5
     async fn get_partial_values_key(
         &self,
         key: &StoreKey,
@@ -93,19 +110,35 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
     ) -> Result<Option<Vec<AsyncBytes>>, StorageError> {
         let mut results = Vec::new();
 
-        // TODO: use the cache here.
-    
+        // Iterate over the requested byte ranges (potentially multiple).
         for byte_range in byte_ranges {
-            let bytes = match byte_range {
-                ByteRange::FromStart(start, Some(len)) => {
-                    zarr_get_range_from_offset(&self.store_name, key.as_str(), start as u32, len as u32).await
-                },
-                ByteRange::Suffix(suffix_length) => {
-                    zarr_get_range_from_end(&self.store_name, key.as_str(), suffix_length as u32).await
-                },
-                _ => panic!("Unsupported ByteRange variant"),
-            };
-            results.push(bytes);
+
+            // Normalize the key similar to lru_cache.ts
+            // considering potential Range info.
+            let key_str = normalize_key(key.as_str(), Some(byte_range));
+
+            // Check the cache first
+            let cache = get_or_init_store_cache(&self.store_name);
+            if let Some(cached) = cache.get(&key_str) {
+                results.push(cached.clone());
+            } else {
+                // Cache miss.
+                let bytes = match byte_range {
+                    ByteRange::FromStart(start, Some(len)) => {
+                        zarr_get_range_from_offset(&self.store_name, key.as_str(), start as u32, len as u32).await
+                    },
+                    ByteRange::Suffix(suffix_length) => {
+                        zarr_get_range_from_end(&self.store_name, key.as_str(), suffix_length as u32).await
+                    },
+                    _ => panic!("Unsupported ByteRange variant"),
+                };
+
+                // Store in cache
+                cache.insert(key_str, bytes.clone());
+
+                // Append to results
+                results.push(bytes);
+            }
         }
         Ok(Some(results))
     }

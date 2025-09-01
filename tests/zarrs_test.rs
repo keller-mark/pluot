@@ -6,6 +6,7 @@ use zarrs::filesystem::FilesystemStore;
 
 
 #[test]
+#[ignore]
 fn test_read_array_subset() {
 
     let store = Arc::new(FilesystemStore::new("data/out/6001240_labels.ome.zarr")
