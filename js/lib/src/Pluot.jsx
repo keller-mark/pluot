@@ -62,10 +62,20 @@ export function Pluot(props) {
     const canvasRef = useRef(null);
     const [isWasmReady, setIsWasmReady] = useState(false);
 
+    const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
+    
+    /*
     const [zoom, setZoom] = useState(0.0);
     const [targetX, setTargetX] = useState(0.0);
     const [targetY, setTargetY] = useState(0.0);
-    const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
+    */
+    const [pointRadius, setPointRadius] = useState(5.0);
+    const [ch0Window, setCh0Window] = useState([0.0, 0.1]);
+    const [ch1Window, setCh1Window] = useState([0.0, 0.1]);
+
+    const [ch0color, setCh0Color] = useState([1.0, 0.0, 0.0]);
+    const [ch1color, setCh1Color] = useState([0.0, 1.0, 0.0]);
+    
 
     useLayoutEffect(() => {
         const initWasm = async () => {
@@ -92,8 +102,8 @@ export function Pluot(props) {
         // Create a 2D camera for handling zoom and pan.
         const camera = createDom2dCamera(canvas,{
             isFixed: false,
-            distance: zoom,
-            target: [targetX, targetY],
+            distance: 0.0,
+            target: [0.0, 0.0],
             defaultMouseDownMoveAction: 'pan',
 
             onKeyDown: (event) => {
@@ -154,9 +164,10 @@ export function Pluot(props) {
                     x_key: "/n_1000000/x_coords",
                     y_key: "/n_1000000/y_coords",
                     color_key: "/n_1000000/class_labels",
-                    point_radius: 6.0,
+                    point_radius: pointRadius,
                 }
                 */
+                
                 
                 /*
                 plot_type: 'Scatterplot',
@@ -165,7 +176,7 @@ export function Pluot(props) {
                     x_key: "/densmap/x_coords",
                     y_key: "/densmap/y_coords",
                     color_key: "/densmap/class_labels",
-                    point_radius: 6.0,
+                    point_radius: pointRadius,
                 }
                 */
                 
@@ -174,12 +185,12 @@ export function Pluot(props) {
                 plot_params: {
                     channel_indices: [0, 1],
                     channel_windows: [
-                        [0.0, 0.1],
-                        [0.0, 0.2],
+                        ch0Window,
+                        ch1Window,
                     ],
                     channel_colors: [
-                        [1.0, 0.0, 0.0],
-                        [0.0, 1.0, 1.0],
+                        ch0color,
+                        ch1color,
                     ],
                 },
                 
@@ -221,7 +232,7 @@ export function Pluot(props) {
         } else {
             requestAnimationFrame(animate);
         }
-    }, [isWasmReady, viewMatrix]);
+    }, [isWasmReady, viewMatrix, pointRadius, ch0Window, ch1Window, ch0color, ch1color]);
 
     return (
         <>
@@ -233,17 +244,149 @@ export function Pluot(props) {
                     height={height}
                 />
             </div>
-            {/*<input
-                type="range"
-                min={-5}
-                max={5}
-                step={0.01}
-                value={zoom}
-                onChange={(e) => {
-                    const newValue = parseFloat(e.target.value);
-                    setZoom(newValue);
-                }}
-            />*/}
+            <div>
+                <label>Point Radius (for Scatterplot):</label>
+                <input
+                    type="range"
+                    min={1.0}
+                    max={100.0}
+                    step={1.0}
+                    value={pointRadius}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setPointRadius(newValue);
+                    }}
+                />
+            </div>
+            {/* Channel 0 controls: contrast min/max and r/g/b sliders */}
+            <div>
+                <label>Channel 0 Contrast Min:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch0Window[0]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh0Window([newValue, ch0Window[1]]);
+                    }}
+                />
+                <label>Channel 0 Contrast Max:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch0Window[1]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh0Window([ch0Window[0], newValue]);
+                    }}
+                />
+                <br/>
+                <label>Channel 0 Red:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch0color[0]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh0Color([newValue, ch0color[1], ch0color[2]]);
+                    }}
+                />
+                <label>Channel 0 Green:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch0color[1]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh0Color([ch0color[0], newValue, ch0color[2]]);
+                    }}
+                />
+                <label>Channel 0 Blue:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch0color[2]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh0Color([ch0color[0], ch0color[1], newValue]);
+                    }}
+                />
+            </div>
+            {/* Channel 1 controls */}
+            <div>
+                <label>Channel 1 Contrast Min:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch1Window[0]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh1Window([newValue, ch1Window[1]]);
+                    }}
+                />
+                <label>Channel 1 Contrast Max:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch1Window[1]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh1Window([ch1Window[0], newValue]);
+                    }}
+                />
+                <br/>
+                <label>Channel 1 Red:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch1color[0]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh1Color([newValue, ch1color[1], ch1color[2]]);
+                    }}
+                />
+                <label>Channel 1 Green:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch1color[1]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh1Color([ch1color[0], newValue, ch1color[2]]);
+                    }}
+                />
+                <label>Channel 1 Blue:</label>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={ch1color[2]}
+                    onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        setCh1Color([ch1color[0], ch1color[1], newValue]);
+                    }}
+                />
+            </div>
+            
         </>
     );
 }
