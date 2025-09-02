@@ -89,7 +89,6 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
     }
 }
 
-
 pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
 where
     F: FnOnce(&mut Renderer) -> R,
@@ -113,6 +112,42 @@ where
         f(renderer.borrow_mut().as_mut().unwrap())
     })
 }
+/* 
+// TODO: something is preventing running the same render call twice in a row in Python. On the second call I see the error:
+Buffer[Id(6,1)] does not exist
+stack backtrace:
+   0:        0x11c20fd94 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::h5ae7a3fa6eb328a3
+   1:        0x11c0863ec - core::fmt::write::h030214d4eb7a507f
+   2:        0x11c20f59c - std::io::Write::write_fmt::h74c29e4e72233bfb
+   3:        0x11c20f470 - std::panicking::rust_panic_with_hook::h2dbff7028f972dd1
+   4:        0x11c22d828 - std::panicking::begin_panic_handler::{{closure}}::h221494348fd9cee9
+   5:        0x11c22d798 - std::sys::backtrace::__rust_end_short_backtrace::h7adc940a992edc37
+   6:        0x11c22dbdc - __rustc[b55d4bfdbafc8d45]::rust_begin_unwind
+   7:        0x11c3ea3d4 - core::panicking::panic_fmt::h34e6ceb1caea0f27
+   8:        0x11c2ad454 - wgpu_core::storage::Storage<T>::get::h9df8cba1b289d9e7
+   9:        0x11c2d1468 - wgpu_core::registry::Registry<T>::get::h0284d07cca9bdcbf
+  10:        0x11c28fce4 - wgpu::api::queue::Queue::write_buffer::h9c24ad05ca81ba6e
+  11:        0x11c253388 - vello::wgpu_engine::WgpuEngine::run_recording::h38da7b9cbfec7c40
+
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
+where
+    F: FnOnce(&mut Renderer) -> R,
+{
+    // Re-create every time?
+    let mut vello_renderer = Renderer::new(
+            device,
+            RendererOptions {
+                use_cpu: false,
+                antialiasing_support: AaSupport::all(),
+                num_init_threads: std::num::NonZeroUsize::new(1),
+                pipeline_cache: None,
+            },
+        ).expect("create vello renderer");
+    f(&mut vello_renderer)
+}
+*/
 
 
 // This function should accept width and height as parameters,
