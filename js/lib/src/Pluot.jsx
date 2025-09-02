@@ -157,7 +157,7 @@ export function Pluot(props) {
                 camera_view: viewMatrix,
                 plot_id: 'my_plot',
 
-                /*
+                
                 plot_type: 'Scatterplot',
                 store_name: 'gaussian_quantiles_store',
                 plot_params: {
@@ -166,8 +166,6 @@ export function Pluot(props) {
                     color_key: "/n_1000000/class_labels",
                     point_radius: pointRadius,
                 }
-                */
-                
                 
                 /*
                 plot_type: 'Scatterplot',
@@ -180,6 +178,7 @@ export function Pluot(props) {
                 }
                 */
                 
+                /*
                 plot_type: 'Bioimage',
                 store_name: 'ome_ngff',
                 plot_params: {
@@ -193,6 +192,8 @@ export function Pluot(props) {
                         ch1color,
                     ],
                 },
+
+                */
                 
             };
             wasm.render_wasm(renderParams).then(arr => {

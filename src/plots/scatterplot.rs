@@ -182,7 +182,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
             wgpu::BindGroupLayoutEntry {
                 // The uniforms buffer.
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -309,6 +309,10 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
 
         render_pass.set_pipeline(&render_pipeline);
         render_pass.set_bind_group(0, &bind_group, &[]);
+
+        // TODO: Would it be more efficient to store the point X/Y/Size/Opacity/Color info in textures, as done by Regl-Scatterplot?
+        // (As opposed to using instancing)
+        // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/point.vs#L43
         render_pass.draw(0..4, 0..(n as u32));
 
         // End the renderpass.

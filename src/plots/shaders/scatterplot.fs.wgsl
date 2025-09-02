@@ -1,7 +1,16 @@
+struct Uniforms {
+    camera_view: mat4x4<f32>,
+    point_size_px: f32,   // diameter in pixels
+    _pad0: f32,
+    viewport_size: vec2<f32>, // (width, height) in pixels
+    color: vec4<f32>,     // rgba color for points
+};
+
 struct FSOut {
     @location(0) color: vec4<f32>,
 };
 
+@group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
@@ -21,6 +30,10 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
     return colors[index % 10];
 }
 
+fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+  return clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+}
+
 
 @fragment
 fn fs_main(
@@ -28,23 +41,21 @@ fn fs_main(
     @location(1) quad_pos: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
-    // Anti-aliased circle using SDF and smoothstep
-    let r = 1.0;
-    let dist = length(quad_pos);
-    let sdf = r - dist;           // positive inside, negative outside
-    let aa = fwidth(sdf);         // edge width in pixels
+    // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
+    let radius_px = u.point_size_px / 2.0;
+    let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
+    let c = quad_pos * 2.0 - 1.0;
+    let sdf = length(c) * radius_px;
+    let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
 
-    // Early discard far outside edge to save fill-rate
-    if (sdf < -aa) {
+    if (alpha == 0.0) {
         discard;
     }
-
-    let alpha = smoothstep(0.0, aa, sdf);
-
+    
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;
     // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, alpha);
+    out.color = vec4<f32>(category_color.rgb * alpha, alpha);
     return out;
 }
