@@ -1,7 +1,7 @@
 use core::num;
 use std::borrow::Cow;
 
-use vello::wgpu;
+use vello::wgpu::{self, include_wgsl};
 use crate::{utils::RenderContext};
 use crate::{log};
 
@@ -277,15 +277,8 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         ],
     });
 
-    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/bioimage.vs.wgsl"))),
-    });
-
-    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/bioimage.fs.wgsl"))),
-    });
+    let vs_module = context.device.create_shader_module(include_wgsl!("shaders/bioimage.vs.wgsl"));
+    let fs_module = context.device.create_shader_module(include_wgsl!("shaders/bioimage.fs.wgsl"));
 
     let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),

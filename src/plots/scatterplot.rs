@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use vello::wgpu;
+use vello::wgpu::{self, include_wgsl};
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
@@ -232,15 +232,8 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         ],
     });
 
-    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/scatterplot.vs.wgsl"))),
-    });
-
-    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/scatterplot.fs.wgsl"))),
-    });
+    let vs_module = context.device.create_shader_module(include_wgsl!("shaders/scatterplot.vs.wgsl"));
+    let fs_module = context.device.create_shader_module(include_wgsl!("shaders/scatterplot.fs.wgsl"));
 
     let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
