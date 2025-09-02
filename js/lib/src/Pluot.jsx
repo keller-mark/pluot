@@ -141,11 +141,11 @@ export function Pluot(props) {
             const renderParams = {
                 width,
                 height,
-                zoom, // No longer used
-                targetX, // No longer used
-                targetY, // No longer used
-                cameraView: viewMatrix,
-                plotId: 'my_plot',
+                //zoom, // No longer used
+                //targetX, // No longer used
+                //targetY, // No longer used
+                camera_view: viewMatrix,
+                plot_id: 'my_plot',
                 // plotType,
                 // storeName: 'gaussian_quantiles_store',
                 // x_key: "/n_1000000/x_coords",
@@ -153,8 +153,19 @@ export function Pluot(props) {
                 // color_key: "/n_1000000/class_labels",
                 // point_radius: 6.0,
 
-                plotType: 'bioimage',
-                storeName: 'ome_ngff',
+                plot_type: 'Bioimage',
+                plot_params: {
+                    channel_indices: [0, 1],
+                    channel_windows: [
+                        [0.0, 1.0],
+                        [0.0, 1.0],
+                    ],
+                    channel_colors: [
+                        [1.0, 0.0, 0.0],
+                        [0.0, 1.0, 1.0],
+                    ],
+                },
+                store_name: 'ome_ngff',
          
                 //storeName: 'mnist_store',
                 //x_key: "/densmap/x_coords",

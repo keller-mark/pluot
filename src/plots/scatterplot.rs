@@ -6,21 +6,25 @@ use vello::{
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
-use crate::{utils::RenderContext};
+use crate::utils::{RenderContext, PlotParams};
 
 use skrifa::MetadataProvider;
 
 pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the Zarr store.
     let store = context.store;
-    let x_array_path = context.params.x_key.as_ref().expect("X key not set");
-    let y_array_path = context.params.y_key.as_ref().expect("Y key not set");
-    let labels_array_path = context.params.color_key.as_ref().expect("Color key not set");
 
+    let PlotParams::Scatterplot(scatterplot_params) = &context.params.plot_params else {
+      panic!("Expected scatterplot params");
+    };
 
-    let x_array_future = zarrs::array::Array::async_open(store.clone(), &x_array_path);
-    let y_array_future = zarrs::array::Array::async_open(store.clone(), &y_array_path);
-    let labels_array_future = zarrs::array::Array::async_open(store.clone(), &labels_array_path);
+    let x_array_path = &scatterplot_params.x_key.as_ref();
+    let y_array_path = &scatterplot_params.y_key.as_ref();
+    let labels_array_path = scatterplot_params.color_key.as_ref().expect("Color key");
+
+    let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
+    let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
+    let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
 
     // Wait for all futures to complete
     let arr_open_results = futures::join!(x_array_future, y_array_future, labels_array_future);
@@ -144,7 +148,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
     let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
     let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
-    let point_size_px: f32 = context.params.point_radius.unwrap_or(5.0);
+    let point_size_px: f32 = scatterplot_params.point_radius.unwrap_or(5.0);
     let _pad0: f32 = 0.0;
     let viewport_w = context.params.width as f32;
     let viewport_h = context.params.height as f32;

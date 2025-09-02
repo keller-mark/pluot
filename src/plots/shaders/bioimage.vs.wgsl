@@ -1,9 +1,14 @@
 struct Uniforms {
     camera_view: mat4x4<f32>,
-    point_size_px: f32,   // diameter in pixels, unused
-    _pad0: f32,
     viewport_size: vec2<f32>, // (width, height) in pixels
-    color: vec4<f32>,     // rgba color for points, unused
+
+    num_channels: u32,
+    _pad0: f32,
+    
+    // See "runtime sized arrays" info
+    // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-wgsl.html#runtime-sized-arrays
+    channel_windows: array<vec4<f32>, 8>,
+    channel_colors: array<vec4<f32>, 8>,
 };
 
 struct VSOut {

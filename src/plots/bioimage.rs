@@ -2,7 +2,7 @@ use core::num;
 use std::borrow::Cow;
 
 use vello::wgpu::{self, include_wgsl};
-use crate::{utils::RenderContext};
+use crate::utils::{RenderContext, PlotParams};
 use crate::{log};
 
 use ome_zarr_metadata::v0_5::{RelaxedOmeFields};
@@ -10,6 +10,10 @@ use ome_zarr_metadata::v0_5::{RelaxedOmeFields};
 pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the Zarr store.
     let store = context.store;
+
+    let PlotParams::Bioimage(bioimage_params) = &context.params.plot_params else {
+      panic!("Expected bioimage params");
+    };
 
     // Get the OME-NGFF metadata for the image.
     // See https://github.com/zarrs/ome_zarr_metadata/blob/main/src/v0_5.rs
@@ -69,7 +73,14 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let img_h = lowres_array.shape()[y_dim_i];
     log(&format!("Image dimensions: {} x {}", img_w, img_h));
 
-    let num_channels = 2;
+    let num_channels = bioimage_params.channel_indices.len();
+    
+    // Assert that there are the same number of colors and windows.
+    assert_eq!(num_channels, bioimage_params.channel_colors.len());
+    assert_eq!(num_channels, bioimage_params.channel_windows.len());
+
+    // TODO: actually use the channel indices.
+
 
     // Read the pixel data using a slice that selects the first z, c, and t indices.
     
@@ -151,15 +162,6 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         texture_size,
     );
 
-    // Create uniforms matching the WGSL layout
-    // struct Uniforms {
-    //   camera_view: mat4x4<f32>,
-    //   point_size_px: f32,
-    //   _pad0: f32,
-    //   viewport_size: vec2<f32>,
-    //   color: vec4<f32>
-    // }
-
     // TODO: use the camera_view and derived values up above, to determine which multiscale to load, etc.
 
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
@@ -212,14 +214,26 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
 
-    // TODO: simplify the uniforms.
-    let point_size_px: f32 = context.params.point_radius.unwrap_or(5.0);
-    let _pad0: f32 = 0.0;
+    // Define the uniforms, matching the WGSL layout.
+    // struct Uniforms {
+    //   camera_view: mat4x4<f32>,
+    //   viewport_size: vec2<f32>,
+    //   num_channels: u32,
+    //   _pad: f32,
+    //   channel_windows: array<vec4<f32>>,
+    //   channel_colors: array<vec4<f32>>,
+    // }
+
+    // Note: 'uniform' storage requires that array elements are aligned to 16 bytes,
+    // but array element of type 'vec2<f32>' has a stride of 8 bytes. Consider using a vec4 instead.
+    
     let viewport_w = context.params.width as f32;
     let viewport_h = context.params.height as f32;
-    let color = [1.0_f32, 0.0, 0.0, 1.0];
 
-    let mut uniform_bytes: Vec<u8> = Vec::with_capacity((16+8) * 4);
+    let MAX_NUM_CHANNELS = 8;
+    // We can only have one runtime-sized array in a struct, so we instead need to pad the per-channel arrays to a fixed size.
+
+    let mut uniform_bytes: Vec<u8> = Vec::with_capacity((2 + 16 + 1 + (MAX_NUM_CHANNELS * (4 + 4))) * 4);
 
     // Log the computed values for debugging.
     // log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
@@ -227,10 +241,45 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     for f in camera_view.iter() {
         uniform_bytes.extend_from_slice(&f.to_ne_bytes());
     }
-    for f in [point_size_px, _pad0, viewport_w, viewport_h].iter() {
+    for f in [viewport_w, viewport_h].iter() {
         uniform_bytes.extend_from_slice(&f.to_ne_bytes());
     }
-    for c in color { uniform_bytes.extend_from_slice(&c.to_ne_bytes()); }
+    uniform_bytes.extend_from_slice(&(num_channels as u32).to_ne_bytes());
+    // Pad to vec4 with one unused float for _pad.
+    uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+
+    
+
+    for w in bioimage_params.channel_windows.iter() {
+        uniform_bytes.extend_from_slice(&w.0.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&w.1.to_ne_bytes());
+        // Pad to vec4 with two unused floats.
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+    }
+    // Pad the windows to MAX_NUM_CHANNELS with (0.0, 1.0)
+    for _ in num_channels..MAX_NUM_CHANNELS {
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        // Pad to vec4 with two unused floats.
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+    }
+    for c in bioimage_params.channel_colors.iter() {
+        uniform_bytes.extend_from_slice(&c.0.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&c.1.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&c.2.to_ne_bytes());
+        // Pad to vec4 with one unused float.
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+    }
+    // Pad the colors to MAX_NUM_CHANNELS.
+    for _ in num_channels..MAX_NUM_CHANNELS {
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+        // Pad to vec4 with one unused float.
+        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+    }
 
     let uniform_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Uniform Buffer"),
@@ -247,7 +296,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
             wgpu::BindGroupLayoutEntry {
                 // The uniforms buffer.
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,

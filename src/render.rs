@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Arc};
 
-pub use crate::utils::RenderParams;
+pub use crate::utils::{RenderParams, PlotParams};
 use crate::utils::RenderContext;
 use crate::zarr::{AsyncZarritaStore};
 use crate::plots;
@@ -120,7 +120,6 @@ where
 pub async fn render(params: RenderParams) -> Vec<u8> {
     let width = params.width;
     let height = params.height;
-    let plot_type = &params.plot_type;
     let store_name = &params.store_name;
 
     // The Instance is the context for all other wgpu objects.
@@ -213,14 +212,14 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     };
 
     // Plot type-specific rendering logic.
-    match plot_type.as_str() {
-        "triangle" => {
+    match params.plot_params {
+        PlotParams::Triangle => {
             plots::triangle::render_triangle(&mut context, &mut encoder).await;
         },
-        "scatterplot" => {
+        PlotParams::Scatterplot(_) => {
             plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await;
         },
-        "bioimage" => {
+        PlotParams::Bioimage(_) => {
             plots::bioimage::render_bioimage(&mut context, &mut encoder).await;
         },
         _ => panic!("Unsupported plot type"),
