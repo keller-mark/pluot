@@ -4,7 +4,7 @@
 
 use wasm_bindgen_test::*;
 use wasm_bindgen::prelude::*;
-use pluot::{render_wasm, utils::RenderParams};
+use pluot::{render_wasm, RenderParams};
 
 wasm_bindgen_test_configure!(run_in_browser);
 

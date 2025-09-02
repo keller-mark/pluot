@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::sync::Arc;
-use zarrs::storage::ReadableListableStorage;
 use zarrs::filesystem::FilesystemStore;
 
 
