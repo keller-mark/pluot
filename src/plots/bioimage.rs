@@ -30,10 +30,10 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
        attrs.get("ome").expect("OME").clone()
     ).expect("OME attributes");
 
-    log(&format!(
+    /*log(&format!(
         "The OME fields are:\n{:#?}\n",
         ome_fields
-    ));
+    ));*/
     
     let multiscales = ome_fields.multiscales
         .expect("Expected the OME-NGFF image to contain a multiscale image. Other OME-NGFF types are not yet supported.");
@@ -71,7 +71,8 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
 
     let img_w = lowres_array.shape()[x_dim_i];
     let img_h = lowres_array.shape()[y_dim_i];
-    log(&format!("Image dimensions: {} x {}", img_w, img_h));
+    
+    // log(&format!("Image dimensions: {} x {}", img_w, img_h));
 
     let num_channels = bioimage_params.channel_indices.len();
     
@@ -104,8 +105,6 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     let ch1_arr = lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice)
         .await.expect("Read pixel data");
 
-    log(&format!("Read array 0 with shape {:?}", ch0_arr.shape()));
-    log(&format!("Read array 1 with shape {:?}", ch1_arr.shape()));
 
     // Concatenate the channel data into a single vector.
     // TODO: is this the most efficient way / use the minimal number of copies?

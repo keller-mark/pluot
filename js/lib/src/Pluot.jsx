@@ -146,31 +146,43 @@ export function Pluot(props) {
                 //targetY, // No longer used
                 camera_view: viewMatrix,
                 plot_id: 'my_plot',
-                // plotType,
-                // storeName: 'gaussian_quantiles_store',
-                // x_key: "/n_1000000/x_coords",
-                // y_key: "/n_1000000/y_coords",
-                // color_key: "/n_1000000/class_labels",
-                // point_radius: 6.0,
 
+                /*
+                plot_type: 'Scatterplot',
+                store_name: 'gaussian_quantiles_store',
+                plot_params: {
+                    x_key: "/n_1000000/x_coords",
+                    y_key: "/n_1000000/y_coords",
+                    color_key: "/n_1000000/class_labels",
+                    point_radius: 6.0,
+                }
+                */
+                
+                /*
+                plot_type: 'Scatterplot',
+                store_name: 'mnist_store',
+                plot_params: {
+                    x_key: "/densmap/x_coords",
+                    y_key: "/densmap/y_coords",
+                    color_key: "/densmap/class_labels",
+                    point_radius: 6.0,
+                }
+                */
+                
                 plot_type: 'Bioimage',
+                store_name: 'ome_ngff',
                 plot_params: {
                     channel_indices: [0, 1],
                     channel_windows: [
-                        [0.0, 1.0],
-                        [0.0, 1.0],
+                        [0.0, 0.1],
+                        [0.0, 0.2],
                     ],
                     channel_colors: [
                         [1.0, 0.0, 0.0],
                         [0.0, 1.0, 1.0],
                     ],
                 },
-                store_name: 'ome_ngff',
-         
-                //storeName: 'mnist_store',
-                //x_key: "/densmap/x_coords",
-                //y_key: "/densmap/y_coords",
-                //color_key: "/densmap/class_labels",
+                
             };
             wasm.render_wasm(renderParams).then(arr => {
                 // TODO: is there a more efficient way to do this?
