@@ -15,3 +15,5 @@ async def test_render_to_array():
     assert arr.shape == (200, 100, 4)
     assert arr.dtype == 'uint8'
     assert arr.sum() == 10200000
+
+# TODO: test that a render call that internally uses the Vello renderer can be run twice in a row successfully.
