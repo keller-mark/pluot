@@ -292,7 +292,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &scatter_view,
+                view: &context.view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -318,6 +318,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
 
 
     // 2) Vello scene with text.
+    /* 
     crate::plots::text::add_text_to_scene(&mut context.vello_scene);
 
 
@@ -335,5 +336,5 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
     });
 
     crate::render::overlay_pass(context, encoder, &scatter_tex, &scatter_view);
-
+    */
 }

@@ -1,6 +1,6 @@
 #![cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 
-use pluot::{render, RenderParams};
+use pluot::{render, utils::RenderParams};
 
 #[tokio::test]
 async fn test_render_triangle() {
