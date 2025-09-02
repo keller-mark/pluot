@@ -1,7 +1,7 @@
 use core::num;
 use std::borrow::Cow;
 
-use vello::wgpu::{self, include_wgsl};
+use wgpu::{self, include_wgsl};
 use crate::utils::{RenderContext, PlotParams};
 use crate::{log};
 
@@ -364,11 +364,13 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         cache: None,
     });
 
+    let out_view = context.out_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &context.view,
+                view: &out_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {

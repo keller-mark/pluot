@@ -1,10 +1,10 @@
-use vello::wgpu;
-use vello::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
-use vello::{
+use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
+/*use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
-};
+};*/
 
+use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,7 +21,6 @@ static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = O
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
-    static VELLO_RENDERER: RefCell<Option<Renderer>> = RefCell::new(None);
 }
 
 async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
@@ -89,66 +88,6 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
     }
 }
 
-pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
-where
-    F: FnOnce(&mut Renderer) -> R,
-{
-    VELLO_RENDERER.with(|renderer| {
-        // Check if already initialized
-        if renderer.borrow().is_none() {
-            let vello_renderer = Renderer::new(
-                device,
-                RendererOptions {
-                    use_cpu: false,
-                    antialiasing_support: AaSupport::all(),
-                    num_init_threads: std::num::NonZeroUsize::new(1),
-                    pipeline_cache: None,
-                },
-            ).expect("create vello renderer");
-
-            *renderer.borrow_mut() = Some(vello_renderer);
-        }
-
-        f(renderer.borrow_mut().as_mut().unwrap())
-    })
-}
-/* 
-// TODO: something is preventing running the same render call twice in a row in Python. On the second call I see the error:
-Buffer[Id(6,1)] does not exist
-stack backtrace:
-   0:        0x11c20fd94 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::h5ae7a3fa6eb328a3
-   1:        0x11c0863ec - core::fmt::write::h030214d4eb7a507f
-   2:        0x11c20f59c - std::io::Write::write_fmt::h74c29e4e72233bfb
-   3:        0x11c20f470 - std::panicking::rust_panic_with_hook::h2dbff7028f972dd1
-   4:        0x11c22d828 - std::panicking::begin_panic_handler::{{closure}}::h221494348fd9cee9
-   5:        0x11c22d798 - std::sys::backtrace::__rust_end_short_backtrace::h7adc940a992edc37
-   6:        0x11c22dbdc - __rustc[b55d4bfdbafc8d45]::rust_begin_unwind
-   7:        0x11c3ea3d4 - core::panicking::panic_fmt::h34e6ceb1caea0f27
-   8:        0x11c2ad454 - wgpu_core::storage::Storage<T>::get::h9df8cba1b289d9e7
-   9:        0x11c2d1468 - wgpu_core::registry::Registry<T>::get::h0284d07cca9bdcbf
-  10:        0x11c28fce4 - wgpu::api::queue::Queue::write_buffer::h9c24ad05ca81ba6e
-  11:        0x11c253388 - vello::wgpu_engine::WgpuEngine::run_recording::h38da7b9cbfec7c40
-
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
-where
-    F: FnOnce(&mut Renderer) -> R,
-{
-    // Re-create every time?
-    let mut vello_renderer = Renderer::new(
-            device,
-            RendererOptions {
-                use_cpu: false,
-                antialiasing_support: AaSupport::all(),
-                num_init_threads: std::num::NonZeroUsize::new(1),
-                pipeline_cache: None,
-            },
-        ).expect("create vello renderer");
-    f(&mut vello_renderer)
-}
-*/
-
 
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
@@ -169,7 +108,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // Create a texture to render to.
     let texture_desc = TextureDescriptor {
         // Debug label of the texture. This will show up in graphics debuggers for easy identification.
-        label: Some("Render Texture"),
+        label: Some("Final Render Texture"),
         // Size of the texture. All components must be greater than zero.
         // For a regular 1D/2D texture, the unused sizes will be 1.
         // For 2DArray textures, Z is the number of 2D textures in that array.
@@ -190,13 +129,12 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         view_formats: &[],
     };
     let texture = device.create_texture(&texture_desc);
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
+    //let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
 
     // Create vello scene and texture.
     let vello_tex = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Vello Text Overlay Texture"),
+        label: Some("Shape/Text Overlay Texture"),
         size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         mip_level_count: 1,
         sample_count: 1,
@@ -205,11 +143,11 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::STORAGE_BINDING,
+            | wgpu::TextureUsages::STORAGE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let vello_view = vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut vello_scene = Scene::new();
+    //let mut vello_scene = Scene::new();
 
 
     // Create a buffer to store the output (RGBA8)
@@ -237,13 +175,12 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         store: &store,
         device: &device,
         texture_desc: &texture_desc,
-        view: &view,
+        out_tex: &texture,
         queue: &queue,
         params: &params,
 
         vello_tex: &vello_tex,
-        vello_view: &vello_view,
-        vello_scene: &mut vello_scene,
+        //vello_scene: &mut vello_scene,
     };
 
     // Plot type-specific rendering logic.
@@ -318,7 +255,11 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 }
 
 
-pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, background_tex: &wgpu::Texture, background_view: &wgpu::TextureView) {
+pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, background_tex: &wgpu::Texture) {
+
+    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let background_view = background_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
     // 3) Composition pass: sample tri_tex then text_tex and draw to swapchain
     let overlay_vs = r#"
         struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -431,16 +372,18 @@ pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::Command
         label: Some("BG foreground (vello scene)"),
         layout: &overlay_bgl,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&context.vello_view) },
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&vello_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&overlay_sampler) },
         ],
     });
+
+    let out_view = context.out_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Composite Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &context.view,
+                view: &out_view,
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {

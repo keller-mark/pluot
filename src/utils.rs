@@ -1,6 +1,5 @@
 use crate::zarr::{AsyncZarritaStore};
 use std::sync::Arc;
-use vello::wgpu;
 
 // TODO: define RenderParams here (rather than lib.rs).
 // Then, pass RenderParams via RenderContext.
@@ -53,13 +52,12 @@ pub struct RenderContext<'a> {
     pub store: &'a Arc<AsyncZarritaStore>,
     pub device: &'a wgpu::Device,
     pub texture_desc: &'a wgpu::TextureDescriptor<'a>,
-    pub view: &'a wgpu::TextureView,
+    pub out_tex: &'a wgpu::Texture,
     pub queue: &'a wgpu::Queue,
     pub params: &'a RenderParams,
 
     pub vello_tex: &'a wgpu::Texture,
-    pub vello_view: &'a wgpu::TextureView,
-    pub vello_scene: &'a mut vello::Scene,
+    //pub vello_scene: &'a mut vello::Scene,
 }
 
 impl Default for RenderParams {

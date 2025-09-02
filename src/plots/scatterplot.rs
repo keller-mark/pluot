@@ -1,14 +1,15 @@
 use std::borrow::Cow;
 
-use vello::wgpu::{self, include_wgsl};
+use wgpu::{self, include_wgsl};
+/* 
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
+*/
+use crate::plots::vger_text::with_vger_renderer;
 use crate::utils::{RenderContext, PlotParams};
-
-use skrifa::MetadataProvider;
 
 pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // Get x and y data from the Zarr store.
@@ -292,7 +293,7 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &context.view,
+                view: &scatter_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -319,26 +320,36 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         drop(render_pass);
     }
 
+    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
+    // === 4) Render with Vger into our texture ===
+    with_vger_renderer(context.device, context.queue, |vger| {
+        vger.begin(512.0, 512.0, 1.0);
+        let cyan = vger.color_paint(vger::color::Color::CYAN);
+        vger.fill_circle([100.0, 100.0], 20.0, cyan);
 
-    // 2) Vello scene with text.
-    /* 
-    crate::plots::text::add_text_to_scene(&mut context.vello_scene);
+        vger.translate([32.0, 256.0]);
+        vger.text("Hello, world!", 24, vger::color::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, None);
 
+        let desc = wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &vello_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        };
 
-    // === 4) Render with Vello into our texture ===
-    let params = vello::RenderParams {
-        base_color: Color::from_rgba8(0, 0, 0, 0), // transparent
-        width: context.params.width,
-        height: context.params.height,
-        antialiasing_method: AaConfig::Msaa16,
-    };
-    crate::render::with_vello_renderer(context.device, |vello_renderer| {
-        vello_renderer
-            .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
-            .expect("vello render_to_texture");
+        vger.encode(&desc);
     });
 
-    crate::render::overlay_pass(context, encoder, &scatter_tex, &scatter_view);
-    */
+    crate::render::overlay_pass(context, encoder, &scatter_tex);
+    
 }
