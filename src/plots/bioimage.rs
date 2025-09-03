@@ -59,19 +59,25 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         .await.expect("Open lowres dataset array");
 
     // Do not assume the dimension order, or that there are Z/C/T dims.
-    let z_index = 99;
+    let z_index = bioimage_params.target_z.unwrap_or(99);
     let c_index = 0;
     let t_index = 0;
 
     let x_dim_i = first_multiscale.axes.iter().position(|a| a.name == "x").expect("x axis");
     let y_dim_i = first_multiscale.axes.iter().position(|a| a.name == "y").expect("y axis");
-    let z_dim_i = first_multiscale.axes.iter().position(|a| a.name == "z");
+    let z_dim_i_opt = first_multiscale.axes.iter().position(|a| a.name == "z");
     let c_dim_i = first_multiscale.axes.iter().position(|a| a.name == "c");
     let t_dim_i = first_multiscale.axes.iter().position(|a| a.name == "t");
 
     let img_w = lowres_array.shape()[x_dim_i];
     let img_h = lowres_array.shape()[y_dim_i];
+
+    if let Some(z_dim_i) = z_dim_i_opt {
+        let img_num_z = lowres_array.shape()[z_dim_i];
+        assert!(z_index < img_num_z as u32, "z_index {z_index} out of bounds for image with {img_num_z} z slices");
+    }
     
+
     // log(&format!("Image dimensions: {} x {}", img_w, img_h));
 
     let num_channels = bioimage_params.channel_indices.len();
@@ -88,14 +94,14 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
     let ch0_arr_slice = zarrs::array_subset::ArraySubset::new_with_start_shape(
-        vec![0, z_index, 0, 0], // start
+        vec![0, z_index as u64, 0, 0], // start
         vec![1, 1, img_h as u64, img_w as u64], // shape
     ).expect("Compatible dimensionality");
 
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
     let ch1_arr_slice = zarrs::array_subset::ArraySubset::new_with_start_shape(
-        vec![1, z_index, 0, 0], // start
+        vec![1, z_index as u64, 0, 0], // start
         vec![1, 1, img_h as u64, img_w as u64], // shape
     ).expect("Compatible dimensionality");
 

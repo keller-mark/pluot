@@ -17,6 +17,7 @@ pub struct BioimageRenderParams {
     pub channel_indices: Vec<u32>,
     pub channel_windows: Vec<(f32, f32)>,
     pub channel_colors: Vec<(f32, f32, f32)>, // RGB colors as floats in [0.0, 1.0]
+    pub target_z: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

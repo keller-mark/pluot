@@ -70,12 +70,12 @@ export function Pluot(props) {
     const [targetY, setTargetY] = useState(0.0);
     */
     const [pointRadius, setPointRadius] = useState(5.0);
+
     const [ch0Window, setCh0Window] = useState([0.0, 0.1]);
     const [ch1Window, setCh1Window] = useState([0.0, 0.1]);
-
     const [ch0color, setCh0Color] = useState([1.0, 0.0, 0.0]);
     const [ch1color, setCh1Color] = useState([0.0, 1.0, 0.0]);
-    
+    const [zIndex, setZIndex] = useState(99);
 
     useLayoutEffect(() => {
         const initWasm = async () => {
@@ -163,7 +163,7 @@ export function Pluot(props) {
                 */
                 
 
-                
+                /*
                 plot_type: 'Scatterplot',
                 store_name: 'gaussian_quantiles_store',
                 plot_params: {
@@ -172,7 +172,7 @@ export function Pluot(props) {
                     color_key: "/n_1000000/class_labels",
                     point_radius: pointRadius,
                 }
-                
+                */
                 
                 
                 
@@ -187,10 +187,11 @@ export function Pluot(props) {
                 }
                 */
                 
-                /*
+                
                 plot_type: 'Bioimage',
                 store_name: 'ome_ngff',
                 plot_params: {
+                    target_z: zIndex,
                     channel_indices: [0, 1],
                     channel_windows: [
                         ch0Window,
@@ -201,7 +202,7 @@ export function Pluot(props) {
                         ch1color,
                     ],
                 },
-                */
+                
 
                 
             };
@@ -242,7 +243,7 @@ export function Pluot(props) {
         } else {
             requestAnimationFrame(animate);
         }
-    }, [isWasmReady, viewMatrix, pointRadius, ch0Window, ch1Window, ch0color, ch1color]);
+    }, [isWasmReady, viewMatrix, pointRadius, ch0Window, ch1Window, ch0color, ch1color, zIndex]);
 
     return (
         <>
@@ -396,7 +397,18 @@ export function Pluot(props) {
                     }}
                 />
             </div>
-            
+            <label>Z index:</label>
+            <input
+                type="range"
+                min={0}
+                max={236}
+                step={1}
+                value={zIndex}
+                onChange={(e) => {
+                    const newValue = parseInt(e.target.value);
+                    setZIndex(newValue);
+                }}
+            />
         </>
     );
 }
