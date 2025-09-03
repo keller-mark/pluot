@@ -161,6 +161,7 @@ export function Pluot(props) {
                 plot_type: 'Triangle',
                 store_name: 'gaussian_quantiles_store',
                 */
+                
 
                 
                 plot_type: 'Scatterplot',
@@ -171,6 +172,7 @@ export function Pluot(props) {
                     color_key: "/n_1000000/class_labels",
                     point_radius: pointRadius,
                 }
+                
                 
                 
                 

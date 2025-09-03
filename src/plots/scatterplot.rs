@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use wgpu::{self, include_wgsl};
+use crate::wgpu::{self, include_wgsl};
 /* 
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},

@@ -3,19 +3,20 @@ use std::cell::RefCell;
 
 use skrifa::MetadataProvider;
 
-/*use vello::{
+use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
 };
-*/
+
 
 thread_local! {
     static VELLO_RENDERER: RefCell<Option<Renderer>> = RefCell::new(None);
 }
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
-
+/* 
+#[cfg(target_arch = "wasm32")]
 pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
 where
     F: FnOnce(&mut Renderer) -> R,
@@ -39,6 +40,25 @@ where
         f(renderer.borrow_mut().as_mut().unwrap())
         
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+*/
+pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
+where
+    F: FnOnce(&mut Renderer) -> R,
+{
+    let mut vello_renderer = Renderer::new(
+        device,
+        RendererOptions {
+            use_cpu: false,
+            antialiasing_support: AaSupport::all(),
+            num_init_threads: std::num::NonZeroUsize::new(1),
+            pipeline_cache: None,
+        },
+    ).expect("create vello renderer");
+
+    f(&mut vello_renderer)
 }
 
 /// Add shapes to a vello scene. This does not actually render the shapes, but adds them

@@ -1,7 +1,7 @@
 use core::num;
 use std::borrow::Cow;
 
-use wgpu::{self, include_wgsl};
+use crate::wgpu::{self, include_wgsl};
 use crate::utils::{RenderContext, PlotParams};
 use crate::{log};
 

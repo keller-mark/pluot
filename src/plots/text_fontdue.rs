@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use wgpu::util::DeviceExt;
+use crate::wgpu::util::DeviceExt;
 
 use fontdue::{Font, FontSettings};
 use fontdue::layout::{Layout, LayoutSettings, CoordinateSystem, TextStyle};

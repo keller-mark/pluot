@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
-use wgpu::{self, include_wgsl};
-/* 
+use crate::wgpu::{self, include_wgsl};
+
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
-use crate::plots::vello_text::with_vello_renderer;
-*/
+
 use crate::utils::{RenderContext, PlotParams};
 
 
@@ -94,7 +93,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &out_view, // Render directly into output view. TODO: change this if rendering to offscreen texture, then rendering shapes/text, then overlaying.
+                view: &tri_view, // Render directly into output view. TODO: change this if rendering to offscreen texture, then rendering shapes/text, then overlaying.
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -113,12 +112,13 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         // End the renderpass.
         drop(render_pass);
     }
-    /* 
+
+    /*
     println!("Rendered scatterplot");
 
     // 2) Vello scene with text.
     
-    crate::plots::vello_text::add_text_to_scene(&mut context.vello_scene);
+    crate::plots::text_vello::add_text_to_scene(&mut context.vello_scene);
 
     println!("Added text to scene");
 
@@ -130,16 +130,19 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         antialiasing_method: AaConfig::Msaa16,
     };
 
-    with_vello_renderer(context.device, |vello_renderer| {
+    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+    crate::plots::text_vello::with_vello_renderer(context.device, |vello_renderer| {
         vello_renderer
-            .render_to_texture(context.device, context.queue, &context.vello_scene, &context.vello_view, &params)
+            .render_to_texture(context.device, context.queue, &context.vello_scene, &vello_view, &params)
             .expect("vello render_to_texture");
     });
 
     println!("Rendered vello scene");
 
-    crate::render::overlay_pass(context, encoder, &tri_tex, &tri_view);
+    crate::render::overlay_pass(context, encoder, &tri_tex);
 
     println!("Overlayed triangle and text");
     */
+    crate::render::overlay_pass(context, encoder, &tri_tex);
 }

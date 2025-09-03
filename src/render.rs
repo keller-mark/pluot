@@ -1,4 +1,4 @@
-use wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
+use crate::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 /*use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
@@ -141,13 +141,20 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         dimension: wgpu::TextureDimension::D2,
         // Important: Use a non-sRGB UNORM format for Vello offscreen rendering.
         // Note: Vello requires TextureUsages::STORAGE_BINDING, which requires Rgba8Unorm (incompatible with Rgba8UnormSrgb format)
+        /*format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::STORAGE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,*/
+        
+        // For VGER:
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    //let mut vello_scene = Scene::new();
+    //let mut vello_scene = vello::Scene::new();
 
 
     // Create a buffer to store the output (RGBA8)

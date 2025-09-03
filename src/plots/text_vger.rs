@@ -7,7 +7,7 @@ thread_local! {
     static VGER_RENDERER: RefCell<Option<Vger>> = RefCell::new(None);
 }
 
-const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
+//const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
 #[cfg(target_arch = "wasm32")]
 pub fn with_vger_renderer<F, R>(device: &wgpu::Device, queue: &wgpu::Queue, f: F) -> R
@@ -23,9 +23,8 @@ where
                 wgpu::TextureFormat::Rgba8UnormSrgb,
             );
 
-            let settings = fontdue::FontSettings::default();
-
-            vger_renderer.glyph_cache.font = fontdue::Font::from_bytes(FONT_BYTES, settings).unwrap();
+            //let settings = fontdue::FontSettings::default();
+            //vger_renderer.glyph_cache.font = fontdue::Font::from_bytes(FONT_BYTES, settings).unwrap();
 
             *renderer.borrow_mut() = Some(vger_renderer);
         }
@@ -45,8 +44,8 @@ where
         wgpu::TextureFormat::Rgba8UnormSrgb,
     );
 
-    let settings = fontdue::FontSettings::default();
-    vger_renderer.glyph_cache.font = fontdue::Font::from_bytes(FONT_BYTES, settings).unwrap();
+    //let settings = fontdue::FontSettings::default();
+    //vger_renderer.glyph_cache.font = fontdue::Font::from_bytes(FONT_BYTES, settings).unwrap();
     
     f(&mut vger_renderer)
 }
