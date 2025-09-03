@@ -146,28 +146,20 @@ pub struct TwoText {
     pub height: f64,
     pub text: String,
 
-    /** @member {string} */
     pub fill: String,
-    /** @member {number} */
     pub fontsize: f64,
-    /** @member {string} */
     pub font: String,
-    /** Corresponds to canvas `context.textAlign`.
-     * Possible values: "start", "middle", "end".
-     * @member {string} */
+    // Corresponds to canvas `context.textAlign`.
+    // Possible values: "start", "middle", "end".
     pub align: TwoTextAlign,
-    /** Corresponds to canvas `context.textBaseline`.
-     * Possible values: "alphabetic", "top", "middle", "bottom".
-     * @member {string} */
+    // Corresponds to canvas `context.textBaseline`.
+    // Possible values: "alphabetic", "top", "middle", "bottom".
     pub baseline: TwoTextBaseline,
-    /** @member {number} */
     pub opacity: f64,
-    /** In radians.
-     * @member {number} */
+    // In radians.
     pub rotation: Option<f64>,
-    /** How text that overflows the bounding box should be dealt with.
-     * Possible values: null, "clip", "ellipsis".
-     * @member {string} */
+    // How text that overflows the bounding box should be dealt with.
+    // Possible values: null, "clip", "ellipsis".
     pub overflow: Option<TwoTextOverflow>,
 }
 
