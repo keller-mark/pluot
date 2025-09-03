@@ -14,6 +14,7 @@ const DEFAULT_VIEW = new Float32Array([
 //const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
 const baseUrl = "http://localhost:5173/@data/mnist.zarr";
 
+// TODO: move store registration into demo subpackage and via props (rather than constructing stores in lib subpackage).
 const stores = {
   // TODO: wrap store in a cache.
   // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
