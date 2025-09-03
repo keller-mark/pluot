@@ -70,6 +70,7 @@ kurbo = { version = "0.11.3", default-features = false }
 # Trying VGER for shape/text rendering.
 vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
 fontdue = "0.9.x"
+glam = "0.30.5"
 
 
 

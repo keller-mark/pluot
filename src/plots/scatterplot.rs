@@ -8,7 +8,7 @@ use vello::{
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
 */
-use crate::plots::vger_text::with_vger_renderer;
+use crate::plots::text_vger::with_vger_renderer;
 use crate::utils::{RenderContext, PlotParams};
 
 pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
@@ -350,6 +350,8 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         vger.encode(&desc);
     });
 
+    crate::plots::text_fontdue::render_text(context, encoder);
+
     crate::render::overlay_pass(context, encoder, &scatter_tex);
-    
+
 }

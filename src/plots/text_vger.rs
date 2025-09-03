@@ -20,7 +20,7 @@ where
             let mut vger_renderer = Vger::new(
                 Arc::new(device.clone()).clone(),
                 Arc::new(queue.clone()).clone(),
-                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
             );
 
             let settings = fontdue::FontSettings::default();
@@ -42,7 +42,7 @@ where
     let mut vger_renderer = Vger::new(
         Arc::new(device.clone()).clone(),
         Arc::new(queue.clone()).clone(),
-        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
     );
 
     let settings = fontdue::FontSettings::default();
