@@ -22,11 +22,19 @@ test_plain_rust = ["tokio"]
 [dependencies]
 
 # Python-specific dependencies
+# TODO: upgrade to pyo3, see https://github.com/developmentseed/obstore/pull/548
+# but serde-pyobject pins to <0.25 ...
+# See this PR: https://github.com/Jij-Inc/serde-pyobject/pull/21
+# TODO: switch from serde-pyobject to pythonize https://github.com/PyO3/pyo3/issues/566
+# See https://github.com/davidhewitt/pythonize
 pyo3 = { version = "0.23.3", optional = true, features = ["extension-module"] }
 serde-pyobject = { version = "0.6.2", optional = true }
-pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], optional = true }
+pyo3-async-runtimes = { version = "0.23.0", features = [
+    "tokio-runtime",
+], optional = true }
 # tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
 tokio = { version = "1.47.1", features = ["full"], optional = true }
+
 
 # Core dependencies
 bytemuck = "1.23.2"
@@ -41,7 +49,15 @@ serde = { version = "1.0.x", features = ["derive"] }
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 # Zarrs (ea23432)
-zarrs = { git = "https://github.com/zarrs/zarrs.git", rev = "ea23432", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async", "filesystem"] }
+zarrs = { git = "https://github.com/zarrs/zarrs.git", rev = "ea23432", default-features = false, features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    "filesystem",
+] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 
@@ -51,7 +67,7 @@ ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.gi
 serde_json = "1.0.143"
 
 # WebGPU
-wgpu = { version = "26.0.1" }
+#wgpu = { version = "26.0.1" }
 
 # Trying vello for shape/text rendering.
 # Vello (65eea2c4)
@@ -59,9 +75,11 @@ vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
 # Add wgpu as a direct dependency to enable the webgl feature. This is still not working in Firefox/Safari.
 # wgpu = { version = "26.0.1", features = ["webgl"] }
 # From https://github.com/linebender/vello/blob/main/Cargo.toml
-# Metadata reader and glyph scaler for OpenType fonts. 
-skrifa = { version = "0.36.0", default-features = false, features = ["autohint_shaping"] }
-# Primitive types for styling vector graphics. 
+# Metadata reader and glyph scaler for OpenType fonts.
+skrifa = { version = "0.36.0", default-features = false, features = [
+    "autohint_shaping",
+] }
+# Primitive types for styling vector graphics.
 # The version of kurbo used below should be kept in sync with the version of kurbo used by peniko.
 peniko = { version = "0.4.0", default-features = false }
 # A Rust library for manipulating curves.
@@ -71,8 +89,6 @@ kurbo = { version = "0.11.3", default-features = false }
 vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
 fontdue = "0.9.x"
 glam = "0.30.5"
-
-
 
 
 # For testing with local modified version of the rust-blosc-src crate.
@@ -126,14 +142,13 @@ lto = true
 codegen-units = 1
 
 
-
 # Need to use nightly version of `wasm-bindgen` and the other crates in its workspace.
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 [patch.crates-io]
-wasm-bindgen               = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-macro         = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-macro = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
 wasm-bindgen-macro-support = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-shared        = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-futures        = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-js-sys                     = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-web-sys                    = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-shared = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-futures = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+js-sys = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+web-sys = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }

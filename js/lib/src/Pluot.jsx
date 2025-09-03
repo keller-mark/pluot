@@ -158,8 +158,8 @@ export function Pluot(props) {
                 plot_id: 'my_plot',
 
                 
-                plot_type: 'Triangle',
-                store_name: 'gaussian_quantiles_store',
+                //plot_type: 'Triangle',
+                //store_name: 'gaussian_quantiles_store',
                 
                 
 
@@ -176,7 +176,8 @@ export function Pluot(props) {
                 
                 
                 
-                /*
+                
+                
                 plot_type: 'Scatterplot',
                 store_name: 'mnist_store',
                 plot_params: {
@@ -185,7 +186,7 @@ export function Pluot(props) {
                     color_key: "/densmap/class_labels",
                     point_radius: pointRadius,
                 }
-                */
+                
                 
                 /*
                 plot_type: 'Bioimage',

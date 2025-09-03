@@ -1,5 +1,5 @@
 use crate::wgpu;
-use crate::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
+use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 /*use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
@@ -9,13 +9,12 @@ use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock, Arc};
+use std::sync::{Arc, Mutex, OnceLock};
 
-pub use crate::utils::{RenderParams, PlotParams};
-use crate::utils::RenderContext;
-use crate::zarr::{AsyncZarritaStore};
 use crate::plots;
-
+use crate::utils::RenderContext;
+pub use crate::utils::{PlotParams, RenderParams};
+use crate::zarr::AsyncZarritaStore;
 
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
@@ -46,7 +45,7 @@ async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+pub async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // Check if already initialized
     let existing = GPU_CONTEXT.with(|ctx| ctx.borrow().clone());
     if let Some(context) = existing {
@@ -65,7 +64,7 @@ async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+pub async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // The tokio::test will fail if we rely on thread_local to cache the GPU context.
     // So we just create a new context each time for now.
 
@@ -77,7 +76,7 @@ async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
 pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
     let map_mutex = ZARR_STORES.get_or_init(|| Mutex::new(HashMap::new()));
     let map = map_mutex.lock().unwrap();
-    
+
     if let Some(store) = map.get(name) {
         store.clone()
     } else {
@@ -88,7 +87,6 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
             .clone()
     }
 }
-
 
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
@@ -101,7 +99,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
     // Does not have to be kept alive.
-    
+
     // The InstanceDescriptor has fields for which backends wgpu will choose during instantiation,
     // and which DX12 shader compiler wgpu will use.
     let (device, queue) = get_or_init_gpu_context().await;
@@ -113,7 +111,11 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         // Size of the texture. All components must be greater than zero.
         // For a regular 1D/2D texture, the unused sizes will be 1.
         // For 2DArray textures, Z is the number of 2D textures in that array.
-        size: Extent3d { width, height, depth_or_array_layers: 1 },
+        size: Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         // Mip count of texture. For a texture with no extra mips, this must be 1.
         mip_level_count: 1,
         // Sample count of texture. If this is not 1, texture must have [BindingType::Texture::multisampled] set to true.
@@ -132,11 +134,14 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     let texture = device.create_texture(&texture_desc);
     //let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-
     // Create vello scene and texture.
     let vello_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Shape/Text Overlay Texture"),
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -147,19 +152,17 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::STORAGE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
-        
+
         // For VGER:
-        /* 
+        /*
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
         */
-
         view_formats: &[],
     });
     //let mut vello_scene = vello::Scene::new();
-
 
     // Create a buffer to store the output (RGBA8)
     let bytes_per_pixel: u32 = 4;
@@ -198,13 +201,13 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     match params.plot_params {
         PlotParams::Triangle => {
             plots::triangle::render_triangle(&mut context, &mut encoder).await;
-        },
+        }
         PlotParams::Scatterplot(_) => {
             plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await;
-        },
+        }
         PlotParams::Bioimage(_) => {
             plots::bioimage::render_bioimage(&mut context, &mut encoder).await;
-        },
+        }
         _ => panic!("Unsupported plot type"),
     }
 
@@ -233,7 +236,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     // Map and await completion without blocking the browser thread
     let buffer_slice = output_buffer.slice(..);
-    
+
     #[cfg(target_arch = "wasm32")]
     {
         let (sender, receiver) = oneshot_channel();
@@ -245,6 +248,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        println!("Starting map_async");
         // See https://github.com/gfx-rs/wgpu/blob/c488bbe60447d28736c26c82a32cd87794b3bf1d/examples/features/src/framework.rs#L598
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             if result.is_err() {
@@ -252,10 +256,13 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             }
         });
         println!("Done map_async");
-        let _ = device.poll(wgpu::PollType::wait()).unwrap();
-    }
 
-    println!("Mapped output buffer");
+        // TODO: When called from python,
+        // does this device.poll need to be called outside of the pyo3_async_runtimes::tokio::future_into_py block?
+        // This seems to hang when called from a jupyter notebook (although only when vello is used to render something)
+        let _ = device.poll(wgpu::PollType::wait()).unwrap();
+        println!("Mapped output buffer");
+    }
 
     // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();
@@ -273,10 +280,14 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     pixels
 }
 
-
-pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder, background_tex: &wgpu::Texture) {
-
-    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
+pub fn overlay_pass(
+    context: &mut RenderContext<'_>,
+    encoder: &mut wgpu::CommandEncoder,
+    background_tex: &wgpu::Texture,
+) {
+    let vello_view = context
+        .vello_tex
+        .create_view(&wgpu::TextureViewDescriptor::default());
     let background_view = background_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
     // 3) Composition pass: sample tri_tex then text_tex and draw to swapchain
@@ -310,66 +321,76 @@ pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::Command
         }
     "#;
 
-    let overlay_vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Overlay VS"),
-        source: wgpu::ShaderSource::Wgsl(overlay_vs.into()),
-    });
-    let overlay_fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Overlay FS"),
-        source: wgpu::ShaderSource::Wgsl(overlay_fs.into()),
-    });
+    let overlay_vs_module = context
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Overlay VS"),
+            source: wgpu::ShaderSource::Wgsl(overlay_vs.into()),
+        });
+    let overlay_fs_module = context
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Overlay FS"),
+            source: wgpu::ShaderSource::Wgsl(overlay_fs.into()),
+        });
 
-    let overlay_bgl = context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Overlay BGL"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
+    let overlay_bgl = context
+        .device
+        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Overlay BGL"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                count: None,
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+    let overlay_pl = context
+        .device
+        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Overlay PL"),
+            bind_group_layouts: &[&overlay_bgl],
+            push_constant_ranges: &[],
+        });
+    let overlay_pipeline = context
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Overlay Pipeline"),
+            layout: Some(&overlay_pl),
+            vertex: wgpu::VertexState {
+                module: &overlay_vs_module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
-    });
-    let overlay_pl = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Overlay PL"),
-        bind_group_layouts: &[&overlay_bgl],
-        push_constant_ranges: &[],
-    });
-    let overlay_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Overlay Pipeline"),
-        layout: Some(&overlay_pl),
-        vertex: wgpu::VertexState {
-            module: &overlay_vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &overlay_fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: context.texture_desc.format,
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
+            fragment: Some(wgpu::FragmentState {
+                module: &overlay_fs_module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: context.texture_desc.format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
     let overlay_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("Overlay Sampler"),
@@ -379,24 +400,42 @@ pub fn overlay_pass(context: &mut RenderContext<'_>, encoder: &mut wgpu::Command
         ..Default::default()
     });
 
-    let bg_background = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("BG background (pre-vello)"),
-        layout: &overlay_bgl,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&background_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&overlay_sampler) },
-        ],
-    });
-    let bg_foreground = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("BG foreground (vello scene)"),
-        layout: &overlay_bgl,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&vello_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&overlay_sampler) },
-        ],
-    });
+    let bg_background = context
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("BG background (pre-vello)"),
+            layout: &overlay_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&background_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&overlay_sampler),
+                },
+            ],
+        });
+    let bg_foreground = context
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("BG foreground (vello scene)"),
+            layout: &overlay_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&vello_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&overlay_sampler),
+                },
+            ],
+        });
 
-    let out_view = context.out_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let out_view = context
+        .out_tex
+        .create_view(&wgpu::TextureViewDescriptor::default());
 
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

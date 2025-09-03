@@ -147,14 +147,14 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     crate::render::overlay_pass(context, encoder, &tri_tex);
     */
     
-    println!("Rendered triangle");
+    //println!("Rendered triangle");
 
     // 2) Vello scene with text.
     let mut scene = vello::Scene::new();
 
     crate::plots::text_vello::add_text_to_scene(&mut scene);
 
-    println!("Added text to scene");
+    //println!("Added text to scene");
 
     // === 4) Render with Vello into our texture ===
     let params = vello::RenderParams {
@@ -170,10 +170,10 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
             .expect("vello render_to_texture");
     });
 
-    println!("Rendered vello scene");
+    //println!("Rendered vello scene");
 
     crate::render::overlay_pass(context, encoder, &tri_tex);
 
-    println!("Overlayed triangle and text");
+    //println!("Overlayed triangle and text");
 
 }
