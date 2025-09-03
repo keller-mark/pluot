@@ -1,10 +1,10 @@
 use crate::wgpu;
-use crate::zarr::{AsyncZarritaStore};
+use crate::zarr::AsyncZarritaStore;
 use std::sync::Arc;
 
 // TODO: define RenderParams here (rather than lib.rs).
 // Then, pass RenderParams via RenderContext.
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ScatterplotRenderParams {
@@ -39,7 +39,6 @@ pub struct RenderParams {
     //pub zoom: Option<f32>,
     //pub target_x: Option<f32>,
     //pub target_y: Option<f32>,
-
     pub camera_view: Option<[f32; 16]>,
 
     #[serde(flatten)]
@@ -73,12 +72,7 @@ impl Default for RenderParams {
             camera_view: None,
             plot_id: "default_plot".to_string(),
             store_name: "default_store".to_string(),
-            plot_params: PlotParams::Scatterplot(ScatterplotRenderParams {
-                x_key: "PC1".to_string(),
-                y_key: "PC2".to_string(),
-                color_key: None,
-                point_radius: None,
-            }),
+            plot_params: PlotParams::Triangle,
         }
     }
 }

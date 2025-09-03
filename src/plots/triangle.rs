@@ -3,13 +3,12 @@ use std::borrow::Cow;
 use crate::wgpu;
 
 use vello::{
-    peniko::{Blob, Brush, Color, Fill, Font},
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
-    AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
+    peniko::{Blob, Brush, Color, Fill, Font},
+    AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene,
 };
 
-use crate::utils::{RenderContext, PlotParams};
-
+use crate::utils::{PlotParams, RenderContext};
 
 pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
@@ -28,56 +27,69 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         }
     "#;
 
-    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Vertex Shader"),
-        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
-    });
+    let vs_module = context
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Vertex Shader"),
+            source: wgpu::ShaderSource::Wgsl(vs_src.into()),
+        });
 
-    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Fragment Shader"),
-        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
-    });
+    let fs_module = context
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Fragment Shader"),
+            source: wgpu::ShaderSource::Wgsl(fs_src.into()),
+        });
 
-    let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
+    let render_pipeline_layout =
+        context
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
 
-    let render_pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: context.texture_desc.format,
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
+    let render_pipeline = context
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &vs_module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &fs_module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: context.texture_desc.format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
     // End render-specific things.
 
     // 1) Offscreen triangle target
     let tri_tex = context.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Triangle Offscreen Texture"),
-        size: wgpu::Extent3d { width: context.params.width, height: context.params.height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: context.params.width,
+            height: context.params.height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -111,9 +123,10 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         drop(render_pass);
     }
 
-    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
     /*
+      let vello_view = context
+         .vello_tex
+         .create_view(&wgpu::TextureViewDescriptor::default());
     // === Render with Vger into our texture ===
     crate::plots::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
         vger.begin(512.0, 512.0, 1.0);
@@ -146,8 +159,12 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
 
     crate::render::overlay_pass(context, encoder, &tri_tex);
     */
-    
+
     //println!("Rendered triangle");
+    /*
+    let vello_view = context
+        .vello_tex
+        .create_view(&wgpu::TextureViewDescriptor::default());
 
     // 2) Vello scene with text.
     let mut scene = vello::Scene::new();
@@ -175,5 +192,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     crate::render::overlay_pass(context, encoder, &tri_tex);
 
     //println!("Overlayed triangle and text");
+    */
 
+    crate::render::overlay_pass(context, encoder, &tri_tex);
 }

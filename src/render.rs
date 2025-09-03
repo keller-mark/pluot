@@ -213,20 +213,15 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
+        texture.as_image_copy(),
         wgpu::TexelCopyBufferInfo {
             buffer: &output_buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 // Must be 256-byte aligned on WebGPU
                 bytes_per_row: Some(padded_bytes_per_row),
-                rows_per_image: Some(height),
-                //rows_per_image: None,
+                //rows_per_image: Some(height),
+                rows_per_image: None,
             },
         },
         texture_desc.size,
@@ -248,20 +243,24 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        println!("Starting map_async");
+        // See https://github.com/lapce/floem/blob/5f4709b9c4806f0a21b3450bd9795c3472f8fc2e/vello/src/lib.rs#L595
+        //println!("Starting map_async");
         // See https://github.com/gfx-rs/wgpu/blob/c488bbe60447d28736c26c82a32cd87794b3bf1d/examples/features/src/framework.rs#L598
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             if result.is_err() {
                 panic!("Failed to map texture for reading");
             }
         });
-        println!("Done map_async");
+        //println!("Done map_async");
 
         // TODO: When called from python,
         // does this device.poll need to be called outside of the pyo3_async_runtimes::tokio::future_into_py block?
         // This seems to hang when called from a jupyter notebook (although only when vello is used to render something)
+
+        // TODO: look more closely into what Vello is doing.
+        // What is the Vello .render_to_texture function doing internally that is causing this to block?
         let _ = device.poll(wgpu::PollType::wait()).unwrap();
-        println!("Mapped output buffer");
+        //println!("Mapped output buffer");
     }
 
     // Read and depad rows into a tightly packed RGBA buffer
