@@ -157,10 +157,10 @@ export function Pluot(props) {
                 camera_view: viewMatrix,
                 plot_id: 'my_plot',
 
-                /*
+                
                 plot_type: 'Triangle',
                 store_name: 'gaussian_quantiles_store',
-                */
+                
                 
 
                 /*
@@ -187,7 +187,7 @@ export function Pluot(props) {
                 }
                 */
                 
-                
+                /*
                 plot_type: 'Bioimage',
                 store_name: 'ome_ngff',
                 plot_params: {
@@ -202,6 +202,7 @@ export function Pluot(props) {
                         ch1color,
                     ],
                 },
+                */
                 
 
                 

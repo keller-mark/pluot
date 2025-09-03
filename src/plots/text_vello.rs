@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 
-use skrifa::MetadataProvider;
 
+use crate::wgpu;
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
 };
+use skrifa::MetadataProvider;
 
 
 thread_local! {
@@ -15,7 +16,7 @@ thread_local! {
 }
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
-/* 
+
 #[cfg(target_arch = "wasm32")]
 pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
 where
@@ -43,7 +44,6 @@ where
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-*/
 pub fn with_vello_renderer<F, R>(device: &wgpu::Device, f: F) -> R
 where
     F: FnOnce(&mut Renderer) -> R,

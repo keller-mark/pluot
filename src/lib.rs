@@ -6,9 +6,9 @@ mod bindings;
 pub mod d3;
 
 // When using Vello:
-//pub use vello::wgpu; // Re-export wgpu from vello for convenience.
+pub use vello::wgpu; // Re-export wgpu from vello for convenience.
 // Switch to use the following when not using Vello:
-pub use wgpu;
+//pub use wgpu;
 
 pub use crate::utils::{RenderParams, PlotParams};
 

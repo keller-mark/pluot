@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::wgpu;
 use crate::wgpu::util::DeviceExt;
 
 use fontdue::{Font, FontSettings};

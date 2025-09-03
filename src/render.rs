@@ -1,3 +1,4 @@
+use crate::wgpu;
 use crate::wgpu::{TextureDescriptor, TextureUsages, TextureFormat, Extent3d};
 /*use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
@@ -141,17 +142,20 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         dimension: wgpu::TextureDimension::D2,
         // Important: Use a non-sRGB UNORM format for Vello offscreen rendering.
         // Note: Vello requires TextureUsages::STORAGE_BINDING, which requires Rgba8Unorm (incompatible with Rgba8UnormSrgb format)
-        /*format: wgpu::TextureFormat::Rgba8Unorm,
+        format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::STORAGE_BINDING
-            | wgpu::TextureUsages::COPY_SRC,*/
+            | wgpu::TextureUsages::COPY_SRC,
         
         // For VGER:
+        /* 
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
+        */
+
         view_formats: &[],
     });
     //let mut vello_scene = vello::Scene::new();
@@ -219,31 +223,39 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 // Must be 256-byte aligned on WebGPU
                 bytes_per_row: Some(padded_bytes_per_row),
                 rows_per_image: Some(height),
+                //rows_per_image: None,
             },
         },
         texture_desc.size,
     );
 
-    let command_buffer = encoder.finish();
-    queue.submit([command_buffer]);
+    queue.submit(Some(encoder.finish()));
 
     // Map and await completion without blocking the browser thread
     let buffer_slice = output_buffer.slice(..);
-    let (sender, receiver) = oneshot_channel();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-        sender.send(res).ok();
-    });
-
+    
     #[cfg(target_arch = "wasm32")]
     {
+        let (sender, receiver) = oneshot_channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+            sender.send(res).ok();
+        });
         let _ = device.poll(wgpu::PollType::Poll);
+        receiver.receive().await.unwrap().unwrap();
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let _ = device.poll(wgpu::PollType::Wait);
+        // See https://github.com/gfx-rs/wgpu/blob/c488bbe60447d28736c26c82a32cd87794b3bf1d/examples/features/src/framework.rs#L598
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            if result.is_err() {
+                panic!("Failed to map texture for reading");
+            }
+        });
+        println!("Done map_async");
+        let _ = device.poll(wgpu::PollType::wait()).unwrap();
     }
-        
-    receiver.receive().await.unwrap().unwrap();
+
+    println!("Mapped output buffer");
 
     // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();

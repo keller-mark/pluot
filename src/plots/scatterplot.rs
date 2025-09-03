@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::wgpu::{self, include_wgsl};
+use crate::wgpu;
 /* 
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
@@ -237,8 +237,8 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         ],
     });
 
-    let vs_module = context.device.create_shader_module(include_wgsl!("shaders/scatterplot.vs.wgsl"));
-    let fs_module = context.device.create_shader_module(include_wgsl!("shaders/scatterplot.fs.wgsl"));
+    let vs_module = context.device.create_shader_module(wgpu::include_wgsl!("shaders/scatterplot.vs.wgsl"));
+    let fs_module = context.device.create_shader_module(wgpu::include_wgsl!("shaders/scatterplot.fs.wgsl"));
 
     let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
@@ -320,38 +320,5 @@ pub async fn render_scatterplot(context: &mut RenderContext<'_>, encoder: &mut w
         drop(render_pass);
     }
 
-    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-    // === 4) Render with Vger into our texture ===
-    with_vger_renderer(context.device, context.queue, |vger| {
-        vger.begin(512.0, 512.0, 1.0);
-        let cyan = vger.color_paint(vger::color::Color::CYAN);
-        vger.fill_circle([100.0, 100.0], 20.0, cyan);
-
-        vger.translate([32.0, 256.0]);
-        vger.text("Hello, world!", 24, vger::color::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, None);
-
-        let desc = wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &vello_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        };
-
-        vger.encode(&desc);
-    });
-
-    crate::plots::text_fontdue::render_text(context, encoder);
-
     crate::render::overlay_pass(context, encoder, &scatter_tex);
-
 }

@@ -1,3 +1,4 @@
+use crate::wgpu;
 use crate::zarr::{AsyncZarritaStore};
 use std::sync::Arc;
 

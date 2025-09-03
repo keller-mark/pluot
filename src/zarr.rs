@@ -29,7 +29,7 @@ fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, Bytes>> {
         cache.clone()
     } else {
         // TODO: is 100 a good cache size?
-        let new_cache = Arc::new(Cache::new(100)); // Cache up to 100 items
+        let new_cache = Arc::new(Cache::new(10000)); // Cache up to 100 items
         map.insert(name.to_string(), new_cache.clone());
         new_cache
     }

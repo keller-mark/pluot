@@ -1,7 +1,7 @@
 use core::num;
 use std::borrow::Cow;
 
-use crate::wgpu::{self, include_wgsl};
+use crate::wgpu;
 use crate::utils::{RenderContext, PlotParams};
 use crate::{log};
 
@@ -54,7 +54,7 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
     }
 
     // For now, load the lowest resolution level and render the pixels.
-    let lowres_dataset = &first_multiscale.datasets.last().expect("At least one dataset");
+    let lowres_dataset = &first_multiscale.datasets.first().expect("At least one dataset");
     let lowres_array = zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", lowres_dataset.path))
         .await.expect("Open lowres dataset array");
 
@@ -331,8 +331,8 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         ],
     });
 
-    let vs_module = context.device.create_shader_module(include_wgsl!("shaders/bioimage.vs.wgsl"));
-    let fs_module = context.device.create_shader_module(include_wgsl!("shaders/bioimage.fs.wgsl"));
+    let vs_module = context.device.create_shader_module(wgpu::include_wgsl!("shaders/bioimage.vs.wgsl"));
+    let fs_module = context.device.create_shader_module(wgpu::include_wgsl!("shaders/bioimage.fs.wgsl"));
 
     let render_pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),

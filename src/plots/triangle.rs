@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::wgpu::{self, include_wgsl};
+use crate::wgpu;
 
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
@@ -87,8 +87,6 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     });
     let tri_view = tri_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let out_view = context.out_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
@@ -113,12 +111,48 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         drop(render_pass);
     }
 
+    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
     /*
-    println!("Rendered scatterplot");
+    // === Render with Vger into our texture ===
+    crate::plots::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
+        vger.begin(512.0, 512.0, 1.0);
+        let cyan = vger.color_paint(vger::color::Color::CYAN);
+        vger.fill_circle([100.0, 100.0], 20.0, cyan);
+
+        vger.translate([32.0, 256.0]);
+        vger.text("Hello, world!", 24, vger::color::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, None);
+
+        let desc = wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &vello_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        };
+
+        vger.encode(&desc);
+    });
+
+    crate::plots::text_fontdue::render_text(context, encoder);
+
+    crate::render::overlay_pass(context, encoder, &tri_tex);
+    */
+    
+    println!("Rendered triangle");
 
     // 2) Vello scene with text.
-    
-    crate::plots::text_vello::add_text_to_scene(&mut context.vello_scene);
+    let mut scene = vello::Scene::new();
+
+    crate::plots::text_vello::add_text_to_scene(&mut scene);
 
     println!("Added text to scene");
 
@@ -130,11 +164,9 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         antialiasing_method: AaConfig::Msaa16,
     };
 
-    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
     crate::plots::text_vello::with_vello_renderer(context.device, |vello_renderer| {
         vello_renderer
-            .render_to_texture(context.device, context.queue, &context.vello_scene, &vello_view, &params)
+            .render_to_texture(context.device, context.queue, &scene, &vello_view, &params)
             .expect("vello render_to_texture");
     });
 
@@ -143,6 +175,5 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     crate::render::overlay_pass(context, encoder, &tri_tex);
 
     println!("Overlayed triangle and text");
-    */
-    crate::render::overlay_pass(context, encoder, &tri_tex);
+
 }

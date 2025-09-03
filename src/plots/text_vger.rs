@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use crate::wgpu;
 use vger::Vger;
 
 thread_local! {
