@@ -227,34 +227,43 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         texture_desc.size,
     );
 
+    // TODO: vello runs queue.submit internally, for the previous encoder passed to the render_triangle function:
     queue.submit(Some(encoder.finish()));
 
     // Map and await completion without blocking the browser thread
     let buffer_slice = output_buffer.slice(..);
 
-    let (sender, receiver) = oneshot_channel();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-        if res.is_err() {
-            panic!("Failed to map texture for reading");
-        }
-        sender.send(res).ok();
-    });
-
     #[cfg(target_arch = "wasm32")]
     {
+        let (sender, receiver) = oneshot_channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+            if res.is_err() {
+                panic!("Failed to map texture for reading");
+            }
+            sender.send(res).ok();
+        });
+
         let _ = device.poll(wgpu::PollType::Poll);
+        receiver.receive().await.unwrap().unwrap();
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
         // See https://github.com/lapce/floem/blob/5f4709b9c4806f0a21b3450bd9795c3472f8fc2e/vello/src/lib.rs#L595
         //println!("Starting map_async");
         // See https://github.com/gfx-rs/wgpu/blob/c488bbe60447d28736c26c82a32cd87794b3bf1d/examples/features/src/framework.rs#L598
-        // buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-        //     if result.is_err() {
-        //         panic!("Failed to map texture for reading");
-        //     }
-        // });
-        println!("Done map_async");
+        // Reference: https://github.com/milos-agathon/forge3d/blob/e4ded1b8067b3b15afd46c4a3f6cf34e9fa7a0a0/src/CLAUDE.md?plain=1#L92
+        //let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            if result.is_err() {
+                panic!("Failed to map texture for reading");
+            }
+            //let _ = tx.send(result);
+        });
+
+        let _ = device.poll(wgpu::PollType::Wait);
+
+        //rx.recv().unwrap().unwrap();
+        //let mapped = slice.get_mapped_range();
 
         // TODO: When called from python,
         // does this device.poll need to be called outside of the pyo3_async_runtimes::tokio::future_into_py block?
@@ -264,14 +273,25 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         // What is the Vello .render_to_texture function doing internally that is causing this to block?
         // TODO: Maybe it needs surface_texture.present() to be called first?
         // See https://github.com/yutannihilation/vellogd-r/blob/17e7380fcf9883ea50cf01a9bfd1cfb4dbcb32ee/src/rust/vellogd-shared/src/winit_app/mod.rs#L649
-        let _ = device.poll(wgpu::PollType::Wait);
-        println!("Mapped output buffer");
+        //
+        // See info from vello about using a Blitter
+        // Reference: https://github.com/linebender/vello/blob/54e2a47abd0a9b1ad8b172bbaffed97d1c2248d6/CHANGELOG.md?plain=1#L64C2-L73C35
+        /*loop {
+            let poll_result = device.poll(wgpu::PollType::Poll);
+            if (poll_result.is_err()) {
+                break;
+            }
+            if (poll_result.unwrap() == wgpu::PollStatus::QueueEmpty) {
+                break;
+            }
+            println!("Still polling");
+        }*/
+        //println!("buffer_slice.map_async");
     }
-
-    receiver.receive().await.unwrap().unwrap();
 
     // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();
+
     let mut pixels = vec![0u8; (unpadded_bytes_per_row * height) as usize];
     for y in 0..height {
         let src_start = (y as usize) * (padded_bytes_per_row as usize);
