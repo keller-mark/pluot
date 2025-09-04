@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+/*use std::borrow::Cow;
 use std::cell::RefCell;
 
 
@@ -39,7 +39,7 @@ where
         }
 
         f(renderer.borrow_mut().as_mut().unwrap())
-        
+
     })
 }
 
@@ -151,3 +151,4 @@ pub fn add_text_to_scene(scene: &mut Scene) {
         .brush(&Brush::Solid(Color::from_rgb8(240, 0, 245)))
         .draw(Fill::NonZero, glyphs.into_iter());
 }
+*/

@@ -2,11 +2,11 @@ use std::borrow::Cow;
 
 use crate::wgpu;
 
-use vello::{
-    kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
-    peniko::{Blob, Brush, Color, Fill, Font},
-    AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene,
-};
+// use vello::{
+//     kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
+//     peniko::{Blob, Brush, Color, Fill, Font},
+//     AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene,
+// };
 
 use crate::utils::{PlotParams, RenderContext};
 
@@ -123,18 +123,27 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         drop(render_pass);
     }
 
-    /*
-      let vello_view = context
-         .vello_tex
-         .create_view(&wgpu::TextureViewDescriptor::default());
+    let vello_view = context
+        .vello_tex
+        .create_view(&wgpu::TextureViewDescriptor::default());
     // === Render with Vger into our texture ===
-    crate::plots::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
+    crate::two::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
         vger.begin(512.0, 512.0, 1.0);
         let cyan = vger.color_paint(vger::color::Color::CYAN);
         vger.fill_circle([100.0, 100.0], 20.0, cyan);
 
         vger.translate([32.0, 256.0]);
-        vger.text("Hello, world!", 24, vger::color::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, None);
+        vger.text(
+            "Hello, world!",
+            24,
+            vger::color::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+            None,
+        );
 
         let desc = wgpu::RenderPassDescriptor {
             label: None,
@@ -155,10 +164,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         vger.encode(&desc);
     });
 
-    crate::plots::text_fontdue::render_text(context, encoder);
-
-    crate::render::overlay_pass(context, encoder, &tri_tex);
-    */
+    crate::two::text_fontdue::render_text(context, encoder);
 
     //println!("Rendered triangle");
     /*
@@ -188,10 +194,6 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     });
 
     //println!("Rendered vello scene");
-
-    crate::render::overlay_pass(context, encoder, &tri_tex);
-
-    //println!("Overlayed triangle and text");
     */
 
     crate::render::overlay_pass(context, encoder, &tri_tex);

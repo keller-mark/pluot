@@ -63,28 +63,31 @@ ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.gi
 serde_json = "1.0.143"
 
 # WebGPU
-#wgpu = { version = "26.0.1" }
+wgpu = { version = "26.0.1" }
 
 # Trying vello for shape/text rendering.
 # Vello (65eea2c4)
-vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
-# Add wgpu as a direct dependency to enable the webgl feature. This is still not working in Firefox/Safari.
-# wgpu = { version = "26.0.1", features = ["webgl"] }
-# From https://github.com/linebender/vello/blob/main/Cargo.toml
-# Metadata reader and glyph scaler for OpenType fonts.
-skrifa = { version = "0.36.0", default-features = false, features = [
-    "autohint_shaping",
-] }
-# Primitive types for styling vector graphics.
-# The version of kurbo used below should be kept in sync with the version of kurbo used by peniko.
-peniko = { version = "0.4.0", default-features = false }
-# A Rust library for manipulating curves.
-kurbo = { version = "0.11.3", default-features = false }
+# vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
+# # Add wgpu as a direct dependency to enable the webgl feature. This is still not working in Firefox/Safari.
+# # wgpu = { version = "26.0.1", features = ["webgl"] }
+# # From https://github.com/linebender/vello/blob/main/Cargo.toml
+# # Metadata reader and glyph scaler for OpenType fonts.
+# skrifa = { version = "0.36.0", default-features = false, features = [
+#     "autohint_shaping",
+# ] }
+# # Primitive types for styling vector graphics.
+# # The version of kurbo used below should be kept in sync with the version of kurbo used by peniko.
+# peniko = { version = "0.4.0", default-features = false }
+# # A Rust library for manipulating curves.
+# kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
 vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
 fontdue = "0.9.x"
 glam = "0.30.5"
+
+# Trying glyphon for text rendering.
+# glyphon = "0.9.0"
 
 
 # For testing with local modified version of the rust-blosc-src crate.

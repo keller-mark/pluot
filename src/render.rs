@@ -145,21 +145,20 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
+
+        // For Vello:
         // Important: Use a non-sRGB UNORM format for Vello offscreen rendering.
         // Note: Vello requires TextureUsages::STORAGE_BINDING, which requires Rgba8Unorm (incompatible with Rgba8UnormSrgb format)
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        /*format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::STORAGE_BINDING
-            | wgpu::TextureUsages::COPY_SRC,
-
+            | wgpu::TextureUsages::COPY_SRC,*/
         // For VGER:
-        /*
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
-        */
         view_formats: &[],
     });
     //let mut vello_scene = vello::Scene::new();
