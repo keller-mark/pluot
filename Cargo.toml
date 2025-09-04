@@ -22,11 +22,6 @@ test_plain_rust = ["tokio"]
 [dependencies]
 
 # Python-specific dependencies
-# TODO: upgrade to pyo3, see https://github.com/developmentseed/obstore/pull/548
-# but serde-pyobject pins to <0.25 ...
-# See this PR: https://github.com/Jij-Inc/serde-pyobject/pull/21
-# TODO: switch from serde-pyobject to pythonize https://github.com/PyO3/pyo3/issues/566
-# See https://github.com/davidhewitt/pythonize
 pyo3 = { version = "0.26", optional = true, features = ["extension-module"] }
 pyo3-async-runtimes = { version = "0.26", features = [
     "tokio-runtime",
