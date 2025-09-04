@@ -3,8 +3,7 @@ name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
-#edition = "2021"
-#rust-version = "1.77"
+exclude = ["data", "js", "python", "python-notebooks"]
 
 # Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
 [package.metadata.wasm-pack.profile.release]
@@ -17,34 +16,22 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Define features to toggle which dependency is active
-wasm = ["wasm-bindgen", "wasm-bindgen-futures", "wasm-bindgen-shared", "web-sys", "js-sys", "serde-wasm-bindgen", "console_error_panic_hook"]
-python = ["pyo3", "serde-pyobject", "pyo3-async-runtimes", "tokio"]
+python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio"]
 test_plain_rust = ["tokio"]
 
 [dependencies]
-# WASM-specific dependencies
-wasm-bindgen = { version = "0.2.100", optional = true }
-wasm-bindgen-futures = { version = "0.4.50", optional = true }
-wasm-bindgen-shared = { version = "0.2.100", optional = true }
-web-sys = { version = "0.3.77", optional = true }
-js-sys = { version = "0.3.77", optional = true }
-serde-wasm-bindgen = { version = "0.6.5", optional = true }
-# The `console_error_panic_hook` crate provides better debugging of panics by
-# logging them with `console.error`. This is great for development, but requires
-# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
-# code size when deploying.
-console_error_panic_hook = { version = "0.1.7", optional = true }
-
 
 # Python-specific dependencies
-pyo3 = { version = "0.23.3", optional = true, features = ["extension-module"] }
-serde-pyobject = { version = "0.6.2", optional = true }
-pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime"], optional = true }
+pyo3 = { version = "0.26", optional = true, features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.26", features = [
+    "tokio-runtime",
+], optional = true }
+pythonize = { version = "0.26", optional = true }
 # tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
 tokio = { version = "1.47.1", features = ["full"], optional = true }
 
+
 # Core dependencies
-wgpu = "26.0.0"
 bytemuck = "1.23.2"
 futures = "0.3.31"
 futures-intrusive = "0.5"
@@ -56,23 +43,79 @@ serde = { version = "1.0.x", features = ["derive"] }
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
-zarrs = { git = "https://github.com/zarrs/zarrs.git", default-features = false, features = ["ndarray", "crc32c", "gzip", "sharding", "transpose", "async"] }
+# Zarrs (ea23432)
+zarrs = { git = "https://github.com/zarrs/zarrs.git", rev = "ea23432", default-features = false, features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    "filesystem",
+] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
+svg = "0.18.0"
+
+# For OME-Zarr image metadata parsing.
+# We use this fork which relaxes things by not using serde(deny_unknown_fields).
+ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.git", branch = "keller-mark/relaxed-ome-fields" }
+serde_json = "1.0.143"
+
+# WebGPU
+wgpu = { version = "26.0.1" }
+
+# Trying vello for shape/text rendering.
+# Vello (65eea2c4)
+# vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
+# # Add wgpu as a direct dependency to enable the webgl feature. This is still not working in Firefox/Safari.
+# # wgpu = { version = "26.0.1", features = ["webgl"] }
+# # From https://github.com/linebender/vello/blob/main/Cargo.toml
+# # Metadata reader and glyph scaler for OpenType fonts.
+# skrifa = { version = "0.36.0", default-features = false, features = [
+#     "autohint_shaping",
+# ] }
+# # Primitive types for styling vector graphics.
+# # The version of kurbo used below should be kept in sync with the version of kurbo used by peniko.
+# peniko = { version = "0.4.0", default-features = false }
+# # A Rust library for manipulating curves.
+# kurbo = { version = "0.11.3", default-features = false }
+
+# Trying VGER for shape/text rendering.
+vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
+fontdue = "0.9.x"
+glam = "0.30.5"
+
+# Trying glyphon for text rendering.
+# glyphon = "0.9.0"
 
 
 # For testing with local modified version of the rust-blosc-src crate.
 #blosc-src = { path = "../rust-blosc-src" }
 
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.100" }
+wasm-bindgen-futures = { version = "0.4.50" }
+wasm-bindgen-shared = { version = "0.2.100" }
+web-sys = { version = "0.3.77" }
+js-sys = { version = "0.3.77" }
+serde-wasm-bindgen = { version = "0.6.5" }
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { version = "0.1.7" }
+
 
 # Fixes for getrandom. May not be necessary here if added to upstream zarrs config.toml.
 # Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
-[dependencies.getrandom_v03]
+[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom_v03]
 package = "getrandom"
 version = "0.3"
 features = ["wasm_js"]
 
-[dependencies.getrandom_v02]
+[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom_v02]
 package = "getrandom"
 version = "0.2"
 features = ["js"]
@@ -98,14 +141,13 @@ lto = true
 codegen-units = 1
 
 
-
 # Need to use nightly version of `wasm-bindgen` and the other crates in its workspace.
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 [patch.crates-io]
-wasm-bindgen               = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-macro         = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-macro = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
 wasm-bindgen-macro-support = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-shared        = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-futures        = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-js-sys                     = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-web-sys                    = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-shared = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+wasm-bindgen-futures = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+js-sys = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
+web-sys = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }

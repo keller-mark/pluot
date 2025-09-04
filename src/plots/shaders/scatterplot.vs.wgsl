@@ -80,7 +80,8 @@ fn vs_main(
     var out: VSOut;
     out.position = vec4<f32>(center_ndc + offset_ndc, 0.0, 1.0);
     out.color = u.color;
-    out.quad_pos = corner; // pass unit quad position for circular masking
+    // Pass quad position in [0, 1] range for fragment shader.
+    out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     return out;
 }
