@@ -1,11 +1,11 @@
-pub use crate::utils::RenderParams;
 pub use crate::render::render;
+pub use crate::utils::RenderParams;
 
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use wasm_bindgen::prelude::*;
     use super::{render, RenderParams};
+    use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
     extern "C" {
@@ -22,10 +22,19 @@ pub mod wasm {
         async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Uint8Array;
 
         #[wasm_bindgen(js_name = zarr_get_range_from_offset)]
-        async fn zarr_get_range_from_offset_js(store_name: &str, key: &str, offset: u32, length: u32) -> js_sys::Uint8Array;
+        async fn zarr_get_range_from_offset_js(
+            store_name: &str,
+            key: &str,
+            offset: u32,
+            length: u32,
+        ) -> js_sys::Uint8Array;
 
         #[wasm_bindgen(js_name = zarr_get_range_from_end)]
-        async fn zarr_get_range_from_end_js(store_name: &str, key: &str, suffix_length: u32) -> js_sys::Uint8Array;
+        async fn zarr_get_range_from_end_js(
+            store_name: &str,
+            key: &str,
+            suffix_length: u32,
+        ) -> js_sys::Uint8Array;
     }
 
     fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
@@ -51,16 +60,24 @@ pub mod wasm {
         convert_to_bytes(js_bytes)
     }
 
-    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::Bytes {
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_range_from_offset_js(store_name, key, offset, length).await;
         convert_to_bytes(js_bytes)
     }
 
-    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::Bytes {
+    pub async fn zarr_get_range_from_end(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_range_from_end_js(store_name, key, suffix_length).await;
         convert_to_bytes(js_bytes)
     }
-
 
     #[wasm_bindgen]
     pub fn set_panic_hook() {
@@ -77,8 +94,8 @@ pub mod wasm {
     // and return a Uint8Array containing the rendered image data.
     #[wasm_bindgen]
     pub async fn render_wasm(params: JsValue) -> js_sys::Uint8Array {
-        let params: RenderParams = serde_wasm_bindgen::from_value(params)
-            .expect("Invalid parameters");
+        let params: RenderParams =
+            serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
 
         let pixels = render(params).await;
 
@@ -91,13 +108,12 @@ pub mod wasm {
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub mod python {
     use pyo3::prelude::*;
+    use pyo3::types::{PyAny, PyBytes, PyDict, PyTuple};
     use pyo3::wrap_pyfunction;
-    use pyo3::types::{PyBytes, PyDict, PyAny, PyTuple};
-    use pyo3::ToPyObject;
     use pyo3::IntoPyObject;
 
-    use serde_pyobject::from_pyobject;
     use super::{render, RenderParams};
+    use pythonize::depythonize;
 
     pub fn log(s: &str) {
         println!("{}", s);
@@ -105,11 +121,13 @@ pub mod python {
 
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
         // Acquire the Python GIL. This must be done for all Python interactions.
-        let py_obj = Python::with_gil(|py| {
+        let py_obj = Python::attach(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
 
             // Call the async function, which returns a coroutine
-            let coroutine = zarr_module.call_method1("zarr_has", (store_name, key)).unwrap();
+            let coroutine = zarr_module
+                .call_method1("zarr_has", (store_name, key))
+                .unwrap();
 
             // Convert the Python coroutine into a Rust future
             pyo3_async_runtimes::tokio::into_future(coroutine)
@@ -118,51 +136,69 @@ pub mod python {
         .await
         .expect("Failed to await future");
 
-        Python::with_gil(|py| py_obj.bind(py).extract::<bool>())
+        Python::attach(|py| py_obj.bind(py).extract::<bool>())
             .expect("Failed to extract bool from Python object")
     }
 
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
-        let py_obj = Python::with_gil(|py| {
+        let py_obj = Python::attach(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
-            let coroutine = zarr_module.call_method1("zarr_get", (store_name, key)).unwrap();
+            let coroutine = zarr_module
+                .call_method1("zarr_get", (store_name, key))
+                .unwrap();
             pyo3_async_runtimes::tokio::into_future(coroutine)
         })
         .expect("Failed to create future")
         .await
         .expect("Failed to await future");
-    
-        let result = Python::with_gil(|py| py_obj.bind(py).extract::<Vec<u8>>())
+
+        let result = Python::attach(|py| py_obj.bind(py).extract::<Vec<u8>>())
             .expect("Failed to extract bytes from Python object");
         zarrs::storage::Bytes::from(result)
     }
 
-    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::Bytes {
-        let py_obj = Python::with_gil(|py| {
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> zarrs::storage::Bytes {
+        let py_obj = Python::attach(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
-            let coroutine = zarr_module.call_method1("zarr_get_range_from_offset", (store_name, key, offset, length)).unwrap();
+            let coroutine = zarr_module
+                .call_method1(
+                    "zarr_get_range_from_offset",
+                    (store_name, key, offset, length),
+                )
+                .unwrap();
             pyo3_async_runtimes::tokio::into_future(coroutine)
         })
         .expect("Failed to create future")
         .await
         .expect("Failed to await future");
-    
-        let result = Python::with_gil(|py| py_obj.bind(py).extract::<Vec<u8>>())
+
+        let result = Python::attach(|py| py_obj.bind(py).extract::<Vec<u8>>())
             .expect("Failed to extract bytes from Python object");
         zarrs::storage::Bytes::from(result)
     }
 
-    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::Bytes {
-        let py_obj = Python::with_gil(|py| {
+    pub async fn zarr_get_range_from_end(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
+        let py_obj = Python::attach(|py| {
             let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
-            let coroutine = zarr_module.call_method1("zarr_get_range_from_end", (store_name, key, suffix_length)).unwrap();
+            let coroutine = zarr_module
+                .call_method1("zarr_get_range_from_end", (store_name, key, suffix_length))
+                .unwrap();
             pyo3_async_runtimes::tokio::into_future(coroutine)
         })
         .expect("Failed to create future")
         .await
         .expect("Failed to await future");
-    
-        let result = Python::with_gil(|py| py_obj.bind(py).extract::<Vec<u8>>())
+
+        let result = Python::attach(|py| py_obj.bind(py).extract::<Vec<u8>>())
             .expect("Failed to extract bytes from Python object");
         zarrs::storage::Bytes::from(result)
     }
@@ -172,7 +208,7 @@ pub mod python {
     pub fn render_py(py: Python, kwds: Option<PyObject>) -> PyResult<Bound<PyAny>> {
         // Use the py parameter directly instead of Python::with_gil
         let params: RenderParams = if let Some(dict) = kwds {
-            from_pyobject::<RenderParams, _>(dict.into_bound(py)).unwrap()
+            depythonize::<RenderParams>(&dict.into_bound(py)).unwrap()
         } else {
             RenderParams::default()
         };
@@ -182,7 +218,7 @@ pub mod python {
             Ok(pixels)
         })
     }
-    
+
     // This function creates the Python module.
     #[pymodule]
     fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -210,11 +246,20 @@ pub mod plain_rust {
         panic!("zarr_get is not implemented in plain Rust mode.");
     }
 
-    pub async fn zarr_get_range_from_offset(store_name: &str, key: &str, offset: u32, length: u32) -> zarrs::storage::Bytes {
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> zarrs::storage::Bytes {
         panic!("zarr_get_range_from_offset is not implemented in plain Rust mode.");
     }
 
-    pub async fn zarr_get_range_from_end(store_name: &str, key: &str, suffix_length: u32) -> zarrs::storage::Bytes {
+    pub async fn zarr_get_range_from_end(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
         panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
     }
 }

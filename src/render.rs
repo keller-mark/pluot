@@ -232,36 +232,43 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // Map and await completion without blocking the browser thread
     let buffer_slice = output_buffer.slice(..);
 
+    let (sender, receiver) = oneshot_channel();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+        if res.is_err() {
+            panic!("Failed to map texture for reading");
+        }
+        sender.send(res).ok();
+    });
+
     #[cfg(target_arch = "wasm32")]
     {
-        let (sender, receiver) = oneshot_channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-            sender.send(res).ok();
-        });
         let _ = device.poll(wgpu::PollType::Poll);
-        receiver.receive().await.unwrap().unwrap();
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
         // See https://github.com/lapce/floem/blob/5f4709b9c4806f0a21b3450bd9795c3472f8fc2e/vello/src/lib.rs#L595
         //println!("Starting map_async");
         // See https://github.com/gfx-rs/wgpu/blob/c488bbe60447d28736c26c82a32cd87794b3bf1d/examples/features/src/framework.rs#L598
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            if result.is_err() {
-                panic!("Failed to map texture for reading");
-            }
-        });
-        //println!("Done map_async");
+        // buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+        //     if result.is_err() {
+        //         panic!("Failed to map texture for reading");
+        //     }
+        // });
+        println!("Done map_async");
 
         // TODO: When called from python,
         // does this device.poll need to be called outside of the pyo3_async_runtimes::tokio::future_into_py block?
+        // TODO: Do we need to use pyo3's py.detach within py.attach()?
         // This seems to hang when called from a jupyter notebook (although only when vello is used to render something)
-
         // TODO: look more closely into what Vello is doing.
         // What is the Vello .render_to_texture function doing internally that is causing this to block?
-        let _ = device.poll(wgpu::PollType::wait()).unwrap();
-        //println!("Mapped output buffer");
+        // TODO: Maybe it needs surface_texture.present() to be called first?
+        // See https://github.com/yutannihilation/vellogd-r/blob/17e7380fcf9883ea50cf01a9bfd1cfb4dbcb32ee/src/rust/vellogd-shared/src/winit_app/mod.rs#L649
+        let _ = device.poll(wgpu::PollType::Wait);
+        println!("Mapped output buffer");
     }
+
+    receiver.receive().await.unwrap().unwrap();
 
     // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();
