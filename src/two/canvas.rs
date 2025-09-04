@@ -25,6 +25,10 @@ pub fn render_shapes(
     crate::two::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
         vger.begin(width, height, 1.0);
 
+        // TODO: the VGER coordinate system (0,0) is in the bottom left.
+        // We need it to be in the top left.
+        // TODO: Adjust the Y coordinates accordingly.
+
         for element in elements {
             match element {
                 TwoElement::Rectangle(d) => {

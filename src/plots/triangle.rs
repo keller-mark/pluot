@@ -8,6 +8,7 @@ use crate::wgpu;
 //     AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene,
 // };
 
+use crate::two::shapes::{TwoCircle, TwoElement, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::utils::{PlotParams, RenderContext};
 
 pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
@@ -123,6 +124,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         drop(render_pass);
     }
 
+    /*
     let vello_view = context
         .vello_tex
         .create_view(&wgpu::TextureViewDescriptor::default());
@@ -163,8 +165,45 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
 
         vger.encode(&desc);
     });
+    */
 
-    crate::two::text_fontdue::render_text(context, encoder);
+    crate::two::canvas::render_shapes(
+        context,
+        encoder,
+        &vec![
+            TwoElement::Rectangle(TwoRectangle {
+                x: 10.0,
+                y: 20.0,
+                width: 30.0,
+                height: 40.0,
+                opacity: 0.5,
+                fill: Some("#FF0000".to_string()),
+                stroke: Some("#00FFFF".to_string()),
+                linewidth: 2.0,
+                rotation: Some(std::f64::consts::PI / 4.0),
+            }),
+            TwoElement::Circle(TwoCircle {
+                x: 50.0,
+                y: 60.0,
+                radius: 15.0,
+                opacity: 1.0,
+                fill: Some("#00FF00".to_string()),
+                stroke: None,
+                linewidth: 1.0,
+            }),
+            TwoElement::Line(TwoLine {
+                x1: 70.0,
+                y1: 800.0 - 80.0,
+                x2: 90.0,
+                y2: 800.0 - 100.0,
+                opacity: 1.0,
+                stroke: Some("#000000".to_string()),
+                linewidth: 3.0,
+            }),
+        ],
+    );
+
+    //crate::two::text_fontdue::render_text(context, encoder);
 
     //println!("Rendered triangle");
     /*
