@@ -92,6 +92,8 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
 
                 if let Some(fill) = &d.fill {
                     path = path.set("fill", fill.as_str());
+                } else {
+                    path = path.set("fill", "none");
                 }
 
                 if let Some(stroke) = &d.stroke {

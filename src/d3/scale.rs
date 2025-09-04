@@ -5,33 +5,40 @@ use std::borrow::Borrow;
 
 // Reference: https://github.com/d3/d3-scale/blob/main/src/linear.js
 
-/// A trait for scales that map a domain to a range.
-pub trait Scale<D, R> {
+pub trait Scaleable<D, R> {
     /// Given a value from the domain, returns the corresponding value in the range.
     fn scale(&self, value: &D) -> R;
+}
 
+/// A trait for scales that map a domain to a range.
+pub trait Scale<D, R> {
     /// Gets the scale's domain.
     fn get_domain(&self) -> (D, D);
 
     /// Sets the scale's domain.
-    fn set_domain(self, domain: (D, D)) -> Self;
+    fn set_domain(&mut self, domain: (D, D));
 
     /// Gets the scale's range.
     fn get_range(&self) -> (R, R);
 
     /// Sets the scale's range.
-    fn set_range(self, range: (R, R)) -> Self;
+    fn set_range(&mut self, range: (R, R));
+
+    // Note: not all D3 scales support .ticks.
+    // In these cases, the .ticks implementation should just return the domain items.
+    // Reference: https://github.com/d3/d3-axis/blob/20aef368e872a88e83b31a46df725e29c49908e6/src/axis.js#L44C46-L44C51
+    fn ticks(&self, count: Option<usize>) -> Vec<D>;
 }
 
 /// A continuous scale.
 #[derive(Debug, Clone)]
-pub struct ScaleContinuous {
+pub struct ScaleLinear {
     domain: (f64, f64),
     range: (f64, f64),
     clamp: bool,
 }
 
-impl Default for ScaleContinuous {
+impl Default for ScaleLinear {
     /// Creates a default continuous scale with a domain and range of `[0.0, 1.0]`.
     fn default() -> Self {
         Self {
@@ -42,14 +49,8 @@ impl Default for ScaleContinuous {
     }
 }
 
-impl ScaleContinuous {
-    /// Creates a new default continuous scale.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Given a value in the domain, returns the corresponding value in the range.
-    pub fn scale(&self, x: &f64) -> f64 {
+impl Scaleable<f64, f64> for ScaleLinear {
+    fn scale(&self, x: &f64) -> f64 {
         let (d0, d1) = self.domain;
         let (r0, r1) = self.range;
 
@@ -73,48 +74,30 @@ impl ScaleContinuous {
             interpolate(normalize(x_clamped))
         }
     }
+}
 
-    /// Gets the scale's clamp status.
-    pub fn get_clamp(&self) -> bool {
-        self.clamp
-    }
-
-    /// Enables or disables clamping of the input value to the domain.
-    pub fn set_clamp(mut self, clamp: bool) -> Self {
-        self.clamp = clamp;
-        self
-    }
-
+impl Scale<f64, f64> for ScaleLinear {
     fn get_domain(&self) -> (f64, f64) {
         self.domain
     }
 
-    fn set_domain(mut self, domain: (f64, f64)) -> Self {
+    fn set_domain(&mut self, domain: (f64, f64)) {
         self.domain = domain;
-        self
     }
 
     fn get_range(&self) -> (f64, f64) {
         self.range
     }
 
-    fn set_range(mut self, range: (f64, f64)) -> Self {
+    fn set_range(&mut self, range: (f64, f64)) {
         self.range = range;
-        self
     }
-}
 
-/// A linear scale. This is a continuous scale with a linear relationship.
-#[derive(Debug, Clone)]
-pub struct ScaleLinear {
-    continuous: ScaleContinuous,
-}
-
-impl Default for ScaleLinear {
-    fn default() -> Self {
-        Self {
-            continuous: ScaleContinuous::new(),
-        }
+    /// Returns approximately `count` ticks from the scale's domain.
+    fn ticks(&self, count: Option<usize>) -> Vec<f64> {
+        let count = count.unwrap_or(10);
+        let (start, stop) = self.get_domain();
+        ticks(start, stop, count)
     }
 }
 
@@ -126,53 +109,20 @@ impl ScaleLinear {
 
     /// Gets the scale's clamp status.
     pub fn get_clamp(&self) -> bool {
-        self.continuous.get_clamp()
+        self.clamp
     }
 
     /// Enables or disables clamping.
-    pub fn set_clamp(mut self, clamp: bool) -> Self {
-        self.continuous = self.continuous.set_clamp(clamp);
-        self
-    }
-
-    /// Returns approximately `count` ticks from the scale's domain.
-    pub fn ticks(&self, count: Option<usize>) -> Vec<f64> {
-        let count = count.unwrap_or(10);
-        let (start, stop) = self.get_domain();
-        ticks(start, stop, count)
+    pub fn set_clamp(&mut self, clamp: bool) {
+        self.clamp = clamp;
     }
 
     /// Rounds the start and end of the domain to "nice" numbers.
-    pub fn nice(mut self, count: Option<usize>) -> Self {
+    pub fn nice(&mut self, count: Option<usize>) {
         let count = count.unwrap_or(10);
         let (start, stop) = self.get_domain();
         let (new_start, new_stop) = nice(start, stop, count);
-        self.continuous = self.continuous.set_domain((new_start, new_stop));
-        self
-    }
-}
-
-impl Scale<f64, f64> for ScaleLinear {
-    fn scale(&self, value: &f64) -> f64 {
-        self.continuous.scale(value)
-    }
-
-    fn get_domain(&self) -> (f64, f64) {
-        self.continuous.get_domain()
-    }
-
-    fn set_domain(mut self, domain: (f64, f64)) -> Self {
-        self.continuous = self.continuous.set_domain(domain);
-        self
-    }
-
-    fn get_range(&self) -> (f64, f64) {
-        self.continuous.get_range()
-    }
-
-    fn set_range(mut self, range: (f64, f64)) -> Self {
-        self.continuous = self.continuous.set_range(range);
-        self
+        self.set_domain((new_start, new_stop));
     }
 }
 
@@ -338,7 +288,8 @@ mod tests {
 
     #[test]
     fn test_scale_linear_range_sets_range() {
-        let s = ScaleLinear::new().set_range((1.0, 2.0));
+        let mut s = ScaleLinear::new();
+        s.set_range((1.0, 2.0));
         assert_eq!(s.get_domain(), (0.0, 1.0));
         assert_eq!(s.get_range(), (1.0, 2.0));
         assert_eq!(s.scale(&0.5), 1.5);
@@ -346,9 +297,9 @@ mod tests {
 
     #[test]
     fn test_scale_linear_domain_range_sets_domain_and_range() {
-        let s = ScaleLinear::new()
-            .set_domain((1.0, 2.0))
-            .set_range((3.0, 4.0));
+        let mut s = ScaleLinear::new();
+        s.set_domain((1.0, 2.0));
+        s.set_range((3.0, 4.0));
         assert_eq!(s.get_domain(), (1.0, 2.0));
         assert_eq!(s.get_range(), (3.0, 4.0));
         assert_eq!(s.scale(&1.5), 3.5);
@@ -356,22 +307,30 @@ mod tests {
 
     #[test]
     fn test_linear_maps_domain_to_range() {
-        assert_eq!(ScaleLinear::new().set_range((1.0, 2.0)).scale(&0.5), 1.5);
+        let mut s = ScaleLinear::new();
+        s.set_range((1.0, 2.0));
+        assert_eq!(s.scale(&0.5), 1.5);
     }
 
     #[test]
     fn test_linear_clamp_true_restricts_output_to_range() {
-        let s = ScaleLinear::new().set_clamp(true).set_range((10.0, 20.0));
+        let mut s = ScaleLinear::new();
+        s.set_clamp(true);
+        s.set_range((10.0, 20.0));
         assert_eq!(s.scale(&2.0), 20.0);
         assert_eq!(s.scale(&-1.0), 10.0);
     }
 
     #[test]
     fn test_linear_nice_extends_domain() {
-        let s = ScaleLinear::new().set_domain((0.0, 0.96)).nice(None);
+        let mut s = ScaleLinear::new();
+        s.set_domain((0.0, 0.96));
+        s.nice(None);
         assert_eq!(s.get_domain(), (0.0, 1.0));
 
-        let s = ScaleLinear::new().set_domain((0.0, 96.0)).nice(None);
+        let mut s = ScaleLinear::new();
+        s.set_domain((0.0, 96.0));
+        s.nice(None);
         assert_eq!(s.get_domain(), (0.0, 100.0));
     }
 
@@ -385,7 +344,8 @@ mod tests {
             assert!((a - b).abs() < 1e-9);
         }
 
-        let s = ScaleLinear::new().set_domain((-100.0, 100.0));
+        let mut s = ScaleLinear::new();
+        s.set_domain((-100.0, 100.0));
         let ticks = s.ticks(Some(10));
         let expected: Vec<f64> = vec![
             -100.0, -80.0, -60.0, -40.0, -20.0, 0.0, 20.0, 40.0, 60.0, 80.0, 100.0,
@@ -395,14 +355,14 @@ mod tests {
 
     #[test]
     fn test_linear_copy_isolates_domain_changes() {
-        let x = ScaleLinear::new();
+        let mut x = ScaleLinear::new();
         let mut y = x.clone();
-        let x = x.set_domain((1.0, 2.0));
+        x.set_domain((1.0, 2.0));
         assert_eq!(y.get_domain(), (0.0, 1.0));
         assert_eq!(x.scale(&1.0), 0.0);
         assert_eq!(y.scale(&1.0), 1.0);
 
-        y = y.set_domain((2.0, 3.0));
+        y.set_domain((2.0, 3.0));
         assert_eq!(x.scale(&2.0), 1.0);
         assert_eq!(y.scale(&2.0), 0.0);
         assert_eq!(x.get_domain(), (1.0, 2.0));
@@ -411,26 +371,27 @@ mod tests {
 
     #[test]
     fn test_linear_copy_isolates_range_changes() {
-        let x = ScaleLinear::new();
+        let mut x = ScaleLinear::new();
         let mut y = x.clone();
-        let x = x.set_range((1.0, 2.0));
+        x.set_range((1.0, 2.0));
         assert_eq!(y.get_range(), (0.0, 1.0));
 
-        y = y.set_range((2.0, 3.0));
+        y.set_range((2.0, 3.0));
         assert_eq!(x.get_range(), (1.0, 2.0));
         assert_eq!(y.get_range(), (2.0, 3.0));
     }
 
     #[test]
     fn test_linear_copy_isolates_clamp_changes() {
-        let x = ScaleLinear::new().set_clamp(true);
+        let mut x = ScaleLinear::new();
+        x.set_clamp(true);
         let mut y = x.clone();
-        let x = x.set_clamp(false);
+        x.set_clamp(false);
         assert_eq!(x.scale(&2.0), 2.0);
         assert_eq!(y.scale(&2.0), 1.0);
         assert_eq!(y.get_clamp(), true);
 
-        y = y.set_clamp(false);
+        y.set_clamp(false);
         assert_eq!(x.scale(&2.0), 2.0);
         assert_eq!(y.scale(&2.0), 2.0);
         assert_eq!(x.get_clamp(), false);

@@ -1,5 +1,5 @@
-mod shapes;
-mod svg;
+pub mod shapes;
+pub mod svg;
 
 pub mod text_fontdue;
 // pub mod text_vello;
