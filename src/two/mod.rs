@@ -1,3 +1,4 @@
+pub mod canvas;
 pub mod shapes;
 pub mod svg;
 

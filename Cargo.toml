@@ -83,6 +83,7 @@ wgpu = { version = "26.0.1" }
 
 # Trying VGER for shape/text rendering.
 vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
+euclid = "0.22.11"
 fontdue = "0.9.x"
 glam = "0.30.5"
 
