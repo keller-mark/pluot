@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::d3::axis::{Axis, AxisOrientation};
+use crate::d3::scale::{Scale, ScaleLinear};
 use crate::wgpu;
 
 // use vello::{
@@ -124,49 +126,7 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         drop(render_pass);
     }
 
-    /*
-    let vello_view = context
-        .vello_tex
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    // === Render with Vger into our texture ===
-    crate::two::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
-        vger.begin(512.0, 512.0, 1.0);
-        let cyan = vger.color_paint(vger::color::Color::CYAN);
-        vger.fill_circle([100.0, 100.0], 20.0, cyan);
-
-        vger.translate([32.0, 256.0]);
-        vger.text(
-            "Hello, world!",
-            24,
-            vger::color::Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
-            None,
-        );
-
-        let desc = wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &vello_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        };
-
-        vger.encode(&desc);
-    });
-    */
-
+    // Test rendering some shapes.
     crate::two::canvas::render_shapes(
         context,
         encoder,
@@ -218,10 +178,32 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
                 stroke: Some("#000000".to_string()),
                 linewidth: 2.0,
             }),
+            TwoElement::Text(TwoText {
+                text: "Hello, world".to_string(),
+                x: 100.0,
+                y: 10.0,
+                width: 100.0,
+                height: 40.0,
+                opacity: 0.7,
+                fill: "#0000FF".to_string(),
+                rotation: None,
+                fontsize: 32.0,
+                ..Default::default()
+            }),
         ],
+        None,
     );
 
-    //crate::two::text_fontdue::render_text(context, encoder);
+    // Test rendering an axis:
+    let mut x_scale = ScaleLinear::new();
+    x_scale.set_domain((0.0, 100.0));
+    x_scale.set_range((20.0, 780.0));
+    let x_axis = Axis::new(AxisOrientation::Bottom);
+    let x_axis_elements = x_axis.generate_elements(&x_scale);
+    crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, None);
+
+    // Test rendering some text:
+    crate::two::text_fontdue::render_text(context, encoder);
 
     //println!("Rendered triangle");
     /*

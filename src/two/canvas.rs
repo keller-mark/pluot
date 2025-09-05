@@ -15,12 +15,14 @@ pub fn render_shapes(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
     elements: &[TwoElement],
+    translate: Option<(f64, f64)>, // TODO: use this
 ) {
     let width = context.params.width as f32;
     let height = context.params.height as f32;
     let vello_view = context
         .vello_tex
         .create_view(&wgpu::TextureViewDescriptor::default());
+
     // === Render with Vger into our texture ===
     crate::two::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
         vger.begin(width, height, 1.0);
@@ -126,24 +128,23 @@ pub fn render_shapes(
                 TwoElement::Text(d) => {
                     // TODO: either use Fontdue for rendering text (skipping/ignoring the text elements here), or update the VGER shader/font atlas to use the Fontdue logic/implementation.
                     //
-                    //
                     // TODO: handle text alignment and baseline properly.
                     // Vger's text rendering origin is bottom-left.
+                    vger.save();
                     if let Some(rotation) = d.rotation {
-                        vger.save();
                         vger.translate([d.x as f32, height - d.y as f32]);
                         vger.rotate(rotation as f32);
                         vger.translate([-(d.x as f32), -(height - d.y as f32)]);
                     } else {
+                        // TODO: does the text height need to be subtracted here (like for the rectangle case)?
                         vger.translate([d.x as f32, height - d.y as f32]);
                     }
 
                     let color = parse_color_with_opacity(&d.fill, d.opacity);
                     vger.text(&d.text, d.fontsize as u32, color, None);
 
-                    if d.rotation.is_some() {
-                        vger.restore();
-                    }
+                    // Note: must have called vger.save() in order to call .restore().
+                    vger.restore();
                 }
             }
         }

@@ -3,32 +3,30 @@ use std::borrow::Cow;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt;
 
+use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
-use fontdue::layout::{Layout, LayoutSettings, CoordinateSystem, TextStyle};
 
-
-use crate::utils::{RenderContext, PlotParams};
-
-
+use crate::utils::{PlotParams, RenderContext};
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
-
 pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
-
     // Font rendering
     // 1) Rasterize "Hello world" with fontdue and pack into a single-row atlas.
     // Provide a font file in your repo at assets/Roboto-Regular.ttf (or change the path).
     let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("load font");
 
-    let px: f32 = 64.0; // font size in pixels
+    let px: f32 = 14.0; // font size in pixels
     let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
     layout.reset(&LayoutSettings {
         max_width: None,
         max_height: None,
         ..LayoutSettings::default()
     });
-    layout.append(&[&font], &TextStyle::new("Hello world", px, 0));
+    layout.append(
+        &[&font],
+        &TextStyle::new("0  10  20  30  40  50  60  70  80  90  100", px, 0),
+    );
 
     let glyphs = layout.glyphs();
     if glyphs.is_empty() {
@@ -70,13 +68,14 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         if gw > 0 && gh > 0 {
             for row in 0..gh {
                 let src = &bmp[row * gw..row * gw + gw];
-                let dst = &mut atlas[row * atlas_width + x_cursor..row * atlas_width + x_cursor + gw];
+                let dst =
+                    &mut atlas[row * atlas_width + x_cursor..row * atlas_width + x_cursor + gw];
                 dst.copy_from_slice(src);
             }
 
             // Compute screen-space rect in pixels (top-left)
             let x_px = g.x as f32;
-            let y_px = (g.y + m.ymin as f32).round();
+            let y_px = g.y as f32;
             let w_px = gw as f32;
             let h_px = gh as f32;
 
@@ -140,11 +139,13 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
     });
 
     // 3) Create instance buffer
-    let instance_buffer = context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Text Instances"),
-        contents: bytemuck::cast_slice(&instance_data),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
+    let instance_buffer = context
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Text Instances"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
     // 4) Uniforms: viewport size and text color (premultiplied in shader)
     #[repr(C)]
@@ -160,53 +161,69 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         _pad: [0.0, 0.0],
         color: [0.0, 0.0, 0.0, 1.0], // black text
     };
-    let uniform_buffer = context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Text Uniforms"),
-        contents: bytemuck::bytes_of(&uniforms),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
+    let uniform_buffer = context
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Text Uniforms"),
+            contents: bytemuck::bytes_of(&uniforms),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
 
     // 5) Bind group layout: texture + sampler + uniforms
-    let bgl = context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Text BGL"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
+    let bgl = context
+        .device
+        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Text BGL"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
                 },
-                count: None,
-            },
-        ],
-    });
-    let bind_group: wgpu::BindGroup = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Text BG"),
-        layout: &bgl,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&atlas_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&atlas_sampler) },
-            wgpu::BindGroupEntry { binding: 2, resource: uniform_buffer.as_entire_binding() },
-        ],
-    });
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+    let bind_group: wgpu::BindGroup =
+        context
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Text BG"),
+                layout: &bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&atlas_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
     // 6) WGSL shaders: instanced quad in screen space sampling R8 atlas
     let vs_src = r#"
@@ -272,21 +289,27 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         }
     "#;
 
-    let vs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Text VS"),
-        source: wgpu::ShaderSource::Wgsl(vs_src.into()),
-    });
-    let fs_module = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Text FS"),
-        source: wgpu::ShaderSource::Wgsl(fs_src.into()),
-    });
+    let vs_module = context
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Text VS"),
+            source: wgpu::ShaderSource::Wgsl(vs_src.into()),
+        });
+    let fs_module = context
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Text FS"),
+            source: wgpu::ShaderSource::Wgsl(fs_src.into()),
+        });
 
     // 7) Pipeline (instanced quad with per-instance vertex buffer)
-    let pipeline_layout = context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("Text Pipeline Layout"),
-        bind_group_layouts: &[&bgl],
-        push_constant_ranges: &[],
-    });
+    let pipeline_layout = context
+        .device
+        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Text Pipeline Layout"),
+            bind_group_layouts: &[&bgl],
+            push_constant_ranges: &[],
+        });
 
     // Vertex buffer layout: two vec4<f32> per instance
     let vertex_buffers = [wgpu::VertexBufferLayout {
@@ -306,40 +329,44 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         ],
     }];
 
-    let pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("Text Pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &vertex_buffers,
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: context.texture_desc.format,
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
-            strip_index_format: None,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
+    let pipeline = context
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Text Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &vs_module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &fs_module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: context.texture_desc.format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
     // Number of emitted instances (skip zero-sized glyphs)
     let instance_count: u32 = (instance_data.len() / 8) as u32;
 
-    let vello_view = context.vello_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let vello_view = context
+        .vello_tex
+        .create_view(&wgpu::TextureViewDescriptor::default());
 
     // 8) Render
     {

@@ -136,7 +136,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
 
         elements.push(TwoElement::Path(TwoPath {
             points: path_points,
-            stroke: Some("currentColor".to_string()),
+            stroke: Some("#000000".to_string()),
             fill: None,
             linewidth: 1.0,
             opacity: 1.0,
@@ -160,7 +160,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
                 y1,
                 x2,
                 y2,
-                stroke: Some("currentColor".to_string()),
+                stroke: Some("#000000".to_string()),
                 linewidth: 1.0,
                 opacity: 1.0,
             }));
@@ -200,7 +200,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
                 //text: format(&value),
                 align,
                 baseline,
-                fill: "currentColor".to_string(),
+                fill: "#000000".to_string(),
                 ..Default::default()
             }));
         }
