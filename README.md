@@ -34,7 +34,7 @@ The data filtering operations themselves will always be performed in Rust.
 For example, given a viewState, the Rust code may load certain chunks of data. Given a data filtering expression, it may then filter that data. Finally, it will perform the render pass and return the arraybuffer (which the JS code will render to a Canvas).
 
 
-The Rust code should only be concerned with rendering a single plot, and should not care whether the caller is intending to use the result in a static or interactive context.
+The Rust code should only be concerned with rendering a single plot, and should not care (or as minimally as possible) whether the caller is intending to use the result in a static or interactive context.
 It should be fast enough for this not to matter.
 
 The WASM and JS bundle sizes should be relatively small.
