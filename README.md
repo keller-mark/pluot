@@ -3,6 +3,8 @@
 Implement once, pluot everywhere (across languages, regardless of whether static or interactive).
 <!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
 
+🚧 work in progress 🚧
+
 Unlock the following benefits:
 - Render static plots via Rust directly (no web browser needed)
 - Render static plots via Python (no web browser needed)
@@ -106,7 +108,7 @@ const arr = await render({
             dataKey: 'my_dataset_key',
         }),
         new PolygonLayer({
-            
+
         })
     ],
     */
@@ -117,7 +119,7 @@ const arr = await render({
     // The Rust code can have its own internal deckGL-like APIs to render a scatterplot.
     viewType: 'scatterplot',
     // Pass any coordination values that the Rust code knows about.
-    // The rust code will use these 
+    // The rust code will use these
     coordinationValues: {
         dataset: 'my_dataset_key',
         embeddingType: 'UMAP',
@@ -136,7 +138,7 @@ const arr = await render({
             },
         ],
         contourLayer: {
-            
+
         }
     },
     // Another, more complex view type:
