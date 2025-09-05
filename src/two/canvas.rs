@@ -15,7 +15,7 @@ pub fn render_shapes(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
     elements: &[TwoElement],
-    translate: Option<(f64, f64)>, // TODO: use this
+    translate: Option<(f64, f64)>,
 ) {
     let width = context.params.width as f32;
     let height = context.params.height as f32;
@@ -130,26 +130,29 @@ pub fn render_shapes(
                         }
                     }
                 }
-                TwoElement::Text(d) => {
-                    // TODO: either use Fontdue for rendering text (skipping/ignoring the text elements here), or update the VGER shader/font atlas to use the Fontdue logic/implementation.
-                    //
-                    // TODO: handle text alignment and baseline properly.
-                    // Vger's text rendering origin is bottom-left.
-                    vger.save();
-                    if let Some(rotation) = d.rotation {
-                        vger.translate([d.x as f32, height - d.y as f32]);
-                        vger.rotate(rotation as f32);
-                        vger.translate([-(d.x as f32), -(height - d.y as f32)]);
-                    } else {
-                        // TODO: does the text height need to be subtracted here (like for the rectangle case)?
-                        vger.translate([d.x as f32, height - d.y as f32]);
-                    }
+                TwoElement::Text(_) => {
+                    /*
+                        // Ignore this if we are instead using Fontdue for rendering text (skipping/ignoring the text elements here).
+                        // Alternatively, we could update the VGER shader/font atlas to use the Fontdue logic/implementation.
+                        //
+                        // TODO: handle text alignment and baseline properly.
+                        // Vger's text rendering origin is bottom-left.
+                        vger.save();
+                        if let Some(rotation) = d.rotation {
+                            vger.translate([d.x as f32, height - d.y as f32]);
+                            vger.rotate(rotation as f32);
+                            vger.translate([-(d.x as f32), -(height - d.y as f32)]);
+                        } else {
+                            // TODO: does the text height need to be subtracted here (like for the rectangle case)?
+                            vger.translate([d.x as f32, height - d.y as f32]);
+                        }
 
-                    let color = parse_color_with_opacity(&d.fill, d.opacity);
-                    vger.text(&d.text, d.fontsize as u32, color, None);
+                        let color = parse_color_with_opacity(&d.fill, d.opacity);
+                        vger.text(&d.text, d.fontsize as u32, color, None);
 
-                    // Note: must have called vger.save() in order to call .restore().
-                    vger.restore();
+                        // Note: must have called vger.save() in order to call .restore().
+                        vger.restore();
+                    */
                 }
             }
         }

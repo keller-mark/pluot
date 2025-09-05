@@ -1,4 +1,5 @@
-use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt;
@@ -6,98 +7,237 @@ use crate::wgpu::util::DeviceExt;
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::params::{PlotParams, RenderContext};
+use crate::params::RenderContext;
+use crate::two::shapes::{TwoText, TwoTextAlign, TwoTextBaseline};
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
-pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
-    // Font rendering
-    // 1) Rasterize "Hello world" with fontdue and pack into a single-row atlas.
-    // Provide a font file in your repo at assets/Roboto-Regular.ttf (or change the path).
-    let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("load font");
+// Cached font atlas data
+#[derive(Clone)]
+struct FontAtlasCache {
+    font: Font,
+    atlas_texture: Option<wgpu::Texture>,
+    glyph_cache: HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>, // char + font_size -> metrics + bitmap
+}
 
-    let px: f32 = 14.0; // font size in pixels
+thread_local! {
+    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = RefCell::new(None);
+}
+
+fn get_or_init_font_atlas() -> FontAtlasCache {
+    FONT_ATLAS.with(|atlas| {
+        let mut atlas_ref = atlas.borrow_mut();
+        if let Some(ref cached_atlas) = *atlas_ref {
+            cached_atlas.clone()
+        } else {
+            let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("load font");
+            let cache = FontAtlasCache {
+                font,
+                atlas_texture: None,
+                glyph_cache: HashMap::new(),
+            };
+            *atlas_ref = Some(cache.clone());
+            cache
+        }
+    })
+}
+
+// Text measurement functions
+fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
     let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
     layout.reset(&LayoutSettings {
         max_width: None,
         max_height: None,
         ..LayoutSettings::default()
     });
-    layout.append(
-        &[&font],
-        &TextStyle::new("0  10  20  30  40  50  60  70  80  90  100", px, 0),
-    );
+    layout.append(&[font], &TextStyle::new(text, font_size, 0));
+
+    let glyphs = layout.glyphs();
+    if glyphs.is_empty() {
+        return 0.0;
+    }
+
+    // Calculate the total width by finding the rightmost point
+    let mut max_x = 0.0f32;
+    for glyph in glyphs {
+        let right_edge = glyph.x + glyph.width as f32;
+        max_x = max_x.max(right_edge);
+    }
+    max_x
+}
+
+fn calculate_text_position(
+    text_element: &TwoText,
+    text_width: f32,
+    translate: Option<(f64, f64)>,
+) -> (f32, f32) {
+    let x = match text_element.align {
+        TwoTextAlign::Start => text_element.x as f32,
+        TwoTextAlign::Middle => text_element.x as f32 - text_width / 2.0,
+        TwoTextAlign::End => text_element.x as f32 - text_width,
+    };
+
+    // For baseline, we'll use the provided y coordinate as-is for now
+    // More sophisticated baseline handling could be added later
+    let y = match text_element.baseline {
+        TwoTextBaseline::Top => text_element.y as f32,
+        TwoTextBaseline::Middle => text_element.y as f32,
+        TwoTextBaseline::Alphabetic => text_element.y as f32,
+        TwoTextBaseline::Bottom => text_element.y as f32,
+    };
+
+    // Account for translation if provided.
+    if let Some((tx, ty)) = translate {
+        (x + tx as f32, y + ty as f32)
+    } else {
+        (x, y)
+    }
+}
+
+// TODO: operate the opposite way. ensure that all color fields of TwoElements are [r, g, b[, a]] tuples,
+// and only translate them to strings as-needed (e.g., for SVG rendering, using "rgb()" or "rgba()").
+fn parse_color(color_str: &str) -> [f32; 4] {
+    if color_str.starts_with('#') && color_str.len() == 7 {
+        let r = u8::from_str_radix(&color_str[1..3], 16).unwrap_or(0) as f32 / 255.0;
+        let g = u8::from_str_radix(&color_str[3..5], 16).unwrap_or(0) as f32 / 255.0;
+        let b = u8::from_str_radix(&color_str[5..7], 16).unwrap_or(0) as f32 / 255.0;
+        [r, g, b, 1.0]
+    } else {
+        // Default to black for unparseable colors
+        [0.0, 0.0, 0.0, 1.0]
+    }
+}
+
+pub fn render_text(
+    context: &mut RenderContext<'_>,
+    encoder: &mut wgpu::CommandEncoder,
+    text_elements: &[TwoText],
+    translate: Option<(f64, f64)>,
+) {
+    if text_elements.is_empty() {
+        return;
+    }
+
+    // Get cached font
+    let font_atlas = get_or_init_font_atlas();
+
+    // Build a comprehensive layout with all text elements to create the atlas
+    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+    layout.reset(&LayoutSettings {
+        max_width: None,
+        max_height: None,
+        ..LayoutSettings::default()
+    });
+
+    // Append all text from all elements to ensure we have all glyphs in the atlas
+    for text_element in text_elements {
+        layout.append(
+            &[&font_atlas.font],
+            &TextStyle::new(&text_element.text, text_element.fontsize as f32, 0),
+        );
+    }
 
     let glyphs = layout.glyphs();
     if glyphs.is_empty() {
         return;
     }
 
-    // Rasterize each glyph and measure atlas size (row pack).
+    // Rasterize each glyph and measure atlas size (row pack)
     let mut atlas_width: usize = 0;
     let mut atlas_height: usize = 0;
     let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
+
     for g in glyphs {
-        let (metrics, bitmap) = font.rasterize_config(g.key);
+        let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
         atlas_width += metrics.width.max(1);
         atlas_height = atlas_height.max(metrics.height.max(1));
         rasters.push((metrics, bitmap));
     }
+
     if atlas_width == 0 || atlas_height == 0 {
         return;
     }
 
-    // Build the atlas RGBA (actually single channel) row.
-    // We keep it R8Unorm and sample .r in the shader.
+    // Build the atlas RGBA (actually single channel) row
     let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
     let mut x_cursor: usize = 0;
 
-    // Per-glyph instance data: [x, y, w, h, u0, v0, u1, v1]
-    let mut instance_data: Vec<f32> = Vec::with_capacity(glyphs.len() * 8);
+    // Now process each text element individually to generate instance data
+    let mut all_instance_data: Vec<f32> = Vec::new();
+    let mut total_instances = 0u32;
 
-    for (g, (m, bmp)) in glyphs.iter().zip(rasters.into_iter()) {
-        // Actual bitmap dimensions
-        let gw = m.width.max(0) as usize;
-        let gh = m.height.max(0) as usize;
+    for text_element in text_elements {
+        // Measure text width for alignment
+        let text_width = measure_text_width(
+            &font_atlas.font,
+            &text_element.text,
+            text_element.fontsize as f32,
+        );
+        let (base_x, base_y) = calculate_text_position(text_element, text_width, translate);
 
-        // Atlas pack dimensions (pad zero-size glyphs to avoid degenerate packing)
-        let gw_pad = gw.max(1);
-        let gh_pad = gh.max(1);
+        // Create a separate layout for this text element
+        let mut element_layout = Layout::new(CoordinateSystem::PositiveYDown);
+        element_layout.reset(&LayoutSettings {
+            max_width: None,
+            max_height: None,
+            ..LayoutSettings::default()
+        });
+        element_layout.append(
+            &[&font_atlas.font],
+            &TextStyle::new(&text_element.text, text_element.fontsize as f32, 0),
+        );
 
-        // Copy bitmap into atlas only if it has pixels
-        if gw > 0 && gh > 0 {
-            for row in 0..gh {
-                let src = &bmp[row * gw..row * gw + gw];
-                let dst =
-                    &mut atlas[row * atlas_width + x_cursor..row * atlas_width + x_cursor + gw];
-                dst.copy_from_slice(src);
+        let element_glyphs = element_layout.glyphs();
+
+        // Track our position in the atlas for this text element
+        let mut element_cursor = x_cursor;
+
+        for (i, g) in element_glyphs.iter().enumerate() {
+            let (m, bmp) = &rasters[total_instances as usize + i];
+
+            // Actual bitmap dimensions
+            let gw = m.width.max(0) as usize;
+            let gh = m.height.max(0) as usize;
+
+            // Atlas pack dimensions (pad zero-size glyphs to avoid degenerate packing)
+            let gw_pad = gw.max(1);
+            let gh_pad = gh.max(1);
+
+            // Copy bitmap into atlas only if it has pixels
+            if gw > 0 && gh > 0 {
+                for row in 0..gh {
+                    let src = &bmp[row * gw..row * gw + gw];
+                    let dst = &mut atlas[row * atlas_width + element_cursor
+                        ..row * atlas_width + element_cursor + gw];
+                    dst.copy_from_slice(src);
+                }
             }
 
-            // Compute screen-space rect in pixels (top-left)
-            let x_px = g.x as f32;
-            let y_px = g.y as f32;
+            // Compute screen-space rect in pixels
+            let x_px = base_x + g.x as f32;
+            let y_px = base_y + g.y as f32;
             let w_px = gw as f32;
             let h_px = gh as f32;
 
-            // Place with a small margin from top-left
-            let origin = glam::vec2(10.0, 10.0);
-            let rect_x = origin.x + x_px;
-            let rect_y = origin.y + y_px;
-
             // UV rectangle (normalized) uses padded pack width/height
-            let u0 = (x_cursor as f32) / (atlas_width as f32);
+            let u0 = (element_cursor as f32) / (atlas_width as f32);
             let v0 = 0.0;
-            let u1 = ((x_cursor + gw_pad) as f32) / (atlas_width as f32);
+            let u1 = ((element_cursor + gw_pad) as f32) / (atlas_width as f32);
             let v1 = (gh_pad as f32) / (atlas_height as f32);
 
-            instance_data.extend_from_slice(&[rect_x, rect_y, w_px, h_px, u0, v0, u1, v1]);
+            if gw > 0 && gh > 0 {
+                all_instance_data.extend_from_slice(&[x_px, y_px, w_px, h_px, u0, v0, u1, v1]);
+            }
+
+            // Advance pack cursor by padded width
+            element_cursor += gw_pad;
         }
 
-        // Advance pack cursor by padded width
-        x_cursor += gw_pad;
+        x_cursor = element_cursor;
+        total_instances += element_glyphs.len() as u32;
     }
 
-    // 2) Upload atlas as a single-channel R8Unorm texture.
+    // 2) Upload atlas as a single-channel R8Unorm texture
     let atlas_tex = context.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Text Atlas"),
         size: wgpu::Extent3d {
@@ -112,6 +252,7 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
+
     context.queue.write_texture(
         atlas_tex.as_image_copy(),
         &atlas,
@@ -126,6 +267,7 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
             depth_or_array_layers: 1,
         },
     );
+
     let atlas_view = atlas_tex.create_view(&wgpu::TextureViewDescriptor::default());
     let atlas_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("Text Sampler"),
@@ -143,11 +285,12 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Text Instances"),
-            contents: bytemuck::cast_slice(&instance_data),
+            contents: bytemuck::cast_slice(&all_instance_data),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-    // 4) Uniforms: viewport size and text color (premultiplied in shader)
+    // 4) Uniforms: viewport size and text color (we'll use the first text element's color for now)
+    // TODO: update this to allow for a color per text element.
     #[repr(C)]
     #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
     struct Uniforms {
@@ -156,11 +299,20 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         _pad: [f32; 2],
         color: [f32; 4],
     }
+
+    // Use the first text element's color, or default to black
+    let color = if !text_elements.is_empty() {
+        parse_color(&text_elements[0].fill)
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
+    };
+
     let uniforms = Uniforms {
         viewport: [context.params.width as f32, context.params.height as f32],
         _pad: [0.0, 0.0],
-        color: [0.0, 0.0, 0.0, 1.0], // black text
+        color,
     };
+
     let uniform_buffer = context
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -203,27 +355,27 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
                 },
             ],
         });
-    let bind_group: wgpu::BindGroup =
-        context
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Text BG"),
-                layout: &bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&atlas_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&atlas_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+
+    let bind_group = context
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Text BG"),
+            layout: &bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+            ],
+        });
 
     // 6) WGSL shaders: instanced quad in screen space sampling R8 atlas
     let vs_src = r#"
@@ -362,7 +514,7 @@ pub fn render_text(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandE
         });
 
     // Number of emitted instances (skip zero-sized glyphs)
-    let instance_count: u32 = (instance_data.len() / 8) as u32;
+    let instance_count: u32 = (all_instance_data.len() / 8) as u32;
 
     let vello_view = context
         .vello_tex

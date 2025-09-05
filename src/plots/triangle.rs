@@ -200,10 +200,20 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     x_scale.set_range((20.0, 780.0));
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
-    crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, Some((0.0, 10.0)));
+
+    let axis_translate = Some((0.0, 750.0));
+    crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, axis_translate);
+
+    let text_elements: Vec<TwoText> = x_axis_elements
+        .into_iter()
+        .filter_map(|element| match element {
+            TwoElement::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect();
 
     // Test rendering some text:
-    crate::two::text_fontdue::render_text(context, encoder);
+    crate::two::text_fontdue::render_text(context, encoder, &text_elements, axis_translate);
 
     //println!("Rendered triangle");
     /*

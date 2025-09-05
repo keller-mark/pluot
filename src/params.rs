@@ -51,6 +51,12 @@ pub struct RenderParams {
 
     // Timeout in ms before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
+
+    // Margins for plots that need them (e.g. scatterplot axes).
+    pub margin_left: Option<f32>,
+    pub margin_right: Option<f32>,
+    pub margin_top: Option<f32>,
+    pub margin_bottom: Option<f32>,
 }
 pub struct RenderContext<'a> {
     pub store: &'a Arc<AsyncZarritaStore>,
@@ -77,6 +83,10 @@ impl Default for RenderParams {
             store_name: "default_store".to_string(),
             plot_params: PlotParams::Triangle,
             timeout: None,
+            margin_left: None,
+            margin_right: None,
+            margin_top: None,
+            margin_bottom: None,
         }
     }
 }
