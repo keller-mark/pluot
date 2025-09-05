@@ -271,6 +271,9 @@ cargo test --features test_plain_rust
 
 This work has been informed and inspired by the following projects:
 - https://github.com/vitessce/vitessce
+- https://github.com/keller-mark/use-coordination
+- https://github.com/hms-dbmi/viv
+- https://github.com/flekschas/jupyter-scatter
 - https://github.com/hms-dbmi/cistrome-explorer
 - https://github.com/keller-mark/deck-to-svg
 - https://github.com/higlass/higlass
