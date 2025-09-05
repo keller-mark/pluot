@@ -127,6 +127,9 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     }
 
     // Test rendering some shapes.
+    // TODO: allow for multiple render_shapes? Or force the user to construct a single Vec<TwoElement>?
+    // But how to handle different translations for different groups of shapes?
+    // Add a wrapper TwoGroup with translation and Vec<TwoElement> inside?
     crate::two::canvas::render_shapes(
         context,
         encoder,
@@ -201,9 +204,12 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
+    // Render the non-text elements of the axis:
     let axis_translate = Some((0.0, 750.0));
     crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, axis_translate);
 
+    // TODO: should the filter logic and render_text call be called inside of render_shapes?
+    // Render the text elements of the axis:
     let text_elements: Vec<TwoText> = x_axis_elements
         .into_iter()
         .filter_map(|element| match element {
@@ -212,7 +218,6 @@ pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu
         })
         .collect();
 
-    // Test rendering some text:
     crate::two::text_fontdue::render_text(context, encoder, &text_elements, axis_translate);
 
     //println!("Rendered triangle");

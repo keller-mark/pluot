@@ -11,6 +11,10 @@ use vello::{
 use crate::params::{PlotParams, RenderContext};
 use crate::two::text_vger::with_vger_renderer;
 
+use crate::d3::axis::{Axis, AxisOrientation};
+use crate::d3::scale::{Scale, ScaleLinear};
+use crate::two::shapes::{TwoCircle, TwoElement, TwoLine, TwoPath, TwoRectangle, TwoText};
+
 pub async fn render_scatterplot(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
@@ -355,6 +359,54 @@ pub async fn render_scatterplot(
         // End the renderpass.
         drop(render_pass);
     }
+
+    // Construct the X-axis:
+    let mut x_scale = ScaleLinear::new();
+    x_scale.set_domain((min_x as f64, max_x as f64));
+    x_scale.set_range((0.0, 800.0));
+    let x_axis = Axis::new(AxisOrientation::Bottom);
+    let x_axis_elements = x_axis.generate_elements(&x_scale);
+
+    // Construct the Y-axis:
+    let mut y_scale = ScaleLinear::new();
+    y_scale.set_domain((min_y as f64, max_y as f64));
+    y_scale.set_range((800.0, 0.0)); // Inverted range
+    let y_axis = Axis::new(AxisOrientation::Left);
+    let y_axis_elements = y_axis.generate_elements(&y_scale);
+
+    // ===== RENDER X AXIS =====
+    // Render the non-text elements of the axis:
+    let x_axis_translate = Some((0.0, 760.0));
+    crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, x_axis_translate);
+
+    // TODO: should the filter logic and render_text call be called inside of render_shapes?
+    // Render the text elements of the axis:
+    let text_elements: Vec<TwoText> = x_axis_elements
+        .into_iter()
+        .filter_map(|element| match element {
+            TwoElement::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+
+    crate::two::text_fontdue::render_text(context, encoder, &text_elements, x_axis_translate);
+
+    // ===== RENDER Y AXIS =====
+    // Render the non-text elements of the axis:
+    let y_axis_translate = Some((40.0, 0.0));
+    crate::two::canvas::render_shapes(context, encoder, &y_axis_elements, y_axis_translate);
+
+    // TODO: should the filter logic and render_text call be called inside of render_shapes?
+    // Render the text elements of the axis:
+    let text_elements: Vec<TwoText> = y_axis_elements
+        .into_iter()
+        .filter_map(|element| match element {
+            TwoElement::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+
+    crate::two::text_fontdue::render_text(context, encoder, &text_elements, y_axis_translate);
 
     crate::render::overlay_pass(context, encoder, &scatter_tex);
 }
