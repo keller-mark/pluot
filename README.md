@@ -266,3 +266,19 @@ cargo test --features test_plain_rust
 - Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
 - Learnxinyminutes: https://learnxinyminutes.com/rust/
 - A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
+
+## Inspired by
+
+This work has been informed and inspired by the following projects:
+- https://github.com/vitessce/vitessce
+- https://github.com/hms-dbmi/cistrome-explorer
+- https://github.com/keller-mark/deck-to-svg
+- https://github.com/higlass/higlass
+- https://github.com/gosling-lang/gosling.js
+- https://github.com/keller-mark/vueplotlib
+- https://github.com/vitessce/easy_vitessce
+- https://github.com/scverse/napari-spatialdata
+- https://github.com/scverse/spatialdata-plot
+- https://github.com/scverse/scanpy
+- https://github.com/visgl/deck.gl
+- https://github.com/observablehq/plot
