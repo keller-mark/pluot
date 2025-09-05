@@ -11,9 +11,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::params::RenderContext;
+pub use crate::params::{PlotParams, RenderParams};
 use crate::plots;
-use crate::utils::RenderContext;
-pub use crate::utils::{PlotParams, RenderParams};
 use crate::zarr::AsyncZarritaStore;
 
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
@@ -275,6 +275,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         //
         // See info from vello about using a Blitter
         // Reference: https://github.com/linebender/vello/blob/54e2a47abd0a9b1ad8b172bbaffed97d1c2248d6/CHANGELOG.md?plain=1#L64C2-L73C35
+        //
+        // Also see this usage of Vello which mentions deadlocking:
+        // Reference https://github.com/DioxusLabs/blitz/blob/dbca61c417f6289640a2ca20a2d87473ccc473ee/packages/anyrender_vello/src/wgpu_context.rs#L314
         /*loop {
             let poll_result = device.poll(wgpu::PollType::Poll);
             if (poll_result.is_err()) {

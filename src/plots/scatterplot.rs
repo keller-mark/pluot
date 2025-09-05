@@ -8,8 +8,8 @@ use vello::{
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
 */
+use crate::params::{PlotParams, RenderContext};
 use crate::two::text_vger::with_vger_renderer;
-use crate::utils::{PlotParams, RenderContext};
 
 pub async fn render_scatterplot(
     context: &mut RenderContext<'_>,
@@ -347,7 +347,9 @@ pub async fn render_scatterplot(
 
         // TODO: Would it be more efficient to store the point X/Y/Size/Opacity/Color info in textures, as done by Regl-Scatterplot?
         // (As opposed to using instancing)
-        // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/point.vs#L43
+        // References:
+        // - https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/point.vs#L43
+        // - https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/index.js#L1938
         render_pass.draw(0..4, 0..(n as u32));
 
         // End the renderpass.

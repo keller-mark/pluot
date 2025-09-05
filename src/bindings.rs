@@ -1,5 +1,5 @@
+pub use crate::params::RenderParams;
 pub use crate::render::render;
-pub use crate::utils::RenderParams;
 
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]

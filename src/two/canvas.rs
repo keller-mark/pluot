@@ -1,5 +1,5 @@
+use crate::params::{PlotParams, RenderContext};
 use crate::two::shapes::{TwoElement, TwoTextBaseline};
-use crate::utils::{PlotParams, RenderContext};
 use crate::wgpu;
 use vger::Vger;
 

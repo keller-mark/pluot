@@ -1,9 +1,9 @@
 mod bindings;
 pub mod d3;
+mod params;
 mod plots;
 mod render;
 pub mod two;
-mod utils;
 mod zarr;
 
 // When using Vello:
@@ -13,7 +13,7 @@ mod zarr;
 // Switch to use the following when not using Vello:
 pub use wgpu;
 
-pub use crate::utils::{PlotParams, RenderParams};
+pub use crate::params::{PlotParams, RenderParams};
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]

@@ -48,6 +48,9 @@ pub struct RenderParams {
     // Note that solely data-dependent computations should be cached via the (store_name, key) tuple.
     pub plot_id: String,
     pub store_name: String,
+
+    // Timeout in ms before bailing out of awaiting a data request.
+    pub timeout: Option<u32>,
 }
 pub struct RenderContext<'a> {
     pub store: &'a Arc<AsyncZarritaStore>,
@@ -73,6 +76,7 @@ impl Default for RenderParams {
             plot_id: "default_plot".to_string(),
             store_name: "default_store".to_string(),
             plot_params: PlotParams::Triangle,
+            timeout: None,
         }
     }
 }

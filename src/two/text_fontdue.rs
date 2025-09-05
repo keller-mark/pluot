@@ -6,7 +6,7 @@ use crate::wgpu::util::DeviceExt;
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::utils::{PlotParams, RenderContext};
+use crate::params::{PlotParams, RenderContext};
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 

@@ -10,8 +10,8 @@ use crate::wgpu;
 //     AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene,
 // };
 
+use crate::params::{PlotParams, RenderContext};
 use crate::two::shapes::{TwoCircle, TwoElement, TwoLine, TwoPath, TwoRectangle, TwoText};
-use crate::utils::{PlotParams, RenderContext};
 
 pub async fn render_triangle(context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     let vs_src = r#"
