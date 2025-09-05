@@ -25,16 +25,16 @@ pub fn render_shapes(
     crate::two::text_vger::with_vger_renderer(context.device, context.queue, |vger| {
         vger.begin(width, height, 1.0);
 
-        // TODO: the VGER coordinate system (0,0) is in the bottom left.
-        // We need it to be in the top left.
-        // TODO: Adjust the Y coordinates accordingly.
+        // The VGER coordinate system (0,0) is in the bottom left.
+        // We want to define coordinates in the top left (so it matches SVG).
+        // We need to adjust the Y coordinates accordingly.
 
         for element in elements {
             match element {
                 TwoElement::Rectangle(d) => {
                     if let Some(rotation) = d.rotation {
                         let cx = d.x + d.width / 2.0;
-                        let cy = d.y + d.height / 2.0;
+                        let cy = (height as f64 - d.y) + d.height / 2.0;
                         vger.save();
                         vger.translate([cx as f32, cy as f32]);
                         vger.rotate(rotation as f32);
@@ -45,7 +45,12 @@ pub fn render_shapes(
                         let color = parse_color_with_opacity(fill_str, d.opacity);
                         let paint = vger.color_paint(color);
                         vger.fill_rect(
-                            euclid::rect(d.x as f32, d.y as f32, d.width as f32, d.height as f32),
+                            euclid::rect(
+                                d.x as f32,
+                                height - d.y as f32 - d.height as f32,
+                                d.width as f32,
+                                d.height as f32,
+                            ),
                             0.0,
                             paint,
                         );
@@ -55,8 +60,8 @@ pub fn render_shapes(
                         let color = parse_color_with_opacity(stroke_str, d.opacity);
                         let paint = vger.color_paint(color);
                         vger.stroke_rect(
-                            [d.x as f32, d.y as f32].into(),
-                            [(d.x + d.width) as f32, (d.y + d.height) as f32].into(),
+                            [d.x as f32, height - d.y as f32 - d.height as f32].into(),
+                            [(d.x + d.width) as f32, height - d.y as f32].into(),
                             0.0,
                             d.linewidth as f32,
                             paint,
@@ -71,14 +76,14 @@ pub fn render_shapes(
                     if let Some(fill_str) = &d.fill {
                         let color = parse_color_with_opacity(fill_str, d.opacity);
                         let paint = vger.color_paint(color);
-                        vger.fill_circle([d.x as f32, d.y as f32], d.radius as f32, paint);
+                        vger.fill_circle([d.x as f32, height - d.y as f32], d.radius as f32, paint);
                     }
 
                     if let Some(stroke_str) = &d.stroke {
                         let color = parse_color_with_opacity(stroke_str, d.opacity);
                         let paint = vger.color_paint(color);
                         vger.stroke_arc(
-                            [d.x as f32, d.y as f32],
+                            [d.x as f32, height - d.y as f32],
                             d.radius as f32,
                             d.linewidth as f32,
                             0.0,
@@ -92,8 +97,8 @@ pub fn render_shapes(
                         let color = parse_color_with_opacity(stroke_str, d.opacity);
                         let paint = vger.color_paint(color);
                         vger.stroke_segment(
-                            [d.x1 as f32, d.y1 as f32],
-                            [d.x2 as f32, d.y2 as f32],
+                            [d.x1 as f32, height - d.y1 as f32],
+                            [d.x2 as f32, height - d.y2 as f32],
                             d.linewidth as f32,
                             paint,
                         );
@@ -107,8 +112,8 @@ pub fn render_shapes(
                                 let color = parse_color_with_opacity(stroke_str, d.opacity);
                                 let paint = vger.color_paint(color);
                                 vger.stroke_segment(
-                                    [prev.0 as f32, prev.1 as f32],
-                                    [p.0 as f32, p.1 as f32],
+                                    [prev.0 as f32, height - prev.1 as f32],
+                                    [p.0 as f32, height - p.1 as f32],
                                     d.linewidth as f32,
                                     paint,
                                 );
@@ -126,11 +131,11 @@ pub fn render_shapes(
                     // Vger's text rendering origin is bottom-left.
                     if let Some(rotation) = d.rotation {
                         vger.save();
-                        vger.translate([d.x as f32, d.y as f32]);
+                        vger.translate([d.x as f32, height - d.y as f32]);
                         vger.rotate(rotation as f32);
-                        vger.translate([-(d.x as f32), -(d.y as f32)]);
+                        vger.translate([-(d.x as f32), -(height - d.y as f32)]);
                     } else {
-                        vger.translate([d.x as f32, d.y as f32]);
+                        vger.translate([d.x as f32, height - d.y as f32]);
                     }
 
                     let color = parse_color_with_opacity(&d.fill, d.opacity);
