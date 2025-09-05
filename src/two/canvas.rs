@@ -31,6 +31,11 @@ pub fn render_shapes(
         // We want to define coordinates in the top left (so it matches SVG).
         // We need to adjust the Y coordinates accordingly.
 
+        if let Some(t_coord) = translate {
+            vger.save();
+            vger.translate([t_coord.0 as f32, -t_coord.1 as f32]);
+        }
+
         for element in elements {
             match element {
                 TwoElement::Rectangle(d) => {
@@ -147,6 +152,10 @@ pub fn render_shapes(
                     vger.restore();
                 }
             }
+        }
+
+        if translate.is_some() {
+            vger.restore();
         }
 
         let desc = wgpu::RenderPassDescriptor {
