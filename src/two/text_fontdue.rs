@@ -114,6 +114,9 @@ pub fn render_text(
     text_elements: &[TwoText],
     translate: Option<(f64, f64)>,
 ) {
+    // Configurable padding around each glyph to prevent texture bleeding
+    const PADDING: usize = 1;
+
     if text_elements.is_empty() {
         return;
     }
@@ -149,8 +152,9 @@ pub fn render_text(
 
     for g in glyphs {
         let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-        atlas_width += metrics.width.max(1);
-        atlas_height = atlas_height.max(metrics.height.max(1));
+        // Add padding around each glyph: PADDING + glyph_width + PADDING
+        atlas_width += 2 * PADDING + metrics.width.max(1);
+        atlas_height = atlas_height.max(2 * PADDING + metrics.height.max(1));
         rasters.push((metrics, bitmap));
     }
 
@@ -158,9 +162,9 @@ pub fn render_text(
         return;
     }
 
-    // Build the atlas RGBA (actually single channel) row
+    // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
     let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
-    let mut x_cursor: usize = 0;
+    let mut x_cursor: usize = PADDING; // Start with padding offset
 
     // Now process each text element individually to generate instance data
     let mut all_instance_data: Vec<f32> = Vec::new();
@@ -199,16 +203,15 @@ pub fn render_text(
             let gw = m.width.max(0) as usize;
             let gh = m.height.max(0) as usize;
 
-            // Atlas pack dimensions (pad zero-size glyphs to avoid degenerate packing)
-            let gw_pad = gw.max(1);
-            let gh_pad = gh.max(1);
-
-            // Copy bitmap into atlas only if it has pixels
+            // Copy bitmap into atlas with padding offset
             if gw > 0 && gh > 0 {
                 for row in 0..gh {
                     let src = &bmp[row * gw..row * gw + gw];
-                    let dst = &mut atlas[row * atlas_width + element_cursor
-                        ..row * atlas_width + element_cursor + gw];
+                    // Offset destination by PADDING pixels vertically and horizontally
+                    let dst_row = PADDING + row;
+                    let dst_start = dst_row * atlas_width + element_cursor;
+                    let dst_end = dst_start + gw;
+                    let dst = &mut atlas[dst_start..dst_end];
                     dst.copy_from_slice(src);
                 }
             }
@@ -219,18 +222,18 @@ pub fn render_text(
             let w_px = gw as f32;
             let h_px = gh as f32;
 
-            // UV rectangle (normalized) uses padded pack width/height
+            // UV rectangle (normalized) - exclude padding from sampled area
             let u0 = (element_cursor as f32) / (atlas_width as f32);
-            let v0 = 0.0;
-            let u1 = ((element_cursor + gw_pad) as f32) / (atlas_width as f32);
-            let v1 = (gh_pad as f32) / (atlas_height as f32);
+            let v0 = (PADDING as f32) / (atlas_height as f32);
+            let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
+            let v1 = ((PADDING + gh) as f32) / (atlas_height as f32);
 
             if gw > 0 && gh > 0 {
                 all_instance_data.extend_from_slice(&[x_px, y_px, w_px, h_px, u0, v0, u1, v1]);
             }
 
-            // Advance pack cursor by padded width
-            element_cursor += gw_pad;
+            // Advance cursor by glyph width + padding for next glyph
+            element_cursor += gw + 2 * PADDING;
         }
 
         x_cursor = element_cursor;
