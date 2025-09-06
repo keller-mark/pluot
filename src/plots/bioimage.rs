@@ -501,5 +501,7 @@ pub async fn render_bioimage(
         drop(render_pass);
     }
 
-    RenderResult { bailed_early: true }
+    RenderResult {
+        bailed_early: false,
+    }
 }

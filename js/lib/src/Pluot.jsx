@@ -128,6 +128,7 @@ export function Pluot(props) {
     camera.setView(viewMatrix);
   }, [canvasRef]);
 
+  // TODO: switch this useEffect to use React-Query.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !isWasmReady) {
@@ -167,7 +168,12 @@ export function Pluot(props) {
         );
         ctx.putImageData(imageData, 0, 0);
 
-        console.log(arr.at(-1));
+        const bailedEarly = arr.at(-1) === 1;
+        if (bailedEarly) {
+          // TODO: do this via react state and useEffect?
+          // TODO: prevent infinite loop if always bailing early?
+          requestAnimationFrame(renderFrame);
+        }
       });
     }
     function animate() {
