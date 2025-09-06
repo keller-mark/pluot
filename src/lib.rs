@@ -4,6 +4,7 @@ mod params;
 mod plots;
 mod render;
 
+pub(crate) mod timeout;
 pub mod two;
 mod zarr;
 

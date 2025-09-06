@@ -5,22 +5,11 @@ use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 
 use crate::log;
+use crate::maybe_timeout;
 use crate::params::{PlotParams, RenderContext, RenderResult};
 use crate::wgpu;
 
 use ome_zarr_metadata::v0_5::RelaxedOmeFields;
-
-macro_rules! maybe_timeout {
-    ($v1:expr, $v2:expr) => {
-        match $v2 {
-            Some(timeout_ms) => $v1.timeout(Duration::from_millis(timeout_ms as u64)),
-            // I can't seem to deal with unification of the two match arms if I simply return $v1 below.
-            // For now, just set the timeout to 24 hours.
-            // It would be best to avoid any timeout logic in the non-interactive case, as it can be finicky.
-            None => $v1.timeout(Duration::from_millis(24 * 60 * 60 * 1000)),
-        }
-    };
-}
 
 pub async fn render_bioimage(
     context: &RenderContext<'_>,
@@ -111,10 +100,10 @@ pub async fn render_bioimage(
 
     // For now, load the lowest resolution level.
     // If small enough, use as the initial/background image (perhaps only needed in the interactive case, though).
-    let lowres_dataset = &first_multiscale.datasets[1];
-    // TODO: temporarily use higher lowres img
-    //.last()
-    //.expect("At least one dataset");
+    let lowres_dataset = &first_multiscale
+        .datasets
+        .last()
+        .expect("At least one dataset");
     let lowres_array =
         zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", lowres_dataset.path))
             .await
