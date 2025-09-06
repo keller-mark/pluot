@@ -46,7 +46,7 @@ const DEMOS = {
 };
 
 export function Demo() {
-  const [currPlotId, setCurrPlotId] = useState("scatterplot_1m");
+  const [currPlotId, setCurrPlotId] = useState("ome_ngff");
 
   const plotType = DEMOS[currPlotId].plot_type;
   const plotParams = DEMOS[currPlotId].plot_params;

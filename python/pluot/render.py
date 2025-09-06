@@ -6,7 +6,7 @@ from ._internal import render_py
 async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
-    result = await render_py(**kwargs)
+    result = await render_py(timeout=None, **kwargs)
     return result
 
 async def render_to_array(**kwargs):
@@ -14,7 +14,8 @@ async def render_to_array(**kwargs):
     width = kwargs["width"]
     height = kwargs["height"]
     result = await render(**kwargs)
-    arr = np.frombuffer(result, dtype=np.dtype('uint8')).reshape((height, width, 4))
+    NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
+    arr = np.frombuffer(result[:-NUM_EXTRA_BYTES], dtype=np.dtype('uint8')).reshape((height, width, 4))
     return arr
 
 async def render_to_image(**kwargs):

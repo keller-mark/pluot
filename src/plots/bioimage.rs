@@ -1,10 +1,26 @@
 use std::borrow::Cow;
+use std::future::Future;
+
+use futures_time::future::FutureExt;
+use futures_time::time::Duration;
 
 use crate::log;
 use crate::params::{PlotParams, RenderContext, RenderResult};
 use crate::wgpu;
 
 use ome_zarr_metadata::v0_5::RelaxedOmeFields;
+
+macro_rules! maybe_timeout {
+    ($v1:expr, $v2:expr) => {
+        match $v2 {
+            Some(timeout_ms) => $v1.timeout(Duration::from_millis(timeout_ms as u64)),
+            // I can't seem to deal with unification of the two match arms if I simply return $v1 below.
+            // For now, just set the timeout to 24 hours.
+            // It would be best to avoid any timeout logic in the non-interactive case, as it can be finicky.
+            None => $v1.timeout(Duration::from_millis(24 * 60 * 60 * 1000)),
+        }
+    };
+}
 
 pub async fn render_bioimage(
     context: &RenderContext<'_>,
@@ -95,10 +111,10 @@ pub async fn render_bioimage(
 
     // For now, load the lowest resolution level.
     // If small enough, use as the initial/background image (perhaps only needed in the interactive case, though).
-    let lowres_dataset = &first_multiscale
-        .datasets
-        .last()
-        .expect("At least one dataset");
+    let lowres_dataset = &first_multiscale.datasets[1];
+    // TODO: temporarily use higher lowres img
+    //.last()
+    //.expect("At least one dataset");
     let lowres_array =
         zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", lowres_dataset.path))
             .await
@@ -185,10 +201,30 @@ pub async fn render_bioimage(
     // TODO: support other dtypes.
 
     // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
-    let (ch0_result, ch1_result) = futures::join!(
-        lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch0_arr_slice),
-        lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice),
+    let futures_try_join_result = futures::try_join!(
+        maybe_timeout!(
+            lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch0_arr_slice),
+            context.params.timeout
+        ),
+        maybe_timeout!(
+            lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice),
+            context.params.timeout
+        )
     );
+
+    let (ch0_result, ch1_result) = match futures_try_join_result {
+        Ok((ch0_result, ch1_result)) => {
+            // Both channel reads succeeded within the timeout.
+            log("Both channel reads succeeded within the timeout.");
+            (ch0_result, ch1_result)
+        }
+        Err(_) => {
+            // TODO: still render something in this case
+            // (e.g., lower-resolution image or subset of channels)
+            log("Channel reads timed out or failed");
+            return RenderResult { bailed_early: true };
+        }
+    };
 
     // Read the whole array
     let ch0_arr = ch0_result.expect("Read ch0 pixel data");
