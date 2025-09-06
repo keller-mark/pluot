@@ -1,13 +1,15 @@
-use core::num;
 use std::borrow::Cow;
 
 use crate::log;
-use crate::params::{PlotParams, RenderContext};
+use crate::params::{PlotParams, RenderContext, RenderResult};
 use crate::wgpu;
 
 use ome_zarr_metadata::v0_5::RelaxedOmeFields;
 
-pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+pub async fn render_bioimage(
+    context: &RenderContext<'_>,
+    encoder: &mut wgpu::CommandEncoder,
+) -> RenderResult {
     // Get x and y data from the Zarr store.
     let store = context.store;
 
@@ -498,4 +500,6 @@ pub async fn render_bioimage(context: &RenderContext<'_>, encoder: &mut wgpu::Co
         // End the renderpass.
         drop(render_pass);
     }
+
+    RenderResult { bailed_early: true }
 }

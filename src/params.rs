@@ -70,6 +70,10 @@ pub struct RenderContext<'a> {
     //pub vello_scene: &'a mut vello::Scene,
 }
 
+pub struct RenderResult {
+    pub bailed_early: bool,
+}
+
 impl Default for RenderParams {
     fn default() -> Self {
         Self {

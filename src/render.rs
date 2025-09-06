@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::params::RenderContext;
-pub use crate::params::{PlotParams, RenderParams};
+pub use crate::params::{PlotParams, RenderParams, RenderResult};
 use crate::plots;
 use crate::zarr::AsyncZarritaStore;
 
@@ -197,18 +197,16 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     };
 
     // Plot type-specific rendering logic.
-    match params.plot_params {
-        PlotParams::Triangle => {
-            plots::triangle::render_triangle(&mut context, &mut encoder).await;
-        }
+    let render_result = match params.plot_params {
+        PlotParams::Triangle => plots::triangle::render_triangle(&mut context, &mut encoder).await,
         PlotParams::Scatterplot(_) => {
-            plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await;
+            plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await
         }
         PlotParams::Bioimage(_) => {
-            plots::bioimage::render_bioimage(&mut context, &mut encoder).await;
+            plots::bioimage::render_bioimage(&mut context, &mut encoder).await
         }
         _ => panic!("Unsupported plot type"),
-    }
+    };
 
     // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(
@@ -294,7 +292,10 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();
 
-    let mut pixels = vec![0u8; (unpadded_bytes_per_row * height) as usize];
+    let NUM_EXTRA_BYTES = 1;
+
+    let mut pixels = vec![0u8; (unpadded_bytes_per_row * height + NUM_EXTRA_BYTES) as usize];
+
     for y in 0..height {
         let src_start = (y as usize) * (padded_bytes_per_row as usize);
         let src_end = src_start + (unpadded_bytes_per_row as usize);
@@ -302,6 +303,13 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         let dst_end = dst_start + (unpadded_bytes_per_row as usize);
         pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
     }
+
+    // Add final byte to provide the RenderResult values to the caller.
+    pixels[(unpadded_bytes_per_row * height) as usize] = match render_result.bailed_early {
+        false => 0,
+        true => 1,
+    };
+
     drop(data);
     output_buffer.unmap();
 

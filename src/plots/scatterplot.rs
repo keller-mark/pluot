@@ -8,8 +8,7 @@ use vello::{
     AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
 };
 */
-use crate::params::{PlotParams, RenderContext};
-use crate::two::text_vger::with_vger_renderer;
+use crate::params::{PlotParams, RenderContext, RenderResult};
 
 use crate::d3::axis::{Axis, AxisOrientation};
 use crate::d3::scale::{Scale, ScaleLinear};
@@ -18,7 +17,7 @@ use crate::two::shapes::{TwoCircle, TwoElement, TwoLine, TwoPath, TwoRectangle, 
 pub async fn render_scatterplot(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
-) {
+) -> RenderResult {
     // Get x and y data from the Zarr store.
     let store = context.store;
 
@@ -409,4 +408,8 @@ pub async fn render_scatterplot(
     crate::two::text_fontdue::render_text(context, encoder, &text_elements, y_axis_translate);
 
     crate::render::overlay_pass(context, encoder, &scatter_tex);
+
+    RenderResult {
+        bailed_early: false,
+    }
 }

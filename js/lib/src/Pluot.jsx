@@ -161,11 +161,13 @@ export function Pluot(props) {
         // TODO: is there a more efficient way to do this?
         // E.g., write to a webgl texture? or is this fast enough already?
         const imageData = new ImageData(
-          new Uint8ClampedArray(arr),
+          new Uint8ClampedArray(arr.subarray(0, -1)),
           width,
           height,
         );
         ctx.putImageData(imageData, 0, 0);
+
+        console.log(arr.at(-1));
       });
     }
     function animate() {
