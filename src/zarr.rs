@@ -1,30 +1,26 @@
-
-use crate::{
-    zarr_has, zarr_get, zarr_get_range_from_offset, zarr_get_range_from_end,
-};
+use crate::{zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has};
 
 use futures::{stream, StreamExt, TryStreamExt};
 use zarrs::storage::{
-    byte_range::{ByteRange, ByteRangeIterator}, Bytes, StoreKey,
-    AsyncReadableStorageTraits, MaybeBytes, AsyncMaybeBytesIterator,
-    StorageError,
+    byte_range::{ByteRange, ByteRangeIterator},
+    AsyncMaybeBytesIterator, AsyncReadableStorageTraits, Bytes, MaybeBytes, StorageError, StoreKey,
 };
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock, Arc};
+use std::sync::{Arc, Mutex, OnceLock};
 
 // We need to use quick_cache.
 // Using mini_moka did not work, as its sync Cache was not compatible with WASM,
 // and its unsync Cache was not cooperating with OnceLock/Mutex/RefCell/OnceCell/etc.
 use quick_cache::sync::Cache;
 
-
-static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, Bytes>>>>> = OnceLock::new();
+static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, Bytes>>>>> =
+    OnceLock::new();
 
 fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, Bytes>> {
     let map_mutex = ZARR_STORE_CACHES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = map_mutex.lock().unwrap();
-    
+
     if let Some(cache) = map.get(name) {
         cache.clone()
     } else {
@@ -40,15 +36,14 @@ fn normalize_key(key: &str, byte_range: Option<ByteRange>) -> String {
     match byte_range {
         Some(ByteRange::FromStart(start, Some(len))) => {
             format!("{}:{}:{}", key, start, start + len - 1)
-        },
+        }
         Some(ByteRange::Suffix(suffix_length)) => {
             format!("{}:-{}", key, suffix_length)
-        },
+        }
         None => key.to_string(),
         _ => panic!("Unsupported ByteRange variant"),
     }
 }
-
 
 // References:
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/storage_async.rs
@@ -79,8 +74,10 @@ impl AsyncZarritaStore {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl AsyncReadableStorageTraits for AsyncZarritaStore {
+    // Note: this has a default implementation in zarrs,
+    // so this may not be necessary.
+    // Reference: https://github.com/zarrs/zarrs/blob/cd1ee50c7a7c4af3002ffe4a8314c568c9b11b38/zarrs_storage/src/storage_async.rs#L32
     async fn get(&self, key: &StoreKey) -> Result<MaybeBytes, StorageError> {
-
         // Normalize the key similar to lru_cache.ts
         // considering potential Range info.
         let key_str = normalize_key(key.as_str(), None);
@@ -99,11 +96,11 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
 
         // Store in cache
         cache.insert(key_str.to_string(), bytes.clone());
-        
+
         Ok(Some(bytes))
     }
 
-    async fn get_byte_ranges<'a>(
+    async fn get_partial_many<'a>(
         &'a self,
         key: &StoreKey,
         byte_ranges: ByteRangeIterator<'a>,
@@ -112,7 +109,6 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
 
         // Iterate over the requested byte ranges (potentially multiple).
         for byte_range in byte_ranges {
-
             // Normalize the key similar to lru_cache.ts
             // considering potential Range info.
             let key_str = normalize_key(key.as_str(), Some(byte_range));
@@ -125,11 +121,22 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                 // Cache miss.
                 let bytes = match byte_range {
                     ByteRange::FromStart(start, Some(len)) => {
-                        zarr_get_range_from_offset(&self.store_name, key.as_str(), start as u32, len as u32).await
-                    },
+                        zarr_get_range_from_offset(
+                            &self.store_name,
+                            key.as_str(),
+                            start as u32,
+                            len as u32,
+                        )
+                        .await
+                    }
                     ByteRange::Suffix(suffix_length) => {
-                        zarr_get_range_from_end(&self.store_name, key.as_str(), suffix_length as u32).await
-                    },
+                        zarr_get_range_from_end(
+                            &self.store_name,
+                            key.as_str(),
+                            suffix_length as u32,
+                        )
+                        .await
+                    }
                     _ => panic!("Unsupported ByteRange variant"),
                 };
 
