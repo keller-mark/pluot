@@ -147,20 +147,6 @@ pub async fn render_triangle(
     // Render the axis:
     crate::two::canvas::render_shapes(context, encoder, &x_axis_group);
 
-    /*
-    // TODO: should the filter logic and render_text call be called inside of render_shapes?
-    // Render the text elements of the axis:
-    let text_elements: Vec<TwoText> = x_axis_elements
-        .into_iter()
-        .filter_map(|element| match element {
-            TwoElement::Text(text) => Some(text),
-            _ => None,
-        })
-        .collect();
-
-    crate::two::text_fontdue::render_text(context, encoder, &text_elements);
-    */
-
     //println!("Rendered triangle");
     /*
     let vello_view = context

@@ -392,37 +392,6 @@ pub async fn render_scatterplot(
     // Render the X and Y axes:
     crate::two::canvas::render_shapes(context, encoder, &axis_elements);
 
-    /*
-    // TODO: should the filter logic and render_text call be called inside of render_shapes?
-    // Render the text elements of the axis:
-    let text_elements: Vec<TwoText> = x_axis_elements
-        .into_iter()
-        .filter_map(|element| match element {
-            TwoElement::Text(text) => Some(text),
-            _ => None,
-        })
-        .collect();
-
-    crate::two::text_fontdue::render_text(context, encoder, &text_elements, x_axis_translate);
-
-    // ===== RENDER Y AXIS =====
-    // Render the non-text elements of the axis:
-    let y_axis_translate = Some((40.0, 0.0));
-    crate::two::canvas::render_shapes(context, encoder, &y_axis_elements, y_axis_translate);
-
-    // TODO: should the filter logic and render_text call be called inside of render_shapes?
-    // Render the text elements of the axis:
-    let text_elements: Vec<TwoText> = y_axis_elements
-        .into_iter()
-        .filter_map(|element| match element {
-            TwoElement::Text(text) => Some(text),
-            _ => None,
-        })
-        .collect();
-
-    crate::two::text_fontdue::render_text(context, encoder, &text_elements, y_axis_translate);
-    */
-
     crate::render::overlay_pass(context, encoder, &scatter_tex);
 
     RenderResult {
