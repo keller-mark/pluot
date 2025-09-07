@@ -241,11 +241,11 @@ mod tests {
 
         let expected_svg_str = r#"
             <g height="200" width="200">
-                <rect fill="red" height="40" opacity="0.5" stroke="blue" stroke-width="2" transform="rotate(45,25,40)" width="30" x="10" y="20"/>
-                <circle cx="50" cy="60" fill="green" opacity="1" r="15"/>
-                <line opacity="1" stroke="black" stroke-width="3" x1="70" x2="90" y1="80" y2="100"/>
-                <path d="M 110 120 L 130 140" fill="yellow" opacity="1" stroke="purple" stroke-width="4"/>
-                <text dominant-baseline="middle" fill="orange" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" x="150" y="160">Hello</text>
+                <rect fill="rgb(255, 0, 0)" height="40" opacity="0.5" stroke="rgb(0, 0, 255)" stroke-width="2" transform="rotate(45,25,40)" width="30" x="10" y="20"/>
+                <circle cx="50" cy="60" fill="rgb(0, 255, 0)" opacity="1" r="15"/>
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="3" x1="70" x2="90" y1="80" y2="100"/>
+                <path d="M 110 120 L 130 140" fill="rgb(0, 255, 255)" opacity="1" stroke="rgb(255, 0, 255)" stroke-width="4"/>
+                <text dominant-baseline="middle" fill="rgb(0, 128, 255)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" x="150" y="160">Hello</text>
             </g>
         "#;
 
