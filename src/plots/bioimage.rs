@@ -1,6 +1,11 @@
 use std::borrow::Cow;
+use std::future::Future;
+
+use futures_time::future::FutureExt;
+use futures_time::time::Duration;
 
 use crate::log;
+use crate::maybe_timeout;
 use crate::params::{PlotParams, RenderContext, RenderResult};
 use crate::wgpu;
 
@@ -185,10 +190,30 @@ pub async fn render_bioimage(
     // TODO: support other dtypes.
 
     // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
-    let (ch0_result, ch1_result) = futures::join!(
-        lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch0_arr_slice),
-        lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice),
+    let futures_try_join_result = futures::try_join!(
+        maybe_timeout!(
+            lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch0_arr_slice),
+            context.params.timeout
+        ),
+        maybe_timeout!(
+            lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice),
+            context.params.timeout
+        )
     );
+
+    let (ch0_result, ch1_result) = match futures_try_join_result {
+        Ok((ch0_result, ch1_result)) => {
+            // Both channel reads succeeded within the timeout.
+            log("Both channel reads succeeded within the timeout.");
+            (ch0_result, ch1_result)
+        }
+        Err(_) => {
+            // TODO: still render something in this case
+            // (e.g., lower-resolution image or subset of channels)
+            log("Channel reads timed out or failed");
+            return RenderResult { bailed_early: true };
+        }
+    };
 
     // Read the whole array
     let ch0_arr = ch0_result.expect("Read ch0 pixel data");

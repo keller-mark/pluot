@@ -3,7 +3,7 @@
 use svg::node::element::{Circle, Group, Line, Path, Rectangle, Text};
 use svg::Document;
 
-use crate::two::shapes::{TwoElement, TwoTextBaseline};
+use crate::two::shapes::{TwoColor, TwoElement, TwoTextBaseline};
 
 pub fn init_svg(width: f64, height: f64) -> (Document, Group) {
     let document = Document::new()
@@ -19,6 +19,18 @@ pub fn init_svg(width: f64, height: f64) -> (Document, Group) {
 pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
     for element in elements {
         group = match element {
+            TwoElement::Group(d) => {
+                let mut sub_group = Group::new();
+                if let Some(translate) = d.translate {
+                    sub_group = sub_group.set(
+                        "transform",
+                        format!("translate({},{})", translate.0, translate.1),
+                    );
+                }
+                // Recursion.
+                sub_group = update_svg(sub_group, &d.elements);
+                group.add(sub_group)
+            }
             TwoElement::Rectangle(d) => {
                 let mut rect = Rectangle::new()
                     .set("x", d.x)
@@ -28,13 +40,13 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     .set("opacity", d.opacity);
 
                 if let Some(fill) = &d.fill {
-                    rect = rect.set("fill", fill.as_str());
+                    rect = rect.set("fill", fill.to_string());
                 }
 
                 if let Some(stroke) = &d.stroke {
                     rect = rect
                         .set("stroke-width", d.linewidth)
-                        .set("stroke", stroke.as_str());
+                        .set("stroke", stroke.to_string());
                 }
 
                 if let Some(rotation) = d.rotation {
@@ -53,13 +65,13 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     .set("opacity", d.opacity);
 
                 if let Some(fill) = &d.fill {
-                    circle = circle.set("fill", fill.as_str());
+                    circle = circle.set("fill", fill.to_string());
                 }
 
                 if let Some(stroke) = &d.stroke {
                     circle = circle
                         .set("stroke-width", d.linewidth)
-                        .set("stroke", stroke.as_str());
+                        .set("stroke", stroke.to_string());
                 }
                 group.add(circle)
             }
@@ -74,7 +86,7 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                 if let Some(stroke) = &d.stroke {
                     line = line
                         .set("stroke-width", d.linewidth)
-                        .set("stroke", stroke.as_str());
+                        .set("stroke", stroke.to_string());
                 }
 
                 group.add(line)
@@ -91,7 +103,7 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                 let mut path = Path::new().set("opacity", d.opacity).set("d", path_d);
 
                 if let Some(fill) = &d.fill {
-                    path = path.set("fill", fill.as_str());
+                    path = path.set("fill", fill.to_string());
                 } else {
                     path = path.set("fill", "none");
                 }
@@ -99,7 +111,7 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                 if let Some(stroke) = &d.stroke {
                     path = path
                         .set("stroke-width", d.linewidth)
-                        .set("stroke", stroke.as_str());
+                        .set("stroke", stroke.to_string());
                 }
 
                 group.add(path)
@@ -121,7 +133,7 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     .set("text-anchor", d.align.to_string())
                     .set("dominant-baseline", baseline)
                     .set("opacity", d.opacity)
-                    .set("fill", d.fill.as_str())
+                    .set("fill", d.fill.to_string())
                     .set("font-size", d.fontsize)
                     .set("font-family", d.font.as_str());
 
@@ -177,8 +189,8 @@ mod tests {
                 width: 30.0,
                 height: 40.0,
                 opacity: 0.5,
-                fill: Some("red".to_string()),
-                stroke: Some("blue".to_string()),
+                fill: Some(TwoColor::Rgb((255, 0, 0))),
+                stroke: Some(TwoColor::Rgb((0, 0, 255))),
                 linewidth: 2.0,
                 rotation: Some(std::f64::consts::PI / 4.0),
             }),
@@ -187,7 +199,7 @@ mod tests {
                 y: 60.0,
                 radius: 15.0,
                 opacity: 1.0,
-                fill: Some("green".to_string()),
+                fill: Some(TwoColor::Rgb((0, 255, 0))),
                 stroke: None,
                 linewidth: 1.0,
             }),
@@ -197,14 +209,14 @@ mod tests {
                 x2: 90.0,
                 y2: 100.0,
                 opacity: 1.0,
-                stroke: Some("black".to_string()),
+                stroke: Some(TwoColor::Rgb((0, 0, 0))),
                 linewidth: 3.0,
             }),
             TwoElement::Path(TwoPath {
                 points: vec![(110.0, 120.0), (130.0, 140.0)],
                 opacity: 1.0,
-                fill: Some("yellow".to_string()),
-                stroke: Some("purple".to_string()),
+                fill: Some(TwoColor::Rgb((0, 255, 255))),
+                stroke: Some(TwoColor::Rgb((255, 0, 255))),
                 linewidth: 4.0,
             }),
             TwoElement::Text(TwoText {
@@ -214,7 +226,7 @@ mod tests {
                 width: 100.0,
                 height: 100.0,
                 opacity: 1.0,
-                fill: "orange".to_string(),
+                fill: TwoColor::Rgb((0, 128, 255)),
                 fontsize: 12.0,
                 font: "Arial".to_string(),
                 align: TwoTextAlign::Middle,
@@ -229,11 +241,11 @@ mod tests {
 
         let expected_svg_str = r#"
             <g height="200" width="200">
-                <rect fill="red" height="40" opacity="0.5" stroke="blue" stroke-width="2" transform="rotate(45,25,40)" width="30" x="10" y="20"/>
-                <circle cx="50" cy="60" fill="green" opacity="1" r="15"/>
-                <line opacity="1" stroke="black" stroke-width="3" x1="70" x2="90" y1="80" y2="100"/>
-                <path d="M 110 120 L 130 140" fill="yellow" opacity="1" stroke="purple" stroke-width="4"/>
-                <text dominant-baseline="middle" fill="orange" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" x="150" y="160">Hello</text>
+                <rect fill="rgb(255, 0, 0)" height="40" opacity="0.5" stroke="rgb(0, 0, 255)" stroke-width="2" transform="rotate(45,25,40)" width="30" x="10" y="20"/>
+                <circle cx="50" cy="60" fill="rgb(0, 255, 0)" opacity="1" r="15"/>
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="3" x1="70" x2="90" y1="80" y2="100"/>
+                <path d="M 110 120 L 130 140" fill="rgb(0, 255, 255)" opacity="1" stroke="rgb(255, 0, 255)" stroke-width="4"/>
+                <text dominant-baseline="middle" fill="rgb(0, 128, 255)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" x="150" y="160">Hello</text>
             </g>
         "#;
 

@@ -7,6 +7,7 @@ from os.path import join, dirname
 
 GLOBAL_STORES = {
     "my_store": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "gaussian_quantiles.zarr")),
+    "ome_ngff": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "6001240_labels.ome.zarr")),
 }
 
 async def zarr_has(store_name: str, key: str) -> bool:

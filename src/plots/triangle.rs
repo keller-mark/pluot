@@ -11,7 +11,9 @@ use crate::wgpu;
 // };
 
 use crate::params::{PlotParams, RenderContext, RenderResult};
-use crate::two::shapes::{TwoCircle, TwoElement, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::shapes::{
+    TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
+};
 
 pub async fn render_triangle(
     context: &mut RenderContext<'_>,
@@ -129,99 +131,21 @@ pub async fn render_triangle(
         drop(render_pass);
     }
 
-    // Test rendering some shapes.
-    // TODO: allow for multiple render_shapes? Or force the user to construct a single Vec<TwoElement>?
-    // But how to handle different translations for different groups of shapes?
-    // Add a wrapper TwoGroup with translation and Vec<TwoElement> inside?
-    crate::two::canvas::render_shapes(
-        context,
-        encoder,
-        &vec![
-            TwoElement::Rectangle(TwoRectangle {
-                x: 10.0,
-                y: 10.0,
-                width: 30.0,
-                height: 40.0,
-                opacity: 0.7,
-                fill: None,
-                stroke: Some("#0000FF".to_string()),
-                linewidth: 2.0,
-                rotation: None,
-            }),
-            TwoElement::Rectangle(TwoRectangle {
-                x: 40.0,
-                y: 50.0,
-                width: 30.0,
-                height: 40.0,
-                opacity: 1.0,
-                fill: Some("#000000".to_string()),
-                stroke: Some("#00FFFF".to_string()),
-                linewidth: 2.0,
-                rotation: None,
-            }),
-            TwoElement::Circle(TwoCircle {
-                x: 50.0,
-                y: 60.0,
-                radius: 15.0,
-                opacity: 1.0,
-                fill: Some("#00F0F0".to_string()),
-                stroke: None,
-                linewidth: 1.0,
-            }),
-            TwoElement::Line(TwoLine {
-                x1: 10.0,
-                y1: 10.0,
-                x2: 100.0,
-                y2: 100.0,
-                opacity: 1.0,
-                stroke: Some("#000000".to_string()),
-                linewidth: 3.0,
-            }),
-            TwoElement::Path(TwoPath {
-                points: vec![(10.0, 10.0), (10.0, 80.0), (100.0, 100.0)],
-                opacity: 1.0,
-                fill: None,
-                stroke: Some("#000000".to_string()),
-                linewidth: 2.0,
-            }),
-            TwoElement::Text(TwoText {
-                text: "Hello, world".to_string(),
-                x: 100.0,
-                y: 10.0,
-                width: 100.0,
-                height: 40.0,
-                opacity: 0.7,
-                fill: "#0000FF".to_string(),
-                rotation: None,
-                fontsize: 32.0,
-                ..Default::default()
-            }),
-        ],
-        None,
-    );
-
-    // Test rendering an axis:
+    // Render the X axis:
     let mut x_scale = ScaleLinear::new();
     x_scale.set_domain((0.0, 100.0));
     x_scale.set_range((20.0, 780.0));
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
-    // Render the non-text elements of the axis:
-    let axis_translate = Some((0.0, 750.0));
-    crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, axis_translate);
+    let x_axis_group = vec![TwoElement::Group(TwoGroup {
+        elements: x_axis_elements,
+        translate: Some((0.0, 750.0)),
+        ..Default::default()
+    })];
 
-    // TODO: should the filter logic and render_text call be called inside of render_shapes?
-    // Render the text elements of the axis:
-    let text_elements: Vec<TwoText> = x_axis_elements
-        .into_iter()
-        .filter_map(|element| match element {
-            TwoElement::Text(text) => Some(text),
-            _ => None,
-        })
-        .collect();
-
-    crate::two::text_fontdue::render_text(context, encoder, &text_elements, axis_translate);
+    // Render the axis:
+    crate::two::canvas::render_shapes(context, encoder, &x_axis_group);
 
     //println!("Rendered triangle");
     /*

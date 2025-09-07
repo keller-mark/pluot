@@ -7,7 +7,12 @@ async fn test_render_triangle() {
     let params = RenderParams::default();
     let result_vec = render(params).await;
 
-    assert_eq!(result_vec.len(), (100 * 100 * 4) as usize);
+    let NUM_EXTRA_BYTES = 1;
+
+    assert_eq!(
+        result_vec.len(),
+        ((100 * 100 * 4) + NUM_EXTRA_BYTES) as usize
+    );
 
     let is_not_all_zero = result_vec.iter().any(|&x| x != 0);
     assert!(

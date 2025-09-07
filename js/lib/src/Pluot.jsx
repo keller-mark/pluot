@@ -157,6 +157,7 @@ export function Pluot(props) {
         plot_type: plotType,
         store_name: storeName,
         plot_params: plotParams,
+        timeout: 200, // in ms
       };
       wasm.render_wasm(renderParams).then((arr) => {
         // TODO: is there a more efficient way to do this?

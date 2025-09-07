@@ -1,7 +1,9 @@
 // Reference: https://github.com/d3/d3-axis/blob/main/src/axis.js
 
 use crate::d3::scale::{Scale, Scaleable};
-use crate::two::shapes::{TwoElement, TwoLine, TwoPath, TwoText, TwoTextAlign, TwoTextBaseline};
+use crate::two::shapes::{
+    TwoColor, TwoElement, TwoLine, TwoPath, TwoText, TwoTextAlign, TwoTextBaseline,
+};
 
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
@@ -136,7 +138,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
 
         elements.push(TwoElement::Path(TwoPath {
             points: path_points,
-            stroke: Some("#000000".to_string()),
+            stroke: Some(TwoColor::Rgb((0, 0, 0))),
             fill: None,
             linewidth: 1.0,
             opacity: 1.0,
@@ -160,7 +162,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
                 y1,
                 x2,
                 y2,
-                stroke: Some("#000000".to_string()),
+                stroke: Some(TwoColor::Rgb((0, 0, 0))),
                 linewidth: 1.0,
                 opacity: 1.0,
             }));
@@ -200,7 +202,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
                 //text: format(&value),
                 align,
                 baseline,
-                fill: "#000000".to_string(),
+                fill: TwoColor::Rgb((0, 0, 0)),
                 ..Default::default()
             }));
         }
@@ -244,29 +246,29 @@ mod tests {
 
         let expected_svg_str = r#"
             <g height="30" width="500">
-                <path d="M 0.5 6 L 0.5 0.5 L 500.5 0.5 L 500.5 6" fill="none" opacity="1" stroke="currentColor" stroke-width="1"/>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0.5" x2="0.5" y1="0" y2="6"/>
-                <text dominant-baseline="text-before-edge" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="0.5" y="9">
+                <path d="M 0.5 6 L 0.5 0.5 L 500.5 0.5 L 500.5 6" fill="none" opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1"/>
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0.5" x2="0.5" y1="0" y2="6"/>
+                <text dominant-baseline="text-before-edge" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="0.5" y="9">
                     0
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="100.5" x2="100.5" y1="0" y2="6"/>
-                <text dominant-baseline="text-before-edge" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="100.5" y="9">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="100.5" x2="100.5" y1="0" y2="6"/>
+                <text dominant-baseline="text-before-edge" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="100.5" y="9">
                     2
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="200.5" x2="200.5" y1="0" y2="6"/>
-                <text dominant-baseline="text-before-edge" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="200.5" y="9">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="200.5" x2="200.5" y1="0" y2="6"/>
+                <text dominant-baseline="text-before-edge" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="200.5" y="9">
                     4
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="300.5" x2="300.5" y1="0" y2="6"/>
-                <text dominant-baseline="text-before-edge" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="300.5" y="9">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="300.5" x2="300.5" y1="0" y2="6"/>
+                <text dominant-baseline="text-before-edge" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="300.5" y="9">
                     6
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="400.5" x2="400.5" y1="0" y2="6"/>
-                <text dominant-baseline="text-before-edge" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="400.5" y="9">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="400.5" x2="400.5" y1="0" y2="6"/>
+                <text dominant-baseline="text-before-edge" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="400.5" y="9">
                     8
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="500.5" x2="500.5" y1="0" y2="6"/>
-                <text dominant-baseline="text-before-edge" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="500.5" y="9">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="500.5" x2="500.5" y1="0" y2="6"/>
+                <text dominant-baseline="text-before-edge" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="middle" x="500.5" y="9">
                     10
                 </text>
             </g>
@@ -288,29 +290,29 @@ mod tests {
 
         let expected_svg_str = r#"
             <g height="500" width="30">
-                <path d="M -6 0.5 L 0.5 0.5 L 0.5 500.5 L -6 500.5" fill="none" opacity="1" stroke="currentColor" stroke-width="1"/>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0" x2="-6" y1="0.5" y2="0.5"/>
-                <text dominant-baseline="middle" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="0.5">
+                <path d="M -6 0.5 L 0.5 0.5 L 0.5 500.5 L -6 500.5" fill="none" opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1"/>
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0" x2="-6" y1="0.5" y2="0.5"/>
+                <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="0.5">
                     0
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0" x2="-6" y1="100.5" y2="100.5"/>
-                <text dominant-baseline="middle" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="100.5">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0" x2="-6" y1="100.5" y2="100.5"/>
+                <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="100.5">
                     2
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0" x2="-6" y1="200.5" y2="200.5"/>
-                <text dominant-baseline="middle" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="200.5">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0" x2="-6" y1="200.5" y2="200.5"/>
+                <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="200.5">
                     4
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0" x2="-6" y1="300.5" y2="300.5"/>
-                <text dominant-baseline="middle" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="300.5">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0" x2="-6" y1="300.5" y2="300.5"/>
+                <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="300.5">
                     6
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0" x2="-6" y1="400.5" y2="400.5"/>
-                <text dominant-baseline="middle" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="400.5">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0" x2="-6" y1="400.5" y2="400.5"/>
+                <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="400.5">
                     8
                 </text>
-                <line opacity="1" stroke="currentColor" stroke-width="1" x1="0" x2="-6" y1="500.5" y2="500.5"/>
-                <text dominant-baseline="middle" fill="currentColor" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="500.5">
+                <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="0" x2="-6" y1="500.5" y2="500.5"/>
+                <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial,sans-serif" font-size="14" opacity="1" text-anchor="end" x="-9" y="500.5">
                     10
                 </text>
             </g>
