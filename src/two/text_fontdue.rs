@@ -77,9 +77,9 @@ fn calculate_text_position(text_element: &TwoText, text_width: f32) -> (f32, f32
     // More sophisticated baseline handling could be added later
     let y = match text_element.baseline {
         TwoTextBaseline::Top => text_element.y as f32,
-        TwoTextBaseline::Middle => text_element.y as f32,
+        TwoTextBaseline::Middle => (text_element.y - text_element.fontsize / 2.0) as f32,
         TwoTextBaseline::Alphabetic => text_element.y as f32,
-        TwoTextBaseline::Bottom => text_element.y as f32,
+        TwoTextBaseline::Bottom => (text_element.y - text_element.fontsize) as f32,
     };
 
     (x, y)

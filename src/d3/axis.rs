@@ -198,7 +198,11 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
             elements.push(TwoElement::Text(TwoText {
                 x,
                 y,
-                text: format!("{}", value),
+                // For now, limit to 3 significant digits
+                text: format!("{:.3}", value)
+                    .trim_end_matches('0')
+                    .trim_end_matches('.')
+                    .to_string(),
                 //text: format(&value),
                 align,
                 baseline,

@@ -62,7 +62,10 @@ export function Demo() {
 
   return (
     <div>
-      <select onChange={(e) => setCurrPlotId(e.target.value)}>
+      <select
+        value={currPlotId}
+        onChange={(e) => setCurrPlotId(e.target.value)}
+      >
         {Object.keys(DEMOS).map((plotId) => (
           <option key={plotId}>{plotId}</option>
         ))}
