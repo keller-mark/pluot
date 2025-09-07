@@ -1,12 +1,31 @@
 // Reference: https://github.com/keller-mark/deck-to-svg/blob/main/lib/src/shapes.js
 
+pub type RgbColor = (u8, u8, u8);
+pub type RgbaColor = (u8, u8, u8, u8);
+
+#[derive(Clone, Debug)]
+pub enum TwoColor {
+    Rgb(RgbColor),
+    Rgba(RgbaColor),
+}
+
+impl ToString for TwoColor {
+    fn to_string(&self) -> String {
+        match self {
+            TwoColor::Rgb(rgb) => format!("rgb({}, {}, {})", rgb.0, rgb.1, rgb.2),
+            TwoColor::Rgba(rgba) => format!("rgba({}, {}, {}, {})", rgba.0, rgba.1, rgba.2, rgba.3),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct TwoRectangle {
     pub x: f64,
     pub y: f64,
     pub width: f64,
     pub height: f64,
-    pub stroke: Option<String>,
-    pub fill: Option<String>,
+    pub stroke: Option<TwoColor>,
+    pub fill: Option<TwoColor>,
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
@@ -21,7 +40,7 @@ impl Default for TwoRectangle {
             width: 0.0,
             height: 0.0,
             stroke: None,
-            fill: Some("#000".to_string()),
+            fill: Some(TwoColor::Rgb((0, 0, 0))),
             linewidth: 1.0,
             opacity: 1.0,
             rotation: None,
@@ -29,12 +48,13 @@ impl Default for TwoRectangle {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TwoCircle {
     pub x: f64,
     pub y: f64,
     pub radius: f64,
-    pub stroke: Option<String>,
-    pub fill: Option<String>,
+    pub stroke: Option<TwoColor>,
+    pub fill: Option<TwoColor>,
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
@@ -47,19 +67,20 @@ impl Default for TwoCircle {
             y: 0.0,
             radius: 0.0,
             stroke: None,
-            fill: Some("#000".to_string()),
+            fill: Some(TwoColor::Rgb((0, 0, 0))),
             linewidth: 1.0,
             opacity: 1.0,
         }
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TwoLine {
     pub x1: f64,
     pub y1: f64,
     pub x2: f64,
     pub y2: f64,
-    pub stroke: Option<String>,
+    pub stroke: Option<TwoColor>,
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
@@ -72,17 +93,18 @@ impl Default for TwoLine {
             y1: 0.0,
             x2: 0.0,
             y2: 0.0,
-            stroke: Some("#000".to_string()),
+            stroke: Some(TwoColor::Rgb((0, 0, 0))),
             linewidth: 1.0,
             opacity: 1.0,
         }
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TwoPath {
     pub points: Vec<(f64, f64)>,
-    pub stroke: Option<String>,
-    pub fill: Option<String>,
+    pub stroke: Option<TwoColor>,
+    pub fill: Option<TwoColor>,
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
@@ -92,14 +114,15 @@ impl Default for TwoPath {
     fn default() -> Self {
         Self {
             points: Vec::new(),
-            stroke: Some("#000".to_string()),
-            fill: Some("#fff".to_string()),
+            stroke: Some(TwoColor::Rgb((0, 0, 0))),
+            fill: Some(TwoColor::Rgb((255, 255, 255))),
             linewidth: 1.0,
             opacity: 1.0,
         }
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum TwoTextAlign {
     Start,
     Middle,
@@ -116,6 +139,7 @@ impl ToString for TwoTextAlign {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum TwoTextBaseline {
     Alphabetic,
     Top,
@@ -134,11 +158,13 @@ impl ToString for TwoTextBaseline {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum TwoTextOverflow {
     Clip,
     Ellipsis,
 }
 
+#[derive(Clone, Debug)]
 pub struct TwoText {
     pub x: f64,
     pub y: f64,
@@ -146,7 +172,7 @@ pub struct TwoText {
     pub height: f64,
     pub text: String,
 
-    pub fill: String,
+    pub fill: TwoColor,
     pub fontsize: f64,
     pub font: String,
     // Corresponds to canvas `context.textAlign`.
@@ -171,7 +197,7 @@ impl Default for TwoText {
             width: 0.0,
             height: 0.0,
             text: String::new(),
-            fill: "#000".to_string(),
+            fill: TwoColor::Rgb((0, 0, 0)),
             fontsize: 14.0,
             font: "Arial,sans-serif".to_string(),
             align: TwoTextAlign::Middle,
@@ -183,10 +209,31 @@ impl Default for TwoText {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct TwoGroup {
+    pub elements: Vec<TwoElement>,
+    // In radians.
+    pub rotation: Option<f64>,
+    pub translate: Option<(f64, f64)>,
+    // TODO: add data- or aria- attributes for accessibility or hooking up event handlers?
+}
+
+impl Default for TwoGroup {
+    fn default() -> Self {
+        Self {
+            elements: Vec::new(),
+            rotation: None,
+            translate: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum TwoElement {
     Rectangle(TwoRectangle),
     Circle(TwoCircle),
     Line(TwoLine),
     Path(TwoPath),
     Text(TwoText),
+    Group(TwoGroup),
 }

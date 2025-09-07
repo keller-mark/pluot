@@ -8,7 +8,7 @@ use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
 use crate::params::RenderContext;
-use crate::two::shapes::{TwoText, TwoTextAlign, TwoTextBaseline};
+use crate::two::shapes::{TwoColor, TwoText, TwoTextAlign, TwoTextBaseline};
 
 const FONT_BYTES: &[u8] = include_bytes!("fonts/Inter-Bold.ttf").as_slice();
 
@@ -66,11 +66,7 @@ fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
     max_x
 }
 
-fn calculate_text_position(
-    text_element: &TwoText,
-    text_width: f32,
-    translate: Option<(f64, f64)>,
-) -> (f32, f32) {
+fn calculate_text_position(text_element: &TwoText, text_width: f32) -> (f32, f32) {
     let x = match text_element.align {
         TwoTextAlign::Start => text_element.x as f32,
         TwoTextAlign::Middle => text_element.x as f32 - text_width / 2.0,
@@ -86,25 +82,24 @@ fn calculate_text_position(
         TwoTextBaseline::Bottom => text_element.y as f32,
     };
 
-    // Account for translation if provided.
-    if let Some((tx, ty)) = translate {
-        (x + tx as f32, y + ty as f32)
-    } else {
-        (x, y)
-    }
+    (x, y)
 }
 
-// TODO: operate the opposite way. ensure that all color fields of TwoElements are [r, g, b[, a]] tuples,
-// and only translate them to strings as-needed (e.g., for SVG rendering, using "rgb()" or "rgba()").
-fn parse_color(color_str: &str) -> [f32; 4] {
-    if color_str.starts_with('#') && color_str.len() == 7 {
-        let r = u8::from_str_radix(&color_str[1..3], 16).unwrap_or(0) as f32 / 255.0;
-        let g = u8::from_str_radix(&color_str[3..5], 16).unwrap_or(0) as f32 / 255.0;
-        let b = u8::from_str_radix(&color_str[5..7], 16).unwrap_or(0) as f32 / 255.0;
-        [r, g, b, 1.0]
-    } else {
-        // Default to black for unparseable colors
-        [0.0, 0.0, 0.0, 1.0]
+fn parse_color(color: &TwoColor) -> [f32; 4] {
+    match color {
+        TwoColor::Rgb((r, g, b)) => {
+            let r = *r as f32 / 255.0;
+            let g = *g as f32 / 255.0;
+            let b = *b as f32 / 255.0;
+            [r, g, b, 1.0]
+        }
+        TwoColor::Rgba((r, g, b, a)) => {
+            let r = *r as f32 / 255.0;
+            let g = *g as f32 / 255.0;
+            let b = *b as f32 / 255.0;
+            let a = *a as f32 / 255.0;
+            [r, g, b, a]
+        }
     }
 }
 
@@ -112,7 +107,6 @@ pub fn render_text(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
     text_elements: &[TwoText],
-    translate: Option<(f64, f64)>,
 ) {
     // Configurable padding around each glyph to prevent texture bleeding
     const PADDING: usize = 1;
@@ -177,7 +171,7 @@ pub fn render_text(
             &text_element.text,
             text_element.fontsize as f32,
         );
-        let (base_x, base_y) = calculate_text_position(text_element, text_width, translate);
+        let (base_x, base_y) = calculate_text_position(text_element, text_width);
 
         // Create a separate layout for this text element
         let mut element_layout = Layout::new(CoordinateSystem::PositiveYDown);
@@ -303,7 +297,8 @@ pub fn render_text(
         color: [f32; 4],
     }
 
-    // Use the first text element's color, or default to black
+    // TODO: support per-element colors.
+    // For now, we use the first text element's color, or default to black
     let color = if !text_elements.is_empty() {
         parse_color(&text_elements[0].fill)
     } else {

@@ -1,7 +1,9 @@
 // Reference: https://github.com/d3/d3-axis/blob/main/src/axis.js
 
 use crate::d3::scale::{Scale, Scaleable};
-use crate::two::shapes::{TwoElement, TwoLine, TwoPath, TwoText, TwoTextAlign, TwoTextBaseline};
+use crate::two::shapes::{
+    TwoColor, TwoElement, TwoLine, TwoPath, TwoText, TwoTextAlign, TwoTextBaseline,
+};
 
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
@@ -136,7 +138,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
 
         elements.push(TwoElement::Path(TwoPath {
             points: path_points,
-            stroke: Some("#000000".to_string()),
+            stroke: Some(TwoColor::Rgb((0, 0, 0))),
             fill: None,
             linewidth: 1.0,
             opacity: 1.0,
@@ -160,7 +162,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
                 y1,
                 x2,
                 y2,
-                stroke: Some("#000000".to_string()),
+                stroke: Some(TwoColor::Rgb((0, 0, 0))),
                 linewidth: 1.0,
                 opacity: 1.0,
             }));
@@ -200,7 +202,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
                 //text: format(&value),
                 align,
                 baseline,
-                fill: "#000000".to_string(),
+                fill: TwoColor::Rgb((0, 0, 0)),
                 ..Default::default()
             }));
         }

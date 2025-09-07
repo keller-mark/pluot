@@ -12,7 +12,9 @@ use crate::params::{PlotParams, RenderContext, RenderResult};
 
 use crate::d3::axis::{Axis, AxisOrientation};
 use crate::d3::scale::{Scale, ScaleLinear};
-use crate::two::shapes::{TwoCircle, TwoElement, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::shapes::{
+    TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
+};
 
 pub async fn render_scatterplot(
     context: &mut RenderContext<'_>,
@@ -366,6 +368,12 @@ pub async fn render_scatterplot(
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
+    let x_axis_group = TwoElement::Group(TwoGroup {
+        elements: x_axis_elements,
+        translate: Some((0.0, 750.0)),
+        ..Default::default()
+    });
+
     // Construct the Y-axis:
     let mut y_scale = ScaleLinear::new();
     y_scale.set_domain((min_y as f64, max_y as f64));
@@ -373,11 +381,18 @@ pub async fn render_scatterplot(
     let y_axis = Axis::new(AxisOrientation::Left);
     let y_axis_elements = y_axis.generate_elements(&y_scale);
 
-    // ===== RENDER X AXIS =====
-    // Render the non-text elements of the axis:
-    let x_axis_translate = Some((0.0, 760.0));
-    crate::two::canvas::render_shapes(context, encoder, &x_axis_elements, x_axis_translate);
+    let y_axis_group = TwoElement::Group(TwoGroup {
+        elements: y_axis_elements,
+        translate: Some((40.0, 0.0)),
+        ..Default::default()
+    });
 
+    let axis_elements = vec![x_axis_group, y_axis_group];
+
+    // Render the X and Y axes:
+    crate::two::canvas::render_shapes(context, encoder, &axis_elements);
+
+    /*
     // TODO: should the filter logic and render_text call be called inside of render_shapes?
     // Render the text elements of the axis:
     let text_elements: Vec<TwoText> = x_axis_elements
@@ -406,6 +421,7 @@ pub async fn render_scatterplot(
         .collect();
 
     crate::two::text_fontdue::render_text(context, encoder, &text_elements, y_axis_translate);
+    */
 
     crate::render::overlay_pass(context, encoder, &scatter_tex);
 
