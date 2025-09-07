@@ -2,9 +2,9 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use wasm_bindgen_test::*;
-use wasm_bindgen::prelude::*;
 use pluot::{render_wasm, RenderParams};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -23,12 +23,19 @@ async fn test_render_triangle() {
         plot_type: "triangle".to_string(),
         store_name: "my_store".to_string(),
     })
-        .expect("Invalid parameters");
+    .expect("Invalid parameters");
     let result = render_wasm(params).await;
 
     let result_vec = result.to_vec();
-    assert_eq!(result_vec.len(), (width * height * 4) as usize);
+    let NUM_EXTRA_BYTES = 1;
+    assert_eq!(
+        result_vec.len(),
+        ((width * height * 4) + NUM_EXTRA_BYTES) as usize
+    );
 
     let is_not_all_zero = result_vec.iter().any(|&x| x != 0);
-    assert!(is_not_all_zero, "The rendered image should not be all black.");
+    assert!(
+        is_not_all_zero,
+        "The rendered image should not be all black."
+    );
 }
