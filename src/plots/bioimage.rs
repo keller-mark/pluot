@@ -201,6 +201,11 @@ pub async fn render_bioimage(
         )
     );
 
+    // TODO: load image data as vec of individual chunks (rather than requesting the full slice)
+    // to allow for progressive rendering of large images as the chunks load.
+    // We want to render the chunks that have loaded prior to the timeout (if there was a timeout specified).
+    // First convert the requested slice to the chunk keys?
+
     let (ch0_result, ch1_result) = match futures_try_join_result {
         Ok((ch0_result, ch1_result)) => {
             // Both channel reads succeeded within the timeout.
