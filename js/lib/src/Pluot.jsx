@@ -4,7 +4,7 @@ import React, { useLayoutEffect, useEffect, useRef, useState } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
 import createDom2dCamera from "dom-2d-camera";
-import createCamera from "3d-view";
+import createCamera from "3d-view-controls";
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 
@@ -82,6 +82,11 @@ export function Pluot(props) {
 
   const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
 
+  useEffect(() => {
+    // Reset view matrix on plot change.
+    setViewMatrix(DEFAULT_VIEW);
+  }, [plotId]);
+
   /*
     const [zoom, setZoom] = useState(0.0);
     const [targetX, setTargetX] = useState(0.0);
@@ -145,13 +150,19 @@ export function Pluot(props) {
       camera.setView(viewMatrix);
     } else if (mode === "3d") {
       function onCameraEvent(camera, event) {
-        console.log(camera.computedMatrix);
-        setViewMatrix(mat4.clone(camera.computedMatrix));
+        camera.tick();
+        console.log(camera.matrix);
+        setViewMatrix(mat4.clone(camera.matrix));
       }
 
-      const camera = createCamera({
+      const camera = createCamera(canvas, {
         mode: "orbit",
+        zoomSpeed: -3,
       });
+
+      // TODO:
+      // - fork 3d-view-controls and remove usage of "global" - then clean up vite config.
+      // - define a camera.dispsose option.
 
       // Reference: https://github.com/flekschas/dom-2d-camera/blob/cd59ea035a0ea72c2c0535fa3721f8127946576c/src/index.js#L237C3-L315C71
       const keyUpHandler = (event) => {
@@ -176,6 +187,7 @@ export function Pluot(props) {
 
       // Reference: https://github.com/mikolalysenko/3d-view/blob/8269e02337bba1923173a750aa7f3f0f76c91ba5/example/minimal.js#L67
       const mouseMoveHandler = (event) => {
+        /*
         var dx = (event.clientX - lastX) / width;
         var dy = -(event.clientY - lastY) / height;
         if (event.which === 1) {
@@ -192,11 +204,12 @@ export function Pluot(props) {
         }
         lastX = event.clientX;
         lastY = event.clientY;
+        */
         onCameraEvent(camera, event);
       };
 
       const wheelHandler = (event) => {
-        camera.pan(now(), 0, 0, event.deltaY);
+        //camera.pan(now(), 0, 0, event.deltaY);
         onCameraEvent(camera, event);
       };
 
