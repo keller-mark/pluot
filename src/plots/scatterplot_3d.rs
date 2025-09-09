@@ -397,6 +397,9 @@ pub async fn render_scatterplot_3d(
         drop(render_pass);
     }
 
+    // TODO: modify the axis range to depend on viewport width/height rather than hard-coding.
+    // But for 3D, this 2D axis doesnt make sense anyway.
+
     // Construct the X-axis:
     let mut x_scale = ScaleLinear::new();
     x_scale.set_domain((min_x as f64, max_x as f64));
