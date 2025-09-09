@@ -202,6 +202,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         PlotParams::Scatterplot(_) => {
             plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await
         }
+        PlotParams::Scatterplot3d(_) => {
+            plots::scatterplot_3d::render_scatterplot_3d(&mut context, &mut encoder).await
+        }
         PlotParams::Bioimage(_) => {
             plots::bioimage::render_bioimage(&mut context, &mut encoder).await
         }

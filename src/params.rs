@@ -13,6 +13,16 @@ pub struct ScatterplotRenderParams {
     pub color_key: Option<String>,
     pub point_radius: Option<f32>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Scatterplot3dRenderParams {
+    pub x_key: String,
+    pub y_key: String,
+    pub z_key: String,
+    pub color_key: Option<String>,
+    pub point_radius: Option<f32>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BioimageRenderParams {
     pub channel_indices: Vec<u32>,
@@ -28,6 +38,7 @@ pub enum PlotParams {
     // { "plot_type": "Scatterplot" }
     // Reference: https://serde.rs/enum-representations.html
     Scatterplot(ScatterplotRenderParams),
+    Scatterplot3d(Scatterplot3dRenderParams),
     Bioimage(BioimageRenderParams),
     Triangle, // No parameters
 }

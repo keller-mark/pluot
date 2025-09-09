@@ -34,7 +34,9 @@
     "d3-scale": "^4.0.2",
     "d3-drag": "^3.0.0",
     "dom-2d-camera": "^2.2.6",
-    "gl-matrix": "^3.4.4"
+    "gl-matrix": "^3.4.4",
+    "3d-view": "^2.0.1",
+    "3d-view-controls": "^2.2.2"
   },
   "devDependencies": {
     "vitest": "^3.2.4",

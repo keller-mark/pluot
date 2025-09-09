@@ -57,6 +57,12 @@ importers:
 
   js/lib:
     dependencies:
+      3d-view:
+        specifier: ^2.0.1
+        version: 2.0.1
+      3d-view-controls:
+        specifier: ^2.2.2
+        version: 2.2.2
       d3-drag:
         specifier: ^3.0.0
         version: 3.0.0
@@ -107,6 +113,12 @@ importers:
   pkg: {}
 
 packages:
+
+  3d-view-controls@2.2.2:
+    resolution: {integrity: sha512-WL0u3PN41lEx/4qvKqV6bJlweUYoW18FXMshW/qHb41AVdZxDReLoJNGYsI7x6jf9bYelEF62BJPQmO7yEnG2w==}
+
+  3d-view@2.0.1:
+    resolution: {integrity: sha512-YSLRHXNpSziaaiK2R0pI5+JKguoJVbtWmIv9YyBFtl0+q42kQwJB/JUulbFR/1zYFm58ifjKQ6kVdgZ6tyKtCA==}
 
   '@ampproject/remapping@2.3.0':
     resolution: {integrity: sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw==}
@@ -599,6 +611,9 @@ packages:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
     engines: {node: '>=12'}
 
+  binary-search-bounds@2.0.5:
+    resolution: {integrity: sha512-H0ea4Fd3lS1+sTEB2TgcLoK21lLhwEJzlQv3IN47pJS976Gx4zoWe0ak3q+uYh60ppQxg9F16Ri4tS1sfD4+jA==}
+
   browserslist@4.25.2:
     resolution: {integrity: sha512-0si2SJK3ooGzIawRu61ZdPCO1IncZwS8IzuX73sPZsXW6EQ/w/DAfPyKI8l1ETTCr2MnvqWitmlCUxgdul45jA==}
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
@@ -639,6 +654,9 @@ packages:
 
   csstype@3.1.3:
     resolution: {integrity: sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw==}
+
+  cubic-hermite@1.0.0:
+    resolution: {integrity: sha512-DKZ6yLcJiJJgl54mGA4n0uueYB4qdPfOJrQ1HSEZqdKp6D25AAAWVDwpoAxLflOku5a/ALBO77oEIyWcVa+UYg==}
 
   d3-array@3.2.4:
     resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
@@ -779,6 +797,9 @@ packages:
   fflate@0.8.2:
     resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
+  filtered-vector@1.2.5:
+    resolution: {integrity: sha512-5Vu6wdtQJ1O2nRmz39dIr9m3hEDq1skYby5k1cJQdNWK4dMgvYcUEiA/9j7NcKfNZ5LGxn8w2LSLiigyH7pTAw==}
+
   fresh@2.0.0:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
@@ -792,8 +813,26 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
+  gl-mat3@1.0.0:
+    resolution: {integrity: sha512-obeEq9y7xaDoVkwMGJNL1upwpYlPJiXJFhREaNytMqUdfHKHNna9HvImmLV8F8Ys6QOYwPPddptZNoiiec/XOg==}
+
+  gl-mat4@1.2.0:
+    resolution: {integrity: sha512-sT5C0pwB1/e9G9AvAoLsoaJtbMGjfd/jfxo8jMCKqYYEnjZuFvqV5rehqar0538EmssjdDeiEWnKyBSTw7quoA==}
+
   gl-matrix@3.4.4:
     resolution: {integrity: sha512-latSnyDNt/8zYUB6VIJ6PCh2jBjJX6gnDsoCZ7LyW7GkqrD51EWwa9qCoGixj8YqBtETQK/xY7OmpTF8xz1DdQ==}
+
+  gl-quat@1.0.0:
+    resolution: {integrity: sha512-Pv9yvjJgQN85EbE79S+DF50ujxDkyjfYHIyXJcCRiimU1UxMY7vEHbVkj0IWLFaDndhfZT9vVOyfdMobLlrJsQ==}
+
+  gl-vec3@1.2.0:
+    resolution: {integrity: sha512-ynW7j5ZshRTHXG5UPC5u6G52cBCNx53LbNlq2HQ1bAosZbO4wOCEBufXS7KGiKL1slMgy4j/77Ikt+vMznouLg==}
+
+  gl-vec4@1.0.1:
+    resolution: {integrity: sha512-/gx5zzIy75JXzke4yuwcbvK+COWf8UJbVCUPvhfsYVw1GVey4Eextk/0H0ctXnOICruNK7+GS4ILQzEQcHcPEg==}
+
+  has-passive-events@1.0.0:
+    resolution: {integrity: sha512-2vSj6IeIsgvsRMyeQ0JaCX5Q3lX4zMn5HpoVc7MEhQ6pv8Iq9rsXjsp+E5ZwaT7T0xhMT0KmU8gtt1EFVdbJiw==}
 
   html-encoding-sniffer@4.0.0:
     resolution: {integrity: sha512-Y22oTqIU4uuPgEemfz7NDJz6OeKf12Lsu+QC+s3BVpda64lTiMYCyGwg5ki4vFxkMwQdeZDl2adZoqUgdFuTgQ==}
@@ -821,6 +860,9 @@ packages:
   internmap@2.0.3:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
+
+  is-browser@2.1.0:
+    resolution: {integrity: sha512-F5rTJxDQ2sW81fcfOR1GnCXT6sVJC104fCyfj+mjpwNEwaPYSn5fte5jiHmBg3DHsIoL/l8Kvw5VN5SsTRcRFQ==}
 
   is-potential-custom-element-name@1.0.1:
     resolution: {integrity: sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==}
@@ -872,6 +914,18 @@ packages:
   magic-string@0.30.17:
     resolution: {integrity: sha512-sNPKHvyjVf7gyjwS4xGTaW/mCnF8wnjtifKBEhxfZ7E/S8tQ0rssrwGNn6q8JH/ohItJfSQp9mBtQYuTlH5QnA==}
 
+  mat4-decompose@1.0.4:
+    resolution: {integrity: sha512-M3x6GXrzRTt5Ok4/bcHFc869Pe8F3uWaSp3xkUpi+uaTRulPXIZ1GWD13Z3A8WK2bxTrcvX21mjp05gUy/Dwbw==}
+
+  mat4-interpolate@1.0.4:
+    resolution: {integrity: sha512-+ulnoc6GUHq8eGZGbLyhQU61tx2oeNAFilV/xzCCzLV+F3nDk8jqERUqRmx8eNMMMvrdvoRSw0JXmnisfVPY9A==}
+
+  mat4-recompose@1.0.4:
+    resolution: {integrity: sha512-s1P2Yl4LQxq8dN0CgJE+mCO8y3IX/SmauSZ+H0zJsE1UKlgJ9loInfPC/OUxn2MzUW9bfBZf0Wcc2QKA3/e6FQ==}
+
+  matrix-camera-controller@2.1.4:
+    resolution: {integrity: sha512-zsPGPONclrKSImNpqqKDTcqFpWLAIwMXEJtCde4IFPOw1dA9udzFg4HOFytOTosOFanchrx7+Hqq6glLATIxBA==}
+
   mime-db@1.54.0:
     resolution: {integrity: sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==}
     engines: {node: '>= 0.6'}
@@ -882,6 +936,18 @@ packages:
 
   moo-color@1.0.3:
     resolution: {integrity: sha512-i/+ZKXMDf6aqYtBhuOcej71YSlbjT3wCO/4H1j8rPvxDJEifdwgg5MaFyu6iYAT8GBZJg2z0dkgK4YMzvURALQ==}
+
+  mouse-change@1.4.0:
+    resolution: {integrity: sha512-vpN0s+zLL2ykyyUDh+fayu9Xkor5v/zRD9jhSqjRS1cJTGS0+oakVZzNm5n19JvvEj0you+MXlYTpNxUDQUjkQ==}
+
+  mouse-event-offset@3.0.2:
+    resolution: {integrity: sha512-s9sqOs5B1Ykox3Xo8b3Ss2IQju4UwlW6LSR+Q5FXWpprJ5fzMLefIIItr3PH8RwzfGy6gxs/4GAmiNuZScE25w==}
+
+  mouse-event@1.0.5:
+    resolution: {integrity: sha512-ItUxtL2IkeSKSp9cyaX2JLUuKk2uMoxBg4bbOWVd29+CskYJR9BGsUqtXenNzKbnDshvupjUewDIYVrOB6NmGw==}
+
+  mouse-wheel@1.2.0:
+    resolution: {integrity: sha512-+OfYBiUOCTWcTECES49neZwL5AoGkXE+lFjIvzwNCnYRlso+EnfvovcBxGoyQ0yQt806eSPjS675K0EwWknXmw==}
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -903,6 +969,12 @@ packages:
   on-finished@2.4.1:
     resolution: {integrity: sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg==}
     engines: {node: '>= 0.8'}
+
+  orbit-camera-controller@4.0.0:
+    resolution: {integrity: sha512-/XTmpr6FUT6MuKPBGN2nv9cS8jhhVs8do71VagBQS5p4rxM04MhqSnI/Uu+gVNN5s6KPcS73o1dHzjuDThEJUA==}
+
+  parse-unit@1.0.1:
+    resolution: {integrity: sha512-hrqldJHokR3Qj88EIlV/kAyAi/G5R2+R56TBANxNMy0uPlYcttx0jnMW6Yx5KsKPSbC3KddM/7qQm3+0wEXKxg==}
 
   parse5@7.3.0:
     resolution: {integrity: sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==}
@@ -933,6 +1005,9 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
+  quat-slerp@1.0.1:
+    resolution: {integrity: sha512-OTozCDeP5sW7cloGR+aIycctZasBhblk1xdsSGP1Iz5pEwDqyChloTmc96xsDfusFD7GRxwDDu+tpJX0Wa1kJw==}
+
   quick-lru@7.0.1:
     resolution: {integrity: sha512-kLjThirJMkWKutUKbZ8ViqFc09tDQhlbQo2MNuVeLWbRauqYP96Sm6nzlQ24F0HFjUNZ4i9+AgldJ9H6DZXi7g==}
     engines: {node: '>=18'}
@@ -956,6 +1031,9 @@ packages:
 
   reference-spec-reader@0.2.0:
     resolution: {integrity: sha512-q0mfCi5yZSSHXpCyxjgQeaORq3tvDsxDyzaadA/5+AbAUwRyRuuTh0aRQuE/vAOt/qzzxidJ5iDeu1cLHaNBlQ==}
+
+  right-now@1.0.0:
+    resolution: {integrity: sha512-DA8+YS+sMIVpbsuKgy+Z67L9Lxb1p05mNxRpDPNksPDEFir4vmBlUtuN9jkTGn9YMMdlBuK7XQgFiz6ws+yhSg==}
 
   rollup@4.46.3:
     resolution: {integrity: sha512-RZn2XTjXb8t5g13f5YclGoilU/kwT696DIkY3sywjdZidNSi3+vseaQov7D7BZXVJCPv3pDWUN69C78GGbXsKw==}
@@ -992,6 +1070,9 @@ packages:
 
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
+
+  signum@1.0.0:
+    resolution: {integrity: sha512-yodFGwcyt59XRh7w5W3jPcIQb3Bwi21suEfT7MAWnBX3iCdklJpgDgvGT9o04UonglZN5SNMfJFkHIR/jO8GHw==}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -1046,6 +1127,9 @@ packages:
     resolution: {integrity: sha512-WMi/OQ2axVTf/ykqCQgXiIct+mSQDFdH2fkwhPwgEwvJ1kSzZRiinb0zF2Xb8u4+OqPChmyI6MEu4EezNJz+FQ==}
     hasBin: true
 
+  to-px@1.1.0:
+    resolution: {integrity: sha512-bfg3GLYrGoEzrGoE05TAL/Uw+H/qrf2ptr9V3W7U0lkjjyYnIfgxmVLUfhQ1hZpIQwin81uxhDjvUkDYsC0xWw==}
+
   toidentifier@1.0.1:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
@@ -1057,6 +1141,9 @@ packages:
   tr46@5.1.1:
     resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
     engines: {node: '>=18'}
+
+  turntable-camera-controller@3.0.1:
+    resolution: {integrity: sha512-UOGu9W/Mx053pAaczi0BEPqvWJOqSgtpdigWG9C8dX8rQVdyl2hWmpdJW3m15QrGxJtJHIhhDTHVtTZzPkd/FA==}
 
   typescript@5.9.2:
     resolution: {integrity: sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==}
@@ -1237,6 +1324,21 @@ packages:
         optional: true
 
 snapshots:
+
+  3d-view-controls@2.2.2:
+    dependencies:
+      3d-view: 2.0.1
+      has-passive-events: 1.0.0
+      mouse-change: 1.4.0
+      mouse-event-offset: 3.0.2
+      mouse-wheel: 1.2.0
+      right-now: 1.0.0
+
+  3d-view@2.0.1:
+    dependencies:
+      matrix-camera-controller: 2.1.4
+      orbit-camera-controller: 4.0.0
+      turntable-camera-controller: 3.0.1
 
   '@ampproject/remapping@2.3.0':
     dependencies:
@@ -1688,6 +1790,8 @@ snapshots:
 
   assertion-error@2.0.1: {}
 
+  binary-search-bounds@2.0.5: {}
+
   browserslist@4.25.2:
     dependencies:
       caniuse-lite: 1.0.30001735
@@ -1725,6 +1829,8 @@ snapshots:
       rrweb-cssom: 0.8.0
 
   csstype@3.1.3: {}
+
+  cubic-hermite@1.0.0: {}
 
   d3-array@3.2.4:
     dependencies:
@@ -1861,6 +1967,11 @@ snapshots:
 
   fflate@0.8.2: {}
 
+  filtered-vector@1.2.5:
+    dependencies:
+      binary-search-bounds: 2.0.5
+      cubic-hermite: 1.0.0
+
   fresh@2.0.0: {}
 
   fsevents@2.3.3:
@@ -1868,7 +1979,25 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
+  gl-mat3@1.0.0: {}
+
+  gl-mat4@1.2.0: {}
+
   gl-matrix@3.4.4: {}
+
+  gl-quat@1.0.0:
+    dependencies:
+      gl-mat3: 1.0.0
+      gl-vec3: 1.2.0
+      gl-vec4: 1.0.1
+
+  gl-vec3@1.2.0: {}
+
+  gl-vec4@1.0.1: {}
+
+  has-passive-events@1.0.0:
+    dependencies:
+      is-browser: 2.1.0
 
   html-encoding-sniffer@4.0.0:
     dependencies:
@@ -1903,6 +2032,8 @@ snapshots:
   inherits@2.0.4: {}
 
   internmap@2.0.3: {}
+
+  is-browser@2.1.0: {}
 
   is-potential-custom-element-name@1.0.1: {}
 
@@ -1964,6 +2095,30 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  mat4-decompose@1.0.4:
+    dependencies:
+      gl-mat4: 1.2.0
+      gl-vec3: 1.2.0
+
+  mat4-interpolate@1.0.4:
+    dependencies:
+      gl-mat4: 1.2.0
+      gl-vec3: 1.2.0
+      mat4-decompose: 1.0.4
+      mat4-recompose: 1.0.4
+      quat-slerp: 1.0.1
+
+  mat4-recompose@1.0.4:
+    dependencies:
+      gl-mat4: 1.2.0
+
+  matrix-camera-controller@2.1.4:
+    dependencies:
+      binary-search-bounds: 2.0.5
+      gl-mat4: 1.2.0
+      gl-vec3: 1.2.0
+      mat4-interpolate: 1.0.4
+
   mime-db@1.54.0: {}
 
   mime-types@3.0.1:
@@ -1973,6 +2128,20 @@ snapshots:
   moo-color@1.0.3:
     dependencies:
       color-name: 1.1.4
+
+  mouse-change@1.4.0:
+    dependencies:
+      mouse-event: 1.0.5
+
+  mouse-event-offset@3.0.2: {}
+
+  mouse-event@1.0.5: {}
+
+  mouse-wheel@1.2.0:
+    dependencies:
+      right-now: 1.0.0
+      signum: 1.0.0
+      to-px: 1.1.0
 
   ms@2.1.3: {}
 
@@ -1989,6 +2158,13 @@ snapshots:
   on-finished@2.4.1:
     dependencies:
       ee-first: 1.1.1
+
+  orbit-camera-controller@4.0.0:
+    dependencies:
+      filtered-vector: 1.2.5
+      gl-mat4: 1.2.0
+
+  parse-unit@1.0.1: {}
 
   parse5@7.3.0:
     dependencies:
@@ -2012,6 +2188,10 @@ snapshots:
 
   punycode@2.3.1: {}
 
+  quat-slerp@1.0.1:
+    dependencies:
+      gl-quat: 1.0.0
+
   quick-lru@7.0.1: {}
 
   range-parser@1.2.1: {}
@@ -2029,6 +2209,8 @@ snapshots:
       loose-envify: 1.4.0
 
   reference-spec-reader@0.2.0: {}
+
+  right-now@1.0.0: {}
 
   rollup@4.46.3:
     dependencies:
@@ -2099,6 +2281,8 @@ snapshots:
 
   siginfo@2.0.0: {}
 
+  signum@1.0.0: {}
+
   source-map-js@1.2.1: {}
 
   stackback@0.0.2: {}
@@ -2136,6 +2320,10 @@ snapshots:
     dependencies:
       tldts-core: 6.1.86
 
+  to-px@1.1.0:
+    dependencies:
+      parse-unit: 1.0.1
+
   toidentifier@1.0.1: {}
 
   tough-cookie@5.1.2:
@@ -2145,6 +2333,12 @@ snapshots:
   tr46@5.1.1:
     dependencies:
       punycode: 2.3.1
+
+  turntable-camera-controller@3.0.1:
+    dependencies:
+      filtered-vector: 1.2.5
+      gl-mat4: 1.2.0
+      gl-vec3: 1.2.0
 
   typescript@5.9.2: {}
 
