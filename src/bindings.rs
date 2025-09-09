@@ -107,16 +107,19 @@ pub mod wasm {
 // === Python Bindings ===
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub mod python {
+    use log::info;
     use pyo3::prelude::*;
     use pyo3::types::{PyAny, PyBytes, PyDict, PyTuple};
     use pyo3::wrap_pyfunction;
     use pyo3::IntoPyObject;
-
-    use super::{render, RenderParams};
+    use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    pub fn log(s: &str) {
-        println!("{}", s);
+    use super::{render, RenderParams};
+
+    #[pyfunction]
+    pub fn log_info(s: &str) {
+        info!("{}", s);
     }
 
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
@@ -222,6 +225,10 @@ pub mod python {
     // This function creates the Python module.
     #[pymodule]
     fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+        pyo3_log::init();
+        let _ = Logger::new(_py, Caching::LoggersAndLevels)?.install();
+
+        m.add_function(wrap_pyfunction!(log_info, m)?)?;
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
         Ok(())
     }

@@ -22,6 +22,8 @@ pub async fn render_scatterplot(
 ) -> RenderResult {
     // Get x and y data from the Zarr store.
     let store = context.store;
+    let height = context.params.height as f64;
+    let width = context.params.width as f64;
 
     let PlotParams::Scatterplot(scatterplot_params) = &context.params.plot_params else {
         panic!("Expected scatterplot params");
@@ -364,20 +366,20 @@ pub async fn render_scatterplot(
     // Construct the X-axis:
     let mut x_scale = ScaleLinear::new();
     x_scale.set_domain((min_x as f64, max_x as f64));
-    x_scale.set_range((0.0, 800.0));
+    x_scale.set_range((0.0, width));
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
     let x_axis_group = TwoElement::Group(TwoGroup {
         elements: x_axis_elements,
-        translate: Some((0.0, 750.0)),
+        translate: Some((0.0, width - 40.0)),
         ..Default::default()
     });
 
     // Construct the Y-axis:
     let mut y_scale = ScaleLinear::new();
     y_scale.set_domain((min_y as f64, max_y as f64));
-    y_scale.set_range((800.0, 0.0)); // Inverted range
+    y_scale.set_range((height, 0.0)); // Inverted range
     let y_axis = Axis::new(AxisOrientation::Left);
     let y_axis_elements = y_axis.generate_elements(&y_scale);
 

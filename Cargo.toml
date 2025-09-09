@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Define features to toggle which dependency is active
-python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio"]
+python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log"]
 test_plain_rust = ["tokio"]
 
 [dependencies]
@@ -27,11 +27,13 @@ pyo3-async-runtimes = { version = "0.26", features = [
     "tokio-runtime",
 ], optional = true }
 pythonize = { version = "0.26", optional = true }
+pyo3-log = { git = "https://github.com/alex/pyo3-log.git", rev = "3193bba", optional = true }
 # tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
 tokio = { version = "1.47.1", features = ["full"], optional = true }
 
 
 # Core dependencies
+log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings.
 bytemuck = "1.23.2"
 futures = "0.3.31"
 futures-intrusive = "0.5"

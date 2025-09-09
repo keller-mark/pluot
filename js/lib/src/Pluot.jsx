@@ -82,11 +82,6 @@ export function Pluot(props) {
 
   const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
 
-  useEffect(() => {
-    // Reset view matrix on plot change.
-    setViewMatrix(DEFAULT_VIEW);
-  }, [plotId]);
-
   /*
     const [zoom, setZoom] = useState(0.0);
     const [targetX, setTargetX] = useState(0.0);
@@ -234,6 +229,11 @@ export function Pluot(props) {
 
     return dispose;
   }, [canvasRef, mode]);
+
+  useEffect(() => {
+    // Reset view matrix on plot change.
+    setViewMatrix(DEFAULT_VIEW);
+  }, [plotId]);
 
   // TODO: switch this useEffect to use React-Query.
   useEffect(() => {

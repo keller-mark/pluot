@@ -26,7 +26,8 @@ pub use crate::bindings::wasm::{
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub use crate::bindings::python::{
-    log, render_py, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    log_info as log, render_py, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset,
+    zarr_has,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]

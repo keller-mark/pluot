@@ -279,6 +279,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         //
         // Also see this usage of Vello which mentions deadlocking:
         // Reference https://github.com/DioxusLabs/blitz/blob/dbca61c417f6289640a2ca20a2d87473ccc473ee/packages/anyrender_vello/src/wgpu_context.rs#L314
+        //
+        // Also see this dicsussion about deadlocking from pyo3-log
+        // Reference: https://docs.rs/pyo3-log/latest/pyo3_log/#interaction-with-python-gil
         /*loop {
             let poll_result = device.poll(wgpu::PollType::Poll);
             if (poll_result.is_err()) {
