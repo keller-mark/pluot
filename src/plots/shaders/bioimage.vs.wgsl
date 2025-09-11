@@ -4,9 +4,11 @@ struct Uniforms {
 
     num_channels: u32,
     _pad0: f32,
-    
+
     // See "runtime sized arrays" info
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-wgsl.html#runtime-sized-arrays
+    // TODO: can use a runtime-sized array of structs
+    // Reference: https://github.com/tessera-ui/tessera/blob/95ca33c304f37c7eb00510ef2156b360dddeb2f2/tessera-ui-basic-components/src/pipelines/shape.rs#L47
     channel_windows: array<vec4<f32>, 8>,
     channel_colors: array<vec4<f32>, 8>,
 };

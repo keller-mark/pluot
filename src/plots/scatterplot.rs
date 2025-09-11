@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 
 use crate::wgpu;
+use encase::{ShaderType, UniformBuffer};
+use glam::{Mat4, Vec2, Vec4};
 /*
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
@@ -15,6 +17,14 @@ use crate::d3::scale::{Scale, ScaleLinear};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
+
+#[derive(ShaderType, Debug)]
+pub struct ScatterplotUniforms {
+    pub camera_view: Mat4,   // mat4x4<f32>,
+    pub point_size_px: f32,  // diameter in pixels
+    pub viewport_size: Vec2, // (width, height) in pixels
+    pub color: Vec4,         // rgba color for points
+}
 
 pub async fn render_scatterplot(
     context: &mut RenderContext<'_>,
@@ -157,25 +167,20 @@ pub async fn render_scatterplot(
     let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
     let point_size_px: f32 = scatterplot_params.point_radius.unwrap_or(5.0);
-    let _pad0: f32 = 0.0;
     let viewport_w = context.params.width as f32;
     let viewport_h = context.params.height as f32;
-    let color = [1.0_f32, 0.0, 0.0, 1.0];
 
-    let mut uniform_bytes: Vec<u8> = Vec::with_capacity((16 + 8) * 4);
+    // Construct the uniform struct using Encase.
+    let uniform_struct = ScatterplotUniforms {
+        camera_view: Mat4::from_cols_array(&camera_view),
+        point_size_px,
+        viewport_size: Vec2::new(viewport_w, viewport_h),
+        color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+    };
 
-    // Log the computed values for debugging.
-    // log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
-
-    for f in camera_view.iter() {
-        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
-    }
-    for f in [point_size_px, _pad0, viewport_w, viewport_h].iter() {
-        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
-    }
-    for c in color {
-        uniform_bytes.extend_from_slice(&c.to_ne_bytes());
-    }
+    let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+    buffer.write(&uniform_struct).unwrap();
+    let uniform_bytes = buffer.into_inner();
 
     let uniform_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Uniform Buffer"),

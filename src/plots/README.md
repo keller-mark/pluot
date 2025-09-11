@@ -18,6 +18,8 @@ Basically, do we want the identity matrix to correspond to background-size "cont
 - Cover: Scales the image (while preserving its ratio) to completely fill the container, leaving no empty space. If the proportions of the image differ from the viewport, the image is cropped either vertically or horizontally.
 <!-- Reference: https://developer.mozilla.org/en-US/docs/Web/CSS/background-size -->
 
+Clarify how to translate between camera view matrix and { zoom, target: [targetX, targetY] } (for 2D).
+
 ### 2D camera and coordinate system
 
 #### intrinsic (non-physical) coordinate system
@@ -28,6 +30,8 @@ How is the coordinate system affected by the plot margins (marginLeft, marginTop
 Given the margins and the viewport width/height, we define an "adjusted screen quad" whose (-1 to 1) corresponds to the area inside the margins, but when rendered to screen it only corresponds to the smaller (adjusted_min_coord, adjusted_max_coord).
 
 The (adjusted) screen quad should correspond directly to (-1, 1) in the data.
+
+We can use the 2D scatterplot with 4 points [(-1, -1), (-1, 1), (1, 1), (1, -1)] to test this.
 
 
 #### physical coordinate system
@@ -43,5 +47,7 @@ When the camera view matrix is the identity matrix, and the aspect ratio is 1:1 
 ### 3D (orbit) camera and coordinate system
 
 #### intrinsic (non-physical) coordinate system
+
+We can use the 3D scatterplot with 8 points at the edge of the (-1, 1) cube to test this.
 
 #### physical coordinate system

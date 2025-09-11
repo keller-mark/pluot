@@ -1,7 +1,6 @@
 struct Uniforms {
     camera_view: mat4x4<f32>,
     point_size_px: f32,   // diameter in pixels
-    _pad0: f32,
     viewport_size: vec2<f32>, // (width, height) in pixels
     color: vec4<f32>,     // rgba color for points
 };
@@ -51,7 +50,7 @@ fn fs_main(
     if (alpha == 0.0) {
         discard;
     }
-    
+
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;

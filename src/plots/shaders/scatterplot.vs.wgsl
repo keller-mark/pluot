@@ -1,7 +1,8 @@
+// TODO: put vertex and fragment shaders in the same file, to share struct/binding definitions.
+
 struct Uniforms {
     camera_view: mat4x4<f32>,
     point_size_px: f32,   // diameter in pixels
-    _pad0: f32,
     viewport_size: vec2<f32>, // (width, height) in pixels
     color: vec4<f32>,     // rgba color for points
 };
@@ -55,10 +56,10 @@ fn vs_main(
     // Compute clip space position
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/point.vs#L48
     let clip_space_position = model_view_projection * vec4<f32>(p.x, p.y, 0.0, 1.0);
-    
+
     // Convert to NDC
     let center_ndc = clip_space_position.xy / clip_space_position.w;
-    
+
     /*
     // Snap to pixel grid to avoid sub-pixel jitter when zooming/panning
     let pixel_pos = vec2<f32>(0.5, 0.5) * (ndc_position + vec2<f32>(1.0, 1.0)) * u.viewport_size;
