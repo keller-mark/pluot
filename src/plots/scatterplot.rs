@@ -372,7 +372,7 @@ pub async fn render_scatterplot(
 
     let x_axis_group = TwoElement::Group(TwoGroup {
         elements: x_axis_elements,
-        translate: Some((0.0, width - 40.0)),
+        translate: Some((0.0, height - 40.0)),
         ..Default::default()
     });
 
