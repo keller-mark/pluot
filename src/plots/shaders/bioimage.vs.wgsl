@@ -1,16 +1,17 @@
+// TODO: put vertex and fragment shaders in the same file, to share struct/binding definitions.
+struct Channel {
+    window: vec2<f32>, // (min, max) for contrast adjustment
+    color: vec3<f32>,  // RGB color for the channel
+};
+
 struct Uniforms {
     camera_view: mat4x4<f32>,
     viewport_size: vec2<f32>, // (width, height) in pixels
-
     num_channels: u32,
-    _pad0: f32,
 
     // See "runtime sized arrays" info
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-wgsl.html#runtime-sized-arrays
-    // TODO: can use a runtime-sized array of structs
-    // Reference: https://github.com/tessera-ui/tessera/blob/95ca33c304f37c7eb00510ef2156b360dddeb2f2/tessera-ui-basic-components/src/pipelines/shape.rs#L47
-    channel_windows: array<vec4<f32>, 8>,
-    channel_colors: array<vec4<f32>, 8>,
+    channels: array<Channel>,
 };
 
 struct VSOut {
@@ -18,7 +19,7 @@ struct VSOut {
     @location(0) tex_coord: vec2<f32>, // Pass texture coordinates to fragment shader
 };
 
-@group(0) @binding(0) var<uniform> u: Uniforms;
+@group(0) @binding(0) var<storage, read> u: Uniforms;
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
 // The corresponding texture coordinates (UVs) for each vertex.

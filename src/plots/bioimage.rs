@@ -11,6 +11,9 @@ use crate::wgpu;
 
 use ome_zarr_metadata::v0_5::RelaxedOmeFields;
 
+use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
+use glam::{Mat4, Vec2, Vec3, Vec4};
+
 pub async fn render_bioimage(
     context: &RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
@@ -331,73 +334,51 @@ pub async fn render_bioimage(
     let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
     let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
-    // Define the uniforms, matching the WGSL layout.
-    // struct Uniforms {
-    //   camera_view: mat4x4<f32>,
-    //   viewport_size: vec2<f32>,
-    //   num_channels: u32,
-    //   _pad: f32,
-    //   channel_windows: array<vec4<f32>>,
-    //   channel_colors: array<vec4<f32>>,
-    // }
-
-    // Note: 'uniform' storage requires that array elements are aligned to 16 bytes,
-    // but array element of type 'vec2<f32>' has a stride of 8 bytes. Consider using a vec4 instead.
-
-    let MAX_NUM_CHANNELS = 8;
-    // We can only have one runtime-sized array in a struct, so we instead need to pad the per-channel arrays to a fixed size.
-
-    let mut uniform_bytes: Vec<u8> =
-        Vec::with_capacity((2 + 16 + 1 + (MAX_NUM_CHANNELS * (4 + 4))) * 4);
-
-    // Log the computed values for debugging.
-    // log(&format!("Zoom: {zoom}, x_min: {x_min}, x_max: {x_max}, y_min: {y_min}, y_max: {y_max}"));
-
-    for f in camera_view.iter() {
-        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
+    // Define the uniforms, matching the WGSL layout (handled by using encase).
+    #[derive(ShaderType, Debug)]
+    struct ChannelUniforms {
+        channel_window: Vec2,
+        channel_colors: Vec3,
     }
-    for f in [viewport_w, viewport_h].iter() {
-        uniform_bytes.extend_from_slice(&f.to_ne_bytes());
-    }
-    uniform_bytes.extend_from_slice(&(num_channels as u32).to_ne_bytes());
-    // Pad to vec4 with one unused float for _pad.
-    uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
 
-    for w in bioimage_params.channel_windows.iter() {
-        uniform_bytes.extend_from_slice(&w.0.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&w.1.to_ne_bytes());
-        // Pad to vec4 with two unused floats.
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
+    #[derive(ShaderType, Debug)]
+    struct BioimageUniforms {
+        camera_view: Mat4,
+        viewport_size: Vec2,
+        num_channels: ArrayLength,
+
+        // Note: WGSL only allows one runtime-sized array in a struct,
+        // and it must be the last field.
+        #[size(runtime)]
+        channels: Vec<ChannelUniforms>,
     }
-    // Pad the windows to MAX_NUM_CHANNELS with (0.0, 1.0)
-    for _ in num_channels..MAX_NUM_CHANNELS {
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        // Pad to vec4 with two unused floats.
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-    }
-    for c in bioimage_params.channel_colors.iter() {
-        uniform_bytes.extend_from_slice(&c.0.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&c.1.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&c.2.to_ne_bytes());
-        // Pad to vec4 with one unused float.
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-    }
-    // Pad the colors to MAX_NUM_CHANNELS.
-    for _ in num_channels..MAX_NUM_CHANNELS {
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-        // Pad to vec4 with one unused float.
-        uniform_bytes.extend_from_slice(&0.0f32.to_ne_bytes());
-    }
+
+    let channel_uniforms: Vec<ChannelUniforms> = bioimage_params
+        .channel_windows
+        .iter()
+        .zip(bioimage_params.channel_colors.iter())
+        .map(|(w, c)| ChannelUniforms {
+            channel_window: Vec2::new(w.0, w.1),
+            channel_colors: Vec3::new(c.0, c.1, c.2),
+        })
+        .collect();
+    let bioimage_uniforms = BioimageUniforms {
+        camera_view: Mat4::from_cols_array(&camera_view),
+        viewport_size: Vec2::new(viewport_w, viewport_h),
+        num_channels: Default::default(),
+        channels: channel_uniforms,
+    };
+
+    // Runtime-sized arrays cannot be used with the encase UniformBuffer,
+    // and require using StorageBuffer instead.
+    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+    buffer.write(&bioimage_uniforms).unwrap();
+    let uniform_bytes = buffer.into_inner();
 
     let uniform_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Uniform Buffer"),
+        label: Some("Storage Buffer for Uniforms"),
         size: uniform_bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     context
@@ -416,7 +397,7 @@ pub async fn render_bioimage(
                         binding: 0,
                         visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },

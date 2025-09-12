@@ -1,6 +1,10 @@
 use std::borrow::Cow;
 
 use crate::wgpu;
+
+use encase::{ShaderType, UniformBuffer};
+use glam::{Mat4, Vec2, Vec4};
+
 /*
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},

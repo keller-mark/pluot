@@ -182,6 +182,7 @@ pub async fn render_scatterplot(
     buffer.write(&uniform_struct).unwrap();
     let uniform_bytes = buffer.into_inner();
 
+    // TODO: use create_buffer_init instead?
     let uniform_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Uniform Buffer"),
         size: uniform_bytes.len() as u64,
