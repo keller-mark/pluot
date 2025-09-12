@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 
 use crate::wgpu;
+
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
+
 /*
 use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
@@ -19,49 +21,57 @@ use crate::two::shapes::{
 };
 
 #[derive(ShaderType, Debug)]
-pub struct ScatterplotUniforms {
+pub struct Scatterplot3dUniforms {
     pub camera_view: Mat4,   // mat4x4<f32>,
     pub point_size_px: f32,  // diameter in pixels
     pub viewport_size: Vec2, // (width, height) in pixels
     pub color: Vec4,         // rgba color for points
 }
 
-pub async fn render_scatterplot(
+pub async fn render_scatterplot_3d(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
 ) -> RenderResult {
     // Get x and y data from the Zarr store.
     let store = context.store;
-    let height = context.params.height as f64;
-    let width = context.params.width as f64;
 
-    let PlotParams::Scatterplot(scatterplot_params) = &context.params.plot_params else {
+    let PlotParams::Scatterplot3d(scatterplot_params) = &context.params.plot_params else {
         panic!("Expected scatterplot params");
     };
 
     let x_array_path = &scatterplot_params.x_key.as_ref();
     let y_array_path = &scatterplot_params.y_key.as_ref();
+    let z_array_path = &scatterplot_params.z_key.as_ref();
     let labels_array_path = scatterplot_params.color_key.as_ref().expect("Color key");
 
     let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
     let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
+    let z_array_future = zarrs::array::Array::async_open(store.clone(), z_array_path);
     let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
 
     // Wait for all futures to complete
-    let arr_open_results = futures::join!(x_array_future, y_array_future, labels_array_future);
+    let arr_open_results = futures::join!(
+        x_array_future,
+        y_array_future,
+        z_array_future,
+        labels_array_future
+    );
 
     let x_array = arr_open_results.0.unwrap();
     let y_array = arr_open_results.1.unwrap();
-    let labels_array = arr_open_results.2.unwrap();
+    let z_array = arr_open_results.2.unwrap();
+    let labels_array = arr_open_results.3.unwrap();
 
     let x_subset = x_array.subset_all();
     let y_subset = y_array.subset_all();
+    let z_subset = z_array.subset_all();
     let labels_subset = labels_array.subset_all();
 
     // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
-    let (x_result, y_result, labels_result) = futures::join!(
+    let (x_result, y_result, z_result, labels_result) = futures::join!(
         x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset),
         y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset),
+        z_array.async_retrieve_array_subset_ndarray::<f64>(&z_subset),
         labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset),
     );
 
@@ -71,6 +81,7 @@ pub async fn render_scatterplot(
     // Read the whole array
     let x_vec = x_result.unwrap();
     let y_vec = y_result.unwrap();
+    let z_vec = z_result.unwrap();
     let labels_vec = labels_result.unwrap();
 
     // More efficient version that eliminates intermediate vectors and redundant operations
@@ -80,10 +91,12 @@ pub async fn render_scatterplot(
     // Convert to f32 and cast to bytes directly - no for loop needed
     let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
     let y_f32: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+    let z_f32: Vec<f32> = z_vec.iter().map(|&z| z as f32).collect();
     let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
 
     let x_bytes = bytemuck::cast_slice(&x_f32);
     let y_bytes = bytemuck::cast_slice(&y_f32);
+    let z_bytes = bytemuck::cast_slice(&z_f32);
     let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
 
     // Create separate buffers for X and Y coordinates
@@ -102,6 +115,14 @@ pub async fn render_scatterplot(
         mapped_at_creation: false,
     });
     context.queue.write_buffer(&y_buffer, 0, &y_bytes);
+
+    let z_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Z Coordinates Storage Buffer"),
+        size: z_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    context.queue.write_buffer(&z_buffer, 0, &z_bytes);
 
     let labels_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Class labels Storage Buffer"),
@@ -171,7 +192,7 @@ pub async fn render_scatterplot(
     let viewport_h = context.params.height as f32;
 
     // Construct the uniform struct using Encase.
-    let uniform_struct = ScatterplotUniforms {
+    let uniform_struct = Scatterplot3dUniforms {
         camera_view: Mat4::from_cols_array(&camera_view),
         point_size_px,
         viewport_size: Vec2::new(viewport_w, viewport_h),
@@ -234,8 +255,19 @@ pub async fn render_scatterplot(
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The class labels coordinates buffer.
+                        // The Z coordinates buffer.
                         binding: 3,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        // The class labels coordinates buffer.
+                        binding: 4,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -266,6 +298,10 @@ pub async fn render_scatterplot(
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: z_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: labels_buffer.as_entire_binding(),
                 },
             ],
@@ -273,7 +309,7 @@ pub async fn render_scatterplot(
 
     let shader = context
         .device
-        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot_3d.wgsl"));
 
     let render_pipeline_layout =
         context
@@ -284,7 +320,6 @@ pub async fn render_scatterplot(
                 push_constant_ranges: &[],
             });
 
-    // TODO: Extract the shared render pipeline and render pass logic. There is a lot of duplication here.
     let render_pipeline = context
         .device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -366,23 +401,26 @@ pub async fn render_scatterplot(
         drop(render_pass);
     }
 
+    // TODO: modify the axis range to depend on viewport width/height rather than hard-coding.
+    // But for 3D, this 2D axis doesnt make sense anyway.
+
     // Construct the X-axis:
     let mut x_scale = ScaleLinear::new();
     x_scale.set_domain((min_x as f64, max_x as f64));
-    x_scale.set_range((0.0, width));
+    x_scale.set_range((0.0, 800.0));
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
     let x_axis_group = TwoElement::Group(TwoGroup {
         elements: x_axis_elements,
-        translate: Some((0.0, height - 40.0)),
+        translate: Some((0.0, 750.0)),
         ..Default::default()
     });
 
     // Construct the Y-axis:
     let mut y_scale = ScaleLinear::new();
     y_scale.set_domain((min_y as f64, max_y as f64));
-    y_scale.set_range((height, 0.0)); // Inverted range
+    y_scale.set_range((800.0, 0.0)); // Inverted range
     let y_axis = Axis::new(AxisOrientation::Left);
     let y_axis_elements = y_axis.generate_elements(&y_scale);
 

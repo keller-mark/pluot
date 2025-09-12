@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt;
 
+use encase::{ShaderType, UniformBuffer};
+
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
@@ -286,17 +288,6 @@ pub fn render_text(
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-    // 4) Uniforms: viewport size and text color (we'll use the first text element's color for now)
-    // TODO: update this to allow for a color per text element.
-    #[repr(C)]
-    #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-    struct Uniforms {
-        viewport: [f32; 2],
-        // Pad to 16-byte alignment before vec4; total struct size = 32 bytes.
-        _pad: [f32; 2],
-        color: [f32; 4],
-    }
-
     // TODO: support per-element colors.
     // For now, we use the first text element's color, or default to black
     let color = if !text_elements.is_empty() {
@@ -305,17 +296,29 @@ pub fn render_text(
         [0.0, 0.0, 0.0, 1.0]
     };
 
-    let uniforms = Uniforms {
-        viewport: [context.params.width as f32, context.params.height as f32],
-        _pad: [0.0, 0.0],
-        color,
+    // Uniforms for font rendering shader:
+    // viewport size and text color (we'll use the first text element's color for now)
+    // TODO: update this to allow for a color per text element.
+    #[derive(ShaderType, Debug)]
+    struct TextUniforms {
+        viewport: glam::Vec2,
+        color: glam::Vec4,
+    }
+
+    let uniform_struct = TextUniforms {
+        viewport: glam::Vec2::from([context.params.width as f32, context.params.height as f32]),
+        color: glam::Vec4::from(color),
     };
+
+    let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+    buffer.write(&uniform_struct).unwrap();
+    let uniform_bytes = buffer.into_inner();
 
     let uniform_buffer = context
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Text Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
+            contents: &uniform_bytes,
             usage: wgpu::BufferUsages::UNIFORM,
         });
 

@@ -17,6 +17,17 @@ const DEMOS = {
       //point_radius: pointRadius,
     },
   },
+  scatterplot_3d: {
+    plot_type: "Scatterplot3d",
+    store_name: "gaussian_quantiles_store",
+    plot_params: {
+      x_key: "/n_100000/x_coords",
+      y_key: "/n_100000/y_coords",
+      z_key: "/n_100000/z_coords",
+      color_key: "/n_100000/class_labels",
+      point_radius: 5.0,
+    },
+  },
   scatterplot_mnist: {
     plot_type: "Scatterplot",
     store_name: "mnist_store",
@@ -96,6 +107,7 @@ export function Demo() {
                   : {}),
               }
         }
+        mode={plotType === "Scatterplot3d" ? "3d" : "2d"}
       />
       {plotType === "Scatterplot" ? (
         <div>

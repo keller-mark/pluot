@@ -4,6 +4,7 @@ import React, { useLayoutEffect, useEffect, useRef, useState } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
 import createDom2dCamera from "dom-2d-camera";
+import createCamera from "3d-view-controls";
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 
@@ -52,6 +53,17 @@ window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
 
 // console.log(await stores['my_store'].get('/umap/x_coords/zarr.json'));
 
+// Reference: https://github.com/hughsk/right-now/blob/master/browser.js
+const now =
+  performance && performance.now
+    ? function now() {
+        return performance.now();
+      }
+    : Date.now ||
+      function now() {
+        return +new Date();
+      };
+
 export function Pluot(props) {
   const {
     width,
@@ -62,6 +74,7 @@ export function Pluot(props) {
     plotParams,
     renderOnce = true,
     logPerformance = false,
+    mode = "2d",
   } = props;
 
   const canvasRef = useRef(null);
@@ -91,42 +104,136 @@ export function Pluot(props) {
       return;
     }
 
-    function onCameraEvent(camera, event) {
-      camera.tick();
-      // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
-      setViewMatrix(mat4.clone(camera.view));
-    }
+    let dispose = () => {};
 
     // Create a 2D camera for handling zoom and pan.
-    const camera = createDom2dCamera(canvas, {
-      isFixed: false,
-      distance: 0.0,
-      target: [0.0, 0.0],
-      defaultMouseDownMoveAction: "pan",
+    if (mode === "2d") {
+      function onCameraEvent(camera, event) {
+        camera.tick();
+        // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
+        setViewMatrix(mat4.clone(camera.view));
+      }
 
-      onKeyDown: (event) => {
-        onCameraEvent(camera, event);
-      },
-      onKeyUp: (event) => {
-        onCameraEvent(camera, event);
-      },
-      onMouseDown: (event) => {
-        onCameraEvent(camera, event);
-      },
-      onMouseUp: (event) => {
-        onCameraEvent(camera, event);
-      },
-      onMouseMove: (event) => {
-        onCameraEvent(camera, event);
-      },
-      onWheel: (event) => {
-        onCameraEvent(camera, event);
-      },
-    });
+      const camera = createDom2dCamera(canvas, {
+        isFixed: false,
+        distance: 0.0,
+        target: [0.0, 0.0],
+        defaultMouseDownMoveAction: "pan",
 
-    // Set the initial view matrix.
-    camera.setView(viewMatrix);
-  }, [canvasRef]);
+        onKeyDown: (event) => {
+          onCameraEvent(camera, event);
+        },
+        onKeyUp: (event) => {
+          onCameraEvent(camera, event);
+        },
+        onMouseDown: (event) => {
+          onCameraEvent(camera, event);
+        },
+        onMouseUp: (event) => {
+          onCameraEvent(camera, event);
+        },
+        onMouseMove: (event) => {
+          onCameraEvent(camera, event);
+        },
+        onWheel: (event) => {
+          onCameraEvent(camera, event);
+        },
+      });
+      dispose = camera.dispose;
+
+      // Set the initial view matrix.
+      camera.setView(viewMatrix);
+    } else if (mode === "3d") {
+      function onCameraEvent(camera, event) {
+        camera.tick();
+        console.log(camera.matrix);
+        setViewMatrix(mat4.clone(camera.matrix));
+      }
+
+      const camera = createCamera(canvas, {
+        mode: "orbit",
+        zoomSpeed: -3,
+      });
+
+      // TODO:
+      // - fork 3d-view-controls and remove usage of "global" - then clean up vite config.
+      // - define a camera.dispsose option.
+
+      // Reference: https://github.com/flekschas/dom-2d-camera/blob/cd59ea035a0ea72c2c0535fa3721f8127946576c/src/index.js#L237C3-L315C71
+      const keyUpHandler = (event) => {
+        // TODO
+      };
+
+      const keyDownHandler = (event) => {
+        // TODO
+      };
+
+      const mouseUpHandler = (event) => {
+        // TODO
+      };
+
+      const mouseDownHandler = (event) => {
+        // TODO
+      };
+
+      // TODO: use react state?
+      var lastX = 0;
+      var lastY = 0;
+
+      // Reference: https://github.com/mikolalysenko/3d-view/blob/8269e02337bba1923173a750aa7f3f0f76c91ba5/example/minimal.js#L67
+      const mouseMoveHandler = (event) => {
+        /*
+        var dx = (event.clientX - lastX) / width;
+        var dy = -(event.clientY - lastY) / height;
+        if (event.which === 1) {
+          if (event.shiftKey) {
+            //zoom
+            camera.rotate(now(), 0, 0, dx);
+          } else {
+            //rotate
+            camera.rotate(now(), dx, dy);
+          }
+        } else if (event.which === 3) {
+          //pan
+          camera.pan(now(), dx, dy);
+        }
+        lastX = event.clientX;
+        lastY = event.clientY;
+        */
+        onCameraEvent(camera, event);
+      };
+
+      const wheelHandler = (event) => {
+        //camera.pan(now(), 0, 0, event.deltaY);
+        onCameraEvent(camera, event);
+      };
+
+      canvas.addEventListener("keydown", keyDownHandler);
+      canvas.addEventListener("keyup", keyUpHandler);
+      canvas.addEventListener("mousedown", mouseDownHandler);
+      canvas.addEventListener("mouseup", mouseUpHandler);
+      canvas.addEventListener("mousemove", mouseMoveHandler);
+      canvas.addEventListener("wheel", wheelHandler);
+
+      dispose = () => {
+        canvas.removeEventListener("keydown", keyDownHandler);
+        canvas.removeEventListener("keyup", keyUpHandler);
+        canvas.removeEventListener("mousedown", mouseDownHandler);
+        canvas.removeEventListener("mouseup", mouseUpHandler);
+        canvas.removeEventListener("mousemove", mouseMoveHandler);
+        canvas.removeEventListener("wheel", wheelHandler);
+      };
+    } else {
+      throw new Error("Unknown mode found.");
+    }
+
+    return dispose;
+  }, [canvasRef, mode]);
+
+  useEffect(() => {
+    // Reset view matrix on plot change.
+    setViewMatrix(DEFAULT_VIEW);
+  }, [plotId]);
 
   // TODO: switch this useEffect to use React-Query.
   useEffect(() => {
