@@ -88,6 +88,8 @@ fn vs_main(
     let valid_min = vec2<f32>(-1.0 + margin_left, -1.0 + margin_bottom);
     let valid_max = vec2<f32>(1.0 - margin_right, 1.0 - margin_top);
 
+    // TODO: refine this check to account for the point radius.
+
     // Check if point center is in the margins/outside the valid region.
     if (center_ndc.x < valid_min.x || center_ndc.x > valid_max.x ||
         center_ndc.y < valid_min.y || center_ndc.y > valid_max.y) {
@@ -158,11 +160,6 @@ fn fs_main(
     @location(1) quad_pos: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
-    // While we checked in the vertex shader if the point center is in the margins,
-    // which discards some points, there still may be points which are located
-    // partially in the margins (especially when the point radius is large).
-    // TODO: We need to do another check to discard points partially in the margins here.
-
     // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
     let radius_px = u.point_size_px / 2.0;
     let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
