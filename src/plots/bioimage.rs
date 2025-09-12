@@ -14,6 +14,23 @@ use ome_zarr_metadata::v0_5::RelaxedOmeFields;
 use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 
+#[derive(ShaderType, Debug)]
+struct ChannelUniforms {
+    channel_window: Vec2,
+    channel_colors: Vec3,
+}
+
+#[derive(ShaderType, Debug)]
+struct BioimageUniforms {
+    camera_view: Mat4,
+    viewport_size: Vec2,
+    num_channels: ArrayLength,
+    // Note: WGSL only allows one runtime-sized array in a struct,
+    // and it must be the last field.
+    #[size(runtime)]
+    channels: Vec<ChannelUniforms>,
+}
+
 pub async fn render_bioimage(
     context: &RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
@@ -335,24 +352,6 @@ pub async fn render_bioimage(
     let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
     // Define the uniforms, matching the WGSL layout (handled by using encase).
-    #[derive(ShaderType, Debug)]
-    struct ChannelUniforms {
-        channel_window: Vec2,
-        channel_colors: Vec3,
-    }
-
-    #[derive(ShaderType, Debug)]
-    struct BioimageUniforms {
-        camera_view: Mat4,
-        viewport_size: Vec2,
-        num_channels: ArrayLength,
-
-        // Note: WGSL only allows one runtime-sized array in a struct,
-        // and it must be the last field.
-        #[size(runtime)]
-        channels: Vec<ChannelUniforms>,
-    }
-
     let channel_uniforms: Vec<ChannelUniforms> = bioimage_params
         .channel_windows
         .iter()
@@ -416,6 +415,7 @@ pub async fn render_bioimage(
                     },
                 ],
             });
+
     let bind_group = context
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -433,12 +433,9 @@ pub async fn render_bioimage(
             ],
         });
 
-    let vs_module = context
+    let shader = context
         .device
-        .create_shader_module(wgpu::include_wgsl!("shaders/bioimage.vs.wgsl"));
-    let fs_module = context
-        .device
-        .create_shader_module(wgpu::include_wgsl!("shaders/bioimage.fs.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/bioimage.wgsl"));
 
     let render_pipeline_layout =
         context
@@ -449,20 +446,19 @@ pub async fn render_bioimage(
                 push_constant_ranges: &[],
             });
 
-    // TODO: Extract the shared render pipeline and render pass logic. There is a lot of duplication here.
     let render_pipeline = context
         .device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &vs_module,
+                module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &fs_module,
+                module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {

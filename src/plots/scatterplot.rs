@@ -271,12 +271,9 @@ pub async fn render_scatterplot(
             ],
         });
 
-    let vs_module = context
+    let shader = context
         .device
-        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot.vs.wgsl"));
-    let fs_module = context
-        .device
-        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot.fs.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot.wgsl"));
 
     let render_pipeline_layout =
         context
@@ -294,13 +291,13 @@ pub async fn render_scatterplot(
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &vs_module,
+                module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &fs_module,
+                module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
