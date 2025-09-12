@@ -1,7 +1,8 @@
 struct Uniforms {
+    viewport_size: vec2<f32>, // (width, height) in pixels
+    plot_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
     point_size_px: f32,   // diameter in pixels
-    viewport_size: vec2<f32>, // (width, height) in pixels
     color: vec4<f32>,     // rgba color for points
 };
 
@@ -59,8 +60,47 @@ fn vs_main(
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/point.vs#L48
     let clip_space_position = model_view_projection * vec4<f32>(p.x, p.y, 0.0, 1.0);
 
-    // Convert to NDC
-    let center_ndc = clip_space_position.xy / clip_space_position.w;
+    // Convert to NDC, accounting for plot margins.
+    // (We would stop here to compute center_ndc if not accounting for margins).
+    let center_ndc_unconstrained = clip_space_position.xy / clip_space_position.w;
+
+    // The plot is being rendered into a sub-region of the viewport, defined by the margins.
+    // Convert margins from pixels to NDC
+    let margin_ndc = u.plot_margin * (2.0 / vec4<f32>(u.viewport_size.yx, u.viewport_size.yx));
+    let margin_top = margin_ndc.x;
+    let margin_right = margin_ndc.y;
+    let margin_bottom = margin_ndc.z;
+    let margin_left = margin_ndc.w;
+
+    // Calculate the scale factor (size of available region / size of full region)
+    let scale = vec2<f32>(1.0 - (margin_left + margin_right), 1.0 - (margin_top + margin_bottom));
+
+    // Calculate translation to center the scaled coordinates in the available region
+    // The available region spans from [-1 + margin_left, 1 - margin_right] in X
+    // and [-1 + margin_bottom, 1 - margin_top] in Y
+    let translate = vec2<f32>(margin_left - margin_right, margin_bottom - margin_top);
+
+    let center_ndc = center_ndc_unconstrained * scale + translate;
+
+    // We now may have points which are positioned in the margins,
+    // especially if the user has zoomed into the scatterplot.
+    // We need to define the valid rendering region, accounting for margins.
+    let valid_min = vec2<f32>(-1.0 + margin_left, -1.0 + margin_bottom);
+    let valid_max = vec2<f32>(1.0 - margin_right, 1.0 - margin_top);
+
+    // Check if point center is in the margins/outside the valid region.
+    if (center_ndc.x < valid_min.x || center_ndc.x > valid_max.x ||
+        center_ndc.y < valid_min.y || center_ndc.y > valid_max.y) {
+        // Move the vertex outside the clip volume to discard it.
+        var out: VSOut;
+        // Using w < 0 clips the vertex
+        out.position = vec4<f32>(0.0, 0.0, 0.0, -1.0);
+        out.color = u.color;
+        out.quad_pos = vec2<f32>(0.0);
+        out.instance_index = instance_index;
+        // We return early with the w = -1 clipped vertex.
+        return out;
+    }
 
     /*
     // Snap to pixel grid to avoid sub-pixel jitter when zooming/panning
@@ -113,10 +153,16 @@ fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 
 @fragment
 fn fs_main(
+    @builtin(position) frag_coord: vec4<f32>,
     @location(0) color_in: vec4<f32>,
     @location(1) quad_pos: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
+    // While we checked in the vertex shader if the point center is in the margins,
+    // which discards some points, there still may be points which are located
+    // partially in the margins (especially when the point radius is large).
+    // TODO: We need to do another check to discard points partially in the margins here.
+
     // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
     let radius_px = u.point_size_px / 2.0;
     let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
