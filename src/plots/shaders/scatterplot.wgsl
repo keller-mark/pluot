@@ -11,6 +11,7 @@ struct VSOut {
     @location(0) color: vec4<f32>,
     @location(1) quad_pos: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
+    @location(3) valid_bounds: vec4<f32>, // valid_min.xy, valid_max.xy in NDC
 };
 
 struct FSOut {
@@ -85,22 +86,31 @@ fn vs_main(
     // We now may have points which are positioned in the margins,
     // especially if the user has zoomed into the scatterplot.
     // We need to define the valid rendering region, accounting for margins.
+    // Convert desired pixel radius to NDC
+    let radius_px = 0.5 * u.point_size_px;
+    // pixels -> NDC: ndc_per_px = 2 / viewport
+    let ndc_per_px = 2.0 / u.viewport_size;
+    let radius_ndc = vec2<f32>(radius_px * ndc_per_px.x, radius_px * ndc_per_px.y);
+
+    // Define the valid rendering region, accounting for margins.
     let valid_min = vec2<f32>(-1.0 + margin_left, -1.0 + margin_bottom);
     let valid_max = vec2<f32>(1.0 - margin_right, 1.0 - margin_top);
 
-    // TODO: refine this check to account for the point radius.
+    // REVISED: Check if the entire point (center + radius) is completely outside the valid region.
+    // Only clip points that are entirely outside - partial points should be rendered.
+    let point_min = center_ndc - radius_ndc;
+    let point_max = center_ndc + radius_ndc;
 
-    // Check if point center is in the margins/outside the valid region.
-    if (center_ndc.x < valid_min.x || center_ndc.x > valid_max.x ||
-        center_ndc.y < valid_min.y || center_ndc.y > valid_max.y) {
-        // Move the vertex outside the clip volume to discard it.
+    if (point_max.x < valid_min.x || point_min.x > valid_max.x ||
+        point_max.y < valid_min.y || point_min.y > valid_max.y) {
+        // Point is completely outside the valid region, clip it entirely
         var out: VSOut;
         // Using w < 0 clips the vertex
         out.position = vec4<f32>(0.0, 0.0, 0.0, -1.0);
         out.color = u.color;
         out.quad_pos = vec2<f32>(0.0);
         out.instance_index = instance_index;
-        // We return early with the w = -1 clipped vertex.
+        out.valid_bounds = vec4<f32>(valid_min, valid_max);
         return out;
     }
 
@@ -112,12 +122,6 @@ fn vs_main(
     let snapped_position = (pixel_pos / vec2<f32>(u.viewport_size.x, u.viewport_size.y)) * 2.0 - 1.0;
     */
 
-    // Convert desired pixel radius to NDC
-    let radius_px = 0.5 * u.point_size_px;
-    // pixels -> NDC: ndc_per_px = 2 / viewport
-    let ndc_per_px = 2.0 / u.viewport_size;
-    let radius_ndc = vec2<f32>(radius_px * ndc_per_px.x, radius_px * ndc_per_px.y);
-
     // Pick corner of quad and place around center
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
     let offset_ndc = vec2<f32>(corner.x * radius_ndc.x, corner.y * radius_ndc.y);
@@ -128,6 +132,8 @@ fn vs_main(
     // Pass quad position in [0, 1] range for fragment shader.
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
+    // Pass valid bounds to fragment shader for per-fragment clipping
+    out.valid_bounds = vec4<f32>(valid_min, valid_max);
     return out;
 }
 
@@ -159,7 +165,26 @@ fn fs_main(
     @location(0) color_in: vec4<f32>,
     @location(1) quad_pos: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
+    @location(3) valid_bounds: vec4<f32>,
 ) -> FSOut {
+// Convert fragment coordinate from screen space back to NDC
+    let screen_pos = frag_coord.xy;
+    let ndc_pos = vec2<f32>(
+        (screen_pos.x / u.viewport_size.x) * 2.0 - 1.0,        // X unchanged
+        1.0 - (screen_pos.y / u.viewport_size.y) * 2.0         // Y flipped
+    );
+
+    // Extract valid bounds
+    let valid_min = valid_bounds.xy;
+    let valid_max = valid_bounds.zw;
+
+    // Check if this fragment is outside the valid region
+    if (ndc_pos.x < valid_min.x || ndc_pos.x > valid_max.x ||
+        ndc_pos.y < valid_min.y || ndc_pos.y > valid_max.y) {
+        discard;
+    }
+
+
     // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
     let radius_px = u.point_size_px / 2.0;
     let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
