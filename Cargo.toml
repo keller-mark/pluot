@@ -66,7 +66,7 @@ ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.gi
 serde_json = "1.0.143"
 
 # WebGPU
-wgpu = { version = "26.0.1" }
+wgpu = { version = "27.0.0" }
 glam = "0.30.5"
 encase = { version = "0.11.2", features = ["glam"] }
 
