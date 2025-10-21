@@ -23,7 +23,7 @@ test_plain_rust = ["tokio"]
 
 # Python-specific dependencies
 pyo3 = { version = "0.26", optional = true, features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.26", features = [
+pyo3-async-runtimes = { version = "0.27", features = [
     "tokio-runtime",
 ], optional = true }
 pythonize = { version = "0.26", optional = true }
