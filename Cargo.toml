@@ -46,7 +46,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 # Zarrs (ea23432)
-zarrs = { git = "https://github.com/zarrs/zarrs.git", rev = "cd1ee50", default-features = false, features = [
+zarrs = { version = "0.22.4", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
@@ -66,7 +66,7 @@ ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.gi
 serde_json = "1.0.143"
 
 # WebGPU
-wgpu = { version = "26.0.1" }
+wgpu = { version = "27.0.1" }
 glam = "0.30.5"
 encase = { version = "0.11.2", features = ["glam"] }
 
@@ -87,7 +87,7 @@ encase = { version = "0.11.2", features = ["glam"] }
 # kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
+vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "4d28e54" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
 
