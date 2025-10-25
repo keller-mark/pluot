@@ -67,8 +67,8 @@ serde_json = "1.0.143"
 
 # WebGPU
 wgpu = { version = "27.0.1" }
-glam = "0.30.5"
-encase = { version = "0.11.2", features = ["glam"] }
+glam = { version = "0.30.8", features = ["encase"] }
+encase = { version = "0.12.0" }
 
 # Trying vello for shape/text rendering.
 # Vello (65eea2c4)
