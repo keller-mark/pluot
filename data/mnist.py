@@ -7,6 +7,7 @@
 #   "umap-learn==0.5.5",
 #   "scikit-learn==1.7.1",
 #   "numba==0.59.1",
+#   "vega-datasets==0.9.0"
 # ]
 # ///
 
@@ -19,6 +20,7 @@ import pandas as pd
 import umap
 from sklearn import datasets
 from sklearn.datasets import make_blobs, make_classification, make_gaussian_quantiles
+from vega_datasets import data as vega_data
 from os.path import join
 import zarr
 
@@ -51,11 +53,12 @@ no_compression = dict(filters=None, compressors=None, serializer="auto")
 z.create_array(name="/umap/x_coords", data=umap_df["X"].astype(float).values, **no_compression)
 z.create_array(name="/umap/y_coords", data=umap_df["Y"].astype(float).values, **no_compression)
 z.create_array(name="/umap/class_labels", data=umap_df["Targets"].astype(int).values, **no_compression)
+z.create_array(name="/umap/class_labels_str", data=umap_df["Targets"].astype(str).values, **no_compression)
 
 z.create_array(name="/densmap/x_coords", data=densmap_df["X"].astype(float).values, **no_compression)
 z.create_array(name="/densmap/y_coords", data=densmap_df["Y"].astype(float).values, **no_compression)
 z.create_array(name="/densmap/class_labels", data=densmap_df["Targets"].astype(int).values, **no_compression)
-
+z.create_array(name="/densmap/class_labels_str", data=densmap_df["Targets"].astype(str).values, **no_compression)
 
 # Create fake datasets of other sizes
 # Reference: https://scikit-learn.org/stable/datasets/sample_generators.html#generators-for-classification-and-clustering
@@ -74,3 +77,6 @@ for size in sizes:
     z.create_array(name=f"/n_{size}/y_coords", data=y_coords.astype(float), **no_compression)
     z.create_array(name=f"/n_{size}/z_coords", data=z_coords.astype(float), **no_compression)
     z.create_array(name=f"/n_{size}/class_labels", data=class_labels.astype(int), **no_compression)
+    z.create_array(name=f"/n_{size}/class_labels_str", data=class_labels.astype(str), **no_compression)
+
+# TODO: create a bar plot dataset
