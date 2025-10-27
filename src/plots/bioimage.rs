@@ -27,7 +27,7 @@ struct BioimageUniforms {
     num_channels: ArrayLength,
     // Note: WGSL only allows one runtime-sized array in a struct,
     // and it must be the last field.
-    #[size(runtime)]
+    #[shader(size(runtime))]
     channels: Vec<ChannelUniforms>,
 }
 

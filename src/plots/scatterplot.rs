@@ -19,11 +19,12 @@ use crate::two::shapes::{
 };
 
 #[derive(ShaderType, Debug)]
-pub struct ScatterplotUniforms {
-    pub camera_view: Mat4,   // mat4x4<f32>,
-    pub point_size_px: f32,  // diameter in pixels
-    pub viewport_size: Vec2, // (width, height) in pixels
-    pub color: Vec4,         // rgba color for points
+struct ScatterplotUniforms {
+    viewport_size: Vec2, // (width, height) in pixels
+    plot_margin: Vec4,   // (top, right, bottom, left) in pixels
+    camera_view: Mat4,   // mat4x4<f32>,
+    point_size_px: f32,  // diameter in pixels
+    color: Vec4,         // rgba color for points
 }
 
 pub async fn render_scatterplot(
@@ -34,6 +35,11 @@ pub async fn render_scatterplot(
     let store = context.store;
     let height = context.params.height as f64;
     let width = context.params.width as f64;
+
+    let margin_top = context.params.margin_top.unwrap_or(0.0) as f64;
+    let margin_right = context.params.margin_right.unwrap_or(0.0) as f64;
+    let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f64;
+    let margin_left = context.params.margin_left.unwrap_or(0.0) as f64;
 
     let PlotParams::Scatterplot(scatterplot_params) = &context.params.plot_params else {
         panic!("Expected scatterplot params");
@@ -173,6 +179,13 @@ pub async fn render_scatterplot(
     // Construct the uniform struct using Encase.
     let uniform_struct = ScatterplotUniforms {
         camera_view: Mat4::from_cols_array(&camera_view),
+        plot_margin: Vec4::from_array([
+            // top, right, bottom, left
+            margin_top as f32,
+            margin_right as f32,
+            margin_bottom as f32,
+            margin_left as f32,
+        ]),
         point_size_px,
         viewport_size: Vec2::new(viewport_w, viewport_h),
         color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
@@ -369,26 +382,26 @@ pub async fn render_scatterplot(
     // Construct the X-axis:
     let mut x_scale = ScaleLinear::new();
     x_scale.set_domain((min_x as f64, max_x as f64));
-    x_scale.set_range((0.0, width));
+    x_scale.set_range((margin_left, width - margin_right));
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
     let x_axis_group = TwoElement::Group(TwoGroup {
         elements: x_axis_elements,
-        translate: Some((0.0, height - 40.0)),
+        translate: Some((0.0, height - margin_bottom)),
         ..Default::default()
     });
 
     // Construct the Y-axis:
     let mut y_scale = ScaleLinear::new();
     y_scale.set_domain((min_y as f64, max_y as f64));
-    y_scale.set_range((height, 0.0)); // Inverted range
+    y_scale.set_range((height - margin_bottom, margin_top)); // Inverted range
     let y_axis = Axis::new(AxisOrientation::Left);
     let y_axis_elements = y_axis.generate_elements(&y_scale);
 
     let y_axis_group = TwoElement::Group(TwoGroup {
         elements: y_axis_elements,
-        translate: Some((40.0, 0.0)),
+        translate: Some((margin_left, 0.0)),
         ..Default::default()
     });
 

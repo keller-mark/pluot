@@ -159,4 +159,8 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         */
         Ok(None) // TODO: implement. can zarrita return a size?
     }
+
+    fn supports_get_partial(&self) -> bool {
+        true
+    }
 }

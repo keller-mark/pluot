@@ -22,12 +22,12 @@ test_plain_rust = ["tokio"]
 [dependencies]
 
 # Python-specific dependencies
-pyo3 = { version = "0.26", optional = true, features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.26", features = [
+pyo3 = { version = "0.27", optional = true, features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.27", features = [
     "tokio-runtime",
 ], optional = true }
-pythonize = { version = "0.26", optional = true }
-pyo3-log = { git = "https://github.com/alex/pyo3-log.git", rev = "3193bba", optional = true }
+pythonize = { git = "https://github.com/tuxu/pythonize.git", rev = "6140fe0", optional = true }
+pyo3-log = { git = "https://github.com/a1phyr/pyo3-log.git", rev = "1b4d070", optional = true }
 # tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
 tokio = { version = "1.47.1", features = ["full"], optional = true }
 
@@ -46,7 +46,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 # Zarrs (ea23432)
-zarrs = { git = "https://github.com/zarrs/zarrs.git", rev = "cd1ee50", default-features = false, features = [
+zarrs = { version = "0.22.4", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
@@ -66,9 +66,9 @@ ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.gi
 serde_json = "1.0.143"
 
 # WebGPU
-wgpu = { version = "26.0.1" }
-glam = "0.30.5"
-encase = { version = "0.11.2", features = ["glam"] }
+wgpu = { version = "27.0.1" }
+glam = { version = "0.30.8", features = ["encase"] }
+encase = { version = "0.12.0" }
 
 # Trying vello for shape/text rendering.
 # Vello (65eea2c4)
@@ -87,7 +87,7 @@ encase = { version = "0.11.2", features = ["glam"] }
 # kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
+vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "4d28e54" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
 

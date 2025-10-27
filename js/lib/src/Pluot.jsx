@@ -256,6 +256,8 @@ export function Pluot(props) {
       const renderParams = {
         width,
         height,
+        margin_bottom: 40.0,
+        margin_left: 40.0,
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
