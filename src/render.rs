@@ -261,7 +261,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             //let _ = tx.send(result);
         });
 
-        let _ = device.poll(wgpu::PollType::Wait);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
 
         //rx.recv().unwrap().unwrap();
         //let mapped = slice.get_mapped_range();

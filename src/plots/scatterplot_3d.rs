@@ -21,11 +21,11 @@ use crate::two::shapes::{
 };
 
 #[derive(ShaderType, Debug)]
-pub struct Scatterplot3dUniforms {
-    pub camera_view: Mat4,   // mat4x4<f32>,
-    pub point_size_px: f32,  // diameter in pixels
-    pub viewport_size: Vec2, // (width, height) in pixels
-    pub color: Vec4,         // rgba color for points
+struct Scatterplot3dUniforms {
+    camera_view: Mat4,   // mat4x4<f32>,
+    point_size_px: f32,  // diameter in pixels
+    viewport_size: Vec2, // (width, height) in pixels
+    color: Vec4,         // rgba color for points
 }
 
 pub async fn render_scatterplot_3d(
