@@ -87,7 +87,7 @@ encase = { version = "0.11.2", features = ["glam"] }
 # kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/audulus/vger-rs.git", rev = "551935f" }
+vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "5ef086e" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
 

@@ -2,6 +2,7 @@
 //! Original source: <https://github.com/d3/d3-scale>
 
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
 // Reference: https://github.com/d3/d3-scale/blob/main/src/linear.js
 
@@ -123,6 +124,206 @@ impl ScaleLinear {
         let (start, stop) = self.get_domain();
         let (new_start, new_stop) = nice(start, stop, count);
         self.set_domain((new_start, new_stop));
+    }
+}
+
+// Reference: https://github.com/d3/d3-scale/blob/main/src/band.js
+
+/// A band scale for mapping discrete domain values to continuous range values.
+/// This is commonly used for bar charts and other categorical visualizations.
+#[derive(Debug, Clone)]
+pub struct ScaleBand {
+    domain: Vec<String>,
+    range: (f64, f64),
+    range_map: HashMap<String, f64>,
+    step: f64,
+    bandwidth: f64,
+    round: bool,
+    padding_inner: f64,
+    padding_outer: f64,
+    align: f64,
+}
+
+impl Default for ScaleBand {
+    /// Creates a default band scale with an empty domain and range of `[0.0, 1.0]`.
+    fn default() -> Self {
+        let mut scale = Self {
+            domain: Vec::new(),
+            range: (0.0, 1.0),
+            range_map: HashMap::new(),
+            step: 0.0,
+            bandwidth: 0.0,
+            round: false,
+            padding_inner: 0.0,
+            padding_outer: 0.0,
+            align: 0.5,
+        };
+        scale.rescale();
+        scale
+    }
+}
+
+impl ScaleBand {
+    /// Creates a new default band scale.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Gets the scale's domain.
+    pub fn get_domain(&self) -> &[String] {
+        &self.domain
+    }
+
+    /// Sets the scale's domain.
+    pub fn set_domain(&mut self, domain: Vec<String>) {
+        self.domain = domain;
+        self.rescale();
+    }
+
+    /// Gets the scale's range.
+    pub fn get_range(&self) -> (f64, f64) {
+        self.range
+    }
+
+    /// Sets the scale's range.
+    pub fn set_range(&mut self, range: (f64, f64)) {
+        self.range = range;
+        self.rescale();
+    }
+
+    /// Sets the scale's range and enables rounding.
+    pub fn set_range_round(&mut self, range: (f64, f64)) {
+        self.range = range;
+        self.round = true;
+        self.rescale();
+    }
+
+    /// Gets the width of each band.
+    pub fn bandwidth(&self) -> f64 {
+        self.bandwidth
+    }
+
+    /// Gets the distance between the starts of adjacent bands.
+    pub fn step(&self) -> f64 {
+        self.step
+    }
+
+    /// Gets the scale's rounding status.
+    pub fn get_round(&self) -> bool {
+        self.round
+    }
+
+    /// Enables or disables rounding.
+    pub fn set_round(&mut self, round: bool) {
+        self.round = round;
+        self.rescale();
+    }
+
+    /// Sets both inner and outer padding to the same value.
+    /// The value should be in the range [0, 1].
+    pub fn set_padding(&mut self, padding: f64) {
+        self.padding_inner = padding.min(1.0);
+        self.padding_outer = padding;
+        self.rescale();
+    }
+
+    /// Gets the scale's inner padding.
+    pub fn get_padding_inner(&self) -> f64 {
+        self.padding_inner
+    }
+
+    /// Sets the inner padding between bands.
+    /// The value should be in the range [0, 1].
+    pub fn set_padding_inner(&mut self, padding: f64) {
+        self.padding_inner = padding.min(1.0);
+        self.rescale();
+    }
+
+    /// Gets the scale's outer padding.
+    pub fn get_padding_outer(&self) -> f64 {
+        self.padding_outer
+    }
+
+    /// Sets the outer padding before the first and after the last band.
+    pub fn set_padding_outer(&mut self, padding: f64) {
+        self.padding_outer = padding;
+        self.rescale();
+    }
+
+    /// Gets the scale's alignment.
+    pub fn get_align(&self) -> f64 {
+        self.align
+    }
+
+    /// Sets the alignment of the bands within the range.
+    /// The value should be in the range [0, 1], where 0.5 is centered.
+    pub fn set_align(&mut self, align: f64) {
+        self.align = align.max(0.0).min(1.0);
+        self.rescale();
+    }
+
+    /// Returns the domain values as "ticks" for axis rendering.
+    pub fn ticks(&self) -> Vec<String> {
+        self.domain.clone()
+    }
+
+    /// Recalculates the scale's internal state based on current settings.
+    fn rescale(&mut self) {
+        let n = self.domain.len();
+        let (r0, r1) = self.range;
+        let reverse = r1 < r0;
+        let (start, stop) = if reverse { (r1, r0) } else { (r0, r1) };
+
+        // Calculate step size
+        let divisor = (n as f64 - self.padding_inner + self.padding_outer * 2.0).max(1.0);
+        self.step = (stop - start) / divisor;
+
+        if self.round {
+            self.step = self.step.floor();
+        }
+
+        // Calculate adjusted start position
+        let mut adjusted_start =
+            start + (stop - start - self.step * (n as f64 - self.padding_inner)) * self.align;
+
+        // Calculate bandwidth
+        self.bandwidth = self.step * (1.0 - self.padding_inner);
+
+        if self.round {
+            adjusted_start = adjusted_start.round();
+            self.bandwidth = self.bandwidth.round();
+        }
+
+        // Build the range map
+        self.range_map.clear();
+        for (i, key) in self.domain.iter().enumerate() {
+            let value = adjusted_start + self.step * i as f64;
+            let final_value = if reverse {
+                // For reversed ranges, we need to reverse the positions
+                stop - (value - start)
+            } else {
+                value
+            };
+            self.range_map.insert(key.clone(), final_value);
+        }
+    }
+}
+
+impl Scaleable<String, Option<f64>> for ScaleBand {
+    /// Maps a domain value to its corresponding range position.
+    /// Returns `None` if the value is not in the domain.
+    fn scale(&self, value: &String) -> Option<f64> {
+        self.range_map.get(value).copied()
+    }
+}
+
+impl<'a> Scaleable<&'a str, Option<f64>> for ScaleBand {
+    /// Maps a domain value to its corresponding range position.
+    /// Returns `None` if the value is not in the domain.
+    fn scale(&self, value: &&'a str) -> Option<f64> {
+        // The double reference `&&'a str` in the method signature is because the `Scaleable`
+        // trait takes `&D`, so when `D` is `&'a str`, we get `&&'a str`.
+        self.range_map.get(*value).copied()
     }
 }
 
@@ -395,5 +596,121 @@ mod tests {
         assert_eq!(x.scale(&2.0), 2.0);
         assert_eq!(y.scale(&2.0), 2.0);
         assert_eq!(x.get_clamp(), false);
+    }
+
+    // ScaleBand tests
+
+    #[test]
+    fn test_scale_band_defaults() {
+        let s = ScaleBand::new();
+        assert_eq!(s.get_domain().len(), 0);
+        assert_eq!(s.get_range(), (0.0, 1.0));
+        assert_eq!(s.get_round(), false);
+        assert_eq!(s.get_padding_inner(), 0.0);
+        assert_eq!(s.get_padding_outer(), 0.0);
+        assert_eq!(s.get_align(), 0.5);
+    }
+
+    #[test]
+    fn test_scale_band_domain_sets_domain() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(s.get_domain(), &["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_scale_band_maps_domain_to_range() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        s.set_range((0.0, 960.0));
+
+        assert_eq!(s.scale(&"a"), Some(0.0));
+        assert_eq!(s.scale(&"b"), Some(320.0));
+        assert_eq!(s.scale(&"c"), Some(640.0));
+        assert_eq!(s.bandwidth(), 320.0);
+    }
+
+    #[test]
+    fn test_scale_band_with_padding() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        s.set_range((0.0, 960.0));
+        s.set_padding_inner(0.1);
+        s.set_padding_outer(0.2);
+
+        let step = s.step();
+        let bandwidth = s.bandwidth();
+
+        // With 3 bands, padding_inner = 0.1, padding_outer = 0.2:
+        // step = 960 / (3 - 0.1 + 0.2 * 2) = 960 / 3.3 ≈ 290.909...
+        assert!((step - 290.909090909).abs() < 1e-6);
+
+        // bandwidth = step * (1 - padding_inner) = step * 0.9
+        assert!((bandwidth - step * 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_scale_band_with_round() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        s.set_range_round((0.0, 100.0));
+
+        // With rounding, step and positions should be integers
+        let step = s.step();
+        assert_eq!(step, step.floor());
+
+        let a_pos = s.scale(&"a").unwrap();
+        assert_eq!(a_pos, a_pos.round());
+    }
+
+    #[test]
+    fn test_scale_band_unknown_value() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string()]);
+
+        assert_eq!(s.scale(&"a"), Some(0.0));
+        assert_eq!(s.scale(&"unknown"), None);
+    }
+
+    #[test]
+    fn test_scale_band_ticks() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+
+        let ticks = s.ticks();
+        assert_eq!(ticks, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_scale_band_copy_isolates_changes() {
+        let mut x = ScaleBand::new();
+        x.set_domain(vec!["a".to_string(), "b".to_string()]);
+
+        let mut y = x.clone();
+        y.set_domain(vec!["c".to_string(), "d".to_string()]);
+
+        assert_eq!(x.get_domain(), &["a", "b"]);
+        assert_eq!(y.get_domain(), &["c", "d"]);
+    }
+
+    #[test]
+    fn test_scale_band_align() {
+        let mut s = ScaleBand::new();
+        s.set_domain(vec!["a".to_string(), "b".to_string()]);
+        s.set_range((0.0, 100.0));
+        s.set_padding(0.2);
+
+        // Default align is 0.5 (centered)
+        let default_a = s.scale(&"a").unwrap();
+
+        // Align to start (0.0)
+        s.set_align(0.0);
+        let start_a = s.scale(&"a").unwrap();
+        assert!(start_a < default_a);
+
+        // Align to end (1.0)
+        s.set_align(1.0);
+        let end_a = s.scale(&"a").unwrap();
+        assert!(end_a > default_a);
     }
 }
