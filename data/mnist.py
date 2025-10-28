@@ -2,11 +2,10 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "zarr==3.1.1",
-#   "numpy",
+#   "numpy>=2.0.0",
 #   "pandas",
 #   "umap-learn==0.5.5",
 #   "scikit-learn==1.7.1",
-#   "numba==0.59.1",
 #   "vega-datasets==0.9.0"
 # ]
 # ///
@@ -23,6 +22,18 @@ from sklearn.datasets import make_blobs, make_classification, make_gaussian_quan
 from vega_datasets import data as vega_data
 from os.path import join
 import zarr
+
+# Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
+# Reference: https://github.com/zarr-developers/zarr-python/issues/3389
+no_compression = dict(filters=None, compressors=None, serializer="auto")
+
+# Create a bar plot dataset
+wheat_df = vega_data.wheat()
+z = zarr.open(join("out", "wheat.zarr"))
+z.create_array(name="/year", data=wheat_df["year"].values.astype(np.dtypes.StringDType), **no_compression)
+z.create_array(name="/wheat", data=wheat_df["wheat"].astype(int), **no_compression)
+
+
 
 
 mnist = datasets.fetch_openml("mnist_784")
@@ -45,10 +56,6 @@ densmap_df["Targets"] = densmap_df["Targets"].astype(int)
 
 
 z = zarr.open(join("out", "mnist.zarr"))
-
-# Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
-# Reference: https://github.com/zarr-developers/zarr-python/issues/3389
-no_compression = dict(filters=None, compressors=None, serializer="auto")
 
 z.create_array(name="/umap/x_coords", data=umap_df["X"].astype(float).values, **no_compression)
 z.create_array(name="/umap/y_coords", data=umap_df["Y"].astype(float).values, **no_compression)
@@ -78,5 +85,3 @@ for size in sizes:
     z.create_array(name=f"/n_{size}/z_coords", data=z_coords.astype(float), **no_compression)
     z.create_array(name=f"/n_{size}/class_labels", data=class_labels.astype(int), **no_compression)
     z.create_array(name=f"/n_{size}/class_labels_str", data=class_labels.astype(str), **no_compression)
-
-# TODO: create a bar plot dataset

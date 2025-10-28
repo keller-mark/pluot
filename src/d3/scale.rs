@@ -6,25 +6,20 @@ use std::collections::HashMap;
 
 // Reference: https://github.com/d3/d3-scale/blob/main/src/linear.js
 
+/// A trait for scales that map a domain value to a range value.
 pub trait Scaleable<D, R> {
     /// Given a value from the domain, returns the corresponding value in the range.
     fn scale(&self, value: &D) -> R;
 }
 
-/// A trait for scales that map a domain to a range.
-pub trait Scale<D, R> {
-    /// Gets the scale's domain.
-    fn get_domain(&self) -> (D, D);
-
-    /// Sets the scale's domain.
-    fn set_domain(&mut self, domain: (D, D));
-
+/// A trait for scales that have a linear range like [start_px, end_px].
+pub trait LinearRangeable<R> {
     /// Gets the scale's range.
     fn get_range(&self) -> (R, R);
+}
 
-    /// Sets the scale's range.
-    fn set_range(&mut self, range: (R, R));
-
+/// A trait for scales that gets a vector of domain values to use as axis ticks.
+pub trait Tickable<D> {
     // Note: not all D3 scales support .ticks.
     // In these cases, the .ticks implementation should just return the domain items.
     // Reference: https://github.com/d3/d3-axis/blob/20aef368e872a88e83b31a46df725e29c49908e6/src/axis.js#L44C46-L44C51
@@ -77,23 +72,13 @@ impl Scaleable<f64, f64> for ScaleLinear {
     }
 }
 
-impl Scale<f64, f64> for ScaleLinear {
-    fn get_domain(&self) -> (f64, f64) {
-        self.domain
-    }
-
-    fn set_domain(&mut self, domain: (f64, f64)) {
-        self.domain = domain;
-    }
-
+impl LinearRangeable<f64> for ScaleLinear {
     fn get_range(&self) -> (f64, f64) {
         self.range
     }
+}
 
-    fn set_range(&mut self, range: (f64, f64)) {
-        self.range = range;
-    }
-
+impl Tickable<f64> for ScaleLinear {
     /// Returns approximately `count` ticks from the scale's domain.
     fn ticks(&self, count: Option<usize>) -> Vec<f64> {
         let count = count.unwrap_or(10);
@@ -106,6 +91,18 @@ impl ScaleLinear {
     /// Creates a new default linear scale.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn get_domain(&self) -> (f64, f64) {
+        self.domain
+    }
+
+    pub fn set_domain(&mut self, domain: (f64, f64)) {
+        self.domain = domain;
+    }
+
+    pub fn set_range(&mut self, range: (f64, f64)) {
+        self.range = range;
     }
 
     /// Gets the scale's clamp status.
@@ -163,6 +160,20 @@ impl Default for ScaleBand {
     }
 }
 
+impl LinearRangeable<f64> for ScaleBand {
+    /// Gets the scale's range.
+    fn get_range(&self) -> (f64, f64) {
+        self.range
+    }
+}
+
+impl Tickable<String> for ScaleBand {
+    /// Returns the domain values as "ticks" for axis rendering.
+    fn ticks(&self, count: Option<usize>) -> Vec<String> {
+        self.domain.clone()
+    }
+}
+
 impl ScaleBand {
     /// Creates a new default band scale.
     pub fn new() -> Self {
@@ -178,11 +189,6 @@ impl ScaleBand {
     pub fn set_domain(&mut self, domain: Vec<String>) {
         self.domain = domain;
         self.rescale();
-    }
-
-    /// Gets the scale's range.
-    pub fn get_range(&self) -> (f64, f64) {
-        self.range
     }
 
     /// Sets the scale's range.
@@ -262,11 +268,6 @@ impl ScaleBand {
         self.rescale();
     }
 
-    /// Returns the domain values as "ticks" for axis rendering.
-    pub fn ticks(&self) -> Vec<String> {
-        self.domain.clone()
-    }
-
     /// Recalculates the scale's internal state based on current settings.
     fn rescale(&mut self) {
         let n = self.domain.len();
@@ -309,21 +310,11 @@ impl ScaleBand {
     }
 }
 
-impl Scaleable<String, Option<f64>> for ScaleBand {
+impl Scaleable<String, f64> for ScaleBand {
     /// Maps a domain value to its corresponding range position.
     /// Returns `None` if the value is not in the domain.
-    fn scale(&self, value: &String) -> Option<f64> {
-        self.range_map.get(value).copied()
-    }
-}
-
-impl<'a> Scaleable<&'a str, Option<f64>> for ScaleBand {
-    /// Maps a domain value to its corresponding range position.
-    /// Returns `None` if the value is not in the domain.
-    fn scale(&self, value: &&'a str) -> Option<f64> {
-        // The double reference `&&'a str` in the method signature is because the `Scaleable`
-        // trait takes `&D`, so when `D` is `&'a str`, we get `&&'a str`.
-        self.range_map.get(*value).copied()
+    fn scale(&self, value: &String) -> f64 {
+        self.range_map.get(value).unwrap().clone()
     }
 }
 
@@ -624,9 +615,9 @@ mod tests {
         s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
         s.set_range((0.0, 960.0));
 
-        assert_eq!(s.scale(&"a"), Some(0.0));
-        assert_eq!(s.scale(&"b"), Some(320.0));
-        assert_eq!(s.scale(&"c"), Some(640.0));
+        assert_eq!(s.scale(&"a".to_string()), 0.0);
+        assert_eq!(s.scale(&"b".to_string()), 320.0);
+        assert_eq!(s.scale(&"c".to_string()), 640.0);
         assert_eq!(s.bandwidth(), 320.0);
     }
 
@@ -659,7 +650,7 @@ mod tests {
         let step = s.step();
         assert_eq!(step, step.floor());
 
-        let a_pos = s.scale(&"a").unwrap();
+        let a_pos = s.scale(&"a".to_string());
         assert_eq!(a_pos, a_pos.round());
     }
 
@@ -668,8 +659,9 @@ mod tests {
         let mut s = ScaleBand::new();
         s.set_domain(vec!["a".to_string(), "b".to_string()]);
 
-        assert_eq!(s.scale(&"a"), Some(0.0));
-        assert_eq!(s.scale(&"unknown"), None);
+        assert_eq!(s.scale(&"a".to_string()), 0.0);
+        // TODO: assert error for unknown value instead
+        // assert_eq!(s.scale(&"unknown".to_string()), 0.0);
     }
 
     #[test]
@@ -677,7 +669,7 @@ mod tests {
         let mut s = ScaleBand::new();
         s.set_domain(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
 
-        let ticks = s.ticks();
+        let ticks = s.ticks(None);
         assert_eq!(ticks, vec!["a", "b", "c"]);
     }
 
@@ -701,16 +693,16 @@ mod tests {
         s.set_padding(0.2);
 
         // Default align is 0.5 (centered)
-        let default_a = s.scale(&"a").unwrap();
+        let default_a = s.scale(&"a".to_string());
 
         // Align to start (0.0)
         s.set_align(0.0);
-        let start_a = s.scale(&"a").unwrap();
+        let start_a = s.scale(&"a".to_string());
         assert!(start_a < default_a);
 
         // Align to end (1.0)
         s.set_align(1.0);
-        let end_a = s.scale(&"a").unwrap();
+        let end_a = s.scale(&"a".to_string());
         assert!(end_a > default_a);
     }
 }

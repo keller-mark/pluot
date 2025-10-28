@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::log;
 use crate::wgpu;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
@@ -13,7 +14,7 @@ use vello::{
 use crate::params::{PlotParams, RenderContext, RenderResult};
 
 use crate::d3::axis::{Axis, AxisOrientation};
-use crate::d3::scale::{Scale, ScaleBand, ScaleLinear};
+use crate::d3::scale::{LinearRangeable, ScaleBand, ScaleLinear, Scaleable, Tickable};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
@@ -47,29 +48,23 @@ pub async fn render_barplot(
 
     let x_array_path = &barplot_params.x_key.as_ref();
     let y_array_path = &barplot_params.y_key.as_ref();
-    let labels_array_path = barplot_params.color_key.as_ref().expect("Color key");
 
     let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
     let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
-    let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
 
     // Wait for all futures to complete
-    let arr_open_results = futures::join!(x_array_future, y_array_future, labels_array_future);
+    let arr_open_results = futures::join!(x_array_future, y_array_future);
 
     let x_array = arr_open_results.0.unwrap();
     let y_array = arr_open_results.1.unwrap();
-    let labels_array = arr_open_results.2.unwrap();
 
     let x_subset = x_array.subset_all();
     let y_subset = y_array.subset_all();
-    let labels_subset = labels_array.subset_all();
 
     // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
-    let (x_result, y_result, labels_result) = futures::join!(
-        // TODO: support categorical/string dtype for x_array
-        x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset),
-        y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset),
-        labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset),
+    let (x_result, y_result) = futures::join!(
+        x_array.async_retrieve_array_subset_ndarray::<String>(&x_subset),
+        y_array.async_retrieve_array_subset_ndarray::<i64>(&y_subset),
     );
 
     // Print the Zarr.json metadata to the JS console.
@@ -78,45 +73,16 @@ pub async fn render_barplot(
     // Read the whole array
     let x_vec = x_result.unwrap();
     let y_vec = y_result.unwrap();
-    let labels_vec = labels_result.unwrap();
+
+    // TODO: how best to obtain a Vec of strings?
+    // See alternative at https://github.com/zarrs/zarrs/blob/b1a7a19fd249eca1edce493081aed669e6fd2463/zarrs/examples/array_write_read_string.rs#L98
+    let x_str_vec = x_vec.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+
+    log(&x_str_vec[0]);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
     let n = x_vec.len();
     assert_eq!(n, y_vec.len(), "x and y data must have the same length");
-
-    // Convert to f32 and cast to bytes directly - no for loop needed
-    let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
-    let y_f32: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
-    let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
-
-    let x_bytes = bytemuck::cast_slice(&x_f32);
-    let y_bytes = bytemuck::cast_slice(&y_f32);
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
-
-    // Create separate buffers for X and Y coordinates
-    let x_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("X Coordinates Storage Buffer"),
-        size: x_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    context.queue.write_buffer(&x_buffer, 0, &x_bytes);
-
-    let y_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Y Coordinates Storage Buffer"),
-        size: y_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    context.queue.write_buffer(&y_buffer, 0, &y_bytes);
-
-    let labels_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Class labels Storage Buffer"),
-        size: labels_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    context.queue.write_buffer(&labels_buffer, 0, &labels_bytes);
 
     // Create uniforms matching the WGSL layout
 
@@ -141,6 +107,46 @@ pub async fn render_barplot(
     let viewport_w = context.params.width as f32;
     let viewport_h = context.params.height as f32;
 
+    // Create a scale for the categorical/string X values.
+    let mut x_scale = ScaleBand::new();
+    // TODO: set padding in pixel units rather than as a fraction.
+    x_scale.set_padding_outer(0.1);
+    x_scale.set_padding_inner(0.1);
+    x_scale.set_domain(x_str_vec.clone());
+    x_scale.set_range((margin_left, width - margin_right));
+
+    // Create a linear scale for the Y values.
+    let mut y_scale = ScaleLinear::new();
+    y_scale.set_domain((0.0 as f64, 100.0 as f64));
+    y_scale.set_range((height - margin_bottom, margin_top)); // Inverted range
+
+    // Convert to f32 and cast to bytes directly - no for loop needed
+    let x_f32: Vec<f32> = x_str_vec.iter().map(|x| x_scale.scale(x) as f32).collect();
+    let y_f32: Vec<f32> = y_vec
+        .iter()
+        .map(|&y| y_scale.scale(&(y as f64)) as f32)
+        .collect();
+
+    let x_bytes = bytemuck::cast_slice(&x_f32);
+    let y_bytes = bytemuck::cast_slice(&y_f32);
+
+    // Create separate buffers for X and Y coordinates
+    let x_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("X Coordinates Storage Buffer"),
+        size: x_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    context.queue.write_buffer(&x_buffer, 0, &x_bytes);
+
+    let y_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Y Coordinates Storage Buffer"),
+        size: y_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    context.queue.write_buffer(&y_buffer, 0, &y_bytes);
+
     // Construct the uniform struct using Encase.
     let uniform_struct = BarPlotUniforms {
         camera_view: Mat4::from_cols_array(&camera_view),
@@ -152,8 +158,8 @@ pub async fn render_barplot(
             margin_left as f32,
         ]),
         viewport_size: Vec2::new(viewport_w, viewport_h),
-        bar_padding_px: 1.0, // TODO: get from scale object
-        bar_size_px: 20.0,   // TODO: get from scale object
+        bar_padding_px: x_scale.get_padding_outer() as f32,
+        bar_size_px: x_scale.bandwidth() as f32,
     };
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -211,23 +217,12 @@ pub async fn render_barplot(
                         },
                         count: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        // The class labels coordinates buffer.
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
                 ],
             });
     let bind_group = context
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Scatter BG"),
+            label: Some("Barplot BG"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -241,10 +236,6 @@ pub async fn render_barplot(
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: y_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: labels_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -345,9 +336,6 @@ pub async fn render_barplot(
     }
 
     // Construct the X-axis:
-    let mut x_scale = ScaleBand::new();
-    x_scale.set_domain((min_x as f64, max_x as f64));
-    x_scale.set_range((margin_left, width - margin_right));
     let x_axis = Axis::new(AxisOrientation::Bottom);
     let x_axis_elements = x_axis.generate_elements(&x_scale);
 
@@ -358,9 +346,6 @@ pub async fn render_barplot(
     });
 
     // Construct the Y-axis:
-    let mut y_scale = ScaleLinear::new();
-    y_scale.set_domain((min_y as f64, max_y as f64));
-    y_scale.set_range((height - margin_bottom, margin_top)); // Inverted range
     let y_axis = Axis::new(AxisOrientation::Left);
     let y_axis_elements = y_axis.generate_elements(&y_scale);
 

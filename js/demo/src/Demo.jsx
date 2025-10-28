@@ -54,6 +54,15 @@ const DEMOS = {
       // ],
     },
   },
+  bar_plot: {
+    // Reference: https://altair-viz.github.io/gallery/bar_chart_with_highlighted_bar.html
+    plot_type: "BarPlot",
+    store_name: "wheat",
+    plot_params: {
+      x_key: "/year",
+      y_key: "/wheat",
+    }
+  },
 };
 
 export function Demo() {
