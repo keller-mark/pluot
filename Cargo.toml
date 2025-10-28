@@ -23,9 +23,7 @@ test_plain_rust = ["tokio"]
 
 # Python-specific dependencies
 pyo3 = { version = "0.27", optional = true, features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.27", features = [
-    "tokio-runtime",
-], optional = true }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"], optional = true }
 pythonize = { git = "https://github.com/tuxu/pythonize.git", rev = "6140fe0", optional = true }
 pyo3-log = { git = "https://github.com/a1phyr/pyo3-log.git", rev = "1b4d070", optional = true }
 # tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
@@ -46,7 +44,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 # Zarrs (ea23432)
-zarrs = { version = "0.22.4", default-features = false, features = [
+zarrs = { version = "0.22.5", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
@@ -87,7 +85,7 @@ encase = { version = "0.12.0" }
 # kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "4d28e54" }
+vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "5ef086e" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
 

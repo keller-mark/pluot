@@ -1,6 +1,6 @@
 // Reference: https://github.com/d3/d3-axis/blob/main/src/axis.js
 
-use crate::d3::scale::{Scale, Scaleable};
+use crate::d3::scale::{LinearRangeable, Scaleable, Tickable};
 use crate::two::shapes::{
     TwoColor, TwoElement, TwoLine, TwoPath, TwoText, TwoTextAlign, TwoTextBaseline,
 };
@@ -81,7 +81,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
 
     pub fn generate_elements(
         &self,
-        scale: &(impl Scale<D, f64> + Scaleable<D, f64>),
+        scale: &(impl Tickable<D> + Scaleable<D, f64> + LinearRangeable<f64>),
     ) -> Vec<TwoElement> {
         let mut elements = Vec::new();
 

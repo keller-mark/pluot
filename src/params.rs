@@ -1,10 +1,10 @@
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-// TODO: define RenderParams here (rather than lib.rs).
-// Then, pass RenderParams via RenderContext.
-use serde::{Deserialize, Serialize};
+// TODO: use Observable Plot-like parameter names:
+// https://observablehq.com/plot/marks/bar
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ScatterplotRenderParams {
@@ -32,6 +32,13 @@ pub struct BioimageRenderParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct BarPlotRenderParams {
+    pub x_key: String,
+    pub y_key: String,
+    pub color_key: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "plot_type", content = "plot_params")]
 pub enum PlotParams {
     // Using internally tagged enum representation.
@@ -40,6 +47,7 @@ pub enum PlotParams {
     Scatterplot(ScatterplotRenderParams),
     Scatterplot3d(Scatterplot3dRenderParams),
     Bioimage(BioimageRenderParams),
+    BarPlot(BarPlotRenderParams),
     Triangle, // No parameters
 }
 

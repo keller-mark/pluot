@@ -208,6 +208,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         PlotParams::Bioimage(_) => {
             plots::bioimage::render_bioimage(&mut context, &mut encoder).await
         }
+        PlotParams::BarPlot(_) => plots::barplot::render_barplot(&mut context, &mut encoder).await,
         _ => panic!("Unsupported plot type"),
     };
 

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::d3::axis::{Axis, AxisOrientation};
-use crate::d3::scale::{Scale, ScaleLinear};
+use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
 use crate::wgpu;
 
 // use vello::{

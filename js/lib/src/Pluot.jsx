@@ -26,6 +26,9 @@ const stores = {
   ome_ngff: lru(
     new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
   ),
+  wheat: lru(
+    new FetchStore("http://localhost:5173/@data/wheat.zarr"),
+  ),
 };
 
 // console.log(wasm);
