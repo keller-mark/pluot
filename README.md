@@ -12,6 +12,14 @@ Unlock the following benefits:
 - Render interactive plots via JavaScript
 - Bitmap (PNG/JPEG) or SVG output supported
 
+
+## Requirements
+
+- __Fast__: Each `render()` call should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover)
+- __Small__: The bundle size (i.e., the WASM binary size) should be kept around (or below) its current ~2MB to make it feasible to use in web applications
+- __Scalable__: Should scale to out-of-memory dataset sizes using partial reads of arrays/columns (currently using Zarr to achieve this) and data tiling/aggregation strategies.
+
+
 ## How it works
 
 Plotting functions are implemented in Rust using [WGPU](https://github.com/gfx-rs/wgpu).
