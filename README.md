@@ -19,6 +19,7 @@ Unlock the following benefits:
 - __Small__: The bundle size (i.e., the WASM binary size) should be kept small (currently ~2MB) to make it feasible to use in web applications.
 - __Scalable__: Should scale to out-of-memory dataset sizes using partial reads of arrays/columns (currently using Zarr to achieve this) and data tiling/aggregation strategies.
 - __Vector__: Plotting functions should implement both raster and vector equivalents, to support publication-quality graphics export.
+- __Extensible__: Provide D3-like utilities to enable the development of highly customized plot types.
 
 
 ## How it works
