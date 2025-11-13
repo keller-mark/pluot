@@ -57,8 +57,8 @@ The data filtering operations themselves will always be performed in Rust.
 
 - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
 - WebGL fallbacks. Instead, we can be patient and wait until WebGPU availability improves.
-- Window/Canvas management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library.
-- Coordinated multiple views. These should be achieved via the parent/calling library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
+- Window/Canvas management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library. This both reduces the scope and decouples the plotting from any particular GUI framework.
+- Coordinated multiple views. This can be achieved via the parent/calling library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
 
 
 ## Why not just use JS+WebGPU directly?

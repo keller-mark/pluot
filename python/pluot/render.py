@@ -1,12 +1,50 @@
+import uuid
 from PIL import Image
 import numpy as np
+import zarr
+from zarr.storage import MemoryStore
+from .zarr import GLOBAL_STORES
 from ._internal import render_py
 
+# Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
+# Reference: https://github.com/zarr-developers/zarr-python/issues/3389
+no_compression = dict(filters=None, compressors=None, serializer="auto")
+
+# Helper function to convert _arr params to _key params,
+# inserting NumPy array data into an in-memory Zarr store.
+def parse_kwargs(kwargs):
+    """Parse kwargs for render functions."""
+    kwargs_has_store = "store_name" in kwargs
+    kwargs_has_plot_params = "plot_params" in kwargs
+    new_kwargs = kwargs
+    if (not kwargs_has_store) and kwargs_has_plot_params:
+        store_name = str(uuid.uuid4())
+        new_kwargs = {
+            "store_name": store_name,
+            **kwargs,
+            "plot_params": {},
+        }
+        GLOBAL_STORES[store_name] = MemoryStore()
+        for key, val in kwargs["plot_params"].items():
+            if key.endswith("_arr") and isinstance(val, np.ndarray):
+                new_key = key.replace("_arr", "_key")
+                new_val = f"/{new_key}_arr"
+                zarr.create_array(
+                    store=GLOBAL_STORES[store_name],
+                    data=val,
+                    name=new_val,
+                    **no_compression
+                )
+                new_kwargs["plot_params"][new_key] = new_val
+            else:
+                new_kwargs["plot_params"][key] = val
+    return new_kwargs
 
 async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
-    result = await render_py(timeout=None, **kwargs)
+    new_kwargs = parse_kwargs(kwargs)
+    result = await render_py(timeout=None, **new_kwargs)
     return result
 
 async def render_to_array(**kwargs):
