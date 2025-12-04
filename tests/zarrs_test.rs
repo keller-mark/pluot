@@ -11,7 +11,7 @@ fn test_read_array_subset() {
     let store = Arc::new(FilesystemStore::new("data/out/6001240_labels.ome.zarr")
         .expect("Create filesystem store"));
 
-    let lowres_array = zarrs::array::Array::open(store.clone(), "/2_nc")
+    let lowres_array = zarrs::array::Array::open(store.clone(), "/2")
         .expect("Open lowres dataset array");
 
     println!("Reading array subset3: {:?}", lowres_array.subset_all());

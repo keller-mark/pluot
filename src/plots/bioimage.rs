@@ -75,7 +75,7 @@ pub async fn render_bioimage(
     for (i, dataset) in first_multiscale.datasets.iter().enumerate() {
         // TODO: support Blosc-compressed arrays, and remove the _nc no-compression suffix here.
         let dataset_array =
-            zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", dataset.path))
+            zarrs::array::Array::async_open(store.clone(), &format!("/{}", dataset.path))
                 .await
                 .expect("Open dataset array");
 
@@ -111,7 +111,7 @@ pub async fn render_bioimage(
         .first()
         .expect("At least one dataset");
     let hires_array =
-        zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", hires_dataset.path))
+        zarrs::array::Array::async_open(store.clone(), &format!("/{}", hires_dataset.path))
             .await
             .expect("Open highest-resolution dataset array");
 
@@ -125,7 +125,7 @@ pub async fn render_bioimage(
         .last()
         .expect("At least one dataset");
     let lowres_array =
-        zarrs::array::Array::async_open(store.clone(), &format!("/{}_nc", lowres_dataset.path))
+        zarrs::array::Array::async_open(store.clone(), &format!("/{}", lowres_dataset.path))
             .await
             .expect("Open lowest-resolution dataset array");
 

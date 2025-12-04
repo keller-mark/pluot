@@ -7,7 +7,7 @@ exclude = ["data", "js", "python", "python-notebooks"]
 
 # Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ['-Oz']
+#wasm-opt = ['-Oz']
 
 [lib]
 name = "pluot"
@@ -44,7 +44,14 @@ serde = { version = "1.0.x", features = ["derive"] }
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 # Zarrs (ea23432)
-zarrs = { version = "0.22.8", default-features = false, features = [
+zstd = { version = "*", features = [
+    "wasm",
+    "thin",
+], default-features = false, optional = true }
+zstd-sys = { version = "=2.0.9", optional = true, default-features = false }
+zstd-safe = { version = "*", optional = true, default-features = false }
+
+zarrs = { path = "../zarrs/zarrs", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
@@ -52,6 +59,8 @@ zarrs = { version = "0.22.8", default-features = false, features = [
     "transpose",
     "async",
     "filesystem",
+    "zstd",
+    "blosc",
 ] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
@@ -129,7 +138,7 @@ wasm-bindgen-test = "0.3.34"
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
-opt-level = "s"
+#opt-level = "s"
 
 # Enable link-time optimization.
 # This gives LLVM many more opportunities to inline and prune functions.
