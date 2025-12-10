@@ -69,6 +69,8 @@ The data filtering operations themselves will always be performed in Rust.
   - CI machines that lack a GPU
 - Compilation for web targets with Rust dependencies that have C subdependencies that assume C libraries like `stdlib.h` and `string.h`.
   - Prevents using certain Zarr (de)compression algorithms that are implemented in C
+- Challenges using multi-threaded and concurrenct Rust programs in WASM contexts.
+  - See [comments](https://github.com/zarrs/zarrs/issues/242#issuecomment-3236982849)
 
 ## Why not just use JS+WebGPU directly?
 
