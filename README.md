@@ -21,7 +21,6 @@ Unlock the following benefits:
 - __Vector__: Plotting functions should implement both raster and vector equivalents, to support publication-quality graphics export.
 - __Extensible__: Provide D3-like utilities to enable the development of highly customized plot types.
 
-
 ## How it works
 
 Plotting functions are implemented in Rust using [WGPU](https://github.com/gfx-rs/wgpu).
@@ -60,6 +59,16 @@ The data filtering operations themselves will always be performed in Rust.
 - Window/Canvas management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library. This both reduces the scope and decouples the plotting from any particular GUI framework.
 - Coordinated multiple views. This can be achieved via the parent/calling library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
 
+## Challenges
+
+- Keeping the bundle size small.
+  - Prevents using certain Rust dependencies, such as for text rendering, requiring new implementations
+  - Prevents using WebGL fallbacks, as this also increases the bundle size significantly. However, we could explore progressively loading a larger bundle in this situation.
+- WebGPU not yet available in all contexts.
+  - Safari and Firefox on macOS versions prior to Tahoe
+  - CI machines that lack a GPU
+- Compilation for web targets with Rust dependencies that have C subdependencies that assume C libraries like `stdlib.h` and `string.h`.
+  - Prevents using certain Zarr (de)compression algorithms that are implemented in C
 
 ## Why not just use JS+WebGPU directly?
 
@@ -209,7 +218,13 @@ cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8
 
 
 wasm-pack build --target web
+# or
+wasm-pack build --target web && pnpm run start
+# or
+wasm-pack build --dev --target web && pnpm run start
 ```
+
+
 
 Test in browser:
 
