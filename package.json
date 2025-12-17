@@ -22,7 +22,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "MIT",
+  "license": "",
   "devDependencies": {
     "vitest": "^3.2.4",
     "vite": "^6.1.1",

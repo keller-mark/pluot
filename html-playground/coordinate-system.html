@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coordinate System Playground</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="coordinateCanvas" width="600" height="600" style="border: 1px solid black;"></canvas>
+    <script type="module">
+      // Reference: https://observablehq.com/@mourner/webgpu-boilerplate
+        const canvas = document.getElementById('coordinateCanvas');
+        const context = canvas.getContext('webgpu');
+
+        const adapter = await navigator.gpu?.requestAdapter();
+        const device = await adapter?.requestDevice();
+        const format = navigator.gpu.getPreferredCanvasFormat();
+        context.configure({ device, format });
+        
+        const code = `
+            struct Uniforms {
+              time: f32
+            }
+            @group(0) @binding(0) var<uniform> u: Uniforms;
+
+            struct Vertex {
+              @location(0) pos: vec4f
+            };
+            struct VertexOut {
+              @builtin(position) pos: vec4f,
+              @location(0) color: vec4f
+            }
+
+            @vertex fn vertexMain(v: Vertex) -> VertexOut {
+              let x = sin(u.time);
+              let y = cos(u.time);
+              let pos = vec4f(mat2x2f(y, -x, x, y) * v.pos.xy, 0, 1);
+              let color = vec4f(v.pos.zw, 0.5 + x * 0.5, 1);
+              return VertexOut(pos, color);
+            }
+            @fragment fn fragmentMain(v: VertexOut) -> @location(0) vec4f {
+              return v.color;
+            }
+        `;
+
+        const module = device.createShaderModule({code});
+        const pipeline = device.createRenderPipeline({
+          layout: 'auto',
+          vertex: {
+          module, 
+          entryPoint: 'vertexMain',
+          buffers: [{ // layout for our vertex data (positions and colors)
+            arrayStride: 4 * 4,
+            attributes: [{shaderLocation: 0, offset: 0, format: 'float32x4'}]
+          }]
+          },
+          fragment: {
+            module, 
+            entryPoint: 'fragmentMain', 
+            targets: [{format}]
+          },
+          primitive: {topology: 'triangle-strip'}
+        });
+        
+        const uniformValues = new Float32Array(1); // a uniform buffer for passing current time
+        const uniformBuffer = device.createBuffer({size: uniformValues.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+        const bindGroup = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [{binding: 0, resource: {buffer: uniformBuffer}}]
+        });
+
+        const vertexData = Float32Array.of(
+            -0.7, 0.7, 0, 1,
+            -0.7, -0.7, 0, 0,
+            0.7, 0.7, 1, 1,
+            0.7, -0.7, 1, 0
+        );
+        const vertexBuffer = device.createBuffer({size: vertexData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST});
+        device.queue.writeBuffer(vertexBuffer, 0, vertexData);
+
+        let start = performance.now();
+        
+        (function render(time) {
+            uniformValues[0] = 1000 / 1000;
+            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+            
+            const encoder = device.createCommandEncoder();
+            const output = {
+                clearValue: [1, 1, 1, 1],
+                loadOp: 'clear',
+                storeOp: 'store',
+                view: context.getCurrentTexture().createView()
+            };
+            const pass = encoder.beginRenderPass({colorAttachments: [output]});
+            pass.setPipeline(pipeline);
+            pass.setVertexBuffer(0, vertexBuffer);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(4);
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+
+            requestAnimationFrame(render);
+        })(start);
+
+    </script>
+</body>
+</html>
