@@ -239,7 +239,7 @@ Open to http://localhost:3005/www/
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```
-wasm-pack test --headless --firefox
+wasm-pack test --headless --chrome
 ```
 
 ### Publish to NPM with `wasm-pack publish`

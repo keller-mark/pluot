@@ -317,7 +317,7 @@ pub async fn render_scatterplot_3d(
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
     let render_pipeline = context
@@ -347,8 +347,8 @@ pub async fn render_scatterplot_3d(
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
             cache: None,
+            multiview_mask: None,
         });
 
     // 1) Offscreen scatterplot target
@@ -385,6 +385,7 @@ pub async fn render_scatterplot_3d(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&render_pipeline);

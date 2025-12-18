@@ -272,7 +272,7 @@ pub fn render_text(
         label: Some("Text Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
         address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -461,7 +461,7 @@ pub fn render_text(
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Text Pipeline Layout"),
             bind_group_layouts: &[&bgl],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     // Vertex buffer layout: two vec4<f32> per instance
@@ -510,8 +510,8 @@ pub fn render_text(
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
             cache: None,
+            multiview_mask: None,
         });
 
     // Number of emitted instances (skip zero-sized glyphs)
@@ -538,6 +538,7 @@ pub fn render_text(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         pass.set_pipeline(&pipeline);

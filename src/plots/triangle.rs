@@ -55,7 +55,7 @@ pub async fn render_triangle(
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
     let render_pipeline = context
@@ -85,8 +85,8 @@ pub async fn render_triangle(
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
             cache: None,
+            multiview_mask: None,
         });
     // End render-specific things.
 
@@ -122,6 +122,7 @@ pub async fn render_triangle(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&render_pipeline);

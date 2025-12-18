@@ -225,8 +225,9 @@ pub fn render_shapes(
                 },
             })],
             depth_stencil_attachment: None,
-            occlusion_query_set: None,
             timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
         };
 
         vger.encode(&desc);
