@@ -15,13 +15,10 @@ async fn test_render_triangle() {
     let params: JsValue = serde_wasm_bindgen::to_value(&RenderParams {
         width,
         height,
-        zoom: Some(1.0),
-        target_x: Some(0.0),
-        target_y: Some(0.0),
         camera_view: None,
         plot_id: "my_plot".to_string(),
-        plot_type: "triangle".to_string(),
         store_name: "my_store".to_string(),
+        ..Default::default()
     })
     .expect("Invalid parameters");
     let result = render_wasm(params).await;
