@@ -44,7 +44,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
 # Zarrs (ea23432)
-zarrs = { version = "0.22.5", default-features = false, features = [
+zarrs = { version = "0.22.10", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
