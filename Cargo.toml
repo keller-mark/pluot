@@ -3,6 +3,7 @@ name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
+rust-version = "1.92"
 exclude = ["data", "js", "python", "python-notebooks"]
 
 # Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
@@ -64,7 +65,7 @@ ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.gi
 serde_json = "1.0.143"
 
 # WebGPU
-wgpu = { version = "27.0.1" }
+wgpu = { version = "28.0.0" }
 glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 
@@ -85,7 +86,7 @@ encase = { version = "0.12.0" }
 # kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "5ef086e" }
+vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "b579608" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
 
@@ -98,9 +99,9 @@ fontdue = "0.9.x"
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "0.2.100" }
-wasm-bindgen-futures = { version = "0.4.50" }
-wasm-bindgen-shared = { version = "0.2.100" }
+wasm-bindgen = { version = "0.2.106" }
+wasm-bindgen-futures = { version = "0.4.56" }
+wasm-bindgen-shared = { version = "0.2.106" }
 web-sys = { version = "0.3.77" }
 js-sys = { version = "0.3.77" }
 serde-wasm-bindgen = { version = "0.6.5" }
@@ -142,15 +143,3 @@ lto = true
 # This also gives LLVM more opportunities to inline and prune functions.
 # This will make the .wasm smaller and faster, but will also make compilation even longer
 codegen-units = 1
-
-
-# Need to use nightly version of `wasm-bindgen` and the other crates in its workspace.
-# Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
-[patch.crates-io]
-wasm-bindgen = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-macro = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-macro-support = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-shared = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-wasm-bindgen-futures = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-js-sys = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }
-web-sys = { git = "https://github.com/rustwasm/wasm-bindgen", rev = "b766ac3e206a8efab2c7cf91923cd502b2bc77a5" }

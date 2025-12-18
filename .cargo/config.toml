@@ -5,7 +5,18 @@ rustflags = [
     '--cfg', 'getrandom_backend="wasm_js"',
     # Probably not necessary, as not using wasm-rayon-bindgen, but may use it in the future.
     # Reference: https://github.com/RReverser/wasm-bindgen-rayon?tab=readme-ov-file#using-config-files
-    "-C", "target-feature=+atomics,+bulk-memory"
+    "-C", "target-feature=+atomics,+bulk-memory",
+    # After upgrade to rustc 1.92 (I think this is what caused it), need the following flags:
+    # References:
+    # - https://github.com/huggingface/xet-core/issues/554#issuecomment-3488260311
+    # - https://github.com/wasm-bindgen/wasm-bindgen/pull/4717
+    "-C", "link-arg=--shared-memory",
+    "-C", "link-arg=--max-memory=1073741824",
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--export=__wasm_init_tls",
+    "-C", "link-arg=--export=__tls_size",
+    "-C", "link-arg=--export=__tls_align",
+    "-C", "link-arg=--export=__tls_base",
 ]
 
 [unstable]

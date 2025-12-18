@@ -405,7 +405,7 @@ pub fn overlay_pass(
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Overlay PL"),
             bind_group_layouts: &[&overlay_bgl],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
     let overlay_pipeline = context
         .device
@@ -431,15 +431,15 @@ pub fn overlay_pass(
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
             cache: None,
+            multiview_mask: None,
         });
 
     let overlay_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("Overlay Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
 
@@ -496,6 +496,7 @@ pub fn overlay_pass(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&overlay_pipeline);
