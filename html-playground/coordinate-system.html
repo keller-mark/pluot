@@ -3,16 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coordinate System Playground</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-        }
-        canvas {
-            display: block;
-        }
-    </style>
+    <title>WebGPU Playground</title>
 </head>
 <body>
     <canvas id="coordinateCanvas" width="600" height="600" style="border: 1px solid black;"></canvas>
@@ -27,10 +18,10 @@
         context.configure({ device, format });
         
         const code = `
-            struct Uniforms {
+            /*struct Uniforms {
               time: f32
             }
-            @group(0) @binding(0) var<uniform> u: Uniforms;
+            @group(0) @binding(0) var<uniform> u: Uniforms;*/
 
             struct Vertex {
               @location(0) pos: vec4f
@@ -40,11 +31,34 @@
               @location(0) color: vec4f
             }
 
-            @vertex fn vertexMain(v: Vertex) -> VertexOut {
-              let x = sin(u.time);
-              let y = cos(u.time);
-              let pos = vec4f(mat2x2f(y, -x, x, y) * v.pos.xy, 0, 1);
-              let color = vec4f(v.pos.zw, 0.5 + x * 0.5, 1);
+            // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
+            const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
+                vec2<f32>(-1.0, -1.0),
+                vec2<f32>( 1.0, -1.0),
+                vec2<f32>(-1.0,  1.0),
+                vec2<f32>( 1.0,  1.0)
+            );
+
+            const POINT_COORDS: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
+                vec2<f32>(-1.0, -1.0),
+                vec2<f32>( 1.0, -1.0),
+                vec2<f32>(-1.0,  1.0),
+                vec2<f32>( 1.0,  1.0)
+            );
+
+            @vertex fn vertexMain(
+              @builtin(instance_index) instance_index: u32,
+              @builtin(vertex_index) vertex_index: u32
+            ) -> VertexOut {
+              // Pick corner of quad and place around center
+              let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
+
+              // Move to point position
+              let point_pos = POINT_COORDS[instance_index];
+
+  
+              let pos = vec4f(point_pos.x * 0.9 + corner.x * 0.05, point_pos.y * 0.9 + corner.y * 0.05, 0.0, 1.0);
+              let color = vec4f(1.0, 0.0, 0.0, 1.0);
               return VertexOut(pos, color);
             }
             @fragment fn fragmentMain(v: VertexOut) -> @location(0) vec4f {
@@ -56,12 +70,9 @@
         const pipeline = device.createRenderPipeline({
           layout: 'auto',
           vertex: {
-          module, 
-          entryPoint: 'vertexMain',
-          buffers: [{ // layout for our vertex data (positions and colors)
-            arrayStride: 4 * 4,
-            attributes: [{shaderLocation: 0, offset: 0, format: 'float32x4'}]
-          }]
+            module, 
+            entryPoint: 'vertexMain',
+            buffers: [],
           },
           fragment: {
             module, 
@@ -71,6 +82,7 @@
           primitive: {topology: 'triangle-strip'}
         });
         
+        /*
         const uniformValues = new Float32Array(1); // a uniform buffer for passing current time
         const uniformBuffer = device.createBuffer({size: uniformValues.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
         const bindGroup = device.createBindGroup({
@@ -78,38 +90,39 @@
             entries: [{binding: 0, resource: {buffer: uniformBuffer}}]
         });
 
+        // 4 points: Top-Left, Bottom-Left, Top-Right, Bottom-Right
+        // Format: x, y, r, g (using zw for color channels as per shader)
         const vertexData = Float32Array.of(
-            -0.7, 0.7, 0, 1,
-            -0.7, -0.7, 0, 0,
-            0.7, 0.7, 1, 1,
-            0.7, -0.7, 1, 0
+            -0.9, 0.9, 0, 1,  // Top-Left
+            -0.9, -0.9, 0, 0, // Bottom-Left
+            0.9, 0.9, 1, 1,   // Top-Right
+            0.9, -0.9, 1, 0   // Bottom-Right
         );
         const vertexBuffer = device.createBuffer({size: vertexData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST});
         device.queue.writeBuffer(vertexBuffer, 0, vertexData);
-
-        let start = performance.now();
+   
+        uniformValues[0] = 1000 / 1000;
+        device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+        */
         
-        (function render(time) {
-            uniformValues[0] = 1000 / 1000;
-            device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-            
-            const encoder = device.createCommandEncoder();
-            const output = {
-                clearValue: [1, 1, 1, 1],
-                loadOp: 'clear',
-                storeOp: 'store',
-                view: context.getCurrentTexture().createView()
-            };
-            const pass = encoder.beginRenderPass({colorAttachments: [output]});
-            pass.setPipeline(pipeline);
-            pass.setVertexBuffer(0, vertexBuffer);
-            pass.setBindGroup(0, bindGroup);
-            pass.draw(4);
-            pass.end();
-            device.queue.submit([encoder.finish()]);
+        const encoder = device.createCommandEncoder();
+        const output = {
+            clearValue: [1, 1, 1, 1],
+            loadOp: 'clear',
+            storeOp: 'store',
+            view: context.getCurrentTexture().createView()
+        };
+        const pass = encoder.beginRenderPass({colorAttachments: [output]});
+        pass.setPipeline(pipeline);
+        //pass.setVertexBuffer(0, vertexBuffer);
+        //pass.setBindGroup(0, bindGroup);
+        const numPoints = 4;
+        pass.draw(4, numPoints);
+        pass.end();
+        device.queue.submit([encoder.finish()]);
 
-            requestAnimationFrame(render);
-        })(start);
+
+        
 
     </script>
 </body>
