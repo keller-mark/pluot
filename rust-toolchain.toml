@@ -1,0 +1,5 @@
+[toolchain]
+# Reference: https://github.com/RReverser/wasm-bindgen-rayon?tab=readme-ov-file#building-rust-code
+channel = "nightly-2025-11-15"
+components = ["rust-src"]
+targets = ["wasm32-unknown-unknown"]
