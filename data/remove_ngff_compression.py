@@ -2,7 +2,7 @@ import zarr
 from os.path import join
 
 
-store = zarr.storage.LocalStore(join("..", "data", "out", "6001240_labels.ome.zarr"))
+store = zarr.storage.LocalStore(join(".", "out", "6001240_labels.ome.zarr"))
 z = zarr.open(store)
 
 # Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
