@@ -228,6 +228,8 @@ pnpm install
 
 # Generate/download sample data
 # See data/README.md
+
+uv sync --extra dev
 ```
 
 ### Build for WASM
@@ -297,6 +299,12 @@ Try in Jupyter notebook:
 
 ```sh
 uv run jupyter lab --notebook-dir python-notebooks
+```
+
+Try in Marimo notebook:
+
+```sh
+uv run marimo edit
 ```
 
 ### Build for plain Rust
