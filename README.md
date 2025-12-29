@@ -1,6 +1,6 @@
 # pluot
 
-Implement once, pluot everywhere (across languages, regardless of whether static or interactive).
+Implement once, pluot everywhere (across languages, regardless of whether static or interactive). "Headless" plotting: render to an array of pixels (or an SVG string).
 <!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
 
 🚧 work in progress 🚧
