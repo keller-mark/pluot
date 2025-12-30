@@ -1,11 +1,13 @@
 # pluot
 
-Implement once, pluot everywhere (across languages, regardless of whether static or interactive). "Headless" plotting: render to an array of pixels (or an SVG string).
+Implement once, pluot everywhere (across languages, regardless of whether static or interactive). 
 <!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
+
 
 🚧 work in progress 🚧
 
-Unlock the following benefits:
+
+"Headless" plotting: render to an array of pixels (or an SVG string), decoupled from any windowing system:
 - Render static plots via Rust directly (no web browser needed)
 - Render static plots via Python (no web browser needed)
 - Render static plots via JavaScript
@@ -54,8 +56,8 @@ The data filtering operations themselves will always be performed in Rust.
 
 ## Non-goals
 
-- Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS.
-- WebGL fallbacks. Instead, we can be patient and wait until WebGPU availability improves.
+<!-- - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS. -->
+<!-- - WebGL fallbacks. Instead, we can be patient and wait until WebGPU availability improves. -->
 - Window/Canvas management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library. This both reduces the scope and decouples the plotting from any particular GUI framework.
 - Coordinated multiple views. This can be achieved via the parent/calling library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
 
