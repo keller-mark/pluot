@@ -1,6 +1,6 @@
 # pluot
 
-Implement once, pluot everywhere (across languages, regardless of whether static or interactive).
+Implement once, pluot everywhere (across languages, regardless of whether static or interactive). "Headless" plotting: render to an array of pixels (or an SVG string).
 <!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
 
 🚧 work in progress 🚧
@@ -211,10 +211,31 @@ const arr = await render({
 
 ## Development
 
+## Set up environment
+
+Install Rust tools with [Rustup](https://rustup.rs/).
+
+```sh
+# Install rustup
+cargo install wasm-pack
+cargo build
+
+# Install pnpm
+# may need to run `wasm-pack build --target web` first
+pnpm install
+
+# Install uv
+
+# Generate/download sample data
+# See data/README.md
+
+uv sync --extra dev
+```
+
 ### Build for WASM
 
 ```sh
-# Install nightly version of wasm-bindgen CLI
+# Install nightly version of wasm-bindgen CLI (potentially not needed anymore)
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
@@ -238,13 +259,13 @@ Open to http://localhost:3005/www/
 
 ### Test in Headless Browsers with `wasm-pack test`
 
-```
+```sh
 wasm-pack test --headless --chrome
 ```
 
 ### Publish to NPM with `wasm-pack publish`
 
-```
+```sh
 wasm-pack publish
 ```
 
@@ -278,6 +299,12 @@ Try in Jupyter notebook:
 
 ```sh
 uv run jupyter lab --notebook-dir python-notebooks
+```
+
+Try in Marimo notebook:
+
+```sh
+uv run marimo edit
 ```
 
 ### Build for plain Rust
