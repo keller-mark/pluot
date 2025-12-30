@@ -7,7 +7,7 @@ Implement once, pluot everywhere (across languages, regardless of whether static
 🚧 work in progress 🚧
 
 
-"Headless" plotting: render to an array of pixels (or an SVG string), decoupled from any windowing system:
+"Headless" plotting: Rust+WGPU code renders to an array of pixels (or an SVG string), decoupled from any windowing system:
 - Render static plots via Rust directly (no web browser needed)
 - Render static plots via Python (no web browser needed)
 - Render static plots via JavaScript
