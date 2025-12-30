@@ -16,7 +16,7 @@
         const device = await adapter?.requestDevice();
         const format = navigator.gpu.getPreferredCanvasFormat();
         context.configure({ device, format });
-        
+
         /* lang: glsl */
         const code = `
             struct Vertex {
@@ -27,16 +27,34 @@
               @location(0) color: vec4f
             }
 
+            fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
+              return mat4x4<f32>(
+                vec4<f32>(x, 0.0, 0.0, 0.0),
+                vec4<f32>(0.0, y, 0.0, 0.0),
+                vec4<f32>(0.0, 0.0, z, 0.0),
+                vec4<f32>(0.0, 0.0, 0.0, 1.0)
+              );
+            }
+
+            fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
+              return mat4x4<f32>(
+                vec4<f32>(1.0, 0.0, 0.0, 0.0),
+                vec4<f32>(0.0, 1.0, 0.0, 0.0),
+                vec4<f32>(0.0, 0.0, 1.0, 0.0),
+                vec4<f32>(x, y, z, 1.0),
+              );
+            }
+
             const PHYSICAL_SIZE_X: f32 = 1.0;
             const PHYSICAL_SIZE_X_UNIT_EXP: f32 = -6.0; // Each pixel is 1 micrometer wide (1e-6 meters)
 
             const PHYSICAL_SIZE_Y: f32 = 1.0;
             const PHYSICAL_SIZE_Y_UNIT_EXP: f32 = -6.0; // Each pixel is 1 micrometer tall (1e-6 meters)
-            
+
             const VIEWPORT_WIDTH: f32 = 600.0; // Canvas width in pixels
             const VIEWPORT_HEIGHT: f32 = 600.0; // Canvas height in pixels
 
-            const ASPECT_RATIO_MODE: u8 = 1; // 0: ignore (squeeze?), 1: fit (contain), 2: fill (cover)
+            const ASPECT_RATIO_MODE: u32 = 1; // 0: ignore (squeeze?), 1: fit (contain), 2: fill (cover)
 
             // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
             const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
@@ -46,11 +64,12 @@
                 vec2<f32>( 1.0,  1.0)
             );
 
+            // Example of point coordinates in pixel units within the 600px x 600px viewport.
             const POINT_COORDS: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
-                vec2<f32>(-1.0, -1.0), // Red (bottom left)
-                vec2<f32>( 1.0, -1.0), // Green (bottom right)
-                vec2<f32>(-1.0,  1.0), // Blue (top left)
-                vec2<f32>( 1.0,  1.0)  // Yellow (top right)
+                vec2<f32>(0.0, 0.0), // Red (bottom left)
+                vec2<f32>( 500.0, 0.0), // Green (bottom right)
+                vec2<f32>(0.0,  500.0), // Blue (top left)
+                vec2<f32>( 500.0,  500.0)  // Yellow (top right)
             );
 
             const POINT_COLORS: array<vec4<f32>, 4> = array<vec4<f32>, 4>(
@@ -59,7 +78,7 @@
                 vec4<f32>(0.0, 0.0, 1.0, 1.0), // Blue
                 vec4<f32>(1.0, 1.0, 0.0, 1.0)  // Yellow
             );
-              
+
             // Default camera view matrix (identity).
             const CAMERA_VIEW: mat4x4<f32> = mat4x4<f32>(
               vec4<f32>(1.0, 0.0, 0.0, 0.0),
@@ -76,9 +95,15 @@
               let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
               // Move to point position
-              let point_pos = POINT_COORDS[instance_index];
+              let point_pos_orig = POINT_COORDS[instance_index];
 
-              let pos = vec4f(point_pos.x * 1.0 + corner.x * 0.05, point_pos.y * 1.0 + corner.y * 0.05, 0.0, 1.0);
+              // POSITION = PROJECTION * MODEL * ORIG_POSITION
+
+              // Transform original coordinates into clip space (NDC) (-1 to 1)
+              let MODEL_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0/VIEWPORT_WIDTH, 2.0/VIEWPORT_HEIGHT, 1.0);
+
+              let point_pos_to_ndc = CAMERA_VIEW * MODEL_MAT * vec4(point_pos_orig, 0.0, 1.0);
+              let pos = vec4f(point_pos_to_ndc.x * 1.0 + corner.x * 0.05, point_pos_to_ndc.y * 1.0 + corner.y * 0.05, 0.0, 1.0);
               let color = POINT_COLORS[instance_index];
               return VertexOut(pos, color);
             }
@@ -91,18 +116,18 @@
         const pipeline = device.createRenderPipeline({
           layout: 'auto',
           vertex: {
-            module, 
+            module,
             entryPoint: 'vertexMain',
             buffers: [],
           },
           fragment: {
-            module, 
-            entryPoint: 'fragmentMain', 
+            module,
+            entryPoint: 'fragmentMain',
             targets: [{format}]
           },
           primitive: {topology: 'triangle-strip'}
         });
-        
+
         const encoder = device.createCommandEncoder();
         const output = {
             clearValue: [1, 1, 1, 1],
