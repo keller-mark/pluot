@@ -27,6 +27,17 @@
               @location(0) color: vec4f
             }
 
+            const PHYSICAL_SIZE_X: f32 = 1.0;
+            const PHYSICAL_SIZE_X_UNIT_EXP: f32 = -6.0; // Each pixel is 1 micrometer wide (1e-6 meters)
+
+            const PHYSICAL_SIZE_Y: f32 = 1.0;
+            const PHYSICAL_SIZE_Y_UNIT_EXP: f32 = -6.0; // Each pixel is 1 micrometer tall (1e-6 meters)
+            
+            const VIEWPORT_WIDTH: f32 = 600.0; // Canvas width in pixels
+            const VIEWPORT_HEIGHT: f32 = 600.0; // Canvas height in pixels
+
+            const ASPECT_RATIO_MODE: u8 = 1; // 0: ignore (squeeze?), 1: fit (contain), 2: fill (cover)
+
             // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
             const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
                 vec2<f32>(-1.0, -1.0),
