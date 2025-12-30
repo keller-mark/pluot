@@ -15,7 +15,7 @@ Implement once, pluot everywhere (across languages, regardless of whether static
 - Bitmap (PNG/JPEG) or SVG output supported
 
 
-## Requirements
+## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
 - __Small__: The bundle size (i.e., the WASM binary size) should be kept small (currently ~2MB) to make it feasible to use in web applications.
