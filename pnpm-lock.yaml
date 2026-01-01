@@ -81,6 +81,9 @@ importers:
       gl-matrix:
         specifier: ^3.4.4
         version: 3.4.4
+      lightua:
+        specifier: 0.1.0
+        version: 0.1.0
       pluot:
         specifier: workspace:*
         version: link:../../pkg
@@ -894,6 +897,10 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  lightua@0.1.0:
+    resolution: {integrity: sha512-7H3DxfyPA4EOyYoiNNNPGqIKaDT2jlsPG0Ocs1xjbJaX/M4Dt/aBJbYxOgrf+BUnAEnb4b4cQggoWb2EnC+nqQ==}
+    engines: {node: '>=16.20'}
 
   lodash-es@4.17.21:
     resolution: {integrity: sha512-mKnC+QJ9pWVzv+C4/U3rRsHapFfHvQFoFB92e52xeyGMcX6/OlIl78je1u8vePzYZSkkogMPJ2yjxxsb89cxyw==}
@@ -2076,6 +2083,8 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
+
+  lightua@0.1.0: {}
 
   lodash-es@4.17.21: {}
 
