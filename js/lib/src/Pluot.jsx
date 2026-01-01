@@ -7,6 +7,7 @@ import createDom2dCamera from "dom-2d-camera";
 import createCamera from "3d-view-controls";
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
+import { useWebGpuFeatureDetection } from "./feature-detection.js";
 
 const DEFAULT_VIEW = new Float32Array([
   1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
@@ -79,6 +80,8 @@ export function Pluot(props) {
     logPerformance = false,
     mode = "2d",
   } = props;
+
+  const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
 
   const canvasRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
@@ -323,6 +326,9 @@ export function Pluot(props) {
 
   return (
     <div style={{ width, height }}>
+      {!supportsWebGpu ? (
+        <p>{supportsWebGpuMessage}</p>
+      ) : null}
       <canvas
         ref={canvasRef}
         style={{ width, height, border: "1px solid black" }}
