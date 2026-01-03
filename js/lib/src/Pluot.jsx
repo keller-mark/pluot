@@ -13,9 +13,6 @@ const DEFAULT_VIEW = new Float32Array([
   1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
 ]);
 
-//const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
-const baseUrl = "http://localhost:5173/@data/mnist.zarr";
-
 // TODO: move store registration into demo subpackage and via props (rather than constructing stores in lib subpackage).
 const stores = {
   // TODO: wrap store in a cache.
@@ -55,8 +52,6 @@ window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
   return stores[store_name].getRange(`/${key}`, { suffix_length });
 };
 
-// console.log(await stores['my_store'].get('/umap/x_coords/zarr.json'));
-
 // Reference: https://github.com/hughsk/right-now/blob/master/browser.js
 const now =
   performance && performance.now
@@ -79,20 +74,16 @@ export function Pluot(props) {
     renderOnce = true,
     logPerformance = false,
     mode = "2d",
+    format = "vector",
   } = props;
 
   const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
 
   const canvasRef = useRef(null);
+  const svgRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
-
   const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
-
-  /*
-    const [zoom, setZoom] = useState(0.0);
-    const [targetX, setTargetX] = useState(0.0);
-    const [targetY, setTargetY] = useState(0.0);
-    */
+  const isVector = format === "vector";
 
   useLayoutEffect(() => {
     const initWasm = async () => {
@@ -120,6 +111,7 @@ export function Pluot(props) {
         setViewMatrix(mat4.clone(camera.view));
       }
 
+      // TODO: implement a camera for vector/SVG mode.
       const camera = createDom2dCamera(canvas, {
         isFixed: false,
         distance: 0.0,
@@ -243,11 +235,9 @@ export function Pluot(props) {
 
   // TODO: switch this useEffect to use React-Query.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !isWasmReady) {
+    if (!isWasmReady) {
       return;
     }
-    const ctx = canvas.getContext("2d");
 
     // Start FPS tracking variables.
     let frameCount = 0;
@@ -272,26 +262,44 @@ export function Pluot(props) {
         plot_type: plotType,
         store_name: storeName,
         plot_params: plotParams,
-        format: "vector", // TODO: try vector
+        format, // raster or vector
         timeout: 200, // in ms
       };
       wasm.render_wasm(renderParams).then((arr) => {
+        if (isVector) {
+          // Format: Vector (render to SVG)
+          const gContents = new TextDecoder().decode(arr);
+          if (!svgRef.current) {
+            return;
+          }
+          svgRef.current.innerHTML = gContents;
 
-        console.log(arr);
-        // TODO: is there a more efficient way to do this?
-        // E.g., write to a webgl texture? or is this fast enough already?
-        const imageData = new ImageData(
-          new Uint8ClampedArray(arr.subarray(0, -1)),
-          width,
-          height,
-        );
-        ctx.putImageData(imageData, 0, 0);
+          // TODO: check for bailed early
+        } else {
+          const canvas = canvasRef.current;
+          if (!canvas) {
+            return;
+          }
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            return;
+          }
+          // Format: Raster (render to canvas)
+          // TODO: is there a more efficient way to do this?
+          // E.g., write to a webgl texture? or is this fast enough already?
+          const imageData = new ImageData(
+            new Uint8ClampedArray(arr.subarray(0, -1)),
+            width,
+            height,
+          );
+          ctx.putImageData(imageData, 0, 0);
 
-        const bailedEarly = arr.at(-1) === 1;
-        if (bailedEarly) {
-          // TODO: do this via react state and useEffect?
-          // TODO: prevent infinite loop if always bailing early?
-          requestAnimationFrame(renderFrame);
+          const bailedEarly = arr.at(-1) === 1;
+          if (bailedEarly) {
+            // TODO: do this via react state and useEffect?
+            // TODO: prevent infinite loop if always bailing early?
+            requestAnimationFrame(renderFrame);
+          }
         }
       });
     }
@@ -325,19 +333,31 @@ export function Pluot(props) {
     } else {
       requestAnimationFrame(animate);
     }
-  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName]);
+  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef]);
 
   return (
     <div style={{ width, height }}>
       {!supportsWebGpu ? (
         <p>{supportsWebGpuMessage}</p>
       ) : null}
-      <canvas
-        ref={canvasRef}
-        style={{ width, height, border: "1px solid black" }}
-        width={width}
-        height={height}
-      />
+      {isVector ? (
+        <svg
+          ref={svgRef}
+          style={{ width, height, border: "1px solid black" }}
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+        </svg>
+      ) : (
+        <canvas
+          ref={canvasRef}
+          style={{ width, height, border: "1px solid black" }}
+          width={width}
+          height={height}
+        />
+      )}
     </div>
   );
 }

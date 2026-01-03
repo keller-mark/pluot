@@ -66,7 +66,7 @@ const DEMOS = {
 };
 
 export function Demo() {
-  const [currPlotId, setCurrPlotId] = useState("ome_ngff");
+  const [currPlotId, setCurrPlotId] = useState("scatterplot_mnist");
 
   const plotType = DEMOS[currPlotId].plot_type;
   const plotParams = DEMOS[currPlotId].plot_params;
