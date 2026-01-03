@@ -68,6 +68,8 @@ pub struct RenderParams {
     pub plot_id: String,
     pub store_name: String,
 
+    pub format: String, // "raster" or "vector"
+
     // Timeout in ms before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
 
@@ -87,6 +89,8 @@ pub struct RenderContext<'a> {
 
     pub vello_tex: &'a wgpu::Texture,
     //pub vello_scene: &'a mut vello::Scene,
+
+    pub out_string: &'a mut String,
 }
 
 pub struct RenderResult {
@@ -105,6 +109,7 @@ impl Default for RenderParams {
             plot_id: "default_plot".to_string(),
             store_name: "default_store".to_string(),
             plot_params: PlotParams::Triangle,
+            format: "raster".to_string(),
             timeout: None,
             margin_left: None,
             margin_right: None,

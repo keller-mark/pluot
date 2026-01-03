@@ -272,9 +272,12 @@ export function Pluot(props) {
         plot_type: plotType,
         store_name: storeName,
         plot_params: plotParams,
+        format: "vector", // TODO: try vector
         timeout: 200, // in ms
       };
       wasm.render_wasm(renderParams).then((arr) => {
+
+        console.log(arr);
         // TODO: is there a more efficient way to do this?
         // E.g., write to a webgl texture? or is this fast enough already?
         const imageData = new ImageData(

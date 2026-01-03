@@ -194,7 +194,24 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
         vello_tex: &vello_tex,
         //vello_scene: &mut vello_scene,
+
+        out_string: &mut "".to_string(),
     };
+
+    if params.format == "vector" {
+        // For vector output, we only support certain plot types.
+        let svg_result = match params.plot_params {
+            PlotParams::Scatterplot(_) => {
+                plots::scatterplot::render_scatterplot_svg(&mut context, &mut encoder).await
+            }
+            _ => {
+                panic!("Vector output format is only supported for scatterplots and bar plots");
+            }
+        };
+        // Return the SVG string as bytes.
+        return context.out_string.clone().into_bytes();
+    }
+
 
     // Plot type-specific rendering logic.
     let render_result = match params.plot_params {

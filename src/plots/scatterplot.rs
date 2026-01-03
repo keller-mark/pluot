@@ -17,6 +17,7 @@ use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
+use crate::two::svg::{init_svg, update_svg};
 
 #[derive(ShaderType, Debug)]
 struct ScatterplotUniforms {
@@ -412,6 +413,164 @@ pub async fn render_scatterplot(
     crate::two::canvas::render_shapes(context, encoder, &axis_elements);
 
     crate::render::overlay_pass(context, encoder, &scatter_tex);
+
+    RenderResult {
+        bailed_early: false,
+    }
+}
+
+pub async fn render_scatterplot_svg(
+    context: &mut RenderContext<'_>,
+    encoder: &mut wgpu::CommandEncoder,
+) -> RenderResult {
+    // Get x and y data from the Zarr store.
+    let store = context.store;
+    let height = context.params.height as f64;
+    let width = context.params.width as f64;
+
+    let margin_top = context.params.margin_top.unwrap_or(0.0) as f64;
+    let margin_right = context.params.margin_right.unwrap_or(0.0) as f64;
+    let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f64;
+    let margin_left = context.params.margin_left.unwrap_or(0.0) as f64;
+
+    let PlotParams::Scatterplot(scatterplot_params) = &context.params.plot_params else {
+        panic!("Expected scatterplot params");
+    };
+
+    let x_array_path = &scatterplot_params.x_key.as_ref();
+    let y_array_path = &scatterplot_params.y_key.as_ref();
+    let labels_array_path = scatterplot_params.color_key.as_ref().expect("Color key");
+
+    let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
+    let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
+    let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
+
+    // Wait for all futures to complete
+    let arr_open_results = futures::join!(x_array_future, y_array_future, labels_array_future);
+
+    let x_array = arr_open_results.0.unwrap();
+    let y_array = arr_open_results.1.unwrap();
+    let labels_array = arr_open_results.2.unwrap();
+
+    let x_subset = x_array.subset_all();
+    let y_subset = y_array.subset_all();
+    let labels_subset = labels_array.subset_all();
+
+    // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
+    let (x_result, y_result, labels_result) = futures::join!(
+        x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset),
+        y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset),
+        labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset),
+    );
+
+    // Print the Zarr.json metadata to the JS console.
+    // log(&x_array.metadata().to_string_pretty());
+
+    // Read the whole array
+    let x_vec = x_result.unwrap();
+    let y_vec = y_result.unwrap();
+    let labels_vec = labels_result.unwrap();
+
+    // More efficient version that eliminates intermediate vectors and redundant operations
+    let n = x_vec.len();
+    assert_eq!(n, y_vec.len(), "x and y data must have the same length");
+
+
+    // Create uniforms matching the WGSL layout
+    // struct Uniforms {
+    //   camera_view: mat4x4<f32>,
+    //   point_size_px: f32,
+    //   _pad0: f32,
+    //   viewport_size: vec2<f32>,
+    //   color: vec4<f32>
+    // }
+
+    // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
+    let camera_view = context.params.camera_view.unwrap_or([
+        // Column 0
+        1.0, 0.0, 0.0, 0.0, // Column 1
+        0.0, 1.0, 0.0, 0.0, // Column 2
+        0.0, 0.0, 1.0, 0.0, // Column 3
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+
+    let zoom = camera_view[0]; // Assuming uniform scaling in x/y, take the first element (x scaling).
+    let translate_x = camera_view[12];
+    let translate_y = camera_view[13];
+
+    // Convert zoom level to scale factor
+    // scale_factor of 0 means zoom = 1.0 (no zoom)
+    // scale_factor of 1 means zoom = 0.5 (zoomed out to half)
+    // scale_factor of 2 means zoom = 0.25 (zoomed out to a quarter)
+    // scale_factor of 3 means zoom = 0.125 (zoomed out to an eighth)
+
+    // scale_factor of -1 means zoom = 2.0 (zoomed in to double)
+    // scale_factor of -2 means zoom = 4.0 (zoomed in to quadruple)
+    // scale_factor of -3 means zoom = 8.0 (zoomed in to octuple)
+    let scale_factor = (1.0 / zoom).log2();
+
+    // X translation interpretation:
+    // A translate_x value of 1.0 means a point at x=-1.0 (left edge of viewport/screen-quad) is now at the center of the viewport.
+    // A translate_x value of 2.0 means a point at x=-1.0 is now at the right edge of the viewport.
+    // A translate_x value of -1.0 means a point at x=1.0 (right edge of viewport/screen-quad) is now at the center of the viewport.
+
+    // Zoom interpretation:
+    // A zoom value of 0.5 means that points are scaled down by half, so a point at x=-1.0 is now at x=-0.5, and a point at x=1.0 is now at x=0.5.
+    // A zoom value of 0.25 means that points are scaled down by a quarter, so a point at x=-1.0 is now at x=-0.25, and a point at x=1.0 is now at x=0.25.
+
+    // Zoom and translation combined interpretation:
+    // A translate_x value of 0.5 when zoom = 0.5 means a point at x=-1.0 is now at the center of the viewport, and a point at x=1.0 is now at the right of the viewport.
+    // When zoom = 0.5 AND translate_x = 0.5 AND translate_y = 0.5, all four screen-quad [-1 to 1] corner points are in the top right quadrant of the viewport.
+    // When zoom = 0.5 AND translate_x = -0.5 AND translate_y = -0.5, all four screen-quad [-1 to 1] corner points are in the bottom left quadrant of the viewport.
+
+    let x_range = 2.0 / zoom; // The range of x values visible in the viewport
+    let y_range = 2.0 / zoom; // The range of y values visible in the viewport
+
+    let min_x = (-translate_x - 1.0) / zoom; // translation of (x=-1)
+    let max_x = (-translate_x + 1.0) / zoom; // translation of (x=1)
+    let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
+    let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
+
+    let point_size_px: f32 = scatterplot_params.point_radius.unwrap_or(5.0);
+    let viewport_w = context.params.width as f32;
+    let viewport_h = context.params.height as f32;
+
+    // <WGPU stuff here in canvas variant>
+
+    // Construct the X-axis:
+    let mut x_scale = ScaleLinear::new();
+    x_scale.set_domain((min_x as f64, max_x as f64));
+    x_scale.set_range((margin_left, width - margin_right));
+    let x_axis = Axis::new(AxisOrientation::Bottom);
+    let x_axis_elements = x_axis.generate_elements(&x_scale);
+
+    let x_axis_group = TwoElement::Group(TwoGroup {
+        elements: x_axis_elements,
+        translate: Some((0.0, height - margin_bottom)),
+        ..Default::default()
+    });
+
+    // Construct the Y-axis:
+    let mut y_scale = ScaleLinear::new();
+    y_scale.set_domain((min_y as f64, max_y as f64));
+    y_scale.set_range((height - margin_bottom, margin_top)); // Inverted range
+    let y_axis = Axis::new(AxisOrientation::Left);
+    let y_axis_elements = y_axis.generate_elements(&y_scale);
+
+    let y_axis_group = TwoElement::Group(TwoGroup {
+        elements: y_axis_elements,
+        translate: Some((margin_left, 0.0)),
+        ..Default::default()
+    });
+
+    let axis_elements = vec![x_axis_group, y_axis_group];
+
+    // Render the X and Y axes:
+    let (_, group) = init_svg(width, height);
+    let updated_group = update_svg(group, &axis_elements);
+
+    // Pass the string via the context param for output.
+    *context.out_string = updated_group.to_string();
 
     RenderResult {
         bailed_early: false,
