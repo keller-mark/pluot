@@ -1,0 +1,79 @@
+# Developer docs
+
+## Repository organization
+
+This repository is organized as a monorepo.
+
+### Rust
+
+The core Rust/WGPU plotting code is located in the `src` directory.
+Rust-associated files also include:
+- `Cargo.toml`
+- `rust-toolchain.toml`
+- `.cargo`
+- `tests`: Plain Rust unit tests
+
+### JavaScript
+
+The repository contains JavaScript bindings in the form of an NPM package (containing a React component that loads the WASM bundle) and a demo web app.
+JavaScript code is located in the `js` directory.
+JavaScript-associated files also include:
+- `package.json`
+- `pnpm-workspace.yaml`
+- `tsconfig.json`
+- `vitest.config.js`
+- `vitest.setup.js`
+- `webgpu-playground`: Plain HTML files for quickly checking concepts and syntax in WebGPU shader code.
+
+### Python
+
+The repository contains Python bindings in the form of a Python package.
+Python code is located in the `python` directory.
+Python-associated files also include:
+- `pyproject.toml`
+- `python-notebooks`: Testing the Python bindings via Jupyter/Marimo notebooks
+- `data`: Code to download/generate data for testing
+
+## Principles
+
+The Rust code should only be concerned with rendering a single plot, and should not care (or as minimally as possible) whether the caller is intending to use the result in a static or interactive context.
+It should be fast enough for this not to matter.
+
+
+The WASM and JS bundle sizes should be relatively small, as we want to prioritize web-based usage from the outset.
+
+
+The frontend/client should never "touch" the data.
+In other words, it should never execute a `for` loop over the data (for rendering purposes).
+The frontend/client does, however, need to register data-loading functions that will be called by the Rust code to retrieve data.
+
+
+The frontend will specify visual properties and data-related properties and expressions, for example colormaps, viewState (zoom/pan), data filtering expressions via parameters.
+The data filtering operations themselves will always be performed in Rust.
+<!--For example, given a viewState, the Rust code may load certain chunks of data. Given a data filtering expression, it may then filter that data. Finally, it will perform the render pass and return the arraybuffer (which the JS code will render to a Canvas).-->
+
+
+## Challenges
+
+- Keeping the bundle size small.
+  - Prevents using certain Rust dependencies, such as for text rendering, requiring new minimal implementations.
+  - Prevents using WebGL fallbacks, as this also increases the bundle size significantly. However, we could explore progressively loading a larger bundle in this situation.
+- WebGPU not yet available in all contexts.
+  - Safari and Firefox on macOS versions prior to Tahoe
+  - CI machines that lack a GPU
+- Compilation for web targets with Rust dependencies that have C subdependencies that assume C libraries like `stdlib.h` and `string.h`.
+  - Prevents using certain Zarr (de)compression algorithms that are implemented in C
+- Challenges using multi-threaded and concurrenct Rust programs in WASM contexts.
+  - See [comments](https://github.com/zarrs/zarrs/issues/242#issuecomment-3236982849)
+- Need to port low-level plotting logic (e.g., from D3).
+- Supporting both raster and vector formats. In some cases, plot rendering logic may need to be implemented twice, once for each type of output.
+- Efficient rendering while providing high-level APIs.
+- Caching intermediate values to improve performance in the interactive case.
+- Rendering something before all data has been loaded.
+- Extensibility, enabling implementation of new plot types outside the pluot crate.
+
+## Rust learning resources
+- Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
+- Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
+- Learnxinyminutes: https://learnxinyminutes.com/rust/
+- A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust

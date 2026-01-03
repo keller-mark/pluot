@@ -12,7 +12,7 @@ Implement once, pluot everywhere (across languages, regardless of whether static
 - Render static plots via Python (no web browser needed)
 - Render static plots via JavaScript
 - Render interactive plots via JavaScript
-- Bitmap (PNG/JPEG) or SVG output supported
+- Raster/bitmap and vector (SVG) output supported
 
 
 ## Features
@@ -35,183 +35,16 @@ These Rust plotting functions are only concerned with producing a "static" plot 
   - Simple Python wrapper functions convert the returned pixel buffers into NumPy arrays or PNG/JPG/etc images.
   <!-- - To render interactive plots in Python, AnyWidget can be used (Not yet implemented) -->
 
-## Principles
-
-The Rust code should only be concerned with rendering a single plot, and should not care (or as minimally as possible) whether the caller is intending to use the result in a static or interactive context.
-It should be fast enough for this not to matter.
-
-
-The WASM and JS bundle sizes should be relatively small, as we want to prioritize web-based usage from the outset.
-
-
-The frontend/client should never "touch" the data.
-In other words, it should never execute a `for` loop over the data (for rendering purposes).
-The frontend/client does, however, need to register data-loading functions that will be called by the Rust code to retrieve data.
-
-
-The frontend will specify visual properties and data-related properties and expressions, for example colormaps, viewState (zoom/pan), data filtering expressions via parameters.
-The data filtering operations themselves will always be performed in Rust.
-<!--For example, given a viewState, the Rust code may load certain chunks of data. Given a data filtering expression, it may then filter that data. Finally, it will perform the render pass and return the arraybuffer (which the JS code will render to a Canvas).-->
-
-
-## Non-goals
-
-<!-- - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS. -->
-<!-- - WebGL fallbacks. Instead, we can be patient and wait until WebGPU availability improves. -->
-- Window/Canvas management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library. This both reduces the scope and decouples the plotting from any particular GUI framework.
-- Coordinated multiple views. This can be achieved via the parent/calling library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
-
-## Challenges
-
-- Keeping the bundle size small.
-  - Prevents using certain Rust dependencies, such as for text rendering, requiring new implementations
-  - Prevents using WebGL fallbacks, as this also increases the bundle size significantly. However, we could explore progressively loading a larger bundle in this situation.
-- WebGPU not yet available in all contexts.
-  - Safari and Firefox on macOS versions prior to Tahoe
-  - CI machines that lack a GPU
-- Compilation for web targets with Rust dependencies that have C subdependencies that assume C libraries like `stdlib.h` and `string.h`.
-  - Prevents using certain Zarr (de)compression algorithms that are implemented in C
-- Challenges using multi-threaded and concurrenct Rust programs in WASM contexts.
-  - See [comments](https://github.com/zarrs/zarrs/issues/242#issuecomment-3236982849)
-
-## Why not just use JS+WebGPU directly?
+### Why not just use JS+WebGPU directly?
 
 This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
 It would also make CPU data processing operations more challenging.
 
-<!--
-## JS API
 
-```js
-
-import { init, render } from 'pluot';
-
-// How should this work in other languages?
-// What should this return? Arrow vector? TypedArray? Arrow table IPC?
-// Should this be more aware of tiling/multi-resolution data? How would it handle XYZCT imaging or volumetric or mesh data?
-async function dataGetter(dataKey, columnExpression, rowExpression) {
-    // Given the key, return something like DeckGL's binary format.
-    // If the underlying data format/provider supports it, we may only want to load a subset of rows or columns.
-    // For instance, if the data format is spatially-indexed, we may be able to load a subset of rows based on the rowExpression (e.g., derived from viewState and width/height).
-    return {
-        src: {
-            columnA: new Uint8Array([]),
-            columnB: new Uint8Array([]),
-            columnC: new Uint8Array([])
-        },
-        length: 10
-    };
-}
-await init(dataGetter);
-// Alternative idea:
-// Should the data store be assumed to be a zarr store?
-// The rust code can then handle doing the zarr-gets and computing which Zarr keys to request.
-// It will mean the rust code must know which "kind" of zarr store it is dealing with.
-// Parquet tables/columns may need to be mapped to zarr either in the JS-side or in the Rust-side.
-// Can we assume the Zarr store corresponds to the root of a SpatialData object?
-// More coordination types will need to be defined at the view level (to take the place of the fileDef.options paths to individual elements, etc).
-// Then the data registration can be more like:
-await init({
-    'my_dataset': myStore,
-});
-
-
-
-const arr = await render({
-    width: 500,
-    height: 500,
-    /*
-    viewState: {
-        // Frontend should manage this state
-        zoom: 0,
-        target: [2, 2],
-    },
-    // TODO: how to specify 2D vs. 3D?
-    coordinateSystem: 'CARTESIAN', // also support 'GENOMIC'
-    // Option 1: DeckGL-like API
-    // This delegates more flexibility to the client / caller.
-    layers: [
-        new ScatterplotLayer({
-            dataKey: 'my_dataset_key',
-        }),
-        new PolygonLayer({
-
-        })
-    ],
-    */
-    // Option 2: Vitessce-like view-based API
-    // The rust code will know how to render a scatterplot.
-    // This delegates more responsibility to the rust code, and limits the flexibility.
-    // However that is OK because the intention is that the rust code should be where the plotting code lives.
-    // The Rust code can have its own internal deckGL-like APIs to render a scatterplot.
-    viewType: 'scatterplot',
-    // Pass any coordination values that the Rust code knows about.
-    // The rust code will use these
-    coordinationValues: {
-        dataset: 'my_dataset_key',
-        embeddingType: 'UMAP',
-        pointLayer: [
-            {
-                obsType: 'cell',
-                obsSetFilter: [['cell_type', 'immune']],
-                obsSetSelection: [['cell_type', 'immune', 'B cell'], ['cell_type', 'immune', 'T cell']],
-                obsSetColor: [
-                    { path: ['cell_type', 'immune', 'B cell'], color: [255, 0, 0] }
-                ],
-                embeddingZoom: 0,
-                embeddingTargetX: 0,
-                embeddingTargetY: 0,
-                embeddingTargetZ: null,
-            },
-        ],
-        contourLayer: {
-
-        }
-    },
-    // Another, more complex view type:
-    viewType: 'spatial',
-    coordinationValues: {
-        dataset: 'my_dataset_key',
-        // May have nested coordination values to support layer->channel pattern.
-        imageLayer: [
-            {
-                imageChannel: [
-                    {
-
-                    }
-                ]
-            }
-        ],
-        segmentationLayer: [
-            {
-                segmentationChannel: [
-                    {
-                        'test'
-                    }
-                ]
-            }
-        ]
-    },
-    // Simple statistical view type:
-    viewType: 'featureValueDistributionHistogram',
-    coordinationValues: {
-        dataset: 'my_dataset_key',
-        obsType: 'cell',
-        featureType: 'gene',
-        featureSelection: 'CD4',
-
-    },
-    // Genomic view type:
-    viewType: 'genomicProfiles',
-    coordinationValues: {
-        dataset: 'my_dataset_key'
-    }
-})
-```
-
--->
 
 ## Development
+
+Further developer documentation can be found in [dev-docs](./dev-docs/README.md).
 
 ## Set up environment
 
@@ -320,12 +153,6 @@ Run tests:
 ```sh
 cargo test --features test_plain_rust
 ```
-
-## Rust learning resources
-- Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
-- Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
-- Learnxinyminutes: https://learnxinyminutes.com/rust/
-- A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
 
 ## Inspired by
 
