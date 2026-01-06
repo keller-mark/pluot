@@ -205,6 +205,7 @@ struct Model {
 
     attribute_table: Table,
     instanced_attribute_table: Table,
+    indices: Option<Vec<u32>>, // TODO: is this the type we want to use here?
 
     // Some things to keep track of, from ComboVertexStateDescriptor and ComboRenderPipelineDescriptor.
     vertex_buffer_count: u32,
@@ -382,6 +383,7 @@ impl Model {
                     fields: Vec::new(),
                 },
             },
+            indices: None,
             vertex_buffer_count: vertex_buffer_count as u32,
             c_vertex_buffers,
             c_attributes,
@@ -389,38 +391,62 @@ impl Model {
         }
     }
 
-    pub fn set_attributes(&mut self) {
-        // TODO
+    pub fn set_attributes(&mut self, attributes: Table) {
+        self.attribute_table = attributes;
     }
-    pub fn set_instanced_attributes(&mut self) {
-        // TODO
-    }
-
-    pub fn set_indices(&mut self) {
-        // TODO
-    }
-    pub fn set_uniform_buffer(&mut self) {
-        // TODO
+    pub fn set_instanced_attributes(&mut self, attributes: Table) {
+        self.instanced_attribute_table = attributes;
     }
 
-    pub fn set_uniform_texture(&mut self) {
-        // TODO
+    pub fn set_indices(&mut self, indices: Option<Vec<u32>>) {
+        self.indices = indices;
+    }
+    pub fn set_uniform_buffer(&mut self, binding: u32, buffer: wgpu::Buffer, offset: u64, size: u64) {
+        self.set_binding(binding, BindingInitializationHelper {
+            binding,
+            buffer: Some(buffer),
+            offset,
+            size,
+            texture_view: None,
+            sampler: None,
+        })
     }
 
-    pub fn set_uniform_sampler(&mut self) {
-        // TODO
+    pub fn set_uniform_texture(&mut self, binding: u32, texture_view: wgpu::TextureView) {
+        self.set_binding(binding, BindingInitializationHelper {
+            binding,
+            buffer: None,
+            offset: 0,
+            size: 0,
+            texture_view: Some(texture_view),
+            sampler: None,
+        })
+    }
+
+    pub fn set_uniform_sampler(&mut self, binding: u32, sampler: wgpu::Sampler) {
+        self.set_binding(binding, BindingInitializationHelper {
+            binding,
+            buffer: None,
+            offset: 0,
+            size: 0,
+            texture_view: None,
+            sampler: Some(sampler),
+        })
     }
 
     pub fn draw(&mut self, pass: &mut wgpu::RenderPass) {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L91C46-L91C47
-        // TODO
+        pass.set_pipeline(&self.pipeline);
+        self.set_vertex_buffers(pass);
+        // The argument is used for specifying dynamic offsets, which is not something we support right now.
+        pass.set_bind_group(0, &self.bind_group, &[]);
 
-        let vertex_count = self.attribute_table.num_rows;
+        let vertex_count = self.attribute_table.schema.num_rows;
 
         let min_instances = 1;
-        let instance_count = std::cmp::max(self.instanced_attribute_table.num_rows, min_instances);
+        let instance_count = std::cmp::max(self.instanced_attribute_table.schema.num_rows, min_instances);
         if let Some(indices) = self.indices {
-            pass.set_index_buffer(self.indices.buffer());
+            pass.set_index_buffer(self.indices);
             pass.draw_indexed(self.indices.length(), instance_count);
         } else {
             pass.draw(vertex_count, instance_count);
