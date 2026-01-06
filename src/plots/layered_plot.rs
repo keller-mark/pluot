@@ -89,6 +89,7 @@ struct TableField {
     // TODO: add a `type` property?
     // getVertexFormatSize(field->type())
     // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/util/webgpu-utils.cc#L28
+    field_type: wgpu::VertexFormat,
 }
 
 struct TableSchema {
@@ -102,6 +103,7 @@ struct Table {
 
 struct UniformDescriptor {
     pub shader_stage: wgpu::ShaderStages,
+    // In deck.gl-native, binding_types are only UniformBuffer (default), Sampler, or SampledTexture.
     pub binding_type: wgpu::BindingType,
     pub is_dynamic: bool,
 }
@@ -144,13 +146,50 @@ impl Default for ModelOptions {
     }
 }
 
+// Structure with one constructor per-type of bindings, so that the initializer_list accepts
+// bindings with the right type and no extra information.
+// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/webgpu-helpers.h#L102
+struct BindingInitializationHelper {
+    binding: u32,
+    // TODO: split into three separate structs, and only allow sampler OR texture_view OR buffer+offset+size?
+    sampler: Option<wgpu::Sampler>,
+    texture_view: Option<wgpu::TextureView>,
+    buffer: Option<wgpu::Buffer>,
+    offset: u64,
+    size: u64,
+}
+
+trait GetAsBinding {
+    fn get_as_binding(&self) -> wgpu::BindGroupEntry;
+}
+
+impl GetAsBinding for BindingInitializationHelper {
+    // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/webgpu-helpers.cc#L232
+    fn get_as_binding(&self) -> wgpu::BindGroupEntry {
+        let resource: wgpu::BindingResource = match (self.sampler, self.texture_view, self.buffer) {
+            (Some(sampler), None, None) => wgpu::BindingResource::Sampler(sampler),
+            (None, Some(texture_view), None) => wgpu::BindingResource::TextureView(texture_view),
+            (None, None, Some(buffer)) => wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer,
+                offset: self.offset,
+                size: self.size,
+            }),
+            _ => panic!("Invalid binding initialization"),
+        };
+        wgpu::BindGroupEntry {
+            binding: self.binding,
+            resource,
+        }
+    }
+}
+
 // References:
 // - https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.h#L50
 // - https://github.com/visgl/luma.gl/blob/master/modules/engine/src/model/model.ts
 // - https://github.com/visgl/luma.gl/tree/master/modules/webgpu/src
 struct Model {
     pub device: wgpu::Device,
-    pub model_options: ModelOptions,
+    pub options: ModelOptions,
 
     // Rendering pipeline.
     pub pipeline: wgpu::RenderPipeline,
@@ -166,186 +205,151 @@ struct Model {
 
     attribute_table: Table,
     instanced_attribute_table: Table,
+
+    // Some things to keep track of, from ComboVertexStateDescriptor and ComboRenderPipelineDescriptor.
+    vertex_buffer_count: u32,
+    c_vertex_buffers: Vec<wgpu::VertexBufferLayout>,
+    c_attributes: Vec<wgpu::VertexAttribute>,
+
+    // _bindings
+    bindings: Vec<Option<BindingInitializationHelper>>,
 }
-
-
-// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/combo-render-pipeline-descriptor.h#L27
-struct ComboVertexStateDescriptor<'a> {
-    // Note: VertexStateDescriptor no longer exists.
-    // It previously contained two properties: `index_format` and `vertex_buffers`.
-    // Reference: https://github.com/gfx-rs/wgpu/blob/438ac00115ab433fcda84ac089837dee273ba460/wgpu-core/src/device/trace.rs#L70
-    pub index_format: wgpu::IndexFormat,
-    pub vertex_buffers: Vec<wgpu::VertexBufferLayout<'a>>,
-    pub vertex_buffer_count: u32,
-
-    // Additional properties added in deck.gl-native.
-    //pub c_vertex_buffers: [wgpu::VertexBufferLayout<'a>; kMaxVertexBuffers as usize],
-    pub c_attributes: Vec<wgpu::VertexAttribute>//; kMaxVertexAttributes as usize],
-
-}
-
-// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/combo-render-pipeline-descriptor.h#L35C7-L35C36
-struct ComboRenderPipelineDescriptor<'a> {
-    // The cpp code extends the RenderPipelineDescriptor class.
-    // Here, we use composition instead of inheritance.
-    pub inner_descriptor: wgpu::RenderPipelineDescriptor<'a>,
-
-    // Note: ProgrammableStageDescriptor no longer exists.
-    // It previously contained the properties: `module`, `entry_point`, `constants`, and `zero_initialize_workgroup_memory`.
-    // Reference: https://github.com/gfx-rs/wgpu/blob/37dd63d56a810a8dabba69a4344963ef374dfc2d/wgpu-core/src/pipeline.rs#L161
-    pub c_fragment_stage: wgpu::ShaderModule,
-
-    pub c_vertex_state: ComboVertexStateDescriptor<'a>,
-    // Note: RasterizationStateDescriptor no longer exists.
-    // It seems to correspond to PrimitiveState and DepthStencilState/DepthBiasState.
-    pub c_rasterization_state: wgpu::PrimitiveState,
-    // Note: ColorStateDescriptor seems to be called ColorTargetState now.
-    pub c_color_states: [wgpu::ColorTargetState; kMaxColorAttachments as usize],
-    // Note: DepthStencilStateDescriptor seems to be called DepthStencilState now.
-    pub c_depth_stencil_state: wgpu::DepthStencilState,
-}
-
-impl<'a> ComboVertexStateDescriptor<'a> {
-    pub fn new() -> Self {
-        // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/combo-render-pipeline-descriptor.cc#L31
-        // Fill the default values for vertexBuffers and vertexAttributes in buffers.
-        let vertex_attribute = wgpu::VertexAttribute {
-            shader_location: 0,
-            offset: 0,
-            format: wgpu::VertexFormat::Float32, // TODO: the cpp code just uses "Float". is Float32 correct?
-        };
-        let mut c_attributes = Vec::new();
-        for _ in 0..kMaxVertexAttributes {
-            c_attributes.push(vertex_attribute);
-        }
-        let mut vertex_buffers = Vec::new();
-        for i in 0..kMaxVertexBuffers {
-            if i == 0 {
-                vertex_buffers.push(wgpu::VertexBufferLayout {
-                    array_stride: 0,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        shader_location: 0,
-                        offset: 0,
-                        format: wgpu::VertexFormat::Float32, // TODO: the cpp code just uses "Float". is Float32 correct?
-                    }],
-                });
-            } else {
-                vertex_buffers.push(wgpu::VertexBufferLayout {
-                    array_stride: 0,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[],
-                });
-            }
-        }
-
-        Self {
-            index_format: wgpu::IndexFormat::Uint32,
-            vertex_buffers,
-            vertex_buffer_count: 0,
-            c_attributes,
-        }
-    }
-}
-
-impl<'a> ComboRenderPipelineDescriptor<'a> {
-    pub fn new(device: &wgpu::Device) -> Self {
-        // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/combo-render-pipeline-descriptor.cc#L60
-
-        let inner_descriptor = wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: context.texture_desc.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
-        };
-        Self {
-
-        }
-    }
-}
-
 
 fn create_bind_group_layout(device: &wgpu::Device, uniforms: &[UniformDescriptor]) -> wgpu::BindGroupLayout {
     // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L142
-    // TODO
+    let mut bindings: Vec<wgpu::BindGroupLayoutEntry> = Vec::with_capacity(uniforms.len());
+    for i in 0..uniforms.len() {
+        bindings.push(wgpu::BindGroupLayoutEntry {
+            binding: i as u32,
+            visibility: uniforms[i].shader_stage,
+            // Assume the binding_type sets `has_dynamic_offset` correctly.
+            ty: uniforms[i].binding_type,
+            count: None,
+        });
+    }
+    // Filter out any bindings with visibility == ShaderStages::NONE (not visible from any stages).
+    // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/webgpu-helpers.cc#L196
+    let filtered_bindings = bindings.into_iter().filter(|entry| entry.visibility != wgpu::ShaderStages::NONE).collect::<Vec<_>>();
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Uniform Bind Group Layout"),
+        entries: &filtered_bindings,
+    })
 }
 
-fn initialize_vertex_state() {
-    // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L110
-    // TODO: Initialize vertex state.
+fn make_basic_pipeline_layout(device: &wgpu::Device, bind_group_layout: Option<&wgpu::BindGroupLayout>) -> wgpu::PipelineLayout {
+    // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/webgpu/src/webgpu-helpers.cc#L177
+    if let Some(bind_group_layout) = bind_group_layout {
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Basic Pipeline Layout - Count is 1"),
+            bind_group_layouts: &[bind_group_layout],
+            immediate_size: 0,
+        })
+    } else {
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Basic Pipeline Layout - Count is 0"),
+            bind_group_layouts: &[],
+            immediate_size: 0,
+        })
+    }
 }
 
 impl Model {
-    pub fn new(device: wgpu::Device, model_options: ModelOptions) -> Self {
+    pub fn new(device: wgpu::Device, options: ModelOptions) -> Self {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L34
 
         // Create shader modules.
         let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Vertex Shader"),
-            source: wgpu::ShaderSource::Wgsl(model_options.vs.into()),
+            source: wgpu::ShaderSource::Wgsl(options.vs.into()),
         });
         let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Fragment Shader"),
-            source: wgpu::ShaderSource::Wgsl(model_options.fs.into()),
-        });
-
-        // Create bind group layout.
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Render Pipeline Bind Group Layout"),
-            entries: &[],
-        });
-
-        // Create pipeline layout (makeBasicPipelineLayout).
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            immediate_size: 0,
+            source: wgpu::ShaderSource::Wgsl(options.fs.into()),
         });
 
         // Create render pipeline descriptor.
+
+        // Initialize vertex state.
+        // (Inlined _initializeVertexState, since not used anywhere else)
+        let vertex_buffer_count = options.attribute_schema.fields.len() + options.instanced_attribute_schema.fields.len();
+        let mut location = 0;
+        let mut c_vertex_buffers: Vec<wgpu::VertexBufferLayout> = Vec::with_capacity(kMaxVertexBuffers as usize);
+        let mut c_attributes: Vec<wgpu::VertexAttribute> = Vec::with_capacity(kMaxVertexAttributes as usize);
+        for attribute_field in options.attribute_schema.fields {
+            let vertex_format_size = attribute_field.field_type.size();
+            let vertex_attribute = wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: location as u32,
+                format: attribute_field.field_type,
+            };
+            c_vertex_buffers[location] = wgpu::VertexBufferLayout {
+                array_stride: vertex_format_size,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &[vertex_attribute],
+            };
+            c_attributes[location] = vertex_attribute;
+            location += 1;
+        }
+        for attribute_field in options.instanced_attribute_schema.fields {
+            let vertex_format_size = attribute_field.field_type.size();
+            let vertex_attribute = wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: location as u32,
+                format: attribute_field.field_type,
+            };
+            c_vertex_buffers[location] = wgpu::VertexBufferLayout {
+                array_stride: vertex_format_size,
+                step_mode: wgpu::VertexStepMode::Instance, // Main difference from above for loop.
+                attributes: &[vertex_attribute],
+            };
+            c_attributes[location] = vertex_attribute;
+            location += 1;
+        }
+
+        // Initialize uniform cache (this.bindings)
+        let bindings: Vec<Option<BindingInitializationHelper>> = Vec::with_capacity(options.uniforms.len());
+
+        // Set uniformBindGroupLayout (this._createBindGroupLayout())
+        // Create bind group layout.
+        let uniform_bind_group_layout = create_bind_group_layout(&device, &options.uniforms);
+
+        // Create pipeline layout (makeBasicPipelineLayout).
+        let layout = make_basic_pipeline_layout(&device, Some(&uniform_bind_group_layout));
+
+        // Create the RenderPipelineDescriptor down here (since depends on creating the pipeline layout)
         let descriptor = wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
+            layout: Some(&layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &vs_module,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
-                buffers: &[],
+                buffers: &c_vertex_buffers,
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &fs_module,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: context.texture_desc.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L47
+                    format: options.texture_format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                topology: options.primitive_topology,
                 ..Default::default()
             },
             depth_stencil: None,
@@ -354,27 +358,16 @@ impl Model {
             multiview_mask: None,
         };
 
-        // Initialize vertex state.
-
-        // Initialize uniform cache (this.bindings)
-
-        // Set uniformBindGroupLayout (this._createBindGroupLayout())
-
-
-        let render_pipeline = device.create_render_pipeline(&descriptor);
-        let uniform_bind_group_layout = create_bind_group_layout(
-            &device,
-            &model_options.uniforms
-        );
-        let result = Model {
+        let pipeline = device.create_render_pipeline(&descriptor);
+        Model {
             device,
-            model_options,
+            options,
             vs_module,
             fs_module,
             // We do not yet set the bind group.
             // This gets set in the Model::_setBinding method.
             bind_group: None,
-            pipeline: render_pipeline,
+            pipeline,
             uniform_bind_group_layout,
             // Initialize with empty tables?
             attribute_table: Table {
@@ -389,9 +382,11 @@ impl Model {
                     fields: Vec::new(),
                 },
             },
-        };
-
-        return result;
+            vertex_buffer_count: vertex_buffer_count as u32,
+            c_vertex_buffers,
+            c_attributes,
+            bindings,
+        }
     }
 
     pub fn set_attributes(&mut self) {
