@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use crate::wgpu;
+use crate::log;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 /*
@@ -17,6 +18,8 @@ use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
+
+use crate::render::get_or_init_buffer;
 
 #[derive(ShaderType, Debug)]
 struct ScatterplotUniforms {
@@ -45,52 +48,64 @@ pub async fn render_scatterplot(
         panic!("Expected scatterplot params");
     };
 
-    let x_array_path = &scatterplot_params.x_key.as_ref();
-    let y_array_path = &scatterplot_params.y_key.as_ref();
     let labels_array_path = scatterplot_params.color_key.as_ref().expect("Color key");
 
-    let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
-    let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
     let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
 
     // Wait for all futures to complete
-    let arr_open_results = futures::join!(x_array_future, y_array_future, labels_array_future);
+    //let arr_open_results = futures::join!(labels_array_future);
 
-    let x_array = arr_open_results.0.unwrap();
-    let y_array = arr_open_results.1.unwrap();
-    let labels_array = arr_open_results.2.unwrap();
+    let labels_array = labels_array_future.await.unwrap();
 
-    let x_subset = x_array.subset_all();
-    let y_subset = y_array.subset_all();
     let labels_subset = labels_array.subset_all();
 
     // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
-    let (x_result, y_result, labels_result) = futures::join!(
-        x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset),
-        y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset),
-        labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset),
-    );
+    let labels_result = labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset).await;
 
     // Print the Zarr.json metadata to the JS console.
     // log(&x_array.metadata().to_string_pretty());
 
     // Read the whole array
-    let x_vec = x_result.unwrap();
-    let y_vec = y_result.unwrap();
     let labels_vec = labels_result.unwrap();
 
     // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = x_vec.len();
-    assert_eq!(n, y_vec.len(), "x and y data must have the same length");
+    let n = labels_vec.len();
 
     // Convert to f32 and cast to bytes directly - no for loop needed
-    let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
-    let y_f32: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
     let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
+
+    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
+
+    // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
+    let x_f32_future = get_or_init_buffer("x_bytes", async || {
+        let x_array_path = &scatterplot_params.x_key.as_ref();
+        let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
+        let x_array = x_array_future.await.unwrap();
+        let x_subset = x_array.subset_all();
+        let x_result = x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset).await;
+
+        let x_vec = x_result.unwrap();
+        let x_f32_inner: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
+        x_f32_inner
+    });
+
+    let y_f32_future = get_or_init_buffer("y_bytes", async || {
+        let y_array_path = &scatterplot_params.y_key.as_ref();
+        let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
+        let y_array = y_array_future.await.unwrap();
+        let y_subset = y_array.subset_all();
+        let y_result = y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset).await;
+
+        let y_vec = y_result.unwrap();
+        let y_f32_inner: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+        y_f32_inner
+    });
+
+    // Await in parallel.
+    let (x_f32, y_f32) = futures::join!(x_f32_future, y_f32_future);
 
     let x_bytes = bytemuck::cast_slice(&x_f32);
     let y_bytes = bytemuck::cast_slice(&y_f32);
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
 
     // Create separate buffers for X and Y coordinates
     let x_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {

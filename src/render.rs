@@ -4,12 +4,14 @@ use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
     peniko::{Blob, Brush, Color, Fill, Font},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
 };*/
+use crate::log;
 
 use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::any::Any;
 
 use crate::params::RenderContext;
 pub use crate::params::{PlotParams, RenderParams, RenderResult};
@@ -19,8 +21,11 @@ use crate::zarr::AsyncZarritaStore;
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
+//static BUFFER_CACHE: OnceLock<Mutex<HashMap<String, Vec<f32>>>> = OnceLock::new();
+
 thread_local! {
-    static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = RefCell::new(None);
+    static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = const { RefCell::new(None) };
+    static BUFFER_CACHE: RefCell<Option<HashMap<String, Vec<f32>>>> = const { RefCell::new(None) };
 }
 
 async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
@@ -86,6 +91,62 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
             .or_insert_with(|| Arc::new(AsyncZarritaStore::new(name.to_string())))
             .clone()
     }
+}
+
+pub async fn get_or_init_buffer(key: &str, initializer: impl AsyncFnOnce() -> Vec<f32>) -> Vec<f32> {
+    // Initializer param
+    // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
+    //
+    /*
+    // This approach using OnceLock+Mutex is working, but cannot be used with futures::join!.
+    // This error appears: "RuntimeError: Atomics.wait cannot be called in this context".
+    // The stacktrace indicates something related to lock contention.
+    let map_mutex = BUFFER_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let map = map_mutex.lock().unwrap();
+
+    if let Some(store) = map.get(key) {
+        store.clone()
+    } else {
+        drop(map);
+        let mut map = map_mutex.lock().unwrap();
+        let buffer = initializer().await;
+        map.entry(key.to_string())
+            .or_insert(buffer)
+            .clone()
+    }
+    */
+
+    // This thread_local approach seems to work fine with futures::join!.
+    // First, check if the buffer already exists
+    let buffer_exists = BUFFER_CACHE.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(key).cloned())
+    });
+
+    if let Some(buffer) = buffer_exists {
+        log("Buffer found in cache");
+        return buffer;
+    }
+
+    // Buffer doesn't exist, so create it
+    log("Creating new buffer");
+    let buffer = initializer().await;
+
+    // Store it in the cache
+    BUFFER_CACHE.with(|map| {
+        let mut map_ref = map.borrow_mut();
+
+        // Initialize the map if it doesn't exist
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+
+        // Insert the buffer
+        map_ref.as_mut().unwrap().insert(key.to_string(), buffer.clone());
+    });
+
+    buffer
 }
 
 // This function should accept width and height as parameters,
