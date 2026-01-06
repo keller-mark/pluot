@@ -99,6 +99,67 @@ struct TableSchema {
 
 struct Table {
     schema: TableSchema,
+    columns: Vec<SpecialArray>,
+}
+
+// Array data structure that manages the backing GPU buffer.
+// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/array.h#L35
+struct SpecialArray {
+    //data: Option<Vec<u32>>, // TODO: make this generic over any numeric type?
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    buffer: Option<wgpu::Buffer>,
+    length: i64,
+    buffer_byte_size: u64,
+    index_format: Option<wgpu::IndexFormat>,
+}
+
+impl SpecialArray {
+    pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
+        Self {
+            //data: None,
+            device,
+            queue,
+            buffer: None,
+            length: 0,
+            buffer_byte_size: 0,
+            index_format: None,
+        }
+    }
+    pub fn length(&self) -> i64 {
+        self.length
+    }
+    // TODO: make generic to support other data types.
+    pub fn set_data(&mut self, data: Vec<u8>, usage: wgpu::BufferUsages, index_format: Option<wgpu::IndexFormat>) {
+        // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/array.h#L58
+        let buffer_byte_size = data.len() as u64 * std::mem::size_of::<u8>() as u64;
+        if self.buffer.is_none() || self.buffer_byte_size != buffer_byte_size {
+            self.buffer = Some(self.create_buffer(buffer_byte_size, usage));
+        }
+        self.queue.write_buffer(
+            &self.buffer.as_ref().expect("Buffer not initialized"),
+            0, &data
+        );
+        self.length = data.len() as i64;
+        self.buffer_byte_size = buffer_byte_size;
+        self.index_format = index_format;
+    }
+    pub fn create_buffer(&self, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
+        self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage,
+            mapped_at_creation: false,
+        })
+    }
+    // Returns the backing buffer that this array manages.
+    pub fn get_buffer(&self) -> &wgpu::Buffer {
+        self.buffer.as_ref().expect("Buffer not initialized")
+    }
+    pub fn get_index_format(&self) -> wgpu::IndexFormat {
+        self.index_format.expect("Index format not initialized")
+    }
+
 }
 
 struct UniformDescriptor {
@@ -205,7 +266,7 @@ struct Model {
 
     attribute_table: Table,
     instanced_attribute_table: Table,
-    indices: Option<Vec<u32>>, // TODO: is this the type we want to use here?
+    indices: Option<SpecialArray>,
 
     // Some things to keep track of, from ComboVertexStateDescriptor and ComboRenderPipelineDescriptor.
     vertex_buffer_count: u32,
@@ -252,6 +313,14 @@ fn make_basic_pipeline_layout(device: &wgpu::Device, bind_group_layout: Option<&
             immediate_size: 0,
         })
     }
+}
+
+fn make_bind_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, bindings: Vec<BindingInitializationHelper>) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Basic Bind Group"),
+        layout,
+        entries: &bindings.iter().map(|binding| binding.get_as_binding()).collect::<Vec<_>>(),
+    })
 }
 
 impl Model {
@@ -398,8 +467,8 @@ impl Model {
         self.instanced_attribute_table = attributes;
     }
 
-    pub fn set_indices(&mut self, indices: Option<Vec<u32>>) {
-        self.indices = indices;
+    pub fn set_indices(&mut self, indices: SpecialArray) {
+        self.indices = Some(indices);
     }
     pub fn set_uniform_buffer(&mut self, binding: u32, buffer: wgpu::Buffer, offset: u64, size: u64) {
         self.set_binding(binding, BindingInitializationHelper {
@@ -446,22 +515,38 @@ impl Model {
         let min_instances = 1;
         let instance_count = std::cmp::max(self.instanced_attribute_table.schema.num_rows, min_instances);
         if let Some(indices) = self.indices {
-            pass.set_index_buffer(self.indices);
-            pass.draw_indexed(self.indices.length(), instance_count);
+            pass.set_index_buffer(indices.get_buffer().slice(..), indices.get_index_format());
+            pass.draw_indexed(0..indices.length() as u32, 0, 0..instance_count);
         } else {
-            pass.draw(vertex_count, instance_count);
+            pass.draw(0..vertex_count, 0..instance_count);
         }
     }
 
-    fn set_binding(&mut self, binding: u32, init_helper: ) {
+    fn set_binding(&mut self, binding: u32, init_helper: BindingInitializationHelper) {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L154C49-L154C76
-        // TODO
+        self.bindings[binding as usize] = Some(init_helper);
+
+        // Make sure all uniforms are set before trying to create a bind group
+
+        // Filter out bindings that are None
+        let non_empty_bindings: Vec<BindingInitializationHelper> = self.bindings.iter()
+            .filter_map(|binding| binding.as_ref())
+            .collect();
+
+        self.bind_group = Some(make_bind_group(&self.device, &self.uniform_bind_group_layout, non_empty_bindings));
     }
 
     fn set_vertex_buffers(&mut self, pass: &mut wgpu::RenderPass) {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L171
-        // TODO
-
+        let mut location = 0;
+        for attribute in self.attribute_table.columns {
+            pass.set_vertex_buffer(location, attribute.get_buffer().slice(..));
+            location += 1;
+        }
+        for attribute in self.instanced_attribute_table.columns {
+            pass.set_vertex_buffer(location, attribute.get_buffer().slice(..));
+            location += 1;
+        }
     }
 }
 
