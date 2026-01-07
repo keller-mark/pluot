@@ -85,6 +85,8 @@ wasm-pack build --target web
 wasm-pack build --target web && pnpm run start
 # or
 wasm-pack build --dev --target web && pnpm run start
+# or
+wasm-pack build --release --target web && pnpm run start
 ```
 
 
@@ -164,6 +166,7 @@ cargo test --features test_plain_rust
 This work has been informed and inspired by the following projects:
 
 - https://github.com/visgl/deck.gl
+- https://github.com/UnfoldedInc/deck.gl-native
 - https://github.com/observablehq/plot
 - https://github.com/flekschas/jupyter-scatter
 - https://github.com/gosling-lang/gosling.js

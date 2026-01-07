@@ -2,6 +2,7 @@ mod bindings;
 pub mod d3;
 mod params;
 mod plots;
+mod cache;
 mod render;
 
 pub(crate) mod timeout;
