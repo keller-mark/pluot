@@ -85,6 +85,7 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
     }
 }
 
+// TODO: Should we also implement a non-async variant of get_or_init_buffer?
 pub async fn get_or_init_buffer(initializer: impl AsyncFnOnce() -> Vec<f32>, keys: &[String], cache_enabled: bool) -> Vec<f32> {
     // Initializer param
     // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
