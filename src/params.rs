@@ -55,6 +55,12 @@ pub enum PlotParams {
 pub struct RenderParams {
     pub width: u32,
     pub height: u32,
+
+    // Device pixel ratio to support retina displays.
+    // Default to 1.0 for standard displays.
+    // Retina screens will have a value of 2.0 or higher.
+    pub device_pixel_ratio: f32,
+
     //pub zoom: Option<f32>,
     //pub target_x: Option<f32>,
     //pub target_y: Option<f32>,
@@ -70,6 +76,9 @@ pub struct RenderParams {
 
     // Timeout in ms before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
+
+    // Allow disabling memoization/cacheing. Useful for testing/debugging.
+    pub cache_enabled: bool,
 
     // Margins for plots that need them (e.g. scatterplot axes).
     pub margin_left: Option<f32>,
@@ -98,6 +107,8 @@ impl Default for RenderParams {
         Self {
             width: 100,
             height: 100,
+
+            device_pixel_ratio: 1.0,
             //zoom: None,
             //target_x: None,
             //target_y: None,
@@ -106,6 +117,7 @@ impl Default for RenderParams {
             store_name: "default_store".to_string(),
             plot_params: PlotParams::Triangle,
             timeout: None,
+            cache_enabled: true,
             margin_left: None,
             margin_right: None,
             margin_top: None,

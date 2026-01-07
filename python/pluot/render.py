@@ -44,7 +44,7 @@ async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
-    result = await render_py(timeout=None, **new_kwargs)
+    result = await render_py(timeout=None, cache_enabled=True, device_pixel_ratio=1.0, **new_kwargs)
     return result
 
 async def render_to_array(**kwargs):
