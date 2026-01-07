@@ -1,4 +1,4 @@
-Code loosley inspired by DeckGL, but will diverge further. Primarily only using its Model abstraction, without porting other things directly.
+Code loosley inspired by LumaGL/DeckGL, but will diverge further. Primarily only using its Model abstraction, without porting other things directly.
 
 The Layer/View/Deck abstractions will diverge further.
 

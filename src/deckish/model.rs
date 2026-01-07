@@ -65,7 +65,7 @@ const kMaxTexture2DMipLevels: u32 = 14;
 // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/schema.h
 // Sequence of Field objects describing the columns of a table data structure.
 #[derive(Clone)]
-struct TableField {
+pub struct TableField {
     name: String,
     // TODO: add a `type` property?
     // getVertexFormatSize(field->type())
@@ -73,12 +73,12 @@ struct TableField {
     field_type: wgpu::VertexFormat,
 }
 #[derive(Clone)]
-struct TableSchema {
+pub struct TableSchema {
     num_rows: u32,
     fields: Vec<TableField>,
 }
 #[derive(Clone)]
-struct Table {
+pub struct Table {
     schema: TableSchema,
     columns: Vec<SpecialArray>,
 }
@@ -86,7 +86,7 @@ struct Table {
 // Array data structure that manages the backing GPU buffer.
 // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/array.h#L35
 #[derive(Clone)]
-struct SpecialArray {
+pub struct SpecialArray {
     //data: Option<Vec<u32>>, // TODO: make this generic over any numeric type?
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -145,11 +145,11 @@ impl SpecialArray {
 }
 
 #[derive(Clone)]
-struct UniformDescriptor {
+pub struct UniformDescriptor {
     pub shader_stage: wgpu::ShaderStages,
     // In deck.gl-native, binding_types are only UniformBuffer (default), Sampler, or SampledTexture.
     pub binding_type: wgpu::BindingType,
-    pub is_dynamic: bool, // Never used because the Buffer variant of wgpu::BindingType has its own property has_dynamic_offset
+    // pub is_dynamic: bool, // Never used because the Buffer variant of wgpu::BindingType has its own property has_dynamic_offset
 }
 
 #[derive(Clone)]
