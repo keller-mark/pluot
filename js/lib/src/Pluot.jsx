@@ -264,6 +264,7 @@ export function Pluot(props) {
         height,
         margin_bottom: 40.0,
         margin_left: 40.0,
+        device_pixel_ratio: window.devicePixelRatio,
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
@@ -273,6 +274,7 @@ export function Pluot(props) {
         store_name: storeName,
         plot_params: plotParams,
         timeout: 200, // in ms
+        cache_enabled: true,
       };
       wasm.render_wasm(renderParams).then((arr) => {
         // TODO: is there a more efficient way to do this?

@@ -85,6 +85,8 @@ wasm-pack build --target web
 wasm-pack build --target web && pnpm run start
 # or
 wasm-pack build --dev --target web && pnpm run start
+# or
+wasm-pack build --release --target web && pnpm run start
 ```
 
 
