@@ -67,8 +67,13 @@ async def _(
             point_radius=point_radius_slider.value,
         ),
         margin_left=100,
-        margin_bottom=100
+        margin_bottom=100,
     )
+    return
+
+
+@app.cell
+def _():
     return
 
 
