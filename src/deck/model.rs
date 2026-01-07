@@ -1,8 +1,8 @@
 use crate::wgpu;
-use std::borrow::Cow;
 use std::mem::size_of;
 
-// Prototyping an API for layered plotting.
+// Port of the DeckGL Model class.
+// The Model is an abstraction over a WGPU render pipeline and helps with buffer management.
 
 // Constants from deck.gl-native
 // TODO: Update casing of names.
@@ -47,28 +47,6 @@ const kMaxTextureSize: u32 = 8192;
 const kMaxTexture2DArrayLayers: u32 = 256;
 const kMaxTexture2DMipLevels: u32 = 14;
 
-struct Layer {
-
-}
-
-// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/scatterplot-layer/scatterplot-layer.h#L35
-struct ScatterplotLayer {
-    x_data: Option<Vec<f32>>,
-    y_data: Option<Vec<f32>>,
-    labels_data: Option<Vec<i32>>,
-}
-
-struct BitmapLayer {
-
-}
-
-struct CompositeLayer {
-
-}
-
-struct TileLayer {
-
-}
 
 // TODO: Should this diverge more from deck.gl-native which was tied to Arrow table schema representations?
 // Perhaps we want something closer to a Zarr array schema representation?
@@ -248,7 +226,7 @@ impl GetAsBinding for BindingInitializationHelper {
 // - https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.h#L50
 // - https://github.com/visgl/luma.gl/blob/master/modules/engine/src/model/model.ts
 // - https://github.com/visgl/luma.gl/tree/master/modules/webgpu/src
-struct Model {
+pub struct Model {
     pub device: wgpu::Device,
     pub options: ModelOptions,
 
@@ -445,12 +423,14 @@ impl Model {
                     num_rows: 0,
                     fields: Vec::new(),
                 },
+                columns: Vec::new(),
             },
             instanced_attribute_table: Table {
                 schema: TableSchema {
                     num_rows: 0,
                     fields: Vec::new(),
                 },
+                columns: Vec::new(),
             },
             indices: None,
             vertex_buffer_count: vertex_buffer_count as u32,
@@ -553,29 +533,4 @@ impl Model {
 pub trait GetModel {
     /// Given a value from the domain, returns the corresponding value in the range.
     fn get_model(&self, device: &wgpu::Device) -> Model;
-}
-
-impl GetModel for ScatterplotLayer {
-    // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/scatterplot-layer/scatterplot-layer.cc#L205
-    fn get_model(&self, device: &wgpu::Device) -> Model {
-        Model::new(device)
-    }
-}
-
-pub async fn render_layered_plot(
-    context: &mut RenderContext<'_>,
-    encoder: &mut wgpu::CommandEncoder,
-) -> RenderResult {
-    // Get x and y data from the Zarr store.
-    let store = context.store;
-    let height = context.params.height as f64;
-    let width = context.params.width as f64;
-
-    let margin_top = context.params.margin_top.unwrap_or(0.0) as f64;
-    let margin_right = context.params.margin_right.unwrap_or(0.0) as f64;
-    let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f64;
-    let margin_left = context.params.margin_left.unwrap_or(0.0) as f64;
-
-
-    let scatterplot_layer = ScatterplotLayer::new(device);
 }
