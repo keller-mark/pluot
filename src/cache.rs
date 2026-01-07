@@ -14,6 +14,9 @@ static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = O
 
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = const { RefCell::new(None) };
+    // TODO: How to generalize the BUFFER_CACHE to support other numeric dtypes?
+    // Would it be better (or possible) to cache resulting wgpu::Buffer objects (or their [u8] byte parameters)?
+    // Can entire Layer/Model objects be cached?
     static BUFFER_CACHE: RefCell<Option<HashMap<Vec<String>, Vec<f32>>>> = const { RefCell::new(None) };
 }
 
@@ -122,3 +125,6 @@ pub async fn get_or_init_buffer(initializer: impl AsyncFnOnce() -> Vec<f32>, key
 
     buffer
 }
+
+// TODO: Every render, try to clear things from the buffer_cache.
+// See egui FrameCache approach: clear any variables that were not used in the previous frame (for the same plot ID)
