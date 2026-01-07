@@ -35,7 +35,7 @@ impl DrawToCanvas for ScatterplotLayer {
   async fn get_model(self, device, queue) {
      // use memoization
   }
-  async fn draw(self, device, queue, encoder) {
+  async fn draw(self, device, queue, pass) {
     // create pass from encoder
     let model = self.get_model(device, queue);
     model.draw(pass)

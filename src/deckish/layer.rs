@@ -61,7 +61,7 @@ pub trait DrawToSvg {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToCanvas {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, encoder: &wgpu::CommandEncoder);
+    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &wgpu::RenderPass<'_>);
 }
 
 trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
@@ -95,11 +95,54 @@ pub async fn render_canvas(view_params: ViewParams, layers: Vec<Box<dyn Prepared
         layer.prepare().await;
     }
 
-    for layer in &layers {
-        // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
-        // Should we instead assume the layer already has the necessary info from view_params?
-        layer.draw(context.device.clone(), context.queue.clone(), encoder).await;
+    // Create the render pass
+    // 1) Offscreen plot target
+    let layered_tex = context.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Layered Offscreen Texture"),
+        size: wgpu::Extent3d {
+            width: context.params.width,
+            height: context.params.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: context.texture_desc.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let layered_view = layered_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Layered Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &layered_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    // Set a white background for the scatterplot.
+                    // TODO: make this configurable.
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        for layer in &layers {
+            // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
+            // Should we instead assume the layer already has the necessary info from view_params?
+            layer.draw(context.device.clone(), context.queue.clone(), &render_pass).await;
+        }
+
+        drop(render_pass);
     }
+
+    crate::render::overlay_pass(context, encoder, &layered_tex);
 
     // TODO: return RenderResult? How to aggregate results from multiple layers?
 }
