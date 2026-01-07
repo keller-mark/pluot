@@ -5,6 +5,7 @@ use crate::params::{RenderContext, RenderResult};
 
 // Struct to store anything at the view level (i.e., not layer-specific)
 pub struct ViewParams {
+    pub view_id: String, // Just reuse the plot_id when there is a single view.
     pub width: u32,
     pub height: u32,
 
@@ -31,6 +32,7 @@ pub struct ViewParams {
 impl Default for ViewParams {
     fn default() -> Self {
         Self {
+            view_id: "default_view".to_string(),
             width: 100,
             height: 100,
             device_pixel_ratio: 1.0,
@@ -142,6 +144,7 @@ pub async fn render_canvas(view_params: ViewParams, layers: Vec<Box<dyn Prepared
         drop(render_pass);
     }
 
+    // TODO: render directly to the context's out_tex, to avoid an extra render pass.
     crate::render::overlay_pass(context, encoder, &layered_tex);
 
     // TODO: return RenderResult? How to aggregate results from multiple layers?

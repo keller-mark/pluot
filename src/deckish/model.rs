@@ -156,12 +156,9 @@ pub struct UniformDescriptor {
 }
 
 #[derive(Clone)]
-pub struct ModelOptions {
+pub struct ModelOptions<'a> {
     // Vertex shader source
-    // TODO: only allow a single string for both vs and fs, since wgsl supports vertex/fragment in same string?
-    pub vs: String,
-    // Fragment shader source
-    pub fs: String,
+    pub shader_source: wgpu::ShaderModuleDescriptor<'a>,
     // Attribute definitions.
     pub attribute_schema: TableSchema,
     // Instanced attribute definitions.
@@ -174,11 +171,10 @@ pub struct ModelOptions {
     pub texture_format: wgpu::TextureFormat,
 }
 
-impl Default for ModelOptions {
+/*
+impl Default for ModelOptions<'a> {
     fn default() -> Self {
         ModelOptions {
-            vs: String::new(),
-            fs: String::new(),
             attribute_schema: TableSchema {
                 num_rows: 0,
                 fields: Vec::new(),
@@ -193,6 +189,8 @@ impl Default for ModelOptions {
         }
     }
 }
+*/
+
 
 // Structure with one constructor per-type of bindings, so that the initializer_list accepts
 // bindings with the right type and no extra information.
@@ -236,9 +234,9 @@ impl GetAsBinding for BindingInitializationHelper {
 // - https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.h#L50
 // - https://github.com/visgl/luma.gl/blob/master/modules/engine/src/model/model.ts
 // - https://github.com/visgl/luma.gl/tree/master/modules/webgpu/src
-pub struct Model {
+pub struct Model<'a> {
     pub device: wgpu::Device,
-    pub options: ModelOptions,
+    pub options: ModelOptions<'a>,
 
     // Rendering pipeline.
     pub pipeline: wgpu::RenderPipeline,
@@ -246,11 +244,8 @@ pub struct Model {
     pub uniform_bind_group_layout: wgpu::BindGroupLayout,
     // Bind group containg uniform data.
     pub bind_group: Option<wgpu::BindGroup>,
-    // TODO: use a single shader module for both vertex and fragment shaders? See above comment in ModelOptions.
-    // Compiled vertex shader.
-    pub vs_module: wgpu::ShaderModule,
-    // Compiled fragment shader.
-    pub fs_module: wgpu::ShaderModule,
+    // Compiled vertex+fragment shader.
+    pub shader_module: wgpu::ShaderModule,
 
     attribute_table: Table,
     instanced_attribute_table: Table,
@@ -340,19 +335,12 @@ impl VertexStuff {
     }
 }
 
-impl Model {
-    pub fn new(device: wgpu::Device, options: ModelOptions) -> Self {
+impl<'a> Model<'a> {
+    pub fn new(device: wgpu::Device, options: ModelOptions<'a>) -> Self {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L34
 
         // Create shader modules.
-        let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Vertex Shader"),
-            source: wgpu::ShaderSource::Wgsl(options.vs.clone().into()),
-        });
-        let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Fragment Shader"),
-            source: wgpu::ShaderSource::Wgsl(options.fs.clone().into()),
-        });
+        let shader_module = device.create_shader_module(options.shader_source.clone());
 
         // Create render pipeline descriptor.
 
@@ -388,13 +376,13 @@ impl Model {
             label: Some("Render Pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
-                module: &vs_module,
+                module: &shader_module,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &c_vertex_buffers,
             },
             fragment: Some(wgpu::FragmentState {
-                module: &fs_module,
+                module: &shader_module,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -429,8 +417,7 @@ impl Model {
         Self {
             device,
             options,
-            vs_module,
-            fs_module,
+            shader_module,
             // We do not yet set the bind group.
             // This gets set in the Model::_setBinding method.
             bind_group: None,
