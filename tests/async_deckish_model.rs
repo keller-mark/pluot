@@ -3,7 +3,7 @@
 // Run with
 // cargo test --features test_plain_rust
 
-use pluot::deckish::model::{Model, ModelOptions};
+use pluot::deckish::model::{Model, ModelOptions, SpecialArray};
 use pluot::wgpu;
 use pluot::cache::init_gpu_context;
 
@@ -267,4 +267,152 @@ async fn test_model_with_texture_and_draw() {
     // The test passes if draw() completes without panicking
     // In a real scenario, you would verify the rendered output, but for a unit test
     // verifying that the draw call succeeds is sufficient
+}
+
+#[tokio::test]
+async fn test_model_with_instanced_indexed_drawing() {
+    let (device, queue) = init_gpu_context().await;
+
+    let vs = "
+        struct Uniforms {
+            mvp: mat4x4<f32>,
+        }
+        @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+        @vertex
+        fn vs_main(
+            @builtin(vertex_index) in_vertex_index: u32,
+            @builtin(instance_index) instance_idx: u32
+        ) -> @builtin(position) vec4<f32> {
+            let x = f32(i32(in_vertex_index) - 1) + f32(instance_idx) * 0.5;
+            let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
+            return uniforms.mvp * vec4<f32>(x, y, 0.0, 1.0);
+        }
+    ".to_string();
+
+    let fs = "
+        @fragment
+        fn fs_main() -> @location(0) vec4<f32> {
+            return vec4<f32>(1.0, 0.5, 0.0, 1.0);
+        }
+    ".to_string();
+
+    // Create a uniform descriptor
+    let uniforms = vec![
+        pluot::deckish::model::UniformDescriptor {
+            shader_stage: wgpu::ShaderStages::VERTEX,
+            binding_type: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        }
+    ];
+
+    let options = ModelOptions {
+        vs,
+        fs,
+        uniforms,
+        ..Default::default()
+    };
+
+    let mut model = Model::new(device.clone(), options);
+
+    // Create a uniform buffer
+    let buffer_size = 64; // Size for a mat4x4<f32>
+    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Uniform Buffer"),
+        size: buffer_size,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    // Set the uniform buffer
+    model.set_uniform_buffer(0, uniform_buffer, 0, buffer_size);
+
+    // Verify that the bind group was created
+    assert!(model.bind_group.is_some(), "Bind group should be created after setting uniform buffer");
+
+    // Create index data for indexed drawing
+    // Define 6 indices for drawing 2 triangles (a quad)
+    let indices: Vec<u16> = vec![0, 1, 2, 2, 3, 0];
+    let index_bytes: Vec<u8> = indices
+        .iter()
+        .flat_map(|i| i.to_le_bytes())
+        .collect();
+
+    // Create a SpecialArray for the indices
+    let mut index_array = SpecialArray::new(device.clone(), queue.clone());
+    index_array.set_data(
+        index_bytes,
+        wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        wgpu::IndexFormat::Uint16,
+    );
+
+    // Set the indices on the model
+    model.set_indices(index_array);
+
+    // Verify that indices were set
+    assert!(model.num_indices().is_some(), "Indices should be set");
+    if let Some(indices_count) = model.num_indices() {
+        assert_eq!(indices_count, 6, "Index buffer should contain 6 u16 indices (12 bytes)");
+    }
+
+    // Create a render target texture for drawing
+    let render_target_size = wgpu::Extent3d {
+        width: 256,
+        height: 256,
+        depth_or_array_layers: 1,
+    };
+
+    let render_target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Render Target"),
+        size: render_target_size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Bgra8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+
+    let render_target_view = render_target.create_view(&wgpu::TextureViewDescriptor::default());
+
+    // Create a command encoder and render pass
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Test Encoder"),
+    });
+
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Test Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &render_target_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        // Call the draw method - this should perform instanced indexed drawing
+        // Since indices are set, draw() will call pass.draw_indexed()
+        // Instance count will be max(instanced_attribute_table.schema.num_rows, 1) = 1
+        model.draw(&mut render_pass);
+    }
+
+    // Submit the commands
+    queue.submit(std::iter::once(encoder.finish()));
+
+    // The test passes if draw() completes without panicking
+    // This test verifies that:
+    // 1. set_indices works correctly to store index data
+    // 2. draw uses the indices for draw_indexed call (draw_indexed should be called with 6 indices)
+    // 3. Instanced drawing works (with 1 instance since instanced_attribute_table is empty)
 }

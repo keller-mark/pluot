@@ -112,7 +112,7 @@ impl SpecialArray {
         self.length
     }
     // TODO: make generic to support other data types.
-    pub fn set_data(&mut self, data: Vec<u8>, usage: wgpu::BufferUsages, index_format: Option<wgpu::IndexFormat>) {
+    pub fn set_data(&mut self, data: Vec<u8>, usage: wgpu::BufferUsages, index_format: wgpu::IndexFormat) {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/array.h#L58
         let buffer_byte_size = data.len() as u64 * std::mem::size_of::<u8>() as u64;
         if self.buffer.is_none() || self.buffer_byte_size != buffer_byte_size {
@@ -122,9 +122,12 @@ impl SpecialArray {
             &self.buffer.as_ref().expect("Buffer not initialized"),
             0, &data
         );
-        self.length = data.len() as i64;
+        self.length = data.len() as i64 / (match index_format {
+            wgpu::IndexFormat::Uint16 => 2,
+            wgpu::IndexFormat::Uint32 => 4,
+        } as i64);
         self.buffer_byte_size = buffer_byte_size;
-        self.index_format = index_format;
+        self.index_format = Some(index_format);
     }
     pub fn create_buffer(&self, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
         self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -466,6 +469,15 @@ impl Model {
     pub fn set_indices(&mut self, indices: SpecialArray) {
         self.indices = Some(indices);
     }
+
+    pub fn num_indices(&self) -> Option<usize> {
+        if let Some(indices) = &self.indices {
+            Some(indices.length() as usize)
+        } else {
+            None
+        }
+    }
+
     pub fn set_uniform_buffer(&mut self, binding: u32, buffer: wgpu::Buffer, offset: u64, size: u64) {
         self.set_binding(binding, BindingInitializationHelper {
             binding,
