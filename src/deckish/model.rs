@@ -530,6 +530,13 @@ impl Model {
             .filter_map(|binding| binding.clone())
             .collect();
 
+        // We need the number of items in uniform_bind_group_layout to match the number of elements in non_empty_bindings.
+        // Therefore, we first check that the number of non-empty bindings matches the number of entries in the layout.
+        // Note: the cpp code does not appear to do such a check. Unclear why/how.
+        if non_empty_bindings.len() != self.options.uniforms.len() {
+            // Not all bindings are set yet, so we cannot create the bind group.
+            return;
+        }
         self.bind_group = Some(make_bind_group(&self.device, &self.uniform_bind_group_layout, non_empty_bindings));
     }
 
