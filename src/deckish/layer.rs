@@ -45,6 +45,13 @@ impl Default for ViewParams {
     }
 }
 
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+pub trait PreparedLayer {
+    async fn prepare(&self);
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToSvg {
@@ -57,9 +64,19 @@ pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, encoder: &wgpu::CommandEncoder);
 }
 
+trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
+trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
 
-pub async fn render_svg(view_params: ViewParams, layers: Vec<Box<dyn DrawToSvg>>) -> Group {
+
+pub async fn render_svg(view_params: ViewParams, layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
+
+    // TODO: use futures.join! here
+    // TODO: use maybe_timeout here
+    for layer in &layers {
+        layer.prepare().await;
+    }
+
     let mut group = group;
     for layer in &layers {
         // TODO: when/where to pass view_params to each layer?
@@ -71,7 +88,13 @@ pub async fn render_svg(view_params: ViewParams, layers: Vec<Box<dyn DrawToSvg>>
     group
 }
 
-pub async fn render_canvas(view_params: ViewParams, layers: Vec<Box<dyn DrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+pub async fn render_canvas(view_params: ViewParams, layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+    // TODO: use futures.join! here
+    // TODO: use maybe_timeout here
+    for layer in &layers {
+        layer.prepare().await;
+    }
+
     for layer in &layers {
         // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
         // Should we instead assume the layer already has the necessary info from view_params?
