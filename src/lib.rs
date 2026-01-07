@@ -2,9 +2,9 @@ mod bindings;
 pub mod d3;
 mod params;
 mod plots;
-mod cache;
+pub mod cache; // Made public for testing only.
 mod render;
-mod deckish;
+pub mod deckish; // Made public for testing only.
 
 pub(crate) mod timeout;
 pub mod two;

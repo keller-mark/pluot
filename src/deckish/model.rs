@@ -2,8 +2,9 @@ use crate::wgpu;
 use std::mem::size_of;
 use std::num::{NonZero, NonZeroU64};
 
-// Port of the DeckGL Model class.
+// Port of the LumaGL/DeckGL Model class.
 // The Model is an abstraction over a WGPU render pipeline and helps with buffer management.
+// Reference: https://luma.gl/docs/api-reference/engine/model
 
 // Constants from deck.gl-native
 // TODO: Update casing of names.
@@ -148,11 +149,11 @@ struct UniformDescriptor {
     pub shader_stage: wgpu::ShaderStages,
     // In deck.gl-native, binding_types are only UniformBuffer (default), Sampler, or SampledTexture.
     pub binding_type: wgpu::BindingType,
-    pub is_dynamic: bool,
+    pub is_dynamic: bool, // Never used because the Buffer variant of wgpu::BindingType has its own property has_dynamic_offset
 }
 
 #[derive(Clone)]
-struct ModelOptions {
+pub struct ModelOptions {
     // Vertex shader source
     // TODO: only allow a single string for both vs and fs, since wgsl supports vertex/fragment in same string?
     pub vs: String,
@@ -253,7 +254,7 @@ pub struct Model {
     indices: Option<SpecialArray>,
 
     // Some things to keep track of, from ComboVertexStateDescriptor and ComboRenderPipelineDescriptor.
-    vertex_buffer_count: u32,
+    pub vertex_buffer_count: u32,
     //c_vertex_buffers: Vec<wgpu::VertexBufferLayout<'a>>,
     //c_attributes: Vec<wgpu::VertexAttribute>,
 
@@ -359,18 +360,18 @@ impl Model {
         let mut c_vertex_stuff: Vec<VertexStuff> = Vec::with_capacity(kMaxVertexBuffers as usize);
         for attribute_field in &options.attribute_schema.fields {
             let vertex_format_size = attribute_field.field_type.size();
-            c_vertex_stuff[location] = VertexStuff::new(vertex_format_size, wgpu::VertexStepMode::Vertex, 0, location as u32, attribute_field.field_type);
+            c_vertex_stuff.push(VertexStuff::new(vertex_format_size, wgpu::VertexStepMode::Vertex, 0, location as u32, attribute_field.field_type));
             location += 1;
         }
         for attribute_field in &options.instanced_attribute_schema.fields {
             let vertex_format_size = attribute_field.field_type.size();
-            c_vertex_stuff[location] = VertexStuff::new(vertex_format_size, wgpu::VertexStepMode::Instance, 0, location as u32, attribute_field.field_type);
+            c_vertex_stuff.push(VertexStuff::new(vertex_format_size, wgpu::VertexStepMode::Instance, 0, location as u32, attribute_field.field_type));
             location += 1;
         }
         let c_vertex_buffers = c_vertex_stuff.iter().map(|vs| vs.get_vertex_buffer_layout()).collect::<Vec<_>>();
 
         // Initialize uniform cache (this.bindings)
-        let bindings: Vec<Option<BindingInitializationHelper>> = Vec::with_capacity(options.uniforms.len());
+        let bindings: Vec<Option<BindingInitializationHelper>> = vec![None; options.uniforms.len()];
 
         // Set uniformBindGroupLayout (this._createBindGroupLayout())
         // Create bind group layout.
@@ -500,6 +501,7 @@ impl Model {
 
     pub fn draw(&mut self, pass: &mut wgpu::RenderPass) {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/core/src/model.cc#L91C46-L91C47
+        // See also JS equivalent: https://github.com/visgl/luma.gl/blob/6f43c54bf3b6a83f8a4fe3bfb90b46098e74681b/modules/engine/src/model/model.ts#L401
         pass.set_pipeline(&self.pipeline);
         self.set_vertex_buffers(pass);
         // The argument is used for specifying dynamic offsets, which is not something we support right now.

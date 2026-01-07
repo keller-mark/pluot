@@ -20,7 +20,7 @@ thread_local! {
     static BUFFER_CACHE: RefCell<Option<HashMap<Vec<String>, Vec<f32>>>> = const { RefCell::new(None) };
 }
 
-async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+pub async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     // Apparently this is expensive, so we try to cache it in the get_or_init_gpu_context function.
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
     // We can try to enable WebGL fallback here, but it is not working,
