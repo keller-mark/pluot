@@ -1,12 +1,37 @@
-// TODO: see https://github.com/visgl/deck.gl/blob/master/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L66
-// But keep in mind that deck.gl combines multiple shader modules together https://github.com/visgl/deck.gl/commit/777916acd6db7d9ffd0958289152a14319b396c5#diff-27e895578108a7dc7fc14d5d3e5310f4400844bc57431631a63631db79c19f13
+fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
+  return mat4x4<f32>(
+    vec4<f32>(x, 0.0, 0.0, 0.0),
+    vec4<f32>(0.0, y, 0.0, 0.0),
+    vec4<f32>(0.0, 0.0, z, 0.0),
+    vec4<f32>(0.0, 0.0, 0.0, 1.0)
+  );
+}
+
+fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
+  return mat4x4<f32>(
+    vec4<f32>(1.0, 0.0, 0.0, 0.0),
+    vec4<f32>(0.0, 1.0, 0.0, 0.0),
+    vec4<f32>(0.0, 0.0, 1.0, 0.0),
+    vec4<f32>(x, y, z, 1.0),
+  );
+}
+
+// Default camera view matrix (identity).
+const CAMERA_VIEW_IDENTITY: mat4x4<f32> = mat4x4<f32>(
+  vec4<f32>(1.0, 0.0, 0.0, 0.0),
+  vec4<f32>(0.0, 1.0, 0.0, 0.0),
+  vec4<f32>(0.0, 0.0, 1.0, 0.0),
+  vec4<f32>(0.0, 0.0, 0.0, 1.0)
+);
 
 struct Uniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     plot_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
-    point_size_px: f32,   // diameter in pixels
+    point_radius: f32,
+    point_radius_units: u32, // 0: px units, 1: data coordinate system units
     color: vec4<f32>,     // rgba color for points
+    aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
 };
 
 struct VSOut {
@@ -43,7 +68,11 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Center of this point in data space
-    let p = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+    let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+
+    // TODO: Display the 0 to 1 square when camera_view is identity.
+
+    // TODO: Handle multiple aspect ratio modes.
 
     // View aspect ratio
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
@@ -59,85 +88,85 @@ fn vs_main(
         vec4<f32>(0.0, 0.0, 1.0, 0.0), // Column 2
         vec4<f32>(0.0, 0.0, 0.0, 1.0), // Column 3
     );
-    let model_view_projection = projection * u.camera_view;
+    //let model_view_projection = projection * u.camera_view;
 
-    // Compute clip space position
-    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/point.vs#L48
-    let clip_space_position = model_view_projection * vec4<f32>(p.x, p.y, 0.0, 1.0);
 
-    // Convert to NDC, accounting for plot margins.
-    // (We would stop here to compute center_ndc if not accounting for margins).
-    let center_ndc_unconstrained = clip_space_position.xy / clip_space_position.w;
+    let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
-    // The plot is being rendered into a sub-region of the viewport, defined by the margins.
-    // Convert margins from pixels to NDC
-    let margin_ndc = u.plot_margin * (2.0 / vec4<f32>(u.viewport_size.yx, u.viewport_size.yx));
-    let margin_top = margin_ndc.x;
-    let margin_right = margin_ndc.y;
-    let margin_bottom = margin_ndc.z;
-    let margin_left = margin_ndc.w;
+    // TODO: handle point size in data coordinate system units.
+    let point_size_ndc = vec2<f32>(
+        u.point_radius / viewport_w,
+        u.point_radius / viewport_h
+    );
 
-    // Calculate the scale factor (size of available region / size of full region)
-    let scale = vec2<f32>(1.0 - (margin_left + margin_right), 1.0 - (margin_top + margin_bottom));
+    let margin_ndc = vec4<f32>(
+        u.plot_margin.x / viewport_h, // top
+        u.plot_margin.y / viewport_w, // right
+        u.plot_margin.z / viewport_h, // bottom
+        u.plot_margin.w / viewport_w  // left
+    );
+    // Transformation matrix so that points are drawn within the plot area.
+    let MARGIN_MAT = translate(
+        margin_ndc.w, // left
+        -margin_ndc.x, // top
+        0.0
+    ) * scale(
+        1.0 - (margin_ndc.y + margin_ndc.w),
+        1.0 - (margin_ndc.x + margin_ndc.z),
+        1.0
+    ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/top margins.
+    // We operate in (0 to 1) space, since we apply MARGIN_MAT after MODEL_MAT.
 
-    // Calculate translation to center the scaled coordinates in the available region
-    // The available region spans from [-1 + margin_left, 1 - margin_right] in X
-    // and [-1 + margin_bottom, 1 - margin_top] in Y
-    let translate = vec2<f32>(margin_left - margin_right, margin_bottom - margin_top);
+    // POSITION = PROJECTION * MODEL * ORIG_POSITION
 
-    let center_ndc = center_ndc_unconstrained * scale + translate;
+    // Transform (0, 1) into clip space ("NDC") (-1 to 1)
+    // This enables us to work in (0 to 1) space afterwards, which is more intuitive for me at the moment.
+    let NORM_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1.
 
-    // We now may have points which are positioned in the margins,
-    // especially if the user has zoomed into the scatterplot.
-    // We need to define the valid rendering region, accounting for margins.
-    // Convert desired pixel radius to NDC
-    let radius_px = 0.5 * u.point_size_px;
-    // pixels -> NDC: ndc_per_px = 2 / viewport
-    let ndc_per_px = 2.0 / u.viewport_size;
-    let radius_ndc = vec2<f32>(radius_px * ndc_per_px.x, radius_px * ndc_per_px.y);
+    // TODO: use real camera_view. using identity only for testing.
+    //let point_pos_to_ndc = CAMERA_VIEW_IDENTITY * MODEL_MAT * vec4(point_pos_orig, 0.0, 1.0);
+    //
+    // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
+    // Where:
+    // - inputPosition - the 4D vertex position (homogeneous coordinate) in model space.
+    // - modelMatrix - the 4x4 matrix that transforms input vertices from model space to world space.
+    // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
+    // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    // Define the valid rendering region, accounting for margins.
-    let valid_min = vec2<f32>(-1.0 + margin_left, -1.0 + margin_bottom);
-    let valid_max = vec2<f32>(1.0 - margin_right, 1.0 - margin_top);
+    let point_pos_to_ndc = u.camera_view * MARGIN_MAT * NORM_MAT * vec4(point_pos_orig, 0.0, 1.0);
 
-    // REVISED: Check if the entire point (center + radius) is completely outside the valid region.
-    // Only clip points that are entirely outside - partial points should be rendered.
-    let point_min = center_ndc - radius_ndc;
-    let point_max = center_ndc + radius_ndc;
+    let margin_left_threshold = -1.0 + 2.0 * margin_ndc.w;
+    let margin_right_threshold = 1.0 - 2.0 * margin_ndc.y;
+    let margin_top_threshold = 1.0 - 2.0 * margin_ndc.x;
+    let margin_bottom_threshold = -1.0 + 2.0 * margin_ndc.z;
 
-    if (point_max.x < valid_min.x || point_min.x > valid_max.x ||
-        point_max.y < valid_min.y || point_min.y > valid_max.y) {
-        // Point is completely outside the valid region, clip it entirely
-        var out: VSOut;
-        // Using w < 0 clips the vertex
-        out.position = vec4<f32>(0.0, 0.0, 0.0, -1.0);
-        out.color = u.color;
-        out.quad_pos = vec2<f32>(0.0);
-        out.instance_index = instance_index;
-        out.valid_bounds = vec4<f32>(valid_min, valid_max);
-        return out;
+    // TODO: do more clipping in the fragment shader to account for points on the boundaries.
+    if (point_pos_to_ndc.x < margin_left_threshold ||
+        point_pos_to_ndc.x > margin_right_threshold ||
+        point_pos_to_ndc.y < margin_bottom_threshold ||
+        point_pos_to_ndc.y > margin_top_threshold) {
+        // Point is completely outside the plot area; move it off-screen.
+        let offscreen_pos = vec4f(0.0, 0.0, 0.0, -1.0);
+        var out_to_clip: VSOut;
+        out_to_clip.position = offscreen_pos;
+        out_to_clip.color = u.color;
+        out_to_clip.quad_pos = vec2<f32>(0.0, 0.0);
+        out_to_clip.instance_index = instance_index;
+        out_to_clip.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        return out_to_clip;
     }
 
-    /*
-    // Snap to pixel grid to avoid sub-pixel jitter when zooming/panning
-    let pixel_pos = vec2<f32>(0.5, 0.5) * (ndc_position + vec2<f32>(1.0, 1.0)) * u.viewport_size;
 
-    pixel_pos = floor(pixel_pos + 0.5); // Snap to nearest pixel
-    let snapped_position = (pixel_pos / vec2<f32>(u.viewport_size.x, u.viewport_size.y)) * 2.0 - 1.0;
-    */
-
-    // Pick corner of quad and place around center
-    let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
-    let offset_ndc = vec2<f32>(corner.x * radius_ndc.x, corner.y * radius_ndc.y);
+    let pos = vec4f(point_pos_to_ndc.x * 1.0 + (corner.x * point_size_ndc.x), point_pos_to_ndc.y * 1.0 + (corner.y * point_size_ndc.y), 0.0, 1.0);
 
     var out: VSOut;
-    out.position = vec4<f32>(center_ndc + offset_ndc, 0.0, 1.0);
+    out.position = pos;
     out.color = u.color;
     // Pass quad position in [0, 1] range for fragment shader.
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     // Pass valid bounds to fragment shader for per-fragment clipping
-    out.valid_bounds = vec4<f32>(valid_min, valid_max);
+    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     return out;
 }
 
@@ -171,7 +200,8 @@ fn fs_main(
     @location(2) @interpolate(flat) instance_index: u32,
     @location(3) valid_bounds: vec4<f32>,
 ) -> FSOut {
-// Convert fragment coordinate from screen space back to NDC
+    /*
+    // Convert fragment coordinate from screen space back to NDC
     let screen_pos = frag_coord.xy;
     let ndc_pos = vec2<f32>(
         (screen_pos.x / u.viewport_size.x) * 2.0 - 1.0,        // X unchanged
@@ -199,11 +229,11 @@ fn fs_main(
     if (alpha == 0.0) {
         discard;
     }
-
+*/
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;
     // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb * alpha, alpha);
+    out.color = vec4<f32>(category_color.rgb, 1.0);
     return out;
 }

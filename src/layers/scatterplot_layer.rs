@@ -2,7 +2,7 @@ use std::sync::Arc;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams};
+use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
@@ -13,8 +13,10 @@ struct ScatterplotUniforms {
     viewport_size: Vec2, // (width, height) in pixels
     plot_margin: Vec4,   // (top, right, bottom, left) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    point_size_px: f32,  // diameter in pixels
+    point_radius: f32,  // radius of each point
+    point_radius_units: u32, // 0 = pixels, 1 = data units
     color: Vec4,         // rgba color for points
+    aspect_ratio_mode: u32,
 }
 
 struct ScatterplotData {
@@ -32,7 +34,8 @@ pub struct ScatterplotLayer {
     x_key: String,
     y_key: String,
     color_key: Option<String>,
-    point_radius: Option<f32>,
+    point_radius: Option<f32>, // TODO: should this be required?
+    point_radius_unit_mode: Option<UnitsMode>, // TODO: should this be required?
     // Data will be None prior to runninng prepare().
     data: Option<ScatterplotData>,
 }
@@ -47,6 +50,7 @@ impl ScatterplotLayer {
         y_key: String,
         color_key: Option<String>,
         point_radius: Option<f32>,
+        point_radius_unit_mode: Option<UnitsMode>,
     ) -> Self {
         Self {
             view_params,
@@ -57,6 +61,7 @@ impl ScatterplotLayer {
             y_key,
             color_key,
             point_radius,
+            point_radius_unit_mode,
             data: None,
         }
     }
@@ -194,9 +199,18 @@ impl DrawToCanvas for ScatterplotLayer {
                 margin_bottom as f32,
                 margin_left as f32,
             ]),
-            point_size_px,
+            point_radius: point_size_px,
+            point_radius_units: match self.point_radius_unit_mode {
+                Some(UnitsMode::Pixels) | None => 0,
+                Some(UnitsMode::Data) => 1,
+            },
             viewport_size: Vec2::new(viewport_w, viewport_h),
             color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            aspect_ratio_mode: match self.view_params.aspect_ratio_mode {
+                AspectRatioMode::Ignore => 0,
+                AspectRatioMode::Contain => 1,
+                AspectRatioMode::Cover => 2,
+            },
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());

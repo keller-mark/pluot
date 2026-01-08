@@ -3,12 +3,36 @@ use crate::two::svg::{init_svg};
 use svg::node::element::Group;
 use crate::params::{RenderContext, RenderResult};
 
+#[derive(Clone, Debug)]
+pub enum AspectRatioMode {
+    /*
+     - 0: ignore / squeeze: For example,  a 200 x 100 canvas would show values from -1 to 1 in x and y. The -1 to 1 square would be stretched in the X direction since the canvas is wider than it is tall.
+
+     - 1: fit (contain): For example, a 200 x 100 canvas would range from -1 to 1 in the Y direction, and from -1-extra to 1+extra in the X direction. The -1 to 1 square would keep its square aspect ratio and would be fully visible inside the rectangle (with no part of this square clipped). The pixels would be centered.
+
+     - 2: fill (cover): For example, a 200 x 100 canvas would range from -1 to 1 in the X direction, and from -1+extra to 1-extra in the Y direction. The -1 to 1 square would keep its square aspect ratio but would be clipped in the Y direction (at the top and bottom) so that the entire canvas is filled/covered. The pixels would be centered.
+     */
+     Ignore,
+     Contain,
+     Cover,
+}
+
+#[derive(Clone, Debug)]
+pub enum UnitsMode {
+    // 0: pixels (e.g., for fixed pixel-unit sizes).
+    Pixels,
+    // 1: data units (e.g., for physical sizes).
+    Data,
+}
+
 // Struct to store anything at the view level (i.e., not layer-specific)
 #[derive(Clone, Debug)]
 pub struct ViewParams {
     pub view_id: String, // Just reuse the plot_id when there is a single view.
     pub width: u32,
     pub height: u32,
+
+    pub aspect_ratio_mode: AspectRatioMode,
 
     // Device pixel ratio to support retina displays.
     // Default to 1.0 for standard displays.
@@ -36,6 +60,7 @@ impl Default for ViewParams {
             view_id: "default_view".to_string(),
             width: 100,
             height: 100,
+            aspect_ratio_mode: AspectRatioMode::Contain,
             device_pixel_ratio: 1.0,
             camera_view: None,
             timeout: None,

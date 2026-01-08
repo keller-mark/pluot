@@ -1,5 +1,5 @@
 use crate::layers::scatterplot_layer::ScatterplotLayer;
-use crate::layers::core::{render_canvas, ViewParams, PreparedAndDrawToCanvas};
+use crate::layers::core::{render_canvas, ViewParams, PreparedAndDrawToCanvas, AspectRatioMode, UnitsMode};
 use crate::wgpu;
 use crate::log;
 use crate::params::{PlotParams, RenderContext, RenderResult};
@@ -39,6 +39,7 @@ pub async fn render_layered_plot(
         camera_view: context.params.camera_view,
         timeout: context.params.timeout,
         cache_enabled: context.params.cache_enabled,
+        aspect_ratio_mode: AspectRatioMode::Ignore,
     };
 
     let layers: Vec<Box<dyn PreparedAndDrawToCanvas>> = vec![
@@ -51,6 +52,7 @@ pub async fn render_layered_plot(
             plot_params.y_key.clone(),
             plot_params.color_key.clone(),
             plot_params.point_radius,
+            Some(UnitsMode::Pixels),
         )),
     ];
 
