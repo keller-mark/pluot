@@ -1,3 +1,6 @@
+// TODO: see https://github.com/visgl/deck.gl/blob/master/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L66
+// But keep in mind that deck.gl combines multiple shader modules together https://github.com/visgl/deck.gl/commit/777916acd6db7d9ffd0958289152a14319b396c5#diff-27e895578108a7dc7fc14d5d3e5310f4400844bc57431631a63631db79c19f13
+
 struct Uniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     plot_margin: vec4<f32>, // (top | right | bottom | left) in pixels
