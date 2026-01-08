@@ -76,18 +76,72 @@ fn vs_main(
 
     // View aspect ratio
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
-    let viewport_w = u.viewport_size.x;
-    let viewport_h = u.viewport_size.y;
-    let view_aspect_ratio = viewport_w / viewport_h;
+    let view_width_px = u.viewport_size.x;
+    let view_height_px = u.viewport_size.y;
+    // let view_aspect_ratio = view_width_px / view_height_px; // We don't care about this; We only care about the layer aspect ratio.
+
+    // Layer aspect ratio
+    // By "layer", we mean the inner plotting area, excluding margins.
+    let margin_top_px = u.plot_margin.x;
+    let margin_right_px = u.plot_margin.y;
+    let margin_bottom_px = u.plot_margin.z;
+    let margin_left_px = u.plot_margin.w;
+
+    let layer_width_px = view_width_px - (margin_left_px + margin_right_px);
+    let layer_height_px = view_height_px - (margin_top_px + margin_bottom_px);
+    let layer_aspect_ratio = layer_width_px / layer_height_px;
+
+    // Determine the x and y extents to use,
+    // based on the aspect ratio mode and layer aspect ratio.
+    // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
+    var x_extent_for_aspect_ratio_mode = 1.0;
+    var y_extent_for_aspect_ratio_mode = 1.0;
+    if (u.aspect_ratio_mode == 1u) {
+        // fit/contain
+        if (layer_aspect_ratio > 1.0) {
+            // Wide rectangle
+            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+            x_extent_for_aspect_ratio_mode = layer_aspect_ratio;
+        } else if(layer_aspect_ratio < 1.0) {
+            // Tall layer
+            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
+            y_extent_for_aspect_ratio_mode = layer_aspect_ratio;
+        } else {
+            // Square layer; no change needed.
+            // Show exactly (0, 1) in both directions.
+        }
+    } else if (u.aspect_ratio_mode == 2u) {
+        // fill/cover
+        if(layer_aspect_ratio > 1.0) {
+            // Wide rectangle
+            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
+            y_extent_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+        } else if(layer_aspect_ratio < 1.0) {
+            // Tall layer
+            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+            x_extent_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+        } else {
+            // Square layer; no change needed.
+            // Show exactly (0, 1) in both directions.
+        }
+    }
+
+    // TODO: is this correct?
+    let ASPECT_RATIO_MAT = scale(
+        x_extent_for_aspect_ratio_mode, // should this be inverted? 1 / x_extent_for_aspect_ratio_mode?
+        y_extent_for_aspect_ratio_mode, // should this be inverted? 1 / y_extent_for_aspect_ratio_mode?
+        1.0
+    );
+
 
     // Model-view-projection matrix
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
-    let projection: mat4x4<f32> = mat4x4<f32>(
+    /*let projection: mat4x4<f32> = mat4x4<f32>(
         vec4<f32>(1.0 / view_aspect_ratio, 0.0, 0.0, 0.0), // Column 0
         vec4<f32>(0.0, 1.0, 0.0, 0.0), // Column 1
         vec4<f32>(0.0, 0.0, 1.0, 0.0), // Column 2
         vec4<f32>(0.0, 0.0, 0.0, 1.0), // Column 3
-    );
+    );*/
     //let model_view_projection = projection * u.camera_view;
 
 
@@ -95,15 +149,15 @@ fn vs_main(
 
     // TODO: handle point size in data coordinate system units.
     let point_size_ndc = vec2<f32>(
-        u.point_radius / viewport_w,
-        u.point_radius / viewport_h
+        u.point_radius / view_width_px,
+        u.point_radius / view_height_px
     );
 
     let margin_ndc = vec4<f32>(
-        u.plot_margin.x / viewport_h, // top
-        u.plot_margin.y / viewport_w, // right
-        u.plot_margin.z / viewport_h, // bottom
-        u.plot_margin.w / viewport_w  // left
+        margin_top_px / view_height_px, // top
+        margin_right_px / view_width_px, // right
+        margin_bottom_px / view_height_px, // bottom
+        margin_left_px / view_width_px  // left
     );
     // Transformation matrix so that points are drawn within the plot area.
     let MARGIN_MAT = translate(
@@ -133,7 +187,7 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    let point_pos_to_ndc = u.camera_view * MARGIN_MAT * NORM_MAT * vec4(point_pos_orig, 0.0, 1.0);
+    let point_pos_to_ndc = NORM_MAT * MARGIN_MAT * ASPECT_RATIO_MAT * u.camera_view * vec4(point_pos_orig, 0.0, 1.0);
 
     let margin_left_threshold = -1.0 + 2.0 * margin_ndc.w;
     let margin_right_threshold = 1.0 - 2.0 * margin_ndc.y;

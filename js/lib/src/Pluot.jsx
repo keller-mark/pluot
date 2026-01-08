@@ -262,7 +262,7 @@ export function Pluot(props) {
       const renderParams = {
         width,
         height,
-        margin_bottom: 0.0,
+        margin_bottom: 400.0,
         margin_left: 0.0,
         margin_top: 0.0,
         margin_right: 0.0,
