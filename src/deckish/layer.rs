@@ -63,7 +63,7 @@ pub trait DrawToSvg {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToCanvas {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &wgpu::RenderPass<'_>);
+    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass);
 }
 
 pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
@@ -138,7 +138,7 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
         for layer in &layers {
             // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
             // Should we instead assume the layer already has the necessary info from view_params?
-            layer.draw(context.device.clone(), context.queue.clone(), &render_pass).await;
+            layer.draw(context.device.clone(), context.queue.clone(), &mut render_pass).await;
         }
 
         drop(render_pass);
