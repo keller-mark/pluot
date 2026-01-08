@@ -132,6 +132,8 @@ fn vs_main(
         1.0
     );
 
+    // NOTE: these same calculations will need to be done on the CPU as well,
+    // to determine the extents to use for the axes.
 
     // Model-view-projection matrix
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
