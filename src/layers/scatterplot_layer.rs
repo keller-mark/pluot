@@ -2,7 +2,7 @@ use std::sync::Arc;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::deckish::layer::{DrawToCanvas, PreparedLayer, ViewParams};
+use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};

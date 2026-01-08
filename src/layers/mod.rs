@@ -1,2 +1,2 @@
-pub mod layer;
+pub mod core;
 pub mod scatterplot_layer;

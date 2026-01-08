@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use crate::deckish::scatterplot_layer::ScatterplotLayer;
-use crate::deckish::layer::{render_canvas, ViewParams, PreparedAndDrawToCanvas};
+use crate::layers::scatterplot_layer::ScatterplotLayer;
+use crate::layers::core::{render_canvas, ViewParams, PreparedAndDrawToCanvas};
 use crate::wgpu;
 use crate::log;
 use encase::{ShaderType, UniformBuffer};

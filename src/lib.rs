@@ -4,7 +4,7 @@ mod params;
 mod plots;
 mod cache;
 mod render;
-mod deckish;
+mod layers;
 
 pub(crate) mod timeout;
 pub mod two;
