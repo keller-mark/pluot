@@ -1,34 +1,13 @@
-use std::borrow::Cow;
-
 use crate::layers::scatterplot_layer::ScatterplotLayer;
 use crate::layers::core::{render_canvas, ViewParams, PreparedAndDrawToCanvas};
 use crate::wgpu;
 use crate::log;
-use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
-/*
-use vello::{
-    peniko::{Blob, Brush, Color, Fill, Font},
-    kurbo::{Affine, Circle, Ellipse, Line, RoundedRect, Stroke},
-    AaConfig, AaSupport, Renderer, RendererOptions, RenderParams, Scene,
-};
-*/
 use crate::params::{PlotParams, RenderContext, RenderResult};
-
 use crate::d3::axis::{Axis, AxisOrientation};
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
-
-#[derive(ShaderType, Debug)]
-struct ScatterplotUniforms {
-    viewport_size: Vec2, // (width, height) in pixels
-    plot_margin: Vec4,   // (top, right, bottom, left) in pixels
-    camera_view: Mat4,   // mat4x4<f32>,
-    point_size_px: f32,  // diameter in pixels
-    color: Vec4,         // rgba color for points
-}
 
 pub async fn render_layered_plot(
     context: &mut RenderContext<'_>,
@@ -44,7 +23,7 @@ pub async fn render_layered_plot(
     let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f64;
     let margin_left = context.params.margin_left.unwrap_or(0.0) as f64;
 
-    let PlotParams::Scatterplot(scatterplot_params) = &context.params.plot_params else {
+    let PlotParams::LayeredPlot(plot_params) = &context.params.plot_params else {
         panic!("Expected scatterplot params");
     };
 
@@ -68,10 +47,10 @@ pub async fn render_layered_plot(
             store.clone(),
             context.params.store_name.clone(),
             "my_layer".to_string(),
-            scatterplot_params.x_key.clone(),
-            scatterplot_params.y_key.clone(),
-            scatterplot_params.color_key.clone(),
-            scatterplot_params.point_radius,
+            plot_params.x_key.clone(),
+            plot_params.y_key.clone(),
+            plot_params.color_key.clone(),
+            plot_params.point_radius,
         )),
     ];
 

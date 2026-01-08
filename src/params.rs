@@ -39,6 +39,16 @@ pub struct BarPlotRenderParams {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct LayeredPlotRenderParams {
+    pub x_key: String,
+    pub y_key: String,
+    pub color_key: Option<String>,
+    pub point_radius: Option<f32>,
+    // TODO: layers: Vec<LayerParams>,
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "plot_type", content = "plot_params")]
 pub enum PlotParams {
     // Using internally tagged enum representation.
@@ -48,6 +58,7 @@ pub enum PlotParams {
     Scatterplot3d(Scatterplot3dRenderParams),
     Bioimage(BioimageRenderParams),
     BarPlot(BarPlotRenderParams),
+    LayeredPlot(LayeredPlotRenderParams),
     Triangle, // No parameters
 }
 

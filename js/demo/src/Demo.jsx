@@ -63,6 +63,16 @@ const DEMOS = {
       y_key: "/wheat",
     }
   },
+  layered_plot: {
+    plot_type: "LayeredPlot",
+    store_name: "gaussian_quantiles_store",
+    plot_params: {
+      x_key: "/n_1000000/x_coords",
+      y_key: "/n_1000000/y_coords",
+      color_key: "/n_1000000/class_labels",
+      //point_radius: pointRadius,
+    },
+  },
 };
 
 export function Demo() {
@@ -106,6 +116,11 @@ export function Demo() {
                       point_radius: pointRadius,
                     }
                   : {}),
+                ...(plotType === "LayeredPlot"
+                  ? {
+                      point_radius: pointRadius,
+                    }
+                  : {}),
                 ...(plotType === "Bioimage"
                   ? {
                       target_z: zIndex,
@@ -121,6 +136,22 @@ export function Demo() {
       {plotType === "Scatterplot" ? (
         <div>
           <label>Point Radius (for Scatterplot):</label>
+          <input
+            type="range"
+            min={1.0}
+            max={100.0}
+            step={1.0}
+            value={pointRadius}
+            onChange={(e) => {
+              const newValue = parseFloat(e.target.value);
+              setPointRadius(newValue);
+            }}
+          />
+        </div>
+      ) : null}
+      {plotType === "LayeredPlot" ? (
+        <div>
+          <label>Point Radius (for LayeredPlot):</label>
           <input
             type="range"
             min={1.0}

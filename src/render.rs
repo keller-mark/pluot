@@ -126,9 +126,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     let render_result = match params.plot_params {
         PlotParams::Triangle => plots::triangle::render_triangle(&mut context, &mut encoder).await,
         PlotParams::Scatterplot(_) => {
-            // plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await
-            // TEMP: Testing the layered plot rendering here
-            plots::layered_plot::render_layered_plot(&mut context, &mut encoder).await
+            plots::scatterplot::render_scatterplot(&mut context, &mut encoder).await
         }
         PlotParams::Scatterplot3d(_) => {
             plots::scatterplot_3d::render_scatterplot_3d(&mut context, &mut encoder).await
@@ -137,6 +135,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             plots::bioimage::render_bioimage(&mut context, &mut encoder).await
         }
         PlotParams::BarPlot(_) => plots::barplot::render_barplot(&mut context, &mut encoder).await,
+        PlotParams::LayeredPlot(_) => {
+            plots::layered_plot::render_layered_plot(&mut context, &mut encoder).await
+        }
         _ => panic!("Unsupported plot type"),
     };
 
