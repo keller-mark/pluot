@@ -1,5 +1,8 @@
 #![cfg(all(not(target_arch = "wasm32"), feature = "test_plain_rust"))]
 
+// Run with
+// cargo test --features test_plain_rust
+
 use pluot::{render, RenderParams};
 
 #[tokio::test]
