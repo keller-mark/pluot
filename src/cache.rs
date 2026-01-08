@@ -128,4 +128,5 @@ pub async fn get_or_init_buffer(initializer: impl AsyncFnOnce() -> Vec<f32>, key
 }
 
 // TODO: Every render, try to clear things from the buffer_cache.
-// See egui FrameCache approach: clear any variables that were not used in the previous frame (for the same plot ID)
+// See egui FrameCache approach: clear any variables that were not used in the previous frame
+// (corresponding to the same plot ID and format (i.e., raster/vector)).
