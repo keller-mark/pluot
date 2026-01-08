@@ -101,7 +101,7 @@ fn vs_main(
         if (layer_aspect_ratio > 1.0) {
             // Wide rectangle
             // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_extent_for_aspect_ratio_mode = layer_aspect_ratio;
+            x_extent_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
         } else if(layer_aspect_ratio < 1.0) {
             // Tall layer
             // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
@@ -115,7 +115,7 @@ fn vs_main(
         if(layer_aspect_ratio > 1.0) {
             // Wide rectangle
             // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
-            y_extent_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+            y_extent_for_aspect_ratio_mode = layer_aspect_ratio;
         } else if(layer_aspect_ratio < 1.0) {
             // Tall layer
             // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
@@ -128,8 +128,8 @@ fn vs_main(
 
     // TODO: is this correct?
     let ASPECT_RATIO_MAT = scale(
-        1.0 / x_extent_for_aspect_ratio_mode, // should this be inverted? 1 / x_extent_for_aspect_ratio_mode?
-        1.0 / y_extent_for_aspect_ratio_mode, // should this be inverted? 1 / y_extent_for_aspect_ratio_mode?
+        x_extent_for_aspect_ratio_mode, // should this be inverted? 1 / x_extent_for_aspect_ratio_mode?
+        y_extent_for_aspect_ratio_mode, // should this be inverted? 1 / y_extent_for_aspect_ratio_mode?
         1.0
     );
 
@@ -153,20 +153,20 @@ fn vs_main(
         u.point_radius / view_height_px
     );
 
-    let margin_ndc = vec4<f32>(
-        margin_top_px / view_height_px, // top
-        margin_right_px / view_width_px, // right
-        margin_bottom_px / view_height_px, // bottom
-        margin_left_px / view_width_px  // left
-    );
+    // Convert margins from pixel to (0 to 1) normalized units.
+    let margin_top_norm = margin_top_px / view_height_px;
+    let margin_right_norm = margin_right_px / view_width_px;
+    let margin_bottom_norm = margin_bottom_px / view_height_px;
+    let margin_left_norm = margin_left_px / view_width_px;
+
     // Transformation matrix so that points are drawn within the plot area.
     let MARGIN_MAT = translate(
-        margin_ndc.w, // left
-        -margin_ndc.x, // top
+        margin_left_norm, // left
+        margin_bottom_norm, // bottom
         0.0
     ) * scale(
-        1.0 - (margin_ndc.y + margin_ndc.w),
-        1.0 - (margin_ndc.x + margin_ndc.z),
+        1.0 - (margin_left_norm + margin_right_norm),
+        1.0 - (margin_top_norm + margin_bottom_norm),
         1.0
     ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/top margins.
     // We operate in (0 to 1) space, since we apply MARGIN_MAT after MODEL_MAT.
@@ -190,10 +190,10 @@ fn vs_main(
     // TODO: is the ordering of this correct?
     let point_pos_to_ndc = NORM_MAT * MARGIN_MAT * ASPECT_RATIO_MAT * u.camera_view * vec4(point_pos_orig, 0.0, 1.0);
 
-    let margin_left_threshold = -1.0 + 2.0 * margin_ndc.w;
-    let margin_right_threshold = 1.0 - 2.0 * margin_ndc.y;
-    let margin_top_threshold = 1.0 - 2.0 * margin_ndc.x;
-    let margin_bottom_threshold = -1.0 + 2.0 * margin_ndc.z;
+    let margin_left_threshold = -1.0 + 2.0 * margin_left_norm;
+    let margin_right_threshold = 1.0 - 2.0 * margin_right_norm;
+    let margin_top_threshold = 1.0 - 2.0 * margin_top_norm;
+    let margin_bottom_threshold = -1.0 + 2.0 * margin_bottom_norm;
 
     // TODO: do more clipping in the fragment shader to account for points on the boundaries.
     if (point_pos_to_ndc.x < margin_left_threshold ||

@@ -263,9 +263,9 @@ export function Pluot(props) {
         width,
         height,
         margin_bottom: 0.0,
-        margin_left: 0.0,
+        margin_left: 400.0,
         margin_top: 0.0,
-        margin_right: 400.0,
+        margin_right: 0.0,
         device_pixel_ratio: window.devicePixelRatio,
         //zoom, // No longer used
         //targetX, // No longer used
