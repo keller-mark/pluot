@@ -76,9 +76,9 @@ pub async fn render_layered_plot(
             scatterplot_params.point_radius,
         )),
     ];
+
+    // TODO: render to canvas or svg depending on `format` param.
     let render_result = render_canvas(view_params, layers, context, encoder).await;
 
-    RenderResult {
-        bailed_early: false,
-    }
+    return render_result;
 }

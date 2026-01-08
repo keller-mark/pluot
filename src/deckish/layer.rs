@@ -95,7 +95,7 @@ pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn Prepare
     group
 }
 
-pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {
     // TODO: use futures.join! here
     // TODO: use maybe_timeout here
     for layer in &mut layers {
@@ -103,28 +103,16 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
     }
 
     // Create the render pass
-    // 1) Offscreen plot target
-    let layered_tex = context.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Layered Offscreen Texture"),
-        size: wgpu::Extent3d {
-            width: context.params.width,
-            height: context.params.height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: context.texture_desc.format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    let layered_view = layered_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let out_view = context
+        .out_tex
+        .create_view(&wgpu::TextureViewDescriptor::default());
 
     {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Layered Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &layered_view,
+                // Render directly to the context's out_tex, to avoid an extra render pass.
+                view: &out_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -149,8 +137,9 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
         drop(render_pass);
     }
 
-    // TODO: render directly to the context's out_tex, to avoid an extra render pass.
-    crate::render::overlay_pass(context, encoder, &layered_tex);
-
     // TODO: return RenderResult? How to aggregate results from multiple layers?
+
+    RenderResult {
+        bailed_early: false,
+    }
 }
