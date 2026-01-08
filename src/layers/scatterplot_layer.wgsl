@@ -94,18 +94,18 @@ fn vs_main(
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
-    var x_extent_for_aspect_ratio_mode = 1.0;
-    var y_extent_for_aspect_ratio_mode = 1.0;
+    var x_scale_for_aspect_ratio_mode = 1.0;
+    var y_scale_for_aspect_ratio_mode = 1.0;
     if (u.aspect_ratio_mode == 1u) {
         // fit/contain
         if (layer_aspect_ratio > 1.0) {
             // Wide rectangle
             // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_extent_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
         } else if(layer_aspect_ratio < 1.0) {
             // Tall layer
             // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
-            y_extent_for_aspect_ratio_mode = layer_aspect_ratio;
+            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
         } else {
             // Square layer; no change needed.
             // Show exactly (0, 1) in both directions.
@@ -115,21 +115,20 @@ fn vs_main(
         if(layer_aspect_ratio > 1.0) {
             // Wide rectangle
             // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
-            y_extent_for_aspect_ratio_mode = layer_aspect_ratio;
+            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
         } else if(layer_aspect_ratio < 1.0) {
             // Tall layer
             // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_extent_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
         } else {
             // Square layer; no change needed.
             // Show exactly (0, 1) in both directions.
         }
     }
 
-    // TODO: is this correct?
     let ASPECT_RATIO_MAT = scale(
-        x_extent_for_aspect_ratio_mode, // should this be inverted? 1 / x_extent_for_aspect_ratio_mode?
-        y_extent_for_aspect_ratio_mode, // should this be inverted? 1 / y_extent_for_aspect_ratio_mode?
+        x_scale_for_aspect_ratio_mode,
+        y_scale_for_aspect_ratio_mode,
         1.0
     );
 
@@ -168,7 +167,7 @@ fn vs_main(
         1.0 - (margin_left_norm + margin_right_norm),
         1.0 - (margin_top_norm + margin_bottom_norm),
         1.0
-    ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/top margins.
+    ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/bottom margins.
     // We operate in (0 to 1) space, since we apply MARGIN_MAT after MODEL_MAT.
 
     // POSITION = PROJECTION * MODEL * ORIG_POSITION
@@ -187,7 +186,6 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    // TODO: is the ordering of this correct?
     let point_pos_to_ndc = NORM_MAT * MARGIN_MAT * ASPECT_RATIO_MAT * u.camera_view * vec4(point_pos_orig, 0.0, 1.0);
 
     let margin_left_threshold = -1.0 + 2.0 * margin_left_norm;
