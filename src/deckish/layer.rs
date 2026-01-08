@@ -4,6 +4,7 @@ use svg::node::element::Group;
 use crate::params::{RenderContext, RenderResult};
 
 // Struct to store anything at the view level (i.e., not layer-specific)
+#[derive(Clone, Debug)]
 pub struct ViewParams {
     pub view_id: String, // Just reuse the plot_id when there is a single view.
     pub width: u32,
@@ -67,7 +68,11 @@ pub trait DrawToCanvas {
 }
 
 pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
+impl<T: PreparedLayer + DrawToSvg> PreparedAndDrawToSvg for T {}
+
 pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
+impl<T: PreparedLayer + DrawToCanvas> PreparedAndDrawToCanvas for T {}
+
 
 
 pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
