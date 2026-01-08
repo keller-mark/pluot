@@ -12,7 +12,7 @@ use futures_intrusive::channel::shared::oneshot_channel;
 use crate::params::RenderContext;
 pub use crate::params::{PlotParams, RenderParams, RenderResult};
 use crate::plots;
-use crate::cache::{get_or_init_gpu_context, get_or_init_store, get_or_init_buffer};
+use crate::cache::{get_or_init_gpu_context, get_or_init_store};
 
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.

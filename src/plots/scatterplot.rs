@@ -19,7 +19,7 @@ use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
 
-use crate::cache::get_or_init_buffer;
+use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 
 #[derive(ShaderType, Debug)]
 struct ScatterplotUniforms {
@@ -78,7 +78,7 @@ pub async fn render_scatterplot(
 
     // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
     let x_f32_future_deps = vec!["x_bytes".to_string(), context.params.store_name.to_string(), context.params.plot_id.to_string()];
-    let x_f32_future = get_or_init_buffer(async || {
+    let x_f32_future = use_memo_vec_f32(async || {
         let x_array_path = &scatterplot_params.x_key.as_ref();
         let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
         let x_array = x_array_future.await.unwrap();
@@ -91,7 +91,7 @@ pub async fn render_scatterplot(
     }, &x_f32_future_deps, context.params.cache_enabled);
 
     let y_f32_future_deps = vec!["y_bytes".to_string(), context.params.store_name.to_string(), context.params.plot_id.to_string()];
-    let y_f32_future = get_or_init_buffer(async || {
+    let y_f32_future = use_memo_vec_f32(async || {
         let y_array_path = &scatterplot_params.y_key.as_ref();
         let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
         let y_array = y_array_future.await.unwrap();

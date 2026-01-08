@@ -5,7 +5,7 @@ use glam::{Mat4, Vec2, Vec4};
 use crate::deckish::layer::{DrawToCanvas, PreparedLayer, ViewParams};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
-use crate::cache::get_or_init_buffer;
+use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 
 
 #[derive(ShaderType, Debug)]
@@ -68,41 +68,24 @@ impl PreparedLayer for ScatterplotLayer {
     async fn prepare(&mut self) {
         let store = self.store.clone();
 
-        let height = self.view_params.height as f64;
-        let width = self.view_params.width as f64;
+        let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.to_string(), self.layer_id.to_string()];
+        let l_i32_future = use_memo_vec_i32(async || {
+            let labels_array_path = &self.color_key.as_ref().expect("Color key");
+            let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
+            let labels_array = labels_array_future.await.unwrap();
+            let labels_subset = labels_array.subset_all();
+            let labels_result = labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset).await;
 
-        let margin_top = self.view_params.margin_top.unwrap_or(0.0) as f64;
-        let margin_right = self.view_params.margin_right.unwrap_or(0.0) as f64;
-        let margin_bottom = self.view_params.margin_bottom.unwrap_or(0.0) as f64;
-        let margin_left = self.view_params.margin_left.unwrap_or(0.0) as f64;
-
-        let labels_array_path = self.color_key.as_ref().expect("Color key");
-
-        let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
-
-        // Wait for all futures to complete
-        //let arr_open_results = futures::join!(labels_array_future);
-
-        let labels_array = labels_array_future.await.unwrap();
-
-        let labels_subset = labels_array.subset_all();
-
-        // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
-        let labels_result = labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset).await;
-
-        // Print the Zarr.json metadata to the JS console.
-        // log(&x_array.metadata().to_string_pretty());
-
-        // Read the whole array
-        let labels_vec = labels_result.unwrap();
-
-        // More efficient version that eliminates intermediate vectors and redundant operations
-        // Convert to f32 and cast to bytes directly - no for loop needed
-        let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
+            let labels_vec = labels_result.unwrap();
+            // More efficient version that eliminates intermediate vectors and redundant operations
+            // Convert to f32 and cast to bytes directly - no for loop needed
+            let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
+            labels_i32
+        }, &l_i32_future_deps, self.view_params.cache_enabled);
 
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
         let x_f32_future_deps = vec!["x_bytes".to_string(), self.store_name.to_string(), self.layer_id.to_string()];
-        let x_f32_future = get_or_init_buffer(async || {
+        let x_f32_future = use_memo_vec_f32(async || {
             let x_array_path = &self.x_key.as_ref();
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
             let x_array = x_array_future.await.unwrap();
@@ -115,7 +98,7 @@ impl PreparedLayer for ScatterplotLayer {
         }, &x_f32_future_deps, self.view_params.cache_enabled);
 
         let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.to_string(), self.layer_id.to_string()];
-        let y_f32_future = get_or_init_buffer(async || {
+        let y_f32_future = use_memo_vec_f32(async || {
             let y_array_path = &self.y_key.as_ref();
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
             let y_array = y_array_future.await.unwrap();
@@ -127,13 +110,13 @@ impl PreparedLayer for ScatterplotLayer {
             y_f32_inner
         }, &y_f32_future_deps, self.view_params.cache_enabled);
 
-        // Await in parallel.
-        let (x_f32, y_f32) = futures::join!(x_f32_future, y_f32_future);
+        // Await in parallel: Use futures::join, similar to Promise.all in JS.
+        let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
 
         self.data = Some(ScatterplotData {
             x_arr: x_f32,
             y_arr: y_f32,
-            labels_arr: labels_i32,
+            labels_arr: l_i32,
         });
     }
 }

@@ -21,8 +21,6 @@ use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
 
-use crate::cache::get_or_init_buffer;
-
 #[derive(ShaderType, Debug)]
 struct ScatterplotUniforms {
     viewport_size: Vec2, // (width, height) in pixels
