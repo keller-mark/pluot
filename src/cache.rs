@@ -10,13 +10,11 @@ use crate::zarr::AsyncZarritaStore;
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
-//static BUFFER_CACHE: OnceLock<Mutex<HashMap<String, Vec<f32>>>> = OnceLock::new();
-
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = const { RefCell::new(None) };
-    // TODO: How to generalize the BUFFER_CACHE to support other numeric dtypes?
-    // Would it be better (or possible) to cache resulting wgpu::Buffer objects (or their [u8] byte parameters)?
-    // Can entire Layer/Model objects be cached?
+    // TODO: How to generalize the USE_MEMO_CACHE___ to support other numeric dtypes?
+    // Would it be better (or possible) to cache wgpu::Buffer objects (or their [u8] byte parameters)?
+    // Can entire Layer Data objects be cached? Maybe via Enums like our PlotParams enums?
     static USE_MEMO_CACHE_VEC_F32: RefCell<Option<HashMap<Vec<String>, Vec<f32>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_VEC_I32: RefCell<Option<HashMap<Vec<String>, Vec<i32>>>> = const { RefCell::new(None) };
 }
@@ -133,7 +131,7 @@ pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys:
 // We want to balance type safety with code duplication.
 // I.e., we may want to avoid using Box<dyn Any> or similar approaches that lose type information,
 // since we don't want the downstream calling code to be doing a bunch of type casting/checking.
-// Maybe a macro could help here?
+// Maybe a macro could help here? Or enums, one enum per layer.data struct type?
 pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys: &[String], cache_enabled: bool) -> Vec<i32> {
     // Initializer param
     // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
@@ -175,6 +173,6 @@ pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys:
     buffer
 }
 
-// TODO: Every render, try to clear things from the buffer_cache.
+// TODO: Every render, try to clear things from the use_memo cache hash maps.
 // See egui FrameCache approach: clear any variables that were not used in the previous frame
 // (corresponding to the same plot ID and format (i.e., raster/vector)).
