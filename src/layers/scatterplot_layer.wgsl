@@ -128,8 +128,8 @@ fn vs_main(
 
     // TODO: is this correct?
     let ASPECT_RATIO_MAT = scale(
-        x_extent_for_aspect_ratio_mode, // should this be inverted? 1 / x_extent_for_aspect_ratio_mode?
-        y_extent_for_aspect_ratio_mode, // should this be inverted? 1 / y_extent_for_aspect_ratio_mode?
+        1.0 / x_extent_for_aspect_ratio_mode, // should this be inverted? 1 / x_extent_for_aspect_ratio_mode?
+        1.0 / y_extent_for_aspect_ratio_mode, // should this be inverted? 1 / y_extent_for_aspect_ratio_mode?
         1.0
     );
 
@@ -187,6 +187,7 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
+    // TODO: is the ordering of this correct?
     let point_pos_to_ndc = NORM_MAT * MARGIN_MAT * ASPECT_RATIO_MAT * u.camera_view * vec4(point_pos_orig, 0.0, 1.0);
 
     let margin_left_threshold = -1.0 + 2.0 * margin_ndc.w;
