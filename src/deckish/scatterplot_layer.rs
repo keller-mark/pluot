@@ -4,8 +4,7 @@ use glam::{Mat4, Vec2, Vec4};
 
 use crate::deckish::layer::{DrawToCanvas, PreparedLayer, ViewParams};
 use crate::deckish::model::{
-    Model, ModelOptions,
-    TableField, TableSchema, Table, SpecialArray,
+    Model, ModelOptions, SpecialArray, Table, TableField, TableSchema, UniformDescriptor
 };
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
@@ -80,29 +79,19 @@ impl ScatterplotLayer {
 
 
         // Create buffers
-        let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("X Coordinates Storage Buffer"),
-            size: x_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&x_buffer, 0, &x_bytes);
+        // TODO(clone): refactor SpecialArray to take references instead of cloning device/queue.
+        // It gets tricky since we need to consider the Buffer lifetime, which we may want to be shorter.
+        let mut x_special_array = SpecialArray::new(device.clone(), queue.clone());
+        x_special_array.set_data(x_bytes, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, None);
+        let x_buffer = x_special_array.get_buffer();
 
-        let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Y Coordinates Storage Buffer"),
-            size: y_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&y_buffer, 0, &y_bytes);
+        let mut y_special_array = SpecialArray::new(device.clone(), queue.clone());
+        y_special_array.set_data(y_bytes, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, None);
+        let y_buffer = y_special_array.get_buffer();
 
-        let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Class labels Storage Buffer"),
-            size: labels_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+        let mut labels_special_array = SpecialArray::new(device.clone(), queue.clone());
+        labels_special_array.set_data(labels_bytes, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, None);
+        let labels_buffer = labels_special_array.get_buffer();
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = self.view_params.camera_view.unwrap_or([
@@ -142,35 +131,88 @@ impl ScatterplotLayer {
         buffer.write(&uniform_struct).unwrap();
         let uniform_bytes = buffer.into_inner();
 
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Uniform Buffer"),
-            size: uniform_bytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
+        let mut u_special_array = SpecialArray::new(device.clone(), queue.clone());
+        u_special_array.set_data(&uniform_bytes, wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, None);
+        let u_buffer = u_special_array.get_buffer();
 
         let shader_source = wgpu::include_wgsl!("scatterplot_layer.wgsl");
 
         let options = ModelOptions {
             shader_source,
             attribute_schema: TableSchema {
-                num_rows: 0,
+                // TODO: should this attribute_schema value be different?
+                num_rows: 0 as u32,
                 fields: Vec::new(),
             },
             instanced_attribute_schema: TableSchema {
-                num_rows: 0,
-                fields: Vec::new(),
+                // TODO: should this instanced_attribute_schema value be different?
+                num_rows: n as u32,
+                fields: vec![
+                    TableField {
+                        name: "x".to_string(),
+                        field_type: wgpu::VertexFormat::Float32,
+                    },
+                    TableField {
+                        name: "y".to_string(),
+                        field_type: wgpu::VertexFormat::Float32,
+                    },
+                    TableField {
+                        name: "labels".to_string(),
+                        field_type: wgpu::VertexFormat::Sint32,
+                    },
+                ],
             },
-            uniforms: Vec::new(),
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            texture_format: wgpu::TextureFormat::Bgra8Unorm,
+            // Define the uniform descriptors.
+            uniforms: vec![
+                // The uniforms buffer.
+                UniformDescriptor {
+                    shader_stage: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    binding_type: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                // The X coordinates buffer.
+                UniformDescriptor {
+                    shader_stage: wgpu::ShaderStages::VERTEX,
+                    binding_type: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                // The Y coordinates buffer.
+                UniformDescriptor {
+                    shader_stage: wgpu::ShaderStages::VERTEX,
+                    binding_type: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+                // The class labels coordinates buffer.
+                UniformDescriptor {
+                    shader_stage: wgpu::ShaderStages::FRAGMENT,
+                    binding_type: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                },
+            ],
+            primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
+            texture_format: wgpu::TextureFormat::Rgba8UnormSrgb,
         };
 
-        let model = Model::new(device, options);
+        let mut model = Model::new(device, options);
 
-        // TODO: set_uniform_buffer, etc. here
+        // TODO(clone): refactor set_uniform_buffer to take references.
+        // It converts things to references internally anyway.
+        model.set_uniform_buffer(0, u_buffer.clone(), 0, uniform_bytes.len() as u64);
+        model.set_uniform_buffer(1, x_buffer.clone(), 0, x_bytes.len() as u64);
+        model.set_uniform_buffer(2, y_buffer.clone(), 0, y_bytes.len() as u64);
+        model.set_uniform_buffer(3, labels_buffer.clone(), 0, labels_bytes.len() as u64);
 
         return model;
     }

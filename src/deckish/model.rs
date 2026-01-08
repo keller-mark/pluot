@@ -66,16 +66,16 @@ const kMaxTexture2DMipLevels: u32 = 14;
 // Sequence of Field objects describing the columns of a table data structure.
 #[derive(Clone)]
 pub struct TableField {
-    name: String,
+    pub name: String,
     // TODO: add a `type` property?
     // getVertexFormatSize(field->type())
     // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/util/webgpu-utils.cc#L28
-    field_type: wgpu::VertexFormat,
+    pub field_type: wgpu::VertexFormat,
 }
 #[derive(Clone)]
 pub struct TableSchema {
-    num_rows: u32,
-    fields: Vec<TableField>,
+    pub num_rows: u32,
+    pub fields: Vec<TableField>,
 }
 #[derive(Clone)]
 pub struct Table {
@@ -112,7 +112,7 @@ impl SpecialArray {
         self.length
     }
     // TODO: make generic to support other data types.
-    pub fn set_data(&mut self, data: Vec<u8>, usage: wgpu::BufferUsages, index_format: wgpu::IndexFormat) {
+    pub fn set_data(&mut self, data: &[u8], usage: wgpu::BufferUsages, index_format: Option<wgpu::IndexFormat>) {
         // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/luma.gl/garrow/src/array.h#L58
         let buffer_byte_size = data.len() as u64 * std::mem::size_of::<u8>() as u64;
         if self.buffer.is_none() || self.buffer_byte_size != buffer_byte_size {
@@ -123,11 +123,13 @@ impl SpecialArray {
             0, &data
         );
         self.length = data.len() as i64 / (match index_format {
-            wgpu::IndexFormat::Uint16 => 2,
-            wgpu::IndexFormat::Uint32 => 4,
+            None => 1,
+            Some(wgpu::IndexFormat::Uint16) => 2,
+            Some(wgpu::IndexFormat::Uint32) => 4,
         } as i64);
         self.buffer_byte_size = buffer_byte_size;
-        self.index_format = Some(index_format);
+        // self.index_format is only used when the array is passed to Model.set_indices.
+        self.index_format = index_format;
     }
     pub fn create_buffer(&self, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
         self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -162,7 +164,7 @@ pub struct ModelOptions<'a> {
     // Attribute definitions.
     pub attribute_schema: TableSchema,
     // Instanced attribute definitions.
-    pub instanced_attribute_schema:  TableSchema,
+    pub instanced_attribute_schema: TableSchema,
     //  Uniform definitions.
     pub uniforms: Vec<UniformDescriptor>,
     // Type of geometry topology that will be contained in vertex buffers.

@@ -51,7 +51,7 @@ impl Default for ViewParams {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait PreparedLayer {
-    async fn prepare(&self);
+    async fn prepare(&mut self);
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -66,16 +66,16 @@ pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &wgpu::RenderPass<'_>);
 }
 
-trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
-trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
+pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
+pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
 
 
-pub async fn render_svg(view_params: ViewParams, layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
+pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
 
     // TODO: use futures.join! here
     // TODO: use maybe_timeout here
-    for layer in &layers {
+    for layer in &mut layers {
         layer.prepare().await;
     }
 
@@ -90,10 +90,10 @@ pub async fn render_svg(view_params: ViewParams, layers: Vec<Box<dyn PreparedAnd
     group
 }
 
-pub async fn render_canvas(view_params: ViewParams, layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
+pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) {
     // TODO: use futures.join! here
     // TODO: use maybe_timeout here
-    for layer in &layers {
+    for layer in &mut layers {
         layer.prepare().await;
     }
 
