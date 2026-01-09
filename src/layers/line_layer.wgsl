@@ -59,6 +59,36 @@ fn scale_to_handle_aspect_ratio(layer_aspect_ratio: f32, aspect_ratio_mode: u32)
     );
 }
 
+// Computes the final vertex position for a line quad.
+// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/line-layer/line-layer-vertex.glsl.h#L56
+fn extrude_line(
+    source_ndc: vec2<f32>,
+    target_ndc: vec2<f32>,
+    corner: vec2<f32>,
+    line_width_ndc: f32,
+    viewport_aspect_ratio: f32
+) -> vec2<f32> {
+    let p0 = source_ndc;
+    let p1 = target_ndc;
+
+    // Correct the aspect ratio of the line direction vector
+    // so that the normal is perpendicular in screen space.
+    var dir = p1 - p0;
+    dir.y /= viewport_aspect_ratio;
+    dir = normalize(dir);
+    dir.y *= viewport_aspect_ratio;
+
+    // Calculate the normal vector for extrusion.
+    let normal = normalize(vec2<f32>(-dir.y, dir.x));
+    let extrusion = normal * line_width_ndc * 0.5;
+
+    // Select the base point (source or target) and apply the extrusion.
+    // corner.x is -1 for source, +1 for target.
+    // corner.y is -1 or +1 for the side of the line.
+    let base_point = mix(p0, p1, (corner.x + 1.0) / 2.0);
+    return base_point + corner.y * extrusion;
+}
+
 struct LineLayerUniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
@@ -168,88 +198,34 @@ fn vs_main(
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
     let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
-    // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
-    // Where:
-    // - inputPosition - the 4D vertex position (homogeneous coordinate) in model space.
-    // - modelMatrix - the 4x4 matrix that transforms input vertices from model space to world space.
-    // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
-    // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
+    let transform_mat = LAYER_NORM_TO_VIEW_NORM_MAT * (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
-    let point_pos_norm = LAYER_NORM_TO_VIEW_NORM_MAT * (
-        // The camera from dom-2d-camera operates in NDC space.
-        // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
-        // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
-        // However, after this transformation, we want to be working in (0 to 1) normalized space.
+    // Transform source and target points to normalized view space
+    let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
+    let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
 
-        // The camera operates in NDC space, but your data is in normalized space. We need to:
-        // 1. Convert data from (0,1) to NDC (-1,1)
-        // 2. Apply camera
-        // 3. Convert back to (0,1)
-        // 4. Apply aspect ratio and margins
-        // 5. Convert final result to NDC for rendering
-        // We apply camera AFTER converting to NDC, and DON'T convert back until
-        // after all NDC-space operations are done. This keeps translations in the correct space.
+    // Convert to NDC for extrusion calculation
+    let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
+    let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
-        (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
-        // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(point_pos_orig, 0.0, 1.0)
-    );
-    let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
+    // TODO: Handle line_width_unit_mode == 1 (data coordinates)
+    let line_width_ndc = u.line_width / view_height_px * 2.0;
 
-    // Compute the vertex position by accounting for point position and point size.
-    // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
-    let point_radius_norm = vec4f(
-        u.point_radius / view_width_px,
-        u.point_radius / view_height_px,
-        0.0,
-        1.0
-    );
-    let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
-
-
-    // Compute margin thresholds in normalized space.
-
-    // Check clipping using leftmost/rightmost/topmost/bottommost point positions (i.e., account for point size).
-    let point_leftmost_norm = point_pos_norm.x - point_radius_norm.x;
-    let point_rightmost_norm = point_pos_norm.x + point_radius_norm.x;
-    let point_topmost_norm = point_pos_norm.y + point_radius_norm.y;
-    let point_bottommost_norm = point_pos_norm.y - point_radius_norm.y;
-
-    if (point_rightmost_norm < margin_left_norm ||
-        point_leftmost_norm > (1.0 - margin_right_norm) ||
-        point_topmost_norm < margin_bottom_norm || // TODO: double check signs for top/bottom comparisons
-        point_bottommost_norm > (1.0 - margin_top_norm)) {
-        // Point is completely outside the plot area; move it off-screen.
-        let offscreen_pos = vec4f(0.0, 0.0, 0.0, -1.0);
-        var out_to_clip: VSOut;
-        out_to_clip.position = offscreen_pos;
-        out_to_clip.color = u.color;
-        out_to_clip.quad_pos = vec2<f32>(0.0, 0.0);
-        out_to_clip.instance_index = instance_index;
-        out_to_clip.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        return out_to_clip;
-    }
-    // Point is either FULLY or PARTIALLY within the layer area (i.e., within the margins).
-    // Therefore, we need to clamp it to the margin bounds in case it is on the edge.
-    // TODO: when rendering circles (rather than squares), we may need to do more clipping in the fragment shader.
-    let margin_bottomleft_ndc = NORM_TO_NDC_MAT * vec4f(
-        margin_left_norm,
-        margin_bottom_norm,
-        0.0,
-        1.0
-    );
-    let margin_topright_ndc = NORM_TO_NDC_MAT * vec4f(
-        1.0 - margin_right_norm,
-        1.0 - margin_top_norm,
-        0.0,
-        1.0
+    // Extrude the line to form a quad
+    let point_pos_ndc = extrude_line(
+        source_pos_ndc,
+        target_pos_ndc,
+        corner,
+        line_width_ndc,
+        layer_aspect_ratio
     );
 
-    // The final point position in NDC space.
+    // TODO: the clipping for lines must be done via the fragment shader,
+    // since we rely on interpolation to fill in the line quad.
+
     let pos = vec4f(
-        clamp(point_pos_ndc.x + (corner.x * point_radius_ndc.x), margin_bottomleft_ndc.x, margin_topright_ndc.x),
-        clamp(point_pos_ndc.y + (corner.y * point_radius_ndc.y), margin_bottomleft_ndc.y, margin_topright_ndc.y),
+        point_pos_ndc.x,
+        point_pos_ndc.y,
         0.0,
         1.0
     );
@@ -257,11 +233,9 @@ fn vs_main(
     var out: VSOut;
     out.position = pos;
     out.color = u.color;
-    // Pass quad position in [0, 1] range for fragment shader.
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
-    // Pass valid bounds to fragment shader for per-fragment clipping
-    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0); // Not used for lines yet
     return out;
 }
 

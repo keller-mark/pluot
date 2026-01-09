@@ -1,3 +1,4 @@
+use crate::layers::line_layer::LineLayer;
 use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
 use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDrawToCanvas, UnitsMode, ViewParams, render_canvas};
@@ -58,6 +59,23 @@ pub async fn render_layered_plot(
             plot_params.point_radius.unwrap_or(5.0),
             UnitsMode::Pixels,
             PointShapeMode::Square,
+        )),
+        Box::new(LineLayer::new(
+            view_params.clone(),
+            Some(MarginParams {
+                margin_top: Some(margin_top),
+                margin_right: Some(margin_right),
+                margin_bottom: Some(margin_bottom),
+                margin_left: Some(margin_left),
+            }),
+            "my_line_layer".to_string(),
+            5.0,
+            UnitsMode::Pixels,
+            vec![0.0, 0.0],
+            vec![0.0, 0.0],
+            vec![1.0, 1.0],
+            vec![1.0, 0.0],
+            vec![1, 2],
         )),
     ];
 
