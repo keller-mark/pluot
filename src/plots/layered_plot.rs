@@ -1,4 +1,5 @@
 use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
+use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
 use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDrawToCanvas, UnitsMode, ViewParams, render_canvas};
 use crate::wgpu;
 use crate::log;
@@ -40,7 +41,7 @@ pub async fn render_layered_plot(
     };
 
     let layers: Vec<Box<dyn PreparedAndDrawToCanvas>> = vec![
-        Box::new(ScatterplotLayer::new(
+        Box::new(ZarrScatterplotLayer::new(
             view_params.clone(),
             Some(MarginParams {
                 margin_top: Some(margin_top),
