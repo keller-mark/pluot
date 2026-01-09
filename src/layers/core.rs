@@ -25,6 +25,14 @@ pub enum UnitsMode {
     Data,
 }
 
+#[derive(Clone, Debug)]
+pub struct MarginParams {
+    pub margin_left: Option<f32>,
+    pub margin_right: Option<f32>,
+    pub margin_top: Option<f32>,
+    pub margin_bottom: Option<f32>,
+}
+
 // Struct to store anything at the view level (i.e., not layer-specific)
 #[derive(Clone, Debug)]
 pub struct ViewParams {
@@ -48,10 +56,7 @@ pub struct ViewParams {
     pub cache_enabled: bool,
 
     // Margins for plots that need them (e.g. scatterplot axes).
-    pub margin_left: Option<f32>,
-    pub margin_right: Option<f32>,
-    pub margin_top: Option<f32>,
-    pub margin_bottom: Option<f32>,
+    pub margins: Option<MarginParams>,
 
     // Note: Views should have margins, but these should be translated to "bounds" for layers.
     // This is because we may want to render certain layers in the margins
@@ -69,10 +74,7 @@ impl Default for ViewParams {
             camera_view: None,
             timeout: None,
             cache_enabled: true,
-            margin_left: None,
-            margin_right: None,
-            margin_top: None,
-            margin_bottom: None,
+            margins: None,
         }
     }
 }

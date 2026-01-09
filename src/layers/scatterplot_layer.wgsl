@@ -69,12 +69,13 @@ const CAMERA_VIEW_IDENTITY: mat4x4<f32> = mat4x4<f32>(
 
 struct Uniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
-    plot_margin: vec4<f32>, // (top | right | bottom | left) in pixels
+    layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
     point_radius: f32,
-    point_radius_units: u32, // 0: px units, 1: data coordinate system units
-    color: vec4<f32>,     // rgba color for points
+    point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
+    color: vec4<f32>,     // rgba color for points
 };
 
 struct VSOut {
@@ -123,10 +124,10 @@ fn vs_main(
 
     // Layer aspect ratio
     // By "layer", we mean the inner plotting area, excluding margins.
-    let margin_top_px = u.plot_margin.x;
-    let margin_right_px = u.plot_margin.y;
-    let margin_bottom_px = u.plot_margin.z;
-    let margin_left_px = u.plot_margin.w;
+    let margin_top_px = u.layer_margin.x;
+    let margin_right_px = u.layer_margin.y;
+    let margin_bottom_px = u.layer_margin.z;
+    let margin_left_px = u.layer_margin.w;
 
     let layer_width_px = view_width_px - (margin_left_px + margin_right_px);
     let layer_height_px = view_height_px - (margin_top_px + margin_bottom_px);

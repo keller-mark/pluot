@@ -2,7 +2,7 @@ use std::sync::Arc;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode};
+use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
@@ -11,12 +11,13 @@ use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 #[derive(ShaderType, Debug)]
 struct ScatterplotUniforms {
     viewport_size: Vec2, // (width, height) in pixels
-    plot_margin: Vec4,   // (top, right, bottom, left) in pixels
+    layer_margin: Vec4,   // (top, right, bottom, left) margins in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     point_radius: f32,  // radius of each point
-    point_radius_units: u32, // 0 = pixels, 1 = data units
+    point_radius_unit_mode: u32, // 0 = pixels, 1 = data units
+    point_shape_mode: u32, // 0 = square, 1 = circle
+    aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     color: Vec4,         // rgba color for points
-    aspect_ratio_mode: u32,
 }
 
 struct ScatterplotData {
@@ -25,17 +26,28 @@ struct ScatterplotData {
     labels_arr: Vec<i32>,
 }
 
+#[derive(Clone, Debug)]
+pub enum PointShapeMode {
+    // 0: square (basically no-op in fragment shader)
+    Square,
+    // 1: circles (convert square to circle in fragment shader)
+    Circle,
+}
+
 pub struct ScatterplotLayer {
     view_params: ViewParams,
     // TODO: do we want the store or just the store_name here?
     store: Arc<AsyncZarritaStore>,
     store_name: String,
     layer_id: String,
+    // If None, assume margin: 0 in all directions.
+    bounds: Option<MarginParams>,
     x_key: String,
     y_key: String,
     color_key: Option<String>,
-    point_radius: Option<f32>, // TODO: should this be required?
-    point_radius_unit_mode: Option<UnitsMode>, // TODO: should this be required?
+    point_radius: f32,
+    point_radius_unit_mode: UnitsMode,
+    point_shape_mode: PointShapeMode,
     // Data will be None prior to runninng prepare().
     data: Option<ScatterplotData>,
 }
@@ -43,17 +55,20 @@ pub struct ScatterplotLayer {
 impl ScatterplotLayer {
     pub fn new(
         view_params: ViewParams,
+        bounds: Option<MarginParams>,
         store: Arc<AsyncZarritaStore>,
         store_name: String,
         layer_id: String,
         x_key: String,
         y_key: String,
         color_key: Option<String>,
-        point_radius: Option<f32>,
-        point_radius_unit_mode: Option<UnitsMode>,
+        point_radius: f32,
+        point_radius_unit_mode: UnitsMode,
+        point_shape_mode: PointShapeMode,
     ) -> Self {
         Self {
             view_params,
+            bounds,
             store,
             store_name,
             layer_id,
@@ -62,6 +77,7 @@ impl ScatterplotLayer {
             color_key,
             point_radius,
             point_radius_unit_mode,
+            point_shape_mode,
             data: None,
         }
     }
@@ -179,38 +195,50 @@ impl DrawToCanvas for ScatterplotLayer {
             0.0, 0.0, 0.0, 1.0,
         ]);
 
-        let margin_top = self.view_params.margin_top.unwrap_or(0.0) as f64;
-        let margin_right = self.view_params.margin_right.unwrap_or(0.0) as f64;
-        let margin_bottom = self.view_params.margin_bottom.unwrap_or(0.0) as f64;
-        let margin_left = self.view_params.margin_left.unwrap_or(0.0) as f64;
+        let margin_top = if let Some(margin_params) = &self.bounds {
+            margin_params.margin_top.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_right = if let Some(margin_params) = &self.bounds {
+            margin_params.margin_right.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_bottom = if let Some(margin_params) = &self.bounds {
+            margin_params.margin_bottom.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_left = if let Some(margin_params) = &self.bounds {
+            margin_params.margin_left.unwrap_or(0.0)
+        } else { 0.0 } as f64;
 
-        let point_size_px: f32 = self.point_radius.unwrap_or(5.0);
+        let point_size_px: f32 = self.point_radius;
 
         let viewport_w = self.view_params.width as f32;
         let viewport_h = self.view_params.height as f32;
 
         // Construct the uniform struct using Encase.
         let uniform_struct = ScatterplotUniforms {
-            camera_view: Mat4::from_cols_array(&camera_view),
-            plot_margin: Vec4::from_array([
+            viewport_size: Vec2::new(viewport_w, viewport_h),
+            layer_margin: Vec4::from_array([
                 // top, right, bottom, left
                 margin_top as f32,
                 margin_right as f32,
                 margin_bottom as f32,
                 margin_left as f32,
             ]),
+            camera_view: Mat4::from_cols_array(&camera_view),
             point_radius: point_size_px,
-            point_radius_units: match self.point_radius_unit_mode {
-                Some(UnitsMode::Pixels) | None => 0,
-                Some(UnitsMode::Data) => 1,
+            point_radius_unit_mode: match self.point_radius_unit_mode {
+                UnitsMode::Pixels => 0,
+                UnitsMode::Data => 1,
             },
-            viewport_size: Vec2::new(viewport_w, viewport_h),
-            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            point_shape_mode: match self.point_shape_mode {
+                PointShapeMode::Square => 0,
+                PointShapeMode::Circle => 1,
+            },
             aspect_ratio_mode: match self.view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
                 AspectRatioMode::Contain => 1,
                 AspectRatioMode::Cover => 2,
             },
+            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());

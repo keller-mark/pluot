@@ -1,5 +1,5 @@
-use crate::layers::scatterplot_layer::ScatterplotLayer;
-use crate::layers::core::{render_canvas, ViewParams, PreparedAndDrawToCanvas, AspectRatioMode, UnitsMode};
+use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
+use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDrawToCanvas, UnitsMode, ViewParams, render_canvas};
 use crate::wgpu;
 use crate::log;
 use crate::params::{PlotParams, RenderContext, RenderResult};
@@ -18,10 +18,10 @@ pub async fn render_layered_plot(
     let height = context.params.height as f64;
     let width = context.params.width as f64;
 
-    let margin_top = context.params.margin_top.unwrap_or(0.0) as f64;
-    let margin_right = context.params.margin_right.unwrap_or(0.0) as f64;
-    let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f64;
-    let margin_left = context.params.margin_left.unwrap_or(0.0) as f64;
+    let margin_top = context.params.margin_top.unwrap_or(0.0) as f32;
+    let margin_right = context.params.margin_right.unwrap_or(0.0) as f32;
+    let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f32;
+    let margin_left = context.params.margin_left.unwrap_or(0.0) as f32;
 
     let PlotParams::LayeredPlot(plot_params) = &context.params.plot_params else {
         panic!("Expected scatterplot params");
@@ -31,10 +31,7 @@ pub async fn render_layered_plot(
         view_id: context.params.plot_id.to_string(),
         width: context.params.width,
         height: context.params.height,
-        margin_top: Some(margin_top as f32),
-        margin_right: Some(margin_right as f32),
-        margin_bottom: Some(margin_bottom as f32),
-        margin_left: Some(margin_left as f32),
+        margins: None,
         device_pixel_ratio: context.params.device_pixel_ratio,
         camera_view: context.params.camera_view,
         timeout: context.params.timeout,
@@ -45,14 +42,21 @@ pub async fn render_layered_plot(
     let layers: Vec<Box<dyn PreparedAndDrawToCanvas>> = vec![
         Box::new(ScatterplotLayer::new(
             view_params.clone(),
+            Some(MarginParams {
+                margin_top: Some(margin_top),
+                margin_right: Some(margin_right),
+                margin_bottom: Some(margin_bottom),
+                margin_left: Some(margin_left),
+            }),
             store.clone(),
             context.params.store_name.clone(),
             "my_layer".to_string(),
             plot_params.x_key.clone(),
             plot_params.y_key.clone(),
             plot_params.color_key.clone(),
-            plot_params.point_radius,
-            Some(UnitsMode::Pixels),
+            plot_params.point_radius.unwrap_or(5.0),
+            UnitsMode::Pixels,
+            PointShapeMode::Square,
         )),
     ];
 
