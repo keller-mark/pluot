@@ -223,6 +223,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             println!("Still polling");
         }*/
         //println!("buffer_slice.map_async");
+
+        // TODO: See how Graphite uses Vello
+        // Reference: https://github.com/GraphiteEditor/Graphite/blob/1b91198b28ddb5648c51a3754f2aecf75c32eafe/desktop/src/render/state.rs#L239
     }
 
     // Read and depad rows into a tightly packed RGBA buffer
