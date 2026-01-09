@@ -77,6 +77,22 @@ pub async fn render_layered_plot(
             vec![1.0, 0.0],
             vec![1, 2],
         )),
+        Box::new(ScatterplotLayer::new(
+            view_params.clone(),
+            Some(MarginParams {
+                margin_top: Some(margin_top),
+                margin_right: Some(margin_right),
+                margin_bottom: Some(margin_bottom),
+                margin_left: Some(margin_left),
+            }),
+            "my_test_scatter_layer".to_string(),
+            25.0,
+            UnitsMode::Pixels,
+            PointShapeMode::Square,
+            vec![0.0, 1.0, 0.0, 1.0],
+            vec![0.0, 1.0, 1.0, 0.0],
+            vec![1, 2, 3, 4],
+        )),
     ];
 
     // TODO: render to canvas or svg depending on `format` param.

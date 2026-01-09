@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn scale_to_handle_aspect_ratio(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -52,6 +52,8 @@ fn scale_to_handle_aspect_ratio(layer_aspect_ratio: f32, aspect_ratio_mode: u32)
         }
     }
 
+    // Only scaling will result in the (0, 1) region being centered.
+    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
     return scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
@@ -67,6 +69,7 @@ struct ScatterplotLayerUniforms {
     point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
     point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
+    aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     color: vec4<f32>,     // rgba color for points
 };
 
@@ -126,7 +129,7 @@ fn vs_main(
     let layer_aspect_ratio = layer_width_px / layer_height_px;
 
     // Get the scale() matrix to handle the aspect ratio mode.
-    let ASPECT_RATIO_MAT = scale_to_handle_aspect_ratio(
+    let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
         u.aspect_ratio_mode
     );

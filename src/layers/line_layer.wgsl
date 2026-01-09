@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn scale_to_handle_aspect_ratio(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -160,7 +160,7 @@ fn vs_main(
     let layer_aspect_ratio = layer_width_px / layer_height_px;
 
     // Get the scale() matrix to handle the aspect ratio mode.
-    let ASPECT_RATIO_MAT = scale_to_handle_aspect_ratio(
+    let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
         u.aspect_ratio_mode
     );
