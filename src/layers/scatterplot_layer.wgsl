@@ -16,6 +16,49 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
+fn scale_to_handle_aspect_ratio(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+    // Determine the x and y extents to use,
+    // based on the aspect ratio mode and layer aspect ratio.
+    // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
+    var x_scale_for_aspect_ratio_mode = 1.0;
+    var y_scale_for_aspect_ratio_mode = 1.0;
+    if (aspect_ratio_mode == 1u) {
+        // fit/contain
+        if (layer_aspect_ratio > 1.0) {
+            // Wide rectangle
+            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+        } else if(layer_aspect_ratio < 1.0) {
+            // Tall layer
+            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
+            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+        } else {
+            // Square layer; no change needed.
+            // Show exactly (0, 1) in both directions.
+        }
+    } else if (aspect_ratio_mode == 2u) {
+        // fill/cover
+        if(layer_aspect_ratio > 1.0) {
+            // Wide rectangle
+            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
+            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+        } else if(layer_aspect_ratio < 1.0) {
+            // Tall layer
+            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+        } else {
+            // Square layer; no change needed.
+            // Show exactly (0, 1) in both directions.
+        }
+    }
+
+    return scale(
+        x_scale_for_aspect_ratio_mode,
+        y_scale_for_aspect_ratio_mode,
+        1.0
+    );
+}
+
 // Default camera view matrix (identity).
 const CAMERA_VIEW_IDENTITY: mat4x4<f32> = mat4x4<f32>(
   vec4<f32>(1.0, 0.0, 0.0, 0.0),
@@ -70,9 +113,7 @@ fn vs_main(
     // Center of this point in data space
     let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
 
-    // TODO: Display the 0 to 1 square when camera_view is identity.
-
-    // TODO: Handle multiple aspect ratio modes.
+    let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
     // View aspect ratio
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
@@ -91,71 +132,17 @@ fn vs_main(
     let layer_height_px = view_height_px - (margin_top_px + margin_bottom_px);
     let layer_aspect_ratio = layer_width_px / layer_height_px;
 
-    // Determine the x and y extents to use,
-    // based on the aspect ratio mode and layer aspect ratio.
-    // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
-    var x_scale_for_aspect_ratio_mode = 1.0;
-    var y_scale_for_aspect_ratio_mode = 1.0;
-    if (u.aspect_ratio_mode == 1u) {
-        // fit/contain
-        if (layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    } else if (u.aspect_ratio_mode == 2u) {
-        // fill/cover
-        if(layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    }
-
-    // TODO: refactor aspect ratio stuff into a function that returns this matrix
-    let ASPECT_RATIO_MAT = scale(
-        x_scale_for_aspect_ratio_mode,
-        y_scale_for_aspect_ratio_mode,
-        1.0
+    // Get the scale() matrix to handle the aspect ratio mode.
+    let ASPECT_RATIO_MAT = scale_to_handle_aspect_ratio(
+        layer_aspect_ratio,
+        u.aspect_ratio_mode
     );
 
     // NOTE: these same calculations will need to be done on the CPU as well,
     // to determine the extents to use for the axes.
 
-    // Model-view-projection matrix
-    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
-    /*let projection: mat4x4<f32> = mat4x4<f32>(
-        vec4<f32>(1.0 / view_aspect_ratio, 0.0, 0.0, 0.0), // Column 0
-        vec4<f32>(0.0, 1.0, 0.0, 0.0), // Column 1
-        vec4<f32>(0.0, 0.0, 1.0, 0.0), // Column 2
-        vec4<f32>(0.0, 0.0, 0.0, 1.0), // Column 3
-    );*/
-    //let model_view_projection = projection * u.camera_view;
-
-
-    let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
-
-    // TODO: handle point size in data coordinate system units.
-    let point_size_ndc = vec2<f32>(
-        u.point_radius / view_width_px,
-        u.point_radius / view_height_px
-    );
-
     // Convert margins from pixel to (0 to 1) normalized units.
+    // TODO: simplify and use more matrix operations once things are working.
     let margin_top_norm = margin_top_px / view_height_px;
     let margin_right_norm = margin_right_px / view_width_px;
     let margin_bottom_norm = margin_bottom_px / view_height_px;
@@ -173,24 +160,17 @@ fn vs_main(
         1.0 - (margin_top_norm + margin_bottom_norm),
         1.0
     ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/bottom margins.
-    // We operate in (0 to 1) space, since we apply MARGIN_MAT after MODEL_MAT.
 
-    // POSITION = PROJECTION * MODEL * ORIG_POSITION
-
-    // Transform (0, 1) into clip space ("NDC") (-1 to 1)
-    // This enables us to work in (0 to 1) space afterwards, which is more intuitive for me at the moment.
-    let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1.
-
-    let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Inverse of above.
+    // We operate in (0 to 1) space, since it is more intuitive.
+    // We therefore need matrices to transform (0, 1) into clip space ("NDC") (-1 to 1)
+    let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1 (i.e., translating in the scaled-up space)
+    // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
+    let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
     // Model-view-projection matrix
     // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
     let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
-
-    // TODO: use real camera_view. using identity only for testing.
-    //let point_pos_to_ndc = CAMERA_VIEW_IDENTITY * MODEL_MAT * vec4(point_pos_orig, 0.0, 1.0);
-    //
     // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
     // Where:
     // - inputPosition - the 4D vertex position (homogeneous coordinate) in model space.
@@ -198,12 +178,12 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    let point_pos_to_ndc = (NORM_TO_NDC_MAT * LAYER_NORM_TO_VIEW_NORM_MAT) * (
+    let point_pos_norm = LAYER_NORM_TO_VIEW_NORM_MAT * (
         // The camera from dom-2d-camera operates in NDC space.
         // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
         // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
         // However, after this transformation, we want to be working in (0 to 1) normalized space.
-        //
+
         // The camera operates in NDC space, but your data is in normalized space. We need to:
         // 1. Convert data from (0,1) to NDC (-1,1)
         // 2. Apply camera
@@ -212,19 +192,37 @@ fn vs_main(
         // 5. Convert final result to NDC for rendering
         // We apply camera AFTER converting to NDC, and DON'T convert back until
         // after all NDC-space operations are done. This keeps translations in the correct space.
-        (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * vec4(point_pos_orig, 0.0, 1.0)
+
+        (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
+        // TODO: support applying a model matrix (arbitrarily passed by the user)
+        // before applying the camera (i.e., transforming the data coordinates).
+        * vec4(point_pos_orig, 0.0, 1.0)
     );
+    let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
-    let margin_left_threshold = -1.0 + 2.0 * margin_left_norm;
-    let margin_right_threshold = 1.0 - 2.0 * margin_right_norm;
-    let margin_top_threshold = 1.0 - 2.0 * margin_top_norm;
-    let margin_bottom_threshold = -1.0 + 2.0 * margin_bottom_norm;
+    // Compute the vertex position by accounting for point position and point size.
+    // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
+    let point_radius_norm = vec4f(
+        u.point_radius / view_width_px,
+        u.point_radius / view_height_px,
+        0.0,
+        1.0
+    );
+    let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
-    // TODO: do more clipping in the fragment shader to account for points on the boundaries.
-    if (point_pos_to_ndc.x < margin_left_threshold ||
-        point_pos_to_ndc.x > margin_right_threshold ||
-        point_pos_to_ndc.y < margin_bottom_threshold ||
-        point_pos_to_ndc.y > margin_top_threshold) {
+
+    // Compute margin thresholds in normalized space.
+
+    // Check clipping using leftmost/rightmost/topmost/bottommost point positions (i.e., account for point size).
+    let point_leftmost_norm = point_pos_norm.x - point_radius_norm.x;
+    let point_rightmost_norm = point_pos_norm.x + point_radius_norm.x;
+    let point_topmost_norm = point_pos_norm.y + point_radius_norm.y;
+    let point_bottommost_norm = point_pos_norm.y - point_radius_norm.y;
+
+    if (point_rightmost_norm < margin_left_norm ||
+        point_leftmost_norm > (1.0 - margin_right_norm) ||
+        point_topmost_norm < margin_bottom_norm || // TODO: double check signs for top/bottom comparisons
+        point_bottommost_norm > (1.0 - margin_top_norm)) {
         // Point is completely outside the plot area; move it off-screen.
         let offscreen_pos = vec4f(0.0, 0.0, 0.0, -1.0);
         var out_to_clip: VSOut;
@@ -235,9 +233,29 @@ fn vs_main(
         out_to_clip.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
         return out_to_clip;
     }
+    // Point is either FULLY or PARTIALLY within the layer area (i.e., within the margins).
+    // Therefore, we need to clamp it to the margin bounds in case it is on the edge.
+    // TODO: when rendering circles (rather than squares), we may need to do more clipping in the fragment shader.
+    let margin_bottomleft_ndc = NORM_TO_NDC_MAT * vec4f(
+        margin_left_norm,
+        margin_bottom_norm,
+        0.0,
+        1.0
+    );
+    let margin_topright_ndc = NORM_TO_NDC_MAT * vec4f(
+        1.0 - margin_right_norm,
+        1.0 - margin_top_norm,
+        0.0,
+        1.0
+    );
 
-
-    let pos = vec4f(point_pos_to_ndc.x * 1.0 + (corner.x * point_size_ndc.x), point_pos_to_ndc.y * 1.0 + (corner.y * point_size_ndc.y), 0.0, 1.0);
+    // The final point position in NDC space.
+    let pos = vec4f(
+        clamp(point_pos_ndc.x + (corner.x * point_radius_ndc.x), margin_bottomleft_ndc.x, margin_topright_ndc.x),
+        clamp(point_pos_ndc.y + (corner.y * point_radius_ndc.y), margin_bottomleft_ndc.y, margin_topright_ndc.y),
+        0.0,
+        1.0
+    );
 
     var out: VSOut;
     out.position = pos;

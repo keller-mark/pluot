@@ -154,15 +154,19 @@ export function Demo() {
           <label>Point Radius (for LayeredPlot):</label>
           <input
             type="range"
-            min={1.0}
-            max={100.0}
-            step={1.0}
+            min={0.5}
+            max={50.0}
+            step={0.5}
             value={pointRadius}
             onChange={(e) => {
               const newValue = parseFloat(e.target.value);
               setPointRadius(newValue);
             }}
           />
+          <span>
+            {pointRadius}px (squares will be {pointRadius * 2.0}px * {pointRadius * 2.0}px in size)
+            <div className="test-square-point" style={{ backgroundColor: 'blue', width: `${pointRadius*2}px`, height: `${pointRadius*2}px`}} />
+          </span>
         </div>
       ) : null}
       {plotType === "Bioimage" ? (
