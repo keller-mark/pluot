@@ -39,7 +39,7 @@ pub async fn render_layered_plot(
         camera_view: context.params.camera_view,
         timeout: context.params.timeout,
         cache_enabled: context.params.cache_enabled,
-        aspect_ratio_mode: AspectRatioMode::Cover,
+        aspect_ratio_mode: AspectRatioMode::Contain,
     };
 
     let layers: Vec<Box<dyn PreparedAndDrawToCanvas>> = vec![

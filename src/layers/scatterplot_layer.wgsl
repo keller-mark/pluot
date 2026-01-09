@@ -132,6 +132,12 @@ fn vs_main(
         1.0
     );
 
+    let INV_ASPECT_RATIO_MAT = scale(
+        1.0 / x_scale_for_aspect_ratio_mode,
+        1.0 / y_scale_for_aspect_ratio_mode,
+        1.0
+    );
+
     // NOTE: these same calculations will need to be done on the CPU as well,
     // to determine the extents to use for the axes.
 
@@ -161,7 +167,9 @@ fn vs_main(
     let margin_left_norm = margin_left_px / view_width_px;
 
     // Transformation matrix so that points are drawn within the plot area.
-    let MARGIN_MAT = translate(
+    // I.e., transform from normalized "layer" space to normalized "view" space.
+    // Aka MARGIN_MAT (handles the view margins).
+    let LAYER_NORM_TO_VIEW_NORM_MAT = translate(
         margin_left_norm, // left
         margin_bottom_norm, // bottom
         0.0
@@ -176,7 +184,14 @@ fn vs_main(
 
     // Transform (0, 1) into clip space ("NDC") (-1 to 1)
     // This enables us to work in (0 to 1) space afterwards, which is more intuitive for me at the moment.
-    let NORM_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1.
+    let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1.
+
+    let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Inverse of above.
+
+    // Model-view-projection matrix
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
+
 
     // TODO: use real camera_view. using identity only for testing.
     //let point_pos_to_ndc = CAMERA_VIEW_IDENTITY * MODEL_MAT * vec4(point_pos_orig, 0.0, 1.0);
@@ -188,7 +203,22 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    let point_pos_to_ndc = NORM_MAT * MARGIN_MAT * ASPECT_RATIO_MAT * u.camera_view * vec4(point_pos_orig, 0.0, 1.0);
+    let point_pos_to_ndc = (NORM_TO_NDC_MAT * LAYER_NORM_TO_VIEW_NORM_MAT) * (
+        // The camera from dom-2d-camera operates in NDC space.
+        // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
+        // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
+        // However, after this transformation, we want to be working in (0 to 1) normalized space.
+        //
+        // The camera operates in NDC space, but your data is in normalized space. We need to:
+        // 1. Convert data from (0,1) to NDC (-1,1)
+        // 2. Apply camera
+        // 3. Convert back to (0,1)
+        // 4. Apply aspect ratio and margins
+        // 5. Convert final result to NDC for rendering
+        // We apply camera AFTER converting to NDC, and DON'T convert back until
+        // after all NDC-space operations are done. This keeps translations in the correct space.
+        (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * vec4(point_pos_orig, 0.0, 1.0)
+    );
 
     let margin_left_threshold = -1.0 + 2.0 * margin_left_norm;
     let margin_right_threshold = 1.0 - 2.0 * margin_right_norm;

@@ -52,6 +52,10 @@ pub struct ViewParams {
     pub margin_right: Option<f32>,
     pub margin_top: Option<f32>,
     pub margin_bottom: Option<f32>,
+
+    // Note: Views should have margins, but these should be translated to "bounds" for layers.
+    // This is because we may want to render certain layers in the margins
+    // (e.g., text/line layers for axes/titles/etc).
 }
 
 impl Default for ViewParams {
