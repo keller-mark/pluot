@@ -126,15 +126,10 @@ fn vs_main(
         }
     }
 
+    // TODO: refactor aspect ratio stuff into a function that returns this matrix
     let ASPECT_RATIO_MAT = scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
-        1.0
-    );
-
-    let INV_ASPECT_RATIO_MAT = scale(
-        1.0 / x_scale_for_aspect_ratio_mode,
-        1.0 / y_scale_for_aspect_ratio_mode,
         1.0
     );
 
