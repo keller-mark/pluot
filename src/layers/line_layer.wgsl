@@ -63,9 +63,8 @@ struct LineLayerUniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
-    point_radius: f32,
-    point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
-    point_shape_mode: u32, // 0: square; 1: circle
+    line_width: f32,
+    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     color: vec4<f32>,     // rgba color for points
 };
@@ -84,9 +83,11 @@ struct FSOut {
 
 // These group/binding locations will need to match with the locations used by Model.
 @group(0) @binding(0) var<uniform> u: LineLayerUniforms;
-@group(0) @binding(1) var<storage, read> x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
+@group(0) @binding(1) var<storage, read> source_x_coords: array<f32>;
+@group(0) @binding(2) var<storage, read> source_y_coords: array<f32>;
+@group(0) @binding(3) var<storage, read> target_x_coords: array<f32>;
+@group(0) @binding(4) var<storage, read> target_y_coords: array<f32>;
+@group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -103,8 +104,11 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Center of this point in data space
-    let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+    // Source and target points of this line
+    let source_point_pos_orig = vec2<f32>(source_x_coords[instance_index], source_y_coords[instance_index]);
+    let target_point_pos_orig = vec2<f32>(target_x_coords[instance_index], target_y_coords[instance_index]);
+
+    // TODO: adapt the rest of the code to draw lines rather than points.
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 

@@ -208,7 +208,7 @@ pub async fn draw_scatterplot_layer(
     // Create bind group layout and bind group for positions + uniforms
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Scatter BGL"),
+            label: Some("ScatterplotLayer BGL"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     // The uniforms buffer.
@@ -258,7 +258,7 @@ pub async fn draw_scatterplot_layer(
         });
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Scatter BG"),
+            label: Some("ScatterplotLayer BG"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
