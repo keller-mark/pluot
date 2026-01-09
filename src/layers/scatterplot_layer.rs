@@ -88,6 +88,7 @@ struct ScatterplotLayerUniforms {
     point_radius_unit_mode: u32, // 0 = pixels, 1 = data units
     point_shape_mode: u32, // 0 = square, 1 = circle
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
+    aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     color: Vec4,         // rgba color for points
 }
 
@@ -189,6 +190,7 @@ pub async fn draw_scatterplot_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
+        aspect_ratio_alignment_mode: 0, // center. TODO
         color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
     };
 
