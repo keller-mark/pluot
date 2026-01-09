@@ -59,7 +59,7 @@ fn scale_to_handle_aspect_ratio(layer_aspect_ratio: f32, aspect_ratio_mode: u32)
     );
 }
 
-struct ScatterplotLayerUniforms {
+struct LineLayerUniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
@@ -83,7 +83,7 @@ struct FSOut {
 };
 
 // These group/binding locations will need to match with the locations used by Model.
-@group(0) @binding(0) var<uniform> u: ScatterplotLayerUniforms;
+@group(0) @binding(0) var<uniform> u: LineLayerUniforms;
 @group(0) @binding(1) var<storage, read> x_coords: array<f32>;
 @group(0) @binding(2) var<storage, read> y_coords: array<f32>;
 @group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
@@ -279,9 +279,6 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
     return colors[index % 10];
 }
 
-fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-  return clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-}
 
 @fragment
 fn fs_main(
@@ -291,36 +288,7 @@ fn fs_main(
     @location(2) @interpolate(flat) instance_index: u32,
     @location(3) valid_bounds: vec4<f32>,
 ) -> FSOut {
-    /*
-    // Convert fragment coordinate from screen space back to NDC
-    let screen_pos = frag_coord.xy;
-    let ndc_pos = vec2<f32>(
-        (screen_pos.x / u.viewport_size.x) * 2.0 - 1.0,        // X unchanged
-        1.0 - (screen_pos.y / u.viewport_size.y) * 2.0         // Y flipped
-    );
 
-    // Extract valid bounds
-    let valid_min = valid_bounds.xy;
-    let valid_max = valid_bounds.zw;
-
-    // Check if this fragment is outside the valid region
-    if (ndc_pos.x < valid_min.x || ndc_pos.x > valid_max.x ||
-        ndc_pos.y < valid_min.y || ndc_pos.y > valid_max.y) {
-        discard;
-    }
-
-
-    // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
-    let radius_px = u.point_size_px / 2.0;
-    let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
-    let c = quad_pos * 2.0 - 1.0;
-    let sdf = length(c) * radius_px;
-    let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
-
-    if (alpha == 0.0) {
-        discard;
-    }
-*/
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;

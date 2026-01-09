@@ -1,6 +1,10 @@
-// Inspired by the DeckGL ScatterplotLayer
-// Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
+// Inspired by the DeckGL LineLayer.
+// Reference: https://deck.gl/docs/api-reference/layers/line-layer
 
+// The line layer should support rendering lines between pairs of points,
+// with customizable color and width.
+
+// In the initial implementation, color and width will be uniform for all lines (i.e., set globally for the layer).
 use std::sync::Arc;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
@@ -12,7 +16,7 @@ use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 
 
 #[derive(ShaderType, Debug)]
-struct ScatterplotUniforms {
+struct LineLayerUniforms {
     viewport_size: Vec2, // (width, height) in pixels
     layer_margin: Vec4,   // (top, right, bottom, left) margins in pixels
     camera_view: Mat4,   // mat4x4<f32>,
@@ -23,21 +27,16 @@ struct ScatterplotUniforms {
     color: Vec4,         // rgba color for points
 }
 
-struct ScatterplotData {
-    x_arr: Vec<f32>,
-    y_arr: Vec<f32>,
+struct LineLayerData {
+    // Lines are from source (x,y) to target (x,y).
+    source_x_arr: Vec<f32>,
+    source_y_arr: Vec<f32>,
+    target_x_arr: Vec<f32>,
+    target_y_arr: Vec<f32>,
     labels_arr: Vec<i32>,
 }
 
-#[derive(Clone, Debug)]
-pub enum PointShapeMode {
-    // 0: square (basically no-op in fragment shader)
-    Square,
-    // 1: circles (convert square to circle in fragment shader)
-    Circle,
-}
-
-pub struct ScatterplotLayer {
+pub struct LineLayer {
     view_params: ViewParams,
     // TODO: do we want the store or just the store_name here?
     store: Arc<AsyncZarritaStore>,
@@ -45,29 +44,33 @@ pub struct ScatterplotLayer {
     layer_id: String,
     // If None, assume margin: 0 in all directions.
     bounds: Option<MarginParams>,
-    x_key: String,
-    y_key: String,
+    // Source
+    source_x_key: String,
+    source_y_key: String,
+    // Target
+    target_x_key: String,
+    target_y_key: String,
     color_key: Option<String>,
-    point_radius: f32,
-    point_radius_unit_mode: UnitsMode,
-    point_shape_mode: PointShapeMode,
+    line_width: f32,
+    line_width_unit_mode: UnitsMode,
     // Data will be None prior to runninng prepare().
-    data: Option<ScatterplotData>,
+    data: Option<LineLayerData>,
 }
 
-impl ScatterplotLayer {
+impl LineLayer {
     pub fn new(
         view_params: ViewParams,
         bounds: Option<MarginParams>,
         store: Arc<AsyncZarritaStore>,
         store_name: String,
         layer_id: String,
-        x_key: String,
-        y_key: String,
+        source_x_key: String,
+        source_y_key: String,
+        target_x_key: String,
+        target_y_key: String,
         color_key: Option<String>,
-        point_radius: f32,
-        point_radius_unit_mode: UnitsMode,
-        point_shape_mode: PointShapeMode,
+        line_width: f32,
+        line_width_unit_mode: UnitsMode,
     ) -> Self {
         Self {
             view_params,
@@ -75,12 +78,13 @@ impl ScatterplotLayer {
             store,
             store_name,
             layer_id,
-            x_key,
-            y_key,
+            source_x_key,
+            source_y_key,
+            target_x_key,
+            target_y_key,
             color_key,
-            point_radius,
-            point_radius_unit_mode,
-            point_shape_mode,
+            line_width,
+            line_width_unit_mode,
             data: None,
         }
     }
@@ -88,13 +92,10 @@ impl ScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for ScatterplotLayer {
+impl PreparedLayer for LineLayer {
     async fn prepare(&mut self) {
         let store = self.store.clone();
 
-        // TODO: include the layer type in the memoization dependencies?
-        // But what if we want multiple layers to be able to reuse the same cached data?
-        // Then we should also avoid including the layer_id...
         let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.to_string(), self.layer_id.to_string()];
         let l_i32_future = use_memo_vec_i32(async || {
             let labels_array_path = &self.color_key.as_ref().expect("Color key");
@@ -113,7 +114,7 @@ impl PreparedLayer for ScatterplotLayer {
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
         let x_f32_future_deps = vec!["x_bytes".to_string(), self.store_name.to_string(), self.layer_id.to_string()];
         let x_f32_future = use_memo_vec_f32(async || {
-            let x_array_path = &self.x_key.as_ref();
+            let x_array_path = &self.source_x_key.as_ref();
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
             let x_array = x_array_future.await.unwrap();
             let x_subset = x_array.subset_all();
@@ -126,7 +127,7 @@ impl PreparedLayer for ScatterplotLayer {
 
         let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.to_string(), self.layer_id.to_string()];
         let y_f32_future = use_memo_vec_f32(async || {
-            let y_array_path = &self.y_key.as_ref();
+            let y_array_path = &self.source_y_key.as_ref();
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
             let y_array = y_array_future.await.unwrap();
             let y_subset = y_array.subset_all();
@@ -140,7 +141,7 @@ impl PreparedLayer for ScatterplotLayer {
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
         let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
 
-        self.data = Some(ScatterplotData {
+        self.data = Some(LineLayerData {
             x_arr: x_f32,
             y_arr: y_f32,
             labels_arr: l_i32,
@@ -150,7 +151,7 @@ impl PreparedLayer for ScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ScatterplotLayer {
+impl DrawToCanvas for LineLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
@@ -336,7 +337,7 @@ impl DrawToCanvas for ScatterplotLayer {
             });
 
         let shader = device
-            .create_shader_module(wgpu::include_wgsl!("scatterplot_layer.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("line_layer.wgsl"));
 
         let render_pipeline_layout = device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
