@@ -6,7 +6,7 @@ Note: [At first](https://github.com/keller-mark/pluot/pull/107), I started to po
 
 The "plain" layers will accept Rust numeric vectors as data.
 They can optionally be passed getter functions (inspired by those from DeckGL) that transform this data before creating the GPU buffers (the transformed data used for the buffers should be cached, and only re-computed when necessary (we may need to implement something analogous to DeckGL updateTriggers)).
-These plain layers will be helpful for testing, debugging, and customization.
+These plain layers will be helpful for testing, debugging, and customization (e.g., internal composite layers such as AxisLayer).
 
 We will also implement "zarr" layer variants of each "plain" layer that accept a Zarr store and corresponding keys into arrays in this store (rather than Rust vectors directly).
 The async "prepare" functions of these layers will read the Zarr data to obtain Rust vectors internally.
