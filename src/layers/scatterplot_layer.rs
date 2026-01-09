@@ -27,6 +27,7 @@ pub struct ScatterplotLayer {
     layer_id: String,
     // If None, assume margin: 0 in all directions.
     bounds: Option<MarginParams>,
+    data_unit_mode: UnitsMode,
     point_radius: f32,
     point_radius_unit_mode: UnitsMode,
     point_shape_mode: PointShapeMode,
@@ -40,6 +41,7 @@ impl ScatterplotLayer {
         view_params: ViewParams,
         bounds: Option<MarginParams>,
         layer_id: String,
+        data_unit_mode: UnitsMode,
         point_radius: f32,
         point_radius_unit_mode: UnitsMode,
         point_shape_mode: PointShapeMode,
@@ -52,6 +54,7 @@ impl ScatterplotLayer {
             view_params,
             bounds,
             layer_id,
+            data_unit_mode,
             point_radius,
             point_radius_unit_mode,
             point_shape_mode,
@@ -84,6 +87,7 @@ struct ScatterplotLayerUniforms {
     viewport_size: Vec2, // (width, height) in pixels
     layer_margin: Vec4,   // (top, right, bottom, left) margins in pixels
     camera_view: Mat4,   // mat4x4<f32>,
+    data_unit_mode: u32, // 0 = pixels, 1 = data units
     point_radius: f32,  // radius of each point
     point_radius_unit_mode: u32, // 0 = pixels, 1 = data units
     point_shape_mode: u32, // 0 = square, 1 = circle
@@ -99,6 +103,7 @@ pub async fn draw_scatterplot_layer(
     data: &ScatterplotLayerData,
     view_params: &ViewParams,
     bounds: &Option<MarginParams>,
+    data_unit_mode: &UnitsMode,
     point_radius: f32,
     point_radius_unit_mode: &UnitsMode,
     point_shape_mode: &PointShapeMode,
@@ -176,6 +181,10 @@ pub async fn draw_scatterplot_layer(
             margin_left as f32,
         ]),
         camera_view: Mat4::from_cols_array(&camera_view),
+        data_unit_mode: match data_unit_mode {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
         point_radius: point_radius,
         point_radius_unit_mode: match point_radius_unit_mode {
             UnitsMode::Pixels => 0,
@@ -358,6 +367,7 @@ impl DrawToCanvas for ScatterplotLayer {
             data,
             &self.view_params,
             &self.bounds,
+            &self.data_unit_mode,
             self.point_radius,
             &self.point_radius_unit_mode,
             &self.point_shape_mode,

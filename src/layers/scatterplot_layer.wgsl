@@ -65,6 +65,7 @@ struct ScatterplotLayerUniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
+    data_unit_mode: u32, // 0: pixel units, 1: data units // TODO: implement
     point_radius: f32,
     point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
     point_shape_mode: u32, // 0: square; 1: circle

@@ -93,6 +93,7 @@ struct LineLayerUniforms {
     viewport_size: vec2<f32>, // (width, height) in pixels
     layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
     camera_view: mat4x4<f32>,
+    data_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: support this
     line_width: f32,
     line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.

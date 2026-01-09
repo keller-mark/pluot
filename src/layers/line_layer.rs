@@ -28,6 +28,7 @@ pub struct LineLayer {
     // If None, assume margin: 0 in all directions.
     bounds: Option<MarginParams>,
 
+    data_unit_mode: UnitsMode,
     line_width: f32,
     line_width_unit_mode: UnitsMode,
     // Data will be None prior to runninng prepare().
@@ -39,6 +40,7 @@ impl LineLayer {
         view_params: ViewParams,
         bounds: Option<MarginParams>,
         layer_id: String,
+        data_unit_mode: UnitsMode,
         line_width: f32,
         line_width_unit_mode: UnitsMode,
         // TODO(ref): pass in references instead of owned Vecs?
@@ -52,6 +54,7 @@ impl LineLayer {
             view_params,
             bounds,
             layer_id,
+            data_unit_mode,
             line_width,
             line_width_unit_mode,
             data: Some(LineLayerData {
@@ -85,6 +88,7 @@ struct LineLayerUniforms {
     viewport_size: Vec2, // (width, height) in pixels
     layer_margin: Vec4,   // (top, right, bottom, left) margins in pixels
     camera_view: Mat4,   // mat4x4<f32>,
+    data_unit_mode: u32, // 0 = pixels, 1 = data units
     line_width: f32,  // width of each line
     line_width_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
@@ -98,6 +102,7 @@ pub async fn draw_line_layer(
     data: &LineLayerData,
     view_params: &ViewParams,
     bounds: &Option<MarginParams>,
+    data_unit_mode: &UnitsMode,
     line_width: f32,
     line_width_unit_mode: &UnitsMode,
 ) {
@@ -193,6 +198,10 @@ pub async fn draw_line_layer(
             margin_left as f32,
         ]),
         camera_view: Mat4::from_cols_array(&camera_view),
+        data_unit_mode: match data_unit_mode {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
         line_width,
         line_width_unit_mode: match line_width_unit_mode {
             UnitsMode::Pixels => 0,
@@ -400,6 +409,7 @@ impl DrawToCanvas for LineLayer {
             data,
             &self.view_params,
             &self.bounds,
+            &self.data_unit_mode,
             self.line_width,
             &self.line_width_unit_mode,
         ).await;
