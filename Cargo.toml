@@ -4,7 +4,9 @@ version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 edition = "2018"
 rust-version = "1.92"
-exclude = ["data", "js", "python", "python-notebooks"]
+exclude = ["data", "js", "python", "python-notebooks", "dev-docs", "webgpu-playground", "node_modules"]
+categories = ["visualization", "graphics", "rendering", "science", "wasm"]
+keywords = []
 
 # Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
 [package.metadata.wasm-pack.profile.release]
