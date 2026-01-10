@@ -10,6 +10,9 @@ pub(crate) mod timeout;
 pub mod two;
 mod zarr;
 
+mod maybe;
+pub use maybe::{MaybeSend, MaybeSync};
+
 // When using Vello:
 //pub use vello::wgpu;
 

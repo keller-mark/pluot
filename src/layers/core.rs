@@ -1,3 +1,4 @@
+use crate::MaybeSend;
 use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
@@ -98,13 +99,16 @@ pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass);
 }
 
-pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
-impl<T: PreparedLayer + DrawToSvg> PreparedAndDrawToSvg for T {}
+pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend {}
+impl<T: PreparedLayer + DrawToSvg + MaybeSend> PreparedAndDrawToSvg for T {}
 
-pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
-impl<T: PreparedLayer + DrawToCanvas> PreparedAndDrawToCanvas for T {}
+pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend {}
+impl<T: PreparedLayer + DrawToCanvas + MaybeSend> PreparedAndDrawToCanvas for T {}
 
-
+/// This trait combines `MaybeSend` and `MaybeSync`
+/// for an iterator over generic items.
+pub trait MaybeSendIterator: Iterator + MaybeSend {}
+impl<T: Iterator + MaybeSend> MaybeSendIterator for T {}
 
 pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
@@ -127,11 +131,17 @@ pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn Prepare
 }
 
 pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {
-    // TODO: use futures.join! here
-    // TODO: use maybe_timeout here
-    for layer in &mut layers {
-        layer.prepare().await;
-    }
+    // TODO: use maybe_timeout! here?
+
+    // Collect references first to avoid Send issues with the iterator
+    let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare()).collect();
+
+    futures::future::join_all(prepare_futures).await;
+
+    // For pyo3 usage, we need to use iterator types that are Send to avoid the following error
+    // when iterating over vectors of layers:
+    // "has type `std::slice::Iter<'_, Box<dyn PreparedAndDrawToCanvas>>` which is not `Send`"
+    let layer_refs: Vec<_> = layers.iter_mut().collect();
 
     // Create the render pass
     let out_view = context
@@ -159,7 +169,7 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
             multiview_mask: None,
         });
 
-        for layer in &layers {
+        for layer in layer_refs {
             // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
             // Should we instead assume the layer already has the necessary info from view_params?
             layer.draw(context.device.clone(), context.queue.clone(), &mut render_pass).await;

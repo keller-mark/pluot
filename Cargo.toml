@@ -20,7 +20,7 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Define features to toggle which dependency is active
 python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log"]
-test_plain_rust = ["tokio"]
+test_plain_rust = ["tokio"] # TODO: instead of this feature, can tokio be moved to dev-dependencies, even though it is also needed for the python feature?
 
 [dependencies]
 
