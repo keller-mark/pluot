@@ -131,6 +131,7 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
     // Collect references first to avoid Send issues with the iterator
     let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare()).collect();
 
+    // Does this actually work like Promise.all? or does it just run things sequentially?
     futures::future::join_all(prepare_futures).await;
 
     // For pyo3 usage, we need to use iterator types that are Send to avoid the following error
