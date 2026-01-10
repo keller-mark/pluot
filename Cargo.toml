@@ -144,3 +144,7 @@ lto = true
 # This also gives LLVM more opportunities to inline and prune functions.
 # This will make the .wasm smaller and faster, but will also make compilation even longer
 codegen-units = 1
+
+# During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
+[lints.rust]
+unused = "allow"
