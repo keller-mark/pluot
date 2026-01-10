@@ -221,8 +221,11 @@ fn vs_main(
         layer_aspect_ratio
     );
 
-    // TODO: the clipping for lines must be done via the fragment shader,
-    // since we rely on interpolation to fill in the line quad.
+    // The clipping for lines cannot be done the same way as for points;
+    // Since we are rendering lines using interpolation between the vertices of the quad,
+    // we cannot simply clamp coordinates along a single direction without considering the other direction,
+    // as this will change the slope of the line.
+    // TODO: implement proper clipping for lines.
 
     let pos = vec4f(
         point_pos_ndc.x,
