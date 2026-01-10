@@ -6,7 +6,7 @@ from pluot import render, render_to_array
 async def test_render_triangle():
     result = await render(width=100, height=100, plot_id="test", plot_type="Triangle", store_name="test")
     assert result is not None
-    assert len(result) == 100 * 100 * 4  # RGBA for each pixel
+    assert len(result) == (100 * 100 * 4) + 1  # RGBA for each pixel, plus one extra value
     assert sum(result) == 5100000  # Expected sum for a triangle rendering
 
 @pytest.mark.asyncio

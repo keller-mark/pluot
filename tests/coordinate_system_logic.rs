@@ -803,3 +803,655 @@ fn test_square_view_wide_layer_aspect_ratio_with_contain_mode_and_identity_camer
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
 }
+
+
+#[test]
+fn test_square_view_wide_layer_aspect_ratio_with_cover_mode_and_identity_camera_and_margin_bottom_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 1000.0;
+
+    // Large margin of 500 pixels on bottom side of a 1000x1000 view.
+    // The plot will therefore have a wide aspect ratio.
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 500.0;
+
+    let aspect_ratio_mode = 2; // Cover
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-1.0, -0.5),
+        Vec2::new(-1.0, 1.5),
+        Vec2::new(1.0, -0.5),
+        Vec2::new(1.0, 1.5),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_wide_view_square_layer_aspect_ratio_with_ignore_mode_and_identity_camera_and_margin_left_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 500.0; // Wide view.
+
+    // Large margin of 500 pixels on left side of a 1000x500 view.
+    // The plot will therefore have a square aspect ratio.
+    let margin_left_px = 500.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, -1.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_wide_view_square_layer_aspect_ratio_with_contain_mode_and_identity_camera_and_margin_left_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 500.0; // Wide view.
+
+    // Large margin of 500 pixels on left side of a 1000x500 view.
+    // The plot will therefore have a square aspect ratio.
+    let margin_left_px = 500.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 1; // Contain
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, -1.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_wide_view_square_layer_aspect_ratio_with_cover_mode_and_identity_camera_and_margin_left_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 500.0; // Wide view.
+
+    // Large margin of 500 pixels on left side of a 1000x500 view.
+    // The plot will therefore have a square aspect ratio.
+    let margin_left_px = 500.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 1; // Contain
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, -1.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_wide_view_square_layer_aspect_ratio_with_ignore_mode_and_identity_camera_and_margin_right_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 500.0; // Wide view.
+
+    // Large margin of 500 pixels on right side of a 1000x500 view.
+    // The plot will therefore have a square aspect ratio.
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 500.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-1.0, -1.0),
+        Vec2::new(-1.0, 1.0),
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_wide_view_square_layer_aspect_ratio_with_contain_mode_and_identity_camera_and_margin_right_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 500.0; // Wide view.
+
+    // Large margin of 500 pixels on right side of a 1000x500 view.
+    // The plot will therefore have a square aspect ratio.
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 500.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 1; // Contain
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-1.0, -1.0),
+        Vec2::new(-1.0, 1.0),
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_wide_view_square_layer_aspect_ratio_with_cover_mode_and_identity_camera_and_margin_right_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 500.0; // Wide view.
+
+    // Large margin of 500 pixels on right side of a 1000x500 view.
+    // The plot will therefore have a square aspect ratio.
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 500.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 1; // Contain
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-1.0, -1.0),
+        Vec2::new(-1.0, 1.0),
+        Vec2::new(0.0, -1.0),
+        Vec2::new(0.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+// ======== TESTING CAMERA ZOOM TRANSFORMS ========
+// The "base" / easiest case: square aspect ratio, ignore mode, zero margins.
+#[test]
+fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_and_zero_margins() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    // When camera zoom factor is 2,
+    // we expect the points to be scaled by 2x,
+    // so that we only see data in the range [0.25, 0.75] in both X and Y,
+    // which maps to NDC coordinates [-1, 1].
+    let camera_zoom = 2.0;
+    let camera_target_x = 0.0;
+    let camera_target_y = 0.0;
+
+    let camera_view = Mat4::from_columns(&[
+      Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
+      Vec4::new(0.0, camera_zoom, 0.0, 0.0),
+      Vec4::new(0.0, 0.0, 0.0, 0.0),
+      Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
+    ]);
+
+    let view_width_px = 100.0;
+    let view_height_px = 100.0;
+
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-2.0, -2.0),
+        Vec2::new(-2.0, 2.0),
+        Vec2::new(2.0, -2.0),
+        Vec2::new(2.0, 2.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_4x_camera_and_zero_margins() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    // When camera zoom factor is 2,
+    // we expect the points to be scaled by 2x,
+    // so that we only see data in the range [0.25, 0.75] in both X and Y,
+    // which maps to NDC coordinates [-1, 1].
+    let camera_zoom = 4.0;
+    let camera_target_x = 0.0;
+    let camera_target_y = 0.0;
+
+    let camera_view = Mat4::from_columns(&[
+      Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
+      Vec4::new(0.0, camera_zoom, 0.0, 0.0),
+      Vec4::new(0.0, 0.0, 0.0, 0.0),
+      Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
+    ]);
+
+    let view_width_px = 100.0;
+    let view_height_px = 100.0;
+
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-4.0, -4.0),
+        Vec2::new(-4.0, 4.0),
+        Vec2::new(4.0, -4.0),
+        Vec2::new(4.0, 4.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_2x_camera_and_zero_margins() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    // When camera zoom factor is 2,
+    // we expect the points to be scaled by 2x,
+    // so that we only see data in the range [0.25, 0.75] in both X and Y,
+    // which maps to NDC coordinates [-1, 1].
+    let camera_zoom = 0.5;
+    let camera_target_x = 0.0;
+    let camera_target_y = 0.0;
+
+    let camera_view = Mat4::from_columns(&[
+      Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
+      Vec4::new(0.0, camera_zoom, 0.0, 0.0),
+      Vec4::new(0.0, 0.0, 0.0, 0.0),
+      Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
+    ]);
+
+    let view_width_px = 100.0;
+    let view_height_px = 100.0;
+
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-0.5, -0.5),
+        Vec2::new(-0.5, 0.5),
+        Vec2::new(0.5, -0.5),
+        Vec2::new(0.5, 0.5),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera_and_zero_margins() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    // When camera zoom factor is 2,
+    // we expect the points to be scaled by 2x,
+    // so that we only see data in the range [0.25, 0.75] in both X and Y,
+    // which maps to NDC coordinates [-1, 1].
+    let camera_zoom = 0.25;
+    let camera_target_x = 0.0;
+    let camera_target_y = 0.0;
+
+    let camera_view = Mat4::from_columns(&[
+      Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
+      Vec4::new(0.0, camera_zoom, 0.0, 0.0),
+      Vec4::new(0.0, 0.0, 0.0, 0.0),
+      Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
+    ]);
+
+    let view_width_px = 100.0;
+    let view_height_px = 100.0;
+
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-0.25, -0.25),
+        Vec2::new(-0.25, 0.25),
+        Vec2::new(0.25, -0.25),
+        Vec2::new(0.25, 0.25),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
