@@ -2,16 +2,16 @@
 
 // In this file, we will check our logic for coordinate systems used in plotting,
 // and our matrix operations used in our shaders.
+// We need to test different combinations of:
+// - View aspect ratios (square, wide, tall)
+// - Margins (none, equal on all sides, only on some sides) resulting in different "layer" aspect ratios
+// - Aspect ratio modes (ignore/squeeze, fit/contain, fill/cover)
+// - Aspect ratio alignment modes (center, start, end)
+// - Camera matrices (identity, zoomed in, panned, both zoomed and panned)
+// - User-supplied model matrices (arbitrary affine transformations of the data points)
+// - Data unit modes (pixel units, data units)
 
-use nalgebra_glm as glm;
-
-use glm::{
-    Vec2,
-    Vec3,
-    Vec4,
-    Mat3,
-    Mat4,
-};
+use nalgebra_glm::{Vec2, Vec4, Mat4};
 
 
 fn scale(x: f32, y: f32, z: f32) -> Mat4 {
@@ -78,6 +78,10 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> Mat4
     );
 }
 
+// Here, we "simulate" the vertex shader logic in Rust,
+// enabling us to check the logic that we are using for handling margins, aspect ratios, and camera transforms.
+// It will require us to manually keep things in sync with the actual shader code, but that is ok.
+// The rust syntax is luckily very similar to WGSL.
 fn simulate_vertex_shader(
     point_pos_orig: Vec2,
     // "uniforms" below
@@ -88,7 +92,9 @@ fn simulate_vertex_shader(
     margin_top_px: f32,
     margin_right_px: f32,
     margin_bottom_px: f32,
-    aspect_ratio_mode: u32,
+    aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
+    aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end.
+    data_unit_mode: u32, // 0: pixel units, 1: data units.
 ) -> Vec2 {
     // Simulate the vertex shader logic here.
     // Ideally, use the same variable names, and where possible, the same syntax.
@@ -193,6 +199,8 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_zero_margin
     let margin_bottom_px = 0.0;
 
     let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -215,6 +223,8 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_zero_margin
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -245,6 +255,8 @@ fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_and_zero_margins(
     // When using a wide aspect ratio with "ignore",
     // we expect streching in the X direction.
     let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -269,6 +281,8 @@ fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_and_zero_margins(
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -299,6 +313,8 @@ fn test_wide_aspect_ratio_with_contain_mode_and_identity_camera_and_zero_margins
     // When using a wide aspect ratio with "contain",
     // we expect to be viewing more data in the X direction.
     let aspect_ratio_mode = 1; // Contain (fit)
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -323,6 +339,8 @@ fn test_wide_aspect_ratio_with_contain_mode_and_identity_camera_and_zero_margins
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -352,6 +370,8 @@ fn test_tall_aspect_ratio_with_contain_mode_and_identity_camera_and_zero_margins
     // When using a wide aspect ratio with "contain",
     // we expect to be viewing more data in the X direction.
     let aspect_ratio_mode = 1; // Contain (fit)
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -376,6 +396,8 @@ fn test_tall_aspect_ratio_with_contain_mode_and_identity_camera_and_zero_margins
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -406,6 +428,8 @@ fn test_wide_aspect_ratio_with_cover_mode_and_identity_camera_and_zero_margins()
     // When using a wide aspect ratio with "cover",
     // we expect to be viewing less data in the Y direction.
     let aspect_ratio_mode = 2; // Cover (fill)
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -430,6 +454,8 @@ fn test_wide_aspect_ratio_with_cover_mode_and_identity_camera_and_zero_margins()
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -459,6 +485,8 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_and_zero_margins()
     // When using a tall aspect ratio with "cover",
     // we expect to be viewing less data in the X direction.
     let aspect_ratio_mode = 2; // Cover (fill)
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -483,6 +511,8 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_and_zero_margins()
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -512,6 +542,8 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_margins_all
     let margin_bottom_px = 250.0;
 
     let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -534,6 +566,8 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_margins_all
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
@@ -563,6 +597,8 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_margins_bot
     let margin_bottom_px = 250.0;
 
     let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
 
     // After applying the "vertex shader" logic, we should obtain these
     // coordinates in NDC space.
@@ -585,6 +621,176 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_margins_bot
             margin_right_px,
             margin_bottom_px,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_and_margins_top_and_right() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 1000.0;
+
+    // Large margins of 250 pixels on top and right sides, for a 1000x1000 view.
+    // The plot will be therefore rendered in the bottom left, still with a square aspect ratio.
+    let margin_left_px = 0.0;
+    let margin_top_px = 250.0;
+    let margin_right_px = 250.0;
+    let margin_bottom_px = 0.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-1.0, -1.0),
+        Vec2::new(-1.0, 0.5),
+        Vec2::new(0.5, -1.0),
+        Vec2::new(0.5, 0.5),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+// In the margin tests above, we have always kept the aspect ratio of the inner plotting region a square.
+// In the margin tests below, we will create a non-square plotting regions via margins.
+
+#[test]
+fn test_square_view_wide_layer_aspect_ratio_with_ignore_mode_and_identity_camera_and_margin_bottom_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 1000.0;
+
+    // Large margin of 500 pixels on bottom side of a 1000x1000 view.
+    // The plot will therefore have a wide aspect ratio, but keep in mind we are using "ignore" mode here.
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 500.0;
+
+    let aspect_ratio_mode = 0; // Ignore
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(-1.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
+        )
+    }).collect();
+
+    assert_eq!(expected_points_ndc, resulting_points_ndc);
+}
+
+#[test]
+fn test_square_view_wide_layer_aspect_ratio_with_contain_mode_and_identity_camera_and_margin_bottom_only() {
+    // Consider data points at the corners of a unit square.
+    let points = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+    ];
+
+    let camera_view = Mat4::identity();
+
+    let view_width_px = 1000.0;
+    let view_height_px = 1000.0;
+
+    // Large margin of 500 pixels on bottom side of a 1000x1000 view.
+    // The plot will therefore have a wide aspect ratio.
+    let margin_left_px = 0.0;
+    let margin_top_px = 0.0;
+    let margin_right_px = 0.0;
+    let margin_bottom_px = 500.0;
+
+    let aspect_ratio_mode = 1; // Contain
+    let aspect_ratio_alignment_mode = 0; // Center
+    let data_unit_mode = 1; // Data units
+
+    // After applying the "vertex shader" logic, we should obtain these
+    // coordinates in NDC space.
+    let expected_points_ndc = vec![
+        Vec2::new(-0.5, 0.0),
+        Vec2::new(-0.5, 1.0),
+        Vec2::new(0.5, 0.0),
+        Vec2::new(0.5, 1.0),
+    ];
+
+    let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+        simulate_vertex_shader(
+            *point_pos_orig,
+            // "uniforms"
+            camera_view,
+            view_width_px,
+            view_height_px,
+            margin_left_px,
+            margin_top_px,
+            margin_right_px,
+            margin_bottom_px,
+            aspect_ratio_mode,
+            aspect_ratio_alignment_mode,
+            data_unit_mode,
         )
     }).collect();
 
