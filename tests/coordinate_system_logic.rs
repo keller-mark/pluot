@@ -11,6 +11,13 @@
 // - User-supplied model matrices (arbitrary affine transformations of the data points)
 // - Data unit modes (pixel units, data units)
 
+// Known things that need work/fixing:
+// - Implementing aspect ratio alignment modes
+// - Something is off about the camera handling when using non-square aspect ratios
+//   (see comment at end of get_aspect_ratio_mat function)
+// - Implementing user-supplied model matrices
+// - Implementing pixel unit mode
+
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 
 
