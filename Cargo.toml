@@ -127,6 +127,7 @@ features = ["js"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
+nalgebra-glm = "0.3" # Only used in the coordinate_system_logic tests.
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

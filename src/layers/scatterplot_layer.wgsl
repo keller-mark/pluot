@@ -166,7 +166,9 @@ fn vs_main(
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
     // Model-view-projection matrix
-    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // References:
+    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
     let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
     // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
