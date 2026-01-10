@@ -208,7 +208,7 @@ pub mod python {
 
     #[pyfunction]
     #[pyo3(signature = (**kwds))]
-    pub fn render_py(py: Python, kwds: Option<PyObject>) -> PyResult<Bound<PyAny>> {
+    pub fn render_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
         // Use the py parameter directly instead of Python::with_gil
         let params: RenderParams = if let Some(dict) = kwds {
             depythonize::<RenderParams>(&dict.into_bound(py)).unwrap()
