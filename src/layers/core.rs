@@ -1,4 +1,3 @@
-use crate::MaybeSend;
 use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
@@ -99,16 +98,12 @@ pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass);
 }
 
-pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend {}
-impl<T: PreparedLayer + DrawToSvg + MaybeSend> PreparedAndDrawToSvg for T {}
+pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
+impl<T: PreparedLayer + DrawToSvg> PreparedAndDrawToSvg for T {}
 
-pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend {}
-impl<T: PreparedLayer + DrawToCanvas + MaybeSend> PreparedAndDrawToCanvas for T {}
+pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
+impl<T: PreparedLayer + DrawToCanvas> PreparedAndDrawToCanvas for T {}
 
-/// This trait combines `MaybeSend` and `MaybeSync`
-/// for an iterator over generic items.
-pub trait MaybeSendIterator: Iterator + MaybeSend {}
-impl<T: Iterator + MaybeSend> MaybeSendIterator for T {}
 
 pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
