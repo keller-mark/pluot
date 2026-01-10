@@ -2,6 +2,7 @@ use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
 use crate::params::{RenderContext, RenderResult};
+use crate::maybe::MaybeSend;
 
 #[derive(Clone, Debug)]
 pub enum AspectRatioMode {
@@ -98,24 +99,31 @@ pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass);
 }
 
-pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg {}
-impl<T: PreparedLayer + DrawToSvg> PreparedAndDrawToSvg for T {}
+pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend {}
+impl<T: PreparedLayer + DrawToSvg + MaybeSend> PreparedAndDrawToSvg for T {}
 
-pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas {}
-impl<T: PreparedLayer + DrawToCanvas> PreparedAndDrawToCanvas for T {}
+pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend {}
+impl<T: PreparedLayer + DrawToCanvas + MaybeSend> PreparedAndDrawToCanvas for T {}
 
 
 pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
 
-    // TODO: use futures.join! here
-    // TODO: use maybe_timeout here
-    for layer in &mut layers {
-        layer.prepare().await;
-    }
+    // TODO: use maybe_timeout! here?
+
+    // Collect references first to avoid Send issues with the iterator
+    let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare()).collect();
+
+    // Does this actually work like Promise.all? or does it just run things sequentially?
+    futures::future::join_all(prepare_futures).await;
+
+    // For pyo3 usage, we need to use iterator types that are Send to avoid the following error
+    // when iterating over vectors of layers:
+    // "has type `std::slice::Iter<'_, Box<dyn PreparedAndDrawToCanvas>>` which is not `Send`"
+    let layer_refs: Vec<_> = layers.iter_mut().collect();
 
     let mut group = group;
-    for layer in &layers {
+    for layer in layer_refs {
         // TODO: when/where to pass view_params to each layer?
         group = layer.draw(&group).await;
     }
