@@ -18,10 +18,13 @@ Implement once, pluot everywhere (across languages, regardless of whether static
 ## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
-- __Small__: The bundle size (i.e., the WASM binary size) should be kept small (currently ~2MB) to make it feasible to use in web applications.
-- __Scalable__: Should scale to out-of-memory dataset sizes using partial reads of arrays/columns (currently using Zarr to achieve this) and data tiling/aggregation strategies.
-- __Vector__: Plotting functions should implement both raster and vector equivalents, to support publication-quality graphics export.
-- __Extensible__: Provide D3-like utilities to enable the development of highly customized plot types.
+- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 3MB) to make it feasible to integrate into web applications.
+- __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns (currently using Zarr to achieve this).
+- __Raster or Vector__: Plotting functions can implement both raster and vector rendering, to support publication-quality graphics export.
+- __Extensible__: Provides D3-like utilities to enable the development of highly customized plot types.
+- __Low-level or High-level__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
+__Polyglot__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
+
 
 ## How it works
 

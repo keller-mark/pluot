@@ -63,8 +63,7 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
 }
 
 struct ScatterplotLayerUniforms {
-    viewport_size: vec2<f32>, // (width, height) in pixels
-    layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
+    layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     data_unit_mode: u32, // 0: pixel units, 1: data units // TODO: implement
     point_radius: f32,
@@ -113,21 +112,12 @@ fn vs_main(
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
-    // View aspect ratio
-    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
-    let view_width_px = u.viewport_size.x;
-    let view_height_px = u.viewport_size.y;
-    // let view_aspect_ratio = view_width_px / view_height_px; // We don't care about this; We only care about the layer aspect ratio.
-
     // Layer aspect ratio
     // By "layer", we mean the inner plotting area, excluding margins.
-    let margin_top_px = u.layer_margin.x;
-    let margin_right_px = u.layer_margin.y;
-    let margin_bottom_px = u.layer_margin.z;
-    let margin_left_px = u.layer_margin.w;
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
+    let layer_width_px = u.layer_size.x;
+    let layer_height_px = u.layer_size.y;
 
-    let layer_width_px = view_width_px - (margin_left_px + margin_right_px);
-    let layer_height_px = view_height_px - (margin_top_px + margin_bottom_px);
     let layer_aspect_ratio = layer_width_px / layer_height_px;
 
     // Get the scale() matrix to handle the aspect ratio mode.
@@ -135,29 +125,6 @@ fn vs_main(
         layer_aspect_ratio,
         u.aspect_ratio_mode
     );
-
-    // NOTE: these same calculations will need to be done on the CPU as well,
-    // to determine the extents to use for the axes.
-
-    // Convert margins from pixel to (0 to 1) normalized units.
-    // TODO: simplify and use more matrix operations once things are working.
-    let margin_top_norm = margin_top_px / view_height_px;
-    let margin_right_norm = margin_right_px / view_width_px;
-    let margin_bottom_norm = margin_bottom_px / view_height_px;
-    let margin_left_norm = margin_left_px / view_width_px;
-
-    // Transformation matrix so that points are drawn within the plot area.
-    // I.e., transform from normalized "layer" space to normalized "view" space.
-    // Aka MARGIN_MAT (handles the view margins).
-    let LAYER_NORM_TO_VIEW_NORM_MAT = translate(
-        margin_left_norm, // left
-        margin_bottom_norm, // bottom
-        0.0
-    ) * scale(
-        1.0 - (margin_left_norm + margin_right_norm),
-        1.0 - (margin_top_norm + margin_bottom_norm),
-        1.0
-    ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/bottom margins.
 
     // We operate in (0 to 1) space, since it is more intuitive.
     // We therefore need matrices to transform (0, 1) into clip space ("NDC") (-1 to 1)
@@ -178,7 +145,7 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    let point_pos_norm = LAYER_NORM_TO_VIEW_NORM_MAT * (
+    let point_pos_norm = /*LAYER_NORM_TO_VIEW_NORM_MAT * */ (
         // The camera from dom-2d-camera operates in NDC space.
         // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
         // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
@@ -203,56 +170,17 @@ fn vs_main(
     // Compute the vertex position by accounting for point position and point size.
     // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
     let point_radius_norm = vec4f(
-        u.point_radius / view_width_px,
-        u.point_radius / view_height_px,
+        u.point_radius / layer_width_px,
+        u.point_radius / layer_height_px,
         0.0,
         1.0
     );
     let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
-
-    // Compute margin thresholds in normalized space.
-
-    // Check clipping using leftmost/rightmost/topmost/bottommost point positions (i.e., account for point size).
-    let point_leftmost_norm = point_pos_norm.x - point_radius_norm.x;
-    let point_rightmost_norm = point_pos_norm.x + point_radius_norm.x;
-    let point_topmost_norm = point_pos_norm.y + point_radius_norm.y;
-    let point_bottommost_norm = point_pos_norm.y - point_radius_norm.y;
-
-    if (point_rightmost_norm < margin_left_norm ||
-        point_leftmost_norm > (1.0 - margin_right_norm) ||
-        point_topmost_norm < margin_bottom_norm || // TODO: double check signs for top/bottom comparisons
-        point_bottommost_norm > (1.0 - margin_top_norm)) {
-        // Point is completely outside the plot area; move it off-screen.
-        let offscreen_pos = vec4f(0.0, 0.0, 0.0, -1.0);
-        var out_to_clip: VSOut;
-        out_to_clip.position = offscreen_pos;
-        out_to_clip.color = u.color;
-        out_to_clip.quad_pos = vec2<f32>(0.0, 0.0);
-        out_to_clip.instance_index = instance_index;
-        out_to_clip.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        return out_to_clip;
-    }
-    // Point is either FULLY or PARTIALLY within the layer area (i.e., within the margins).
-    // Therefore, we need to clamp it to the margin bounds in case it is on the edge.
-    // TODO: when rendering circles (rather than squares), we may need to do more clipping in the fragment shader.
-    let margin_bottomleft_ndc = NORM_TO_NDC_MAT * vec4f(
-        margin_left_norm,
-        margin_bottom_norm,
-        0.0,
-        1.0
-    );
-    let margin_topright_ndc = NORM_TO_NDC_MAT * vec4f(
-        1.0 - margin_right_norm,
-        1.0 - margin_top_norm,
-        0.0,
-        1.0
-    );
-
     // The final point position in NDC space.
     let pos = vec4f(
-        clamp(point_pos_ndc.x + (corner.x * point_radius_ndc.x), margin_bottomleft_ndc.x, margin_topright_ndc.x),
-        clamp(point_pos_ndc.y + (corner.y * point_radius_ndc.y), margin_bottomleft_ndc.y, margin_topright_ndc.y),
+        point_pos_ndc.x + (corner.x * point_radius_ndc.x),
+        point_pos_ndc.y + (corner.y * point_radius_ndc.y),
         0.0,
         1.0
     );

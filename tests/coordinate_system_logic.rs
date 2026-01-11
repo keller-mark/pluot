@@ -10,6 +10,8 @@
 // - Camera matrices (identity, zoomed in, panned, both zoomed and panned)
 // - User-supplied model matrices (arbitrary affine transformations of the data points)
 // - Data unit modes (pixel units, data units)
+//
+// See slides in https://docs.google.com/presentation/d/1Dnp93BjfdIPbHS_B1J1AHVq8jsc9U1xvJMG8yageLEI/edit?slide=id.p#slide=id.p
 
 // Known things that need work/fixing:
 // - Implementing aspect ratio alignment modes
@@ -95,7 +97,7 @@ fn simulate_vertex_shader(
     camera_view: Mat4,
     view_width_px: f32,
     view_height_px: f32,
-    margin_left_px: f32,
+    margin_left_px: f32, // TODO: remove margin handling here and in the tests since we are now using set_viewport/set_scissor_rect.
     margin_top_px: f32,
     margin_right_px: f32,
     margin_bottom_px: f32,

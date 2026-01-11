@@ -84,8 +84,7 @@ impl PreparedLayer for ScatterplotLayer {
 
 #[derive(ShaderType, Debug)]
 struct ScatterplotLayerUniforms {
-    viewport_size: Vec2, // (width, height) in pixels
-    layer_margin: Vec4,   // (top, right, bottom, left) margins in pixels
+    layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     data_unit_mode: u32, // 0 = pixels, 1 = data units
     point_radius: f32,  // radius of each point
@@ -170,16 +169,12 @@ pub async fn draw_scatterplot_layer(
     let viewport_w = view_params.width as f32;
     let viewport_h = view_params.height as f32;
 
+    let layer_w = viewport_w - (margin_left + margin_right) as f32;
+    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
     // Construct the uniform struct using Encase.
     let uniform_struct = ScatterplotLayerUniforms {
-        viewport_size: Vec2::new(viewport_w, viewport_h),
-        layer_margin: Vec4::from_array([
-            // top, right, bottom, left
-            margin_top as f32,
-            margin_right as f32,
-            margin_bottom as f32,
-            margin_left as f32,
-        ]),
+        layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
         data_unit_mode: match data_unit_mode {
             UnitsMode::Pixels => 0,
@@ -345,6 +340,32 @@ pub async fn draw_scatterplot_layer(
         });
 
     // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
+
+    // Handle margins by adjusting viewport and scissor rect.
+    // This allows us to avoid accounting for margins in the shaders, simplifying them.
+    // (Shaders can simply assume the full viewport size is the plot area.)
+    // Note: these settings will affect all subsequent draw calls in this render pass,
+    // so ensure that other layers are setting their own viewport/scissor_rect appropriately.
+
+    // Set viewport so that the (-1 to 1) NDC coordinates map to the desired plot area within the canvas.
+    pass.set_viewport(
+        margin_left as f32,
+        margin_top as f32,
+        viewport_w - (margin_left + margin_right) as f32,
+        viewport_h - (margin_top + margin_bottom) as f32,
+        0.0, // min_depth
+        1.0, // max_depth
+    );
+
+    // Set scissor rect so that fragments rendered into the margins are clipped.
+    // "Sets the scissor rectangle used during the rasterization stage. After transformation into viewport coordinates."
+    // "The function of the scissor rectangle resembles set_viewport(), but it does not affect the coordinate system, only which fragments are discarded."
+    pass.set_scissor_rect(
+        margin_left as u32,
+        margin_top as u32,
+        (viewport_w - (margin_left + margin_right) as f32) as u32,
+        (viewport_h - (margin_top + margin_bottom) as f32) as u32,
+    );
 
     pass.set_pipeline(&render_pipeline);
     pass.set_bind_group(0, &bind_group, &[]);
