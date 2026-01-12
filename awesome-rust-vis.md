@@ -40,6 +40,7 @@ By "Pure Rust", this means the visualization logic is in pure Rust. However, it 
 ### WGPU-based
 - https://github.com/jonmmease/avenger
 - https://github.com/Ameyanagi/ruviz
+- https://github.com/maplibre/maplibre-rs
 
 ### Coupled to GUI framework
 - https://github.com/Joylei/plotters-iced (iced)
@@ -51,6 +52,7 @@ By "Pure Rust", this means the visualization logic is in pure Rust. However, it 
 - https://github.com/JakkuSakura/gpui-plot (gpui)
 - https://github.com/longbridge/gpui-component/tree/main/crates/ui/src/chart (gpui)
 - https://github.com/eliotbo/bevy_plot (bevy)
+- https://github.com/hacknus/bevy_voxel_plot (bevy)
 - https://github.com/rtbo/plotive/tree/main/iced (iced)
 
 
@@ -89,6 +91,26 @@ Some of the above "Pure Rust"
 - https://github.com/ondt/mapplot (google maps)
 - https://github.com/micouy/plotka (multiple)
 
+
+## Lower-level 2D and 3D rendering / general purpose graphics libraries
+
+TODO: Does it make sense to include these in this list?
+
+- https://github.com/gfx-rs/wgpu
+- https://github.com/linebender/vello
+- https://github.com/google/forma
+- https://github.com/parasyte/pixels
+- https://github.com/femtovg/femtovg
+- https://github.com/dimforge/kiss3d
+- https://github.com/MeadowlarkDAW/rootvg
+- https://github.com/audulus/vger-rs
+- https://github.com/UE2020/bufro
+- https://github.com/schell/renderling
+- https://github.com/BVE-Reborn/rend3
+- https://github.com/DavidPeicho/albedo
+- https://github.com/nannou-org/nannou
+- https://github.com/AryanpurTech/BlueEngine
+- https://github.com/ftilde/palace
 
 ## Related Lists
 
