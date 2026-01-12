@@ -1,6 +1,4 @@
-We need to port some low-level D3 functionality to Rust.
-
-Obviously not all of D3, but essential things like scales and axes.
+We need to port some D3 functionality to Rust. (Obviously not all of D3, but essential things like scales and axes.)
 
 There appear to be some other D3 porting attempts as well:
 - https://github.com/askanium/rustplotlib
