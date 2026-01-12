@@ -13,6 +13,11 @@ The initial list has been populated with tools found primarily via GitHub and cr
   - [Web-based](#web-based)
 - [Terminal and ASCII outputs](#text-based-outputs)
 
+## Pure Rust
+
+I will put things here if I am unsure if CPU vs GPU for now:
+
+
 ## CPU-based, Pure Rust
 
 - https://github.com/ibrahimcesar/velociplot
@@ -21,7 +26,18 @@ The initial list has been populated with tools found primarily via GitHub and cr
 
 ## GPU-based, Pure Rust
 
+- 
+
 ### WGPU-based
+- https://github.com/Ameyanagi/ruviz
+
+## Coupled to GUI framework
+- https://github.com/Joylei/plotters-iced
+
+
+## Text-based outputs
+
+
 
 ## Bindings
 
@@ -29,6 +45,8 @@ The initial list has been populated with tools found primarily via GitHub and cr
 
 - https://github.com/cpmech/plotpy (matplotlib)
 - https://github.com/SiegeLord/RustGnuplot (gnuplot)
+- https://github.com/ploteria/ploteria (gnuplot)
+- https://gitlab.com/ruivieira/matplotrust (matplotlib)
 
 ### Grammar-based
 
@@ -39,24 +57,17 @@ The initial list has been populated with tools found primarily via GitHub and cr
 
 ### Web-based
 
-(Some of these tools may fall into the above grammar-based category)
-
 - https://github.com/plotly/plotly.rs (plotly)
 - https://github.com/alceal/plotlars (plotly)
 - https://github.com/yuankunzhang/charming (apache echarts)
+- https://github.com/stevedonovan/flot-rs (flot)
+- https://github.com/ondt/mapplot (google maps)
+- https://github.com/micouy/plotka (multiple)
 
 
 
-## Text-based outputs
 
 
-
-
-https://crates.io/crates/flot
-https://crates.io/crates/ploteria
-https://crates.io/crates/mapplot
-https://crates.io/crates/matplotrust
-https://crates.io/crates/plotka
 https://crates.io/crates/plotters-iced
 https://crates.io/crates/rustplot
 https://crates.io/crates/splotch
