@@ -13,26 +13,45 @@ The initial list has been populated with tools found primarily via GitHub and cr
   - [Web-based](#web-based)
 - [Terminal and ASCII outputs](#text-based-outputs)
 
+Please let me know if I got any categorizations incorrect (I mostly did brief checks of the README for each crate).
+
+
 ## Pure Rust
 
-I will put things here if I am unsure if CPU vs GPU for now:
+By "Pure Rust", this means the visualization logic is in pure Rust. However, it is not entirely accurate as some of these are still "bindings" to lower-level graphics libraries like Cairo. Even WGPU could be considered a "binding" to the lower-level Metal/Vulkan/etc APIs.
 
 
 ## CPU-based, Pure Rust
 
-- https://github.com/ibrahimcesar/velociplot
 - https://github.com/plotters-rs/plotters
+- https://github.com/SouthamptonRust/rustplot
+- https://github.com/DougLau/splot
+- https://github.com/coder543/dataplotlib
+- https://github.com/limads/papyri
+- https://github.com/ibrahimcesar/velociplot
 - https://github.com/Ameyanagi/ruviz
+- https://github.com/jonfres/fluent-plots
+- https://github.com/BlondeBurrito/plotrs
+- https://github.com/rtbo/plotive
+- https://gitlab.com/Neek-sss/strafe/-/tree/master/strafe-plot
 
 ## GPU-based, Pure Rust
 
-- 
-
 ### WGPU-based
+- https://github.com/jonmmease/avenger
 - https://github.com/Ameyanagi/ruviz
 
-## Coupled to GUI framework
-- https://github.com/Joylei/plotters-iced
+### Coupled to GUI framework
+- https://github.com/Joylei/plotters-iced (iced)
+- https://github.com/ulikoehler/liveplot-rs (egui)
+- https://github.com/pierreaubert/gpui-toolkit/tree/main/gpui-px (gpui)
+- https://github.com/bgkillas/kalc-plot (kalc, egui?)
+- https://github.com/emilk/egui_plot (egui)
+- https://github.com/donkeyteethUX/iced_plot (iced)
+- https://github.com/JakkuSakura/gpui-plot (gpui)
+- https://github.com/longbridge/gpui-component/tree/main/crates/ui/src/chart (gpui)
+- https://github.com/eliotbo/bevy_plot (bevy)
+- https://github.com/rtbo/plotive/tree/main/iced (iced)
 
 
 ## Text-based outputs
@@ -41,18 +60,24 @@ I will put things here if I am unsure if CPU vs GPU for now:
 
 ## Bindings
 
-(Including bindings and wrappers and specification-based tools here)
+This section includes bindings (to high-level visualization libraries implemented in other langauges) and wrappers and specification-based tools here.
+Some of the above "Pure Rust" 
+
 
 - https://github.com/cpmech/plotpy (matplotlib)
 - https://github.com/SiegeLord/RustGnuplot (gnuplot)
 - https://github.com/ploteria/ploteria (gnuplot)
 - https://gitlab.com/ruivieira/matplotrust (matplotlib)
+- https://github.com/sixalphaone/graphplot (typst)
+- https://github.com/Latias94/dear-imgui-rs/tree/main/extensions/dear-implot (implot)
+- https://github.com/DJDuque/pgfplots (latex)
 
 ### Grammar-based
 
 - https://github.com/georgestagg/ggsql (vega-lite)
 - https://github.com/procyon-rs/vega_lite_4.rs (vega-lite)
 - https://github.com/wangjiawen2013/charton (vega-lite ?)
+- https://github.com/cuprous-au/vega-view (vega-lite)
 
 
 ### Web-based
@@ -64,37 +89,6 @@ I will put things here if I am unsure if CPU vs GPU for now:
 - https://github.com/ondt/mapplot (google maps)
 - https://github.com/micouy/plotka (multiple)
 
-
-
-
-
-https://crates.io/crates/plotters-iced
-https://crates.io/crates/rustplot
-https://crates.io/crates/splotch
-https://crates.io/crates/dataplotlib
-https://crates.io/crates/vega-view
-https://crates.io/crates/aflak_plot
-https://crates.io/crates/geo-plot
-https://crates.io/crates/liveplot
-https://crates.io/crates/sciviz
-https://crates.io/crates/rust-plot
-https://crates.io/crates/gpui-px
-https://crates.io/crates/graphplot
-https://crates.io/crates/kalc-plot
-https://crates.io/crates/gpui-d3rs
-https://crates.io/crates/plot-rs
-https://crates.io/crates/papyri
-https://crates.io/crates/dear-implot3d
-https://crates.io/crates/fluent-plots
-https://crates.io/crates/plotchart
-https://crates.io/crates/egui_plot
-https://crates.io/crates/iced_plot
-https://crates.io/crates/gpui-plot
-https://crates.io/crates/plotrs
-https://crates.io/crates/bevy_plot
-https://crates.io/crates/plotive
-https://crates.io/crates/strafe-plot
-https://crates.io/crates/pgfplots
 
 ## Related Lists
 
