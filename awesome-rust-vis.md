@@ -3,6 +3,7 @@
 > Rust crates for data visualization and plotting.
 
 The initial list has been populated with tools found primarily via GitHub and crates.io (using both tags and keyword searches).
+The items on the list should be reusable crates (rather than one-off plot implementations that are coupled to particular datasets and are not designed to be reused).
 
 ## Contents
 - [CPU-based rendering in pure Rust](#cpu-based-pure-rust)
