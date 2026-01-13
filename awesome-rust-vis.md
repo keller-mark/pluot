@@ -81,6 +81,7 @@ Some of the above "Pure Rust"
 - https://github.com/procyon-rs/vega_lite_4.rs (vega-lite)
 - https://github.com/wangjiawen2013/charton (vega-lite ?)
 - https://github.com/cuprous-au/vega-view (vega-lite)
+- https://github.com/alignoth/alignoth (vega-lite)
 
 
 ### Web-based
