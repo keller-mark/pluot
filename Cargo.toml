@@ -54,7 +54,7 @@ zarrs = { version = "0.22.10", default-features = false, features = [
     "sharding",
     "transpose",
     "async",
-    "filesystem",
+    # "filesystem", # was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
 ] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
