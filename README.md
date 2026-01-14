@@ -16,10 +16,10 @@ _In other words: "rewrite it in rust," but for plotting._
 ## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
-- __Small__: The bundle size (i.e., the WASM binary size) should be kept small (currently ~2MB) to make it feasible to use in web applications.
-- __Scalable__: Should scale to out-of-memory dataset sizes using partial reads of arrays/columns (currently using Zarr to achieve this) and data tiling/aggregation strategies.
-- __Vector__: Plotting functions should implement both raster and vector equivalents, to support publication-quality graphics export.
-- __Extensible__: Provide D3-like utilities to enable the development of highly customized plot types.
+- __Small__: The bundle size (i.e., the WASM binary size) should be kept small (currently ~2MB) to make it practical to use in web applications.
+- __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr to achieve this).
+- __Vector__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
+- __Extensible__: Provides D3-like utilities and a declarative layer-based API to enable the development of customized plot types.
 
 ## How it works
 
