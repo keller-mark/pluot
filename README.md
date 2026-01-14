@@ -41,6 +41,8 @@ These Rust plotting functions are only concerned with producing a "static" plot 
 This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
 Our approach enables our CPU-based operations to benefit from the performance characteristics of Rust (or, in web contexts, at least those of Rust-via-WASM).
 
+Read more about the project's motivations in my [blog post](https://github.com/keller-mark/blog/blob/main/2026-01-12-pluot-motivations.md).
+
 ### Non-goals
 
 <!-- - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS. -->
