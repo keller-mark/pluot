@@ -1,5 +1,7 @@
 # pluot
 
+<a href="#"><img src=".github/pluot-logo.png" align="right" height="300" alt="pluot logo" /></a>
+
 Implement once, pluot everywhere (across languages, regardless of whether static or interactive). 
 <!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
 
