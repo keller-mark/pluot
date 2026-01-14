@@ -36,7 +36,7 @@ These Rust plotting functions are only concerned with producing a "static" plot 
 ### Why not just use JS+WebGPU directly?
 
 This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
-The Pluot approach enables our CPU-based operations to benefit from the performance characteristics of Rust (or Rust via WASM in web contexts).
+Our approach enables our CPU-based operations to benefit from the performance characteristics of Rust (or Rust via WASM in web contexts).
 
 ### Non-goals
 
