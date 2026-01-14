@@ -19,11 +19,11 @@ _In other words: "rewrite it in rust," but for plotting._
 - __Small__: The bundle size (i.e., the WASM binary size) should be kept small (currently ~2MB) to make it practical to use in web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr to achieve this).
 - __Vector__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
-- __Extensible__: Provides D3-like utilities and a declarative layer-based API to enable the development of customized plot types.
+- __Extensible__: Provides D3-like utilities and a declarative layer-based API to enable the development of customized plot types (See https://github.com/keller-mark/pluot/issues/105 for more details).
 
 ## How it works
 
-Plotting functions are implemented in Rust using [WGPU](https://github.com/gfx-rs/wgpu).
+Plotting functions are implemented in Rust using the Rust WGPU implementation of WebGPU (Note: WGPU can be used as a standalone WebGPU renderer, decoupled from any web browser).
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
 
 - To render plots in the web browser, the Rust code is compiled to WebAssembly (WASM).
