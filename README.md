@@ -186,5 +186,8 @@ and has also been inspired by the following projects:
 - https://github.com/scverse/spatialdata-plot
 - https://github.com/scverse/scanpy
 
+## About the name
 
+- "Plot" with an extra "u" (from R<strong>u</strong>st)
+- A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The Rust core is to the bindings as the fruit's pit is to its flesh.
 
