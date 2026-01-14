@@ -188,6 +188,10 @@ and has also been inspired by the following projects:
 - https://github.com/scverse/spatialdata-plot
 - https://github.com/scverse/scanpy
 
+## Related work
+
+See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a list of crates related to data visualization and plotting.
+
 ## About the name
 
 - A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The Rust core is to the bindings as the fruit's pit is to its flesh.
