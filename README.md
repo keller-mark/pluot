@@ -161,7 +161,18 @@ cargo test --features test_plain_rust
 
 ## Inspired by
 
-This work has been informed and inspired by the following projects:
+This work has been informed by my experiences in contributing to the following projects:
+
+- https://github.com/vitessce/vitessce
+- https://github.com/keller-mark/use-coordination
+- https://github.com/hms-dbmi/viv
+- https://github.com/hms-dbmi/cistrome-explorer
+- https://github.com/keller-mark/deck-to-svg
+- https://github.com/higlass/higlass
+- https://github.com/keller-mark/vueplotlib
+- https://github.com/vitessce/easy_vitessce
+
+and has also been inspired by the following projects:
 
 - https://github.com/visgl/deck.gl
 - https://github.com/UnfoldedInc/deck.gl-native
@@ -172,13 +183,5 @@ This work has been informed and inspired by the following projects:
 - https://github.com/scverse/spatialdata-plot
 - https://github.com/scverse/scanpy
 
-as well as my experiences contributing to:
 
-- https://github.com/vitessce/vitessce
-- https://github.com/keller-mark/use-coordination
-- https://github.com/hms-dbmi/viv
-- https://github.com/hms-dbmi/cistrome-explorer
-- https://github.com/keller-mark/deck-to-svg
-- https://github.com/higlass/higlass
-- https://github.com/keller-mark/vueplotlib
-- https://github.com/vitessce/easy_vitessce
+
