@@ -194,5 +194,5 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 
 ## About the name
 
-- A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The Rust core is to the bindings as the fruit's pit is to its flesh.
+- A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The fruit's pit is to its flesh as the Rust core of this crate is to its other programming language bindings.
 - "Plot" with an extra "u" (from R<strong>u</strong>st)
