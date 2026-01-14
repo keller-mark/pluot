@@ -2,7 +2,7 @@
 
 <a href="#"><img src=".github/pluot-logo.png" align="right" height="300" alt="pluot logo" /></a>
 
-Goal: Implement a custom data visualization once, then render it everywhere (across languages, static or interactive, raster or vector).
+Goal: Implement a custom data visualization once, then render it everywhere\* (across languages, static or interactive, raster or vector).
 
 How it works: "headless" plotting. Pluot uses Rust and [WGPU](https://github.com/gfx-rs/wgpu) to render plots to an array of pixels (or an SVG string), decoupled from any windowing system:
 - Render static plots via Rust directly (no web browser needed)
@@ -12,6 +12,9 @@ How it works: "headless" plotting. Pluot uses Rust and [WGPU](https://github.com
 - Raster/bitmap and vector (SVG) output supported
 
 _In other words: "rewrite it in rust," but for plotting._
+
+\* "everywhere" currently means Rust, Python, and JavaScript (including in a web browser). Further bindings remain future work.
+
 
 ## Features
 
