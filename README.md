@@ -82,9 +82,6 @@ uv sync --extra dev
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
-
-wasm-pack build --target web
-# or
 wasm-pack build --target web && pnpm run start
 # or
 wasm-pack build --dev --target web && pnpm run start
@@ -92,7 +89,7 @@ wasm-pack build --dev --target web && pnpm run start
 wasm-pack build --release --target web && pnpm run start
 ```
 
-
+<!--
 
 Test in browser:
 
@@ -102,17 +99,23 @@ http-server --cors="*" -p 3005 .
 
 Open to http://localhost:3005/www/
 
+-->
+
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh
 wasm-pack test --headless --chrome
 ```
 
+<!-- TODO: update and un-comment once publishing details are established
+
 ### Publish to NPM with `wasm-pack publish`
 
 ```sh
 wasm-pack publish
 ```
+
+-->
 
 ### Build for Python
 
