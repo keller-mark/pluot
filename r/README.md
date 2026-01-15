@@ -1,5 +1,15 @@
 # R bindings
 
+## Usage in RStudio
+
+### Development
+
+```r
+devtools::install()
+library(hellorust)
+hellorust::hello()
+```
+
 Reference: https://github.com/r-rust/hellorust
 
 # Hello Rust

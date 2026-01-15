@@ -5,7 +5,7 @@
 
 // Actual Wrappers
 SEXP hello_wrapper(void){
-  char* hello_rust = string_from_rust();
+  char* hello_rust = string_from_rust_async();
   SEXP hello_world_string = PROTECT(Rf_mkCharCE(hello_rust, CE_UTF8));
   free_string_from_rust(hello_rust);
   UNPROTECT(1);
