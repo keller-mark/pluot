@@ -1,0 +1,10 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^src/myrustlib/target
+^src/myrustlib/vendor/
+\.lock$
+\.rs\.bk$
+^README.md$
+^.travis.yml$
+^appveyor.yml$
+^\.github$

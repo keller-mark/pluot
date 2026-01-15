@@ -1,0 +1,22 @@
+1.2.3
+ - Fix parallel make; more cleanup after build
+
+1.2.2
+ - Fix commented out CARGO_HOME in Makevars
+
+1.2.1
+ - Print rustc --version in configure as per CRAN request
+ - Update maintainer email address
+
+1.2.0
+ - Windows: support aarch64-pc-windows-gnullvm
+
+1.1.1
+ - CRAN request: use role="aut" for rust dependencies
+ - CRAN request: use -j2 instead of CARGO_BUILD_JOBS=2
+
+1.1.0
+ - Vendor cargo sources to comply with new CRAN guidlines
+
+1.0.2
+ - Windows: add -lntdll to PKG_LIBS as needed by Rust 1.70 and up
