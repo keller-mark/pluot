@@ -1,34 +1,34 @@
 # pluot
 
-Implement once, pluot everywhere (across languages, regardless of whether static or interactive). 
-<!--Create declarative static and interactive plots using WGPU and Rust/WASM.-->
+<a href="#"><img src=".github/pluot-logo.png" align="right" height="300" alt="pluot logo" /></a>
 
+Goal: Implement a custom data visualization once, then render it everywhere\* (across languages, static or interactive, raster or vector).
 
-🚧 work in progress 🚧
-
-
-"Headless" plotting: Rust+WGPU code renders to an array of pixels (or an SVG string), decoupled from any windowing system:
+How it works: "headless" plotting. Pluot uses Rust and [WGPU](https://github.com/gfx-rs/wgpu) to render plots to an array of pixels (or an SVG string), decoupled from any windowing system:
 - Render static plots via Rust directly (no web browser needed)
 - Render static plots via Python (no web browser needed)
 - Render static plots via JavaScript
 - Render interactive plots via JavaScript
 - Raster/bitmap and vector (SVG) output supported
 
+_In other words: "rewrite it in rust," but for plotting._
+
+\* "everywhere" currently means Rust, Python, and JavaScript (including in a web browser). Further bindings remain future work.
+
 
 ## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
 - __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 3MB) to make it feasible to integrate into web applications.
-- __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns (currently using Zarr to achieve this).
-- __Raster or Vector__: Plotting functions can implement both raster and vector rendering, to support publication-quality graphics export.
-- __Extensible__: Provides D3-like utilities to enable the development of highly customized plot types.
+- __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr to achieve this).
+- __Polyglot__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
+- __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
 - __Low-level or High-level__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
-__Polyglot__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
-
+- __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types.
 
 ## How it works
 
-Plotting functions are implemented in Rust using [WGPU](https://github.com/gfx-rs/wgpu).
+Plotting functions are implemented in Rust using the Rust WGPU implementation of WebGPU (Note: WGPU can be used as a standalone WebGPU renderer, decoupled from any web browser).
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
 
 - To render plots in the web browser, the Rust code is compiled to WebAssembly (WASM).
@@ -41,7 +41,9 @@ These Rust plotting functions are only concerned with producing a "static" plot 
 ### Why not just use JS+WebGPU directly?
 
 This would couple the plotting code to JS, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
-It would also make CPU data processing operations more challenging.
+Our approach enables our CPU-based operations to benefit from the performance characteristics of Rust (or, in web contexts, at least those of Rust-via-WASM).
+
+Read more about the project's motivations in my [blog post](https://github.com/keller-mark/blog/blob/main/2026-01-12-pluot-motivations.md).
 
 ### Non-goals
 
@@ -82,9 +84,6 @@ uv sync --extra dev
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
-
-wasm-pack build --target web
-# or
 wasm-pack build --target web && pnpm run start
 # or
 wasm-pack build --dev --target web && pnpm run start
@@ -92,7 +91,7 @@ wasm-pack build --dev --target web && pnpm run start
 wasm-pack build --release --target web && pnpm run start
 ```
 
-
+<!--
 
 Test in browser:
 
@@ -102,17 +101,23 @@ http-server --cors="*" -p 3005 .
 
 Open to http://localhost:3005/www/
 
+-->
+
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh
 wasm-pack test --headless --chrome
 ```
 
+<!-- TODO: update and un-comment once publishing details are established
+
 ### Publish to NPM with `wasm-pack publish`
 
 ```sh
 wasm-pack publish
 ```
+
+-->
 
 ### Build for Python
 
@@ -166,7 +171,18 @@ cargo test --features test_plain_rust
 
 ## Inspired by
 
-This work has been informed and inspired by the following projects:
+This work has been informed by my experiences in contributing to the following projects:
+
+- https://github.com/vitessce/vitessce
+- https://github.com/keller-mark/use-coordination
+- https://github.com/hms-dbmi/viv
+- https://github.com/hms-dbmi/cistrome-explorer
+- https://github.com/keller-mark/deck-to-svg
+- https://github.com/higlass/higlass
+- https://github.com/keller-mark/vueplotlib
+- https://github.com/vitessce/easy_vitessce
+
+and has also been inspired by the following projects:
 
 - https://github.com/visgl/deck.gl
 - https://github.com/UnfoldedInc/deck.gl-native
@@ -177,13 +193,11 @@ This work has been informed and inspired by the following projects:
 - https://github.com/scverse/spatialdata-plot
 - https://github.com/scverse/scanpy
 
-as well as my experiences contributing to:
+## Related work
 
-- https://github.com/vitessce/vitessce
-- https://github.com/keller-mark/use-coordination
-- https://github.com/hms-dbmi/viv
-- https://github.com/hms-dbmi/cistrome-explorer
-- https://github.com/keller-mark/deck-to-svg
-- https://github.com/higlass/higlass
-- https://github.com/keller-mark/vueplotlib
-- https://github.com/vitessce/easy_vitessce
+See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a list of crates related to data visualization and plotting.
+
+## About the name
+
+- A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The fruit's pit is to its flesh as the Rust core of this crate is to its other programming language bindings.
+- "Plot" with an extra "u" (from R<strong>u</strong>st)
