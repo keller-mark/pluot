@@ -3,7 +3,8 @@
 import React, { useLayoutEffect, useEffect, useRef, useState } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
-import createDom2dCamera from "dom-2d-camera";
+//import createDom2dCamera from "dom-2d-camera";
+import createDom2dCamera from "./dom-2d-camera.js"; // Copy with minor modifications.
 import createCamera from "3d-view-controls";
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
@@ -80,9 +81,10 @@ export function Pluot(props) {
     logPerformance = false,
     mode = "2d",
     marginBottom = 0.0,
-    marginLeft = 100.0,
-    marginTop = 200.0,
+    marginLeft = 400.0,
+    marginTop = 0.0,
     marginRight =  0.0,
+    aspectRatioMode = "contain", // "ignore", "contain", "cover"
   } = props;
 
   const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
@@ -151,6 +153,7 @@ export function Pluot(props) {
         onWheel: (event) => {
           onCameraEvent(camera, event);
         },
+        aspectRatioMode: aspectRatioMode,
       });
       dispose = camera.dispose;
 
@@ -241,7 +244,7 @@ export function Pluot(props) {
     }
 
     return dispose;
-  }, [cameraRef, mode]);
+  }, [cameraRef, mode, aspectRatioMode]);
 
   useEffect(() => {
     // Reset view matrix on plot change.

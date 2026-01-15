@@ -38,7 +38,8 @@ const dom2dCamera = (
     onMouseDown = () => {},
     onMouseUp = () => {},
     onMouseMove = () => {},
-    onWheel = () => {}
+    onWheel = () => {},
+    aspectRatioMode = "ignore",
   } = {}
 ) => {
   let camera = createCamera(
@@ -90,15 +91,69 @@ const dom2dCamera = (
 
   spreadXYSettings();
 
+  let xAspectRatioModeFactor = 1.0;
+  let yAspectRatioModeFactor = 1.0;
+
+  /*
+    // Logic for aspect ratio handling in scatterplot_layer.wgsl
+    if (aspect_ratio_mode == 1u) {
+        // fit/contain
+        if (layer_aspect_ratio > 1.0) {
+            // Wide rectangle
+            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+        } else if(layer_aspect_ratio < 1.0) {
+            // Tall layer
+            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
+            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+        } else {
+            // Square layer; no change needed.
+            // Show exactly (0, 1) in both directions.
+        }
+    } else if (aspect_ratio_mode == 2u) {
+        // fill/cover
+        if(layer_aspect_ratio > 1.0) {
+            // Wide rectangle
+            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
+            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+        } else if(layer_aspect_ratio < 1.0) {
+            // Tall layer
+            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+        } else {
+            // Square layer; no change needed.
+            // Show exactly (0, 1) in both directions.
+        }
+    }
+  */
+  const updateAspectRatioModeFactors = () => {
+    xAspectRatioModeFactor = 1.0;
+    yAspectRatioModeFactor = 1.0;
+    if(aspectRatioMode === "contain") {
+      if(aspectRatio > 1.0) {
+        xAspectRatioModeFactor = 1.0 / aspectRatio;
+      } else if(aspectRatio < 1.0) {
+        yAspectRatioModeFactor = aspectRatio;
+      }
+    } else if(aspectRatioMode === "cover") {
+      if(aspectRatio > 1.0) {
+        yAspectRatioModeFactor = aspectRatio;
+      } else if(aspectRatio < 1.0) {
+        xAspectRatioModeFactor = 1.0 / aspectRatio;
+      }
+    }
+  };
+  updateAspectRatioModeFactors();
+
   const transformPanX = isNdc
-    ? dX => (dX / width) * 2 * aspectRatio // to normalized device coords
+    ? dX => (dX / width) * 2 * (1.0 / xAspectRatioModeFactor) // to normalized device coords
     : dX => dX;
   const transformPanY = isNdc
-    ? dY => (dY / height) * 2 // to normalized device coords
+    ? dY => (dY / height) * 2 * (1.0 / yAspectRatioModeFactor) // to normalized device coords
     : dY => -dY;
 
   const transformScaleX = isNdc
-    ? x => (-1 + (x / width) * 2) * aspectRatio // to normalized device coords
+    ? x => (-1 + (x / width) * 2) // to normalized device coords
     : x => x;
   const transformScaleY = isNdc
     ? y => 1 - (y / height) * 2 // to normalized device coords
@@ -235,6 +290,7 @@ const dom2dCamera = (
     width = bBox.width;
     height = bBox.height;
     aspectRatio = width / height;
+    updateAspectRatioModeFactors();
   };
 
   const keyUpHandler = event => {
