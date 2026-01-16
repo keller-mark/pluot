@@ -277,6 +277,7 @@ export function Pluot(props) {
         margin_top: marginTop,
         margin_right: marginRight,
         device_pixel_ratio: window.devicePixelRatio,
+        aspect_ratio_mode: ["ignore", "contain", "cover"].indexOf(aspectRatioMode),
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
