@@ -5,5 +5,5 @@ extern crate libc;
 mod hello;
 
 // Export functions called by R
-pub use hello::string_from_rust_async;
+pub use hello::rust_roundtrip;
 

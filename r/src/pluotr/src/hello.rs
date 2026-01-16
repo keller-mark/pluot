@@ -10,18 +10,13 @@ async fn get_string_async() -> String {
     "Hello ピカチュウ async !".to_string()
 }
 
-#[no_mangle]
-pub extern "C" fn string_from_rust_async() -> *const c_char {
-    let s_str = block_on(get_string_async());
-    let s = CString::new(s_str).unwrap();
-    s.into_raw()
-}
 
 #[no_mangle]
 pub extern "C" fn rust_roundtrip() -> *const c_char {
     let r_str_ptr = unsafe { call_r_info_helper() };
     let r_str = unsafe { CStr::from_ptr(r_str_ptr) }.to_str().unwrap_or("");
-    let new_string = format!("{} + Hello from Rust", r_str);
+    let rust_str = block_on(get_string_async());
+    let new_string = format!("{} + {}", r_str, rust_str);
     let s = CString::new(new_string).unwrap();
     s.into_raw()
 }
