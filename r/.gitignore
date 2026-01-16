@@ -5,7 +5,7 @@ src/*.o
 src/*.so
 src/*.dll
 src/*.a
-src/myrustlib/target/*
-src/myrustlib/vendor.tar.xz
-src/myrustlib/vendor/*
+src/pluotr/target/*
+src/pluotr/vendor.tar.xz
+src/pluotr/vendor/*
 inst/AUTHORS

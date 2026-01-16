@@ -1,5 +1,5 @@
 [package]
-name = "myrustlib"
+name = "pluotr"
 version = "0.1.0"
 authors = ["Jeroen <jeroenooms@gmail.com>"]
 edition = "2021"
@@ -8,6 +8,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-rand = "0.4.1"
 libc = "*"
 futures = "0.3"
+pluot = { path = "../../../.." }

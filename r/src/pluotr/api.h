@@ -6,8 +6,6 @@ extern "C" {
 
 char * string_from_rust_async(void);
 void free_string_from_rust(char*);
-int32_t random_number(void);
-void run_threads(void);
 
 #ifdef __cplusplus
 }

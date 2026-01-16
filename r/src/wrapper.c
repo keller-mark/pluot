@@ -1,7 +1,7 @@
 #include <Rinternals.h>
 
 // Import C headers for rust API
-#include "myrustlib/api.h"
+#include "pluotr/api.h"
 
 // Actual Wrappers
 SEXP hello_wrapper(void){

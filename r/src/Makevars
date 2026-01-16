@@ -1,8 +1,8 @@
-LIBDIR = myrustlib/target/release
-STATLIB = $(LIBDIR)/libmyrustlib.a
+LIBDIR = pluotr/target/release
+STATLIB = $(LIBDIR)/libpluotr.a
 PKG_CFLAGS = -pthread
 PKG_CPPFLAGS = -DSTRICT_R_HEADERS -DR_NO_REMAP
-PKG_LIBS = -L$(LIBDIR) -lmyrustlib -pthread
+PKG_LIBS = -L$(LIBDIR) -lpluotr -pthread
 
 all: cleanup
 
@@ -17,10 +17,10 @@ CARGOTMP=$(PWD)/.cargo
 export CARGO_HOME=$(CARGOTMP)
 
 $(STATLIB):
-	if [ -f myrustlib/vendor.tar.xz ]; then tar xf myrustlib/vendor.tar.xz && mkdir -p $(CARGOTMP) && cp myrustlib/vendor-config.toml $(CARGOTMP)/config.toml; fi
-	PATH="${PATH}:${HOME}/.cargo/bin" cargo build ${CRANFLAGS} --release --manifest-path=myrustlib/Cargo.toml
+	if [ -f pluotr/vendor.tar.xz ]; then tar xf pluotr/vendor.tar.xz && mkdir -p $(CARGOTMP) && cp pluotr/vendor-config.toml $(CARGOTMP)/config.toml; fi
+	PATH="${PATH}:${HOME}/.cargo/bin" cargo build ${CRANFLAGS} --release --manifest-path=pluotr/Cargo.toml
 	@rm -Rf $(CARGOTMP) vendor || true # CRAN wants us to remove "detritus"
 	@rm -Rf $(LIBDIR)/build || true
 
 cleanup: $(SHLIB)
-	@rm -Rf $(STATLIB) myrustlib/target
+	@rm -Rf $(STATLIB) pluotr/target

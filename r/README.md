@@ -30,7 +30,7 @@ Bundle your rust code in a the embedded cargo package (see the `Cargo.toml` file
 hellorust
 ├─ configure            ← checks if 'cargo' is installed
 ├─ src
-│  ├─ myrustlib            ← bundled cargo package with your code
+│  ├─ pluotr            ← bundled cargo package with your code
 │  |  ├─ Cargo.toml          ← cargo dependencies and metadata
 │  |  ├─ src                 ← rust source code
 │  |  └─ api.h               ← C headers for exported rust API
@@ -45,7 +45,7 @@ hellorust
 
 As per the new [2023 cran guidelines](https://cran.r-project.org/web/packages/using_rust.html) we now vendor the cargo crates in the R source packages in order to support offline installation. This is done in a two step process:
 
- 1. (by package author) The [vendor-update.sh](src/myrustlib/vendor-update.sh) script creates the `vendor.tar.xz` bundle that contains all the cargo sources. In addition, the [vendor-authors.R](src/myrustlib/vendor-authors.R) script generates an `inst/AUTHORS` file that lists the authors of the dependencies, as required by CRAN. Both of these scripts are called in the package [cleanup](cleanup) file and therefore run automatically during `R CMD build` when the source package is created.
+ 1. (by package author) The [vendor-update.sh](src/pluotr/vendor-update.sh) script creates the `vendor.tar.xz` bundle that contains all the cargo sources. In addition, the [vendor-authors.R](src/pluotr/vendor-authors.R) script generates an `inst/AUTHORS` file that lists the authors of the dependencies, as required by CRAN. Both of these scripts are called in the package [cleanup](cleanup) file and therefore run automatically during `R CMD build` when the source package is created.
  2. (by the user) At install time, the [Makevars](src/Makevars) extracts the `vendor.tar.xz` bundle (when available) and generates a `.cargo/config.toml` file to instruct `cargo build` to use the vendored (offline) sources.
  
 If you run `R CMD INSTALL` directly from a checkout (without building a source package), then no `vendor.tar.xz` is created and cargo falls back to downloading crates on-the-fly.
