@@ -10,6 +10,8 @@ pub(crate) mod timeout;
 pub mod two;
 mod zarr;
 
+mod maybe;
+
 // When using Vello:
 //pub use vello::wgpu;
 

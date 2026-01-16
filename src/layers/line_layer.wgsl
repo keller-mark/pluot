@@ -62,13 +62,46 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
     );
 }
 
-struct ScatterplotLayerUniforms {
+// Computes the final vertex position for a line quad.
+// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/line-layer/line-layer-vertex.glsl.h#L56
+fn extrude_line(
+    source_ndc: vec2<f32>,
+    target_ndc: vec2<f32>,
+    corner: vec2<f32>,
+    line_width_ndc: f32,
+    viewport_aspect_ratio: f32
+) -> vec2<f32> {
+    let p0 = source_ndc;
+    let p1 = target_ndc;
+
+    // Correct the aspect ratio of the line direction vector
+    // so that the normal is perpendicular in screen space.
+    var dir = p1 - p0;
+    dir.y /= viewport_aspect_ratio;
+    dir = normalize(dir);
+
+    // Calculate the normal vector strictly in screen space.
+    let normal = vec2<f32>(-dir.y, dir.x);
+    
+    // Transform normal back to NDC space for extrusion.
+    // The X component needs to be scaled down by aspect ration because
+    // NDC X units are wider than NDC Y units (physically).
+    // The Y component is kept as 1.0 scaling because line_width_ndc is defined relative to height.
+    let extrusion = vec2<f32>(normal.x / viewport_aspect_ratio, normal.y) * line_width_ndc * 0.5;
+
+    // Select the base point (source or target) and apply the extrusion.
+    // corner.x is -1 for source, +1 for target.
+    // corner.y is -1 or +1 for the side of the line.
+    let base_point = mix(p0, p1, (corner.x + 1.0) / 2.0);
+    return base_point + corner.y * extrusion;
+}
+
+struct LineLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units // TODO: implement
-    point_radius: f32,
-    point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
-    point_shape_mode: u32, // 0: square; 1: circle
+    data_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: implement
+    line_width: f32,
+    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     color: vec4<f32>,     // rgba color for points
@@ -87,10 +120,12 @@ struct FSOut {
 };
 
 // These group/binding locations will need to match with the locations used by Model.
-@group(0) @binding(0) var<uniform> u: ScatterplotLayerUniforms;
-@group(0) @binding(1) var<storage, read> x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
+@group(0) @binding(0) var<uniform> u: LineLayerUniforms;
+@group(0) @binding(1) var<storage, read> source_x_coords: array<f32>;
+@group(0) @binding(2) var<storage, read> source_y_coords: array<f32>;
+@group(0) @binding(3) var<storage, read> target_x_coords: array<f32>;
+@group(0) @binding(4) var<storage, read> target_y_coords: array<f32>;
+@group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -107,8 +142,11 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Center of this point in data space
-    let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+    // Source and target points of this line
+    let source_point_pos_orig = vec2<f32>(source_x_coords[instance_index], source_y_coords[instance_index]);
+    let target_point_pos_orig = vec2<f32>(target_x_coords[instance_index], target_y_coords[instance_index]);
+
+    // TODO: adapt the rest of the code to draw lines rather than points.
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
@@ -138,49 +176,32 @@ fn vs_main(
     // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
     let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
-    // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
-    // Where:
-    // - inputPosition - the 4D vertex position (homogeneous coordinate) in model space.
-    // - modelMatrix - the 4x4 matrix that transforms input vertices from model space to world space.
-    // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
-    // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
+    let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
-    let point_pos_norm = /*LAYER_NORM_TO_VIEW_NORM_MAT * */ (
-        // The camera from dom-2d-camera operates in NDC space.
-        // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
-        // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
-        // However, after this transformation, we want to be working in (0 to 1) normalized space.
+    // Transform source and target points to normalized view space
+    let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
+    let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
 
-        // The camera operates in NDC space, but your data is in normalized space. We need to:
-        // 1. Convert data from (0,1) to NDC (-1,1)
-        // 2. Apply camera
-        // 3. Convert back to (0,1)
-        // 4. Apply aspect ratio and margins
-        // 5. Convert final result to NDC for rendering
-        // We apply camera AFTER converting to NDC, and DON'T convert back until
-        // after all NDC-space operations are done. This keeps translations in the correct space.
+    // Convert to NDC for extrusion calculation
+    let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
+    let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
-        (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
-        // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(point_pos_orig, 0.0, 1.0)
+    // TODO: Handle line_width_unit_mode == 1 (data coordinates)
+    let line_width_ndc = u.line_width / layer_height_px * 2.0;
+
+    // Extrude the line to form a quad
+    let point_pos_ndc = extrude_line(
+        source_pos_ndc,
+        target_pos_ndc,
+        corner,
+        line_width_ndc,
+        layer_aspect_ratio
     );
-    let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
-
-    // Compute the vertex position by accounting for point position and point size.
-    // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
-    let point_radius_norm = vec4f(
-        u.point_radius / layer_width_px,
-        u.point_radius / layer_height_px,
-        0.0,
-        1.0
-    );
-    let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
     // The final point position in NDC space.
     let pos = vec4f(
-        point_pos_ndc.x + (corner.x * point_radius_ndc.x),
-        point_pos_ndc.y + (corner.y * point_radius_ndc.y),
+        point_pos_ndc.x,
+        point_pos_ndc.y,
         0.0,
         1.0
     );
@@ -188,11 +209,9 @@ fn vs_main(
     var out: VSOut;
     out.position = pos;
     out.color = u.color;
-    // Pass quad position in [0, 1] range for fragment shader.
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
-    // Pass valid bounds to fragment shader for per-fragment clipping
-    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0); // Not used for lines yet
     return out;
 }
 
@@ -214,9 +233,6 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
     return colors[index % 10];
 }
 
-fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-  return clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-}
 
 @fragment
 fn fs_main(
@@ -226,36 +242,7 @@ fn fs_main(
     @location(2) @interpolate(flat) instance_index: u32,
     @location(3) valid_bounds: vec4<f32>,
 ) -> FSOut {
-    /*
-    // Convert fragment coordinate from screen space back to NDC
-    let screen_pos = frag_coord.xy;
-    let ndc_pos = vec2<f32>(
-        (screen_pos.x / u.viewport_size.x) * 2.0 - 1.0,        // X unchanged
-        1.0 - (screen_pos.y / u.viewport_size.y) * 2.0         // Y flipped
-    );
 
-    // Extract valid bounds
-    let valid_min = valid_bounds.xy;
-    let valid_max = valid_bounds.zw;
-
-    // Check if this fragment is outside the valid region
-    if (ndc_pos.x < valid_min.x || ndc_pos.x > valid_max.x ||
-        ndc_pos.y < valid_min.y || ndc_pos.y > valid_max.y) {
-        discard;
-    }
-
-
-    // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
-    let radius_px = u.point_size_px / 2.0;
-    let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
-    let c = quad_pos * 2.0 - 1.0;
-    let sdf = length(c) * radius_px;
-    let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
-
-    if (alpha == 0.0) {
-        discard;
-    }
-*/
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;

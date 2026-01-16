@@ -3,7 +3,8 @@
 import React, { useLayoutEffect, useEffect, useRef, useState } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
-import createDom2dCamera from "dom-2d-camera";
+//import createDom2dCamera from "dom-2d-camera";
+import createDom2dCamera from "./dom-2d-camera.js"; // Copy with minor modifications.
 import createCamera from "3d-view-controls";
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
@@ -79,11 +80,17 @@ export function Pluot(props) {
     renderOnce = true,
     logPerformance = false,
     mode = "2d",
+    marginBottom = 0.0,
+    marginLeft = 400.0,
+    marginTop = 0.0,
+    marginRight =  0.0,
+    aspectRatioMode = "contain", // "ignore", "contain", "cover"
   } = props;
 
   const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
 
   const canvasRef = useRef(null);
+  const cameraRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
 
   const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
@@ -104,9 +111,9 @@ export function Pluot(props) {
   }, []);
 
   useEffect(() => {
-    // Set up the d3-zoom handler.
-    const canvas = canvasRef.current;
-    if (!canvas) {
+    // Set up the camera.
+    const cameraEl = cameraRef.current;
+    if (!cameraEl) {
       return;
     }
 
@@ -120,10 +127,12 @@ export function Pluot(props) {
         setViewMatrix(mat4.clone(camera.view));
       }
 
-      const camera = createDom2dCamera(canvas, {
+      const camera = createDom2dCamera(cameraEl, {
         isFixed: false,
         distance: 0.0,
-        target: [0.0, 0.0],
+        //target: [0.0, 0.0],
+        //viewCenter: [0.5, 0.5], // Should this be used when the coordinate system is (0 to 1) rather than (-1 to 1)?
+        viewCenter: [0.0, 0.0],
         defaultMouseDownMoveAction: "pan",
 
         onKeyDown: (event) => {
@@ -144,6 +153,7 @@ export function Pluot(props) {
         onWheel: (event) => {
           onCameraEvent(camera, event);
         },
+        aspectRatioMode: aspectRatioMode,
       });
       dispose = camera.dispose;
 
@@ -156,7 +166,7 @@ export function Pluot(props) {
         setViewMatrix(mat4.clone(camera.matrix));
       }
 
-      const camera = createCamera(canvas, {
+      const camera = createCamera(cameraEl, {
         mode: "orbit",
         zoomSpeed: -3,
       });
@@ -214,27 +224,27 @@ export function Pluot(props) {
         onCameraEvent(camera, event);
       };
 
-      canvas.addEventListener("keydown", keyDownHandler);
-      canvas.addEventListener("keyup", keyUpHandler);
-      canvas.addEventListener("mousedown", mouseDownHandler);
-      canvas.addEventListener("mouseup", mouseUpHandler);
-      canvas.addEventListener("mousemove", mouseMoveHandler);
-      canvas.addEventListener("wheel", wheelHandler);
+      cameraEl.addEventListener("keydown", keyDownHandler);
+      cameraEl.addEventListener("keyup", keyUpHandler);
+      cameraEl.addEventListener("mousedown", mouseDownHandler);
+      cameraEl.addEventListener("mouseup", mouseUpHandler);
+      cameraEl.addEventListener("mousemove", mouseMoveHandler);
+      cameraEl.addEventListener("wheel", wheelHandler);
 
       dispose = () => {
-        canvas.removeEventListener("keydown", keyDownHandler);
-        canvas.removeEventListener("keyup", keyUpHandler);
-        canvas.removeEventListener("mousedown", mouseDownHandler);
-        canvas.removeEventListener("mouseup", mouseUpHandler);
-        canvas.removeEventListener("mousemove", mouseMoveHandler);
-        canvas.removeEventListener("wheel", wheelHandler);
+        cameraEl.removeEventListener("keydown", keyDownHandler);
+        cameraEl.removeEventListener("keyup", keyUpHandler);
+        cameraEl.removeEventListener("mousedown", mouseDownHandler);
+        cameraEl.removeEventListener("mouseup", mouseUpHandler);
+        cameraEl.removeEventListener("mousemove", mouseMoveHandler);
+        cameraEl.removeEventListener("wheel", wheelHandler);
       };
     } else {
       throw new Error("Unknown mode found.");
     }
 
     return dispose;
-  }, [canvasRef, mode]);
+  }, [cameraRef, mode, aspectRatioMode]);
 
   useEffect(() => {
     // Reset view matrix on plot change.
@@ -262,9 +272,12 @@ export function Pluot(props) {
       const renderParams = {
         width,
         height,
-        margin_bottom: 40.0,
-        margin_left: 40.0,
+        margin_bottom: marginBottom,
+        margin_left: marginLeft,
+        margin_top: marginTop,
+        margin_right: marginRight,
         device_pixel_ratio: window.devicePixelRatio,
+        aspect_ratio_mode: ["ignore", "contain", "cover"].indexOf(aspectRatioMode),
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
@@ -327,10 +340,21 @@ export function Pluot(props) {
   }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName]);
 
   return (
-    <div style={{ width, height }}>
+    <div style={{ width, height, position: "relative" }}>
       {!supportsWebGpu ? (
         <p>{supportsWebGpuMessage}</p>
       ) : null}
+      <div
+        ref={cameraRef}
+        style={{
+          position: "absolute",
+          top: marginTop,
+          left: marginLeft,
+          width: width - marginLeft - marginRight,
+          height: height - marginTop - marginBottom,
+          border: "1px solid red",
+        }}
+      />
       <canvas
         ref={canvasRef}
         style={{ width, height, border: "1px solid black" }}

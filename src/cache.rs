@@ -24,11 +24,20 @@ async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
     // We can try to enable WebGL fallback here, but it is not working,
     // even when we add wgpu as a direct dependency with the "webgl" feature enabled.
+    // References:
+    // - https://github.com/gfx-rs/wgpu/issues/6166#issuecomment-2327015218
+    // - https://github.com/emilk/egui/blob/a9e92525c01e90417b431af9a4ea9db4d3dd6179/crates/egui-wgpu/src/setup.rs#L160
     /*
     let instance = wgpu::util::new_instance_with_webgpu_detection(
-        &wgpu::InstanceDescriptor::default(),
+        &wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        },
     ).await;
     */
+
+    // WebGL2 fallback requires specifying compatible_surface, but this would tie us closer to web stuff
+    // which we probably don't want.
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await

@@ -1,5 +1,6 @@
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
+use crate::layers::core::AspectRatioMode;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -77,6 +78,9 @@ pub struct RenderParams {
     //pub target_y: Option<f32>,
     pub camera_view: Option<[f32; 16]>,
 
+    // TODO: switch to enum representation. add serde attributes to AspectRatioMode.
+    pub aspect_ratio_mode: u32,
+
     #[serde(flatten)]
     pub plot_params: PlotParams,
 
@@ -120,6 +124,7 @@ impl Default for RenderParams {
             height: 100,
 
             device_pixel_ratio: 1.0,
+            aspect_ratio_mode: 1,
             //zoom: None,
             //target_x: None,
             //target_y: None,
