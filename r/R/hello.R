@@ -1,3 +1,7 @@
+hello_from_r <- function() {
+  "Hello from R"
+}
+
 #' Hello Rust!
 #'
 #' Minimal examples of calling rust functions in R via C.
@@ -9,9 +13,9 @@
 #'
 #' @export
 #' @rdname hellorust
-#' @examples hello()
+#' @examples hello_from_r()
 #' @return a value generated in Rust (a string, random number, and NULL respectively).
-#' @useDynLib hellorust hello_wrapper
-hello <- function() {
-  .Call(hello_wrapper)
+#' @useDynLib hellorust roundtrip_wrapper
+roundtrip <- function() {
+  .Call(roundtrip_wrapper)
 }
