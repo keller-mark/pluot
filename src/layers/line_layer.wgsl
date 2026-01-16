@@ -52,6 +52,9 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
         }
     }
 
+    // Only scaling will result in the (0, 1) region being centered.
+    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
+    // TODO: implement aspect_ratio_alignment_mode
     return scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
@@ -76,11 +79,15 @@ fn extrude_line(
     var dir = p1 - p0;
     dir.y /= viewport_aspect_ratio;
     dir = normalize(dir);
-    dir.y *= viewport_aspect_ratio;
 
-    // Calculate the normal vector for extrusion.
-    let normal = normalize(vec2<f32>(-dir.y, dir.x));
-    let extrusion = normal * line_width_ndc * 0.5;
+    // Calculate the normal vector strictly in screen space.
+    let normal = vec2<f32>(-dir.y, dir.x);
+    
+    // Transform normal back to NDC space for extrusion.
+    // The X component needs to be scaled down by aspect ration because
+    // NDC X units are wider than NDC Y units (physically).
+    // The Y component is kept as 1.0 scaling because line_width_ndc is defined relative to height.
+    let extrusion = vec2<f32>(normal.x / viewport_aspect_ratio, normal.y) * line_width_ndc * 0.5;
 
     // Select the base point (source or target) and apply the extrusion.
     // corner.x is -1 for source, +1 for target.
@@ -90,13 +97,13 @@ fn extrude_line(
 }
 
 struct LineLayerUniforms {
-    viewport_size: vec2<f32>, // (width, height) in pixels
-    layer_margin: vec4<f32>, // (top | right | bottom | left) in pixels
+    layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     data_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: implement
     line_width: f32,
     line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
+    aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     color: vec4<f32>,     // rgba color for points
 };
 
@@ -143,21 +150,12 @@ fn vs_main(
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
-    // View aspect ratio
-    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
-    let view_width_px = u.viewport_size.x;
-    let view_height_px = u.viewport_size.y;
-    // let view_aspect_ratio = view_width_px / view_height_px; // We don't care about this; We only care about the layer aspect ratio.
-
     // Layer aspect ratio
     // By "layer", we mean the inner plotting area, excluding margins.
-    let margin_top_px = u.layer_margin.x;
-    let margin_right_px = u.layer_margin.y;
-    let margin_bottom_px = u.layer_margin.z;
-    let margin_left_px = u.layer_margin.w;
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1271C5-L1271C52
+    let layer_width_px = u.layer_size.x;
+    let layer_height_px = u.layer_size.y;
 
-    let layer_width_px = view_width_px - (margin_left_px + margin_right_px);
-    let layer_height_px = view_height_px - (margin_top_px + margin_bottom_px);
     let layer_aspect_ratio = layer_width_px / layer_height_px;
 
     // Get the scale() matrix to handle the aspect ratio mode.
@@ -166,29 +164,6 @@ fn vs_main(
         u.aspect_ratio_mode
     );
 
-    // NOTE: these same calculations will need to be done on the CPU as well,
-    // to determine the extents to use for the axes.
-
-    // Convert margins from pixel to (0 to 1) normalized units.
-    // TODO: simplify and use more matrix operations once things are working.
-    let margin_top_norm = margin_top_px / view_height_px;
-    let margin_right_norm = margin_right_px / view_width_px;
-    let margin_bottom_norm = margin_bottom_px / view_height_px;
-    let margin_left_norm = margin_left_px / view_width_px;
-
-    // Transformation matrix so that points are drawn within the plot area.
-    // I.e., transform from normalized "layer" space to normalized "view" space.
-    // Aka MARGIN_MAT (handles the view margins).
-    let LAYER_NORM_TO_VIEW_NORM_MAT = translate(
-        margin_left_norm, // left
-        margin_bottom_norm, // bottom
-        0.0
-    ) * scale(
-        1.0 - (margin_left_norm + margin_right_norm),
-        1.0 - (margin_top_norm + margin_bottom_norm),
-        1.0
-    ); // Scale down by (1 - total_margin), THEN translate the scaled stuff by left/bottom margins.
-
     // We operate in (0 to 1) space, since it is more intuitive.
     // We therefore need matrices to transform (0, 1) into clip space ("NDC") (-1 to 1)
     let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1 (i.e., translating in the scaled-up space)
@@ -196,10 +171,12 @@ fn vs_main(
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
     // Model-view-projection matrix
-    // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // References:
+    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
     let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
-    let transform_mat = LAYER_NORM_TO_VIEW_NORM_MAT * (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
+    let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
     let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
@@ -210,7 +187,7 @@ fn vs_main(
     let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
     // TODO: Handle line_width_unit_mode == 1 (data coordinates)
-    let line_width_ndc = u.line_width / view_height_px * 2.0;
+    let line_width_ndc = u.line_width / layer_height_px * 2.0;
 
     // Extrude the line to form a quad
     let point_pos_ndc = extrude_line(
@@ -221,12 +198,7 @@ fn vs_main(
         layer_aspect_ratio
     );
 
-    // The clipping for lines cannot be done the same way as for points;
-    // Since we are rendering lines using interpolation between the vertices of the quad,
-    // we cannot simply clamp coordinates along a single direction without considering the other direction,
-    // as this will change the slope of the line.
-    // TODO: implement proper clipping for lines.
-
+    // The final point position in NDC space.
     let pos = vec4f(
         point_pos_ndc.x,
         point_pos_ndc.y,

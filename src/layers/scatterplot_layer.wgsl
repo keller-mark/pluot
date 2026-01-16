@@ -54,9 +54,9 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
 
     // Only scaling will result in the (0, 1) region being centered.
     // If we want to align 0 to the left or bottom, we need to add a translation step as well.
+    // TODO: implement aspect_ratio_alignment_mode
     return scale(
         x_scale_for_aspect_ratio_mode,
-        // TODO: do we only need to scale in X, and always keep Y scale at 1.0? would this fix the camera issues?
         y_scale_for_aspect_ratio_mode,
         1.0
     );
