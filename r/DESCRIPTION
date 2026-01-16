@@ -1,4 +1,4 @@
-Package: hellorust
+Package: pluotr
 Type: Package
 Title: Minimal Examples of Using Rust Code in R
 Version: 1.2.3
@@ -14,8 +14,8 @@ Description: Template R package with minimal setup to use Rust code in R without
     showcase R-Rust integration <https://jeroen.github.io/erum2018/>; for a real
     world use-case, see the 'gifski' package on 'CRAN'.
 License: MIT + file LICENSE
-URL: https://github.com/r-rust/hellorust
-BugReports: https://github.com/r-rust/hellorust/issues
+URL: https://github.com/r-rust/pluotr
+BugReports: https://github.com/r-rust/pluotr/issues
 SystemRequirements: Cargo (Rust's package manager), rustc
 Encoding: UTF-8
 RoxygenNote: 7.2.1

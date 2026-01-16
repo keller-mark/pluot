@@ -2,4 +2,4 @@
 
 export(hello_from_r)
 export(roundtrip)
-useDynLib(hellorust,roundtrip_wrapper)
+useDynLib(pluotr,roundtrip_wrapper)

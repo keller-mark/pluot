@@ -1,6 +1,6 @@
 #!/bin/sh
 export PATH="$HOME/.cargo/bin:$PATH"
-cd src/pluotr
+cd src/pluotr_rs
 ./vendor-update.sh
 
 # Update ../inst/AUTHORS

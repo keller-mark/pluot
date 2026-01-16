@@ -1,8 +1,8 @@
-LIBDIR = pluotr/target/release
-STATLIB = $(LIBDIR)/libpluotr.a
+LIBDIR = pluotr_rs/target/release
+STATLIB = $(LIBDIR)/libpluotr_rs.a
 PKG_CFLAGS = -pthread
 PKG_CPPFLAGS = -DSTRICT_R_HEADERS -DR_NO_REMAP
-PKG_LIBS = -L$(LIBDIR) -lpluotr -pthread
+PKG_LIBS = -L$(LIBDIR) -lpluotr_rs -pthread
 
 all: cleanup
 
@@ -17,10 +17,10 @@ CARGOTMP=$(PWD)/.cargo
 export CARGO_HOME=$(CARGOTMP)
 
 $(STATLIB):
-	if [ -f pluotr/vendor.tar.xz ]; then tar xf pluotr/vendor.tar.xz && mkdir -p $(CARGOTMP) && cp pluotr/vendor-config.toml $(CARGOTMP)/config.toml; fi
-	PATH="${PATH}:${HOME}/.cargo/bin" cargo build ${CRANFLAGS} --release --manifest-path=pluotr/Cargo.toml
+	if [ -f pluotr_rs/vendor.tar.xz ]; then tar xf pluotr_rs/vendor.tar.xz && mkdir -p $(CARGOTMP) && cp pluotr_rs/vendor-config.toml $(CARGOTMP)/config.toml; fi
+	PATH="${PATH}:${HOME}/.cargo/bin" cargo build ${CRANFLAGS} --release --manifest-path=pluotr_rs/Cargo.toml
 	@rm -Rf $(CARGOTMP) vendor || true # CRAN wants us to remove "detritus"
 	@rm -Rf $(LIBDIR)/build || true
 
 cleanup: $(SHLIB)
-	@rm -Rf $(STATLIB) pluotr/target
+	@rm -Rf $(STATLIB) pluotr_rs/target

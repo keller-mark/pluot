@@ -2,7 +2,7 @@
 #include <string.h>
 
 // Import C headers for rust API
-#include "pluotr/api.h"
+#include "pluotr_rs/api.h"
 
 // Helper to call R from Rust
 const char* call_r_info_helper(void) {
@@ -30,7 +30,7 @@ static const R_CallMethodDef CallEntries[] = {
   {NULL, NULL, 0}
 };
 
-void R_init_hellorust(DllInfo *dll) {
+void R_init_pluotr(DllInfo *dll) {
   R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
   R_useDynamicSymbols(dll, FALSE);
 }

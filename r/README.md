@@ -1,20 +1,26 @@
 # R bindings
 
-## Usage in RStudio
+## Naming
 
-### Development
+- `pluot`: The plain Rust crate (at the root of the repo)
+- `pluotr`: The R package
+- `pluotr_rs`: The Rust crate inside the R package, which depends on `pluot`, and contains the R bindings.
+
+## Development
+
+Usage in RStudio
 
 ```r
 devtools::install()
-library(hellorust)
-hellorust::hello()
+library(pluotr)
+pluotr::roundtrip()
 ```
 
-Reference: https://github.com/r-rust/hellorust
+Reference: https://github.com/r-rust/pluotr
 
 # Hello Rust
 
-[![R build status](https://github.com/r-rust/hellorust/workflows/R-CMD-check/badge.svg)](https://github.com/r-rust/hellorust/actions?workflow=R-CMD-check)
+[![R build status](https://github.com/r-rust/pluotr/workflows/R-CMD-check/badge.svg)](https://github.com/r-rust/pluotr/actions?workflow=R-CMD-check)
 
 > Minimal Examples of Using Rust Code in R
 
@@ -27,10 +33,10 @@ To learn more about using Rust code in R packages, also have a look at the [r-ru
 Bundle your rust code in a the embedded cargo package (see the `Cargo.toml` file) and then the [src/Makevars](src/Makevars) file is written such that R will automatically build the rust modules when the R package is installed.
 
 ```
-hellorust
+pluotr
 ├─ configure            ← checks if 'cargo' is installed
 ├─ src
-│  ├─ pluotr            ← bundled cargo package with your code
+│  ├─ pluotr_rs            ← bundled cargo package with your code
 │  |  ├─ Cargo.toml          ← cargo dependencies and metadata
 │  |  ├─ src                 ← rust source code
 │  |  └─ api.h               ← C headers for exported rust API
@@ -45,7 +51,7 @@ hellorust
 
 As per the new [2023 cran guidelines](https://cran.r-project.org/web/packages/using_rust.html) we now vendor the cargo crates in the R source packages in order to support offline installation. This is done in a two step process:
 
- 1. (by package author) The [vendor-update.sh](src/pluotr/vendor-update.sh) script creates the `vendor.tar.xz` bundle that contains all the cargo sources. In addition, the [vendor-authors.R](src/pluotr/vendor-authors.R) script generates an `inst/AUTHORS` file that lists the authors of the dependencies, as required by CRAN. Both of these scripts are called in the package [cleanup](cleanup) file and therefore run automatically during `R CMD build` when the source package is created.
+ 1. (by package author) The [vendor-update.sh](src/pluotr_rs/vendor-update.sh) script creates the `vendor.tar.xz` bundle that contains all the cargo sources. In addition, the [vendor-authors.R](src/pluotr_rs/vendor-authors.R) script generates an `inst/AUTHORS` file that lists the authors of the dependencies, as required by CRAN. Both of these scripts are called in the package [cleanup](cleanup) file and therefore run automatically during `R CMD build` when the source package is created.
  2. (by the user) At install time, the [Makevars](src/Makevars) extracts the `vendor.tar.xz` bundle (when available) and generates a `.cargo/config.toml` file to instruct `cargo build` to use the vendored (offline) sources.
  
 If you run `R CMD INSTALL` directly from a checkout (without building a source package), then no `vendor.tar.xz` is created and cargo falls back to downloading crates on-the-fly.
@@ -57,14 +63,14 @@ You can test or force the use of vendored sources by passing `--offline` to `car
 If Rust is available, clone this repository and run the regular `R CMD INSTALL` command:
 
 ```
-R CMD INSTALL hellorust
+R CMD INSTALL pluotr
 ```
 
 Alternatively, to download and install from within R itself:
 
 ```r
 # install.packages("remotes")
-remotes::install_github("r-rust/hellorust")
+remotes::install_github("r-rust/pluotr")
 ```
 
 ## What is Cargo

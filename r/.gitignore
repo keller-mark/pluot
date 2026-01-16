@@ -5,7 +5,7 @@ src/*.o
 src/*.so
 src/*.dll
 src/*.a
-src/pluotr/target/*
-src/pluotr/vendor.tar.xz
-src/pluotr/vendor/*
+src/pluotr_rs/target/*
+src/pluotr_rs/vendor.tar.xz
+src/pluotr_rs/vendor/*
 inst/AUTHORS

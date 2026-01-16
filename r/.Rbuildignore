@@ -1,7 +1,7 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^src/pluotr/target
-^src/pluotr/vendor/
+^src/pluotr_rs/target
+^src/pluotr_rs/vendor/
 \.lock$
 \.rs\.bk$
 ^README.md$
