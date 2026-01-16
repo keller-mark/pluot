@@ -2,3 +2,4 @@ packages:
   - 'pkg'
   - 'js/lib'
   - 'js/demo'
+  - 'js/docs'
