@@ -1,5 +1,5 @@
 ---
-title: Pluot
+title: Implement once, Pluot everywhere. 
 description: Get started building your docs site with Starlight.
 template: splash # Remove or comment out this line to display the site sidebar on this page.
 hero:
@@ -7,34 +7,55 @@ hero:
   image:
     file: ../../assets/pluot-logo.png
   actions:
+    - text: View an example
+      link: /guides/example/
+      icon: right-arrow
     - text: Read the docs
       link: /guides/example/
       icon: right-arrow
-    #- text: Read the Starlight docs
-    #  link: https://starlight.astro.build
-    #  icon: external
-    #  variant: minimal
+      variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Next steps
+## Visualize data using your favorite language
+
+{/* Icon reference: https://starlight.astro.build/reference/icons/ */}
 
 <CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
+	<Card title="Rust" icon="seti:rust">
+		Directly use the `pluot` Rust crate to render plots from within your Rust code.
 	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
+	<Card title="JavaScript" icon="seti:wasm">
+		Render static and interactive plots in the web browser.
+		Made possible via WebAssembly bindings in browsers that support WebGPU.
 	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
+	<Card title="Python" icon="seti:python">
+		Render static plots in Python environments via PyO3 bindings to the Rust library.
+		Or, render interactive plots in notebook environments via AnyWidget.
 	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
+	<Card title="More coming soon" icon="seti:json">
+		R bindings are coming soon.
+		If you don't see your favorite language here, reach out on GitHub.
 	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
+</CardGrid>
+
+## Features
+
+<CardGrid stagger>
+	<Card title="Fast" icon="rocket">
+		Render millions of points on each frame of an animation or user interaction (e.g., pan, zoom).
+	</Card>
+	<Card title="Small" icon="puzzle">
+		The bundle size (i.e., the WASM binary size) is small (currently less than 3MB) to make it practical to integrate into web applications.
+	</Card>
+	<Card title="Scalable" icon="magnifier">
+		Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies.
+	</Card>
+	<Card title="Raster or Vector Output" icon="seti:svg">
+		Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
+	</Card>
+	<Card title="High-Level APIs with Low-Level Control" icon="setting">
+		Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
 	</Card>
 </CardGrid>
