@@ -1,5 +1,5 @@
 ---
-title: Implement once, Pluot everywhere. 
+title: Implement once, visualize everywhere. 
 description: Get started building your docs site with Starlight.
 template: splash # Remove or comment out this line to display the site sidebar on this page.
 hero:
@@ -8,10 +8,10 @@ hero:
     file: ../../assets/pluot-logo.png
   actions:
     - text: View an example
-      link: /guides/example/
+      link: /start/getting-started/
       icon: right-arrow
     - text: Read the docs
-      link: /guides/example/
+      link: /examples/scatterplot/
       icon: right-arrow
       variant: minimal
 ---
@@ -52,10 +52,13 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 	<Card title="Scalable" icon="magnifier">
 		Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies.
 	</Card>
-	<Card title="Raster or Vector Output" icon="seti:svg">
-		Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
+	<Card title="Raster or vector output" icon="seti:svg">
+		Plotting functions can support both raster and vector drawing, to support publication-quality graphics export.
 	</Card>
-	<Card title="High-Level APIs with Low-Level Control" icon="setting">
+	<Card title="High-level APIs with low-level control" icon="setting">
 		Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
+	</Card>
+	<Card title="Leave the browser behind" icon="information">
+		Plotting functions are implemented in Rust using `wgpu`, and do not rely on a web browser or JavaScript runtime when plotting in non-web environments.
 	</Card>
 </CardGrid>
