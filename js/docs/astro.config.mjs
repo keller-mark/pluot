@@ -26,4 +26,8 @@ export default defineConfig({
 			],
 		}),
 	],
+	markdown: {
+		// Opt-out of "smart quotes". We do not want our normal quotes to be changed.
+		smartypants: false,
+	}
 });
