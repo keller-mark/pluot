@@ -83,6 +83,13 @@ In interactive scenarios, we can set `timeout` to a small value such as `100ms`,
 These returned pixels will be accompanied by a flag to indicate to the caller whether the visualization is complete or not.
 In the latter case, the caller can wait an animation frame and call the plot rendering function again.
 
+### Coordinated Multiple Views
+
+Pluot's plot rendering functions are concerned with rendering a single plot.
+By extension, Pluot is agnostic to any particular implementation of coordinated multiple views (i.e., linked interactive plots).
+This enables developers to use their favorite state management library, and decouples Pluot from the state management library du jour.
+
+For example, when using Pluot as a React component in a web application, you could implement CMV with [Use-Coordination](https://github.com/keller-mark/use-coordination). Alternatively, you could use plain React `useState`.
 
 ## Layer-based API
 
@@ -90,8 +97,3 @@ We provide a layer-based API that enables developers to implement custom plottin
 Several core layers are implemented, including ScatterplotLayer and LineLayer.
 
 For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust/) documentation.
-
-
-## Further reading
-
-- Read [about how-to guides](https://diataxis.fr/how-to-guides/) in the Diátaxis framework
