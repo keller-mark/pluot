@@ -6,16 +6,16 @@ sidebar:
     order: 20
 ---
 
-Install the `pluot` JavaScript package from [NPM](www.npmjs.com/package/pluot).
-
 
 ```sh frame="none"
 npm install pluot
 ```
 
+TODO
+
 ## React component
 
-The `pluot` package provides the `<Pluot />` React component.
+The `@pluot/react` NPM package provides the `<Pluot />` React component.
 
 ### Props
 
@@ -39,7 +39,10 @@ The `pluot` package provides the `<Pluot />` React component.
 
 ```jsx
 import React from 'react';
-import { Pluot } from 'pluot';
+import { Pluot } from '@pluot/react';
+import { FetchStore } from 'zarrita';
+
+const store = new FetchStore('https://example.com/my_dataset.zarr');
 
 export function MyPlot(props) {
     return (
@@ -48,7 +51,7 @@ export function MyPlot(props) {
             height={500}
             plotId={"docs-example-scatterplot"}
             plotType={"LayeredPlot"}
-            storeName={"gaussian_quantiles_store"}
+            store={store}
             plotParams={{
                 x_key: "/n_1000000/x_coords",
                 y_key: "/n_1000000/y_coords",
