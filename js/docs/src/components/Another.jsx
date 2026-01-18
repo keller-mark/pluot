@@ -5,7 +5,7 @@ const Pluot = lazy(async () => {
     // For 3d-view-controls.
     window.global = window;
     return {
-        default: (await import('pluot-wrapper')).Pluot,
+        default: (await import('@pluot/react')).Pluot,
     };
 });
 
