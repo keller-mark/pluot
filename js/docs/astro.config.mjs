@@ -27,6 +27,10 @@ export default defineConfig({
 					autogenerate: { directory: 'examples' },
 				},
 			],
+			customCss: [
+				// Relative path to your custom CSS file
+				'./src/styles/custom.css',
+			],
 		}),
 	],
 	markdown: {
