@@ -98,3 +98,33 @@ We provide a layer-based API that enables developers to implement custom plottin
 Several core layers are implemented, including ScatterplotLayer and LineLayer.
 
 For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust/) documentation.
+
+
+## Plot margins
+
+Plot margins (left, bottom, right, top) can be specified via parameters of the plot rendering function.
+Elements such as axes will be rendered into these margin regions (e.g., X axis within the bottom margin area).
+
+Data will be plotted inside the margins (i.e., data points located in the margins will be clipped).
+
+## Coordinate system
+
+When the camera matrix is the identity matrix, and the plotted region (within the margins) has a square aspect ratio, the (0, 1) unit square will be plotted.
+
+### Aspect ratio modes
+
+When the plotted region (within the margins) has a non-square aspect ratio, the behavior will depend on the aspect ratio mode.
+
+- `Ignore`: Squeeze/stretch the (0, 1) unit square so that no more and no less data is shown. The square aspect ratio of the (0, 1) unit square will NOT be preserved.
+
+- `Contain` (AKA fit): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
+
+- `Cover` (AKA fill): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
+
+### Aspect ratio alignment modes
+
+The aspect ratio alignment mode affects what extra data is shown in `Contain` mode, and what data is hidden in `Cover` mode.
+
+- `Start`: TODO
+- `Middle`: TODO
+- `End`: TODO
