@@ -42,10 +42,6 @@ export default defineConfig({
   build: {
     target: "esnext",
   },
-  define: {
-    // For 3d-view-controls.
-    global: "window",
-  },
   plugins: [
     wasm(),
     react({

@@ -1,11 +1,12 @@
 // TODO: once things are working with react,
-// convert to use plain vanilla JS.
+// implement a plain/vanilla JS version.
 import React, { useLayoutEffect, useEffect, useRef, useState, useMemo } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
-//import createDom2dCamera from "dom-2d-camera";
+// import createDom2dCamera from "dom-2d-camera";
 import createDom2dCamera from "./dom-2d-camera.js"; // Copy with minor modifications.
-import createCamera from "3d-view-controls";
+// import createCamera from "3d-view-controls";
+import createCamera from "./3d-view-controls.js"; // Copy with minor modifications.
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
@@ -19,7 +20,7 @@ const baseUrl = "http://localhost:5173/@data/mnist.zarr";
 
 // TODO: move store registration into demo subpackage and via props (rather than constructing stores in lib subpackage).
 const stores = {
-  // TODO: wrap store in a cache.
+  // Wrap store in a cache.
   // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
   mnist_store: lru(new FetchStore("http://localhost:5173/@data/mnist.zarr")),
   gaussian_quantiles_store: lru(
@@ -33,41 +34,29 @@ const stores = {
   ),
 };
 
-// console.log(wasm);
-
-// Define the global zarr_get function.
+// Only use window if it is defined (i.e., in the browser).
 // TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
-window.zarr_get = async (store_name, key) => {
-  console.log(`zarr_get: store_name=${store_name}, key=${key}`);
-  return stores[store_name].get(`/${key}`);
-};
+if (typeof window !== 'undefined') {
+  // Define the global zarr_get function.
+  window.zarr_get = async (store_name, key) => {
+    console.log(`zarr_get: store_name=${store_name}, key=${key}`);
+    return stores[store_name].get(`/${key}`);
+  };
 
-window.zarr_has = async (store_name, key) => {
-  // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
-  return stores[store_name].get(`/${key}`) !== undefined;
-};
+  window.zarr_has = async (store_name, key) => {
+    // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
+    return stores[store_name].get(`/${key}`) !== undefined;
+  };
 
-window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
-  // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
-  return stores[store_name].getRange(`/${key}`, { offset, length });
-};
-window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
-  // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
-  return stores[store_name].getRange(`/${key}`, { suffix_length });
-};
-
-// console.log(await stores['my_store'].get('/umap/x_coords/zarr.json'));
-
-// Reference: https://github.com/hughsk/right-now/blob/master/browser.js
-const now =
-  performance && performance.now
-    ? function now() {
-        return performance.now();
-      }
-    : Date.now ||
-      function now() {
-        return +new Date();
-      };
+  window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
+    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
+    return stores[store_name].getRange(`/${key}`, { offset, length });
+  };
+  window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
+    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
+    return stores[store_name].getRange(`/${key}`, { suffix_length });
+  };
+}
 
 export function Pluot(props) {
   const {
