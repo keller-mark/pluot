@@ -1,0 +1,64 @@
+name: Release and deploy
+
+on:
+  push:
+    branches:
+    - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # TODO: jobs for building and publishing release artifacts here
+  prepare_docs_site:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: wasm32-unknown-unknown
+    - uses: Swatinem/rust-cache@v2
+    # Start WASM-specific stuff
+    #- name: Install wasm-pack (alternative method)
+    #  run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+    - name: Install wasm-pack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-pack
+    - name: Install nightly wasm-bindgen CLI
+      run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
+    #- uses: Swatinem/rust-cache@v2
+    - name: Compile Rust code to WASM
+      run: wasm-pack build --release --target web
+    - uses: pnpm/action-setup@v4
+      name: Install pnpm
+      id: pnpm-install
+      with:
+        run_install: true
+    - name: Build app
+      run: |
+        pnpm run build
+        pnpm run build-docs
+        echo "pluot.dev" > js/docs/dist/CNAME
+    - uses: actions/upload-pages-artifact@v3
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      with:
+        path: ./js/docs/dist
+  
+  deploy_docs_site:
+    runs-on: ubuntu-latest
+    needs: prepare_docs_site
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        id: deployment
+        uses: actions/deploy-pages@v4

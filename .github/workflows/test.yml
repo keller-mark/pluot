@@ -1,0 +1,81 @@
+name: Unit tests
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  plain_rust_unit_tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Compile Rust code
+      run: cargo build --verbose
+    - name: Run Rust unit tests
+      #run: cargo test --verbose --features test_plain_rust # Rendering tests do not work on non-macos runners since they lack GPUs.
+      run: cargo test --verbose
+  py_compile:
+    runs-on: ubuntu-latest
+    needs: [plain_rust_unit_tests]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+      env:
+        UV_PYTHON: '3.12'
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+    - uses: Swatinem/rust-cache@v2
+    # Python-specific stuff
+    - name: Install dependencies
+      run: uv sync --extra dev
+    - name: Compile Rust code
+      run: uv run maturin develop --features python
+  py_and_wasm_unit_tests:
+    runs-on: macos-latest
+    # We only run these macOS-dependent tests if the previous jobs succeeded.
+    needs: [py_compile]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+      env:
+        UV_PYTHON: '3.12'
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: wasm32-unknown-unknown
+    - uses: Swatinem/rust-cache@v2
+    # Python-specific stuff
+    - name: Install dependencies
+      run: uv sync --extra dev
+    - name: Compile Rust code
+      run: uv run maturin develop --features python
+    - name: Run Python unit tests
+      run: uv run pytest
+    # End Python-specific stuff
+    # Start WASM-specific stuff
+    - uses: nanasess/setup-chromedriver@master
+    #- name: Install wasm-pack (alternative method)
+    #  run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+    - name: Install wasm-pack
+      uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-pack
+    - name: Install nightly wasm-bindgen CLI
+      run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
+    #- uses: Swatinem/rust-cache@v2
+    - name: Compile Rust code to WASM
+      run: wasm-pack build --target web
+    - name: Run unit tests
+      run: wasm-pack test --headless --chrome
