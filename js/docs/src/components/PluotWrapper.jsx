@@ -1,14 +1,19 @@
 import React, { useState, useMemo, lazy, Suspense } from 'react';
 import { FetchStore } from 'zarrita';
+import { Pluot } from '@pluot/react';
 
-
+/*
+// We need to use a dynamic import here, because Pluot accesses `window`
+// at the top-level, which causes issues during server-side rendering.
+// Even though we pass `client:only` to the PluotWrapper component in Astro,
+// Astro still tries to import from its JS file during the build step,
+// which fails.
 const Pluot = lazy(async () => {
-    // For 3d-view-controls.
-    window.global = window;
     return {
         default: (await import('@pluot/react')).Pluot,
     };
 });
+*/
 
 export function PluotWrapper(props) {
     const {
@@ -20,7 +25,6 @@ export function PluotWrapper(props) {
     }, [storeUrl]);
     
     return (
-        <Suspense fallback={<p>Loading Pluot...</p>}>
             <Pluot
                 store={store}
                 width={500}
@@ -40,6 +44,5 @@ export function PluotWrapper(props) {
                 marginBottom={0}
                 {...props}
             />
-        </Suspense>
     );
 }

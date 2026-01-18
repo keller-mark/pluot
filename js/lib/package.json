@@ -37,8 +37,13 @@
     "dom-2d-camera": "^2.2.6",
     "camera-2d-simple": "^3.0.0",
     "gl-matrix": "^3.4.4",
+    "3d-view-controls": "^2.2.2",
     "3d-view": "^2.0.1",
-    "3d-view-controls": "^2.2.2"
+    "has-passive-events": "^1.0.0",
+    "mouse-change": "^1.1.1",
+    "mouse-event-offset": "^3.0.2",
+    "mouse-wheel": "^1.0.2"
+
   },
   "devDependencies": {
     "vitest": "^3.2.4",

@@ -117,9 +117,21 @@ importers:
       gl-matrix:
         specifier: ^3.4.4
         version: 3.4.4
+      has-passive-events:
+        specifier: ^1.0.0
+        version: 1.0.0
       lightua:
         specifier: 0.1.0
         version: 0.1.0
+      mouse-change:
+        specifier: ^1.1.1
+        version: 1.4.0
+      mouse-event-offset:
+        specifier: ^3.0.2
+        version: 3.0.2
+      mouse-wheel:
+        specifier: ^1.0.2
+        version: 1.2.0
       pluot:
         specifier: workspace:*
         version: link:../../pkg

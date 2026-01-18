@@ -1,14 +1,21 @@
 // Reference: https://github.com/mikolalysenko/3d-view-controls/blob/0e59c2ae4a891ce3c7bb83aa4291f89d99366037/camera.js
-'use strict'
+import createView from '3d-view';
+import mouseChange from 'mouse-change';
+import mouseWheel from 'mouse-wheel';
+import mouseOffset from 'mouse-event-offset';
+import hasPassive from 'has-passive-events';
 
-module.exports = createCamera
-
-var now         = require('right-now')
-var createView  = require('3d-view')
-var mouseChange = require('mouse-change')
-var mouseWheel  = require('mouse-wheel')
-var mouseOffset = require('mouse-event-offset')
-var hasPassive  = require('has-passive-events')
+// Updated right-now implementation to avoid `global` usage.
+// Reference: https://github.com/hughsk/right-now/blob/master/browser.js
+const now =
+  performance && performance.now
+    ? function now() {
+        return performance.now();
+      }
+    : Date.now ||
+      function now() {
+        return +new Date();
+      };
 
 export default function createCamera(element, options) {
   element = element || document.body
