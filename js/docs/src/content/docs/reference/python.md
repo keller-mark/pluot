@@ -1,6 +1,6 @@
 ---
 title: Usage from Python
-description: A reference page in my new Starlight docs site.
+description: How to render plots from Python.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 10

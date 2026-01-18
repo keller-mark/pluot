@@ -1,6 +1,6 @@
 ---
 title: Usage from Rust
-description: A reference page in my new Starlight docs site.
+description: How to render plots from Rust.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 30

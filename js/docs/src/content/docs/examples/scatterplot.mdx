@@ -1,11 +1,32 @@
 ---
 title: Scatterplot
-description: A guide in my new Starlight docs site.
+description: Scatterplot example.
 sidebar:
     order: 10
 ---
-import { App } from '../../../components/App.jsx';
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
 
 This scatterplot renders 1 million points.
 
-<App client:load client:only="react" />
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    width={500}
+    height={500}
+    plotId={"scatterplot-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+        x_key: "/n_1000000/x_coords",
+        y_key: "/n_1000000/y_coords",
+        color_key: "/n_1000000/class_labels",
+        point_radius: 5.0,
+    }}
+    mode={"2d"}
+    marginLeft={50}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={50}
+/>

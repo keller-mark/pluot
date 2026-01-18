@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: A guide in my new Starlight docs site.
+description: Get started using Pluot.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 10

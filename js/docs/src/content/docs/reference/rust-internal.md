@@ -1,6 +1,6 @@
 ---
 title: Rust API
-description: A reference page in my new Starlight docs site.
+description: Details on the Rust internals of Pluot.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 99

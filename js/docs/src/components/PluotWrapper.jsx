@@ -1,8 +1,6 @@
 import React, { useState, useMemo, lazy, Suspense } from 'react';
 import { FetchStore } from 'zarrita';
 
-const store = new FetchStore('https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr');
-
 
 const Pluot = lazy(async () => {
     // For 3d-view-controls.
@@ -12,19 +10,23 @@ const Pluot = lazy(async () => {
     };
 });
 
+export function PluotWrapper(props) {
+    const {
+        storeUrl,
+    } = props;
 
-export function Another(props) {
+    const store = useMemo(() => {
+        return new FetchStore(storeUrl);
+    }, [storeUrl]);
     
     return (
         <Suspense fallback={<p>Loading Pluot...</p>}>
             <Pluot
+                store={store}
                 width={500}
                 height={500}
-                plotId={"docs-example-scatterplot"}
+                plotId={"example-plot"}
                 plotType={"LayeredPlot"}
-                // TODO: host the store somewhere remotely.
-                //storeName={"gaussian_quantiles_store"}
-                store={store}
                 plotParams={{
                     x_key: "/n_1000000/x_coords",
                     y_key: "/n_1000000/y_coords",
@@ -36,6 +38,7 @@ export function Another(props) {
                 marginTop={0}
                 marginRight={0}
                 marginBottom={0}
+                {...props}
             />
         </Suspense>
     );

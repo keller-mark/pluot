@@ -1,6 +1,6 @@
 ---
 title: Key Concepts
-description: A guide in my new Starlight docs site.
+description: Learn the key concepts used in Pluot.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 20
