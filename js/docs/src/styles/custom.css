@@ -1,4 +1,35 @@
-/* Dark mode colors. */
+/* Dark mode colors: Dark orange */
+:root {
+	--sl-color-accent-low: #460912;
+	--sl-color-accent: #c50038;
+	--sl-color-accent-high: #feb1b2;
+	--sl-color-white: #ffffff;
+	--sl-color-gray-1: #ffe8e0;
+	--sl-color-gray-2: #ffaa8a;
+	--sl-color-gray-3: #ff8150;
+	--sl-color-gray-4: #953300;
+	--sl-color-gray-5: #621f00;
+	--sl-color-gray-6: #461400;
+	--sl-color-black: #2f0a00;
+}
+/* Light mode colors: Dark orange */
+:root[data-theme='light'] {
+	--sl-color-accent-low: #ffc6c7;
+	--sl-color-accent: #a3002d;
+	--sl-color-accent-high: #630018;
+	--sl-color-white: #2f0a00;
+	--sl-color-gray-1: #461400;
+	--sl-color-gray-2: #621f00;
+	--sl-color-gray-3: #953300;
+	--sl-color-gray-4: #e85400;
+	--sl-color-gray-5: #ffaa8a;
+	--sl-color-gray-6: #ffe8e0;
+	--sl-color-gray-7: #fff4ef;
+	--sl-color-black: #ffffff;
+}
+
+/* Dark mode colors: Purple */
+/*
 :root {
 	--sl-color-accent-low: #261c42;
 	--sl-color-accent: #7344d3;
@@ -12,7 +43,9 @@
 	--sl-color-gray-6: #302321;
 	--sl-color-black: #1d1715;
 }
-/* Light mode colors. */
+*/
+/* Light mode colors: Purple */
+/*
 :root[data-theme='light'] {
 	--sl-color-accent-low: #d7d1f7;
 	--sl-color-accent: #6029ba;
@@ -27,3 +60,4 @@
 	--sl-color-gray-7: #f9f5f5;
 	--sl-color-black: #ffffff;
 }
+*/
