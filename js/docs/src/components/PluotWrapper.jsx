@@ -25,24 +25,24 @@ export function PluotWrapper(props) {
     }, [storeUrl]);
     
     return (
-            <Pluot
-                store={store}
-                width={500}
-                height={500}
-                plotId={"example-plot"}
-                plotType={"LayeredPlot"}
-                plotParams={{
-                    x_key: "/n_1000000/x_coords",
-                    y_key: "/n_1000000/y_coords",
-                    color_key: "/n_1000000/class_labels",
-                    point_radius: 5.0,
-                }}
-                mode={"2d"}
-                marginLeft={0}
-                marginTop={0}
-                marginRight={0}
-                marginBottom={0}
-                {...props}
-            />
+        <Pluot
+            store={store}
+            width={500}
+            height={500}
+            plotId={"example-plot"}
+            plotType={"LayeredPlot"}
+            plotParams={{
+                x_key: "/n_1000000/x_coords",
+                y_key: "/n_1000000/y_coords",
+                color_key: "/n_1000000/class_labels",
+                point_radius: 5.0,
+            }}
+            mode={"2d"}
+            marginLeft={0}
+            marginTop={0}
+            marginRight={0}
+            marginBottom={0}
+            {...props}
+        />
     );
 }
