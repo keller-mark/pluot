@@ -20,7 +20,8 @@
     "clean": "pnpm -r exec -- rm -rf dist dist-tsc tsconfig.tsbuildinfo",
     "clean-deps": "pnpm -r exec -- rm -rf node_modules",
     "clean-all": "pnpm run clean && pnpm run clean-deps",
-    "build-docs": "pnpm -r build-docs"
+    "build-docs": "pnpm -r build-docs",
+    "deploy": "wasm-pack build --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d js/docs/dist --cname pluot.dev --nojekyll"
   },
   "keywords": [],
   "author": "",
@@ -30,7 +31,8 @@
     "vite": "^6.1.1",
     "jsdom": "^26.1.0",
     "vitest-canvas-mock": "^0.3.3",
-    "typescript": "^5.9"
+    "typescript": "^5.9",
+    "gh-pages": "^6.3.0"
   },
   "packageManager": "pnpm@9.7.0"
 }
