@@ -5,6 +5,7 @@ sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 20
 ---
+import { Aside } from '@astrojs/starlight/components';
 
 ## Rust core
 
@@ -69,9 +70,12 @@ We provide a React component that supports these interactions, enabling interact
 
 To support similar interactions in a desktop application context, analogous interaction handlers must be implemented in (/ported to) whatever GUI framework is being used.
 
+<Aside type="tip" title="Another way to think about it">With its headless plotting architecture, interactive plotting can be considered similar to the React model of re-renders upon state changes, with memoization and caching strategies that check dependencies.</Aside>
+
+
 ### Timeouts
 
-As noted above, we are often plotting data that is stored remotely, requiring network requests to retreive the data prior to rendering it in a visualization.
+As previously noted, we are often plotting data that is stored remotely, requiring network requests to retreive the data prior to rendering it in a visualization.
 We must account for slow network connections and request failures.
 Pluot handles this with a `timeout` parameter that is passed to the plot rendering function.
 
@@ -106,6 +110,8 @@ Plot margins (left, bottom, right, top) can be specified via parameters of the p
 Elements such as axes will be rendered into these margin regions (e.g., X axis within the bottom margin area).
 
 Data will be plotted inside the margins (i.e., data points located in the margins will be clipped).
+In other words, when considering the coordinate system, camera matrix, and aspect ratio handling, we only consider the plotted region within the margins.
+For example, if the overall canvas size is 100x100 (square), but there is a left margin of 50 pixels, then the plotted region will be a tall rectangle (with aspect ratio `1:2`) in the right half of the canvas.
 
 ## Coordinate system
 
@@ -120,6 +126,9 @@ When the plotted region (within the margins) has a non-square aspect ratio, the 
 - `Contain` (AKA fit): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
 
 - `Cover` (AKA fill): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
+
+For certain use cases, such as for imaging data, it is likely preferable to use `Contain` or `Cover` modes to avoid distortion of square pixels.
+In other cases, such as for scatterplots with different units on the X and Y axes, it may be preferable to use `Ignore` mode to avoid showing extra data that is outside the desired coordinate ranges.
 
 ### Aspect ratio alignment modes
 
