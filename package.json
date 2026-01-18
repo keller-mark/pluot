@@ -5,8 +5,9 @@
   "description": "",
   "module": "dist/index.js",
   "scripts": {
-    "start": "pnpm -r --parallel start",
-    "clean-start": "pnpm install && pnpm run clean && pnpm run build && pnpm run start",
+    "start-demo": "pnpm -r --parallel --filter=!docs start",
+    "start-docs": "pnpm -r --parallel --filter=!demo start",
+    "clean-start": "pnpm install && pnpm run clean && pnpm run build && pnpm run start-demo",
     "build:ci": "pnpm -r --workspace-concurrency 1 build",
     "build": "pnpm -r build",
     "start-tsc": "tsc -b --watch",
@@ -18,7 +19,8 @@
     "lint-fix": "eslint --fix \"packages/**/src/**/*.{js,jsx,ts,tsx}\" \"sites/*/src/**/*.{js,jsx,ts,tsx}\" \"examples/*/src/**/*.{js,jsx,ts,tsx}\"",
     "clean": "pnpm -r exec -- rm -rf dist dist-tsc tsconfig.tsbuildinfo",
     "clean-deps": "pnpm -r exec -- rm -rf node_modules",
-    "clean-all": "pnpm run clean && pnpm run clean-deps"
+    "clean-all": "pnpm run clean && pnpm run clean-deps",
+    "build-docs": "pnpm -r build-docs"
   },
   "keywords": [],
   "author": "",

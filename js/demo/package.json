@@ -7,10 +7,10 @@
   "scripts": {
     "start": "vite",
     "build-demo": "vite build",
-    "preview": "vite preview"
+    "preview-demo": "vite preview"
   },
   "dependencies": {
-    "pluot-wrapper": "workspace:*",
+    "@pluot/react": "workspace:*",
     "use-coordination": "^1.0.1",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"

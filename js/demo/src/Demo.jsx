@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pluot } from "pluot-wrapper";
+import { Pluot } from "@pluot/react";
 
 const DEMOS = {
   triangle: {
