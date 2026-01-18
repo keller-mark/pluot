@@ -81,6 +81,7 @@ When creating static plots, we often want to wait for all data to be received pr
 This differs from interactive scenarios, in which we often want to render visualizations incrementally, so that the user begins to see a subset of data while the rest is still loading.
 In interactive scenarios, we can set `timeout` to a small value such as `100ms`, after which Pluot will return some pixels regardless of whether all data has been received.
 These returned pixels will be accompanied by a flag to indicate to the caller whether the visualization is complete or not.
+(How to use this flag value is up to the caller, for instance, to show a loading indicator.)
 In the latter case, the caller can wait an animation frame and call the plot rendering function again.
 
 ### Coordinated Multiple Views

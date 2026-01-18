@@ -1,6 +1,6 @@
 // TODO: once things are working with react,
 // convert to use plain vanilla JS.
-import React, { useLayoutEffect, useEffect, useRef, useState } from "react";
+import React, { useLayoutEffect, useEffect, useRef, useState, useMemo } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
 //import createDom2dCamera from "dom-2d-camera";
@@ -75,7 +75,8 @@ export function Pluot(props) {
     height,
     plotId,
     plotType,
-    storeName,
+    store,
+    storeName: storeNameProp,
     plotParams,
     renderOnce = true,
     logPerformance = false,
@@ -86,6 +87,17 @@ export function Pluot(props) {
     marginRight =  0.0,
     aspectRatioMode = "contain", // "ignore", "contain", "cover"
   } = props;
+
+  const storeName = useMemo(() => {
+    if (storeNameProp) {
+      return storeNameProp;
+    }
+    if (store) {
+      stores[plotId + "_store"] = lru(store);
+      return plotId + "_store";
+    }
+    throw new Error("Either storeName or store must be provided.");
+  }, [storeNameProp, store]);
 
   const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
 

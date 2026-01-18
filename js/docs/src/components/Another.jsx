@@ -1,4 +1,7 @@
 import React, { useState, useMemo, lazy, Suspense } from 'react';
+import { FetchStore } from 'zarrita';
+
+const store = new FetchStore('https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr');
 
 
 const Pluot = lazy(async () => {
@@ -20,7 +23,8 @@ export function Another(props) {
                 plotId={"docs-example-scatterplot"}
                 plotType={"LayeredPlot"}
                 // TODO: host the store somewhere remotely.
-                storeName={"gaussian_quantiles_store"}
+                //storeName={"gaussian_quantiles_store"}
+                store={store}
                 plotParams={{
                     x_key: "/n_1000000/x_coords",
                     y_key: "/n_1000000/y_coords",
@@ -28,6 +32,10 @@ export function Another(props) {
                     point_radius: 5.0,
                 }}
                 mode={"2d"}
+                marginLeft={0}
+                marginTop={0}
+                marginRight={0}
+                marginBottom={0}
             />
         </Suspense>
     );
