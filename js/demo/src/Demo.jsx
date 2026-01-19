@@ -90,6 +90,8 @@ export function Demo() {
   const [ch1color, setCh1Color] = useState([0.0, 1.0, 0.0]);
   const [zIndex, setZIndex] = useState(99);
 
+  const [graphicsFormat, setGraphicsFormat] = useState("Raster");
+
   return (
     <div>
       <select
@@ -100,9 +102,13 @@ export function Demo() {
           <option key={plotId}>{plotId}</option>
         ))}
       </select>
+      <label>Graphics Format:&nbsp;
+        <input type="checkbox" checked={graphicsFormat === "Raster"} onChange={(e) => setGraphicsFormat(e.target.checked ? "Raster" : "Vector")} />
+      </label>
       <Pluot
         width={800}
         height={800}
+        format={graphicsFormat}
         plotId={currPlotId}
         plotType={plotType}
         storeName={storeName}

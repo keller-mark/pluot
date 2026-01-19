@@ -8,6 +8,8 @@ use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
+use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::svg::update_svg;
 
 pub struct ScatterplotLayerData {
     pub x_arr: Vec<f32>,
@@ -405,7 +407,26 @@ impl DrawToCanvas for ScatterplotLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for ScatterplotLayer {
     async fn draw(&self, group: &Group) -> Group {
-        // TODO
-        return group.clone();
+
+        let toy_elements = vec![
+            TwoElement::Circle(TwoCircle {
+                x: 50.0,
+                y: 50.0,
+                radius: 10.0,
+                ..Default::default()
+            }),
+            TwoElement::Rectangle(TwoRectangle {
+                x: 100.0,
+                y: 100.0,
+                width: 20.0,
+                height: 30.0,
+                ..Default::default()
+            }),
+        ];
+        
+        // TODO: refactor to avoid the cloning here?
+        let updated_group = update_svg(group.clone(), &toy_elements);
+
+        return updated_group.clone();
     }
 }

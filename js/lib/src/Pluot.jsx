@@ -78,6 +78,8 @@ export function Pluot(props) {
     format = "Raster", // "Raster", "Vector"
   } = props;
 
+  const isVector = format === "Vector";
+
   const storeName = useMemo(() => {
     if (storeNameProp) {
       return storeNameProp;
@@ -91,6 +93,7 @@ export function Pluot(props) {
 
   const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
 
+  const svgRef = useRef(null);
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
@@ -255,11 +258,9 @@ export function Pluot(props) {
 
   // TODO: switch this useEffect to use React-Query.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !isWasmReady) {
+    if (!isWasmReady) {
       return;
     }
-    const ctx = canvas.getContext("2d");
 
     // Start FPS tracking variables.
     let frameCount = 0;
@@ -292,21 +293,46 @@ export function Pluot(props) {
         timeout: 200, // in ms
         cache_enabled: true,
       };
+      // TODO: wrap render_wasm in try/catch, to handle Rust panics.
       wasm.render_wasm(renderParams).then((arr) => {
-        // TODO: is there a more efficient way to do this?
-        // E.g., write to a webgl texture? or is this fast enough already?
-        const imageData = new ImageData(
-          new Uint8ClampedArray(arr.subarray(0, -1)),
-          width,
-          height,
-        );
-        ctx.putImageData(imageData, 0, 0);
 
-        const bailedEarly = arr.at(-1) === 1;
-        if (bailedEarly) {
-          // TODO: do this via react state and useEffect?
-          // TODO: prevent infinite loop if always bailing early?
-          requestAnimationFrame(renderFrame);
+        if (isVector) {
+          // Format: Vector (render to SVG)
+          const gContents = new TextDecoder().decode(arr);
+
+          console.log(gContents)
+
+          if (!svgRef.current) {
+            return;
+          }
+          svgRef.current.innerHTML = gContents;
+
+          // TODO: check for bailed early
+        } else {
+          // Format: Raster (render to canvas)
+          const canvas = canvasRef.current;
+          if (!canvas) {
+            return;
+          }
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            return;
+          }
+          // TODO: is there a more efficient way to do this?
+          // E.g., write to a webgl texture? or is this fast enough already?
+          const imageData = new ImageData(
+            new Uint8ClampedArray(arr.subarray(0, -1)),
+            width,
+            height,
+          );
+          ctx.putImageData(imageData, 0, 0);
+
+          const bailedEarly = arr.at(-1) === 1;
+          if (bailedEarly) {
+            // TODO: do this via react state and useEffect?
+            // TODO: prevent infinite loop if always bailing early?
+            requestAnimationFrame(renderFrame);
+          }
         }
       });
     }
@@ -340,7 +366,7 @@ export function Pluot(props) {
     } else {
       requestAnimationFrame(animate);
     }
-  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName]);
+  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef]);
 
   return (
     <div style={{ width, height, position: "relative" }}>
@@ -358,12 +384,24 @@ export function Pluot(props) {
           border: "1px solid red",
         }}
       />
-      <canvas
-        ref={canvasRef}
-        style={{ width, height, border: "1px solid black" }}
-        width={width}
-        height={height}
-      />
+      {isVector ? (
+        <svg
+          ref={svgRef}
+          style={{ width, height, border: "1px solid black" }}
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+        </svg>
+      ) : (
+        <canvas
+          ref={canvasRef}
+          style={{ width, height, border: "1px solid black" }}
+          width={width}
+          height={height}
+        />
+      )}
     </div>
   );
 }
