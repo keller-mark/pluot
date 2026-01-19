@@ -4,9 +4,10 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
+use svg::node::element::Group;
 
 pub struct ScatterplotLayerData {
     pub x_arr: Vec<f32>,
@@ -400,4 +401,11 @@ impl DrawToCanvas for ScatterplotLayer {
     }
 }
 
-// TODO: Implement DrawToSvg.
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToSvg for ScatterplotLayer {
+    async fn draw(&self, group: &Group) -> Group {
+        // TODO
+        return group.clone();
+    }
+}

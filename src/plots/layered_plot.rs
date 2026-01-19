@@ -1,7 +1,7 @@
 use crate::layers::line_layer::LineLayer;
 use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
-use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDrawToCanvas, UnitsMode, ViewParams, render_canvas};
+use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDraw, UnitsMode, ViewParams, render_canvas};
 use crate::wgpu;
 use crate::log;
 use crate::params::{PlotParams, RenderContext, RenderResult};
@@ -11,10 +11,10 @@ use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
 
-pub async fn render_layered_plot(
+pub fn render_layered_plot(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
-) -> RenderResult {
+) -> Vec<Box<dyn PreparedAndDraw>> {
     // Get x and y data from the Zarr store.
     let store = context.store;
     let height = context.params.height as f64;
@@ -41,7 +41,7 @@ pub async fn render_layered_plot(
         aspect_ratio_mode: context.params.aspect_ratio_mode,
     };
 
-    let layers: Vec<Box<dyn PreparedAndDrawToCanvas>> = vec![
+    let layers: Vec<Box<dyn PreparedAndDraw>> = vec![
         Box::new(ZarrScatterplotLayer::new(
             view_params.clone(),
             Some(MarginParams {
@@ -135,8 +135,5 @@ pub async fn render_layered_plot(
         )),
     ];
 
-    // TODO: render to canvas or svg depending on `format` param.
-    let render_result = render_canvas(view_params, layers, context, encoder).await;
-
-    return render_result;
+    return layers;
 }

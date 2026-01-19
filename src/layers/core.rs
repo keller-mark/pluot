@@ -106,8 +106,13 @@ impl<T: PreparedLayer + DrawToSvg + MaybeSend> PreparedAndDrawToSvg for T {}
 pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend {}
 impl<T: PreparedLayer + DrawToCanvas + MaybeSend> PreparedAndDrawToCanvas for T {}
 
+// Trait for layers that can render to both SVG and Canvas
+pub trait PreparedAndDraw: PreparedAndDrawToCanvas + PreparedAndDrawToSvg {}
+impl<T: PreparedAndDrawToCanvas + PreparedAndDrawToSvg> PreparedAndDraw for T {}
 
-pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
+
+// TODO: figure out how to make the type of `layers` Vec<Box<dyn PreparedAndDrawToSvg>>  (no need for canvas as well).
+pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, context: &mut RenderContext<'_>) -> RenderResult {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
 
     // TODO: use maybe_timeout! here?
@@ -126,15 +131,20 @@ pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn Prepare
     let mut group = group;
     for layer in layer_refs {
         // TODO: when/where to pass view_params to each layer?
-        group = layer.draw(&group).await;
+        group = DrawToSvg::draw(layer.as_ref(), &group).await;
     }
 
-    // TODO: also return RenderResult? How to aggregate results from multiple layers?
+    *context.out_group = group.clone();
 
-    group
+    // TODO: Aggregate results from multiple layers
+
+    RenderResult {
+        bailed_early: false,
+    }
 }
 
-pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {
+// TODO: figure out how to make the type of `layers` Vec<Box<dyn PreparedAndDrawToCanvas>>  (no need for SVG as well).
+pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {
     // TODO: use maybe_timeout! here?
 
     // Collect references first to avoid Send issues with the iterator
@@ -177,14 +187,13 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
         for layer in layer_refs {
             // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
             // Should we instead assume the layer already has the necessary info from view_params?
-            layer.draw(context.device.clone(), context.queue.clone(), &mut render_pass).await;
+            DrawToCanvas::draw(layer.as_ref(), context.device.clone(), context.queue.clone(), &mut render_pass).await;
         }
 
         drop(render_pass);
     }
 
-    // TODO: return RenderResult? How to aggregate results from multiple layers?
-
+    // TODO: Aggregate results from multiple layers
     RenderResult {
         bailed_early: false,
     }

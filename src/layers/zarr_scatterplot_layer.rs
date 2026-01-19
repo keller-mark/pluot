@@ -2,12 +2,12 @@ use std::sync::Arc;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerData, draw_scatterplot_layer};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-
+use svg::node::element::Group;
 
 pub struct ZarrScatterplotLayer {
     view_params: ViewParams,
@@ -138,5 +138,15 @@ impl DrawToCanvas for ZarrScatterplotLayer {
             &self.point_radius_unit_mode,
             &self.point_shape_mode,
         ).await;
+    }
+}
+
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToSvg for ZarrScatterplotLayer {
+    async fn draw(&self, group: &Group) -> Group {
+        // TODO
+        return group.clone();
     }
 }

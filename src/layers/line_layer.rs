@@ -8,10 +8,10 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-
+use svg::node::element::Group;
 
 struct LineLayerData {
     // Lines are from source (x,y) to target (x,y).
@@ -443,4 +443,12 @@ impl DrawToCanvas for LineLayer {
     }
 }
 
-// TODO: Implement DrawToSvg.
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToSvg for LineLayer {
+    async fn draw(&self, group: &Group) -> Group {
+        // TODO
+        return group.clone();
+    }
+}
+

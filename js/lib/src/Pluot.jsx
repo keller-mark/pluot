@@ -74,7 +74,8 @@ export function Pluot(props) {
     marginLeft = 400.0,
     marginTop = 0.0,
     marginRight =  0.0,
-    aspectRatioMode = "contain", // "ignore", "contain", "cover"
+    aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
+    format = "Raster", // "Raster", "Vector"
   } = props;
 
   const storeName = useMemo(() => {
@@ -273,12 +274,13 @@ export function Pluot(props) {
       const renderParams = {
         width,
         height,
+        format: format,
         margin_bottom: marginBottom,
         margin_left: marginLeft,
         margin_top: marginTop,
         margin_right: marginRight,
         device_pixel_ratio: window.devicePixelRatio,
-        aspect_ratio_mode: ["ignore", "contain", "cover"].indexOf(aspectRatioMode),
+        aspect_ratio_mode: aspectRatioMode,
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
