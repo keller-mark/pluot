@@ -129,13 +129,13 @@ const dom2dCamera = (
   const updateAspectRatioModeFactors = () => {
     xAspectRatioModeFactor = 1.0;
     yAspectRatioModeFactor = 1.0;
-    if(aspectRatioMode === "contain") {
+    if(aspectRatioMode === "Contain") {
       if(aspectRatio > 1.0) {
         xAspectRatioModeFactor = 1.0 / aspectRatio;
       } else if(aspectRatio < 1.0) {
         yAspectRatioModeFactor = aspectRatio;
       }
-    } else if(aspectRatioMode === "cover") {
+    } else if(aspectRatioMode === "Cover") {
       if(aspectRatio > 1.0) {
         yAspectRatioModeFactor = aspectRatio;
       } else if(aspectRatio < 1.0) {
