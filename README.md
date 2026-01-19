@@ -17,8 +17,6 @@ How it works: "headless" plotting. Pluot uses Rust and [WGPU](https://github.com
 _In other words: "rewrite it in rust," but for plotting._
 
 
-Polyglot, portable, performant, pixel-perfect plotting.
-
 ## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
