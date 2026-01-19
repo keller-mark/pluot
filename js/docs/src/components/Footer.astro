@@ -1,0 +1,24 @@
+---
+interface Props {
+	title: string;
+    href: string;
+}
+
+const { title, href } = Astro.props;
+---
+
+<footer>
+    <p>&copy; {new Date().getFullYear()} <a href={href}>{title}</a></p>
+</footer>
+
+<style>
+	footer {
+        max-width: 40rem;
+        margin-inline: auto;
+        padding-block: 5rem;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: .5rem;
+    }
+</style>

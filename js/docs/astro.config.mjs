@@ -31,6 +31,10 @@ export default defineConfig({
 				// Relative path to your custom CSS file
 				'./src/styles/custom.css',
 			],
+			components: {
+				// Override the default `ThemeSelect` component.
+				ThemeSelect: './src/components/ThemeSelect.astro',
+      		},
 		}),
 	],
 	markdown: {
