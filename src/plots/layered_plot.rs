@@ -84,6 +84,7 @@ pub async fn render_layered_plot(
             vec![1.0, 0.0],
             vec![1, 2],
         )),
+        
         Box::new(ScatterplotLayer::new(
             view_params.clone(),
             Some(MarginParams {
@@ -100,6 +101,42 @@ pub async fn render_layered_plot(
             vec![0.0, 1.0, 0.0, 1.0],
             vec![0.0, 1.0, 1.0, 0.0],
             vec![1, 2, 3, 4],
+        )),
+        
+        Box::new(ScatterplotLayer::new(
+            view_params.clone(),
+            Some(MarginParams {
+                margin_top: Some(0.0),
+                margin_right: Some(0.0),
+                margin_bottom: Some(0.0),
+                margin_left: Some(0.0),
+            }),
+            "my_pixel_scatter_layer".to_string(),
+            UnitsMode::Pixels,
+            50.0,
+            UnitsMode::Pixels,
+            PointShapeMode::Square,
+            vec![0.0, 300.0, 0.0, 300.0],
+            vec![0.0, 300.0, 300.0, 0.0],
+            vec![5, 6, 7, 8],
+        )),
+        Box::new(LineLayer::new(
+            view_params.clone(),
+            Some(MarginParams {
+                margin_top: Some(0.0),
+                margin_right: Some(0.0),
+                margin_bottom: Some(0.0),
+                margin_left: Some(0.0),
+            }),
+            "my_pixel_line_layer".to_string(),
+            UnitsMode::Pixels,
+            5.0,
+            UnitsMode::Pixels,
+            vec![0.0, 0.0],
+            vec![0.0, 0.0],
+            vec![600.0, 600.0],
+            vec![600.0, 0.0],
+            vec![3, 4],
         )),
     ];
 
