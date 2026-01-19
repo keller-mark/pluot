@@ -71,6 +71,9 @@ wgpu = { version = "28.0.0" }
 glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 
+# Matrix multiplication for SVG rendering
+nalgebra-glm = "0.3"
+
 # Trying vello for shape/text rendering.
 # Vello (65eea2c4)
 # vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
@@ -129,7 +132,6 @@ features = ["js"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
-nalgebra-glm = "0.3" # Only used in the coordinate_system_logic tests.
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

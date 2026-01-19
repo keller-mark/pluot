@@ -102,6 +102,7 @@ export function Demo() {
           <option key={plotId}>{plotId}</option>
         ))}
       </select>
+      &nbsp;
       <label>Graphics Format:&nbsp;
         <input type="checkbox" checked={graphicsFormat === "Raster"} onChange={(e) => setGraphicsFormat(e.target.checked ? "Raster" : "Vector")} />
       </label>
