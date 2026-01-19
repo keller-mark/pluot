@@ -3,8 +3,9 @@ use crate::two::svg::{init_svg};
 use svg::node::element::Group;
 use crate::params::{RenderContext, RenderResult};
 use crate::maybe::MaybeSend;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioMode {
     /*
      - 0: ignore / squeeze: For example,  a 200 x 100 canvas would show values from -1 to 1 in x and y. The -1 to 1 square would be stretched in the X direction since the canvas is wider than it is tall.
@@ -18,7 +19,7 @@ pub enum AspectRatioMode {
      Cover,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UnitsMode {
     // 0: pixels (e.g., for fixed pixel-unit sizes).
     Pixels,

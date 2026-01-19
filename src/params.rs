@@ -2,7 +2,17 @@ use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::layers::core::AspectRatioMode;
 use serde::{Deserialize, Serialize};
+use svg::node::element::Group;
 use std::sync::Arc;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum GraphicsFormat {
+    // 0: pixels
+    Raster,
+    // 1: SVG.
+    Vector,
+}
+
 
 // TODO: use Observable Plot-like parameter names:
 // https://observablehq.com/plot/marks/bar
@@ -67,6 +77,7 @@ pub enum PlotParams {
 pub struct RenderParams {
     pub width: u32,
     pub height: u32,
+    pub format: GraphicsFormat,
 
     // Device pixel ratio to support retina displays.
     // Default to 1.0 for standard displays.
@@ -78,8 +89,7 @@ pub struct RenderParams {
     //pub target_y: Option<f32>,
     pub camera_view: Option<[f32; 16]>,
 
-    // TODO: switch to enum representation. add serde attributes to AspectRatioMode.
-    pub aspect_ratio_mode: u32,
+    pub aspect_ratio_mode: AspectRatioMode,
 
     #[serde(flatten)]
     pub plot_params: PlotParams,
@@ -111,6 +121,8 @@ pub struct RenderContext<'a> {
 
     pub vello_tex: &'a wgpu::Texture,
     //pub vello_scene: &'a mut vello::Scene,
+
+    pub out_group: &'a mut Group,
 }
 
 pub struct RenderResult {
@@ -122,9 +134,10 @@ impl Default for RenderParams {
         Self {
             width: 100,
             height: 100,
+            format: GraphicsFormat::Raster,
 
             device_pixel_ratio: 1.0,
-            aspect_ratio_mode: 1,
+            aspect_ratio_mode: AspectRatioMode::Contain,
             //zoom: None,
             //target_x: None,
             //target_y: None,

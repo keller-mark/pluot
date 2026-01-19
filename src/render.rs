@@ -1,5 +1,6 @@
 use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
+use crate::two::svg::init_svg;
 /*use vello::{
     peniko::{Blob, Brush, Color, Fill, Font},
     AaConfig, AaSupport, Renderer, RendererOptions, Scene,
@@ -9,7 +10,7 @@ use crate::log;
 use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 
-use crate::params::RenderContext;
+use crate::params::{GraphicsFormat, RenderContext};
 pub use crate::params::{PlotParams, RenderParams, RenderResult};
 use crate::plots;
 use crate::cache::{get_or_init_gpu_context, get_or_init_store};
@@ -110,6 +111,8 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     let store = get_or_init_store(store_name);
 
+    let (_, mut group) = init_svg(width as f64, height as f64);
+
     let mut context = RenderContext {
         store: &store,
         device: &device,
@@ -120,7 +123,30 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
         vello_tex: &vello_tex,
         //vello_scene: &mut vello_scene,
+        out_group: &mut group,
     };
+
+    // TODO: all render functions should return layers here.
+    // Then, we call the render_svg or render_canvas function from layers/core.rs
+    // to obtain a RenderResult.
+
+    // Finally, we handle the output based on the format.
+
+    if params.format == GraphicsFormat::Vector {
+        // For vector output, we only support certain plot types.
+        let svg_result = match params.plot_params {
+            PlotParams::LayeredPlot(_) => {
+                plots::scatterplot::render_scatterplot_svg(&mut context, &mut encoder).await
+            }
+            _ => {
+                panic!("Vector output format is only supported for scatterplots and bar plots");
+            }
+        };
+        // Return the SVG string as bytes.
+        return context.out_string.clone().into_bytes();
+    }
+
+
 
     // Plot type-specific rendering logic.
     let render_result = match params.plot_params {
