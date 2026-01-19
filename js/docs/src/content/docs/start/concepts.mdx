@@ -101,7 +101,7 @@ For example, when using Pluot as a React component in a web application, you cou
 We provide a layer-based API that enables developers to implement custom plotting functions.
 Several core layers are implemented, including ScatterplotLayer and LineLayer.
 
-For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust/) documentation.
+For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust-internal/) documentation.
 
 
 ## Plot margins
@@ -137,3 +137,13 @@ The aspect ratio alignment mode affects what extra data is shown in `Contain` mo
 - `Start`: TODO
 - `Middle`: TODO
 - `End`: TODO
+
+### Pixel vs. Data Unit modes
+
+Layers can accept parameters to specify whether positions/sizes are specified in pixel units or data units.
+
+- `Pixels`: positions/sizes are specified in pixel units. These values will not be affected by the camera matrix or aspect ratio mode.
+- `Data`: positions/sizes are specified in data units. These values will be affected by the camera matrix and aspect ratio mode.
+
+Layers currently throw errors if pixel-unit positioning is combined with data-unit sizing.
+However, pixel-unit sizing can be combined with data-unit positioning.
