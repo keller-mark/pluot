@@ -18,7 +18,7 @@ pub enum AspectRatioMode {
      Cover,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UnitsMode {
     // 0: pixels (e.g., for fixed pixel-unit sizes).
     Pixels,

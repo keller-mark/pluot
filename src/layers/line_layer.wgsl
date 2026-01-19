@@ -99,7 +99,7 @@ fn extrude_line(
 struct LineLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: implement
+    data_unit_mode: u32, // 0: px units, 1: data coordinate system units
     line_width: f32,
     line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
@@ -169,6 +169,55 @@ fn vs_main(
     let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1 (i.e., translating in the scaled-up space)
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
+
+
+    // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
+    if(u.data_unit_mode == 0u) {
+        // Both source and target points are in pixel coordinates.
+        // Convert them to normalized (0 to 1) coordinates within the layer.
+        let source_point_pos_px = source_point_pos_orig;
+        let target_point_pos_px = target_point_pos_orig;
+
+        let source_point_pos_norm = vec2<f32>(
+            source_point_pos_px.x / layer_width_px,
+            source_point_pos_px.y / layer_height_px
+        );
+        let target_point_pos_norm = vec2<f32>(
+            target_point_pos_px.x / layer_width_px,
+            target_point_pos_px.y / layer_height_px
+        );
+
+        // Convert to NDC for extrusion calculation
+        let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
+        let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
+
+        let line_width_ndc = u.line_width / layer_height_px * 2.0;
+
+        // Extrude the line to form a quad
+        let point_pos_ndc = extrude_line(
+            source_pos_ndc,
+            target_pos_ndc,
+            corner,
+            line_width_ndc,
+            layer_aspect_ratio
+        );
+
+        // The final point position in NDC space.
+        let pos = vec4f(
+            point_pos_ndc.x,
+            point_pos_ndc.y,
+            0.0,
+            1.0
+        );
+
+        var out: VSOut;
+        out.position = pos;
+        out.color = u.color;
+        out.quad_pos = (corner + 1.0) * 0.5;
+        out.instance_index = instance_index;
+        out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0); // Not used for lines yet
+        return out;
+    }
 
     // Model-view-projection matrix
     // References:

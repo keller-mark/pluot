@@ -50,6 +50,10 @@ impl LineLayer {
         target_y_vec: Vec<f32>,
         labels_vec: Vec<i32>,
     ) -> Self {
+        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
+        if(line_width_unit_mode == UnitsMode::Data && data_unit_mode == UnitsMode::Pixels) {
+            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        }
         Self {
             view_params,
             bounds,
