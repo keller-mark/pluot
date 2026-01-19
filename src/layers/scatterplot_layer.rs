@@ -50,6 +50,10 @@ impl ScatterplotLayer {
         y_vec: Vec<f32>,
         labels_vec: Vec<i32>,
     ) -> Self {
+        // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
+        if(point_radius_unit_mode == UnitsMode::Data && data_unit_mode == UnitsMode::Pixels) {
+            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        }
         Self {
             view_params,
             bounds,
