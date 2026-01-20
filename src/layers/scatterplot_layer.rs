@@ -483,7 +483,20 @@ pub fn base_draw_scatterplot_layer_svg(
                 })
             });
         }
-        return svg_elements;
+
+        // Insert rects into an SVG group with a transform and clipping to handle margins,
+        // similar to the usage of scissor rect and viewport in the Canvas rendering.
+        let layer_group_vec = vec![
+            TwoElement::Group(TwoGroup {
+                elements: svg_elements,
+                translate: Some((margin_left, margin_top)),
+                // TODO: check how clip_rect interacts with the translate
+                clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+                ..Default::default()
+            })
+        ];
+
+        return layer_group_vec;
 }
 
 
@@ -505,9 +518,6 @@ impl DrawToSvg for ScatterplotLayer {
             &self.point_radius_unit_mode,
             &self.point_shape_mode,
         );
-
-        // TODO: use an SVG group with a transform and clipping to handle margins,
-        // similar to the usage of scissor rect and viewport in the Canvas rendering.
         
         // TODO: refactor to avoid the cloning here?
         let updated_group = update_svg(group.clone(), &svg_elements);

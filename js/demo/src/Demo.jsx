@@ -71,9 +71,9 @@ const DEMOS = {
         {
           layer_type: "ZarrScatterplotLayer",
           layer_params: {
-            x_key: "/n_1000000/x_coords",
-            y_key: "/n_1000000/y_coords",
-            color_key: "/n_1000000/class_labels",
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
             //point_radius: pointRadius,
           }
         }

@@ -71,10 +71,10 @@ export function Pluot(props) {
     renderOnce = true,
     logPerformance = false,
     mode = "2d",
-    marginBottom = 0.0,
+    marginBottom = 100.0,
     marginLeft = 200.0,
-    marginTop = 0.0,
-    marginRight =  0.0,
+    marginTop = 100.0,
+    marginRight =  100.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
     format = "Raster", // "Raster", "Vector"
   } = props;
