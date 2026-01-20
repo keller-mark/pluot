@@ -178,7 +178,7 @@ pub async fn render_triangle(
     //println!("Rendered vello scene");
     */
 
-    crate::render::overlay_pass(context, encoder, &tri_tex);
+    crate::plots::overlay_utils::overlay_pass(context, encoder, &tri_tex);
 
     RenderResult {
         bailed_early: false,

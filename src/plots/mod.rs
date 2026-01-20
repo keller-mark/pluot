@@ -3,4 +3,5 @@ pub mod bioimage;
 pub mod scatterplot;
 pub mod scatterplot_3d;
 pub mod triangle;
+pub mod overlay_utils;
 pub mod layered_plot;

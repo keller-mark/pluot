@@ -361,7 +361,7 @@ pub async fn render_barplot(
     // Render the X and Y axes:
     crate::two::canvas::render_shapes(context, encoder, &axis_elements);
 
-    crate::render::overlay_pass(context, encoder, &barplot_tex);
+    crate::plots::overlay_utils::overlay_pass(context, encoder, &barplot_tex);
 
     RenderResult {
         bailed_early: false,

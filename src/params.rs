@@ -49,20 +49,38 @@ pub struct BarPlotRenderParams {
     pub color_key: Option<String>,
 }
 
+// TODO: reuse this struct for the layer constructor argument
 #[derive(Serialize, Deserialize, Debug)]
-pub struct LayeredPlotRenderParams {
+pub struct ZarrScatterplotLayerParams {
     pub x_key: String,
     pub y_key: String,
     pub color_key: Option<String>,
     pub point_radius: Option<f32>,
-    // TODO: layers: Vec<LayerParams>,
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "layer_type", content = "layer_params")]
+pub enum LayerParams {
+    // Using adjacently tagged enum representation.
+    // { "layer_type": "ScatterplotLayer" }
+    // Reference: https://serde.rs/enum-representations.html
+    
+    //ScatterplotLayer(ScatterplotLayerParams),
+    //LineLayer(LineLayerParams),
+    ZarrScatterplotLayer(ZarrScatterplotLayerParams),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LayeredPlotRenderParams {
+    pub layers: Vec<LayerParams>,
 }
 
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "plot_type", content = "plot_params")]
 pub enum PlotParams {
-    // Using internally tagged enum representation.
+    // Using adjacently tagged enum representation.
     // { "plot_type": "Scatterplot" }
     // Reference: https://serde.rs/enum-representations.html
     Scatterplot(ScatterplotRenderParams),

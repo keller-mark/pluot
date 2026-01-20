@@ -67,10 +67,17 @@ const DEMOS = {
     plot_type: "LayeredPlot",
     store_name: "gaussian_quantiles_store",
     plot_params: {
-      x_key: "/n_1000/x_coords",
-      y_key: "/n_1000/y_coords",
-      color_key: "/n_1000/class_labels",
-      //point_radius: pointRadius,
+      layers: [
+        {
+          layer_type: "ZarrScatterplotLayer",
+          layer_params: {
+            x_key: "/n_1000000/x_coords",
+            y_key: "/n_1000000/y_coords",
+            color_key: "/n_1000000/class_labels",
+            //point_radius: pointRadius,
+          }
+        }
+      ]
     },
   },
 };
@@ -119,11 +126,6 @@ export function Demo() {
             : {
                 ...plotParams,
                 ...(plotType === "Scatterplot"
-                  ? {
-                      point_radius: pointRadius,
-                    }
-                  : {}),
-                ...(plotType === "LayeredPlot"
                   ? {
                       point_radius: pointRadius,
                     }

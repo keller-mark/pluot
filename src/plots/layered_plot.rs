@@ -4,7 +4,7 @@ use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
 use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDraw, UnitsMode, ViewParams, render_canvas};
 use crate::wgpu;
 use crate::log;
-use crate::params::{PlotParams, RenderContext, RenderResult};
+use crate::params::{LayeredPlotRenderParams, PlotParams, RenderContext, RenderResult, LayerParams, ZarrScatterplotLayerParams};
 use crate::d3::axis::{Axis, AxisOrientation};
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
 use crate::two::shapes::{
@@ -26,7 +26,7 @@ pub fn render_layered_plot(
     let margin_left = context.params.margin_left.unwrap_or(0.0) as f32;
 
     let PlotParams::LayeredPlot(plot_params) = &context.params.plot_params else {
-        panic!("Expected scatterplot params");
+        panic!("Expected layered plot params");
     };
 
     let view_params = ViewParams {
@@ -41,6 +41,45 @@ pub fn render_layered_plot(
         aspect_ratio_mode: context.params.aspect_ratio_mode,
     };
 
+    let layers: Vec<Box<dyn PreparedAndDraw>> = plot_params.layers.iter().map(|layer_params| {
+        match layer_params {
+            LayerParams::ZarrScatterplotLayer(layer_params) => {
+                Box::new(ZarrScatterplotLayer::new(
+                    // TODO: reuse view_params here?
+                    ViewParams {
+                        view_id: context.params.plot_id.to_string(),
+                        width: context.params.width,
+                        height: context.params.height,
+                        margins: None,
+                        device_pixel_ratio: context.params.device_pixel_ratio,
+                        camera_view: context.params.camera_view,
+                        timeout: context.params.timeout,
+                        cache_enabled: context.params.cache_enabled,
+                        aspect_ratio_mode: context.params.aspect_ratio_mode,
+                    },
+                    Some(MarginParams {
+                        margin_top: Some(margin_top),
+                        margin_right: Some(margin_right),
+                        margin_bottom: Some(margin_bottom),
+                        margin_left: Some(margin_left),
+                    }),
+                    store.clone(),
+                    context.params.store_name.clone(),
+                    "layer_from_layered_plot".to_string(),
+                    layer_params.x_key.clone(),
+                    layer_params.y_key.clone(),
+                    layer_params.color_key.clone(),
+                    UnitsMode::Data,
+                    layer_params.point_radius.unwrap_or(5.0),
+                    UnitsMode::Pixels,
+                    PointShapeMode::Square,
+                )) as Box<dyn PreparedAndDraw>
+            },
+            _ => panic!("Unsupported layer type in layered plot"),
+        }
+    }).collect();
+
+    /*
     let layers: Vec<Box<dyn PreparedAndDraw>> = vec![
         Box::new(ZarrScatterplotLayer::new(
             view_params.clone(),
@@ -134,6 +173,7 @@ pub fn render_layered_plot(
             vec![3, 4],
         )),
     ];
+    */
 
     return layers;
 }
