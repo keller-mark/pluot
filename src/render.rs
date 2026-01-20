@@ -188,7 +188,11 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     if params.format == GraphicsFormat::Vector {
         // Return the SVG string as bytes.
-        return context.out_group.to_string().into_bytes();
+        let svg_string = context.out_group.to_string();
+
+        // TODO: make compression optional via a parameter of the render function.
+        let compressed_svg = lz_str::compress_to_uint8_array(&svg_string);
+        return compressed_svg;
     }
 
 

@@ -1,74 +1,66 @@
-// Inspired by the DeckGL ScatterplotLayer
-// Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
+// In the initial implementation, color and width will be uniform for all lines (i.e., set globally for the layer).
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
-use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
-use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
-use crate::two::svg::update_svg;
-use crate::layers::scatterplot_vertex::get_point_position;
 
-pub struct ScatterplotLayerData {
-    pub x_arr: Vec<f32>,
-    pub y_arr: Vec<f32>,
-    pub labels_arr: Vec<i32>,
+struct EmptyLayerData {
+    // Lines are from source (x,y) to target (x,y).
+    source_x_arr: Vec<f32>,
+    source_y_arr: Vec<f32>,
+    target_x_arr: Vec<f32>,
+    target_y_arr: Vec<f32>,
+    labels_arr: Vec<i32>,
 }
 
-#[derive(Clone, Debug)]
-pub enum PointShapeMode {
-    // 0: square (basically no-op in fragment shader)
-    Square,
-    // 1: circles (convert square to circle in fragment shader)
-    Circle,
-}
-
-pub struct ScatterplotLayer {
+pub struct EmptyLayer {
     view_params: ViewParams,
     layer_id: String,
     // If None, assume margin: 0 in all directions.
     bounds: Option<MarginParams>,
+
     data_unit_mode: UnitsMode,
-    point_radius: f32,
-    point_radius_unit_mode: UnitsMode,
-    point_shape_mode: PointShapeMode,
-    // TODO: getters.
-    // Data may be None prior to runninng prepare().
-    data: Option<ScatterplotLayerData>,
+    line_width: f32,
+    line_width_unit_mode: UnitsMode,
+    // Data will be None prior to runninng prepare().
+    data: Option<EmptyLayerData>,
 }
 
-impl ScatterplotLayer {
+impl EmptyLayer {
     pub fn new(
         view_params: ViewParams,
         bounds: Option<MarginParams>,
         layer_id: String,
         data_unit_mode: UnitsMode,
-        point_radius: f32,
-        point_radius_unit_mode: UnitsMode,
-        point_shape_mode: PointShapeMode,
+        line_width: f32,
+        line_width_unit_mode: UnitsMode,
         // TODO(ref): pass in references instead of owned Vecs?
-        x_vec: Vec<f32>,
-        y_vec: Vec<f32>,
+        source_x_vec: Vec<f32>,
+        source_y_vec: Vec<f32>,
+        target_x_vec: Vec<f32>,
+        target_y_vec: Vec<f32>,
         labels_vec: Vec<i32>,
     ) -> Self {
-        // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if(point_radius_unit_mode == UnitsMode::Data && data_unit_mode == UnitsMode::Pixels) {
-            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
+        if(line_width_unit_mode == UnitsMode::Data && data_unit_mode == UnitsMode::Pixels) {
+            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         Self {
             view_params,
             bounds,
             layer_id,
             data_unit_mode,
-            point_radius,
-            point_radius_unit_mode,
-            point_shape_mode,
-            data: Some(ScatterplotLayerData {
-                x_arr: x_vec,
-                y_arr: y_vec,
+            line_width,
+            line_width_unit_mode,
+            data: Some(EmptyLayerData {
+                source_x_arr: source_x_vec,
+                source_y_arr: source_y_vec,
+                target_x_arr: target_x_vec,
+                target_y_arr: target_y_vec,
                 labels_arr: labels_vec,
             }),
         }
@@ -77,7 +69,7 @@ impl ScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for ScatterplotLayer {
+impl PreparedLayer for EmptyLayer {
     async fn prepare(&mut self) {
 
         // TODO: include the layer type in the memoization dependencies?
@@ -91,13 +83,12 @@ impl PreparedLayer for ScatterplotLayer {
 }
 
 #[derive(ShaderType, Debug)]
-struct ScatterplotLayerUniforms {
+struct EmptyLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     data_unit_mode: u32, // 0 = pixels, 1 = data units
-    point_radius: f32,  // radius of each point
-    point_radius_unit_mode: u32, // 0 = pixels, 1 = data units
-    point_shape_mode: u32, // 0 = square, 1 = circle
+    line_width: f32,  // width of each line
+    line_width_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     color: Vec4,         // rgba color for points
@@ -105,19 +96,21 @@ struct ScatterplotLayerUniforms {
 
 // We extract this function for reuse in derived scatterplot layers (e.g., ZarrScatterplotLayer).
 // TODO: is this the best way to share this logic?
-pub async fn base_draw_scatterplot_layer(
+pub async fn draw_line_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
-    data: &ScatterplotLayerData,
+    data: &EmptyLayerData,
     view_params: &ViewParams,
     bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
-    point_radius: f32,
-    point_radius_unit_mode: &UnitsMode,
-    point_shape_mode: &PointShapeMode,
+    line_width: f32,
+    line_width_unit_mode: &UnitsMode,
 ) {
     // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
-    let x_bytes = bytemuck::cast_slice(&data.x_arr);
-    let y_bytes = bytemuck::cast_slice(&data.y_arr);
+    let source_x_bytes = bytemuck::cast_slice(&data.source_x_arr);
+    let source_y_bytes = bytemuck::cast_slice(&data.source_y_arr);
+
+    let target_x_bytes = bytemuck::cast_slice(&data.target_x_arr);
+    let target_y_bytes = bytemuck::cast_slice(&data.target_y_arr);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
     let n = data.labels_arr.len();
@@ -128,21 +121,37 @@ pub async fn base_draw_scatterplot_layer(
 
 
     // Create separate buffers for X and Y coordinates
-    let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("X Coordinates Storage Buffer"),
-        size: x_bytes.len() as u64,
+    let source_x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Source X Coordinates Storage Buffer"),
+        size: source_x_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&x_buffer, 0, &x_bytes);
+    queue.write_buffer(&source_x_buffer, 0, &source_x_bytes);
 
-    let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Y Coordinates Storage Buffer"),
-        size: y_bytes.len() as u64,
+    let source_y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Source Y Coordinates Storage Buffer"),
+        size: source_y_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&y_buffer, 0, &y_bytes);
+    queue.write_buffer(&source_y_buffer, 0, &source_y_bytes);
+
+    let target_x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Target X Coordinates Storage Buffer"),
+        size: target_x_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&target_x_buffer, 0, &target_x_bytes);
+
+    let target_y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Target Y Coordinates Storage Buffer"),
+        size: target_y_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&target_y_buffer, 0, &target_y_bytes);
 
     let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Class labels Storage Buffer"),
@@ -181,21 +190,17 @@ pub async fn base_draw_scatterplot_layer(
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
     // Construct the uniform struct using Encase.
-    let uniform_struct = ScatterplotLayerUniforms {
+    let uniform_struct = EmptyLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
         data_unit_mode: match data_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
-        point_radius: point_radius,
-        point_radius_unit_mode: match point_radius_unit_mode {
+        line_width,
+        line_width_unit_mode: match line_width_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
-        },
-        point_shape_mode: match point_shape_mode {
-            PointShapeMode::Square => 0,
-            PointShapeMode::Circle => 1,
         },
         aspect_ratio_mode: match view_params.aspect_ratio_mode {
             AspectRatioMode::Ignore => 0,
@@ -222,7 +227,7 @@ pub async fn base_draw_scatterplot_layer(
     // Create bind group layout and bind group for positions + uniforms
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ScatterplotLayer BGL"),
+            label: Some("EmptyLayer BGL"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     // The uniforms buffer.
@@ -236,7 +241,7 @@ pub async fn base_draw_scatterplot_layer(
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The X coordinates buffer.
+                    // The Source X coordinates buffer.
                     binding: 1,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
@@ -247,7 +252,7 @@ pub async fn base_draw_scatterplot_layer(
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The Y coordinates buffer.
+                    // The Source Y coordinates buffer.
                     binding: 2,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
@@ -258,8 +263,30 @@ pub async fn base_draw_scatterplot_layer(
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The class labels coordinates buffer.
+                    // The Target X coordinates buffer.
                     binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    // The Target Y coordinates buffer.
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    // The class labels coordinates buffer.
+                    binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -272,7 +299,7 @@ pub async fn base_draw_scatterplot_layer(
         });
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ScatterplotLayer BG"),
+            label: Some("EmptyLayer BG"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -281,25 +308,33 @@ pub async fn base_draw_scatterplot_layer(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: x_buffer.as_entire_binding(),
+                    resource: source_x_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: y_buffer.as_entire_binding(),
+                    resource: source_y_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: target_x_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: target_y_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
                     resource: labels_buffer.as_entire_binding(),
                 },
             ],
         });
 
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("scatterplot_layer.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("line_layer.wgsl"));
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
+            label: Some("EmptyLayer PLD"),
             bind_group_layouts: &[&bind_group_layout],
             immediate_size: 0,
         });
@@ -307,7 +342,7 @@ pub async fn base_draw_scatterplot_layer(
     // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
     let render_pipeline = device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("EmptyLayer RPD"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -348,7 +383,7 @@ pub async fn base_draw_scatterplot_layer(
         });
 
     // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
-
+    
     // Handle margins by adjusting viewport and scissor rect.
     // This allows us to avoid accounting for margins in the shaders, simplifying them.
     // (Shaders can simply assume the full viewport size is the plot area.)
@@ -388,129 +423,27 @@ pub async fn base_draw_scatterplot_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ScatterplotLayer {
+impl DrawToCanvas for EmptyLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-        base_draw_scatterplot_layer(
+        draw_line_layer(
             device, queue, pass,
             data,
             &self.view_params,
             &self.bounds,
             &self.data_unit_mode,
-            self.point_radius,
-            &self.point_radius_unit_mode,
-            &self.point_shape_mode,
+            self.line_width,
+            &self.line_width_unit_mode,
         ).await;
     }
 }
 
-pub fn base_draw_scatterplot_layer_svg(
-    data: &ScatterplotLayerData,
-    view_params: &ViewParams,
-    bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    point_radius: f32,
-    point_radius_unit_mode: &UnitsMode,
-    point_shape_mode: &PointShapeMode,
-) -> Vec<TwoElement> {
-    // Iterate over the data points and create SVG elements.
-        let n = data.labels_arr.len();
-
-        // TODO: reduce code reuse here
-        let camera_view = view_params.camera_view.unwrap_or([
-            // Column 0
-            1.0, 0.0, 0.0, 0.0, // Column 1
-            0.0, 1.0, 0.0, 0.0, // Column 2
-            0.0, 0.0, 1.0, 0.0, // Column 3
-            0.0, 0.0, 0.0, 1.0,
-        ]);
-
-        let margin_top = if let Some(margin_params) = &bounds {
-            margin_params.margin_top.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_right = if let Some(margin_params) = &bounds {
-            margin_params.margin_right.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_bottom = if let Some(margin_params) = &bounds {
-            margin_params.margin_bottom.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_left = if let Some(margin_params) = &bounds {
-            margin_params.margin_left.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-
-        let viewport_w = view_params.width as f32;
-        let viewport_h = view_params.height as f32;
-
-        let layer_w = viewport_w - (margin_left + margin_right) as f32;
-        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-        // End TODO
-
-        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
-        for i in 0..n {
-            let x = data.x_arr[i];
-            let y = data.y_arr[i];
-
-            // Convert data coordinates to pixel coordinates within the layer area.
-            let (px, py) = get_point_position(
-                x,
-                y,
-                layer_w,
-                layer_h,
-                &camera_view,
-                *data_unit_mode,
-                view_params.aspect_ratio_mode,
-                0, // TODO: pass enum value for aspect_ratio_alignment_mode
-            );
-
-            // Create a circle or square element based on point_shape_mode.
-            svg_elements.push(match point_shape_mode {
-                PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
-                    x: px as f64,
-                    y: py as f64,
-                    radius: point_radius as f64,
-                    // TODO: more params
-                    ..Default::default()
-                }),
-                PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
-                    x: (px - point_radius) as f64,
-                    y: (py - point_radius) as f64,
-                    width: (point_radius * 2.0) as f64,
-                    height: (point_radius * 2.0) as f64,
-                    // TODO: more params
-                    ..Default::default()
-                })
-            });
-        }
-        return svg_elements;
-}
-
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for ScatterplotLayer {
+impl DrawToSvg for EmptyLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-
-        let view_params = &self.view_params;
-        let bounds = &self.bounds;
-
-        let svg_elements = base_draw_scatterplot_layer_svg(
-            data,
-            view_params,
-            bounds,
-            &self.data_unit_mode,
-            self.point_radius,
-            &self.point_radius_unit_mode,
-            &self.point_shape_mode,
-        );
-
-        // TODO: use an SVG group with a transform and clipping to handle margins,
-        // similar to the usage of scissor rect and viewport in the Canvas rendering.
-        
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
-        
+        // TODO
+        return group.clone();
     }
 }
+

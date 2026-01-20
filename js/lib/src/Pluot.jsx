@@ -10,6 +10,7 @@ import createCamera from "./3d-view-controls.js"; // Copy with minor modificatio
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
+import { decompressFromUint8Array } from "lz-string";
 
 const DEFAULT_VIEW = new Float32Array([
   1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
@@ -71,7 +72,7 @@ export function Pluot(props) {
     logPerformance = false,
     mode = "2d",
     marginBottom = 0.0,
-    marginLeft = 400.0,
+    marginLeft = 200.0,
     marginTop = 0.0,
     marginRight =  0.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
@@ -298,9 +299,9 @@ export function Pluot(props) {
 
         if (isVector) {
           // Format: Vector (render to SVG)
-          const gContents = new TextDecoder().decode(arr);
+          const gContents = decompressFromUint8Array(arr);
 
-          console.log(gContents)
+          //console.log(gContents)
 
           if (!svgRef.current) {
             return;

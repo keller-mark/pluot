@@ -95,6 +95,8 @@ vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "b579608" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
 
+lz-str = "0.2.1" # To compress SVG strings before passing to JS.
+
 # Trying glyphon for text rendering.
 # glyphon = "0.9.0"
 

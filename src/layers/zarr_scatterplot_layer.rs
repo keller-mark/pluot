@@ -3,11 +3,13 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 
 use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
-use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerData, draw_scatterplot_layer};
+use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerData, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
+use crate::two::svg::update_svg;
 use svg::node::element::Group;
+use crate::log;
 
 pub struct ZarrScatterplotLayer {
     view_params: ViewParams,
@@ -128,7 +130,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
 impl DrawToCanvas for ZarrScatterplotLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-        draw_scatterplot_layer(
+        base_draw_scatterplot_layer(
             device, queue, pass,
             data,
             &self.view_params,
@@ -146,7 +148,30 @@ impl DrawToCanvas for ZarrScatterplotLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for ZarrScatterplotLayer {
     async fn draw(&self, group: &Group) -> Group {
-        // TODO
-        return group.clone();
+        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+
+        let view_params = &self.view_params;
+        let bounds = &self.bounds;
+
+        let svg_elements = base_draw_scatterplot_layer_svg(
+            data,
+            view_params,
+            bounds,
+            &self.data_unit_mode,
+            self.point_radius,
+            &self.point_radius_unit_mode,
+            &self.point_shape_mode,
+        );
+
+        // TODO: use an SVG group with a transform and clipping to handle margins,
+        // similar to the usage of scissor rect and viewport in the Canvas rendering.
+        
+        // TODO: refactor to avoid the cloning here?
+        let updated_group = update_svg(group.clone(), &svg_elements);
+
+        log("Done drawing ZarrScatterplotLayer to SVG.");
+
+        return updated_group.clone();
+        
     }
 }
