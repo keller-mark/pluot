@@ -106,6 +106,7 @@ struct ScatterplotLayerUniforms {
 // We extract this function for reuse in derived scatterplot layers (e.g., ZarrScatterplotLayer).
 // TODO: is this the best way to share this logic?
 // See https://www.youtube.com/watch?v=Phk0C-kLlho
+// See https://github.com/linebender/xilem/blob/main/xilem_core/src/views/any_view.rs
 pub async fn base_draw_scatterplot_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     data: &ScatterplotLayerData,
