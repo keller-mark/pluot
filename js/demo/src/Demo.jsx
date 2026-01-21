@@ -71,6 +71,14 @@ const DEMOS = {
         {
           layer_type: "ZarrScatterplotLayer",
           layer_params: {
+            layer_id: "layer_1",
+            data_unit_mode: "Data",
+            point_radius_unit_mode: "Pixels",
+            point_shape_mode: "Square",
+            point_radius: 5.0,
+            store_name: "gaussian_quantiles_store",
+            bounds: null,
+
             x_key: "/n_1000/x_coords",
             y_key: "/n_1000/y_coords",
             color_key: "/n_1000/class_labels",

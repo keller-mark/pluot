@@ -204,4 +204,5 @@ mod tests {
         assert_eq!(expected_points_ndc, resulting_points_ndc);
     }
 
+    // TODO: move/convert remaining test cases from tests/coordinate_system_logic.rs to here.
 }

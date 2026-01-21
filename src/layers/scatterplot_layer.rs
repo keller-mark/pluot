@@ -40,7 +40,7 @@ pub struct ScatterplotLayerParams {
     pub labels_vec: Vec<i32>,
 }
 
-// TODO: defaults for ScatterplotLayerParams?
+// TODO: defaults for params?
 
 
 // Internal representation for ScatterplotLayer and its "descendant" layers.
@@ -118,7 +118,7 @@ pub async fn base_draw_scatterplot_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     data: &ScatterplotLayerData,
     view_params: &ViewParams,
-    bounds: &Option<MarginParams>,
+    layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
     point_radius: f32,
     point_radius_unit_mode: &UnitsMode,
@@ -169,6 +169,14 @@ pub async fn base_draw_scatterplot_layer(
         0.0, 0.0, 1.0, 0.0, // Column 3
         0.0, 0.0, 0.0, 1.0,
     ]);
+
+    // Use layer-specific bounds if not None, otherwise use the view's margins
+    // (which may also be None).
+    let bounds = if layer_bounds.is_none() {
+        &view_params.margins
+    } else {
+        layer_bounds
+    };
 
     let margin_top = if let Some(margin_params) = &bounds {
         margin_params.margin_top.unwrap_or(0.0)
@@ -416,7 +424,7 @@ impl DrawToCanvas for ScatterplotLayer {
 pub fn base_draw_scatterplot_layer_svg(
     data: &ScatterplotLayerData,
     view_params: &ViewParams,
-    bounds: &Option<MarginParams>,
+    layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
     point_radius: f32,
     point_radius_unit_mode: &UnitsMode,
@@ -433,6 +441,14 @@ pub fn base_draw_scatterplot_layer_svg(
             0.0, 0.0, 1.0, 0.0, // Column 3
             0.0, 0.0, 0.0, 1.0,
         ]);
+
+        // Use layer-specific bounds if not None, otherwise use the view's margins
+        // (which may also be None).
+        let bounds = if layer_bounds.is_none() {
+            &view_params.margins
+        } else {
+            layer_bounds
+        };
 
         let margin_top = if let Some(margin_params) = &bounds {
             margin_params.margin_top.unwrap_or(0.0)

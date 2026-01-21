@@ -2,6 +2,7 @@ use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::layers::core::AspectRatioMode;
 use crate::layers::scatterplot_layer::ScatterplotLayerParams;
+use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayerParams;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -48,15 +49,6 @@ pub struct BarPlotRenderParams {
     pub x_key: String,
     pub y_key: String,
     pub color_key: Option<String>,
-}
-
-// TODO: reuse this struct for the layer constructor argument
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ZarrScatterplotLayerParams {
-    pub x_key: String,
-    pub y_key: String,
-    pub color_key: Option<String>,
-    pub point_radius: Option<f32>,
 }
 
 

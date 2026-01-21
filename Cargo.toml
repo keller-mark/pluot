@@ -53,7 +53,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
-# Note: zarris is also specified in dev-dependencies,
+# Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
 zarrs = { version = "=0.23.0-beta.6", default-features = false, features = [
     "ndarray",

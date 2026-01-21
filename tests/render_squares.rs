@@ -153,9 +153,6 @@ async fn test_render_unit_square_vector() {
         </g>
     "#;
     assert_strings_equal_ignore_whitespace(&svg_string, expected_svg_str);
-
-    
-
 }
 
 // TODO: performance tests with many elements, both raster and svg formats

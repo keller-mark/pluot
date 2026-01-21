@@ -4,7 +4,7 @@ use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
 use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDraw, UnitsMode, ViewParams, render_canvas};
 use crate::wgpu;
 use crate::log;
-use crate::params::{LayeredPlotRenderParams, PlotParams, RenderContext, RenderResult, LayerParams, ZarrScatterplotLayerParams};
+use crate::params::{LayeredPlotRenderParams, PlotParams, RenderContext, RenderResult, LayerParams};
 use crate::d3::axis::{Axis, AxisOrientation};
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
 use crate::two::shapes::{
@@ -33,7 +33,12 @@ pub fn render_layered_plot(
         view_id: context.params.plot_id.to_string(),
         width: context.params.width,
         height: context.params.height,
-        margins: None,
+        margins: Some(MarginParams {
+            margin_top: Some(margin_top),
+            margin_right: Some(margin_right),
+            margin_bottom: Some(margin_bottom),
+            margin_left: Some(margin_left),
+        }),
         device_pixel_ratio: context.params.device_pixel_ratio,
         camera_view: context.params.camera_view,
         timeout: context.params.timeout,
@@ -46,22 +51,7 @@ pub fn render_layered_plot(
             LayerParams::ZarrScatterplotLayer(layer_params) => {
                 Box::new(ZarrScatterplotLayer::new(
                     view_params.clone(),
-                    Some(MarginParams {
-                        margin_top: Some(margin_top),
-                        margin_right: Some(margin_right),
-                        margin_bottom: Some(margin_bottom),
-                        margin_left: Some(margin_left),
-                    }),
-                    store.clone(),
-                    context.params.store_name.clone(),
-                    "layer_from_layered_plot".to_string(),
-                    layer_params.x_key.clone(),
-                    layer_params.y_key.clone(),
-                    layer_params.color_key.clone(),
-                    UnitsMode::Data,
-                    layer_params.point_radius.unwrap_or(5.0),
-                    UnitsMode::Pixels,
-                    PointShapeMode::Square,
+                    layer_params.clone(),
                 )) as Box<dyn PreparedAndDraw>
             },
             LayerParams::ScatterplotLayer(layer_params) => {
