@@ -28,6 +28,9 @@ fn vs_main(
     let cy = f32((vid >> 1u) & 1u);
     let corner = vec2<f32>(cx, cy);
 
+    // Note: `rect_px` indicates where to render the glyph on the screen.
+    // Meanwhile, `uv_rect` indicates where to sample the glyph in the texture atlas.
+
     // Pixel position
     let px = rect_px.xy + corner * rect_px.zw;
 

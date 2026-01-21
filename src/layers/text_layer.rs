@@ -142,9 +142,9 @@ pub struct TextLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode,
+    pub data_unit_mode: UnitsMode, // Units of x/y positions.
     pub text_size: f32,
-    pub text_size_unit_mode: UnitsMode,
+    pub text_size_unit_mode: UnitsMode, // Units of the font size.
     pub text_align_mode: TextAlignMode,
     pub text_baseline_mode: TextBaselineMode,
 
@@ -343,7 +343,9 @@ impl PreparedLayer for TextLayer {
                     }
                 }
 
-                // Compute screen-space rect in pixels
+                // Compute screen-space rect for this glyph
+                // TODO: update this logic so that the rect is in whatever data_units_mode is?
+                // (ensure the text measurement is happening in the correct units too).
                 let x_px = base_x + g.x as f32;
                 let y_px = base_y + g.y as f32;
                 let w_px = gw as f32;
@@ -380,7 +382,13 @@ impl PreparedLayer for TextLayer {
 // TODO: update this to allow for a color per text element.
 #[derive(ShaderType, Debug)]
 struct TextLayerUniforms {
-    viewport: Vec2,
+    layer_size: Vec2, // (layer_width, layer_height) in pixels
+    camera_view: Mat4,   // mat4x4<f32>,
+    data_unit_mode: u32, // 0 = pixels, 1 = data units
+    text_size: f32,
+    text_size_unit_mode: u32, // 0 = pixels, 1 = data units
+    aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
+    aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     color: Vec4,
 }
 
@@ -502,6 +510,10 @@ pub async fn base_draw_text_layer(
     // Uniforms for font rendering shader:
 
     let uniform_struct = TextLayerUniforms {
+        // TODO: fill in the fields here to match the struct definition.
+        // TODO: then, update the WGSL shader to match.
+        // TODO: then, update the shader logic so that it does similar positioning logic
+        // as done by the ScatterplotLayer vertex shader, using these uniform values.
         viewport: Vec2::from([viewport_w - (margin_left + margin_right) as f32, viewport_h - (margin_top + margin_bottom) as f32]),
         color: Vec4::from(color),
     };
