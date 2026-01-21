@@ -19,6 +19,7 @@ pub enum GraphicsFormat {
 // TODO: use Observable Plot-like parameter names:
 // https://observablehq.com/plot/marks/bar
 
+/*
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ScatterplotRenderParams {
     pub x_key: String,
@@ -50,7 +51,7 @@ pub struct BarPlotRenderParams {
     pub y_key: String,
     pub color_key: Option<String>,
 }
-
+*/
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "layer_type", content = "layer_params")]
@@ -60,8 +61,9 @@ pub enum LayerParams {
     // Reference: https://serde.rs/enum-representations.html
     
     ScatterplotLayer(ScatterplotLayerParams),
-    //LineLayer(LineLayerParams),
     ZarrScatterplotLayer(ZarrScatterplotLayerParams),
+
+    //LineLayer(LineLayerParams),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -76,12 +78,15 @@ pub enum PlotParams {
     // Using adjacently tagged enum representation.
     // { "plot_type": "Scatterplot" }
     // Reference: https://serde.rs/enum-representations.html
+
+    /*
     Scatterplot(ScatterplotRenderParams),
     Scatterplot3d(Scatterplot3dRenderParams),
     Bioimage(BioimageRenderParams),
     BarPlot(BarPlotRenderParams),
-    LayeredPlot(LayeredPlotRenderParams),
     Triangle, // No parameters
+    */
+    LayeredPlot(LayeredPlotRenderParams),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -160,7 +165,9 @@ impl Default for RenderParams {
             camera_view: None,
             plot_id: "default_plot".to_string(),
             store_name: "default_store".to_string(),
-            plot_params: PlotParams::Triangle, // TODO: implement a triangle layer for layeredplot, then use it here.
+            plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+                layers: vec![],
+            }),
             timeout: None,
             cache_enabled: true,
             svg_compression_enabled: false,
