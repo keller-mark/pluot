@@ -106,6 +106,7 @@ struct LineLayerUniforms {
 
 // We extract this function for reuse in derived line layers (e.g., ZarrLineLayer).
 // TODO: is this the best way to share this logic?
+// TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 pub async fn base_draw_line_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     data: &LineLayerData,
@@ -586,3 +587,4 @@ impl DrawToSvg for LineLayer {
         return updated_group.clone();
     }
 }
+

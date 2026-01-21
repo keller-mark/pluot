@@ -116,6 +116,9 @@ struct ScatterplotLayerUniforms {
 // TODO: is this the best way to share this logic?
 // See https://www.youtube.com/watch?v=Phk0C-kLlho
 // See https://github.com/linebender/xilem/blob/main/xilem_core/src/views/any_view.rs
+
+// TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
+
 pub async fn base_draw_scatterplot_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     data: &ScatterplotLayerData,
@@ -548,5 +551,6 @@ impl DrawToSvg for ScatterplotLayer {
         let updated_group = update_svg(group.clone(), &svg_elements);
 
         return updated_group.clone();
+        
     }
 }
