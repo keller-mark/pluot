@@ -126,6 +126,9 @@ pub struct RenderParams {
     // Allow disabling memoization/cacheing. Useful for testing/debugging.
     pub cache_enabled: bool,
 
+    // Whether to compress the SVG string using LZ-string if the output format is Vector.
+    pub svg_compression_enabled: bool,
+
     // Margins for plots that need them (e.g. scatterplot axes).
     pub margin_left: Option<f32>,
     pub margin_right: Option<f32>,
@@ -168,6 +171,7 @@ impl Default for RenderParams {
             plot_params: PlotParams::Triangle, // TODO: implement a triangle layer for layeredplot, then use it here.
             timeout: None,
             cache_enabled: true,
+            svg_compression_enabled: false,
             margin_left: None,
             margin_right: None,
             margin_top: None,

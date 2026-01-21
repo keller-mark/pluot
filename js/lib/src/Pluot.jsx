@@ -293,6 +293,7 @@ export function Pluot(props) {
         plot_params: plotParams,
         timeout: 200, // in ms
         cache_enabled: true,
+        svg_compression_enabled: true,
       };
       // TODO: wrap render_wasm in try/catch, to handle Rust panics.
       wasm.render_wasm(renderParams).then((arr) => {

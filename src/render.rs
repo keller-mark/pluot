@@ -190,9 +190,13 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         // Return the SVG string as bytes.
         let svg_string = context.out_group.to_string();
 
-        // TODO: make compression optional via a parameter of the render function.
-        let compressed_svg = lz_str::compress_to_uint8_array(&svg_string);
-        return compressed_svg;
+        // If compression is not enabled, return the SVG string bytes.
+        if !params.svg_compression_enabled {
+            return svg_string.as_bytes().to_vec();
+        }
+
+        // If compression is enabled, use lz-string before returning the Uint8Array.
+        return lz_str::compress_to_uint8_array(&svg_string);
     }
 
 
