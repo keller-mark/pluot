@@ -126,6 +126,27 @@ const DEMOS = {
             target_y_vec: [100, 210],
             labels_vec: [4, 1],
           }
+        },
+        {
+          layer_type: "TextLayer",
+          layer_params: {
+            layer_id: "layer_text",
+            data_unit_mode: "Pixels",
+            text_size_unit_mode: "Pixels",
+            text_size: 25.0,
+            text_align_mode: "Start",
+            text_baseline_mode: "Middle",
+            bounds: {
+              margin_top: 0,
+              margin_right: 0,
+              margin_bottom: 0,
+              margin_left: 0,
+            },
+
+            x_vec: [10, 110],
+            y_vec: [10, 110],
+            text_vec: ["Hello", "World"],
+          }
         }
       ]
     },
