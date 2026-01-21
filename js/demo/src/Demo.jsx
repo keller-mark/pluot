@@ -79,10 +79,30 @@ const DEMOS = {
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_1000/x_coords",
-            y_key: "/n_1000/y_coords",
-            color_key: "/n_1000/class_labels",
-            //point_radius: pointRadius,
+            x_key: "/n_100000/x_coords",
+            y_key: "/n_100000/y_coords",
+            color_key: "/n_100000/class_labels",
+          }
+        },
+        {
+          layer_type: "ScatterplotLayer",
+          layer_params: {
+            layer_id: "layer_2",
+            data_unit_mode: "Pixels",
+            point_radius_unit_mode: "Pixels",
+            point_shape_mode: "Square",
+            point_radius: 15.0,
+            store_name: "gaussian_quantiles_store",
+            bounds: {
+              margin_top: 0,
+              margin_right: 0,
+              margin_bottom: 0,
+              margin_left: 0,
+            },
+
+            x_vec: [100, 100],
+            y_vec: [100, 200],
+            labels_vec: [0, 1],
           }
         }
       ]
