@@ -59,8 +59,13 @@ pub fn render_layered_plot(
                     view_params.clone(),
                     layer_params.clone(),
                 )) as Box<dyn PreparedAndDraw>
-            }
-            _ => panic!("Unsupported layer type in layered plot"),
+            },
+            LayerParams::LineLayer(layer_params) => {
+                Box::new(LineLayer::new(
+                    view_params.clone(),
+                    layer_params.clone(),
+                )) as Box<dyn PreparedAndDraw>
+            },
         }
     }).collect();
 

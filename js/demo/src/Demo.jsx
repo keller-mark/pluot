@@ -79,9 +79,9 @@ const DEMOS = {
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_100000/x_coords",
-            y_key: "/n_100000/y_coords",
-            color_key: "/n_100000/class_labels",
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
           }
         },
         {
@@ -103,6 +103,28 @@ const DEMOS = {
             x_vec: [100, 100],
             y_vec: [100, 200],
             labels_vec: [0, 1],
+          }
+        },
+        {
+          layer_type: "LineLayer",
+          layer_params: {
+            layer_id: "layer_3",
+            data_unit_mode: "Pixels",
+            line_width_unit_mode: "Pixels",
+            line_width: 5.0,
+            store_name: "gaussian_quantiles_store",
+            bounds: {
+              margin_top: 0,
+              margin_right: 0,
+              margin_bottom: 0,
+              margin_left: 0,
+            },
+
+            source_x_vec: [10, 110],
+            source_y_vec: [10, 110],
+            target_x_vec: [100, 210],
+            target_y_vec: [100, 210],
+            labels_vec: [4, 1],
           }
         }
       ]

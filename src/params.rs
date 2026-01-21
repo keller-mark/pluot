@@ -3,6 +3,7 @@ use crate::zarr::AsyncZarritaStore;
 use crate::layers::core::AspectRatioMode;
 use crate::layers::scatterplot_layer::ScatterplotLayerParams;
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayerParams;
+use crate::layers::line_layer::LineLayerParams;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -63,7 +64,7 @@ pub enum LayerParams {
     ScatterplotLayer(ScatterplotLayerParams),
     ZarrScatterplotLayer(ZarrScatterplotLayerParams),
 
-    //LineLayer(LineLayerParams),
+    LineLayer(LineLayerParams),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

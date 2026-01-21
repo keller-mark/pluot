@@ -35,6 +35,7 @@ pub struct ScatterplotLayerParams {
 
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
+    // TODO: improve naming here - should these be "x", "y", etc?
     pub x_vec: Vec<f32>, // TODO: generalize to other numeric dtypes?
     pub y_vec: Vec<f32>,
     pub labels_vec: Vec<i32>,
@@ -54,7 +55,8 @@ pub struct ScatterplotLayerData {
 pub struct ScatterplotLayer {
     view_params: ViewParams,
     layer_params: ScatterplotLayerParams,
-    // TODO: getters.
+    // TODO: getters?
+
     // Data may be None prior to runninng prepare().
     data: Option<ScatterplotLayerData>,
 }
@@ -69,7 +71,7 @@ impl ScatterplotLayer {
             panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         let data = Some(ScatterplotLayerData {
-            // Note the cloning here.
+            // TODO: can cloning be avoided here?
             x_arr: layer_params.x_vec.clone(),
             y_arr: layer_params.y_vec.clone(),
             labels_arr: layer_params.labels_vec.clone(),
@@ -77,7 +79,7 @@ impl ScatterplotLayer {
         Self {
             view_params,
             layer_params,
-            data: data,
+            data,
         }
     }
 }
@@ -312,7 +314,7 @@ pub async fn base_draw_scatterplot_layer(
         });
 
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("scatterplot_layer.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot_layer.wgsl"));
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -431,95 +433,95 @@ pub fn base_draw_scatterplot_layer_svg(
     point_shape_mode: &PointShapeMode,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
-        let n = data.labels_arr.len();
+    let n = data.labels_arr.len();
 
-        // TODO: reduce code reuse here
-        let camera_view = view_params.camera_view.unwrap_or([
-            // Column 0
-            1.0, 0.0, 0.0, 0.0, // Column 1
-            0.0, 1.0, 0.0, 0.0, // Column 2
-            0.0, 0.0, 1.0, 0.0, // Column 3
-            0.0, 0.0, 0.0, 1.0,
-        ]);
+    // TODO: reduce code reuse here
+    let camera_view = view_params.camera_view.unwrap_or([
+        // Column 0
+        1.0, 0.0, 0.0, 0.0, // Column 1
+        0.0, 1.0, 0.0, 0.0, // Column 2
+        0.0, 0.0, 1.0, 0.0, // Column 3
+        0.0, 0.0, 0.0, 1.0,
+    ]);
 
-        // Use layer-specific bounds if not None, otherwise use the view's margins
-        // (which may also be None).
-        let bounds = if layer_bounds.is_none() {
-            &view_params.margins
-        } else {
-            layer_bounds
-        };
+    // Use layer-specific bounds if not None, otherwise use the view's margins
+    // (which may also be None).
+    let bounds = if layer_bounds.is_none() {
+        &view_params.margins
+    } else {
+        layer_bounds
+    };
 
-        let margin_top = if let Some(margin_params) = &bounds {
-            margin_params.margin_top.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_right = if let Some(margin_params) = &bounds {
-            margin_params.margin_right.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_bottom = if let Some(margin_params) = &bounds {
-            margin_params.margin_bottom.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_left = if let Some(margin_params) = &bounds {
-            margin_params.margin_left.unwrap_or(0.0)
-        } else { 0.0 } as f64;
+    let margin_top = if let Some(margin_params) = &bounds {
+        margin_params.margin_top.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_right = if let Some(margin_params) = &bounds {
+        margin_params.margin_right.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_bottom = if let Some(margin_params) = &bounds {
+        margin_params.margin_bottom.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_left = if let Some(margin_params) = &bounds {
+        margin_params.margin_left.unwrap_or(0.0)
+    } else { 0.0 } as f64;
 
-        let viewport_w = view_params.width as f32;
-        let viewport_h = view_params.height as f32;
+    let viewport_w = view_params.width as f32;
+    let viewport_h = view_params.height as f32;
 
-        let layer_w = viewport_w - (margin_left + margin_right) as f32;
-        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-        // End TODO
+    let layer_w = viewport_w - (margin_left + margin_right) as f32;
+    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+    // End TODO
 
-        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
-        for i in 0..n {
-            let x = data.x_arr[i];
-            let y = data.y_arr[i];
+    let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
+    for i in 0..n {
+        let x = data.x_arr[i];
+        let y = data.y_arr[i];
 
-            // Convert data coordinates to pixel coordinates within the layer area.
-            let (px, py) = get_point_position(
-                x,
-                y,
-                layer_w,
-                layer_h,
-                &camera_view,
-                *data_unit_mode,
-                view_params.aspect_ratio_mode,
-                0, // TODO: pass enum value for aspect_ratio_alignment_mode
-            );
+        // Convert data coordinates to pixel coordinates within the layer area.
+        let (px, py) = get_point_position(
+            x,
+            y,
+            layer_w,
+            layer_h,
+            &camera_view,
+            *data_unit_mode,
+            view_params.aspect_ratio_mode,
+            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+        );
 
-            // Create a circle or square element based on point_shape_mode.
-            svg_elements.push(match point_shape_mode {
-                PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
-                    x: px as f64,
-                    y: py as f64,
-                    radius: point_radius as f64,
-                    // TODO: more params
-                    ..Default::default()
-                }),
-                PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
-                    x: (px - point_radius) as f64,
-                    y: (py - point_radius) as f64,
-                    width: (point_radius * 2.0) as f64,
-                    height: (point_radius * 2.0) as f64,
-                    // TODO: more params
-                    ..Default::default()
-                })
-            });
-        }
-
-        // Insert rects into an SVG group with a transform and clipping to handle margins,
-        // similar to the usage of scissor rect and viewport in the Canvas rendering.
-        let layer_group_vec = vec![
-            TwoElement::Group(TwoGroup {
-                elements: svg_elements,
-                translate: Some((margin_left, margin_top)),
-                // TODO: check how clip_rect interacts with the translate
-                clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+        // Create a circle or square element based on point_shape_mode.
+        svg_elements.push(match point_shape_mode {
+            PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
+                x: px as f64,
+                y: py as f64,
+                radius: point_radius as f64,
+                // TODO: more params
+                ..Default::default()
+            }),
+            PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
+                x: (px - point_radius) as f64,
+                y: (py - point_radius) as f64,
+                width: (point_radius * 2.0) as f64,
+                height: (point_radius * 2.0) as f64,
+                // TODO: more params
                 ..Default::default()
             })
-        ];
+        });
+    }
 
-        return layer_group_vec;
+    // Insert rects into an SVG group with a transform and clipping to handle margins,
+    // similar to the usage of scissor rect and viewport in the Canvas rendering.
+    let layer_group_vec = vec![
+        TwoElement::Group(TwoGroup {
+            elements: svg_elements,
+            translate: Some((margin_left, margin_top)),
+            // TODO: check how clip_rect interacts with the translate
+            clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+            ..Default::default()
+        })
+    ];
+
+    return layer_group_vec;
 }
 
 
@@ -546,6 +548,5 @@ impl DrawToSvg for ScatterplotLayer {
         let updated_group = update_svg(group.clone(), &svg_elements);
 
         return updated_group.clone();
-        
     }
 }
