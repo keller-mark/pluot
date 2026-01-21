@@ -193,7 +193,7 @@ pub async fn render_bioimage(
 
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
-    let ch0_arr_slice = zarrs::array_subset::ArraySubset::new_with_start_shape(
+    let ch0_arr_slice = zarrs::array::ArraySubset::new_with_start_shape(
         vec![0, z_index as u64, 0, 0],                        // start
         vec![1, 1, img_lowres_h as u64, img_lowres_w as u64], // shape
     )
@@ -201,7 +201,7 @@ pub async fn render_bioimage(
 
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
-    let ch1_arr_slice = zarrs::array_subset::ArraySubset::new_with_start_shape(
+    let ch1_arr_slice = zarrs::array::ArraySubset::new_with_start_shape(
         vec![1, z_index as u64, 0, 0],                        // start
         vec![1, 1, img_lowres_h as u64, img_lowres_w as u64], // shape
     )
@@ -212,11 +212,11 @@ pub async fn render_bioimage(
     // Use futures::join! to run the async retrievals in parallel, similar to Promise.all in JS.
     let futures_try_join_result = futures::try_join!(
         maybe_timeout!(
-            lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch0_arr_slice),
+            lowres_array.async_retrieve_array_subset::<Vec<u16>>(&ch0_arr_slice),
             context.params.timeout
         ),
         maybe_timeout!(
-            lowres_array.async_retrieve_array_subset_ndarray::<u16>(&ch1_arr_slice),
+            lowres_array.async_retrieve_array_subset::<Vec<u16>>(&ch1_arr_slice),
             context.params.timeout
         )
     );
@@ -246,11 +246,8 @@ pub async fn render_bioimage(
 
     // Concatenate the channel data into a single vector.
     // TODO: is this the most efficient way / use the minimal number of copies?
-    let mut combined_pixel_data = ch0_arr
-        .as_slice()
-        .expect("Contiguous array for ch0")
-        .to_vec();
-    combined_pixel_data.extend_from_slice(ch1_arr.as_slice().expect("Contiguous array for ch1"));
+    let mut combined_pixel_data = ch0_arr;
+    combined_pixel_data.extend_from_slice(&ch1_arr);
 
     // Store the ndarray::ArrayD in a WGPU texture.
     // Create a texture to store the image data (R16Uint).

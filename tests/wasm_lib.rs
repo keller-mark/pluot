@@ -1,6 +1,7 @@
 //! Test suite for the Web and headless browsers.
 
-#![cfg(target_arch = "wasm32")]
+// We only run this test on WASM targets AND when the "lacks_gpu" feature is not enabled (e.g., CI).
+#![cfg(all(target_arch = "wasm32", not(feature="lacks_gpu")))]
 
 use pluot::{render_wasm, RenderParams};
 use wasm_bindgen::prelude::*;

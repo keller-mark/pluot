@@ -27,7 +27,7 @@ pub enum UnitsMode {
     Data,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,
     pub margin_right: Option<f32>,
@@ -36,7 +36,7 @@ pub struct MarginParams {
 }
 
 // Struct to store anything at the view level (i.e., not layer-specific)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ViewParams {
     pub view_id: String, // Just reuse the plot_id when there is a single view.
     pub width: u32,

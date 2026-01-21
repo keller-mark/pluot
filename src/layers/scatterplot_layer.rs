@@ -3,6 +3,7 @@
 
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
+use serde::{Deserialize, Serialize};
 
 use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::wgpu;
@@ -12,13 +13,9 @@ use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoR
 use crate::two::svg::update_svg;
 use crate::layers::scatterplot_vertex::get_point_position;
 
-pub struct ScatterplotLayerData {
-    pub x_arr: Vec<f32>,
-    pub y_arr: Vec<f32>,
-    pub labels_arr: Vec<i32>,
-}
 
-#[derive(Clone, Debug)]
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PointShapeMode {
     // 0: square (basically no-op in fragment shader)
     Square,
@@ -26,15 +23,37 @@ pub enum PointShapeMode {
     Circle,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ScatterplotLayerParams {
+    pub layer_id: String,
+    // If None, assume margin: 0 in all directions.
+    pub bounds: Option<MarginParams>,
+    pub data_unit_mode: UnitsMode,
+    pub point_radius: f32,
+    pub point_radius_unit_mode: UnitsMode,
+    pub point_shape_mode: PointShapeMode,
+
+    // TODO(ref): pass in references instead of owned Vecs?
+    // Would this cause issues when using serde to create layers based on JSON params?
+    pub x_vec: Vec<f32>, // TODO: generalize to other numeric dtypes?
+    pub y_vec: Vec<f32>,
+    pub labels_vec: Vec<i32>,
+}
+
+// TODO: defaults for ScatterplotLayerParams?
+
+
+// Internal representation for ScatterplotLayer and its "descendant" layers.
+pub struct ScatterplotLayerData {
+    pub x_arr: Vec<f32>,
+    pub y_arr: Vec<f32>,
+    pub labels_arr: Vec<i32>,
+}
+
+
 pub struct ScatterplotLayer {
     view_params: ViewParams,
-    layer_id: String,
-    // If None, assume margin: 0 in all directions.
-    bounds: Option<MarginParams>,
-    data_unit_mode: UnitsMode,
-    point_radius: f32,
-    point_radius_unit_mode: UnitsMode,
-    point_shape_mode: PointShapeMode,
+    layer_params: ScatterplotLayerParams,
     // TODO: getters.
     // Data may be None prior to runninng prepare().
     data: Option<ScatterplotLayerData>,
@@ -43,34 +62,22 @@ pub struct ScatterplotLayer {
 impl ScatterplotLayer {
     pub fn new(
         view_params: ViewParams,
-        bounds: Option<MarginParams>,
-        layer_id: String,
-        data_unit_mode: UnitsMode,
-        point_radius: f32,
-        point_radius_unit_mode: UnitsMode,
-        point_shape_mode: PointShapeMode,
-        // TODO(ref): pass in references instead of owned Vecs?
-        x_vec: Vec<f32>,
-        y_vec: Vec<f32>,
-        labels_vec: Vec<i32>,
+        layer_params: ScatterplotLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if(point_radius_unit_mode == UnitsMode::Data && data_unit_mode == UnitsMode::Pixels) {
+        if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
             panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
+        let data = Some(ScatterplotLayerData {
+            // Note the cloning here.
+            x_arr: layer_params.x_vec.clone(),
+            y_arr: layer_params.y_vec.clone(),
+            labels_arr: layer_params.labels_vec.clone(),
+        });
         Self {
             view_params,
-            bounds,
-            layer_id,
-            data_unit_mode,
-            point_radius,
-            point_radius_unit_mode,
-            point_shape_mode,
-            data: Some(ScatterplotLayerData {
-                x_arr: x_vec,
-                y_arr: y_vec,
-                labels_arr: labels_vec,
-            }),
+            layer_params,
+            data: data,
         }
     }
 }
@@ -397,11 +404,11 @@ impl DrawToCanvas for ScatterplotLayer {
             device, queue, pass,
             data,
             &self.view_params,
-            &self.bounds,
-            &self.data_unit_mode,
-            self.point_radius,
-            &self.point_radius_unit_mode,
-            &self.point_shape_mode,
+            &self.layer_params.bounds,
+            &self.layer_params.data_unit_mode,
+            self.layer_params.point_radius,
+            &self.layer_params.point_radius_unit_mode,
+            &self.layer_params.point_shape_mode,
         ).await;
     }
 }
@@ -507,16 +514,16 @@ impl DrawToSvg for ScatterplotLayer {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         let view_params = &self.view_params;
-        let bounds = &self.bounds;
+        let bounds = &self.layer_params.bounds;
 
         let svg_elements = base_draw_scatterplot_layer_svg(
             data,
             view_params,
             bounds,
-            &self.data_unit_mode,
-            self.point_radius,
-            &self.point_radius_unit_mode,
-            &self.point_shape_mode,
+            &self.layer_params.data_unit_mode,
+            self.layer_params.point_radius,
+            &self.layer_params.point_radius_unit_mode,
+            &self.layer_params.point_shape_mode,
         );
         
         // TODO: refactor to avoid the cloning here?

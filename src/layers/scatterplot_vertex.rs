@@ -78,7 +78,7 @@ pub fn get_point_position(
     // "uniforms" below
     layer_width_px: f32,
     layer_height_px: f32,
-    camera_view_raw: &[f32; 16],
+    camera_view_raw: &[f32],
     data_unit_mode: UnitsMode, // 0: pixel units, 1: data units. // TODO: keep the enums here?
     aspect_ratio_mode: AspectRatioMode, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end.
@@ -155,4 +155,53 @@ pub fn get_point_position(
     return (point_pos_px.x, layer_height_px - point_pos_px.y);
 }
 
-// TODO: add inline unit tests here
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera() {
+        // Consider data points at the corners of a unit square.
+        let points = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(1.0, 1.0),
+        ];
+
+        let camera_view = Mat4::identity();
+
+        let layer_width_px = 100.0;
+        let layer_height_px = 100.0;
+
+        let aspect_ratio_mode = AspectRatioMode::Ignore;
+        let aspect_ratio_alignment_mode = 0; // Center
+        let data_unit_mode = UnitsMode::Data;
+
+        // These are in pixel space relative to the layer dimensions.
+        let expected_points_ndc = vec![
+            Vec2::new(0.0, 100.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 100.0),
+            Vec2::new(100.0, 0.0),
+        ];
+
+        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
+            let (out_x, out_y) = get_point_position(
+                point_pos_orig.x,
+                point_pos_orig.y,
+                // "uniforms"
+                layer_width_px,
+                layer_height_px,
+                camera_view.as_slice(), // column-major order
+                data_unit_mode,
+                aspect_ratio_mode,
+                aspect_ratio_alignment_mode,
+            );
+            return Vec2::new(out_x, out_y);
+        }).collect();
+
+        assert_eq!(expected_points_ndc, resulting_points_ndc);
+    }
+
+}

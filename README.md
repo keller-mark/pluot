@@ -169,7 +169,9 @@ cargo build
 Run tests:
 
 ```sh
-cargo test --features test_plain_rust
+cargo test
+# or
+cargo test --features lacks_gpu
 ```
 
 ## Inspired by

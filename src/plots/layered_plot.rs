@@ -45,18 +45,7 @@ pub fn render_layered_plot(
         match layer_params {
             LayerParams::ZarrScatterplotLayer(layer_params) => {
                 Box::new(ZarrScatterplotLayer::new(
-                    // TODO: reuse view_params here?
-                    ViewParams {
-                        view_id: context.params.plot_id.to_string(),
-                        width: context.params.width,
-                        height: context.params.height,
-                        margins: None,
-                        device_pixel_ratio: context.params.device_pixel_ratio,
-                        camera_view: context.params.camera_view,
-                        timeout: context.params.timeout,
-                        cache_enabled: context.params.cache_enabled,
-                        aspect_ratio_mode: context.params.aspect_ratio_mode,
-                    },
+                    view_params.clone(),
                     Some(MarginParams {
                         margin_top: Some(margin_top),
                         margin_right: Some(margin_right),
@@ -75,6 +64,12 @@ pub fn render_layered_plot(
                     PointShapeMode::Square,
                 )) as Box<dyn PreparedAndDraw>
             },
+            LayerParams::ScatterplotLayer(layer_params) => {
+                Box::new(ScatterplotLayer::new(
+                    view_params.clone(),
+                    layer_params.clone(),
+                )) as Box<dyn PreparedAndDraw>
+            }
             _ => panic!("Unsupported layer type in layered plot"),
         }
     }).collect();

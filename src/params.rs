@@ -1,6 +1,7 @@
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::layers::core::AspectRatioMode;
+use crate::layers::scatterplot_layer::ScatterplotLayerParams;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -66,7 +67,7 @@ pub enum LayerParams {
     // { "layer_type": "ScatterplotLayer" }
     // Reference: https://serde.rs/enum-representations.html
     
-    //ScatterplotLayer(ScatterplotLayerParams),
+    ScatterplotLayer(ScatterplotLayerParams),
     //LineLayer(LineLayerParams),
     ZarrScatterplotLayer(ZarrScatterplotLayerParams),
 }
@@ -108,6 +109,8 @@ pub struct RenderParams {
     pub camera_view: Option<[f32; 16]>,
 
     pub aspect_ratio_mode: AspectRatioMode,
+
+    // TODO: remove plot_params. instead, directly specify `layers`` here without needing `plot_type: LayeredPlot`
 
     #[serde(flatten)]
     pub plot_params: PlotParams,
@@ -162,7 +165,7 @@ impl Default for RenderParams {
             camera_view: None,
             plot_id: "default_plot".to_string(),
             store_name: "default_store".to_string(),
-            plot_params: PlotParams::Triangle,
+            plot_params: PlotParams::Triangle, // TODO: implement a triangle layer for layeredplot, then use it here.
             timeout: None,
             cache_enabled: true,
             margin_left: None,
