@@ -91,6 +91,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
             let labels_array = labels_array_future.await.unwrap();
             let labels_subset = labels_array.subset_all();
+            //let labels_result = labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset).await;
             let labels_result = labels_array.async_retrieve_array_subset::<Vec<i64>>(&labels_subset).await;
 
             let labels_vec = labels_result.unwrap();
@@ -107,6 +108,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
             let x_array = x_array_future.await.unwrap();
             let x_subset = x_array.subset_all();
+            //let x_result = x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset).await;
             let x_result = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await;
 
             let x_vec = x_result.unwrap();
@@ -120,6 +122,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
             let y_array = y_array_future.await.unwrap();
             let y_subset = y_array.subset_all();
+            //let y_result = y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset).await;
             let y_result = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await;
 
             let y_vec = y_result.unwrap();
