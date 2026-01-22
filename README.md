@@ -12,19 +12,17 @@ How it works: "headless" plotting. Pluot uses Rust and [WGPU](https://github.com
 - Render static plots via Python (no web browser needed)
 - Render static plots via JavaScript
 - Render interactive plots via JavaScript
-- Raster/bitmap and vector (SVG) output supported
 
-_In other words: "rewrite it in rust," but for plotting._
+<!--_In other words: "rewrite it in rust," but for plotting._-->
 
 
-Polyglot, portable, performant, pixel-perfect plotting.
 
 ## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
 - __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 3MB) to make it feasible to integrate into web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr to achieve this).
-- __Polyglot__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
+- __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
 - __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
 - __Low-level or High-level__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
 - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types.
