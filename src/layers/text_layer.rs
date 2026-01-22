@@ -21,6 +21,7 @@ use crate::two::shapes::{
 };
 use crate::two::svg::update_svg;
 use crate::layers::scatterplot_vertex::get_point_position;
+use crate::log;
 
 const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();
 
@@ -57,7 +58,7 @@ fn get_or_init_font_atlas() -> FontAtlasCache {
 
 // Text measurement functions
 fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
-    let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
+    let mut layout: Layout = Layout::new(CoordinateSystem::PositiveYUp);
     layout.reset(&LayoutSettings {
         max_width: None,
         max_height: None,
@@ -79,20 +80,20 @@ fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
     max_x
 }
 
-fn calculate_text_position(x_pos: f32, y_pos: f32, font_size: f32, text_align: TextAlignMode, text_baseline: TextBaselineMode, text_width: f32) -> (f32, f32) {
+fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_baseline: TextBaselineMode, text_width: f32) -> (f32, f32) {
     let x = match text_align {
-        TextAlignMode::Start => x_pos,
-        TextAlignMode::Middle => x_pos - text_width / 2.0,
-        TextAlignMode::End => x_pos - text_width,
+        TextAlignMode::Start => 0.0,
+        TextAlignMode::Middle => 0.0 - text_width / 2.0,
+        TextAlignMode::End => 0.0 - text_width,
     };
 
-    // For baseline, we'll use the provided y coordinate as-is for now
-    // More sophisticated baseline handling could be added later
     let y = match text_baseline {
-        TextBaselineMode::Top => y_pos - font_size / 2.0,
-        TextBaselineMode::Middle => y_pos,
-        TextBaselineMode::Alphabetic => y_pos, // TODO?
-        TextBaselineMode::Bottom => y_pos + font_size / 2.0,
+        // For some reason, GlyphPosition.y is always a big negative number -(font_size plus some extra pixels)
+        // So we adjust accordingly here.
+        TextBaselineMode::Top => font_size - font_size,
+        TextBaselineMode::Middle => font_size - font_size / 2.0,
+        TextBaselineMode::Alphabetic => font_size - font_size / 2.0, // TODO
+        TextBaselineMode::Bottom => font_size,
     };
 
     (x, y)
@@ -265,6 +266,7 @@ impl PreparedLayer for TextLayer {
         let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
 
         for g in glyphs {
+            // Rasterize the glyph to get its bitmap representation.
             let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
             // Add padding around each glyph: PADDING + glyph_width + PADDING
             atlas_width += 2 * PADDING + metrics.width.max(1);
@@ -297,9 +299,8 @@ impl PreparedLayer for TextLayer {
                 &text_str,
                 font_size as f32,
             );
-            let (base_x, base_y) = calculate_text_position(
-                text_x_pos,
-                text_y_pos,
+            
+            let (offset_x, offset_y) = calculate_text_position(
                 font_size as f32,
                 self.layer_params.text_align_mode,
                 self.layer_params.text_baseline_mode,
@@ -307,7 +308,7 @@ impl PreparedLayer for TextLayer {
             );
 
             // Create a separate layout for this text element
-            let mut element_layout = Layout::new(CoordinateSystem::PositiveYDown);
+            let mut element_layout = Layout::new(CoordinateSystem::PositiveYUp);
             element_layout.reset(&LayoutSettings {
                 max_width: None,
                 max_height: None,
@@ -346,10 +347,14 @@ impl PreparedLayer for TextLayer {
                 // Compute screen-space rect for this glyph
                 // TODO: update this logic so that the rect is in whatever data_units_mode is?
                 // (ensure the text measurement is happening in the correct units too).
-                let x_px = base_x + g.x as f32;
-                let y_px = base_y as f32; // TODO: use g.y here, but how?
-                let w_px = gw as f32;
-                let h_px = gh as f32;
+                let x_px = offset_x + text_x_pos + g.x as f32;
+                let y_px = offset_y + text_y_pos + g.y as f32;
+                let w_px = g.width as f32;
+                let h_px: f32 = g.height as f32;
+
+                log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
+                    elem_i, x_px, y_px, w_px, h_px, g.x, g.y, text_x_pos, text_y_pos, offset_x, offset_y
+                ));
 
                 // UV rectangle (normalized) - exclude padding from sampled area
                 let u0 = (element_cursor as f32) / (atlas_width as f32);
