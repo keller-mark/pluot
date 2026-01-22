@@ -57,7 +57,7 @@ fn get_or_init_font_atlas() -> FontAtlasCache {
 
 // Text measurement functions
 fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
-    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+    let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
     layout.reset(&LayoutSettings {
         max_width: None,
         max_height: None,
@@ -89,10 +89,10 @@ fn calculate_text_position(x_pos: f32, y_pos: f32, font_size: f32, text_align: T
     // For baseline, we'll use the provided y coordinate as-is for now
     // More sophisticated baseline handling could be added later
     let y = match text_baseline {
-        TextBaselineMode::Top => y_pos,
-        TextBaselineMode::Middle => y_pos - font_size / 2.0,
+        TextBaselineMode::Top => y_pos - font_size / 2.0,
+        TextBaselineMode::Middle => y_pos,
         TextBaselineMode::Alphabetic => y_pos, // TODO?
-        TextBaselineMode::Bottom => y_pos - font_size,
+        TextBaselineMode::Bottom => y_pos + font_size / 2.0,
     };
 
     (x, y)
@@ -239,7 +239,7 @@ impl PreparedLayer for TextLayer {
         let font_atlas = get_or_init_font_atlas();
 
         // Build a comprehensive layout with all text elements to create the atlas
-        let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+        let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
         layout.reset(&LayoutSettings {
             max_width: None,
             max_height: None,
@@ -347,7 +347,7 @@ impl PreparedLayer for TextLayer {
                 // TODO: update this logic so that the rect is in whatever data_units_mode is?
                 // (ensure the text measurement is happening in the correct units too).
                 let x_px = base_x + g.x as f32;
-                let y_px = base_y + g.y as f32;
+                let y_px = base_y as f32; // TODO: use g.y here, but how?
                 let w_px = gw as f32;
                 let h_px = gh as f32;
 
@@ -406,6 +406,8 @@ pub async fn base_draw_text_layer(
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
+    text_size: f32,
+    text_size_unit_mode: &UnitsMode,
 ) {
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
@@ -503,19 +505,29 @@ pub async fn base_draw_text_layer(
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-    // TODO: support per-element colors.
-    // For now, we use the first text element's color, or default to black
-    let color = [0.0, 0.0, 0.0, 1.0];
-
-    // Uniforms for font rendering shader:
-
+    // Construct the uniform struct using Encase.
     let uniform_struct = TextLayerUniforms {
-        // TODO: fill in the fields here to match the struct definition.
+        layer_size: Vec2::new(layer_w, layer_h), // (layer_width, layer_height) in pixels
+        camera_view: Mat4::from_cols_array(&camera_view),   // mat4x4<f32>,
+        data_unit_mode: match data_unit_mode {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        }, // 0 = pixels, 1 = data units
+        text_size: text_size,
+        text_size_unit_mode: match text_size_unit_mode {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        }, // 0 = pixels, 1 = data units
+        aspect_ratio_mode: match view_params.aspect_ratio_mode {
+            AspectRatioMode::Ignore => 0,
+            AspectRatioMode::Contain => 1,
+            AspectRatioMode::Cover => 2,
+        },
+        aspect_ratio_alignment_mode: 0, // center. TODO
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
         // as done by the ScatterplotLayer vertex shader, using these uniform values.
-        viewport: Vec2::from([viewport_w - (margin_left + margin_right) as f32, viewport_h - (margin_top + margin_bottom) as f32]),
-        color: Vec4::from(color),
+        color: Vec4::from([0.0, 0.0, 0.0, 1.0]), // TODO: support per-element colors.
     };
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -536,6 +548,16 @@ pub async fn base_draw_text_layer(
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -545,19 +567,9 @@ pub async fn base_draw_text_layer(
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
                     count: None,
                 },
             ],
@@ -570,15 +582,15 @@ pub async fn base_draw_text_layer(
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                    resource: uniform_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: uniform_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
                 },
             ],
         });
@@ -704,6 +716,8 @@ impl DrawToCanvas for TextLayer {
             &self.view_params,
             &self.layer_params.bounds,
             &self.layer_params.data_unit_mode,
+            self.layer_params.text_size,
+            &self.layer_params.text_size_unit_mode,
         ).await;
     }
 }

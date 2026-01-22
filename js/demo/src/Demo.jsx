@@ -133,9 +133,9 @@ const DEMOS = {
             layer_id: "layer_text",
             data_unit_mode: "Pixels",
             text_size_unit_mode: "Pixels",
-            text_size: 25.0,
+            text_size: 50.0,
             text_align_mode: "Start",
-            text_baseline_mode: "Middle",
+            text_baseline_mode: "Bottom",
             bounds: {
               margin_top: 0,
               margin_right: 0,
