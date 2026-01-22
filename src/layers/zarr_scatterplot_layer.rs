@@ -161,6 +161,7 @@ impl DrawToSvg for ZarrScatterplotLayer {
             self.layer_params.point_radius,
             &self.layer_params.point_radius_unit_mode,
             &self.layer_params.point_shape_mode,
+            &self.layer_params.layer_id,
         );
 
         // TODO: use an SVG group with a transform and clipping to handle margins,

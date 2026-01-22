@@ -434,6 +434,7 @@ pub fn base_draw_scatterplot_layer_svg(
     point_radius: f32,
     point_radius_unit_mode: &UnitsMode,
     point_shape_mode: &PointShapeMode,
+    layer_id: &str,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
     let n = data.labels_arr.len();
@@ -518,6 +519,7 @@ pub fn base_draw_scatterplot_layer_svg(
         TwoElement::Group(TwoGroup {
             elements: svg_elements,
             translate: Some((margin_left, margin_top)),
+            layer_id: Some(layer_id.to_string()),
             // TODO: check how clip_rect interacts with the translate
             clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
             ..Default::default()
@@ -545,6 +547,7 @@ impl DrawToSvg for ScatterplotLayer {
             self.layer_params.point_radius,
             &self.layer_params.point_radius_unit_mode,
             &self.layer_params.point_shape_mode,
+            &self.layer_params.layer_id,
         );
         
         // TODO: refactor to avoid the cloning here?

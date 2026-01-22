@@ -465,6 +465,7 @@ pub fn base_draw_line_layer_svg(
     data_unit_mode: &UnitsMode,
     line_width: f32,
     line_width_unit_mode: &UnitsMode,
+    layer_id: &str,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
     let n = data.labels_arr.len();
@@ -553,6 +554,7 @@ pub fn base_draw_line_layer_svg(
         TwoElement::Group(TwoGroup {
             elements: svg_elements,
             translate: Some((margin_left, margin_top)),
+            layer_id: Some(layer_id.to_string()),
             // TODO: check how clip_rect interacts with the translate
             clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
             ..Default::default()
@@ -579,6 +581,7 @@ impl DrawToSvg for LineLayer {
             &self.layer_params.data_unit_mode,
             self.layer_params.line_width,
             &self.layer_params.line_width_unit_mode,
+            &self.layer_params.layer_id,
         );
         
         // TODO: refactor to avoid the cloning here?

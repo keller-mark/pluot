@@ -31,7 +31,14 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     );
                 }
                 if let Some(clip_rect) = d.clip_rect {
-                    let clip_path_id = "clipPath1"; // TODO: generate unique IDs if multiple clip paths are needed
+                    let clip_path_id = if let Some(layer_id) = &d.layer_id {
+                        &format!("{}_clip_path", layer_id)
+                    } else {
+                        // TODO: generate unique IDs if multiple clip paths are needed.
+                        // Keep track of used ids by passing down some kind of container struct that wraps the group
+                        // to keep track of this state.
+                        "clipPath1"
+                    };
                     let clip_path = svg::node::element::ClipPath::new()
                         .set("id", clip_path_id)
                         .add(

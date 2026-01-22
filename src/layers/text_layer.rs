@@ -352,9 +352,9 @@ impl PreparedLayer for TextLayer {
                 let w_px = g.width as f32;
                 let h_px: f32 = g.height as f32;
 
-                log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
+                /*log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
                     elem_i, x_px, y_px, w_px, h_px, g.x, g.y, text_x_pos, text_y_pos, offset_x, offset_y
-                ));
+                ));*/
 
                 // UV rectangle (normalized) - exclude padding from sampled area
                 let u0 = (element_cursor as f32) / (atlas_width as f32);
