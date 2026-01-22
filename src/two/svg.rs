@@ -31,6 +31,9 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     );
                 }
                 if let Some(clip_rect) = d.clip_rect {
+                    // TODO: use layer_type here?
+                    // Or change layer_id to group_id,
+                    // and the caller can handle "{layer_type}_{layer_id}" concatenation.
                     let clip_path_id = if let Some(layer_id) = &d.layer_id {
                         &format!("{}_clip_path", layer_id)
                     } else {

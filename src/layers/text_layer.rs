@@ -731,11 +731,111 @@ pub fn base_draw_text_layer_svg(
     data: &TextLayerData,
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode
+    data_unit_mode: &UnitsMode,
+    text_size: f32,
+    text_size_unit_mode: &UnitsMode,
+    text_align_mode: &TextAlignMode,
+    text_baseline_mode: &TextBaselineMode,
+    layer_id: &str,
 ) -> Vec<TwoElement> {
 
-    // TODO: implement. Will require more params to be passed.
-    return vec![];
+    // Iterate over the data points and create SVG elements.
+    let n = data.text_arr.len();
+
+    // TODO: reduce code reuse here
+    let camera_view = view_params.camera_view.unwrap_or([
+        // Column 0
+        1.0, 0.0, 0.0, 0.0, // Column 1
+        0.0, 1.0, 0.0, 0.0, // Column 2
+        0.0, 0.0, 1.0, 0.0, // Column 3
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+
+    // Use layer-specific bounds if not None, otherwise use the view's margins
+    // (which may also be None).
+    let bounds = if layer_bounds.is_none() {
+        &view_params.margins
+    } else {
+        layer_bounds
+    };
+
+    let margin_top = if let Some(margin_params) = &bounds {
+        margin_params.margin_top.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_right = if let Some(margin_params) = &bounds {
+        margin_params.margin_right.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_bottom = if let Some(margin_params) = &bounds {
+        margin_params.margin_bottom.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_left = if let Some(margin_params) = &bounds {
+        margin_params.margin_left.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+
+    let viewport_w = view_params.width as f32;
+    let viewport_h = view_params.height as f32;
+
+    let layer_w = viewport_w - (margin_left + margin_right) as f32;
+    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+    // End TODO
+
+    let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
+    for i in 0..n {
+        let x = data.x_arr[i];
+        let y = data.y_arr[i];
+
+        // Convert data coordinates to pixel coordinates within the layer area.
+        let (px, py) = get_point_position(
+            x,
+            y,
+            layer_w,
+            layer_h,
+            &camera_view,
+            *data_unit_mode,
+            view_params.aspect_ratio_mode,
+            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+        );
+
+        // Create a circle or square element based on point_shape_mode.
+        svg_elements.push(TwoElement::Text(TwoText {
+            x: px as f64,
+            y: py as f64,
+            width: 100.0, // TODO?
+            height: 100.0, // TODO?
+            text: data.text_arr[i].clone(),
+            font: "Arial".to_string(), // TODO: font should match the one used for raster rendering.
+            fontsize: text_size as f64,
+            // TODO: unify these enums.
+            align: match text_align_mode {
+                TextAlignMode::Start => TwoTextAlign::Start,
+                TextAlignMode::Middle => TwoTextAlign::Middle,
+                TextAlignMode::End => TwoTextAlign::End,
+            },
+            baseline: match text_baseline_mode {
+                TextBaselineMode::Top => TwoTextBaseline::Top,
+                TextBaselineMode::Middle => TwoTextBaseline::Middle,
+                TextBaselineMode::Bottom => TwoTextBaseline::Bottom,
+                TextBaselineMode::Alphabetic => TwoTextBaseline::Alphabetic,
+            },
+            // TODO: more params
+            ..Default::default()
+        }));
+    }
+
+    // Insert rects into an SVG group with a transform and clipping to handle margins,
+    // similar to the usage of scissor rect and viewport in the Canvas rendering.
+    let layer_group_vec = vec![
+        TwoElement::Group(TwoGroup {
+            elements: svg_elements,
+            translate: Some((margin_left, margin_top)),
+            layer_id: Some(layer_id.to_string()),
+            // TODO: check how clip_rect interacts with the translate
+            clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+            ..Default::default()
+        })
+    ];
+
+    return layer_group_vec;
 }
 
 
@@ -752,7 +852,12 @@ impl DrawToSvg for TextLayer {
             data,
             view_params,
             bounds,
-            &self.layer_params.data_unit_mode
+            &self.layer_params.data_unit_mode,
+            self.layer_params.text_size,
+            &self.layer_params.text_size_unit_mode,
+            &self.layer_params.text_align_mode,
+            &self.layer_params.text_baseline_mode,
+            &self.layer_params.layer_id,
         );
         
         // TODO: refactor to avoid the cloning here?

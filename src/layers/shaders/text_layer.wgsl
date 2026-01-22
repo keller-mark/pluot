@@ -225,12 +225,12 @@ fn vs_main(
     // Compute the vertex position by accounting for point position and point size.
     // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
     let text_size_norm = vec4f(
-        u.text_size / layer_width_px,
-        u.text_size / layer_height_px,
+        point_width / layer_width_px,
+        point_height / layer_height_px,
         0.0,
         1.0
     );
-    let text_size_ndc = vec4f(text_size_norm.xy * 2.0, 0.0, 1.0);
+    let text_size_ndc = vec4f(text_size_norm.xy, 0.0, 1.0);
 
     // The final point position in NDC space.
     let pos = vec4f(
