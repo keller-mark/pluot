@@ -79,9 +79,9 @@ const DEMOS = {
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_1000/x_coords",
-            y_key: "/n_1000/y_coords",
-            color_key: "/n_1000/class_labels",
+            x_key: "/n_1000000/x_coords",
+            y_key: "/n_1000000/y_coords",
+            color_key: "/n_1000000/class_labels",
           }
         },
         {
@@ -99,7 +99,6 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-
             x_vec: [100, 100],
             y_vec: [100, 200],
             labels_vec: [0, 1],
@@ -119,7 +118,6 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-
             source_x_vec: [10, 110],
             source_y_vec: [10, 110],
             target_x_vec: [100, 210],
@@ -133,7 +131,7 @@ const DEMOS = {
             layer_id: "layer_text",
             data_unit_mode: "Pixels",
             text_size_unit_mode: "Pixels",
-            text_size: 50.0,
+            text_size: 25.0,
             text_align_mode: "Start",
             text_baseline_mode: "Bottom",
             bounds: {
@@ -145,7 +143,7 @@ const DEMOS = {
 
             x_vec: [10, 110],
             y_vec: [10, 110],
-            text_vec: ["Hello", "World"],
+            text_vec: ["Hello", "world"],
           }
         }
       ]

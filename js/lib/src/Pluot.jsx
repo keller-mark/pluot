@@ -72,7 +72,7 @@ export function Pluot(props) {
     logPerformance = false,
     mode = "2d",
     marginBottom = 100.0,
-    marginLeft = 200.0,
+    marginLeft = 100.0,
     marginTop = 100.0,
     marginRight =  100.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"

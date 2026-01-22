@@ -17,12 +17,8 @@ use crate::plots::layered_plot::get_layer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
-    pub layer_id: String,
-    // If None, assume margin: 0 in all directions.
-    pub bounds: Option<MarginParams>,
-    
+    // pub layer_id: String, // TODO: do we need a layer_id here?
     pub sub_layers: Vec<LayerParams>,
-
 }
 
 // TODO: defaults for params?
