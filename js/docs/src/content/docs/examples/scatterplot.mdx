@@ -19,10 +19,23 @@ This scatterplot renders 1 million points.
     plotType={"LayeredPlot"}
     storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
     plotParams={{
-        x_key: "/n_1000000/x_coords",
-        y_key: "/n_1000000/y_coords",
-        color_key: "/n_1000000/class_labels",
-        point_radius: 5.0,
+      layers: [
+        {
+          layer_type: "ZarrScatterplotLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            data_unit_mode: "Data",
+            point_radius_unit_mode: "Pixels",
+            point_shape_mode: "Square",
+            point_radius: 5.0,
+            bounds: null,
+
+            x_key: "/n_1000000/x_coords",
+            y_key: "/n_1000000/y_coords",
+            color_key: "/n_1000000/class_labels",
+          }
+        }
+      ]
     }}
     mode={"2d"}
     marginLeft={50}

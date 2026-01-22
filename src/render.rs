@@ -122,6 +122,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         timeout: params.timeout,
         cache_enabled: params.cache_enabled,
         aspect_ratio_mode: params.aspect_ratio_mode,
+        store_name: Some(store_name.clone()),
     };
 
     let (_, mut group) = init_svg(width as f64, height as f64);

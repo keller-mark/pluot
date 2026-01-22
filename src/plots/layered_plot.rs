@@ -47,7 +47,6 @@ pub fn render_layered_plot(
     encoder: &mut wgpu::CommandEncoder,
 ) -> Vec<Box<dyn PreparedAndDraw>> {
     // Get x and y data from the Zarr store.
-    let store = context.store;
     let height = context.params.height as f64;
     let width = context.params.width as f64;
 
@@ -75,6 +74,7 @@ pub fn render_layered_plot(
         timeout: context.params.timeout,
         cache_enabled: context.params.cache_enabled,
         aspect_ratio_mode: context.params.aspect_ratio_mode,
+        store_name: Some(context.params.store_name.clone()),
     };
 
     let layers: Vec<Box<dyn PreparedAndDraw>> = plot_params.layers.iter().map(|layer_params| {

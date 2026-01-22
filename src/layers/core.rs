@@ -60,6 +60,8 @@ pub struct ViewParams {
     // Margins for plots that need them (e.g. scatterplot axes).
     pub margins: Option<MarginParams>,
 
+    pub store_name: Option<String>,
+
     // Note: Views should have margins, but these should be translated to "bounds" for layers.
     // This is because we may want to render certain layers in the margins
     // (e.g., text/line layers for axes/titles/etc).
@@ -77,6 +79,7 @@ impl Default for ViewParams {
             timeout: None,
             cache_enabled: true,
             margins: None,
+            store_name: None,
         }
     }
 }

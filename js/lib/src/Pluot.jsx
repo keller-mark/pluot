@@ -10,7 +10,12 @@ import createCamera from "./3d-view-controls.js"; // Copy with minor modificatio
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
-import { decompressFromUint8Array } from "lz-string";
+import lzs from "lz-string";
+
+// Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
+// The requested module 'lz-string' is a CommonJS module,
+// which may not support all module.exports as named exports."
+const { decompressFromUint8Array } = lzs;
 
 const DEFAULT_VIEW = new Float32Array([
   1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,

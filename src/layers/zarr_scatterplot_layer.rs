@@ -26,7 +26,7 @@ pub struct ZarrScatterplotLayerParams {
     pub point_shape_mode: PointShapeMode,
 
     // Data keys
-    pub store_name: String,
+    pub store_name: Option<String>,
     pub x_key: String,
     pub y_key: String,
     pub color_key: Option<String>,
@@ -40,6 +40,7 @@ pub struct ZarrScatterplotLayer {
     layer_params: ZarrScatterplotLayerParams,
     // TODO: do we want the store or just the store_name here?
     store: Arc<AsyncZarritaStore>,
+    store_name: String,
     // Data will be None prior to runninng prepare().
     data: Option<ScatterplotLayerData>,
 }
@@ -53,11 +54,23 @@ impl ZarrScatterplotLayer {
         if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
             panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        let store = get_or_init_store(&layer_params.store_name);
+        // If store_name is None, use the store name from view_params.
+        let store_name = match &layer_params.store_name {
+            Some(layer_store_name) => layer_store_name.clone(),
+            None => {
+                match &view_params.store_name {
+                    Some(view_store_name) => view_store_name.clone(),
+                    None => panic!("store_name must be specified either in layer_params or view_params for Zarr-based layers."),
+                }
+            }
+        };
+
+        let store = get_or_init_store(&store_name);
         Self {
             view_params,
             layer_params,
             store,
+            store_name,
             data: None,
         }
     }
@@ -72,7 +85,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
         // Then we should also avoid including the layer_id...
-        let l_i32_future_deps = vec!["l_bytes".to_string(), self.layer_params.store_name.to_string(), self.layer_params.layer_id.to_string()];
+        let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
         let l_i32_future = use_memo_vec_i32(async || {
             let labels_array_path = &self.layer_params.color_key.as_ref().expect("Color key");
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
@@ -88,7 +101,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
         }, &l_i32_future_deps, self.view_params.cache_enabled);
 
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
-        let x_f32_future_deps = vec!["x_bytes".to_string(), self.layer_params.store_name.to_string(), self.layer_params.layer_id.to_string()];
+        let x_f32_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
         let x_f32_future = use_memo_vec_f32(async || {
             let x_array_path = &self.layer_params.x_key.as_ref();
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
@@ -101,7 +114,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
             x_f32_inner
         }, &x_f32_future_deps, self.view_params.cache_enabled);
 
-        let y_f32_future_deps = vec!["y_bytes".to_string(), self.layer_params.store_name.to_string(), self.layer_params.layer_id.to_string()];
+        let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
         let y_f32_future = use_memo_vec_f32(async || {
             let y_array_path = &self.layer_params.y_key.as_ref();
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
