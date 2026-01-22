@@ -25,6 +25,7 @@ def parse_kwargs(kwargs):
             "plot_params": {},
         }
         GLOBAL_STORES[store_name] = MemoryStore()
+        # TODO: recursively traverse to find _keys
         for key, val in kwargs["plot_params"].items():
             if key.endswith("_arr") and isinstance(val, np.ndarray):
                 new_key = key.replace("_arr", "_key")
@@ -44,7 +45,7 @@ async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
-    result = await render_py(timeout=None, cache_enabled=True, device_pixel_ratio=1.0, aspect_ratio_mode="Contain", format="Raster", **new_kwargs)
+    result = await render_py(timeout=None, cache_enabled=True, device_pixel_ratio=1.0, aspect_ratio_mode="Contain", format="Raster", svg_compression_enabled=False, **new_kwargs)
     return result
 
 async def render_to_array(**kwargs):

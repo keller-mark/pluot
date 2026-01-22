@@ -55,7 +55,7 @@ pub struct BarPlotRenderParams {
 }
 */
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "layer_type", content = "layer_params")]
 pub enum LayerParams {
     // Using adjacently tagged enum representation.

@@ -9,6 +9,7 @@ def _():
     from pluot import render_to_image
     import numpy as np
     import marimo as mo
+    import json
     return mo, np, render_to_image
 
 
@@ -26,8 +27,40 @@ def _():
 @app.cell
 async def _(camera_view, render_to_image):
     await render_to_image(
-        camera_view=camera_view, width=500, height=500, plot_id="test", plot_type="Scatterplot", store_name="my_store",
-        plot_params=dict(x_key="/n_100000/x_coords", y_key="/n_100000/y_coords", color_key="/n_1000000/class_labels", point_radius=5.0),
+        camera_view=camera_view,
+        width=500, 
+        height=500, 
+        plot_id="test",
+        plot_type="LayeredPlot",
+        store_name="my_store",
+        plot_params=dict(
+            #x_key="/n_100000/x_coords",
+            #y_key="/n_100000/y_coords",
+            #color_key="/n_1000000/class_labels",
+            #point_radius=5.0
+            layers=[
+                dict(
+                    layer_type="ScatterplotLayer",
+                      layer_params=dict(
+                        layer_id="layer_2",
+                        data_unit_mode="Pixels",
+                        point_radius_unit_mode="Pixels",
+                        point_shape_mode="Square",
+                        point_radius=15.0,
+                        store_name="my_store",
+                        bounds=dict(
+                          margin_top= 0,
+                          margin_right=0,
+                          margin_bottom= 0,
+                          margin_left=0,
+                        ),
+                        x_vec=[100, 100, 400, 400],
+                        y_vec=[100, 400, 100, 400],
+                        labels_vec=[0, 1, 2, 3],
+                      )
+                )
+            ]
+        ),
     )
     return
 

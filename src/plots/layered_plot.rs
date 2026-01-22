@@ -11,6 +11,37 @@ use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
 
+pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dyn PreparedAndDraw> {
+    match layer_params {
+        LayerParams::ZarrScatterplotLayer(params) => {
+            Box::new(ZarrScatterplotLayer::new(
+                view_params.clone(),
+                params.clone(),
+            )) as Box<dyn PreparedAndDraw>
+        },
+        LayerParams::ScatterplotLayer(params) => {
+            Box::new(ScatterplotLayer::new(
+                view_params.clone(),
+                params.clone(),
+            )) as Box<dyn PreparedAndDraw>
+        },
+        LayerParams::LineLayer(params) => {
+            Box::new(LineLayer::new(
+                view_params.clone(),
+                params.clone(),
+            )) as Box<dyn PreparedAndDraw>
+        },
+        LayerParams::TextLayer(params) => {
+            Box::new(crate::layers::text_layer::TextLayer::new(
+                view_params.clone(),
+                params.clone(),
+            )) as Box<dyn PreparedAndDraw>
+        },
+        // We do not want a catch-all here, so that we get a compile error
+        // when implementing new layer types.
+    }
+}
+
 pub fn render_layered_plot(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
@@ -47,35 +78,8 @@ pub fn render_layered_plot(
     };
 
     let layers: Vec<Box<dyn PreparedAndDraw>> = plot_params.layers.iter().map(|layer_params| {
-        match layer_params {
-            LayerParams::ZarrScatterplotLayer(layer_params) => {
-                Box::new(ZarrScatterplotLayer::new(
-                    view_params.clone(),
-                    layer_params.clone(),
-                )) as Box<dyn PreparedAndDraw>
-            },
-            LayerParams::ScatterplotLayer(layer_params) => {
-                Box::new(ScatterplotLayer::new(
-                    view_params.clone(),
-                    layer_params.clone(),
-                )) as Box<dyn PreparedAndDraw>
-            },
-            LayerParams::LineLayer(layer_params) => {
-                Box::new(LineLayer::new(
-                    view_params.clone(),
-                    layer_params.clone(),
-                )) as Box<dyn PreparedAndDraw>
-            },
-            LayerParams::TextLayer(layer_params) => {
-                Box::new(crate::layers::text_layer::TextLayer::new(
-                    view_params.clone(),
-                    layer_params.clone(),
-                )) as Box<dyn PreparedAndDraw>
-            },
-            // We do not want a catch-all here, so that we get a compile error
-            // when implementing new layer types.
-        }
+        get_layer(layer_params, &view_params)
     }).collect();
-    
+
     return layers;
 }

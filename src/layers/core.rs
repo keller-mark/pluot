@@ -2,7 +2,7 @@ use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
 use crate::params::{RenderContext, RenderResult};
-use crate::maybe::MaybeSend;
+use crate::maybe::{MaybeSend, MaybeSync};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -112,11 +112,11 @@ pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass);
 }
 
-pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend {}
-impl<T: PreparedLayer + DrawToSvg + MaybeSend> PreparedAndDrawToSvg for T {}
+pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync> PreparedAndDrawToSvg for T {}
 
-pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend {}
-impl<T: PreparedLayer + DrawToCanvas + MaybeSend> PreparedAndDrawToCanvas for T {}
+pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToCanvas + MaybeSend + MaybeSync> PreparedAndDrawToCanvas for T {}
 
 // Trait for layers that can render to both SVG and Canvas
 pub trait PreparedAndDraw: PreparedAndDrawToCanvas + PreparedAndDrawToSvg {}
