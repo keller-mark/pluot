@@ -105,6 +105,8 @@ export function Pluot(props) {
   const [isWasmReady, setIsWasmReady] = useState(false);
 
   const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
+  const [isRendering, setIsRendering] = useState(false);
+  const [didFirstRender, setDidFirstRender] = useState(false);
 
   /*
     const [zoom, setZoom] = useState(0.0);
@@ -268,6 +270,14 @@ export function Pluot(props) {
       return;
     }
 
+    // TODO: use react-query to manage the backlog of async render calls?
+    // Alternatively, implement a backlog similar to the one used in the Vitessce heatmap.
+    // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
+    if(isRendering && !didFirstRender) {
+      // Prevent multiple render calls prior to the first successful render.
+      return;
+    }
+
     // Start FPS tracking variables.
     let frameCount = 0;
     let lastTime = performance.now();
@@ -276,7 +286,8 @@ export function Pluot(props) {
 
     // Render once or every animation frame.
     // Define the function to render a single frame.
-    function renderFrame() {
+   async function renderFrame() {
+    setIsRendering(true);
       // console.log('wasm.render');
       const renderParams = {
         width,
@@ -301,47 +312,58 @@ export function Pluot(props) {
         svg_compression_enabled: true,
       };
       // TODO: wrap render_wasm in try/catch, to handle Rust panics.
-      wasm.render_wasm(renderParams).then((arr) => {
+      let arr;
+      try {
+        arr = await wasm.render_wasm(renderParams);
+      } catch (error) {
+        console.error("Error during wasm.render_wasm:", error);
+        // Cleanup
+        setIsRendering(false);
+        return;
+      }
 
-        if (isVector) {
-          // Format: Vector (render to SVG)
-          const gContents = decompressFromUint8Array(arr);
+      if (isVector) {
+        // Format: Vector (render to SVG)
+        const gContents = decompressFromUint8Array(arr);
 
-          //console.log(gContents)
+        //console.log(gContents)
 
-          if (!svgRef.current) {
-            return;
-          }
-          svgRef.current.innerHTML = gContents;
-
-          // TODO: check for bailed early
-        } else {
-          // Format: Raster (render to canvas)
-          const canvas = canvasRef.current;
-          if (!canvas) {
-            return;
-          }
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            return;
-          }
-          // TODO: is there a more efficient way to do this?
-          // E.g., write to a webgl texture? or is this fast enough already?
-          const imageData = new ImageData(
-            new Uint8ClampedArray(arr.subarray(0, -1)),
-            width,
-            height,
-          );
-          ctx.putImageData(imageData, 0, 0);
-
-          const bailedEarly = arr.at(-1) === 1;
-          if (bailedEarly) {
-            // TODO: do this via react state and useEffect?
-            // TODO: prevent infinite loop if always bailing early?
-            requestAnimationFrame(renderFrame);
-          }
+        if (!svgRef.current) {
+          return;
         }
-      });
+        svgRef.current.innerHTML = gContents;
+
+        // TODO: check for bailed early
+      } else {
+        // Format: Raster (render to canvas)
+        const canvas = canvasRef.current;
+        if (!canvas) {
+          return;
+        }
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return;
+        }
+        // TODO: is there a more efficient way to do this?
+        // E.g., write to a webgl texture? or is this fast enough already?
+        const imageData = new ImageData(
+          new Uint8ClampedArray(arr.subarray(0, -1)),
+          width,
+          height,
+        );
+        ctx.putImageData(imageData, 0, 0);
+
+        const bailedEarly = arr.at(-1) === 1;
+        if (bailedEarly) {
+          // TODO: do this via react state and useEffect?
+          // TODO: prevent infinite loop if always bailing early?
+          requestAnimationFrame(renderFrame);
+        }
+      }
+
+
+      setIsRendering(false);
+      setDidFirstRender(true);
     }
     function animate() {
       // Start FPS tracking logic.
@@ -373,7 +395,7 @@ export function Pluot(props) {
     } else {
       requestAnimationFrame(animate);
     }
-  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef]);
+  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef, didFirstRender]);
 
   return (
     <div style={{ width, height, position: "relative" }}>
@@ -409,6 +431,9 @@ export function Pluot(props) {
           height={height}
         />
       )}
+      {!didFirstRender ? (
+        <p>Loading...</p>
+      ) : null}
     </div>
   );
 }

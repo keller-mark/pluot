@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Pluot } from "@pluot/react";
 
 const DEMOS = {
+  /*
   triangle: {
     plot_type: "Triangle",
     store_name: "",
@@ -63,6 +64,7 @@ const DEMOS = {
       y_key: "/wheat",
     }
   },
+  */
   layered_plot: {
     plot_type: "LayeredPlot",
     store_name: "gaussian_quantiles_store",
@@ -182,7 +184,7 @@ const DEMOS = {
 };
 
 export function Demo() {
-  const [currPlotId, setCurrPlotId] = useState("ome_ngff");
+  const [currPlotId, setCurrPlotId] = useState("layered_plot");
 
   const plotType = DEMOS[currPlotId].plot_type;
   const plotParams = DEMOS[currPlotId].plot_params;
