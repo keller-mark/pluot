@@ -9,6 +9,7 @@ struct Uniforms {
     data_unit_mode: u32, // 0: pixel units, 1: data units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    opacity: f32, // Layer opacity
     num_channels: u32,
 
     // See "runtime sized arrays" info

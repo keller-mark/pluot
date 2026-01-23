@@ -17,6 +17,13 @@ use crate::log;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChannelSettings {
+    pub c_index: u32,
+    pub window: (f32, f32),
+    pub color: (f32, f32, f32), // RGB colors as floats in [0.0, 1.0]
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BitmapLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -25,6 +32,15 @@ pub struct BitmapLayerParams {
 
     pub img_size_w: u32,
     pub img_size_h: u32,
+    pub img_size_c: Option<u32>, // Number of channels in the image.
+    pub img_size_z: Option<u32>, // Number of z slices in the image.
+    pub img_size_t: Option<u32>, // Number of timepoints in the image.
+
+    pub channel_settings: Vec<ChannelSettings>,
+    pub z_index: Option<u32>,
+    pub t_index: Option<u32>,
+
+    pub opacity: f32,
 
     // TODO: channel window and color params
 
@@ -32,6 +48,11 @@ pub struct BitmapLayerParams {
     // Would this cause issues when using serde to create layers based on JSON params?
     // TODO: improve naming here
     // TODO: array of channel vecs for multi-channel images?
+
+    // TODO: accept a dimension order array,
+    // a shape array (one size per dimension),
+    // and then accept a flat Vec for the image data in its original dimension order.
+
     pub ch0_vec: Vec<u16>, // TODO: generalize to other numeric dtypes?
 }
 
@@ -87,8 +108,8 @@ impl PreparedLayer for BitmapLayer {
 
 #[derive(ShaderType, Debug)]
 struct ChannelUniforms {
-    channel_window: Vec2,
-    channel_colors: Vec3,
+    window: Vec2,
+    color: Vec3,
 }
 
 #[derive(ShaderType, Debug)]
@@ -99,6 +120,7 @@ struct BitmapLayerUniforms {
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     
+    opacity: f32,
     num_channels: ArrayLength,
     // Note: WGSL only allows one runtime-sized array in a struct,
     // and it must be the last field.
@@ -122,6 +144,8 @@ pub async fn base_draw_bitmap_layer(
     data_unit_mode: &UnitsMode,
     img_size_w: u32,
     img_size_h: u32,
+    opacity: f32,
+    channel_settings: &[ChannelSettings],
 ) {
     // Store the ndarray::ArrayD in a WGPU texture.
     // Create a texture to store the image data (R16Uint).
@@ -252,12 +276,14 @@ pub async fn base_draw_bitmap_layer(
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
     // Define the uniforms, matching the WGSL layout (handled by using encase).
-    let channel_uniforms: Vec<ChannelUniforms> = vec![
-        ChannelUniforms {
-            channel_window: Vec2::new(0.0, 50.0),
-            channel_colors: Vec3::new(255.0, 0.0, 0.0),
-        }
-    ];
+    let channel_uniforms: Vec<ChannelUniforms> = channel_settings
+        .iter()
+        .map(|channel_setting| {
+            ChannelUniforms {
+                window: Vec2::new(channel_setting.window.0, channel_setting.window.1),
+                color: Vec3::new(channel_setting.color.0, channel_setting.color.1, channel_setting.color.2),
+            }
+        }).collect();
 
     // Construct the uniform struct using Encase.
     let uniform_struct = BitmapLayerUniforms {
@@ -273,6 +299,7 @@ pub async fn base_draw_bitmap_layer(
             AspectRatioMode::Cover => 2,
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
+        opacity,
         num_channels: Default::default(),
         channels: channel_uniforms,
     };
@@ -437,6 +464,8 @@ impl DrawToCanvas for BitmapLayer {
             &self.layer_params.data_unit_mode,
             self.layer_params.img_size_w,
             self.layer_params.img_size_h,
+            self.layer_params.opacity,
+            &self.layer_params.channel_settings,
         ).await;
     }
 }

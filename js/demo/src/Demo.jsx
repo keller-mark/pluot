@@ -154,9 +154,22 @@ const DEMOS = {
 
             img_size_w: 4,
             img_size_h: 4,
+            img_size_c: null,
+            img_size_z: null,
+            img_size_t: null,
+            z_index: null,
+            t_index: null,
+            opacity: 0.5,
+            channel_settings: [
+              {
+                c_index: 0,
+                window: [0.0, 10.0],
+                color: [255.0, 0.0, 0.0],
+              }
+            ],
 
             ch0_vec: [
-              10, 110, 210, 310,
+              300, 110, 210, 310,
               20, 120, 220, 320,
               30, 130, 230, 330,
               40, 140, 240, 340,
