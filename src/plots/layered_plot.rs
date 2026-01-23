@@ -1,5 +1,7 @@
+use crate::layers::bitmap_layer::BitmapLayer;
 use crate::layers::line_layer::LineLayer;
 use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
+use crate::layers::text_layer::TextLayer;
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
 use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDraw, UnitsMode, ViewParams, render_canvas};
 use crate::wgpu;
@@ -32,7 +34,13 @@ pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dy
             )) as Box<dyn PreparedAndDraw>
         },
         LayerParams::TextLayer(params) => {
-            Box::new(crate::layers::text_layer::TextLayer::new(
+            Box::new(TextLayer::new(
+                view_params.clone(),
+                params.clone(),
+            )) as Box<dyn PreparedAndDraw>
+        },
+        LayerParams::BitmapLayer(params) => {
+            Box::new(BitmapLayer::new(
                 view_params.clone(),
                 params.clone(),
             )) as Box<dyn PreparedAndDraw>

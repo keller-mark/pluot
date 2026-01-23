@@ -145,6 +145,23 @@ const DEMOS = {
             y_vec: [10, 110],
             text_vec: ["Hello", "world"],
           }
+        },
+        {
+          layer_type: "BitmapLayer",
+          layer_params: {
+            layer_id: "layer_bitmap",
+            data_unit_mode: "Pixels",
+
+            img_size_w: 4,
+            img_size_h: 4,
+
+            ch0_vec: [
+              10, 110, 210, 310,
+              20, 120, 220, 320,
+              30, 130, 230, 330,
+              40, 140, 240, 340,
+            ],
+          }
         }
       ]
     },

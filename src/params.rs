@@ -5,6 +5,7 @@ use crate::layers::scatterplot_layer::ScatterplotLayerParams;
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayerParams;
 use crate::layers::line_layer::LineLayerParams;
 use crate::layers::text_layer::TextLayerParams;
+use crate::layers::bitmap_layer::BitmapLayerParams;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -67,6 +68,7 @@ pub enum LayerParams {
 
     LineLayer(LineLayerParams),
     TextLayer(TextLayerParams),
+    BitmapLayer(BitmapLayerParams)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
