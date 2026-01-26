@@ -77,9 +77,8 @@ struct ScatterplotLayerUniforms {
 struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
+    @location(1) corner: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) valid_bounds: vec4<f32>, // valid_min.xy, valid_max.xy in NDC
 };
 
 struct FSOut {
@@ -161,11 +160,8 @@ fn vs_main(
         var out: VSOut;
         out.position = pos;
         out.color = u.color;
-        // Pass quad position in [0, 1] range for fragment shader.
-        out.quad_pos = (corner + 1.0) * 0.5;
+        out.corner = corner;
         out.instance_index = instance_index;
-        // Pass valid bounds to fragment shader for per-fragment clipping
-        out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
         return out;
     }
 
@@ -226,11 +222,8 @@ fn vs_main(
     var out: VSOut;
     out.position = pos;
     out.color = u.color;
-    // Pass quad position in [0, 1] range for fragment shader.
-    out.quad_pos = (corner + 1.0) * 0.5;
+    out.corner = corner;
     out.instance_index = instance_index;
-    // Pass valid bounds to fragment shader for per-fragment clipping
-    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     return out;
 }
 
@@ -260,40 +253,25 @@ fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) color_in: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
+    @location(1) corner: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) valid_bounds: vec4<f32>,
 ) -> FSOut {
-    /*
-    // Convert fragment coordinate from screen space back to NDC
-    let screen_pos = frag_coord.xy;
-    let ndc_pos = vec2<f32>(
-        (screen_pos.x / u.viewport_size.x) * 2.0 - 1.0,        // X unchanged
-        1.0 - (screen_pos.y / u.viewport_size.y) * 2.0         // Y flipped
-    );
 
-    // Extract valid bounds
-    let valid_min = valid_bounds.xy;
-    let valid_max = valid_bounds.zw;
+    // Handling of circle point shape mode
 
-    // Check if this fragment is outside the valid region
-    if (ndc_pos.x < valid_min.x || ndc_pos.x > valid_max.x ||
-        ndc_pos.y < valid_min.y || ndc_pos.y > valid_max.y) {
-        discard;
+    if(u.point_shape_mode == 1u) {
+        // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
+        let radius_px = u.point_radius;
+        let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
+        let sdf = length(corner) * radius_px;
+        let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
+
+        if (alpha == 0.0) {
+            discard;
+        }
     }
 
 
-    // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
-    let radius_px = u.point_size_px / 2.0;
-    let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
-    let c = quad_pos * 2.0 - 1.0;
-    let sdf = length(c) * radius_px;
-    let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
-
-    if (alpha == 0.0) {
-        discard;
-    }
-*/
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;
