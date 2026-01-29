@@ -258,15 +258,14 @@ fn fs_main(
 ) -> FSOut {
 
     // Handling of circle point shape mode
-
+    var alpha = 1.0;
     if(u.point_shape_mode == 1u) {
-        // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
-        let radius_px = u.point_radius;
-        let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
-        let sdf = length(corner) * radius_px;
-        let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
-
-        if (alpha == 0.0) {
+        // TODO: improve this somehow?
+        let dist = length(corner);
+        // fwidth gives the rate of change across fragments
+        let edge_width = fwidth(dist);
+        alpha = 1.0 - smoothstep(1.0 - edge_width, 1.0 + edge_width, dist);
+        if (alpha < 0.001) {
             discard;
         }
     }
@@ -275,7 +274,6 @@ fn fs_main(
     let category_color = get_categorical_color(labels_coords[instance_index]);
 
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, 1.0);
+    out.color = vec4<f32>(category_color.rgb, alpha);
     return out;
 }
