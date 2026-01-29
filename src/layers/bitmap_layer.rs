@@ -30,6 +30,21 @@ pub struct BitmapLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode: UnitsMode,
 
+    // How positioning works for the bitmap layer:
+    // If data_unit_mode = Pixels, then the image is positioned in pixel space,
+    // with the origin at the bottom left of the layer's bounds (i.e., margins).
+    // If data_unit_mode = Data, then the image is positioned in data units,
+    // with the origin at (0,0) in data space, and pixels extending positively in x and y directions.
+
+    // The model_matrix can be used to apply additional affine transformations
+    // to the physical dimensions of the image (XYZ),
+    // such as translation, rotation, and scaling.
+    // For example, the model_matrix can be used to account for pixels that are not square,
+    // or to adjust the pixel size.
+    // (e.g., most bioimaging formats store images with 1 pixel = 1 micrometer,
+    // but without a model_matrix specified we assume that 1 pixel = 1 meter).
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
+
     pub img_size_w: u32,
     pub img_size_h: u32,
     pub img_size_c: Option<u32>, // Number of channels in the image.
@@ -120,6 +135,9 @@ struct BitmapLayerUniforms {
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     
+    img_size: Vec2, // (img_width, img_height) in pixels // TODO: use u32?
+    // TODO: pass model_matrix here
+
     opacity: f32,
     num_channels: ArrayLength,
     // Note: WGSL only allows one runtime-sized array in a struct,
@@ -299,6 +317,7 @@ pub async fn base_draw_bitmap_layer(
             AspectRatioMode::Cover => 2,
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
+        img_size: Vec2::new(img_size_w as f32, img_size_h as f32),
         opacity,
         num_channels: Default::default(),
         channels: channel_uniforms,

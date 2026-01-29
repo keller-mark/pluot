@@ -76,7 +76,7 @@ const DEMOS = {
             layer_id: "layer_1",
             data_unit_mode: "Data",
             point_radius_unit_mode: "Pixels",
-            point_shape_mode: "Square",
+            point_shape_mode: "Circle",
             point_radius: 5.0,
             store_name: "gaussian_quantiles_store",
             bounds: null,
@@ -136,23 +136,24 @@ const DEMOS = {
             text_size: 25.0,
             text_align_mode: "Start",
             text_baseline_mode: "Bottom",
-            bounds: {
+            bounds: null,
+            /*bounds: {
               margin_top: 0,
               margin_right: 0,
               margin_bottom: 0,
               margin_left: 0,
-            },
+            },*/
 
             x_vec: [10, 110],
             y_vec: [10, 110],
-            text_vec: ["Hello", "world"],
+            text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },
         {
           layer_type: "BitmapLayer",
           layer_params: {
             layer_id: "layer_bitmap",
-            data_unit_mode: "Pixels",
+            data_unit_mode: "Data",
 
             img_size_w: 4,
             img_size_h: 4,
