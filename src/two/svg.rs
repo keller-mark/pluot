@@ -167,8 +167,7 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     .set("font-family", d.font.as_str());
 
                 if let Some(rotation) = d.rotation {
-                    let deg = rotation.to_degrees();
-                    text = text.set("transform", format!("rotate({deg},{},{})", d.x, d.y));
+                    text = text.set("transform", format!("rotate({} {} {})", rotation, d.x, d.y));
                 }
                 group.add(text)
             }

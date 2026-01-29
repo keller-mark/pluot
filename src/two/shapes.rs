@@ -182,7 +182,7 @@ pub struct TwoText {
     // Possible values: "alphabetic", "top", "middle", "bottom".
     pub baseline: TwoTextBaseline,
     pub opacity: f64,
-    // In radians.
+    // In degrees.
     pub rotation: Option<f64>,
     // How text that overflows the bounding box should be dealt with.
     // Possible values: null, "clip", "ellipsis".

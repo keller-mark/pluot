@@ -148,6 +148,7 @@ pub struct TextLayerParams {
     pub text_size_unit_mode: UnitsMode, // Units of the font size.
     pub text_align_mode: TextAlignMode,
     pub text_baseline_mode: TextBaselineMode,
+    pub text_rotation: Option<f32>, // Rotation in degrees
 
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
@@ -403,6 +404,7 @@ struct TextLayerUniforms {
     text_size_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
+    text_rotation: f32, // Rotation in degrees
     color: Vec4,
 }
 
@@ -422,6 +424,7 @@ pub async fn base_draw_text_layer(
     data_unit_mode: &UnitsMode,
     text_size: f32,
     text_size_unit_mode: &UnitsMode,
+    text_rotation: f32, // Rotation in degrees
 ) {
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
@@ -539,6 +542,7 @@ pub async fn base_draw_text_layer(
             AspectRatioMode::Cover => 2,
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
+        text_rotation: text_rotation,
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
         // as done by the ScatterplotLayer vertex shader, using these uniform values.
@@ -738,6 +742,7 @@ impl DrawToCanvas for TextLayer {
             &self.layer_params.data_unit_mode,
             self.layer_params.text_size,
             &self.layer_params.text_size_unit_mode,
+            self.layer_params.text_rotation.unwrap_or(0.0),
         ).await;
     }
 }
@@ -751,6 +756,7 @@ pub fn base_draw_text_layer_svg(
     text_size_unit_mode: &UnitsMode,
     text_align_mode: &TextAlignMode,
     text_baseline_mode: &TextBaselineMode,
+    text_rotation: f32,
     layer_id: &str,
 ) -> Vec<TwoElement> {
 
@@ -832,6 +838,7 @@ pub fn base_draw_text_layer_svg(
                 TextBaselineMode::Bottom => TwoTextBaseline::Bottom,
                 TextBaselineMode::Alphabetic => TwoTextBaseline::Alphabetic,
             },
+            rotation: Some(text_rotation as f64),
             // TODO: more params
             ..Default::default()
         }));
@@ -872,6 +879,7 @@ impl DrawToSvg for TextLayer {
             &self.layer_params.text_size_unit_mode,
             &self.layer_params.text_align_mode,
             &self.layer_params.text_baseline_mode,
+            self.layer_params.text_rotation.unwrap_or(0.0),
             &self.layer_params.layer_id,
         );
         

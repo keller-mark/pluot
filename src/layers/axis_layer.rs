@@ -214,11 +214,11 @@ impl AxisLayer {
 
         // Determine text anchor and baseline based on position.
         // TODO: rotation here for top/bottom axes.
-        let (text_align_mode, text_baseline_mode) = match self.layer_params.position {
-            AxisPosition::Bottom => (TextAlignMode::Start, TextBaselineMode::Middle),
-            AxisPosition::Top => (TextAlignMode::Start, TextBaselineMode::Middle),
-            AxisPosition::Left => (TextAlignMode::End, TextBaselineMode::Middle),
-            AxisPosition::Right => (TextAlignMode::Start, TextBaselineMode::Middle),
+        let (text_align_mode, text_baseline_mode, text_rotation) = match self.layer_params.position {
+            AxisPosition::Bottom => (TextAlignMode::Start, TextBaselineMode::Middle, 90.0),
+            AxisPosition::Top => (TextAlignMode::Start, TextBaselineMode::Middle, -90.0),
+            AxisPosition::Left => (TextAlignMode::End, TextBaselineMode::Middle, 0.0),
+            AxisPosition::Right => (TextAlignMode::Start, TextBaselineMode::Middle, 0.0),
         };
 
         let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
@@ -272,6 +272,7 @@ impl AxisLayer {
                 text_size_unit_mode: UnitsMode::Pixels,
                 text_align_mode: text_align_mode,
                 text_baseline_mode: text_baseline_mode,
+                text_rotation: Some(text_rotation as f32),
 
                 x_vec: text_x_vec,
                 y_vec: text_y_vec,
