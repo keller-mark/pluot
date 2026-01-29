@@ -6,3 +6,4 @@ pub mod text_layer;
 pub mod bitmap_layer;
 pub mod zarr_scatterplot_layer;
 pub mod composite_layer;
+pub mod axis_layer;

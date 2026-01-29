@@ -65,6 +65,17 @@ impl PreparedLayer for CompositeLayer {
     }
 }
 
+// Reusable function that can be used by other composite layers: raster variant.
+pub async fn base_draw_composite_layer(
+    sub_layer_instances: &[Box<dyn PreparedAndDraw>],
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pass: &mut wgpu::RenderPass<'_>,
+) {
+    for sub_layer in sub_layer_instances.iter() {
+        DrawToCanvas::draw(sub_layer.as_ref(), device.clone(), queue.clone(), pass).await;
+    }
+}
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -72,22 +83,28 @@ impl DrawToCanvas for CompositeLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         // TODO: ensure this works with pyO3. If needed, change trait to take &mut self,
         // and then use the same pattern as in the core::render_ functions.
-        for sub_layer in self.sub_layer_instances.iter() {
-            DrawToCanvas::draw(sub_layer.as_ref(), device.clone(), queue.clone(), pass).await;
-        }
+        base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
     }
 }
 
+
+// Reusable function that can be used by other composite layers: SVG variant.
+pub async fn base_draw_composite_layer_svg(
+    sub_layer_instances: &[Box<dyn PreparedAndDraw>],
+    group: &Group,
+) -> Group {
+    let mut updated_group = group.clone();
+    for sub_layer in sub_layer_instances.iter() {
+        updated_group = DrawToSvg::draw(sub_layer.as_ref(), &updated_group).await;
+    }
+    updated_group
+}
 
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for CompositeLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let mut updated_group = group.clone();
-        for sub_layer in self.sub_layer_instances.iter() {
-            updated_group = DrawToSvg::draw(sub_layer.as_ref(), &updated_group).await;
-        }
-        return updated_group.clone();
+        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
     }
 }
