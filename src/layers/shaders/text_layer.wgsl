@@ -103,20 +103,27 @@ const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
 // @location(1): uv_rect = vec4(u0, v0, u1, v1)
 @vertex
 fn vs_main(
-    @location(0) rect_px: vec4<f32>,
-    @location(1) uv_rect: vec4<f32>,
+    @location(0) elem_pos: vec2<f32>, // X/Y position of the text element, in either data or pixel units.
+    @location(1) glyph_px: vec4<f32>, // Glyph offsets and size in pixels: (offset_x, offset_y, width, height)
+    @location(2) uv_rect: vec4<f32>,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Center of this point in data space
-    let point_width = rect_px.z;
-    let point_height = rect_px.w;
-    let point_pos_orig = vec2<f32>(
-        rect_px.x + point_width / 2.0, rect_px.y + point_height / 2.0
-    );
+    let elem_pos_x_orig = elem_pos.x; // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    let elem_pos_y_orig = elem_pos.y; // Note: elem_pos is the position for the whole text element, not the individual glyph.
     
-    
+    let glyph_offset_x_px = glyph_px.x;
+    let glyph_offset_y_px = glyph_px.y;
+    let glyph_width_px = glyph_px.z;
+    let glyph_height_px = glyph_px.w;
+
+
+    // In order to combine the point position with the glyph quad, we convert all values to normalized space (0 to 1).
+    // We need to consider the aspect ratio mode and camera for this conversion.
+
+    // Get a corner for the glyph quad.
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
+    // Get a corner for the uv rect.
     // Corner in [0,1]^2 from vertex_index 0..3 (triangle strip)
     let cx = f32(vertex_index & 1u);
     let cy = f32((vertex_index >> 1u) & 1u);
@@ -152,28 +159,35 @@ fn vs_main(
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
     if(u.data_unit_mode == 0u) {
-        // Convert point position from pixel space to normalized space (0 to 1)
-        let point_pos_norm = vec2<f32>(
-            point_pos_orig.x / layer_width_px,
-            point_pos_orig.y / layer_height_px
+        // Convert text element position from pixel space to normalized space (0 to 1)
+        let elem_pos_norm = vec2<f32>(
+            elem_pos_x_orig / layer_width_px,
+            elem_pos_y_orig / layer_height_px
         );
-        let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
+        let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
 
-        // Compute the vertex position by accounting for point position and point size.
-        let text_size_norm = vec4f(
-            //(u.text_size / layer_width_px) * point_width,
-            //(u.text_size / layer_height_px) * point_height,
-            point_width / layer_width_px,
-            point_height / layer_height_px,
+        let glyph_size_norm = vec4f(
+            glyph_width_px / layer_width_px,
+            glyph_height_px / layer_height_px,
             0.0,
             1.0
         );
-        let text_size_ndc = vec4f(text_size_norm.xy, 0.0, 1.0);
+        let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
+
+
+        // Compute the glyph position in normalized space.
+        let glyph_pos_norm = vec2<f32>(
+            elem_pos_norm.x + (glyph_offset_x_px / layer_width_px) + (glyph_size_norm.x / 2.0),
+            elem_pos_norm.y + (glyph_offset_y_px / layer_height_px) + (glyph_size_norm.y / 2.0)
+        );
+        let glyph_pos_ndc = NORM_TO_NDC_MAT * vec4f(glyph_pos_norm.xy, 0.0, 1.0);
+
+        
 
         // The final point position in NDC space.
         let pos = vec4f(
-            point_pos_ndc.x + (corner.x * text_size_ndc.x), // TODO: divide text_size by 2?
-            point_pos_ndc.y + (corner.y * text_size_ndc.y), // TODO: divide text_size by 2?
+            glyph_pos_ndc.x + (corner.x * glyph_size_ndc.x / 2.0),
+            glyph_pos_ndc.y + (corner.y * glyph_size_ndc.y / 2.0),
             0.0,
             1.0
         );
@@ -184,7 +198,13 @@ fn vs_main(
         out.uv = uv;
         return out;
     }
-    
+
+    // Handle data_unit_mode == "data" (i.e., the elem_pos_orig is in data coordinate system units, not pixels).
+    // Convert elem_pos from data coordinate system units to normalized space (0 to 1).
+    let elem_pos_orig = vec2<f32>(
+        elem_pos_x_orig,
+        elem_pos_y_orig
+    );    
 
     /// Model-view-projection matrix
     // References:
@@ -199,7 +219,7 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    let point_pos_norm = /*LAYER_NORM_TO_VIEW_NORM_MAT * */ (
+    let elem_pos_norm = /*LAYER_NORM_TO_VIEW_NORM_MAT * */ (
         // The camera from dom-2d-camera operates in NDC space.
         // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
         // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
@@ -217,25 +237,30 @@ fn vs_main(
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
         // TODO: support applying a model matrix (arbitrarily passed by the user)
         // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(point_pos_orig, 0.0, 1.0)
+        * vec4(elem_pos_orig, 0.0, 1.0)
     );
 
-    let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
-
-    // Compute the vertex position by accounting for point position and point size.
-    // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
-    let text_size_norm = vec4f(
-        point_width / layer_width_px,
-        point_height / layer_height_px,
+    let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
+    
+    // Compute the glyph position in normalized space.
+    let glyph_size_norm = vec4f(
+        glyph_width_px / layer_width_px,
+        glyph_height_px / layer_height_px,
         0.0,
         1.0
     );
-    let text_size_ndc = vec4f(text_size_norm.xy, 0.0, 1.0);
+    let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
+
+    let glyph_pos_norm = vec2<f32>(
+        elem_pos_norm.x + (glyph_offset_x_px / layer_width_px) + (glyph_size_norm.x / 2.0),
+        elem_pos_norm.y + (glyph_offset_y_px / layer_height_px) + (glyph_size_norm.y / 2.0)
+    );
+    let glyph_pos_ndc = NORM_TO_NDC_MAT * vec4f(glyph_pos_norm.xy, 0.0, 1.0);
 
     // The final point position in NDC space.
     let pos = vec4f(
-        point_pos_ndc.x + (corner.x * text_size_ndc.x), // TODO: divide text_size by 2?
-        point_pos_ndc.y + (corner.y * text_size_ndc.y), // TODO: divide text_size by 2?
+        glyph_pos_ndc.x + (corner.x * glyph_size_ndc.x / 2.0),
+        glyph_pos_ndc.y + (corner.y * glyph_size_ndc.y / 2.0),
         0.0,
         1.0
     );

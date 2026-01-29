@@ -288,18 +288,22 @@ impl PreparedLayer for TextLayer {
 
         // NOTE: atlas and all_instance_data are the main parts that need to be cached for reuse
 
+        // Iterate over each string
         for elem_i in 0..n {
             let text_str = &data.text_arr[elem_i];
             let text_x_pos = data.x_arr[elem_i];
             let text_y_pos = data.y_arr[elem_i];
 
-            // Measure text width for alignment
+            // Measure text width for alignment.
+            // Text width is in pixel units.
             let text_width = measure_text_width(
                 &font_atlas.font,
                 &text_str,
                 font_size as f32,
             );
             
+            // Calculate offset based on alignment and baseline.
+            // These offsets are in pixel units.
             let (offset_x, offset_y) = calculate_text_position(
                 font_size as f32,
                 self.layer_params.text_align_mode,
@@ -324,6 +328,7 @@ impl PreparedLayer for TextLayer {
             // Track our position in the atlas for this text element
             let mut element_cursor = x_cursor;
 
+            // Iterate over each glyph in the string.
             for (i, g) in element_glyphs.iter().enumerate() {
                 let (m, bmp) = &rasters[total_instances as usize + i];
 
@@ -347,8 +352,8 @@ impl PreparedLayer for TextLayer {
                 // Compute screen-space rect for this glyph
                 // TODO: update this logic so that the rect is in whatever data_units_mode is?
                 // (ensure the text measurement is happening in the correct units too).
-                let x_px = offset_x + text_x_pos + g.x as f32;
-                let y_px = offset_y + text_y_pos + g.y as f32;
+                let x_px = offset_x + g.x as f32;
+                let y_px = offset_y + g.y as f32;
                 let w_px = g.width as f32;
                 let h_px: f32 = g.height as f32;
 
@@ -363,7 +368,11 @@ impl PreparedLayer for TextLayer {
                 let v1 = ((PADDING + gh) as f32) / (atlas_height as f32);
 
                 if gw > 0 && gh > 0 {
-                    all_instance_data.extend_from_slice(&[x_px, y_px, w_px, h_px, u0, v0, u1, v1]);
+                    all_instance_data.extend_from_slice(&[
+                        text_x_pos, text_y_pos, // NOTE: these values can be in either data units or pixel units.
+                        x_px, y_px, w_px, h_px, // NOTE: these values are always in pixel units.
+                        u0, v0, u1, v1, // NOTE: these values are always indices into the atlas texture.
+                    ]);
                 }
 
                 // Advance cursor by glyph width + padding for next glyph
@@ -456,7 +465,8 @@ pub async fn base_draw_text_layer(
     let atlas_width = internal_data.atlas_width;
     let atlas_height = internal_data.atlas_height;
     // Number of emitted instances (skip zero-sized glyphs)
-    let instance_count: u32 = (all_instance_data.len() / 8) as u32;
+    const NUM_VALUES_PER_INSTANCE: usize = 10;
+    let instance_count: u32 = (all_instance_data.len() / NUM_VALUES_PER_INSTANCE) as u32;
 
 
     // Upload atlas as a single-channel R8Unorm texture
@@ -612,17 +622,22 @@ pub async fn base_draw_text_layer(
     
     // Vertex buffer layout: two vec4<f32> per instance
     let vertex_buffers = [wgpu::VertexBufferLayout {
-        array_stride: (8 * std::mem::size_of::<f32>()) as u64,
+        array_stride: (NUM_VALUES_PER_INSTANCE * std::mem::size_of::<f32>()) as u64,
         step_mode: wgpu::VertexStepMode::Instance,
         attributes: &[
             wgpu::VertexAttribute {
                 offset: 0,
                 shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                offset: (2 * std::mem::size_of::<f32>()) as u64,
+                shader_location: 1,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
-                offset: (4 * std::mem::size_of::<f32>()) as u64,
-                shader_location: 1,
+                offset: (6 * std::mem::size_of::<f32>()) as u64,
+                shader_location: 2,
                 format: wgpu::VertexFormat::Float32x4,
             },
         ],
