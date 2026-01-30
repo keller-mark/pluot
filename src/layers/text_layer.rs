@@ -2,6 +2,7 @@
 // Reference: https://deck.gl/docs/api-reference/layers/text-layer
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
@@ -13,7 +14,7 @@ use fontdue::{Font, FontSettings};
 use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
+use crate::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_internal_text_layer_data, CachedInternalTextLayerData};
 use svg::node::element::Group;
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle,
@@ -168,12 +169,8 @@ pub struct TextLayerData {
     pub text_arr: Vec<String>,
 }
 
-pub struct InternalTextLayerData {
-    pub atlas_data: Vec<u8>,
-    pub all_instance_data: Vec<f32>,
-    pub atlas_width: usize,
-    pub atlas_height: usize,
-}
+// Re-export the cached internal data type for convenience.
+pub type InternalTextLayerData = CachedInternalTextLayerData;
 
 
 pub struct TextLayer {
@@ -185,7 +182,7 @@ pub struct TextLayer {
     data: Option<TextLayerData>,
     // NOTE: atlas and all_instance_data are the main parts that need to be cached for reuse
     // Note: .prepare() is expected to populate this field.
-    internal_data: Option<InternalTextLayerData>,
+    internal_data: Option<Arc<InternalTextLayerData>>,
 }
 
 impl TextLayer {
@@ -236,161 +233,195 @@ impl PreparedLayer for TextLayer {
 
         let n = data.text_arr.len();
         let font_size = self.layer_params.text_size;
-        
-        // Get cached font
-        let font_atlas = get_or_init_font_atlas();
+        let text_align_mode = self.layer_params.text_align_mode;
+        let text_baseline_mode = self.layer_params.text_baseline_mode;
 
-        // Build a comprehensive layout with all text elements to create the atlas
-        let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
-        layout.reset(&LayoutSettings {
-            max_width: None,
-            max_height: None,
-            ..LayoutSettings::default()
-        });
+        // Build cache keys based on the data that affects the internal representation.
+        // This includes: text strings, positions, font size, alignment, and baseline.
+        let cache_keys: Vec<String> = vec![
+            self.layer_params.layer_id.clone(),
+            format!("{:?}", data.text_arr),
+            format!("{:?}", data.x_arr),
+            format!("{:?}", data.y_arr),
+            format!("{}", font_size),
+            format!("{:?}", text_align_mode),
+            format!("{:?}", text_baseline_mode),
+        ];
 
-        // Append all text from all elements to ensure we have all glyphs in the atlas
-        for text_str in &data.text_arr {
-            layout.append(
-                &[&font_atlas.font],
-                &TextStyle::new(&text_str, font_size as f32, 0),
-            );
-        }
+        // Clone data needed for the async closure
+        let text_arr = data.text_arr.clone();
+        let x_arr = data.x_arr.clone();
+        let y_arr = data.y_arr.clone();
 
-        let glyphs = layout.glyphs();
-        if glyphs.is_empty() {
-            return;
-        }
+        // Use memoization to cache the internal data
+        let internal_data = use_memo_internal_text_layer_data(async || {
+            // Get cached font
+            let font_atlas = get_or_init_font_atlas();
 
-        // Rasterize each glyph and measure atlas size (row pack)
-        let mut atlas_width: usize = 0;
-        let mut atlas_height: usize = 0;
-        let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
-
-        for g in glyphs {
-            // Rasterize the glyph to get its bitmap representation.
-            let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-            // Add padding around each glyph: PADDING + glyph_width + PADDING
-            atlas_width += 2 * PADDING + metrics.width.max(1);
-            atlas_height = atlas_height.max(2 * PADDING + metrics.height.max(1));
-            rasters.push((metrics, bitmap));
-        }
-
-        if atlas_width == 0 || atlas_height == 0 {
-            return;
-        }
-
-        // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
-        let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
-        let mut x_cursor: usize = PADDING; // Start with padding offset
-
-        // Now process each text element individually to generate instance data
-        let mut all_instance_data: Vec<f32> = Vec::new();
-        let mut total_instances = 0u32;
-
-        // NOTE: atlas and all_instance_data are the main parts that need to be cached for reuse
-
-        // Iterate over each string
-        for elem_i in 0..n {
-            let text_str = &data.text_arr[elem_i];
-            let text_x_pos = data.x_arr[elem_i];
-            let text_y_pos = data.y_arr[elem_i];
-
-            // Measure text width for alignment.
-            // Text width is in pixel units.
-            let text_width = measure_text_width(
-                &font_atlas.font,
-                &text_str,
-                font_size as f32,
-            );
-            
-            // Calculate offset based on alignment and baseline.
-            // These offsets are in pixel units.
-            let (offset_x, offset_y) = calculate_text_position(
-                font_size as f32,
-                self.layer_params.text_align_mode,
-                self.layer_params.text_baseline_mode,
-                text_width
-            );
-
-            // Create a separate layout for this text element
-            let mut element_layout = Layout::new(CoordinateSystem::PositiveYUp);
-            element_layout.reset(&LayoutSettings {
+            // Build a comprehensive layout with all text elements to create the atlas
+            let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
+            layout.reset(&LayoutSettings {
                 max_width: None,
                 max_height: None,
                 ..LayoutSettings::default()
             });
-            element_layout.append(
-                &[&font_atlas.font],
-                &TextStyle::new(&text_str, font_size as f32, 0),
-            );
 
-            let element_glyphs = element_layout.glyphs();
-
-            // Track our position in the atlas for this text element
-            let mut element_cursor = x_cursor;
-
-            // Iterate over each glyph in the string.
-            for (i, g) in element_glyphs.iter().enumerate() {
-                let (m, bmp) = &rasters[total_instances as usize + i];
-
-                // Actual bitmap dimensions
-                let gw = m.width.max(0) as usize;
-                let gh = m.height.max(0) as usize;
-
-                // Copy bitmap into atlas with padding offset
-                if gw > 0 && gh > 0 {
-                    for row in 0..gh {
-                        let src = &bmp[row * gw..row * gw + gw];
-                        // Offset destination by PADDING pixels vertically and horizontally
-                        let dst_row = PADDING + row;
-                        let dst_start = dst_row * atlas_width + element_cursor;
-                        let dst_end = dst_start + gw;
-                        let dst = &mut atlas[dst_start..dst_end];
-                        dst.copy_from_slice(src);
-                    }
-                }
-
-                // Compute screen-space rect for this glyph
-                // TODO: update this logic so that the rect is in whatever data_units_mode is?
-                // (ensure the text measurement is happening in the correct units too).
-                let x_px = offset_x + g.x as f32;
-                let y_px = offset_y + g.y as f32;
-                let w_px = g.width as f32;
-                let h_px: f32 = g.height as f32;
-
-                /*log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
-                    elem_i, x_px, y_px, w_px, h_px, g.x, g.y, text_x_pos, text_y_pos, offset_x, offset_y
-                ));*/
-
-                // UV rectangle (normalized) - exclude padding from sampled area
-                let u0 = (element_cursor as f32) / (atlas_width as f32);
-                let v0 = (PADDING as f32) / (atlas_height as f32);
-                let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
-                let v1 = ((PADDING + gh) as f32) / (atlas_height as f32);
-
-                if gw > 0 && gh > 0 {
-                    all_instance_data.extend_from_slice(&[
-                        text_x_pos, text_y_pos, // NOTE: these values can be in either data units or pixel units.
-                        x_px, y_px, w_px, h_px, // NOTE: these values are always in pixel units.
-                        u0, v0, u1, v1, // NOTE: these values are always indices into the atlas texture.
-                    ]);
-                }
-
-                // Advance cursor by glyph width + padding for next glyph
-                element_cursor += gw + 2 * PADDING;
+            // Append all text from all elements to ensure we have all glyphs in the atlas
+            for text_str in &text_arr {
+                layout.append(
+                    &[&font_atlas.font],
+                    &TextStyle::new(&text_str, font_size as f32, 0),
+                );
             }
 
-            x_cursor = element_cursor;
-            total_instances += element_glyphs.len() as u32;
-        }
+            let glyphs = layout.glyphs();
+            if glyphs.is_empty() {
+                return InternalTextLayerData {
+                    atlas_data: Vec::new(),
+                    all_instance_data: Vec::new(),
+                    atlas_width: 0,
+                    atlas_height: 0,
+                };
+            }
 
-        // Cache the internal data for reuse
-        self.internal_data = Some(InternalTextLayerData {
-            atlas_data: atlas,
-            all_instance_data,
-            atlas_width,
-            atlas_height,
-        });
+            // Rasterize each glyph and measure atlas size (row pack)
+            let mut atlas_width: usize = 0;
+            let mut atlas_height: usize = 0;
+            let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
+
+            for g in glyphs {
+                // Rasterize the glyph to get its bitmap representation.
+                let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
+                // Add padding around each glyph: PADDING + glyph_width + PADDING
+                atlas_width += 2 * PADDING + metrics.width.max(1);
+                atlas_height = atlas_height.max(2 * PADDING + metrics.height.max(1));
+                rasters.push((metrics, bitmap));
+            }
+
+            if atlas_width == 0 || atlas_height == 0 {
+                return InternalTextLayerData {
+                    atlas_data: Vec::new(),
+                    all_instance_data: Vec::new(),
+                    atlas_width: 0,
+                    atlas_height: 0,
+                };
+            }
+
+            // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
+            let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
+            let mut x_cursor: usize = PADDING; // Start with padding offset
+
+            // Now process each text element individually to generate instance data
+            let mut all_instance_data: Vec<f32> = Vec::new();
+            let mut total_instances = 0u32;
+
+            // NOTE: atlas and all_instance_data are the main parts that need to be cached for reuse
+
+            // Iterate over each string
+            for elem_i in 0..n {
+                let text_str = &text_arr[elem_i];
+                let text_x_pos = x_arr[elem_i];
+                let text_y_pos = y_arr[elem_i];
+
+                // Measure text width for alignment.
+                // Text width is in pixel units.
+                let text_width = measure_text_width(
+                    &font_atlas.font,
+                    &text_str,
+                    font_size as f32,
+                );
+                
+                // Calculate offset based on alignment and baseline.
+                // These offsets are in pixel units.
+                let (offset_x, offset_y) = calculate_text_position(
+                    font_size as f32,
+                    text_align_mode,
+                    text_baseline_mode,
+                    text_width
+                );
+
+                // Create a separate layout for this text element
+                let mut element_layout = Layout::new(CoordinateSystem::PositiveYUp);
+                element_layout.reset(&LayoutSettings {
+                    max_width: None,
+                    max_height: None,
+                    ..LayoutSettings::default()
+                });
+                element_layout.append(
+                    &[&font_atlas.font],
+                    &TextStyle::new(&text_str, font_size as f32, 0),
+                );
+
+                let element_glyphs = element_layout.glyphs();
+
+                // Track our position in the atlas for this text element
+                let mut element_cursor = x_cursor;
+
+                // Iterate over each glyph in the string.
+                for (i, g) in element_glyphs.iter().enumerate() {
+                    let (m, bmp) = &rasters[total_instances as usize + i];
+
+                    // Actual bitmap dimensions
+                    let gw = m.width.max(0) as usize;
+                    let gh = m.height.max(0) as usize;
+
+                    // Copy bitmap into atlas with padding offset
+                    if gw > 0 && gh > 0 {
+                        for row in 0..gh {
+                            let src = &bmp[row * gw..row * gw + gw];
+                            // Offset destination by PADDING pixels vertically and horizontally
+                            let dst_row = PADDING + row;
+                            let dst_start = dst_row * atlas_width + element_cursor;
+                            let dst_end = dst_start + gw;
+                            let dst = &mut atlas[dst_start..dst_end];
+                            dst.copy_from_slice(src);
+                        }
+                    }
+
+                    // Compute screen-space rect for this glyph
+                    // TODO: update this logic so that the rect is in whatever data_units_mode is?
+                    // (ensure the text measurement is happening in the correct units too).
+                    let x_px = offset_x + g.x as f32;
+                    let y_px = offset_y + g.y as f32;
+                    let w_px = g.width as f32;
+                    let h_px: f32 = g.height as f32;
+
+                    /*log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
+                        elem_i, x_px, y_px, w_px, h_px, g.x, g.y, text_x_pos, text_y_pos, offset_x, offset_y
+                    ));*/
+
+                    // UV rectangle (normalized) - exclude padding from sampled area
+                    let u0 = (element_cursor as f32) / (atlas_width as f32);
+                    let v0 = (PADDING as f32) / (atlas_height as f32);
+                    let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
+                    let v1 = ((PADDING + gh) as f32) / (atlas_height as f32);
+
+                    if gw > 0 && gh > 0 {
+                        all_instance_data.extend_from_slice(&[
+                            text_x_pos, text_y_pos, // NOTE: these values can be in either data units or pixel units.
+                            x_px, y_px, w_px, h_px, // NOTE: these values are always in pixel units.
+                            u0, v0, u1, v1, // NOTE: these values are always indices into the atlas texture.
+                        ]);
+                    }
+
+                    // Advance cursor by glyph width + padding for next glyph
+                    element_cursor += gw + 2 * PADDING;
+                }
+
+                x_cursor = element_cursor;
+                total_instances += element_glyphs.len() as u32;
+            }
+
+            // Return the internal data
+            InternalTextLayerData {
+                atlas_data: atlas,
+                all_instance_data,
+                atlas_width,
+                atlas_height,
+            }
+        }, &cache_keys, self.view_params.cache_enabled).await;
+
+        self.internal_data = Some(internal_data);
     }
 }
 

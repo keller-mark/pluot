@@ -10,6 +10,16 @@ use crate::zarr::AsyncZarritaStore;
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
 static ZARR_STORES: OnceLock<Mutex<HashMap<String, Arc<AsyncZarritaStore>>>> = OnceLock::new();
 
+/// Cached internal data for TextLayer rendering.
+/// Contains the font atlas bitmap and per-glyph instance data.
+#[derive(Clone)]
+pub struct CachedInternalTextLayerData {
+    pub atlas_data: Vec<u8>,
+    pub all_instance_data: Vec<f32>,
+    pub atlas_width: usize,
+    pub atlas_height: usize,
+}
+
 thread_local! {
     static GPU_CONTEXT: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = const { RefCell::new(None) };
     // TODO: How to generalize the USE_MEMO_CACHE___ to support other numeric dtypes?
@@ -17,6 +27,7 @@ thread_local! {
     // Can entire Layer Data objects be cached? Maybe via Enums like our PlotParams enums?
     static USE_MEMO_CACHE_VEC_F32: RefCell<Option<HashMap<Vec<String>, Arc<Vec<f32>>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_VEC_I32: RefCell<Option<HashMap<Vec<String>, Arc<Vec<i32>>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_INTERNAL_TEXT_LAYER_DATA: RefCell<Option<HashMap<Vec<String>, Arc<CachedInternalTextLayerData>>>> = const { RefCell::new(None) };
 }
 
 async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
@@ -180,6 +191,45 @@ pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys:
     });
 
     buffer
+}
+
+pub async fn use_memo_internal_text_layer_data(
+    initializer: impl AsyncFnOnce() -> CachedInternalTextLayerData,
+    keys: &[String],
+    cache_enabled: bool
+) -> Arc<CachedInternalTextLayerData> {
+    if !cache_enabled {
+        return Arc::new(initializer().await);
+    }
+
+    // First, check if the data already exists in cache
+    let data_exists = USE_MEMO_CACHE_INTERNAL_TEXT_LAYER_DATA.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(keys).cloned())
+    });
+
+    if let Some(data) = data_exists {
+        return data;
+    }
+
+    // Data doesn't exist, so create it
+    let data = Arc::new(initializer().await);
+
+    // Store it in the cache
+    USE_MEMO_CACHE_INTERNAL_TEXT_LAYER_DATA.with(|map| {
+        let mut map_ref = map.borrow_mut();
+
+        // Initialize the map if it doesn't exist
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+
+        // Insert the data
+        map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
+    });
+
+    data
 }
 
 // TODO: Every render, try to clear things from the use_memo cache hash maps.
