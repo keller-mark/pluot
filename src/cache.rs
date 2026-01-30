@@ -15,8 +15,8 @@ thread_local! {
     // TODO: How to generalize the USE_MEMO_CACHE___ to support other numeric dtypes?
     // Would it be better (or possible) to cache wgpu::Buffer objects (or their [u8] byte parameters)?
     // Can entire Layer Data objects be cached? Maybe via Enums like our PlotParams enums?
-    static USE_MEMO_CACHE_VEC_F32: RefCell<Option<HashMap<Vec<String>, Vec<f32>>>> = const { RefCell::new(None) };
-    static USE_MEMO_CACHE_VEC_I32: RefCell<Option<HashMap<Vec<String>, Vec<i32>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_VEC_F32: RefCell<Option<HashMap<Vec<String>, Arc<Vec<f32>>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_VEC_I32: RefCell<Option<HashMap<Vec<String>, Arc<Vec<i32>>>>> = const { RefCell::new(None) };
 }
 
 async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
@@ -95,12 +95,12 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
 
 // TODO: Should we also implement a non-async variant of this cacheing/memoization function?
 // Is there a downside to always using async, i.e., even if the `initializer` function never .awaits anything?
-pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys: &[String], cache_enabled: bool) -> Vec<f32> {
+pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys: &[String], cache_enabled: bool) -> Arc<Vec<f32>> {
     // Initializer param
     // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
 
     if !cache_enabled {
-        return initializer().await;
+        return Arc::new(initializer().await);
     }
 
     // This thread_local approach seems to work fine with futures::join!.
@@ -118,7 +118,7 @@ pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys:
 
     // Buffer doesn't exist, so create it
     //log("Creating new buffer");
-    let buffer = initializer().await;
+    let buffer = Arc::new(initializer().await);
 
     // Store it in the cache
     USE_MEMO_CACHE_VEC_F32.with(|map| {
@@ -141,12 +141,12 @@ pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys:
 // I.e., we may want to avoid using Box<dyn Any> or similar approaches that lose type information,
 // since we don't want the downstream calling code to be doing a bunch of type casting/checking.
 // Maybe a macro could help here? Or enums, one enum per layer.data struct type?
-pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys: &[String], cache_enabled: bool) -> Vec<i32> {
+pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys: &[String], cache_enabled: bool) -> Arc<Vec<i32>> {
     // Initializer param
     // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
 
     if !cache_enabled {
-        return initializer().await;
+        return Arc::new(initializer().await);
     }
 
     // This thread_local approach seems to work fine with futures::join!.
@@ -164,7 +164,7 @@ pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys:
 
     // Buffer doesn't exist, so create it
     //log("Creating new buffer");
-    let buffer = initializer().await;
+    let buffer = Arc::new(initializer().await);
 
     // Store it in the cache
     USE_MEMO_CACHE_VEC_I32.with(|map| {

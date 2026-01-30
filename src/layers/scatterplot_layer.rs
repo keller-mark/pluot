@@ -12,7 +12,7 @@ use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::update_svg;
 use crate::layers::scatterplot_vertex::get_point_position;
-
+use std::sync::{Arc};
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -46,9 +46,9 @@ pub struct ScatterplotLayerParams {
 
 // Internal representation for ScatterplotLayer and its "descendant" layers.
 pub struct ScatterplotLayerData {
-    pub x_arr: Vec<f32>,
-    pub y_arr: Vec<f32>,
-    pub labels_arr: Vec<i32>,
+    pub x_arr: Arc<Vec<f32>>,
+    pub y_arr: Arc<Vec<f32>>,
+    pub labels_arr: Arc<Vec<i32>>,
 }
 
 
@@ -72,13 +72,18 @@ impl ScatterplotLayer {
         }
         let data = Some(ScatterplotLayerData {
             // TODO: can cloning be avoided here?
-            x_arr: layer_params.x_vec.clone(),
-            y_arr: layer_params.y_vec.clone(),
-            labels_arr: layer_params.labels_vec.clone(),
+            // One option may be to make layer_params.x_vec optional,
+            // and after taking ownership of x_vec here,
+            // set layer_params.x_vec to None before storing layer_params in self.
+            x_arr: Arc::new(layer_params.x_vec.clone()),
+            y_arr: Arc::new(layer_params.y_vec.clone()),
+            labels_arr: Arc::new(layer_params.labels_vec.clone()),
         });
         Self {
             view_params,
             layer_params,
+            // TODO: dont store data on the instance here.
+            // Just pass the vec references to the draw functions as needed.
             data,
         }
     }
@@ -129,7 +134,9 @@ pub async fn base_draw_scatterplot_layer(
     point_radius_unit_mode: &UnitsMode,
     point_shape_mode: &PointShapeMode,
 ) {
-    // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
+    
+    // This bytemuck::cast_slice does not clone,
+    // it just reinterprets the same memory.
     let x_bytes = bytemuck::cast_slice(&data.x_arr);
     let y_bytes = bytemuck::cast_slice(&data.y_arr);
 
@@ -137,9 +144,11 @@ pub async fn base_draw_scatterplot_layer(
     let n = data.labels_arr.len();
 
     // Convert to f32 and cast to bytes directly - no for loop needed
-    let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
+    //let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
+    let labels_bytes: &[u8] = bytemuck::cast_slice(&data.labels_arr);
 
+    // TODO: can more of this be memoized/cached?
+    // Which parts need to be re-executed every draw call? Which parts have high overhead?
 
     // Create separate buffers for X and Y coordinates
     let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
