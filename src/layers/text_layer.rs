@@ -248,11 +248,6 @@ impl PreparedLayer for TextLayer {
             format!("{:?}", text_baseline_mode),
         ];
 
-        // Clone data needed for the async closure
-        let text_arr = data.text_arr.clone();
-        let x_arr = data.x_arr.clone();
-        let y_arr = data.y_arr.clone();
-
         // Use memoization to cache the internal data
         let internal_data = use_memo_internal_text_layer_data(async || {
             // Get cached font
@@ -267,7 +262,7 @@ impl PreparedLayer for TextLayer {
             });
 
             // Append all text from all elements to ensure we have all glyphs in the atlas
-            for text_str in &text_arr {
+            for text_str in &data.text_arr {
                 layout.append(
                     &[&font_atlas.font],
                     &TextStyle::new(&text_str, font_size as f32, 0),
@@ -319,9 +314,9 @@ impl PreparedLayer for TextLayer {
 
             // Iterate over each string
             for elem_i in 0..n {
-                let text_str = &text_arr[elem_i];
-                let text_x_pos = x_arr[elem_i];
-                let text_y_pos = y_arr[elem_i];
+                let text_str = &data.text_arr[elem_i];
+                let text_x_pos = data.x_arr[elem_i];
+                let text_y_pos = data.y_arr[elem_i];
 
                 // Measure text width for alignment.
                 // Text width is in pixel units.

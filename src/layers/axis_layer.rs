@@ -66,13 +66,80 @@ impl AxisLayer {
         
         let scale_factor = (1.0 / zoom).log2();
 
-        // TODO: account for view_params.aspect_ratio_mode here.
-        let min_x = ((-translate_x - 1.0) / zoom) as f64;
-        let max_x = ((-translate_x + 1.0) / zoom) as f64;
-        let min_y = ((-translate_y - 1.0) / zoom) as f64;
-        let max_y = ((-translate_y + 1.0) / zoom) as f64;
+        let aspect_ratio_mode = self.view_params.aspect_ratio_mode;
         
-        (min_x, max_x, min_y, max_y)
+        let bounds = &self.view_params.margins;
+
+        let margin_top = if let Some(margin_params) = &bounds {
+            margin_params.margin_top.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_right = if let Some(margin_params) = &bounds {
+            margin_params.margin_right.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_bottom = if let Some(margin_params) = &bounds {
+            margin_params.margin_bottom.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_left = if let Some(margin_params) = &bounds {
+            margin_params.margin_left.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+
+        let viewport_w = self.view_params.width as f32;
+        let viewport_h = self.view_params.height as f32;
+
+        let layer_w = (viewport_w - (margin_left + margin_right) as f32);
+        let layer_h = (viewport_h - (margin_top + margin_bottom) as f32);
+        
+        let layer_aspect_ratio = layer_w / layer_h;
+
+        let mut x_scale_for_aspect_ratio_mode = 1.0;
+        let mut y_scale_for_aspect_ratio_mode = 1.0;
+        match aspect_ratio_mode {
+            AspectRatioMode::Ignore => {
+                // No adjustment needed
+            },
+            AspectRatioMode::Contain => {
+                // fit/contain
+                if (layer_aspect_ratio > 1.0) {
+                    // Wide rectangle
+                    // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+                    x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+                } else if(layer_aspect_ratio < 1.0) {
+                    // Tall layer
+                    // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
+                    y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+                } else {
+                    // Square layer; no change needed.
+                    // Show exactly (0, 1) in both directions.
+                }
+            },
+            AspectRatioMode::Cover => {
+                // fill/cover
+                if(layer_aspect_ratio > 1.0) {
+                    // Wide rectangle
+                    // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
+                    y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+                } else if(layer_aspect_ratio < 1.0) {
+                    // Tall layer
+                    // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
+                    x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+                } else {
+                    // Square layer; no change needed.
+                    // Show exactly (0, 1) in both directions.
+                }
+            },
+        };
+
+        // TODO: account for aspect ratio alignment mode here.
+
+        let x_adjustment = (x_scale_for_aspect_ratio_mode - 1.0);
+        let y_adjustment = (y_scale_for_aspect_ratio_mode - 1.0);
+
+        let min_x = ((((-translate_x - 1.0 - x_adjustment) / zoom) + 1.0) / 2.0);
+        let max_x = ((((-translate_x + 1.0 + x_adjustment) / zoom) + 1.0) / 2.0);
+        let min_y = ((((-translate_y - 1.0 - y_adjustment) / zoom) + 1.0) / 2.0);
+        let max_y = ((((-translate_y + 1.0 + y_adjustment) / zoom) + 1.0) / 2.0);
+        
+        (min_x as f64, max_x as f64, min_y as f64, max_y as f64)
     }
 
     /// Build the sublayers (line layer for axis/ticks, text layer for labels)
