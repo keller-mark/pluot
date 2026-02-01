@@ -10,6 +10,35 @@ from ._internal import render_py
 # Reference: https://github.com/zarr-developers/zarr-python/issues/3389
 no_compression = dict(filters=None, compressors=None, serializer="auto")
 
+def replace_arr_with_key(d, store):
+    """Replace _arr keys with _key keys in a dict, inserting NumPy array data into a Zarr store."""
+    
+    if isinstance(d, list):
+        return [
+            replace_arr_with_key(item, store)
+            for item in d
+        ]
+    elif not isinstance(d, dict):
+        return d  # Base case: not a dict, return as is.
+    
+    # D is a dict.
+    new_d = {}
+    for key, val in d.items():
+        if key.endswith("_arr") and isinstance(val, np.ndarray):
+            new_key = key.replace("_arr", "_key")
+            new_val = f"/{new_key}_arr"
+            zarr.create_array(
+                store=store,
+                data=val,
+                name=new_val,
+                **no_compression
+            )
+            new_d[new_key] = new_val
+        else:
+            # Recursively handle nested dicts
+            new_d[key] = replace_arr_with_key(val, store)
+    return new_d
+
 # Helper function to convert _arr params to _key params,
 # inserting NumPy array data into an in-memory Zarr store.
 def parse_kwargs(kwargs):
@@ -25,20 +54,8 @@ def parse_kwargs(kwargs):
             "plot_params": {},
         }
         GLOBAL_STORES[store_name] = MemoryStore()
-        # TODO: recursively traverse to find _keys
-        for key, val in kwargs["plot_params"].items():
-            if key.endswith("_arr") and isinstance(val, np.ndarray):
-                new_key = key.replace("_arr", "_key")
-                new_val = f"/{new_key}_arr"
-                zarr.create_array(
-                    store=GLOBAL_STORES[store_name],
-                    data=val,
-                    name=new_val,
-                    **no_compression
-                )
-                new_kwargs["plot_params"][new_key] = new_val
-            else:
-                new_kwargs["plot_params"][key] = val
+        # recursively traverse to find _keys
+        new_kwargs["plot_params"] = replace_arr_with_key(kwargs["plot_params"], GLOBAL_STORES[store_name])
     return new_kwargs
 
 async def render(**kwargs):
