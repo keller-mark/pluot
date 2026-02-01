@@ -55,7 +55,7 @@ serde = { version = "1.0.x", features = ["derive"] }
 uuid = { version = "1", features = ["v4", "js"] }
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
-zarrs = { version = "=0.23.0-beta.6", default-features = false, features = [
+zarrs = { version = "0.23.0", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
@@ -152,7 +152,7 @@ tokio = { version = "1.47.1", features = ["full"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # Note zarrs is also used for core dependencies (but without its "filesystem" feature). "filesystem" is needed for unit tests.
-zarrs = { version = "=0.23.0-beta.6", default-features = false, features = [
+zarrs = { version = "0.23.0", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
