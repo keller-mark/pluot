@@ -29,9 +29,11 @@ const stores = {
   // Wrap store in a cache.
   // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
   mnist_store: lru(new FetchStore("http://localhost:5173/@data/mnist.zarr")),
-  gaussian_quantiles_store: lru(
-    new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
-  ),
+  // NOTE: no longer using the lru cache to reduce memory usage,
+  // since we now have the use_memo_ functions in cache.rs on the rust side.
+  // Note: when using a timeout parameter, we still may want to use a cache
+  // for in-progress promises (but not for their returned data).
+  gaussian_quantiles_store: new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
   ome_ngff: lru(
     new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
   ),
@@ -410,7 +412,7 @@ export function Pluot(props) {
           left: marginLeft,
           width: width - marginLeft - marginRight,
           height: height - marginTop - marginBottom,
-          border: "1px solid red",
+          border: "0px solid red",
         }}
       />
       {isVector ? (
