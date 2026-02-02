@@ -104,7 +104,7 @@ fn assert_strings_equal_ignore_whitespace(actual: &str, expected: &str) {
 }
 
 #[tokio::test]
-async fn test_render_unit_square_vector() {
+async fn test_render_unit_square_vector() { // TODO: move to different file and run when lacks_gpu feature is enabled.
     let params = RenderParams {
         width: 100,
         height: 100,
@@ -141,10 +141,10 @@ async fn test_render_unit_square_vector() {
 
     let expected_svg_str = r#"
         <g height="100" width="100">
-            <clipPath id="clipPath1">
+            <clipPath id="my_scatterplot_layer_clip_path">
                 <rect height="100" width="100" x="0" y="0"/>
             </clipPath>
-            <g clip-path="url(#clipPath1)" transform="translate(0,0)">
+            <g clip-path="url(#my_scatterplot_layer_clip_path)" transform="translate(0,0)">
                 <rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="-10" y="90"/>
                 <rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="90" y="90"/>
                 <rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="90" y="-10"/>
@@ -161,3 +161,6 @@ async fn test_render_unit_square_vector() {
 // Reference: https://github.com/linebender/resvg/blob/9876cd45dd461ac3083f584cc83e66473a3061ef/crates/resvg/examples/minimal.rs#L27
 // TODO: use dify for pixel-based diffing
 // Reference: https://github.com/emilk/egui/blob/fa78d25564a5dbcb546ff6db0a9e14cb603ba03b/crates/egui_kittest/src/snapshot.rs#L484
+
+// TODO: use kompari for pixel diffing instead?
+// Reference: https://github.com/linebender/kompari

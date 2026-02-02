@@ -1,4 +1,5 @@
-#![cfg(test)]
+// We only run this test on non-WASM targets.
+#![cfg(all(test, not(target_arch = "wasm32")))]
 
 use std::sync::Arc;
 use zarrs::filesystem::FilesystemStore;
