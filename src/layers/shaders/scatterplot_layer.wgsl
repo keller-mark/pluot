@@ -258,6 +258,7 @@ fn fs_main(
 ) -> FSOut {
 
     // Handling of circle point shape mode
+    // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
     var alpha = 1.0;
     if(u.point_shape_mode == 1u) {
         // TODO: improve this somehow?
