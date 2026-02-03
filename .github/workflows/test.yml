@@ -76,6 +76,6 @@ jobs:
       run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
     #- uses: Swatinem/rust-cache@v2
     - name: Compile Rust code to WASM
-      run: wasm-pack build --target web
+      run: wasm-pack build pluot_core --target web
     - name: Run unit tests
-      run: wasm-pack test --headless --chrome
+      run: wasm-pack test pluot_core --headless --chrome

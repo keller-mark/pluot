@@ -1,5 +1,5 @@
 packages:
   - 'pkg'
-  - 'js/lib'
-  - 'js/demo'
-  - 'js/docs'
+  - 'bindings-js/lib'
+  - 'bindings-js/demo'
+  - 'bindings-js/docs'

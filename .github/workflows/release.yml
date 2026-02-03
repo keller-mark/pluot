@@ -35,7 +35,7 @@ jobs:
       run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
     #- uses: Swatinem/rust-cache@v2
     - name: Compile Rust code to WASM
-      run: wasm-pack build --release --target web
+      run: wasm-pack build pluot_core --release --target web
     - uses: pnpm/action-setup@v4
       name: Install pnpm
       id: pnpm-install
@@ -45,11 +45,11 @@ jobs:
       run: |
         pnpm run build
         pnpm run build-docs
-        echo "pluot.dev" > js/docs/dist/CNAME
+        echo "pluot.dev" > bindings-js/docs/dist/CNAME
     - uses: actions/upload-pages-artifact@v3
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       with:
-        path: ./js/docs/dist
+        path: ./bindings-js/docs/dist
   
   deploy_docs_site:
     runs-on: ubuntu-latest

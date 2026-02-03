@@ -3,7 +3,6 @@
   "private": true,
   "version": "1.0.0",
   "description": "",
-  "module": "dist/index.js",
   "scripts": {
     "start-demo": "pnpm -r --parallel --filter=!docs start",
     "start-docs": "pnpm -r --parallel --filter=!demo start",
@@ -21,7 +20,7 @@
     "clean-deps": "pnpm -r exec -- rm -rf node_modules",
     "clean-all": "pnpm run clean && pnpm run clean-deps",
     "build-docs": "pnpm -r build-docs",
-    "deploy": "wasm-pack build --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d js/docs/dist --cname pluot.dev --nojekyll"
+    "deploy": "wasm-pack build pluot_core --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d js/docs/dist --cname pluot.dev --nojekyll"
   },
   "keywords": [],
   "author": "",
