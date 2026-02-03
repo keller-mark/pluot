@@ -19,8 +19,8 @@ jobs:
     - name: Compile Rust code
       run: cargo build --verbose
     - name: Run Rust unit tests
-      #run: cargo test --verbose --features test_plain_rust # Rendering tests do not work on non-macos runners since they lack GPUs.
-      run: cargo test --verbose
+      # Rendering tests do not work on non-macos runners since they lack GPUs.
+      run: cargo test --verbose --features lacks_gpu
   py_compile:
     runs-on: ubuntu-latest
     needs: [plain_rust_unit_tests]

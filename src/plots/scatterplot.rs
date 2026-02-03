@@ -411,7 +411,7 @@ pub async fn render_scatterplot(
     // Render the X and Y axes:
     crate::two::canvas::render_shapes(context, encoder, &axis_elements);
 
-    crate::render::overlay_pass(context, encoder, &scatter_tex);
+    crate::plots::overlay_utils::overlay_pass(context, encoder, &scatter_tex);
 
     RenderResult {
         bailed_early: false,

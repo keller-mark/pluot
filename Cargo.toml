@@ -2,7 +2,11 @@
 name = "pluot"
 version = "0.1.0"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
-edition = "2018"
+# We use the 2021 edition which defaults to Resolver version 2
+# (could alternatively specify resolver = "2" with edition = "2018").
+# This allows us to specify target-specific dev-dependencies,
+# so that `wasm-pack build --dev` does not try to pull in zarrs_filesystem.
+edition = "2021"
 rust-version = "1.92"
 exclude = ["data", "js", "python", "python-notebooks", "dev-docs", "webgpu-playground", "node_modules"]
 categories = ["visualization", "graphics", "rendering", "science", "wasm"]
@@ -20,7 +24,9 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Define features to toggle which dependency is active
 python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log"]
-test_plain_rust = ["tokio"] # TODO: instead of this feature, can tokio be moved to dev-dependencies, even though it is also needed for the python feature?
+# Define a feature for running unit tests in GPU-less environments
+lacks_gpu = []
+
 
 [dependencies]
 
@@ -29,8 +35,9 @@ pyo3 = { version = "0.27", optional = true, features = ["extension-module"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"], optional = true }
 pythonize = { git = "https://github.com/tuxu/pythonize.git", rev = "6140fe0", optional = true }
 pyo3-log = { version = "0.13.2", optional = true }
-# tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
-tokio = { version = "1.47.1", features = ["full"], optional = true }
+# Note: tokio is also specified in dev-dependencies,
+# since its "full" feature is used for our async unit tests.
+tokio = { version = "1.47.1", optional = true }
 
 
 # Core dependencies
@@ -46,8 +53,9 @@ serde = { version = "1.0.x", features = ["derive"] }
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrrs.
 uuid = { version = "1", features = ["v4", "js"] }
-# Zarrs (ea23432)
-zarrs = { version = "0.22.10", default-features = false, features = [
+# Note: zarrs is also specified in dev-dependencies,
+# since its "filesystem" feature is used for unit tests.
+zarrs = { version = "0.23.0", default-features = false, features = [
     "ndarray",
     "crc32c",
     "gzip",
@@ -71,6 +79,9 @@ wgpu = { version = "28.0.0" }
 glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 
+# Matrix multiplication for SVG rendering
+nalgebra-glm = "0.3"
+
 # Trying vello for shape/text rendering.
 # Vello (65eea2c4)
 # vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
@@ -91,6 +102,8 @@ encase = { version = "0.12.0" }
 vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "b579608" }
 euclid = "0.22.11"
 fontdue = "0.9.x"
+
+lz-str = "0.2.1" # To compress SVG strings before passing to JS.
 
 # Trying glyphon for text rendering.
 # glyphon = "0.9.0"
@@ -129,7 +142,29 @@ features = ["js"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"
-nalgebra-glm = "0.3" # Only used in the coordinate_system_logic tests.
+resvg = "0.46.0" # For SVG rendering during unit tests to compare with raster-format outputs.
+tiny-skia = "0.11.4" # Used when rendering with resvg (Pixmap target for rendering).
+dify = "0.8.0" # For pixel diffing in unit tests.
+image = "0.25.9" # For read/write to image formats like PNG in unit tests.
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Note zarrs is also used for core dependencies (but without its "filesystem" feature). "filesystem" is needed for unit tests.
+zarrs = { version = "0.23.0", default-features = false, features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    "filesystem",
+] }
+
+# We depend on tokio for the non-wasm unit tests that call async functions.
+# Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
+tokio = { version = "1.47.1", features = ["full"] }
+
+
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
@@ -150,3 +185,4 @@ codegen-units = 1
 # During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
 [lints.rust]
 unused = "allow"
+non_snake_case = "allow"

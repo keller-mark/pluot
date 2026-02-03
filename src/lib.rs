@@ -19,7 +19,10 @@ mod maybe;
 // Switch to use the following when not using Vello:
 pub use wgpu;
 
-pub use crate::params::{PlotParams, RenderParams};
+// Export things needed for layer-based plotting via Rust.
+pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams};
+pub use crate::layers::core::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
+pub use crate::layers::scatterplot_layer::{ScatterplotLayerParams, PointShapeMode};
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]

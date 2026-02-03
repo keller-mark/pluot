@@ -6,9 +6,10 @@ sidebar:
     order: 20
 ---
 
+## Vanilla JavaScript
 
 ```sh frame="none"
-npm install pluot
+npm install @pluot/core
 ```
 
 TODO
@@ -16,6 +17,10 @@ TODO
 ## React component
 
 The `@pluot/react` NPM package provides the `<Pluot />` React component.
+
+```sh frame="none"
+npm install @pluot/react
+```
 
 ### Props
 

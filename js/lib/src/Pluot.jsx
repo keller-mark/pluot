@@ -10,6 +10,12 @@ import createCamera from "./3d-view-controls.js"; // Copy with minor modificatio
 import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
+import lzs from "lz-string";
+
+// Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
+// The requested module 'lz-string' is a CommonJS module,
+// which may not support all module.exports as named exports."
+const { decompressFromUint8Array } = lzs;
 
 const DEFAULT_VIEW = new Float32Array([
   1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
@@ -23,9 +29,11 @@ const stores = {
   // Wrap store in a cache.
   // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
   mnist_store: lru(new FetchStore("http://localhost:5173/@data/mnist.zarr")),
-  gaussian_quantiles_store: lru(
-    new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
-  ),
+  // NOTE: no longer using the lru cache to reduce memory usage,
+  // since we now have the use_memo_ functions in cache.rs on the rust side.
+  // Note: when using a timeout parameter, we still may want to use a cache
+  // for in-progress promises (but not for their returned data).
+  gaussian_quantiles_store: new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
   ome_ngff: lru(
     new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
   ),
@@ -70,12 +78,15 @@ export function Pluot(props) {
     renderOnce = true,
     logPerformance = false,
     mode = "2d",
-    marginBottom = 0.0,
-    marginLeft = 400.0,
-    marginTop = 0.0,
-    marginRight =  0.0,
-    aspectRatioMode = "contain", // "ignore", "contain", "cover"
+    marginBottom = 100.0,
+    marginLeft = 100.0,
+    marginTop = 100.0,
+    marginRight =  100.0,
+    aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
+    format = "Raster", // "Raster", "Vector"
   } = props;
+
+  const isVector = format === "Vector";
 
   const storeName = useMemo(() => {
     if (storeNameProp) {
@@ -90,11 +101,14 @@ export function Pluot(props) {
 
   const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
 
+  const svgRef = useRef(null);
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
 
   const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
+  const [isRendering, setIsRendering] = useState(false);
+  const [didFirstRender, setDidFirstRender] = useState(false);
 
   /*
     const [zoom, setZoom] = useState(0.0);
@@ -254,11 +268,17 @@ export function Pluot(props) {
 
   // TODO: switch this useEffect to use React-Query.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !isWasmReady) {
+    if (!isWasmReady) {
       return;
     }
-    const ctx = canvas.getContext("2d");
+
+    // TODO: use react-query to manage the backlog of async render calls?
+    // Alternatively, implement a backlog similar to the one used in the Vitessce heatmap.
+    // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
+    if(isRendering && !didFirstRender) {
+      // Prevent multiple render calls prior to the first successful render.
+      return;
+    }
 
     // Start FPS tracking variables.
     let frameCount = 0;
@@ -268,17 +288,19 @@ export function Pluot(props) {
 
     // Render once or every animation frame.
     // Define the function to render a single frame.
-    function renderFrame() {
+   async function renderFrame() {
+    setIsRendering(true);
       // console.log('wasm.render');
       const renderParams = {
         width,
         height,
+        format: format,
         margin_bottom: marginBottom,
         margin_left: marginLeft,
         margin_top: marginTop,
         margin_right: marginRight,
         device_pixel_ratio: window.devicePixelRatio,
-        aspect_ratio_mode: ["ignore", "contain", "cover"].indexOf(aspectRatioMode),
+        aspect_ratio_mode: aspectRatioMode,
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
@@ -289,8 +311,41 @@ export function Pluot(props) {
         plot_params: plotParams,
         timeout: 200, // in ms
         cache_enabled: true,
+        svg_compression_enabled: true,
       };
-      wasm.render_wasm(renderParams).then((arr) => {
+      // TODO: wrap render_wasm in try/catch, to handle Rust panics.
+      let arr;
+      try {
+        arr = await wasm.render_wasm(renderParams);
+      } catch (error) {
+        console.error("Error during wasm.render_wasm:", error);
+        // Cleanup
+        setIsRendering(false);
+        return;
+      }
+
+      if (isVector) {
+        // Format: Vector (render to SVG)
+        const gContents = decompressFromUint8Array(arr);
+
+        //console.log(gContents)
+
+        if (!svgRef.current) {
+          return;
+        }
+        svgRef.current.innerHTML = gContents;
+
+        // TODO: check for bailed early
+      } else {
+        // Format: Raster (render to canvas)
+        const canvas = canvasRef.current;
+        if (!canvas) {
+          return;
+        }
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return;
+        }
         // TODO: is there a more efficient way to do this?
         // E.g., write to a webgl texture? or is this fast enough already?
         const imageData = new ImageData(
@@ -306,7 +361,11 @@ export function Pluot(props) {
           // TODO: prevent infinite loop if always bailing early?
           requestAnimationFrame(renderFrame);
         }
-      });
+      }
+
+
+      setIsRendering(false);
+      setDidFirstRender(true);
     }
     function animate() {
       // Start FPS tracking logic.
@@ -338,7 +397,7 @@ export function Pluot(props) {
     } else {
       requestAnimationFrame(animate);
     }
-  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName]);
+  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef, didFirstRender]);
 
   return (
     <div style={{ width, height, position: "relative" }}>
@@ -353,15 +412,30 @@ export function Pluot(props) {
           left: marginLeft,
           width: width - marginLeft - marginRight,
           height: height - marginTop - marginBottom,
-          border: "1px solid red",
+          border: "0px solid red",
         }}
       />
-      <canvas
-        ref={canvasRef}
-        style={{ width, height, border: "1px solid black" }}
-        width={width}
-        height={height}
-      />
+      {isVector ? (
+        <svg
+          ref={svgRef}
+          style={{ width, height, border: "1px solid black" }}
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+        </svg>
+      ) : (
+        <canvas
+          ref={canvasRef}
+          style={{ width, height, border: "1px solid black" }}
+          width={width}
+          height={height}
+        />
+      )}
+      {!didFirstRender ? (
+        <p>Loading...</p>
+      ) : null}
     </div>
   );
 }

@@ -9,6 +9,7 @@ def _():
     from pluot import render_to_image
     import numpy as np
     import marimo as mo
+    import json
     return mo, np, render_to_image
 
 
@@ -26,8 +27,48 @@ def _():
 @app.cell
 async def _(camera_view, render_to_image):
     await render_to_image(
-        camera_view=camera_view, width=500, height=500, plot_id="test", plot_type="Scatterplot", store_name="my_store",
-        plot_params=dict(x_key="/n_100000/x_coords", y_key="/n_100000/y_coords", color_key="/n_1000000/class_labels", point_radius=5.0),
+        camera_view=camera_view,
+        width=500, 
+        height=500, 
+        margin_left=60,
+        plot_id="test",
+        plot_type="LayeredPlot",
+        store_name="my_store",
+        plot_params=dict(
+            #x_key="/n_100000/x_coords",
+            #y_key="/n_100000/y_coords",
+            #color_key="/n_1000000/class_labels",
+            #point_radius=5.0
+            layers=[
+                dict(
+                    layer_type="ScatterplotLayer",
+                      layer_params=dict(
+                        layer_id="layer_2",
+                        data_unit_mode="Pixels",
+                        point_radius_unit_mode="Pixels",
+                        point_shape_mode="Square",
+                        point_radius=15.0,
+                        store_name="my_store",
+                        bounds=dict(
+                          margin_top= 0,
+                          margin_right=0,
+                          margin_bottom=0,
+                          margin_left=0,
+                        ),
+                        x_vec=[100, 100, 400, 400],
+                        y_vec=[100, 400, 100, 400],
+                        labels_vec=[0, 1, 2, 3],
+                      )
+                ),
+                dict(
+                    layer_type="AxisLayer",
+                    layer_params=dict(
+                        layer_id="left_axis",
+                        position="Left"
+                    )
+                )
+            ]
+        ),
     )
     return
 
@@ -59,15 +100,44 @@ async def _(
     y_arr,
 ):
     await render_to_image(
-        camera_view=camera_view, width=700, height=800, plot_id="test", plot_type="Scatterplot",
-        plot_params=dict(
-            x_arr=x_arr,
-            y_arr=y_arr,
-            color_arr=color_arr,
-            point_radius=point_radius_slider.value,
-        ),
+        camera_view=camera_view, width=600, height=600, plot_id="test", plot_type="LayeredPlot",
         margin_left=100,
         margin_bottom=100,
+        plot_params=dict(
+            #x_key="/n_100000/x_coords",
+            #y_key="/n_100000/y_coords",
+            #color_key="/n_1000000/class_labels",
+            #point_radius=5.0
+            layers=[
+                dict(
+                  layer_type="ZarrScatterplotLayer",
+                  layer_params=dict(
+                    layer_id="zarr_layer",
+                    data_unit_mode="Data",
+                    point_radius_unit_mode="Pixels",
+                    point_shape_mode="Circle",
+                    x_arr=x_arr,
+                    y_arr=y_arr,
+                    color_arr=color_arr,
+                    point_radius=point_radius_slider.value,
+                  )
+                ),
+                dict(
+                    layer_type="AxisLayer",
+                    layer_params=dict(
+                        layer_id="left_axis",
+                        position="Left"
+                    )
+                ),
+                dict(
+                    layer_type="AxisLayer",
+                    layer_params=dict(
+                        layer_id="bottom_axis",
+                        position="Bottom"
+                    )
+                )
+            ]
+        ),
     )
     return
 

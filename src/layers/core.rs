@@ -2,9 +2,10 @@ use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
 use crate::params::{RenderContext, RenderResult};
-use crate::maybe::MaybeSend;
+use crate::maybe::{MaybeSend, MaybeSync};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioMode {
     /*
      - 0: ignore / squeeze: For example,  a 200 x 100 canvas would show values from -1 to 1 in x and y. The -1 to 1 square would be stretched in the X direction since the canvas is wider than it is tall.
@@ -18,7 +19,7 @@ pub enum AspectRatioMode {
      Cover,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UnitsMode {
     // 0: pixels (e.g., for fixed pixel-unit sizes).
     Pixels,
@@ -26,7 +27,7 @@ pub enum UnitsMode {
     Data,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,
     pub margin_right: Option<f32>,
@@ -35,7 +36,7 @@ pub struct MarginParams {
 }
 
 // Struct to store anything at the view level (i.e., not layer-specific)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ViewParams {
     pub view_id: String, // Just reuse the plot_id when there is a single view.
     pub width: u32,
@@ -59,6 +60,8 @@ pub struct ViewParams {
     // Margins for plots that need them (e.g. scatterplot axes).
     pub margins: Option<MarginParams>,
 
+    pub store_name: Option<String>,
+
     // Note: Views should have margins, but these should be translated to "bounds" for layers.
     // This is because we may want to render certain layers in the margins
     // (e.g., text/line layers for axes/titles/etc).
@@ -76,6 +79,7 @@ impl Default for ViewParams {
             timeout: None,
             cache_enabled: true,
             margins: None,
+            store_name: None,
         }
     }
 }
@@ -93,20 +97,37 @@ pub trait DrawToSvg {
     async fn draw(&self, group: &Group) -> Group;
 }
 
+/*
+// Example of a no-op implementation of DrawToSvg.
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToSvg for EmptyLayer {
+    async fn draw(&self, group: &Group) -> Group {
+        // TODO
+        return group.clone();
+    }
+}
+*/
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToCanvas {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass);
 }
 
-pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend {}
-impl<T: PreparedLayer + DrawToSvg + MaybeSend> PreparedAndDrawToSvg for T {}
+pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync> PreparedAndDrawToSvg for T {}
 
-pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend {}
-impl<T: PreparedLayer + DrawToCanvas + MaybeSend> PreparedAndDrawToCanvas for T {}
+pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToCanvas + MaybeSend + MaybeSync> PreparedAndDrawToCanvas for T {}
+
+// Trait for layers that can render to both SVG and Canvas
+pub trait PreparedAndDraw: PreparedAndDrawToCanvas + PreparedAndDrawToSvg {}
+impl<T: PreparedAndDrawToCanvas + PreparedAndDrawToSvg> PreparedAndDraw for T {}
 
 
-pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToSvg>>) -> Group {
+// TODO: figure out how to make the type of `layers` Vec<Box<dyn PreparedAndDrawToSvg>>  (no need for canvas as well).
+pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, context: &mut RenderContext<'_>) -> RenderResult {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
 
     // TODO: use maybe_timeout! here?
@@ -125,15 +146,20 @@ pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn Prepare
     let mut group = group;
     for layer in layer_refs {
         // TODO: when/where to pass view_params to each layer?
-        group = layer.draw(&group).await;
+        group = DrawToSvg::draw(layer.as_ref(), &group).await;
     }
 
-    // TODO: also return RenderResult? How to aggregate results from multiple layers?
+    *context.out_group = group.clone();
 
-    group
+    // TODO: Aggregate results from multiple layers
+
+    RenderResult {
+        bailed_early: false,
+    }
 }
 
-pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDrawToCanvas>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {
+// TODO: figure out how to make the type of `layers` Vec<Box<dyn PreparedAndDrawToCanvas>>  (no need for SVG as well).
+pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {
     // TODO: use maybe_timeout! here?
 
     // Collect references first to avoid Send issues with the iterator
@@ -176,14 +202,13 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
         for layer in layer_refs {
             // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
             // Should we instead assume the layer already has the necessary info from view_params?
-            layer.draw(context.device.clone(), context.queue.clone(), &mut render_pass).await;
+            DrawToCanvas::draw(layer.as_ref(), context.device.clone(), context.queue.clone(), &mut render_pass).await;
         }
 
         drop(render_pass);
     }
 
-    // TODO: return RenderResult? How to aggregate results from multiple layers?
-
+    // TODO: Aggregate results from multiple layers
     RenderResult {
         bailed_early: false,
     }

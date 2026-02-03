@@ -13,6 +13,9 @@ pub fn init_svg(width: f64, height: f64) -> (Document, Group) {
 
     let group = Group::new().set("width", width).set("height", height);
 
+    // TODO: is defs needed? or is it possible to put clipPaths anywhere in the node tree?
+    let defs = svg::node::element::Definitions::new();
+
     (document, group)
 }
 
@@ -26,6 +29,32 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                         "transform",
                         format!("translate({},{})", translate.0, translate.1),
                     );
+                }
+                if let Some(clip_rect) = d.clip_rect {
+                    // TODO: use layer_type here?
+                    // Or change layer_id to group_id,
+                    // and the caller can handle "{layer_type}_{layer_id}" concatenation.
+                    let clip_path_id = if let Some(layer_id) = &d.layer_id {
+                        &format!("{}_clip_path", layer_id)
+                    } else {
+                        // TODO: generate unique IDs if multiple clip paths are needed.
+                        // Keep track of used ids by passing down some kind of container struct that wraps the group
+                        // to keep track of this state.
+                        "clipPath1"
+                    };
+                    let clip_path = svg::node::element::ClipPath::new()
+                        .set("id", clip_path_id)
+                        .add(
+                            Rectangle::new()
+                                .set("x", clip_rect.0)
+                                .set("y", clip_rect.1)
+                                .set("width", clip_rect.2)
+                                .set("height", clip_rect.3),
+                        );
+                    // TODO: does the clip path need to be within <defs>?
+                    // TODO: does it matter if the clipPath is inserted into a translated group?
+                    sub_group = sub_group.set("clip-path", format!("url(#{})", clip_path_id));
+                    group = group.add(clip_path);
                 }
                 // Recursion.
                 sub_group = update_svg(sub_group, &d.elements);
@@ -138,8 +167,7 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     .set("font-family", d.font.as_str());
 
                 if let Some(rotation) = d.rotation {
-                    let deg = rotation.to_degrees();
-                    text = text.set("transform", format!("rotate({deg},{},{})", d.x, d.y));
+                    text = text.set("transform", format!("rotate({} {} {})", rotation, d.x, d.y));
                 }
                 group.add(text)
             }

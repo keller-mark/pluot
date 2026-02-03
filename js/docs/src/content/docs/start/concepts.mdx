@@ -101,7 +101,7 @@ For example, when using Pluot as a React component in a web application, you cou
 We provide a layer-based API that enables developers to implement custom plotting functions.
 Several core layers are implemented, including ScatterplotLayer and LineLayer.
 
-For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust/) documentation.
+For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust-internal/) documentation.
 
 
 ## Plot margins
@@ -137,3 +137,26 @@ The aspect ratio alignment mode affects what extra data is shown in `Contain` mo
 - `Start`: TODO
 - `Middle`: TODO
 - `End`: TODO
+
+### Pixel vs. Data Unit modes
+
+Layers can accept parameters to specify whether positions/sizes are specified in pixel units or data units.
+
+- `Pixels`: positions/sizes are specified in pixel units. These values will not be affected by the camera matrix or aspect ratio mode.
+- `Data`: positions/sizes are specified in data units. These values will be affected by the camera matrix and aspect ratio mode.
+
+Layers currently throw errors if pixel-unit positioning is combined with data-unit sizing.
+However, pixel-unit sizing can be combined with data-unit positioning.
+
+## Scalability
+
+### Vector output format
+
+Pluot can render plots to SVG format.
+While SVG enables high-quality outputs, it has performance limitations when rendering large numbers of elements.
+This is because SVG is an XML-based format, and XML is a text-based format.
+Rendering millions of points to SVG can result in very large SVG strings, which can be slow to transfer (via the bindings) and slow to render in SVG viewers (e.g., web browsers).
+To mitigate this, Pluot can compress the SVG string on the Rust side and decompress on the other language side (currently using the LZ-string method), but this also has a performance cost and only partially mitigates the issue.
+In our experience:
+- without using string compression, plots with about 1,000 SVG nodes can be transferred and rendered in a web browser
+- with string compression, plots with about 10,000 SVG nodes can be transferred and rendered in a web browser

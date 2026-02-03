@@ -1,8 +1,8 @@
-// Inspired by the DeckGL ScatterplotLayer
+// Inspired by the DeckGL BitmapLayer
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
-use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
+use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
@@ -12,78 +12,95 @@ use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::update_svg;
 use crate::layers::scatterplot_vertex::get_point_position;
-use std::sync::{Arc};
+use crate::log;
 
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum PointShapeMode {
-    // 0: square (basically no-op in fragment shader)
-    Square,
-    // 1: circles (convert square to circle in fragment shader)
-    Circle,
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChannelSettings {
+    pub c_index: u32,
+    pub window: (f32, f32),
+    pub color: (f32, f32, f32), // RGB colors as floats in [0.0, 1.0]
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ScatterplotLayerParams {
+pub struct BitmapLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
     pub data_unit_mode: UnitsMode,
-    pub point_radius: f32,
-    pub point_radius_unit_mode: UnitsMode,
-    pub point_shape_mode: PointShapeMode,
+
+    // How positioning works for the bitmap layer:
+    // If data_unit_mode = Pixels, then the image is positioned in pixel space,
+    // with the origin at the bottom left of the layer's bounds (i.e., margins).
+    // If data_unit_mode = Data, then the image is positioned in data units,
+    // with the origin at (0,0) in data space, and pixels extending positively in x and y directions.
+
+    // The model_matrix can be used to apply additional affine transformations
+    // to the physical dimensions of the image (XYZ),
+    // such as translation, rotation, and scaling.
+    // For example, the model_matrix can be used to account for pixels that are not square,
+    // or to adjust the pixel size.
+    // (e.g., most bioimaging formats store images with 1 pixel = 1 micrometer,
+    // but without a model_matrix specified we assume that 1 pixel = 1 meter).
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
+
+    pub img_size_w: u32,
+    pub img_size_h: u32,
+    pub img_size_c: Option<u32>, // Number of channels in the image.
+    pub img_size_z: Option<u32>, // Number of z slices in the image.
+    pub img_size_t: Option<u32>, // Number of timepoints in the image.
+
+    pub channel_settings: Vec<ChannelSettings>,
+    pub z_index: Option<u32>,
+    pub t_index: Option<u32>,
+
+    pub opacity: f32,
+
+    // TODO: channel window and color params
 
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
-    // TODO: improve naming here - should these be "x", "y", etc?
-    pub x_vec: Vec<f32>, // TODO: generalize to other numeric dtypes?
-    pub y_vec: Vec<f32>,
-    pub labels_vec: Vec<i32>,
+    // TODO: improve naming here
+    // TODO: array of channel vecs for multi-channel images?
+
+    // TODO: accept a dimension order array,
+    // a shape array (one size per dimension),
+    // and then accept a flat Vec for the image data in its original dimension order.
+
+    pub ch0_vec: Vec<u16>, // TODO: generalize to other numeric dtypes?
 }
 
 // TODO: defaults for params?
 
 
-// Internal representation for ScatterplotLayer and its "descendant" layers.
-pub struct ScatterplotLayerData {
-    pub x_arr: Arc<Vec<f32>>,
-    pub y_arr: Arc<Vec<f32>>,
-    pub labels_arr: Arc<Vec<i32>>,
+// Internal representation for BitmapLayer and its "descendant" layers.
+pub struct BitmapLayerData {
+    pub ch0_arr: Vec<u16>,
 }
 
 
-pub struct ScatterplotLayer {
+pub struct BitmapLayer {
     view_params: ViewParams,
-    layer_params: ScatterplotLayerParams,
+    layer_params: BitmapLayerParams,
     // TODO: getters?
 
     // Data may be None prior to runninng prepare().
-    data: Option<ScatterplotLayerData>,
+    data: Option<BitmapLayerData>,
 }
 
-impl ScatterplotLayer {
+impl BitmapLayer {
     pub fn new(
         view_params: ViewParams,
-        layer_params: ScatterplotLayerParams,
+        layer_params: BitmapLayerParams,
     ) -> Self {
-        // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
-            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
-        }
-        let data = Some(ScatterplotLayerData {
+        let data = Some(BitmapLayerData {
             // TODO: can cloning be avoided here?
-            // One option may be to make layer_params.x_vec optional,
-            // and after taking ownership of x_vec here,
-            // set layer_params.x_vec to None before storing layer_params in self.
-            x_arr: Arc::new(layer_params.x_vec.clone()),
-            y_arr: Arc::new(layer_params.y_vec.clone()),
-            labels_arr: Arc::new(layer_params.labels_vec.clone()),
+            ch0_arr: layer_params.ch0_vec.clone(),
         });
         Self {
             view_params,
             layer_params,
-            // TODO: dont store data on the instance here.
-            // Just pass the vec references to the draw functions as needed.
             data,
         }
     }
@@ -91,7 +108,7 @@ impl ScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for ScatterplotLayer {
+impl PreparedLayer for BitmapLayer {
     async fn prepare(&mut self) {
 
         // TODO: include the layer type in the memoization dependencies?
@@ -105,75 +122,101 @@ impl PreparedLayer for ScatterplotLayer {
 }
 
 #[derive(ShaderType, Debug)]
-struct ScatterplotLayerUniforms {
+struct ChannelUniforms {
+    window: Vec2,
+    color: Vec3,
+}
+
+#[derive(ShaderType, Debug)]
+struct BitmapLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     data_unit_mode: u32, // 0 = pixels, 1 = data units
-    point_radius: f32,  // radius of each point
-    point_radius_unit_mode: u32, // 0 = pixels, 1 = data units
-    point_shape_mode: u32, // 0 = square, 1 = circle
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
-    color: Vec4,         // rgba color for points
+    
+    img_size: Vec2, // (img_width, img_height) in pixels // TODO: use u32?
+    // TODO: pass model_matrix here
+
+    opacity: f32,
+    num_channels: ArrayLength,
+    // Note: WGSL only allows one runtime-sized array in a struct,
+    // and it must be the last field.
+    #[shader(size(runtime))]
+    channels: Vec<ChannelUniforms>,
 }
 
-// We extract this function for reuse in derived scatterplot layers (e.g., ZarrScatterplotLayer).
+
+// We extract this function for reuse in derived scatterplot layers (e.g., ZarrBitmapLayer).
 // TODO: is this the best way to share this logic?
 // See https://www.youtube.com/watch?v=Phk0C-kLlho
 // See https://github.com/linebender/xilem/blob/main/xilem_core/src/views/any_view.rs
 
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
-pub async fn base_draw_scatterplot_layer(
+pub async fn base_draw_bitmap_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
-    data: &ScatterplotLayerData,
+    data: &BitmapLayerData,
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
-    point_radius: f32,
-    point_radius_unit_mode: &UnitsMode,
-    point_shape_mode: &PointShapeMode,
+    img_size_w: u32,
+    img_size_h: u32,
+    opacity: f32,
+    channel_settings: &[ChannelSettings],
 ) {
-    
-    // This bytemuck::cast_slice does not clone,
-    // it just reinterprets the same memory.
-    let x_bytes = bytemuck::cast_slice(&data.x_arr);
-    let y_bytes = bytemuck::cast_slice(&data.y_arr);
+    // Store the ndarray::ArrayD in a WGPU texture.
+    // Create a texture to store the image data (R16Uint).
 
-    // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = data.labels_arr.len();
+    let num_channels = 1; // TODO: extend to multi-channel images
 
-    // Convert to f32 and cast to bytes directly - no for loop needed
-    //let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&data.labels_arr);
+    let combined_pixel_data: &[u8] = bytemuck::cast_slice(&data.ch0_arr);
 
-    // TODO: can more of this be memoized/cached?
-    // Which parts need to be re-executed every draw call? Which parts have high overhead?
+    // TODO: does this need to be padded to 256 bytes per row?
+    let bytes_per_pixel: u32 = 2; // R16Uint has 2 bytes per pixel.
+    let unpadded_bytes_per_row = img_size_w as u32 * bytes_per_pixel;
+    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
+    let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
 
-    // Create separate buffers for X and Y coordinates
-    let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("X Coordinates Storage Buffer"),
-        size: x_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
+    let texture_size = wgpu::Extent3d {
+        width: img_size_w as u32,
+        height: img_size_h as u32,
+        depth_or_array_layers: num_channels as u32,
+    };
+    let image_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Image Texture"),
+        size: texture_size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        // R16Uint is a 16-bit unsigned integer format.
+        format: wgpu::TextureFormat::R16Uint,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
     });
-    queue.write_buffer(&x_buffer, 0, &x_bytes);
-
-    let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Y Coordinates Storage Buffer"),
-        size: y_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
+    let image_view = image_texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Image Texture View"),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
     });
-    queue.write_buffer(&y_buffer, 0, &y_bytes);
 
-    let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Class labels Storage Buffer"),
-        size: labels_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+    // Upload the pixel data to the texture.
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &image_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        // The pixel data as a byte slice.
+        bytemuck::cast_slice(&combined_pixel_data),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(unpadded_bytes_per_row),
+            rows_per_image: Some(img_size_h as u32),
+        },
+        texture_size,
+    );
 
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
@@ -183,6 +226,45 @@ pub async fn base_draw_scatterplot_layer(
         0.0, 0.0, 1.0, 0.0, // Column 3
         0.0, 0.0, 0.0, 1.0,
     ]);
+
+    let zoom = camera_view[0]; // Assuming uniform scaling in x/y, take the first element (x scaling).
+    let translate_x = camera_view[12];
+    let translate_y = camera_view[13];
+
+    // Convert zoom level to scale factor
+    // scale_factor of 0 means zoom = 1.0 (no zoom)
+    // scale_factor of 1 means zoom = 0.5 (zoomed out to half)
+    // scale_factor of 2 means zoom = 0.25 (zoomed out to a quarter)
+    // scale_factor of 3 means zoom = 0.125 (zoomed out to an eighth)
+
+    // scale_factor of -1 means zoom = 2.0 (zoomed in to double)
+    // scale_factor of -2 means zoom = 4.0 (zoomed in to quadruple)
+    // scale_factor of -3 means zoom = 8.0 (zoomed in to octuple)
+    let scale_factor = (1.0 / zoom).log2();
+
+    log(&format!("scale factor: {}", scale_factor));
+
+    // X translation interpretation:
+    // A translate_x value of 1.0 means a point at x=-1.0 (left edge of viewport/screen-quad) is now at the center of the viewport.
+    // A translate_x value of 2.0 means a point at x=-1.0 is now at the right edge of the viewport.
+    // A translate_x value of -1.0 means a point at x=1.0 (right edge of viewport/screen-quad) is now at the center of the viewport.
+
+    // Zoom interpretation:
+    // A zoom value of 0.5 means that points are scaled down by half, so a point at x=-1.0 is now at x=-0.5, and a point at x=1.0 is now at x=0.5.
+    // A zoom value of 0.25 means that points are scaled down by a quarter, so a point at x=-1.0 is now at x=-0.25, and a point at x=1.0 is now at x=0.25.
+
+    // Zoom and translation combined interpretation:
+    // A translate_x value of 0.5 when zoom = 0.5 means a point at x=-1.0 is now at the center of the viewport, and a point at x=1.0 is now at the right of the viewport.
+    // When zoom = 0.5 AND translate_x = 0.5 AND translate_y = 0.5, all four screen-quad [-1 to 1] corner points are in the top right quadrant of the viewport.
+    // When zoom = 0.5 AND translate_x = -0.5 AND translate_y = -0.5, all four screen-quad [-1 to 1] corner points are in the bottom left quadrant of the viewport.
+
+    let x_range = 2.0 / zoom; // The range of x values visible in the viewport
+    let y_range = 2.0 / zoom; // The range of y values visible in the viewport
+
+    let min_x = (-translate_x - 1.0) / zoom; // translation of (x=-1)
+    let max_x = (-translate_x + 1.0) / zoom; // translation of (x=1)
+    let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
+    let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
 
     // Use layer-specific bounds if not None, otherwise use the view's margins
     // (which may also be None).
@@ -211,22 +293,23 @@ pub async fn base_draw_scatterplot_layer(
     let layer_w = viewport_w - (margin_left + margin_right) as f32;
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
+    // Define the uniforms, matching the WGSL layout (handled by using encase).
+    let channel_uniforms: Vec<ChannelUniforms> = channel_settings
+        .iter()
+        .map(|channel_setting| {
+            ChannelUniforms {
+                window: Vec2::new(channel_setting.window.0, channel_setting.window.1),
+                color: Vec3::new(channel_setting.color.0, channel_setting.color.1, channel_setting.color.2),
+            }
+        }).collect();
+
     // Construct the uniform struct using Encase.
-    let uniform_struct = ScatterplotLayerUniforms {
+    let uniform_struct = BitmapLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
         data_unit_mode: match data_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
-        },
-        point_radius: point_radius,
-        point_radius_unit_mode: match point_radius_unit_mode {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        },
-        point_shape_mode: match point_shape_mode {
-            PointShapeMode::Square => 0,
-            PointShapeMode::Circle => 1,
         },
         aspect_ratio_mode: match view_params.aspect_ratio_mode {
             AspectRatioMode::Ignore => 0,
@@ -234,17 +317,22 @@ pub async fn base_draw_scatterplot_layer(
             AspectRatioMode::Cover => 2,
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
-        color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+        img_size: Vec2::new(img_size_w as f32, img_size_h as f32),
+        opacity,
+        num_channels: Default::default(),
+        channels: channel_uniforms,
     };
 
-    let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+    // Runtime-sized arrays cannot be used with the encase UniformBuffer,
+    // and require using StorageBuffer instead.
+    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
     buffer.write(&uniform_struct).unwrap();
     let uniform_bytes = buffer.into_inner();
 
     let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Uniform Buffer"),
+        label: Some("Storage Buffer for Uniforms"),
         size: uniform_bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
@@ -253,57 +341,36 @@ pub async fn base_draw_scatterplot_layer(
     // Create bind group layout and bind group for positions + uniforms
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ScatterplotLayer BGL"),
+            label: Some("Bioimage BGL"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     // The uniforms buffer.
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The X coordinates buffer.
+                    // The image pixel texture.
                     binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The Y coordinates buffer.
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The class labels coordinates buffer.
-                    binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
                     },
                     count: None,
                 },
             ],
         });
+    
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ScatterplotLayer BG"),
+            label: Some("Bioimage BG"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -312,21 +379,13 @@ pub async fn base_draw_scatterplot_layer(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: x_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: y_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: labels_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&image_view),
                 },
             ],
         });
 
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot_layer.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -408,154 +467,53 @@ pub async fn base_draw_scatterplot_layer(
 
     pass.set_pipeline(&render_pipeline);
     pass.set_bind_group(0, &bind_group, &[]);
-
-    // TODO: Would it be more efficient to store the point X/Y/Size/Opacity/Color info in textures, as done by Regl-Scatterplot?
-    // (As opposed to using instancing)
-    // References:
-    // - https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/point.vs#L43
-    // - https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/index.js#L1938
-    pass.draw(0..4, 0..(n as u32));
+    pass.draw(0..4, 0..1);
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ScatterplotLayer {
+impl DrawToCanvas for BitmapLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-        base_draw_scatterplot_layer(
+        base_draw_bitmap_layer(
             device, queue, pass,
             data,
             &self.view_params,
             &self.layer_params.bounds,
             &self.layer_params.data_unit_mode,
-            self.layer_params.point_radius,
-            &self.layer_params.point_radius_unit_mode,
-            &self.layer_params.point_shape_mode,
+            self.layer_params.img_size_w,
+            self.layer_params.img_size_h,
+            self.layer_params.opacity,
+            &self.layer_params.channel_settings,
         ).await;
     }
 }
 
-pub fn base_draw_scatterplot_layer_svg(
-    data: &ScatterplotLayerData,
+pub fn base_draw_bitmap_layer_svg(
+    data: &BitmapLayerData,
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
-    point_radius: f32,
-    point_radius_unit_mode: &UnitsMode,
-    point_shape_mode: &PointShapeMode,
     layer_id: &str,
 ) -> Vec<TwoElement> {
-    // Iterate over the data points and create SVG elements.
-    let n = data.labels_arr.len();
-
-    // TODO: reduce code reuse here
-    let camera_view = view_params.camera_view.unwrap_or([
-        // Column 0
-        1.0, 0.0, 0.0, 0.0, // Column 1
-        0.0, 1.0, 0.0, 0.0, // Column 2
-        0.0, 0.0, 1.0, 0.0, // Column 3
-        0.0, 0.0, 0.0, 1.0,
-    ]);
-
-    // Use layer-specific bounds if not None, otherwise use the view's margins
-    // (which may also be None).
-    let bounds = if layer_bounds.is_none() {
-        &view_params.margins
-    } else {
-        layer_bounds
-    };
-
-    let margin_top = if let Some(margin_params) = &bounds {
-        margin_params.margin_top.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_right = if let Some(margin_params) = &bounds {
-        margin_params.margin_right.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_bottom = if let Some(margin_params) = &bounds {
-        margin_params.margin_bottom.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_left = if let Some(margin_params) = &bounds {
-        margin_params.margin_left.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-
-    let viewport_w = view_params.width as f32;
-    let viewport_h = view_params.height as f32;
-
-    let layer_w = viewport_w - (margin_left + margin_right) as f32;
-    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-    // End TODO
-
-    let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
-    for i in 0..n {
-        let x = data.x_arr[i];
-        let y = data.y_arr[i];
-
-        // Convert data coordinates to pixel coordinates within the layer area.
-        let (px, py) = get_point_position(
-            x,
-            y,
-            layer_w,
-            layer_h,
-            &camera_view,
-            *data_unit_mode,
-            view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
-        );
-
-        // Create a circle or square element based on point_shape_mode.
-        svg_elements.push(match point_shape_mode {
-            PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
-                x: px as f64,
-                y: py as f64,
-                radius: point_radius as f64,
-                // TODO: more params
-                ..Default::default()
-            }),
-            PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
-                x: (px - point_radius) as f64,
-                y: (py - point_radius) as f64,
-                width: (point_radius * 2.0) as f64,
-                height: (point_radius * 2.0) as f64,
-                // TODO: more params
-                ..Default::default()
-            })
-        });
-    }
-
-    // Insert rects into an SVG group with a transform and clipping to handle margins,
-    // similar to the usage of scissor rect and viewport in the Canvas rendering.
-    let layer_group_vec = vec![
-        TwoElement::Group(TwoGroup {
-            elements: svg_elements,
-            translate: Some((margin_left, margin_top)),
-            layer_id: Some(layer_id.to_string()),
-            // TODO: check how clip_rect interacts with the translate
-            clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
-            ..Default::default()
-        })
-    ];
-
-    return layer_group_vec;
+    return vec![]; // TODO
 }
 
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for ScatterplotLayer {
+impl DrawToSvg for BitmapLayer {
     async fn draw(&self, group: &Group) -> Group {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         let view_params = &self.view_params;
         let bounds = &self.layer_params.bounds;
 
-        let svg_elements = base_draw_scatterplot_layer_svg(
+        let svg_elements = base_draw_bitmap_layer_svg(
             data,
             view_params,
             bounds,
             &self.layer_params.data_unit_mode,
-            self.layer_params.point_radius,
-            &self.layer_params.point_radius_unit_mode,
-            &self.layer_params.point_shape_mode,
             &self.layer_params.layer_id,
         );
         

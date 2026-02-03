@@ -1,19 +1,49 @@
 // Inspired by the DeckGL LineLayer.
 // Reference: https://deck.gl/docs/api-reference/layers/line-layer
 
-// The line layer should support rendering lines between pairs of points,
-// with customizable color and width.
-
-// In the initial implementation, color and width will be uniform for all lines (i.e., set globally for the layer).
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
+use serde::{Deserialize, Serialize};
 
-use crate::layers::core::{DrawToCanvas, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
+use svg::node::element::Group;
+use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::svg::update_svg;
+use crate::layers::scatterplot_vertex::get_point_position;
 
 
-struct LineLayerData {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LineLayerParams {
+    pub layer_id: String,
+    // If None, assume margin: 0 in all directions.
+    pub bounds: Option<MarginParams>,
+    pub data_unit_mode: UnitsMode,
+    pub line_width: f32,
+    pub line_width_unit_mode: UnitsMode,
+
+    // TODO(ref): pass in references instead of owned Vecs?
+    // Would this cause issues when using serde to create layers based on JSON params?
+    // TODO: improve naming here - should these be "source_x", "source_y", etc?
+    pub source_x_vec: Vec<f32>, // TODO: generalize to other numeric dtypes?
+    pub source_y_vec: Vec<f32>,
+    pub target_x_vec: Vec<f32>,
+    pub target_y_vec: Vec<f32>,
+    pub labels_vec: Vec<i32>,
+}
+
+pub struct LineLayer {
+    view_params: ViewParams,
+    layer_params: LineLayerParams,
+    // TODO: getters?
+
+    // Data will be None prior to runninng prepare().
+    data: Option<LineLayerData>,
+}
+
+// Internal representation for LineLayer and its "descendant" layers.
+pub struct LineLayerData {
     // Lines are from source (x,y) to target (x,y).
     source_x_arr: Vec<f32>,
     source_y_arr: Vec<f32>,
@@ -22,52 +52,27 @@ struct LineLayerData {
     labels_arr: Vec<i32>,
 }
 
-pub struct LineLayer {
-    view_params: ViewParams,
-    layer_id: String,
-    // If None, assume margin: 0 in all directions.
-    bounds: Option<MarginParams>,
-
-    data_unit_mode: UnitsMode,
-    line_width: f32,
-    line_width_unit_mode: UnitsMode,
-    // Data will be None prior to runninng prepare().
-    data: Option<LineLayerData>,
-}
-
 impl LineLayer {
     pub fn new(
         view_params: ViewParams,
-        bounds: Option<MarginParams>,
-        layer_id: String,
-        data_unit_mode: UnitsMode,
-        line_width: f32,
-        line_width_unit_mode: UnitsMode,
-        // TODO(ref): pass in references instead of owned Vecs?
-        source_x_vec: Vec<f32>,
-        source_y_vec: Vec<f32>,
-        target_x_vec: Vec<f32>,
-        target_y_vec: Vec<f32>,
-        labels_vec: Vec<i32>,
+        layer_params: LineLayerParams,
     ) -> Self {
         // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if(line_width_unit_mode == UnitsMode::Data && data_unit_mode == UnitsMode::Pixels) {
+        if(layer_params.line_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
+        let data = Some(LineLayerData {
+            // TODO: can cloning be avoided here?
+            source_x_arr: layer_params.source_x_vec.clone(),
+            source_y_arr: layer_params.source_y_vec.clone(),
+            target_x_arr: layer_params.target_x_vec.clone(),
+            target_y_arr: layer_params.target_y_vec.clone(),
+            labels_arr: layer_params.labels_vec.clone(),
+        });
         Self {
             view_params,
-            bounds,
-            layer_id,
-            data_unit_mode,
-            line_width,
-            line_width_unit_mode,
-            data: Some(LineLayerData {
-                source_x_arr: source_x_vec,
-                source_y_arr: source_y_vec,
-                target_x_arr: target_x_vec,
-                target_y_arr: target_y_vec,
-                labels_arr: labels_vec,
-            }),
+            layer_params,
+            data,
         }
     }
 }
@@ -99,13 +104,14 @@ struct LineLayerUniforms {
     color: Vec4,         // rgba color for points
 }
 
-// We extract this function for reuse in derived scatterplot layers (e.g., ZarrScatterplotLayer).
+// We extract this function for reuse in derived line layers (e.g., ZarrLineLayer).
 // TODO: is this the best way to share this logic?
-pub async fn draw_line_layer(
+// TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
+pub async fn base_draw_line_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     data: &LineLayerData,
     view_params: &ViewParams,
-    bounds: &Option<MarginParams>,
+    layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
     line_width: f32,
     line_width_unit_mode: &UnitsMode,
@@ -174,6 +180,14 @@ pub async fn draw_line_layer(
         0.0, 0.0, 1.0, 0.0, // Column 3
         0.0, 0.0, 0.0, 1.0,
     ]);
+
+    // Use layer-specific bounds if not None, otherwise use the view's margins
+    // (which may also be None).
+    let bounds = if layer_bounds.is_none() {
+        &view_params.margins
+    } else {
+        layer_bounds
+    };
 
     let margin_top = if let Some(margin_params) = &bounds {
         margin_params.margin_top.unwrap_or(0.0)
@@ -335,7 +349,7 @@ pub async fn draw_line_layer(
         });
 
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("line_layer.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/line_layer.wgsl"));
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -431,16 +445,149 @@ pub async fn draw_line_layer(
 impl DrawToCanvas for LineLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-        draw_line_layer(
+        base_draw_line_layer(
             device, queue, pass,
             data,
             &self.view_params,
-            &self.bounds,
-            &self.data_unit_mode,
-            self.line_width,
-            &self.line_width_unit_mode,
+            &self.layer_params.bounds,
+            &self.layer_params.data_unit_mode,
+            self.layer_params.line_width,
+            &self.layer_params.line_width_unit_mode,
         ).await;
     }
 }
 
-// TODO: Implement DrawToSvg.
+
+pub fn base_draw_line_layer_svg(
+    data: &LineLayerData,
+    view_params: &ViewParams,
+    layer_bounds: &Option<MarginParams>,
+    data_unit_mode: &UnitsMode,
+    line_width: f32,
+    line_width_unit_mode: &UnitsMode,
+    layer_id: &str,
+) -> Vec<TwoElement> {
+    // Iterate over the data points and create SVG elements.
+    let n = data.labels_arr.len();
+
+    // TODO: reduce code reuse here
+    let camera_view = view_params.camera_view.unwrap_or([
+        // Column 0
+        1.0, 0.0, 0.0, 0.0, // Column 1
+        0.0, 1.0, 0.0, 0.0, // Column 2
+        0.0, 0.0, 1.0, 0.0, // Column 3
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+
+    // Use layer-specific bounds if not None, otherwise use the view's margins
+    // (which may also be None).
+    let bounds = if layer_bounds.is_none() {
+        &view_params.margins
+    } else {
+        layer_bounds
+    };
+
+    let margin_top = if let Some(margin_params) = &bounds {
+        margin_params.margin_top.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_right = if let Some(margin_params) = &bounds {
+        margin_params.margin_right.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_bottom = if let Some(margin_params) = &bounds {
+        margin_params.margin_bottom.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_left = if let Some(margin_params) = &bounds {
+        margin_params.margin_left.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+
+    let viewport_w = view_params.width as f32;
+    let viewport_h = view_params.height as f32;
+
+    let layer_w = viewport_w - (margin_left + margin_right) as f32;
+    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+    // End TODO
+
+    let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
+    for i in 0..n {
+        let source_x = data.source_x_arr[i];
+        let source_y = data.source_y_arr[i];
+        let target_x = data.target_x_arr[i];
+        let target_y = data.target_y_arr[i];
+
+        // Convert data coordinates to pixel coordinates within the layer area.
+        let (source_x_px, source_y_px) = get_point_position(
+            source_x,
+            source_y,
+            layer_w,
+            layer_h,
+            &camera_view,
+            *data_unit_mode,
+            view_params.aspect_ratio_mode,
+            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+        );
+        let (target_x_px, target_y_px) = get_point_position(
+            target_x,
+            target_y,
+            layer_w,
+            layer_h,
+            &camera_view,
+            *data_unit_mode,
+            view_params.aspect_ratio_mode,
+            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+        );
+
+        // Create a circle or square element based on point_shape_mode.
+        svg_elements.push(TwoElement::Line(TwoLine {
+            x1: source_x_px as f64,
+            y1: source_y_px as f64,
+            x2: target_x_px as f64,
+            y2: target_y_px as f64,
+            linewidth: line_width as f64,
+            // TODO: more params
+            ..Default::default()
+        }));
+    }
+
+    // Insert rects into an SVG group with a transform and clipping to handle margins,
+    // similar to the usage of scissor rect and viewport in the Canvas rendering.
+    let layer_group_vec = vec![
+        TwoElement::Group(TwoGroup {
+            elements: svg_elements,
+            translate: Some((margin_left, margin_top)),
+            layer_id: Some(layer_id.to_string()),
+            // TODO: check how clip_rect interacts with the translate
+            clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+            ..Default::default()
+        })
+    ];
+
+    return layer_group_vec;
+}
+
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToSvg for LineLayer {
+    async fn draw(&self, group: &Group) -> Group {
+        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+
+        let view_params = &self.view_params;
+        let bounds = &self.layer_params.bounds;
+
+        let svg_elements = base_draw_line_layer_svg(
+            data,
+            view_params,
+            bounds,
+            &self.layer_params.data_unit_mode,
+            self.layer_params.line_width,
+            &self.layer_params.line_width_unit_mode,
+            &self.layer_params.layer_id,
+        );
+        
+        // TODO: refactor to avoid the cloning here?
+        let updated_group = update_svg(group.clone(), &svg_elements);
+
+        return updated_group.clone();
+    }
+}
+

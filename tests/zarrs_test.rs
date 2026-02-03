@@ -1,4 +1,5 @@
-#![cfg(test)]
+// We only run this test on non-WASM targets.
+#![cfg(all(test, not(target_arch = "wasm32")))]
 
 use std::sync::Arc;
 use zarrs::filesystem::FilesystemStore;
@@ -21,13 +22,13 @@ fn test_read_array_subset() {
 
     // This array is CZYX.
     // TODO: do not assume 4D and dim order.
-    let arr_subset = zarrs::array_subset::ArraySubset::new_with_ranges(&[
+    let arr_subset = zarrs::array::ArraySubset::new_with_ranges(&[
         0..1, 0..1, 0..img_h as u64, 0..img_w as u64,
     ]);
 
     println!("Reading array subset: {:?}", arr_subset);
 
-    let arr_subset2 = zarrs::array_subset::ArraySubset::new_with_ranges(&[
+    let arr_subset2 = zarrs::array::ArraySubset::new_with_ranges(&[
         0..1, 99..100, 0..img_h as u64, 0..img_w as u64,
     ]);
 
@@ -45,18 +46,18 @@ fn test_read_array_subset() {
     ).expect("Compatible dimensionality");*/
 
     // TODO: support other dtypes.
-    let arr = lowres_array.retrieve_array_subset_ndarray::<u16>(&arr_subset)
+    let arr = lowres_array.retrieve_array_subset::<Vec<u16>>(&arr_subset)
         .expect("Read pixel data");
 
-    println!("Read array with shape {:?} and dtype i16", arr.shape());
+    println!("Read array with shape {:?} and dtype i16", arr.len());
 
-    let arr2 = lowres_array.retrieve_array_subset_ndarray::<u16>(&arr_subset2)
+    let arr2 = lowres_array.retrieve_array_subset::<Vec<u16>>(&arr_subset2)
         .expect("Read pixel data2");
 
-    println!("Read array with shape {:?} and dtype i16", arr2.shape());
+    println!("Read array with shape {:?} and dtype i16", arr2.len());
 
-    assert_eq!(arr.shape(), &[1, 1, img_h as usize, img_w as usize]);
-    assert_eq!(arr2.shape(), &[1, 1, img_h as usize, img_w as usize]);
+    assert_eq!(arr.len(), img_h as usize * img_w as usize);
+    assert_eq!(arr2.len(), img_h as usize * img_w as usize);
 
 
 }

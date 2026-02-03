@@ -1,3 +1,15 @@
+fn rotate_z(angle_deg: f32) -> mat4x4<f32> {
+    let angle_rad = (-1.0 * angle_deg) * 3.14159265359 / 180.0; // Convert degrees to radians
+    let c = cos(angle_rad);
+    let s = sin(angle_rad);
+    return mat4x4<f32>(
+        vec4<f32>(c, s, 0.0, 0.0),
+        vec4<f32>(-s, c, 0.0, 0.0),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(0.0, 0.0, 0.0, 1.0)
+    );
+}
+
 fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   return mat4x4<f32>(
     vec4<f32>(x, 0.0, 0.0, 0.0),
@@ -62,35 +74,30 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
     );
 }
 
-struct ScatterplotLayerUniforms {
+struct TextLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     data_unit_mode: u32, // 0: pixel units, 1: data units
-    point_radius: f32,
-    point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
-    point_shape_mode: u32, // 0: square; 1: circle
+    text_size: f32,
+    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    text_rotation: f32, // rotation angle in degrees
     color: vec4<f32>,     // rgba color for points
 };
 
 struct VSOut {
-    @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) valid_bounds: vec4<f32>, // valid_min.xy, valid_max.xy in NDC
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
 };
 
 struct FSOut {
     @location(0) color: vec4<f32>,
 };
 
-// These group/binding locations will need to match with the locations used by Model.
-@group(0) @binding(0) var<uniform> u: ScatterplotLayerUniforms;
-@group(0) @binding(1) var<storage, read> x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
+@group(0) @binding(0) var<uniform> u: TextLayerUniforms;
+@group(0) @binding(1) var glyph_tex: texture_2d<f32>;
+@group(0) @binding(2) var glyph_sampler: sampler;
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -101,16 +108,49 @@ const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>( 1.0,  1.0)
 );
 
+// Note: `rect_px` indicates where to render the glyph on the screen.
+// Meanwhile, `uv_rect` indicates where to sample the glyph in the texture atlas.
 
+// Per-instance attributes:
+// @location(0): rect_px = vec4(x, y, w, h)
+// @location(1): uv_rect = vec4(u0, v0, u1, v1)
 @vertex
 fn vs_main(
-    @builtin(instance_index) instance_index: u32,
+    @location(0) elem_pos: vec2<f32>, // X/Y position of the text element, in either data or pixel units.
+    @location(1) glyph_px: vec4<f32>, // Glyph offsets and size in pixels: (offset_x, offset_y, width, height)
+    @location(2) uv_rect: vec4<f32>,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Center of this point in data space
-    let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+    let elem_pos_x_orig = elem_pos.x; // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    let elem_pos_y_orig = elem_pos.y; // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    
+    let glyph_offset_x_px = glyph_px.x;
+    let glyph_offset_y_px = glyph_px.y;
+    let glyph_width_px = glyph_px.z;
+    let glyph_height_px = glyph_px.w;
 
+    let ROTATION_MAT = rotate_z(u.text_rotation);
+
+
+    // In order to combine the point position with the glyph quad, we convert all values to normalized space (0 to 1).
+    // We need to consider the aspect ratio mode and camera for this conversion.
+
+    // Get a corner for the glyph quad.
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
+
+    // Get a corner for the uv rect.
+    // Corner in [0,1]^2 from vertex_index 0..3 (triangle strip)
+    let cx = f32(vertex_index & 1u);
+    let cy = f32((vertex_index >> 1u) & 1u);
+    let uv_corner = vec2<f32>(cx, cy);
+
+    // Flip Y for UVs so that the bottom of the quad (corner.y=0) 
+    // maps to the bottom of the glyph texture (max V / uv_rect.w),
+    // and the top of the quad (corner.y=1) maps to the top (min V / uv_rect.y).
+    let uv = vec2<f32>(
+        uv_rect.x + uv_corner.x * (uv_rect.z - uv_rect.x),
+        uv_rect.w + uv_corner.y * (uv_rect.y - uv_rect.w)
+    );
 
     // Layer aspect ratio
     // By "layer", we mean the inner plotting area, excluding margins.
@@ -132,46 +172,68 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
-
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
     if(u.data_unit_mode == 0u) {
-        // Convert point position from pixel space to normalized space (0 to 1)
-        let point_pos_norm = vec2<f32>(
-            point_pos_orig.x / layer_width_px,
-            point_pos_orig.y / layer_height_px
+        // Convert text element position from pixel space to normalized space (0 to 1)
+        let elem_pos_norm = vec2<f32>(
+            elem_pos_x_orig / layer_width_px,
+            elem_pos_y_orig / layer_height_px
         );
-        let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
+        let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
 
-        // Compute the vertex position by accounting for point position and point size.
-        let point_radius_norm = vec4f(
-            u.point_radius / layer_width_px,
-            u.point_radius / layer_height_px,
+        let glyph_size_norm = vec4f(
+            glyph_width_px / layer_width_px,
+            glyph_height_px / layer_height_px,
             0.0,
             1.0
         );
-        let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
+        let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
+
+        // Handle rotation of the glyph position offset and corner position.
+        let glyph_offset_norm = vec4f(
+            (glyph_offset_x_px / layer_width_px) + (glyph_size_norm.x / 2.0),
+            (glyph_offset_y_px / layer_height_px) + (glyph_size_norm.y / 2.0),
+            0.0,
+            1.0
+        );
+        let rotated_glyph_offset_norm = (ROTATION_MAT * glyph_offset_norm).xy;
+
+        // Compute the glyph position in normalized space.
+        let glyph_pos_norm = vec2f(
+            elem_pos_norm.x + rotated_glyph_offset_norm.x,
+            elem_pos_norm.y + rotated_glyph_offset_norm.y
+        );
+        let glyph_pos_ndc = NORM_TO_NDC_MAT * vec4f(glyph_pos_norm.xy, 0.0, 1.0);
+
+        // Rotate the corner around the glyph center.
+        let rotated_corner = (ROTATION_MAT * vec4f(
+            corner.x * glyph_size_ndc.x / 2.0,
+            corner.y * glyph_size_ndc.y / 2.0,
+            0.0, 1.0)).xy;
 
         // The final point position in NDC space.
         let pos = vec4f(
-            point_pos_ndc.x + (corner.x * point_radius_ndc.x),
-            point_pos_ndc.y + (corner.y * point_radius_ndc.y),
+            glyph_pos_ndc.x + rotated_corner.x,
+            glyph_pos_ndc.y + rotated_corner.y,
             0.0,
             1.0
         );
 
         var out: VSOut;
-        out.position = pos;
-        out.color = u.color;
-        // Pass quad position in [0, 1] range for fragment shader.
-        out.quad_pos = (corner + 1.0) * 0.5;
-        out.instance_index = instance_index;
-        // Pass valid bounds to fragment shader for per-fragment clipping
-        out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        out.pos = pos;
+        // UV from rect
+        out.uv = uv;
         return out;
     }
 
+    // Handle data_unit_mode == "data" (i.e., the elem_pos_orig is in data coordinate system units, not pixels).
+    // Convert elem_pos from data coordinate system units to normalized space (0 to 1).
+    let elem_pos_orig = vec2<f32>(
+        elem_pos_x_orig,
+        elem_pos_y_orig
+    );    
 
-    // Model-view-projection matrix
+    /// Model-view-projection matrix
     // References:
     // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
     // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
@@ -184,7 +246,7 @@ fn vs_main(
     // - viewMatrix - the 4x4 view matrix, which takes as input a point in world space and the result is a point in camera space.
     // - projectionMatrix - the 4x4 projection matrix, which takes as input a point in camera space and the result is a projected point in clip space.
 
-    let point_pos_norm = /*LAYER_NORM_TO_VIEW_NORM_MAT * */ (
+    let elem_pos_norm = /*LAYER_NORM_TO_VIEW_NORM_MAT * */ (
         // The camera from dom-2d-camera operates in NDC space.
         // The `dom-2d-camera` library is designed to work in **NDC space (-1 to 1)**, not normalized space (0 to 1).
         // When you zoom in, the scale increases, and when you pan, the translation values are in NDC space.
@@ -202,103 +264,64 @@ fn vs_main(
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
         // TODO: support applying a model matrix (arbitrarily passed by the user)
         // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(point_pos_orig, 0.0, 1.0)
+        * vec4(elem_pos_orig, 0.0, 1.0)
     );
-    let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
-    // Compute the vertex position by accounting for point position and point size.
-    // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
-    let point_radius_norm = vec4f(
-        u.point_radius / layer_width_px,
-        u.point_radius / layer_height_px,
+    let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
+    
+    // Compute the glyph position in normalized space.
+    let glyph_size_norm = vec4f(
+        glyph_width_px / layer_width_px,
+        glyph_height_px / layer_height_px,
         0.0,
         1.0
     );
-    let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
+    let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
+
+    // Handle rotation of the glyph position offset and corner position.
+    let glyph_offset_norm = vec4f(
+        (glyph_offset_x_px / layer_width_px) + (glyph_size_norm.x / 2.0),
+        (glyph_offset_y_px / layer_height_px) + (glyph_size_norm.y / 2.0),
+        0.0,
+        1.0
+    );
+    let rotated_glyph_offset_norm = (ROTATION_MAT * glyph_offset_norm).xy;
+
+    // Compute the glyph position in normalized space.
+    let glyph_pos_norm = vec2f(
+        elem_pos_norm.x + rotated_glyph_offset_norm.x,
+        elem_pos_norm.y + rotated_glyph_offset_norm.y
+    );
+    let glyph_pos_ndc = NORM_TO_NDC_MAT * vec4f(glyph_pos_norm.xy, 0.0, 1.0);
+
+    // Rotate the corner around the glyph center.
+    let rotated_corner = (ROTATION_MAT * vec4f(
+        corner.x * glyph_size_ndc.x / 2.0,
+        corner.y * glyph_size_ndc.y / 2.0,
+        0.0, 1.0)).xy;
 
     // The final point position in NDC space.
     let pos = vec4f(
-        point_pos_ndc.x + (corner.x * point_radius_ndc.x),
-        point_pos_ndc.y + (corner.y * point_radius_ndc.y),
+        glyph_pos_ndc.x + rotated_corner.x,
+        glyph_pos_ndc.y + rotated_corner.y,
         0.0,
         1.0
     );
 
     var out: VSOut;
-    out.position = pos;
-    out.color = u.color;
-    // Pass quad position in [0, 1] range for fragment shader.
-    out.quad_pos = (corner + 1.0) * 0.5;
-    out.instance_index = instance_index;
-    // Pass valid bounds to fragment shader for per-fragment clipping
-    out.valid_bounds = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    out.pos = pos;
+    out.uv = uv;
     return out;
 }
 
-
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
-}
-
-fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-  return clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-}
-
 @fragment
-fn fs_main(
-    @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) valid_bounds: vec4<f32>,
-) -> FSOut {
-    /*
-    // Convert fragment coordinate from screen space back to NDC
-    let screen_pos = frag_coord.xy;
-    let ndc_pos = vec2<f32>(
-        (screen_pos.x / u.viewport_size.x) * 2.0 - 1.0,        // X unchanged
-        1.0 - (screen_pos.y / u.viewport_size.y) * 2.0         // Y flipped
-    );
-
-    // Extract valid bounds
-    let valid_min = valid_bounds.xy;
-    let valid_max = valid_bounds.zw;
-
-    // Check if this fragment is outside the valid region
-    if (ndc_pos.x < valid_min.x || ndc_pos.x > valid_max.x ||
-        ndc_pos.y < valid_min.y || ndc_pos.y > valid_max.y) {
-        discard;
-    }
-
-
-    // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
-    let radius_px = u.point_size_px / 2.0;
-    let antiAliasing = 0.5; // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
-    let c = quad_pos * 2.0 - 1.0;
-    let sdf = length(c) * radius_px;
-    let alpha = linearstep(radius_px + antiAliasing, radius_px - antiAliasing, sdf);
-
-    if (alpha == 0.0) {
-        discard;
-    }
-*/
-    let category_color = get_categorical_color(labels_coords[instance_index]);
+fn fs_main(@location(0) uv: vec2<f32>) -> FSOut {
+    let a = textureSample(glyph_tex, glyph_sampler, uv).r;
+    // Premultiply for blending
+    let rgb = u.color.rgb * a;
 
     var out: FSOut;
     // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, 1.0);
+    out.color = vec4<f32>(rgb, a);
     return out;
 }

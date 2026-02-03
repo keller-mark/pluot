@@ -17,6 +17,12 @@ use quick_cache::sync::Cache;
 static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, Bytes>>>>> =
     OnceLock::new();
 
+// We no longer need caching at the store level,
+// since we now have the use_memo_ functions in cache.rs.
+// We disable cacheing here to prevent double caching,
+// minimizing memory usage.
+const ZARR_CACHE_ENABLED: bool = false;
+
 fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, Bytes>> {
     let map_mutex = ZARR_STORE_CACHES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = map_mutex.lock().unwrap();
@@ -82,6 +88,12 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         // considering potential Range info.
         let key_str = normalize_key(key.as_str(), None);
 
+        if !ZARR_CACHE_ENABLED {
+            // Use the zarr_get_js function to fetch the data
+            let bytes = zarr_get(&self.store_name, key.as_str()).await;
+            return Ok(Some(bytes));
+        }
+
         // Check the cache first
         let cache = get_or_init_store_cache(&self.store_name);
         if let Some(cached) = cache.get(&key_str.to_string()) {
@@ -113,12 +125,8 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
             // considering potential Range info.
             let key_str = normalize_key(key.as_str(), Some(byte_range));
 
-            // Check the cache first
-            let cache = get_or_init_store_cache(&self.store_name);
-            if let Some(cached) = cache.get(&key_str) {
-                results.push(Ok(cached.clone()));
-            } else {
-                // Cache miss.
+            if !ZARR_CACHE_ENABLED {
+                // Use the zarr_get_js function to fetch the data
                 let bytes = match byte_range {
                     ByteRange::FromStart(start, Some(len)) => {
                         zarr_get_range_from_offset(
@@ -139,12 +147,43 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                     }
                     _ => panic!("Unsupported ByteRange variant"),
                 };
-
-                // Store in cache
-                cache.insert(key_str, bytes.clone());
-
                 // Append to results
                 results.push(Ok(bytes));
+            } else {
+                // Cache is enabled.
+                // Check the cache first
+                let cache = get_or_init_store_cache(&self.store_name);
+                if let Some(cached) = cache.get(&key_str) {
+                    results.push(Ok(cached.clone()));
+                } else {
+                    // Cache miss.
+                    let bytes = match byte_range {
+                        ByteRange::FromStart(start, Some(len)) => {
+                            zarr_get_range_from_offset(
+                                &self.store_name,
+                                key.as_str(),
+                                start as u32,
+                                len as u32,
+                            )
+                            .await
+                        }
+                        ByteRange::Suffix(suffix_length) => {
+                            zarr_get_range_from_end(
+                                &self.store_name,
+                                key.as_str(),
+                                suffix_length as u32,
+                            )
+                            .await
+                        }
+                        _ => panic!("Unsupported ByteRange variant"),
+                    };
+
+                    // Store in cache
+                    cache.insert(key_str, bytes.clone());
+
+                    // Append to results
+                    results.push(Ok(bytes));
+                }
             }
         }
         Ok(Some(Box::pin(stream::iter(results))))

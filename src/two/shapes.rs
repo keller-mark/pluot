@@ -182,7 +182,7 @@ pub struct TwoText {
     // Possible values: "alphabetic", "top", "middle", "bottom".
     pub baseline: TwoTextBaseline,
     pub opacity: f64,
-    // In radians.
+    // In degrees.
     pub rotation: Option<f64>,
     // How text that overflows the bounding box should be dealt with.
     // Possible values: null, "clip", "ellipsis".
@@ -212,9 +212,14 @@ impl Default for TwoText {
 #[derive(Clone, Debug)]
 pub struct TwoGroup {
     pub elements: Vec<TwoElement>,
+    // Strings to add optional data attributes for debugging.
+    pub layer_type: Option<String>,
+    pub layer_id: Option<String>,
     // In radians.
     pub rotation: Option<f64>,
     pub translate: Option<(f64, f64)>,
+    // If set, defines a clipping rectangle for the group.
+    pub clip_rect: Option<(f64, f64, f64, f64)>, // x, y, width, height // TODO: how does clip rect interact with group translation?
     // TODO: add data- or aria- attributes for accessibility or hooking up event handlers?
 }
 
@@ -222,8 +227,11 @@ impl Default for TwoGroup {
     fn default() -> Self {
         Self {
             elements: Vec::new(),
+            layer_type: None,
+            layer_id: None,
             rotation: None,
             translate: None,
+            clip_rect: None,
         }
     }
 }
