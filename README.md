@@ -145,17 +145,18 @@ uv run python -m asyncio
 >>> await render_py(width=100, height=100, plotId="test", plotType="triangle", storeName="test")
 ```
 
+Try in Marimo notebook:
+
+```sh
+uv run marimo edit
+```
+
 Try in Jupyter notebook:
 
 ```sh
 uv run jupyter lab --notebook-dir bindings-python/notebooks
 ```
 
-Try in Marimo notebook:
-
-```sh
-uv run marimo edit
-```
 
 ### Build for plain Rust
 
