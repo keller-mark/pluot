@@ -41,6 +41,20 @@ The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
           }
         },
         {
+          layer_type: "AxisLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          },
+        },
+        {
+          layer_type: "AxisLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          },
+        },
+        {
           layer_type: "ScatterplotLayer",
           layer_params: {
             layer_id: "layer_2",
@@ -104,7 +118,7 @@ The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
           layer_type: "BitmapLayer",
           layer_params: {
             layer_id: "layer_bitmap",
-            data_unit_mode: "Pixels",
+            data_unit_mode: "Data",
 
             img_size_w: 4,
             img_size_h: 4,

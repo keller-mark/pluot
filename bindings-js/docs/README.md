@@ -1,3 +1,18 @@
+# pluot docs
+
+From the root of the repo:
+
+```sh
+wasm-pack build pluot_core --dev --target web && pnpm run start-docs
+```
+
+## Deploy
+
+```sh
+pnpm run deploy
+```
+
+
 # Starlight Starter Kit: Basics
 
 [![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)

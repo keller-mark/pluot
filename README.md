@@ -89,6 +89,7 @@ wasm-pack build pluot_core --target web && pnpm run start-demo
 wasm-pack build pluot_core --dev --target web && pnpm run start-demo
 # or
 wasm-pack build pluot_core --release --target web && pnpm run start-demo
+
 ```
 
 <!--
