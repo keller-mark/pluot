@@ -1,6 +1,6 @@
 # pluot
 
-<a href="#"><img src=".github/pluot-logo.png" align="right" height="300" alt="pluot logo" /></a>
+<a href="#"><img src="bindings-js/docs/src/assets/pluot-logo.png" align="right" height="300" alt="pluot logo" /></a>
 
 Goal: Implement a custom data visualization once, then render it everywhere\* (across languages, static or interactive, raster or vector).
 
