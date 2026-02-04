@@ -400,42 +400,44 @@ export function Pluot(props) {
   }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef, didFirstRender]);
 
   return (
-    <div style={{ width, height, position: "relative" }}>
-      {!supportsWebGpu ? (
-        <p>{supportsWebGpuMessage}</p>
-      ) : null}
-      <div
-        ref={cameraRef}
-        style={{
-          position: "absolute",
-          top: marginTop,
-          left: marginLeft,
-          width: width - marginLeft - marginRight,
-          height: height - marginTop - marginBottom,
-          border: "0px solid red",
-        }}
-      />
-      {isVector ? (
-        <svg
-          ref={svgRef}
-          style={{ width, height, border: "1px solid black" }}
-          width={width}
-          height={height}
-          viewBox={`0 0 ${width} ${height}`}
-          xmlns="http://www.w3.org/2000/svg"
-        >
-        </svg>
-      ) : (
-        <canvas
-          ref={canvasRef}
-          style={{ width, height, border: "1px solid black" }}
-          width={width}
-          height={height}
+    <>
+      <div style={{ width, height, position: "relative" }}>
+        {!supportsWebGpu ? (
+          <p>{supportsWebGpuMessage}</p>
+        ) : null}
+        <div
+          ref={cameraRef}
+          style={{
+            position: "absolute",
+            top: marginTop,
+            left: marginLeft,
+            width: width - marginLeft - marginRight,
+            height: height - marginTop - marginBottom,
+            border: "0px solid red",
+          }}
         />
-      )}
+        {isVector ? (
+          <svg
+            ref={svgRef}
+            style={{ width, height, border: "1px solid black" }}
+            width={width}
+            height={height}
+            viewBox={`0 0 ${width} ${height}`}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+          </svg>
+        ) : (
+          <canvas
+            ref={canvasRef}
+            style={{ width, height, border: "1px solid black" }}
+            width={width}
+            height={height}
+          />
+        )}
+      </div>
       {!didFirstRender ? (
-        <p>Loading...</p>
-      ) : null}
-    </div>
+          <p>Loading...</p>
+        ) : null}
+    </>
   );
 }
