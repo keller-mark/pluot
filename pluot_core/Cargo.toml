@@ -98,9 +98,10 @@ nalgebra-glm = "0.3"
 # kurbo = { version = "0.11.3", default-features = false }
 
 # Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "b579608" }
-euclid = "0.22.11"
-fontdue = "0.9.x"
+# vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "b579608" }
+# euclid = "0.22.11"
+
+fontdue = "0.9.x" # For font rasterization and text layout.
 
 lz-str = "0.2.1" # To compress SVG strings before passing to JS.
 

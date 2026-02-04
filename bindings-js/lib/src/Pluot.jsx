@@ -128,9 +128,7 @@ export function Pluot(props) {
       await wasm.set_panic_hook();
     };
     if(!window.isPluotInitialized) {
-      window.isPluotInitialized = initWasm().then(() => {
-        setIsWasmReady(true);
-      });
+      window.isPluotInitialized = initWasm().then(() => setIsWasmReady(true));
     } else {
       window.isPluotInitialized.then(() => setIsWasmReady(true));
     }
