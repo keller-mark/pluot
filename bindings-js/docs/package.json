@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "scripts": {
     "start": "astro dev",
+    "astro-sync": "pnpm astro sync",
     "build-docs": "astro build",
     "preview-docs": "astro preview",
     "astro": "astro"

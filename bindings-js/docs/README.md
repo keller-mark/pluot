@@ -7,6 +7,13 @@ From the root of the repo:
 wasm-pack build pluot_core --dev --target web && pnpm run start-docs
 ```
 
+### Troubleshooting
+May need to run:
+
+```sh
+# Reference: https://github.com/withastro/astro/issues/5711
+pnpm run astro-sync
+```
 ## Deploy
 
 Deployment is performed automatically via GitHub Actions.
