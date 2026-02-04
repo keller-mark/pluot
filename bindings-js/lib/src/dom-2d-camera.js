@@ -358,19 +358,19 @@ const dom2dCamera = (
 
   const dispose = () => {
     camera = undefined;
-    window.removeEventListener("keydown", keyDownHandler);
-    window.removeEventListener("keyup", keyUpHandler);
+    element.removeEventListener("keydown", keyDownHandler);
+    element.removeEventListener("keyup", keyUpHandler);
     element.removeEventListener("mousedown", mouseDownHandler);
-    window.removeEventListener("mouseup", mouseUpHandler);
-    window.removeEventListener("mousemove", mouseMoveHandler);
+    element.removeEventListener("mouseup", mouseUpHandler);
+    element.removeEventListener("mousemove", mouseMoveHandler);
     element.removeEventListener("wheel", wheelHandler);
   };
 
-  window.addEventListener("keydown", keyDownHandler, { passive: true });
-  window.addEventListener("keyup", keyUpHandler, { passive: true });
+  element.addEventListener("keydown", keyDownHandler, { passive: true });
+  element.addEventListener("keyup", keyUpHandler, { passive: true });
   element.addEventListener("mousedown", mouseDownHandler, { passive: true });
-  window.addEventListener("mouseup", mouseUpHandler, { passive: true });
-  window.addEventListener("mousemove", mouseMoveHandler, { passive: true });
+  element.addEventListener("mouseup", mouseUpHandler, { passive: true });
+  element.addEventListener("mousemove", mouseMoveHandler, { passive: true });
   element.addEventListener("wheel", wheelHandler, { passive: false });
 
   camera.config = config;

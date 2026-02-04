@@ -18,6 +18,9 @@ const Pluot = lazy(async () => {
 export function PluotWrapper(props) {
     const {
         storeUrl,
+        width = 500,
+        height = 500,
+        plotId = "example-plot",
     } = props;
 
     const store = useMemo(() => {
@@ -27,15 +30,12 @@ export function PluotWrapper(props) {
     return (
         <Pluot
             store={store}
-            width={500}
-            height={500}
-            plotId={"example-plot"}
+            width={width}
+            height={height}
+            plotId={plotId}
             plotType={"LayeredPlot"}
             plotParams={{
-                x_key: "/n_1000000/x_coords",
-                y_key: "/n_1000000/y_coords",
-                color_key: "/n_1000000/class_labels",
-                point_radius: 5.0,
+                layers: []
             }}
             mode={"2d"}
             marginLeft={0}

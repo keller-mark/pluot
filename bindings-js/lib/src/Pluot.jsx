@@ -64,6 +64,7 @@ if (typeof window !== 'undefined') {
     // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
     return stores[store_name].getRange(`/${key}`, { suffix_length });
   };
+  window.isPluotInitialized = null;
 }
 
 export function Pluot(props) {
@@ -105,8 +106,13 @@ export function Pluot(props) {
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
-
-  const [viewMatrix, setViewMatrix] = useState(DEFAULT_VIEW);
+  
+  const [viewMatrix, setViewMatrix] = useState(
+    // Note: We use an initializer function here to avoid
+    // sharing the same Float32Array among multiple Pluot
+    // component instances that may be rendered on the same page.
+    () => new Float32Array(DEFAULT_VIEW)
+  );
   const [isRendering, setIsRendering] = useState(false);
   const [didFirstRender, setDidFirstRender] = useState(false);
 
@@ -120,9 +126,14 @@ export function Pluot(props) {
     const initWasm = async () => {
       await wasm.default();
       await wasm.set_panic_hook();
-      setIsWasmReady(true);
     };
-    initWasm();
+    if(!window.isPluotInitialized) {
+      window.isPluotInitialized = initWasm().then(() => {
+        setIsWasmReady(true);
+      });
+    } else {
+      window.isPluotInitialized.then(() => setIsWasmReady(true));
+    }
   }, []);
 
   useEffect(() => {
@@ -263,7 +274,9 @@ export function Pluot(props) {
 
   useEffect(() => {
     // Reset view matrix on plot change.
-    setViewMatrix(DEFAULT_VIEW);
+    // Create a new Float32Array to avoid sharing a mutable array
+    // among multiple Pluot component instances.
+    setViewMatrix(new Float32Array(DEFAULT_VIEW));
   }, [plotId]);
 
   // TODO: switch this useEffect to use React-Query.

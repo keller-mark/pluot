@@ -4,4 +4,13 @@ description: Coordinated multiple views example.
 sidebar:
     order: 98
 ---
-TODO
+import { CmvExample } from '../../../components/CmvExample.jsx';
+
+This example demonstrates coordinated multiple views (CMV) using two scatterplots.
+
+Their point radius values are linked, but their camera matrices (zoom/pan states) are independent.
+
+<CmvExample
+    client:load
+    client:only="react"
+/>
