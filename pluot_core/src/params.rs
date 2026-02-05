@@ -19,43 +19,24 @@ pub enum GraphicsFormat {
     Vector,
 }
 
-
-// TODO: use Observable Plot-like parameter names:
-// https://observablehq.com/plot/marks/bar
-
-/*
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ScatterplotRenderParams {
-    pub x_key: String,
-    pub y_key: String,
-    pub color_key: Option<String>,
-    pub point_radius: Option<f32>,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ViewMode {
+    // 2D ~= OrthographicView in DeckGL terms
+    // Reference: https://deck.gl/docs/developer-guide/views#types-of-views
+    #[serde(rename = "2d")]
+    TwoD,
+    // 3D ~= OrbitView in DeckGL terms
+    #[serde(rename = "3d")]
+    ThreeD,
+    // Note that 3D may have multiple camera modes
+    // (e.g., orbit, turntable, matrix), but perhaps only the
+    // interactive adapter needs to care about that.
+    // Reference: https://github.com/mikolalysenko/3d-view
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Scatterplot3dRenderParams {
-    pub x_key: String,
-    pub y_key: String,
-    pub z_key: String,
-    pub color_key: Option<String>,
-    pub point_radius: Option<f32>,
-}
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BioimageRenderParams {
-    pub channel_indices: Vec<u32>,
-    pub channel_windows: Vec<(f32, f32)>,
-    pub channel_colors: Vec<(f32, f32, f32)>, // RGB colors as floats in [0.0, 1.0]
-    pub target_z: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BarPlotRenderParams {
-    pub x_key: String,
-    pub y_key: String,
-    pub color_key: Option<String>,
-}
-*/
+// TODO: use more Observable Plot-like parameter names?
+// Reference: https://observablehq.com/plot/marks/bar
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "layer_type", content = "layer_params")]
@@ -87,13 +68,6 @@ pub enum PlotParams {
     // { "plot_type": "Scatterplot" }
     // Reference: https://serde.rs/enum-representations.html
 
-    /*
-    Scatterplot(ScatterplotRenderParams),
-    Scatterplot3d(Scatterplot3dRenderParams),
-    Bioimage(BioimageRenderParams),
-    BarPlot(BarPlotRenderParams),
-    Triangle, // No parameters
-    */
     LayeredPlot(LayeredPlotRenderParams),
 }
 
@@ -108,6 +82,9 @@ pub struct RenderParams {
     // Retina screens will have a value of 2.0 or higher.
     pub device_pixel_ratio: f32,
 
+    // TODO: interactive adapters may support specifying zoom/target rather than camera_view,
+    // but should internally convert to camera_view matrix if so.
+    // Alternatively, use an enum type here to allow either, and put the logic on the rust side.
     //pub zoom: Option<f32>,
     //pub target_x: Option<f32>,
     //pub target_y: Option<f32>,
@@ -115,7 +92,10 @@ pub struct RenderParams {
 
     pub aspect_ratio_mode: AspectRatioMode,
 
-    // TODO: remove plot_params. instead, directly specify `layers`` here without needing `plot_type: LayeredPlot`
+    pub view_mode: ViewMode,
+
+    // TODO: remove plot_params? instead, directly specify `layers`` here
+    // without needing the extra nesting
 
     #[serde(flatten)]
     pub plot_params: PlotParams,
@@ -135,10 +115,16 @@ pub struct RenderParams {
     pub svg_compression_enabled: bool,
 
     // Margins for plots that need them (e.g. scatterplot axes).
+    // TODO: make non-optional
     pub margin_left: Option<f32>,
     pub margin_right: Option<f32>,
     pub margin_top: Option<f32>,
     pub margin_bottom: Option<f32>,
+
+    // Pickable determines whether an extra render target is created/used
+    // to facilitate picking, but will only be true in certain situations
+    // (e.g., interactive plots).
+    pub pickable: bool,
 }
 pub struct RenderContext<'a> {
     pub store: &'a Arc<AsyncZarritaStore>,
@@ -167,6 +153,7 @@ impl Default for RenderParams {
 
             device_pixel_ratio: 1.0,
             aspect_ratio_mode: AspectRatioMode::Contain,
+            view_mode: ViewMode::TwoD,
             //zoom: None,
             //target_x: None,
             //target_y: None,
@@ -183,6 +170,7 @@ impl Default for RenderParams {
             margin_right: None,
             margin_top: None,
             margin_bottom: None,
+            pickable: false,
         }
     }
 }

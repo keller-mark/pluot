@@ -1,4 +1,4 @@
-// Inspired by the DeckGL LineLayer.
+// Inspired by the DeckGL RectLayer.
 // Reference: https://deck.gl/docs/api-reference/layers/line-layer
 
 use encase::{ShaderType, UniformBuffer};
@@ -15,35 +15,36 @@ use crate::layers::position_utils::get_point_position;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LineLayerParams {
+pub struct RectLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
     pub data_unit_mode: UnitsMode,
-    pub line_width: f32,
-    pub line_width_unit_mode: UnitsMode,
+    
+    pub stroke_width: f32,
+    pub stroke_width_unit_mode: UnitsMode,
 
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
     // TODO: improve naming here - should these be "source_x", "source_y", etc?
-    pub source_x_vec: Vec<f32>, // TODO: generalize to other numeric dtypes?
-    pub source_y_vec: Vec<f32>,
-    pub target_x_vec: Vec<f32>,
-    pub target_y_vec: Vec<f32>,
+    pub position_x0: Vec<f32>, // TODO: generalize to other numeric dtypes?
+    pub position_y0: Vec<f32>,
+    pub position_x1: Vec<f32>,
+    pub position_y1: Vec<f32>,
     pub labels_vec: Vec<i32>,
 }
 
-pub struct LineLayer {
+pub struct RectLayer {
     view_params: ViewParams,
-    layer_params: LineLayerParams,
+    layer_params: RectLayerParams,
     // TODO: getters?
 
     // Data will be None prior to runninng prepare().
-    data: Option<LineLayerData>,
+    data: Option<RectLayerData>,
 }
 
-// Internal representation for LineLayer and its "descendant" layers.
-pub struct LineLayerData {
+// Internal representation for RectLayer and its "descendant" layers.
+pub struct RectLayerData {
     // Lines are from source (x,y) to target (x,y).
     source_x_arr: Vec<f32>,
     source_y_arr: Vec<f32>,
@@ -52,21 +53,21 @@ pub struct LineLayerData {
     labels_arr: Vec<i32>,
 }
 
-impl LineLayer {
+impl RectLayer {
     pub fn new(
         view_params: ViewParams,
-        layer_params: LineLayerParams,
+        layer_params: RectLayerParams,
     ) -> Self {
         // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if(layer_params.line_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if(layer_params.stroke_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        let data = Some(LineLayerData {
+        let data = Some(RectLayerData {
             // TODO: can cloning be avoided here?
-            source_x_arr: layer_params.source_x_vec.clone(),
-            source_y_arr: layer_params.source_y_vec.clone(),
-            target_x_arr: layer_params.target_x_vec.clone(),
-            target_y_arr: layer_params.target_y_vec.clone(),
+            source_x_arr: layer_params.position_x0.clone(),
+            source_y_arr: layer_params.position_y0.clone(),
+            target_x_arr: layer_params.position_x1.clone(),
+            target_y_arr: layer_params.position_y1.clone(),
             labels_arr: layer_params.labels_vec.clone(),
         });
         Self {
@@ -79,7 +80,7 @@ impl LineLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for LineLayer {
+impl PreparedLayer for RectLayer {
     async fn prepare(&mut self) {
 
         // TODO: include the layer type in the memoization dependencies?
@@ -93,7 +94,7 @@ impl PreparedLayer for LineLayer {
 }
 
 #[derive(ShaderType, Debug)]
-struct LineLayerUniforms {
+struct RectLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     data_unit_mode: u32, // 0 = pixels, 1 = data units
@@ -104,12 +105,12 @@ struct LineLayerUniforms {
     color: Vec4,         // rgba color for points
 }
 
-// We extract this function for reuse in derived line layers (e.g., ZarrLineLayer).
+// We extract this function for reuse in derived line layers (e.g., ZarrRectLayer).
 // TODO: is this the best way to share this logic?
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
-pub async fn base_draw_line_layer(
+pub async fn base_draw_rect_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
-    data: &LineLayerData,
+    data: &RectLayerData,
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
@@ -209,7 +210,7 @@ pub async fn base_draw_line_layer(
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
     // Construct the uniform struct using Encase.
-    let uniform_struct = LineLayerUniforms {
+    let uniform_struct = RectLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
         data_unit_mode: match data_unit_mode {
@@ -246,7 +247,7 @@ pub async fn base_draw_line_layer(
     // Create bind group layout and bind group for positions + uniforms
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("LineLayer BGL"),
+            label: Some("RectLayer BGL"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     // The uniforms buffer.
@@ -318,7 +319,7 @@ pub async fn base_draw_line_layer(
         });
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("LineLayer BG"),
+            label: Some("RectLayer BG"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -349,11 +350,11 @@ pub async fn base_draw_line_layer(
         });
 
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/line_layer.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/rect_layer.wgsl"));
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("LineLayer PLD"),
+            label: Some("RectLayer PLD"),
             bind_group_layouts: &[&bind_group_layout],
             immediate_size: 0,
         });
@@ -361,7 +362,7 @@ pub async fn base_draw_line_layer(
     // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
     let render_pipeline = device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("LineLayer RPD"),
+            label: Some("RectLayer RPD"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -442,24 +443,24 @@ pub async fn base_draw_line_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for LineLayer {
+impl DrawToCanvas for RectLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-        base_draw_line_layer(
+        base_draw_rect_layer(
             device, queue, pass,
             data,
             &self.view_params,
             &self.layer_params.bounds,
             &self.layer_params.data_unit_mode,
-            self.layer_params.line_width,
-            &self.layer_params.line_width_unit_mode,
+            self.layer_params.stroke_width,
+            &self.layer_params.stroke_width_unit_mode,
         ).await;
     }
 }
 
 
-pub fn base_draw_line_layer_svg(
-    data: &LineLayerData,
+pub fn base_draw_rect_layer_svg(
+    data: &RectLayerData,
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
@@ -567,20 +568,20 @@ pub fn base_draw_line_layer_svg(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for LineLayer {
+impl DrawToSvg for RectLayer {
     async fn draw(&self, group: &Group) -> Group {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         let view_params = &self.view_params;
         let bounds = &self.layer_params.bounds;
 
-        let svg_elements = base_draw_line_layer_svg(
+        let svg_elements = base_draw_rect_layer_svg(
             data,
             view_params,
             bounds,
             &self.layer_params.data_unit_mode,
-            self.layer_params.line_width,
-            &self.layer_params.line_width_unit_mode,
+            self.layer_params.stroke_width,
+            &self.layer_params.stroke_width_unit_mode,
             &self.layer_params.layer_id,
         );
         

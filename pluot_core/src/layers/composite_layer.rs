@@ -11,7 +11,7 @@ use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::update_svg;
-use crate::layers::scatterplot_vertex::get_point_position;
+use crate::layers::position_utils::get_point_position;
 use crate::params::LayerParams;
 use crate::plots::layered_plot::get_layer;
 
