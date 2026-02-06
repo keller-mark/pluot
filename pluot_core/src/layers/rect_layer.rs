@@ -46,10 +46,10 @@ pub struct RectLayer {
 // Internal representation for RectLayer and its "descendant" layers.
 pub struct RectLayerData {
     // Lines are from source (x,y) to target (x,y).
-    source_x_arr: Vec<f32>,
-    source_y_arr: Vec<f32>,
-    target_x_arr: Vec<f32>,
-    target_y_arr: Vec<f32>,
+    position_x0_arr: Vec<f32>,
+    position_y0_arr: Vec<f32>,
+    position_x1_arr: Vec<f32>,
+    position_y1_arr: Vec<f32>,
     labels_arr: Vec<i32>,
 }
 
@@ -64,10 +64,10 @@ impl RectLayer {
         }
         let data = Some(RectLayerData {
             // TODO: can cloning be avoided here?
-            source_x_arr: layer_params.position_x0.clone(),
-            source_y_arr: layer_params.position_y0.clone(),
-            target_x_arr: layer_params.position_x1.clone(),
-            target_y_arr: layer_params.position_y1.clone(),
+            position_x0_arr: layer_params.position_x0.clone(),
+            position_y0_arr: layer_params.position_y0.clone(),
+            position_x1_arr: layer_params.position_x1.clone(),
+            position_y1_arr: layer_params.position_y1.clone(),
             labels_arr: layer_params.labels_vec.clone(),
         });
         Self {
@@ -98,8 +98,8 @@ struct RectLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     data_unit_mode: u32, // 0 = pixels, 1 = data units
-    line_width: f32,  // width of each line
-    line_width_unit_mode: u32, // 0 = pixels, 1 = data units
+    stroke_width: f32,  // width of each line
+    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     color: Vec4,         // rgba color for points
@@ -114,15 +114,15 @@ pub async fn base_draw_rect_layer(
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
-    line_width: f32,
-    line_width_unit_mode: &UnitsMode,
+    stroke_width: f32,
+    stroke_width_unit_mode: &UnitsMode,
 ) {
     // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
-    let source_x_bytes = bytemuck::cast_slice(&data.source_x_arr);
-    let source_y_bytes = bytemuck::cast_slice(&data.source_y_arr);
+    let position_x0_bytes = bytemuck::cast_slice(&data.position_x0_arr);
+    let position_y0_bytes = bytemuck::cast_slice(&data.position_y0_arr);
 
-    let target_x_bytes = bytemuck::cast_slice(&data.target_x_arr);
-    let target_y_bytes = bytemuck::cast_slice(&data.target_y_arr);
+    let position_x1_bytes = bytemuck::cast_slice(&data.position_x1_arr);
+    let position_y1_bytes = bytemuck::cast_slice(&data.position_y1_arr);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
     let n = data.labels_arr.len();
@@ -133,37 +133,37 @@ pub async fn base_draw_rect_layer(
 
 
     // Create separate buffers for X and Y coordinates
-    let source_x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Source X Coordinates Storage Buffer"),
-        size: source_x_bytes.len() as u64,
+    let position_x0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("x0 Coordinates Storage Buffer"),
+        size: position_x0_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&source_x_buffer, 0, &source_x_bytes);
+    queue.write_buffer(&position_x0_buffer, 0, &position_x0_bytes);
 
-    let source_y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Source Y Coordinates Storage Buffer"),
-        size: source_y_bytes.len() as u64,
+    let position_y0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("y0 Coordinates Storage Buffer"),
+        size: position_y0_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&source_y_buffer, 0, &source_y_bytes);
+    queue.write_buffer(&position_y0_buffer, 0, &position_y0_bytes);
 
-    let target_x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Target X Coordinates Storage Buffer"),
-        size: target_x_bytes.len() as u64,
+    let position_x1_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("x1 Coordinates Storage Buffer"),
+        size: position_x1_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&target_x_buffer, 0, &target_x_bytes);
+    queue.write_buffer(&position_x1_buffer, 0, &position_x1_bytes);
 
-    let target_y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Target Y Coordinates Storage Buffer"),
-        size: target_y_bytes.len() as u64,
+    let position_y1_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("y1 Coordinates Storage Buffer"),
+        size: position_y1_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&target_y_buffer, 0, &target_y_bytes);
+    queue.write_buffer(&position_y1_buffer, 0, &position_y1_bytes);
 
     let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Class labels Storage Buffer"),
@@ -217,8 +217,8 @@ pub async fn base_draw_rect_layer(
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
-        line_width,
-        line_width_unit_mode: match line_width_unit_mode {
+        stroke_width,
+        stroke_width_unit_mode: match stroke_width_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -328,19 +328,19 @@ pub async fn base_draw_rect_layer(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: source_x_buffer.as_entire_binding(),
+                    resource: position_x0_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: source_y_buffer.as_entire_binding(),
+                    resource: position_y0_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: target_x_buffer.as_entire_binding(),
+                    resource: position_x1_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: target_y_buffer.as_entire_binding(),
+                    resource: position_y1_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
@@ -464,8 +464,8 @@ pub fn base_draw_rect_layer_svg(
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
     data_unit_mode: &UnitsMode,
-    line_width: f32,
-    line_width_unit_mode: &UnitsMode,
+    stroke_width: f32,
+    stroke_width_unit_mode: &UnitsMode,
     layer_id: &str,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
@@ -510,10 +510,10 @@ pub fn base_draw_rect_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let source_x = data.source_x_arr[i];
-        let source_y = data.source_y_arr[i];
-        let target_x = data.target_x_arr[i];
-        let target_y = data.target_y_arr[i];
+        let source_x = data.position_x0_arr[i];
+        let source_y = data.position_y0_arr[i];
+        let target_x = data.position_x1_arr[i];
+        let target_y = data.position_y1_arr[i];
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (source_x_px, source_y_px) = get_point_position(
@@ -538,12 +538,12 @@ pub fn base_draw_rect_layer_svg(
         );
 
         // Create a circle or square element based on point_shape_mode.
-        svg_elements.push(TwoElement::Line(TwoLine {
-            x1: source_x_px as f64,
-            y1: source_y_px as f64,
-            x2: target_x_px as f64,
-            y2: target_y_px as f64,
-            linewidth: line_width as f64,
+        svg_elements.push(TwoElement::Rectangle(TwoRectangle {
+            x: source_x_px as f64,
+            y: source_y_px as f64,
+            width: (target_x_px - source_x_px) as f64,
+            height: (target_y_px - source_y_px) as f64,
+            linewidth: stroke_width as f64,
             // TODO: more params
             ..Default::default()
         }));

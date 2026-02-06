@@ -4,6 +4,7 @@ use crate::layers::core::AspectRatioMode;
 use crate::layers::scatterplot_layer::ScatterplotLayerParams;
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayerParams;
 use crate::layers::line_layer::LineLayerParams;
+use crate::layers::rect_layer::RectLayerParams;
 use crate::layers::text_layer::TextLayerParams;
 use crate::layers::bitmap_layer::BitmapLayerParams;
 use crate::layers::axis_layer::AxisLayerParams;
@@ -49,6 +50,7 @@ pub enum LayerParams {
     ZarrScatterplotLayer(ZarrScatterplotLayerParams),
 
     LineLayer(LineLayerParams),
+    RectLayer(RectLayerParams),
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),
 

@@ -1,5 +1,6 @@
 use crate::layers::bitmap_layer::BitmapLayer;
 use crate::layers::line_layer::LineLayer;
+use crate::layers::rect_layer::RectLayer;
 use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
 use crate::layers::text_layer::TextLayer;
 use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
@@ -48,6 +49,12 @@ pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dy
         },
         LayerParams::AxisLayer(params) => {
             Box::new(AxisLayer::new(
+                view_params.clone(),
+                params.clone(),
+            )) as Box<dyn PreparedAndDraw>
+        },
+        LayerParams::RectLayer(params) => {
+            Box::new(RectLayer::new(
                 view_params.clone(),
                 params.clone(),
             )) as Box<dyn PreparedAndDraw>

@@ -206,7 +206,21 @@ const DEMOS = {
               40, 140, 240, 340,
             ],
           }
-        }
+        },
+        {
+          layer_type: "RectLayer",
+          layer_params: {
+            layer_id: "rect_layer",
+            data_unit_mode: "Data",
+            stroke_width_unit_mode: "Pixels",
+            stroke_width: 5.0,
+            position_x0: [1],
+            position_y0: [1],
+            position_x1: [2],
+            position_y1: [2],
+            labels_vec: [4],
+          }
+        },
       ]
     },
   },

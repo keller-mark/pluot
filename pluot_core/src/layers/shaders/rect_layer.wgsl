@@ -62,46 +62,13 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
     );
 }
 
-// Computes the final vertex position for a line quad.
-// Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/line-layer/line-layer-vertex.glsl.h#L56
-fn extrude_line(
-    source_ndc: vec2<f32>,
-    target_ndc: vec2<f32>,
-    corner: vec2<f32>,
-    line_width_ndc: f32,
-    viewport_aspect_ratio: f32
-) -> vec2<f32> {
-    let p0 = source_ndc;
-    let p1 = target_ndc;
 
-    // Correct the aspect ratio of the line direction vector
-    // so that the normal is perpendicular in screen space.
-    var dir = p1 - p0;
-    dir.y /= viewport_aspect_ratio;
-    dir = normalize(dir);
-
-    // Calculate the normal vector strictly in screen space.
-    let normal = vec2<f32>(-dir.y, dir.x);
-    
-    // Transform normal back to NDC space for extrusion.
-    // The X component needs to be scaled down by aspect ration because
-    // NDC X units are wider than NDC Y units (physically).
-    // The Y component is kept as 1.0 scaling because line_width_ndc is defined relative to height.
-    let extrusion = vec2<f32>(normal.x / viewport_aspect_ratio, normal.y) * line_width_ndc * 0.5;
-
-    // Select the base point (source or target) and apply the extrusion.
-    // corner.x is -1 for source, +1 for target.
-    // corner.y is -1 or +1 for the side of the line.
-    let base_point = mix(p0, p1, (corner.x + 1.0) / 2.0);
-    return base_point + corner.y * extrusion;
-}
-
-struct LineLayerUniforms {
+struct RectLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     data_unit_mode: u32, // 0: px units, 1: data coordinate system units
-    line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    stroke_width: f32,
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     color: vec4<f32>,     // rgba color for points
@@ -119,11 +86,11 @@ struct FSOut {
 };
 
 // These group/binding locations will need to match with the locations used by Model.
-@group(0) @binding(0) var<uniform> u: LineLayerUniforms;
-@group(0) @binding(1) var<storage, read> source_x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> source_y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> target_x_coords: array<f32>;
-@group(0) @binding(4) var<storage, read> target_y_coords: array<f32>;
+@group(0) @binding(0) var<uniform> u: RectLayerUniforms;
+@group(0) @binding(1) var<storage, read> position_x0_coords: array<f32>;
+@group(0) @binding(2) var<storage, read> position_y0_coords: array<f32>;
+@group(0) @binding(3) var<storage, read> position_x1_coords: array<f32>;
+@group(0) @binding(4) var<storage, read> position_y1_coords: array<f32>;
 @group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
 
 
@@ -141,9 +108,9 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Source and target points of this line
-    let source_point_pos_orig = vec2<f32>(source_x_coords[instance_index], source_y_coords[instance_index]);
-    let target_point_pos_orig = vec2<f32>(target_x_coords[instance_index], target_y_coords[instance_index]);
+    // Corner points of this rect
+    let source_point_pos_orig = vec2<f32>(position_x0_coords[instance_index], position_y0_coords[instance_index]);
+    let target_point_pos_orig = vec2<f32>(position_x1_coords[instance_index], position_y1_coords[instance_index]);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -186,20 +153,24 @@ fn vs_main(
             target_point_pos_px.y / layer_height_px
         );
 
-        // Convert to NDC for extrusion calculation
-        let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
-        let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
+        // Compute the center point in normalized coordinates, to use as the origin for rotation and scaling.
+        let center_point_pos_norm = (source_point_pos_norm + target_point_pos_norm) / 2.0;
 
-        let line_width_ndc = u.line_width / layer_height_px * 2.0;
+        let half_rect_width_norm = (target_point_pos_norm.x - source_point_pos_norm.x) / 2.0;
+        let half_rect_height_norm = (target_point_pos_norm.y - source_point_pos_norm.y) / 2.0;
 
-        // Extrude the line to form a quad
-        let point_pos_ndc = extrude_line(
-            source_pos_ndc,
-            target_pos_ndc,
-            corner,
-            line_width_ndc,
-            layer_aspect_ratio
+        let point_pos_norm = vec2f(
+            center_point_pos_norm.x + half_rect_width_norm * corner.x,
+            center_point_pos_norm.y + half_rect_height_norm * corner.y,
         );
+
+        // TODO: handle rotation.
+        let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
+
+        // TODO: handle stroke width, and both unit modes for it.
+        let stroke_width_ndc = u.stroke_width / layer_height_px * 2.0;
+
+        
 
         // The final point position in NDC space.
         let pos = vec4f(
@@ -229,21 +200,22 @@ fn vs_main(
     let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
     let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
 
-    // Convert to NDC for extrusion calculation
-    let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
-    let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
+    // Compute the center point in normalized coordinates, to use as the origin for rotation and scaling.
+    let center_point_pos_norm = (source_pos_norm + target_pos_norm) / 2.0;
 
-    // TODO: Handle line_width_unit_mode == 1 (data coordinates)
-    let line_width_ndc = u.line_width / layer_height_px * 2.0;
+    let half_rect_width_norm = (target_pos_norm.x - source_pos_norm.x) / 2.0;
+    let half_rect_height_norm = (target_pos_norm.y - source_pos_norm.y) / 2.0;
 
-    // Extrude the line to form a quad
-    let point_pos_ndc = extrude_line(
-        source_pos_ndc,
-        target_pos_ndc,
-        corner,
-        line_width_ndc,
-        layer_aspect_ratio
+    let point_pos_norm = vec2f(
+        center_point_pos_norm.x + half_rect_width_norm * corner.x,
+        center_point_pos_norm.y + half_rect_height_norm * corner.y,
     );
+
+    // TODO: handle rotation.
+    let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
+
+    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates)
+    let stroke_width_ndc = u.stroke_width / layer_height_px * 2.0;
 
     // The final point position in NDC space.
     let pos = vec4f(
