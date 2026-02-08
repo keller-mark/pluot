@@ -136,6 +136,21 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    // TODO: handle stroke width.
+    // We want to handle stroke-width in the same way as an SVG <rect> element would:
+    // If you have a <rect> with a width="100" and a stroke-width="10", the browser calculates it like this:
+    // - The mathematical border (the path) is a line exactly at 100px.
+    // - The stroke is 10px thick.
+    // - The browser draws 5px of that stroke extending outward from the path.
+    // - The browser draws 5px of that stroke extending inward from the path.
+    // Result: the total visual size of the object will be 110px (100 width + 5 left overhang + 5 right overhang).
+
+    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates) (will involve the camera matrix).
+    // Note: data stroke_width units is only supported when also using data units for the positions,
+    // so we do not need to support data stroke width units when using pixel units for the positions.
+    let stroke_width_norm = u.stroke_width / layer_height_px;
+    let stroke_width_half_norm = stroke_width_norm / 2.0;
+
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
     if(u.data_unit_mode == 0u) {
@@ -168,9 +183,7 @@ fn vs_main(
         let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
         // TODO: handle stroke width, and both unit modes for it.
-        let stroke_width_ndc = u.stroke_width / layer_height_px * 2.0;
 
-        
 
         // The final point position in NDC space.
         let pos = vec4f(
@@ -214,8 +227,8 @@ fn vs_main(
     // TODO: handle rotation.
     let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates)
-    let stroke_width_ndc = u.stroke_width / layer_height_px * 2.0;
+
+
 
     // The final point position in NDC space.
     let pos = vec4f(

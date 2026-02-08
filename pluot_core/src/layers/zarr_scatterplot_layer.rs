@@ -4,7 +4,7 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
 use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
-use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerData, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
+use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerParams, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
 use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
@@ -34,6 +34,11 @@ pub struct ZarrScatterplotLayerParams {
 
 // TODO: defaults for params?
 
+pub struct ZarrScatterplotLayerData {
+    pub x_arr: Arc<Vec<f32>>,
+    pub y_arr: Arc<Vec<f32>>,
+    pub labels_arr: Arc<Vec<i32>>,
+}
 
 pub struct ZarrScatterplotLayer {
     view_params: ViewParams,
@@ -42,7 +47,7 @@ pub struct ZarrScatterplotLayer {
     store: Arc<AsyncZarritaStore>,
     store_name: String,
     // Data will be None prior to runninng prepare().
-    data: Option<ScatterplotLayerData>,
+    data: Option<ZarrScatterplotLayerData>,
 }
 
 impl ZarrScatterplotLayer {
@@ -133,7 +138,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
         let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
 
-        self.data = Some(ScatterplotLayerData {
+        self.data = Some(ZarrScatterplotLayerData {
             x_arr: x_f32,
             y_arr: y_f32,
             labels_arr: l_i32,
@@ -146,15 +151,21 @@ impl PreparedLayer for ZarrScatterplotLayer {
 impl DrawToCanvas for ZarrScatterplotLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+
         base_draw_scatterplot_layer(
             device, queue, pass,
-            data,
             &self.view_params,
-            &self.layer_params.bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.point_radius,
-            &self.layer_params.point_radius_unit_mode,
-            &self.layer_params.point_shape_mode,
+            &ScatterplotLayerParams {
+                layer_id: self.layer_params.layer_id.clone(),
+                bounds: self.layer_params.bounds.clone(),
+                data_unit_mode: self.layer_params.data_unit_mode.clone(),
+                point_radius: self.layer_params.point_radius,
+                point_radius_unit_mode: self.layer_params.point_radius_unit_mode.clone(),
+                point_shape_mode: self.layer_params.point_shape_mode.clone(),
+                x_vec: data.x_arr.clone(),
+                y_vec: data.y_arr.clone(),
+                labels_vec: data.labels_arr.clone(),
+            },
         ).await;
     }
 }
@@ -166,29 +177,24 @@ impl DrawToSvg for ZarrScatterplotLayer {
     async fn draw(&self, group: &Group) -> Group {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
-        let view_params = &self.view_params;
-        let bounds = &self.layer_params.bounds;
-
         let svg_elements = base_draw_scatterplot_layer_svg(
-            data,
-            view_params,
-            bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.point_radius,
-            &self.layer_params.point_radius_unit_mode,
-            &self.layer_params.point_shape_mode,
-            &self.layer_params.layer_id,
+            &self.view_params,
+            &ScatterplotLayerParams {
+                layer_id: self.layer_params.layer_id.clone(),
+                bounds: self.layer_params.bounds.clone(),
+                data_unit_mode: self.layer_params.data_unit_mode.clone(),
+                point_radius: self.layer_params.point_radius,
+                point_radius_unit_mode: self.layer_params.point_radius_unit_mode.clone(),
+                point_shape_mode: self.layer_params.point_shape_mode.clone(),
+                x_vec: data.x_arr.clone(),
+                y_vec: data.y_arr.clone(),
+                labels_vec: data.labels_arr.clone(),
+            },
         );
 
-        // TODO: use an SVG group with a transform and clipping to handle margins,
-        // similar to the usage of scissor rect and viewport in the Canvas rendering.
-        
         // TODO: refactor to avoid the cloning here?
         let updated_group = update_svg(group.clone(), &svg_elements);
 
-        log("Done drawing ZarrScatterplotLayer to SVG.");
-
         return updated_group.clone();
-        
     }
 }
