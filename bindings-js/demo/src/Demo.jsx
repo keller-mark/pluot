@@ -78,12 +78,12 @@ const DEMOS = {
             point_radius_unit_mode: "Pixels",
             point_shape_mode: "Circle",
             point_radius: 5.0,
-            store_name: "gaussian_quantiles_store",
+            store_name: "gaussian_quantiles_store_compressed",
             bounds: null,
 
-            x_key: "/n_1000000/x_coords",
-            y_key: "/n_1000000/y_coords",
-            color_key: "/n_1000000/class_labels",
+            x_key: "/n_100000/x_coords",
+            y_key: "/n_100000/y_coords",
+            color_key: "/n_100000/class_labels",
           }
         },
         {
