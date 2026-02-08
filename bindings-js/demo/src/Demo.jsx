@@ -2,69 +2,6 @@ import React, { useState } from "react";
 import { Pluot } from "@pluot/react";
 
 const DEMOS = {
-  /*
-  triangle: {
-    plot_type: "Triangle",
-    store_name: "",
-    plot_params: {},
-  },
-  scatterplot_1m: {
-    plot_type: "Scatterplot",
-    store_name: "gaussian_quantiles_store",
-    plot_params: {
-      x_key: "/n_1000000/x_coords",
-      y_key: "/n_1000000/y_coords",
-      color_key: "/n_1000000/class_labels",
-      //point_radius: pointRadius,
-    },
-  },
-  scatterplot_3d: {
-    plot_type: "Scatterplot3d",
-    store_name: "gaussian_quantiles_store",
-    plot_params: {
-      x_key: "/n_100000/x_coords",
-      y_key: "/n_100000/y_coords",
-      z_key: "/n_100000/z_coords",
-      color_key: "/n_100000/class_labels",
-      point_radius: 5.0,
-    },
-  },
-  scatterplot_mnist: {
-    plot_type: "Scatterplot",
-    store_name: "mnist_store",
-    plot_params: {
-      x_key: "/densmap/x_coords",
-      y_key: "/densmap/y_coords",
-      color_key: "/densmap/class_labels",
-      //point_radius: pointRadius,
-    },
-  },
-  ome_ngff: {
-    plot_type: "Bioimage",
-    store_name: "ome_ngff",
-    plot_params: {
-      // target_z: zIndex,
-      // channel_indices: [0, 1],
-      // channel_windows: [
-      //     ch0Window,
-      //     ch1Window,
-      // ],
-      // channel_colors: [
-      //     ch0color,
-      //     ch1color,
-      // ],
-    },
-  },
-  bar_plot: {
-    // Reference: https://altair-viz.github.io/gallery/bar_chart_with_highlighted_bar.html
-    plot_type: "BarPlot",
-    store_name: "wheat",
-    plot_params: {
-      x_key: "/year",
-      y_key: "/wheat",
-    }
-  },
-  */
   layered_plot: {
     plot_type: "LayeredPlot",
     store_name: "gaussian_quantiles_store",
@@ -81,9 +18,9 @@ const DEMOS = {
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_1000000/x_coords",
-            y_key: "/n_1000000/y_coords",
-            color_key: "/n_1000000/class_labels",
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
           }
         },
         {

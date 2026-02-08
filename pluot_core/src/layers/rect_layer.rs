@@ -5,14 +5,17 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
-use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use svg::node::element::Group;
-use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
-use crate::two::svg::update_svg;
+use crate::layers::core::{
+    AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+};
 use crate::layers::position_utils::get_point_position;
-
+use crate::two::shapes::{
+    TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
+};
+use crate::two::svg::update_svg;
+use crate::wgpu;
+use svg::node::element::Group;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RectLayerParams {
@@ -20,7 +23,7 @@ pub struct RectLayerParams {
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
     pub data_unit_mode: UnitsMode,
-    
+
     pub stroke_width: f32,
     pub stroke_width_unit_mode: UnitsMode,
 
@@ -54,12 +57,11 @@ pub struct RectLayerData {
 }
 
 impl RectLayer {
-    pub fn new(
-        view_params: ViewParams,
-        layer_params: RectLayerParams,
-    ) -> Self {
+    pub fn new(view_params: ViewParams, layer_params: RectLayerParams) -> Self {
         // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if(layer_params.stroke_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if (layer_params.stroke_width_unit_mode == UnitsMode::Data
+            && layer_params.data_unit_mode == UnitsMode::Pixels)
+        {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         let data = Some(RectLayerData {
@@ -95,21 +97,23 @@ impl PreparedLayer for RectLayer {
 
 #[derive(ShaderType, Debug)]
 struct RectLayerUniforms {
-    layer_size: Vec2, // (layer_width, layer_height) in pixels
-    camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode: u32, // 0 = pixels, 1 = data units
-    stroke_width: f32,  // width of each line
-    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units
-    aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
+    layer_size: Vec2,                 // (layer_width, layer_height) in pixels
+    camera_view: Mat4,                // mat4x4<f32>,
+    data_unit_mode: u32,              // 0 = pixels, 1 = data units
+    stroke_width: f32,                // width of each line
+    stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
+    aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
-    color: Vec4,         // rgba color for points
+    color: Vec4,                      // rgba color for points
 }
 
 // We extract this function for reuse in derived line layers (e.g., ZarrRectLayer).
 // TODO: is this the best way to share this logic?
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 pub async fn base_draw_rect_layer(
-    device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pass: &mut wgpu::RenderPass<'_>,
     data: &RectLayerData,
     view_params: &ViewParams,
     layer_bounds: &Option<MarginParams>,
@@ -130,7 +134,6 @@ pub async fn base_draw_rect_layer(
     // Convert to f32 and cast to bytes directly - no for loop needed
     let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
     let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
-
 
     // Create separate buffers for X and Y coordinates
     let position_x0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -192,16 +195,24 @@ pub async fn base_draw_rect_layer(
 
     let margin_top = if let Some(margin_params) = &bounds {
         margin_params.margin_top.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
     let margin_right = if let Some(margin_params) = &bounds {
         margin_params.margin_right.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
     let margin_bottom = if let Some(margin_params) = &bounds {
         margin_params.margin_bottom.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
     let margin_left = if let Some(margin_params) = &bounds {
         margin_params.margin_left.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
 
     let viewport_w = view_params.width as f32;
     let viewport_h = view_params.height as f32;
@@ -243,167 +254,161 @@ pub async fn base_draw_rect_layer(
     });
     queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
-
     // Create bind group layout and bind group for positions + uniforms
-    let bind_group_layout = device
-        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("RectLayer BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    // The uniforms buffer.
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("RectLayer BGL"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                // The uniforms buffer.
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    // The Source X coordinates buffer.
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Source X coordinates buffer.
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    // The Source Y coordinates buffer.
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Source Y coordinates buffer.
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    // The Target X coordinates buffer.
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Target X coordinates buffer.
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    // The Target Y coordinates buffer.
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Target Y coordinates buffer.
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    // The class labels coordinates buffer.
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The class labels coordinates buffer.
+                binding: 5,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-            ],
-        });
-    let bind_group = device
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("RectLayer BG"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: position_x0_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: position_y0_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: position_x1_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: position_y1_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: labels_buffer.as_entire_binding(),
-                },
-            ],
-        });
+                count: None,
+            },
+        ],
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("RectLayer BG"),
+        layout: &bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: position_x0_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: position_y0_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: position_x1_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: position_y1_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: labels_buffer.as_entire_binding(),
+            },
+        ],
+    });
 
-    let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/rect_layer.wgsl"));
+    let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/rect_layer.wgsl"));
 
-    let render_pipeline_layout = device
-        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("RectLayer PLD"),
-            bind_group_layouts: &[&bind_group_layout],
-            immediate_size: 0,
-        });
+    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("RectLayer PLD"),
+        bind_group_layouts: &[&bind_group_layout],
+        immediate_size: 0,
+    });
 
     // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
-    let render_pipeline = device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("RectLayer RPD"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
-        });
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("RectLayer RPD"),
+        layout: Some(&render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        cache: None,
+        multiview_mask: None,
+    });
 
     // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
-    
+
     // Handle margins by adjusting viewport and scissor rect.
     // This allows us to avoid accounting for margins in the shaders, simplifying them.
     // (Shaders can simply assume the full viewport size is the plot area.)
@@ -445,19 +450,24 @@ pub async fn base_draw_rect_layer(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for RectLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+        let data = self
+            .data
+            .as_ref()
+            .expect("Data was not prepared. Call prepare() first.");
         base_draw_rect_layer(
-            device, queue, pass,
+            device,
+            queue,
+            pass,
             data,
             &self.view_params,
             &self.layer_params.bounds,
             &self.layer_params.data_unit_mode,
             self.layer_params.stroke_width,
             &self.layer_params.stroke_width_unit_mode,
-        ).await;
+        )
+        .await;
     }
 }
-
 
 pub fn base_draw_rect_layer_svg(
     data: &RectLayerData,
@@ -490,16 +500,24 @@ pub fn base_draw_rect_layer_svg(
 
     let margin_top = if let Some(margin_params) = &bounds {
         margin_params.margin_top.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
     let margin_right = if let Some(margin_params) = &bounds {
         margin_params.margin_right.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
     let margin_bottom = if let Some(margin_params) = &bounds {
         margin_params.margin_bottom.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
     let margin_left = if let Some(margin_params) = &bounds {
         margin_params.margin_left.unwrap_or(0.0)
-    } else { 0.0 } as f64;
+    } else {
+        0.0
+    } as f64;
 
     let viewport_w = view_params.width as f32;
     let viewport_h = view_params.height as f32;
@@ -539,10 +557,10 @@ pub fn base_draw_rect_layer_svg(
 
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Rectangle(TwoRectangle {
-            x: source_x_px as f64,
-            y: source_y_px as f64,
-            width: (target_x_px - source_x_px) as f64,
-            height: (target_y_px - source_y_px) as f64,
+            x: source_x_px.min(target_x_px) as f64,
+            y: source_y_px.min(target_y_px) as f64,
+            width: (target_x_px - source_x_px).abs() as f64,
+            height: (target_y_px - source_y_px).abs() as f64,
             linewidth: stroke_width as f64,
             // TODO: more params
             ..Default::default()
@@ -551,26 +569,26 @@ pub fn base_draw_rect_layer_svg(
 
     // Insert rects into an SVG group with a transform and clipping to handle margins,
     // similar to the usage of scissor rect and viewport in the Canvas rendering.
-    let layer_group_vec = vec![
-        TwoElement::Group(TwoGroup {
-            elements: svg_elements,
-            translate: Some((margin_left, margin_top)),
-            layer_id: Some(layer_id.to_string()),
-            // TODO: check how clip_rect interacts with the translate
-            clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
-            ..Default::default()
-        })
-    ];
+    let layer_group_vec = vec![TwoElement::Group(TwoGroup {
+        elements: svg_elements,
+        translate: Some((margin_left, margin_top)),
+        layer_id: Some(layer_id.to_string()),
+        // TODO: check how clip_rect interacts with the translate
+        clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+        ..Default::default()
+    })];
 
     return layer_group_vec;
 }
-
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for RectLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+        let data = self
+            .data
+            .as_ref()
+            .expect("Data was not prepared. Call prepare() first.");
 
         let view_params = &self.view_params;
         let bounds = &self.layer_params.bounds;
@@ -584,11 +602,10 @@ impl DrawToSvg for RectLayer {
             &self.layer_params.stroke_width_unit_mode,
             &self.layer_params.layer_id,
         );
-        
+
         // TODO: refactor to avoid the cloning here?
         let updated_group = update_svg(group.clone(), &svg_elements);
 
         return updated_group.clone();
     }
 }
-
