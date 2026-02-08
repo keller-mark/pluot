@@ -35,6 +35,7 @@ const stores = {
   // Note: when using a timeout parameter, we still may want to use a cache
   // for in-progress promises (but not for their returned data).
   gaussian_quantiles_store: new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
+  gaussian_quantiles_store_compressed: new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"),
   ome_ngff: lru(
     new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
   ),
