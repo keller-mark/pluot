@@ -15,8 +15,8 @@ use crate::wgpu;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TileLayerParams {
     pub layer_id: String,
-    /// The pixel dimension of the tiles, usually a power of 2 (e.g., 256 or 512).
-    pub tile_size: u32,
+    /// The size of each tile in data units.
+    pub tile_size: f64,
 }
 
 
@@ -103,51 +103,17 @@ impl TileLayer {
         (min_x as f64, max_x as f64, min_y as f64, max_y as f64)
     }
 
-    /// Determine the appropriate tile zoom level from the camera zoom and scale factor.
-    /// Returns a non-negative integer zoom level where level 0 means 1 tile covers (0,1)x(0,1),
-    /// level 1 means 2x2 tiles, level 2 means 4x4 tiles, etc.
-    fn get_tile_zoom_level(&self) -> u32 {
-        let (zoom, _, _) = self.get_view_transform();
-
-        let bounds = &self.view_params.margins;
-        let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
-        let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
-        let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
-        let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
-
-        let viewport_w = self.view_params.width as f64;
-        let viewport_h = self.view_params.height as f64;
-
-        let layer_w = viewport_w - margin_left - margin_right;
-        let layer_h = viewport_h - margin_top - margin_bottom;
-
-        // The layer dimension that determines how many pixels are available.
-        let layer_dim = layer_w.min(layer_h);
-        let tile_size = self.layer_params.tile_size as f64;
-
-        // At zoom level z, one tile covers 1/(2^z) of the data range in each axis.
-        // The data range visible on screen spans ~(layer_dim * zoom) pixels per unit data.
-        // A tile spanning 1/(2^z) data units should be roughly tile_size pixels.
-        // So: (layer_dim * zoom) / (2^z) ~ tile_size
-        // => 2^z ~ (layer_dim * zoom) / tile_size
-        // => z ~ log2((layer_dim * zoom) / tile_size)
-        let z = ((layer_dim * zoom as f64) / tile_size).log2();
-        z.max(0.0).floor() as u32
-    }
-
     /// Build RectLayer sublayers for each visible tile.
     fn build_sublayers(&self) -> Vec<Box<dyn PreparedAndDraw>> {
-        let tile_zoom = self.get_tile_zoom_level();
-        let num_tiles_per_axis = 1u32 << tile_zoom; // 2^tile_zoom
-        let tile_data_size = 1.0 / num_tiles_per_axis as f64; // size of one tile in data coords
-
+        let tile_size = self.layer_params.tile_size;
         let (min_x, max_x, min_y, max_y) = self.get_visible_range();
 
         // Determine the range of tile indices that overlap the visible area.
-        let tile_col_start = ((min_x / tile_data_size).floor() as i32).max(0) as u32;
-        let tile_col_end = ((max_x / tile_data_size).ceil() as i32).min(num_tiles_per_axis as i32) as u32;
-        let tile_row_start = ((min_y / tile_data_size).floor() as i32).max(0) as u32;
-        let tile_row_end = ((max_y / tile_data_size).ceil() as i32).min(num_tiles_per_axis as i32) as u32;
+        // Tile (col, row) covers data range [col*tile_size, (col+1)*tile_size) x [row*tile_size, (row+1)*tile_size).
+        let tile_col_start = (min_x / tile_size).floor() as i32;
+        let tile_col_end = (max_x / tile_size).ceil() as i32;
+        let tile_row_start = (min_y / tile_size).floor() as i32;
+        let tile_row_end = (max_y / tile_size).ceil() as i32;
 
         let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
 
@@ -169,10 +135,10 @@ impl TileLayer {
 
         for row in tile_row_start..tile_row_end {
             for col in tile_col_start..tile_col_end {
-                let x0 = col as f64 * tile_data_size;
-                let y0 = row as f64 * tile_data_size;
-                let x1 = x0 + tile_data_size;
-                let y1 = y0 + tile_data_size;
+                let x0 = col as f64 * tile_size;
+                let y0 = row as f64 * tile_size;
+                let x1 = x0 + tile_size;
+                let y1 = y0 + tile_size;
 
                 x0_vec.push(x0 as f32);
                 y0_vec.push(y0 as f32);
@@ -185,7 +151,7 @@ impl TileLayer {
 
         if !x0_vec.is_empty() {
             let rect_params = RectLayerParams {
-                layer_id: format!("{}_tiles_z{}", self.layer_params.layer_id, tile_zoom),
+                layer_id: format!("{}_tiles", self.layer_params.layer_id),
                 bounds: self.view_params.margins.clone(),
                 data_unit_mode: UnitsMode::Data,
                 stroke_width: 1.0,
