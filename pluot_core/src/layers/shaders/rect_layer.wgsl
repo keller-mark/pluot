@@ -78,7 +78,10 @@ struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) quad_pos: vec2<f32>,
+    // interpolate(flat) means no interpolation
+    // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-inter-stage-variables.html#a-interpolate
     @location(2) @interpolate(flat) instance_index: u32,
+    @location(3) @interpolate(flat) rect_size_px: vec2<f32>,
 };
 
 struct FSOut {
@@ -174,30 +177,34 @@ fn vs_main(
         let half_rect_width_norm = (target_point_pos_norm.x - source_point_pos_norm.x) / 2.0;
         let half_rect_height_norm = (target_point_pos_norm.y - source_point_pos_norm.y) / 2.0;
 
+        // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
+        // stroke_width is in pixels; convert half of it to normalized coords (separate x/y for aspect ratio).
+        let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
+        let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+
+        let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
+        let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
+
         let point_pos_norm = vec2f(
-            center_point_pos_norm.x + half_rect_width_norm * corner.x,
-            center_point_pos_norm.y + half_rect_height_norm * corner.y,
+            center_point_pos_norm.x + expanded_half_w * corner.x,
+            center_point_pos_norm.y + expanded_half_h * corner.y,
         );
 
         // TODO: handle rotation.
         let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
-        // TODO: handle stroke width, and both unit modes for it.
+        // Original rect size in pixels (before stroke expansion), for the fragment shader.
+        let rect_w_px = abs(target_point_pos_px.x - source_point_pos_px.x);
+        let rect_h_px = abs(target_point_pos_px.y - source_point_pos_px.y);
 
-
-        // The final point position in NDC space.
-        let pos = vec4f(
-            point_pos_ndc.x,
-            point_pos_ndc.y,
-            0.0,
-            1.0
-        );
+        let pos = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
 
         var out: VSOut;
         out.position = pos;
         out.color = u.color;
         out.quad_pos = (corner + 1.0) * 0.5;
         out.instance_index = instance_index;
+        out.rect_size_px = vec2f(rect_w_px, rect_h_px);
         return out;
     }
 
@@ -219,30 +226,35 @@ fn vs_main(
     let half_rect_width_norm = (target_pos_norm.x - source_pos_norm.x) / 2.0;
     let half_rect_height_norm = (target_pos_norm.y - source_pos_norm.y) / 2.0;
 
+    // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
+    // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
+    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
+    let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
+    let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+
+    let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
+    let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
+
     let point_pos_norm = vec2f(
-        center_point_pos_norm.x + half_rect_width_norm * corner.x,
-        center_point_pos_norm.y + half_rect_height_norm * corner.y,
+        center_point_pos_norm.x + expanded_half_w * corner.x,
+        center_point_pos_norm.y + expanded_half_h * corner.y,
     );
 
     // TODO: handle rotation.
     let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
+    // Original rect size in pixels (before stroke expansion), for the fragment shader.
+    let rect_w_px = abs(target_pos_norm.x - source_pos_norm.x) * layer_width_px;
+    let rect_h_px = abs(target_pos_norm.y - source_pos_norm.y) * layer_height_px;
 
-
-
-    // The final point position in NDC space.
-    let pos = vec4f(
-        point_pos_ndc.x,
-        point_pos_ndc.y,
-        0.0,
-        1.0
-    );
+    let pos = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
 
     var out: VSOut;
     out.position = pos;
     out.color = u.color;
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
+    out.rect_size_px = vec2f(rect_w_px, rect_h_px);
     return out;
 }
 
@@ -271,9 +283,32 @@ fn fs_main(
     @location(0) color_in: vec4<f32>,
     @location(1) quad_pos: vec2<f32>,
     @location(2) @interpolate(flat) instance_index: u32,
+    @location(3) @interpolate(flat) rect_size_px: vec2<f32>,
 ) -> FSOut {
 
     let category_color = get_categorical_color(labels_coords[instance_index]);
+
+    // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
+    // The stroke band is stroke_width thick from the outer edge inward
+    // (stroke_width/2 was added outward + stroke_width/2 extends inward from the original boundary).
+    let expanded_w = rect_size_px.x + u.stroke_width;
+    let expanded_h = rect_size_px.y + u.stroke_width;
+
+    let stroke_frac_x = u.stroke_width / expanded_w;
+    let stroke_frac_y = u.stroke_width / expanded_h;
+
+    // quad_pos ranges from (0,0) to (1,1) across the expanded quad.
+    // If the fragment is beyond the stroke band on ALL four sides, it's interior — discard.
+    let inside_left   = quad_pos.x > stroke_frac_x;
+    let inside_right  = quad_pos.x < (1.0 - stroke_frac_x);
+    let inside_bottom = quad_pos.y > stroke_frac_y;
+    let inside_top    = quad_pos.y < (1.0 - stroke_frac_y);
+
+    // TODO: do not completely discard if there is a fill color;
+    // render using the fill color as opposed to the stroke color.
+    if (inside_left && inside_right && inside_bottom && inside_top) {
+        discard;
+    }
 
     var out: FSOut;
     // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
