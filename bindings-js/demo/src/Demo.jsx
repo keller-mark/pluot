@@ -158,6 +158,13 @@ const DEMOS = {
             labels_vec: [4],
           }
         },
+        {
+          layer_type: "TileLayer",
+          layer_params: {
+            layer_id: "tile_layer",
+            tile_size: 4,
+          }
+        },
       ]
     },
   },

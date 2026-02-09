@@ -8,6 +8,7 @@ use crate::layers::rect_layer::RectLayerParams;
 use crate::layers::text_layer::TextLayerParams;
 use crate::layers::bitmap_layer::BitmapLayerParams;
 use crate::layers::axis_layer::AxisLayerParams;
+use crate::layers::tile_layer::TileLayerParams;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -45,7 +46,7 @@ pub enum LayerParams {
     // Using adjacently tagged enum representation.
     // { "layer_type": "ScatterplotLayer" }
     // Reference: https://serde.rs/enum-representations.html
-    
+
     ScatterplotLayer(ScatterplotLayerParams),
     ZarrScatterplotLayer(ZarrScatterplotLayerParams),
 
@@ -55,6 +56,7 @@ pub enum LayerParams {
     BitmapLayer(BitmapLayerParams),
 
     AxisLayer(AxisLayerParams),
+    TileLayer(TileLayerParams)
 }
 
 #[derive(Serialize, Deserialize, Debug)]

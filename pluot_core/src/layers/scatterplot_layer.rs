@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc};
 
 use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::wgpu;
@@ -12,7 +13,6 @@ use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::update_svg;
 use crate::layers::position_utils::get_point_position;
-use std::sync::{Arc};
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -44,6 +44,8 @@ pub struct ScatterplotLayerParams {
 // TODO: defaults for params?
 
 
+// TODO: rename to PointLayer
+// (to save the name "ScatterplotLayer" for some future compositeLayer that includes axes, etc.)
 pub struct ScatterplotLayer {
     view_params: ViewParams,
     layer_params: ScatterplotLayerParams,

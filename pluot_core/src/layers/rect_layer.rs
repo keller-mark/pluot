@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc};
 
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::layers::core::{
@@ -30,52 +31,30 @@ pub struct RectLayerParams {
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
     // TODO: improve naming here - should these be "source_x", "source_y", etc?
-    pub position_x0: Vec<f32>, // TODO: generalize to other numeric dtypes?
-    pub position_y0: Vec<f32>,
-    pub position_x1: Vec<f32>,
-    pub position_y1: Vec<f32>,
-    pub labels_vec: Vec<i32>,
+    pub position_x0: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
+    pub position_y0: Arc<Vec<f32>>,
+    // TODO: accept x/y/width/height instead?
+    pub position_x1: Arc<Vec<f32>>,
+    pub position_y1: Arc<Vec<f32>>,
+    pub labels_vec: Arc<Vec<i32>>,
 }
 
+// TODO: consider eliminating once we have a PolygonLayer?
+// (or implementing using the eventual PolygonLayer internally)
 pub struct RectLayer {
     view_params: ViewParams,
     layer_params: RectLayerParams,
-    // TODO: getters?
-
-    // Data will be None prior to runninng prepare().
-    data: Option<RectLayerData>,
-}
-
-// Internal representation for RectLayer and its "descendant" layers.
-pub struct RectLayerData {
-    // Lines are from source (x,y) to target (x,y).
-    position_x0_arr: Vec<f32>,
-    position_y0_arr: Vec<f32>,
-    position_x1_arr: Vec<f32>,
-    position_y1_arr: Vec<f32>,
-    labels_arr: Vec<i32>,
 }
 
 impl RectLayer {
     pub fn new(view_params: ViewParams, layer_params: RectLayerParams) -> Self {
         // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.stroke_width_unit_mode == UnitsMode::Data
-            && layer_params.data_unit_mode == UnitsMode::Pixels)
-        {
+        if (layer_params.stroke_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        let data = Some(RectLayerData {
-            // TODO: can cloning be avoided here?
-            position_x0_arr: layer_params.position_x0.clone(),
-            position_y0_arr: layer_params.position_y0.clone(),
-            position_x1_arr: layer_params.position_x1.clone(),
-            position_y1_arr: layer_params.position_y1.clone(),
-            labels_arr: layer_params.labels_vec.clone(),
-        });
         Self {
             view_params,
             layer_params,
-            data,
         }
     }
 }
@@ -114,26 +93,22 @@ pub async fn base_draw_rect_layer(
     device: wgpu::Device,
     queue: wgpu::Queue,
     pass: &mut wgpu::RenderPass<'_>,
-    data: &RectLayerData,
     view_params: &ViewParams,
-    layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    stroke_width: f32,
-    stroke_width_unit_mode: &UnitsMode,
+    layer_params: &RectLayerParams,
 ) {
     // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
-    let position_x0_bytes = bytemuck::cast_slice(&data.position_x0_arr);
-    let position_y0_bytes = bytemuck::cast_slice(&data.position_y0_arr);
+    let position_x0_bytes = bytemuck::cast_slice(&layer_params.position_x0);
+    let position_y0_bytes = bytemuck::cast_slice(&layer_params.position_y0);
 
-    let position_x1_bytes = bytemuck::cast_slice(&data.position_x1_arr);
-    let position_y1_bytes = bytemuck::cast_slice(&data.position_y1_arr);
+    let position_x1_bytes = bytemuck::cast_slice(&layer_params.position_x1);
+    let position_y1_bytes = bytemuck::cast_slice(&layer_params.position_y1);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = data.labels_arr.len();
+    let n = layer_params.labels_vec.len();
 
     // Convert to f32 and cast to bytes directly - no for loop needed
-    let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
+    // let labels_i32: Vec<i32> = layer_params.labels_vec.iter().map(|&c| c as i32).collect();
+    let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
 
     // Create separate buffers for X and Y coordinates
     let position_x0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -187,32 +162,24 @@ pub async fn base_draw_rect_layer(
 
     // Use layer-specific bounds if not None, otherwise use the view's margins
     // (which may also be None).
-    let bounds = if layer_bounds.is_none() {
+    let bounds = if layer_params.bounds.is_none() {
         &view_params.margins
     } else {
-        layer_bounds
+        &layer_params.bounds
     };
 
     let margin_top = if let Some(margin_params) = &bounds {
         margin_params.margin_top.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
     let margin_right = if let Some(margin_params) = &bounds {
         margin_params.margin_right.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
     let margin_bottom = if let Some(margin_params) = &bounds {
         margin_params.margin_bottom.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
     let margin_left = if let Some(margin_params) = &bounds {
         margin_params.margin_left.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
 
     let viewport_w = view_params.width as f32;
     let viewport_h = view_params.height as f32;
@@ -224,12 +191,12 @@ pub async fn base_draw_rect_layer(
     let uniform_struct = RectLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode: match data_unit_mode {
+        data_unit_mode: match layer_params.data_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
-        stroke_width,
-        stroke_width_unit_mode: match stroke_width_unit_mode {
+        stroke_width: layer_params.stroke_width,
+        stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -450,36 +417,21 @@ pub async fn base_draw_rect_layer(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for RectLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        let data = self
-            .data
-            .as_ref()
-            .expect("Data was not prepared. Call prepare() first.");
         base_draw_rect_layer(
-            device,
-            queue,
-            pass,
-            data,
+            device, queue, pass,
             &self.view_params,
-            &self.layer_params.bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.stroke_width,
-            &self.layer_params.stroke_width_unit_mode,
+            &self.layer_params,
         )
         .await;
     }
 }
 
 pub fn base_draw_rect_layer_svg(
-    data: &RectLayerData,
     view_params: &ViewParams,
-    layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    stroke_width: f32,
-    stroke_width_unit_mode: &UnitsMode,
-    layer_id: &str,
+    layer_params: &RectLayerParams,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
-    let n = data.labels_arr.len();
+    let n = layer_params.labels_vec.len();
 
     // TODO: reduce code reuse here
     let camera_view = view_params.camera_view.unwrap_or([
@@ -492,32 +444,24 @@ pub fn base_draw_rect_layer_svg(
 
     // Use layer-specific bounds if not None, otherwise use the view's margins
     // (which may also be None).
-    let bounds = if layer_bounds.is_none() {
+    let bounds = if layer_params.bounds.is_none() {
         &view_params.margins
     } else {
-        layer_bounds
+        &layer_params.bounds
     };
 
     let margin_top = if let Some(margin_params) = &bounds {
         margin_params.margin_top.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
     let margin_right = if let Some(margin_params) = &bounds {
         margin_params.margin_right.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
     let margin_bottom = if let Some(margin_params) = &bounds {
         margin_params.margin_bottom.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
     let margin_left = if let Some(margin_params) = &bounds {
         margin_params.margin_left.unwrap_or(0.0)
-    } else {
-        0.0
-    } as f64;
+    } else { 0.0 } as f64;
 
     let viewport_w = view_params.width as f32;
     let viewport_h = view_params.height as f32;
@@ -528,10 +472,10 @@ pub fn base_draw_rect_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let source_x = data.position_x0_arr[i];
-        let source_y = data.position_y0_arr[i];
-        let target_x = data.position_x1_arr[i];
-        let target_y = data.position_y1_arr[i];
+        let source_x = layer_params.position_x0[i];
+        let source_y = layer_params.position_y0[i];
+        let target_x = layer_params.position_x1[i];
+        let target_y = layer_params.position_y1[i];
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (source_x_px, source_y_px) = get_point_position(
@@ -540,7 +484,7 @@ pub fn base_draw_rect_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            *data_unit_mode,
+            layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
             0, // TODO: pass enum value for aspect_ratio_alignment_mode
         );
@@ -550,7 +494,7 @@ pub fn base_draw_rect_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            *data_unit_mode,
+            layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
             0, // TODO: pass enum value for aspect_ratio_alignment_mode
         );
@@ -561,7 +505,7 @@ pub fn base_draw_rect_layer_svg(
             y: source_y_px.min(target_y_px) as f64,
             width: (target_x_px - source_x_px).abs() as f64,
             height: (target_y_px - source_y_px).abs() as f64,
-            linewidth: stroke_width as f64,
+            linewidth: layer_params.stroke_width as f64,
             // TODO: more params
             ..Default::default()
         }));
@@ -572,7 +516,7 @@ pub fn base_draw_rect_layer_svg(
     let layer_group_vec = vec![TwoElement::Group(TwoGroup {
         elements: svg_elements,
         translate: Some((margin_left, margin_top)),
-        layer_id: Some(layer_id.to_string()),
+        layer_id: Some(layer_params.layer_id.clone()),
         // TODO: check how clip_rect interacts with the translate
         clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
         ..Default::default()
@@ -585,22 +529,9 @@ pub fn base_draw_rect_layer_svg(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for RectLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let data = self
-            .data
-            .as_ref()
-            .expect("Data was not prepared. Call prepare() first.");
-
-        let view_params = &self.view_params;
-        let bounds = &self.layer_params.bounds;
-
         let svg_elements = base_draw_rect_layer_svg(
-            data,
-            view_params,
-            bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.stroke_width,
-            &self.layer_params.stroke_width_unit_mode,
-            &self.layer_params.layer_id,
+            &self.view_params,
+            &self.layer_params,
         );
 
         // TODO: refactor to avoid the cloning here?

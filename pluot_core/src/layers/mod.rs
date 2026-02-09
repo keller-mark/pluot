@@ -8,3 +8,4 @@ pub mod bitmap_layer;
 pub mod zarr_scatterplot_layer;
 pub mod composite_layer;
 pub mod axis_layer;
+pub mod tile_layer;
