@@ -17,6 +17,29 @@ pub struct TileLayerParams {
     pub layer_id: String,
     /// The size of each tile in data units.
     pub tile_size: f64,
+
+    // TODO: for a multi-scale tiled layer, we need to determine when to use each resolution based on:
+    // - zoom level / scale factor
+    // - visible data range
+    // - tile size
+    // - viewport size and pixel density
+    // - number of resolution levels available
+    // - how each resolution level is scaled relative to the base resolution (e.g., 2x, 4x, etc.) and whether it is uniform across levels
+    //
+    // If we want to implement something that aligns closely to the OME-NGFF multiscales specification:
+    // - Resolution levels in the multiscales array "MUST be ordered from largest (i.e. highest resolution) to smallest."
+    // - Each resolution level has a "scale" value per dimension that specifies the pixel/voxel size relative to the axis definition
+    //   (e.g., { "name": "x", "type": "space", "unit": "micrometer" } indicates that the X dimension has micrometer units)
+    // - Example of a TCZYX image:
+    //   - resolution 0: "scale": [1.0, 1.0, 0.5, 0.5, 0.5] // the voxel size for the first scale level (0.5 micrometer)
+    //   - resolution 1: "scale": [1.0, 1.0, 1.0, 1.0, 1.0] // the voxel size for the second scale level (downscaled by a factor of 2 -> 1 micrometer)
+    //   - resolution 2: "scale": [1.0, 1.0, 2.0, 2.0, 2.0] // the voxel size for the third scale level (downscaled by a factor of 4 -> 2 micrometer)
+    // - The image array at each resolution level has a "shape" that specifies the full shape of the array at that resolution level,
+    //   and a "chunk_shape" that specifies the shape of the tiles/chunks for that resolution level.
+    //     - If the chunk_shape is small enough to fit within GPU memory constraints,
+    //       then we can load and render individual tiles as needed based on the visible data range and zoom level.
+    //     - Otherwise, we just load tiles with some maximum tile_size, and zarr will handle subsetting the chunks for us.
+    // Reference: https://ngff.openmicroscopy.org/0.5/index.html#trafo-md
 }
 
 
