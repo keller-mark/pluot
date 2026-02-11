@@ -1,7 +1,7 @@
 mod plugins;
 
 // Export things needed for layer-based plotting via Rust.
-pub use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams};
+pub use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
 pub use pluot_core::layers::core::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 
 

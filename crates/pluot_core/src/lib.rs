@@ -21,7 +21,7 @@ pub mod maybe;
 pub use wgpu;
 
 // Export things needed for layer-based plotting via Rust.
-pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams};
+pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
 pub use crate::layers::core::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 

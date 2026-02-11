@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+<g height="600" width="600">
+<clipPath id="layer_2_clip_path">
+<rect height="600" width="600" x="0" y="0"/>
+</clipPath>
+<g clip-path="url(#layer_2_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(0, 0, 0)" height="30" opacity="1" width="30" x="85" y="485"/>
+<rect fill="rgb(0, 0, 0)" height="30" opacity="1" width="30" x="85" y="385"/>
+</g>
+<clipPath id="layer_3_clip_path">
+<rect height="600" width="600" x="0" y="0"/>
+</clipPath>
+<g clip-path="url(#layer_3_clip_path)" transform="translate(0,0)">
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="5" x1="10" x2="100" y1="590" y2="500"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="5" x1="110" x2="210" y1="490" y2="390"/>
+</g>
+<clipPath id="layer_text_clip_path">
+<rect height="600" width="600" x="0" y="0"/>
+</clipPath>
+<g clip-path="url(#layer_text_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="text-after-edge" fill="rgb(0, 0, 0)" font-family="Arial" font-size="25" opacity="1" text-anchor="start" transform="rotate(0 10 590)" x="10" y="590">
+Hello
+</text>
+<text dominant-baseline="text-after-edge" fill="rgb(0, 0, 0)" font-family="Arial" font-size="25" opacity="1" text-anchor="start" transform="rotate(0 110 490)" x="110" y="490">
+The quick brown fox jumps over the lazy dog
+</text>
+</g>
+</g>
+</svg>
