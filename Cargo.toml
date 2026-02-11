@@ -6,9 +6,17 @@ members = [
     "crates/pluot_zarr",
     "crates/pluot",
     "examples/pluot_cli",
-    "examples/pluot_http"
 ]
 resolver = "2"
+
+exclude = [
+    # These example crates have lots of subdependencies.
+    # To ensure that they get their own independent Cargo.lock files
+    # to avoid subdependency conflicts, with the workspace packages or with each other,
+    # we exclude them from the workspace and instead specify their dependencies with path = "../../crates/pluot".
+    "examples/pluot_http",
+    "examples/pluot_xilem",
+]
 
 [workspace.package]
 version = "0.1.0"
