@@ -56,12 +56,13 @@ uuid.workspace = true
 # since its "filesystem" feature is used for unit tests.
 zarrs = { workspace = true, default-features = false, features = [
     "ndarray",
-    "crc32c",
-    "gzip",
     "sharding",
     "transpose",
     "async",
-    # "filesystem", # was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
+    "crc32c",
+    "gzip",
+    # "zstd",
+    # "blosc",
 ] }
 async-trait.workspace = true
 quick_cache.workspace = true
