@@ -1,5 +1,6 @@
 [package]
 name = "pluot"
+description = "Plotting library designed for usage from Rust, Python, and JavaScript"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
