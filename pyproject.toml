@@ -34,15 +34,19 @@ module-name = "pluot._internal"
 # Reference: https://www.maturin.rs/project_layout.html#mixed-rustpython-project
 python-source = "bindings-python"
 
-manifest-path = "crates/pluot_core/Cargo.toml"
+manifest-path = "crates/pluot/Cargo.toml"
 
 [tool.uv]
 # Rebuild package when any rust files change
 cache-keys = [
   {file = "pyproject.toml"},
   {file = "Cargo.toml"},
+  {file = "crates/pluot/Cargo.toml"},
+  {file = "crates/pluot/src/**/*.rs"},
   {file = "crates/pluot_core/Cargo.toml"},
-  {file = "crates/pluot_core/**/*.rs"}
+  {file = "crates/pluot_core/**/*.rs"},
+  {file = "crates/pluot_zarr/Cargo.toml"},
+  {file = "crates/pluot_zarr/**/*.rs"}
 ]
 
 # Reference: https://github.com/apache/datafusion-python/blob/d6d6ea69a7bcc80ebf025ee8778df12ecbf874c5/pyproject.toml#L66C1-L68C48

@@ -197,3 +197,13 @@ impl DrawToSvg for ZarrScatterplotLayer {
         return updated_group.clone();
     }
 }
+
+inventory::submit! {
+    pluot_core::registry::LayerRegistration {
+        layer_type_name: "ZarrScatterplotLayer",
+        create_layer: |value, view_params| {
+            let params: ZarrScatterplotLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(ZarrScatterplotLayer::new(view_params.clone(), params))
+        },
+    }
+}

@@ -1,74 +1,10 @@
-use crate::layers::bitmap_layer::BitmapLayer;
-use crate::layers::line_layer::LineLayer;
-use crate::layers::rect_layer::RectLayer;
-use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayer};
-use crate::layers::text_layer::TextLayer;
-use crate::layers::zarr_scatterplot_layer::ZarrScatterplotLayer;
-use crate::layers::axis_layer::AxisLayer;
-use crate::layers::tile_layer::TileLayer;
-use crate::layers::core::{AspectRatioMode, MarginParams, PreparedAndDraw, UnitsMode, ViewParams, render_canvas};
+use crate::layers::core::{MarginParams, PreparedAndDraw, ViewParams};
+use crate::registry::get_layer_from_registry;
 use crate::wgpu;
-use crate::log;
-use crate::params::{LayeredPlotRenderParams, PlotParams, RenderContext, RenderResult, LayerParams};
-use crate::d3::axis::{Axis, AxisOrientation};
-use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable};
-use crate::two::shapes::{
-    TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
-};
+use crate::params::{PlotParams, RenderContext, LayerParams};
 
 pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dyn PreparedAndDraw> {
-    match layer_params {
-        LayerParams::ZarrScatterplotLayer(params) => {
-            Box::new(ZarrScatterplotLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::ScatterplotLayer(params) => {
-            Box::new(ScatterplotLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::LineLayer(params) => {
-            Box::new(LineLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::TextLayer(params) => {
-            Box::new(TextLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::BitmapLayer(params) => {
-            Box::new(BitmapLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::AxisLayer(params) => {
-            Box::new(AxisLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::RectLayer(params) => {
-            Box::new(RectLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        LayerParams::TileLayer(params) => {
-            Box::new(TileLayer::new(
-                view_params.clone(),
-                params.clone(),
-            )) as Box<dyn PreparedAndDraw>
-        },
-        // We do not want a catch-all here, so that we get a compile error
-        // when implementing new layer types.
-    }
+    get_layer_from_registry(&layer_params.layer_type, layer_params.layer_params.clone(), view_params)
 }
 
 pub fn render_layered_plot(

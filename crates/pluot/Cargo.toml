@@ -22,9 +22,9 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Define features to toggle which dependency is active
-python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log"]
+python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log", "pluot_core/python"]
 # Define a feature for running unit tests in GPU-less environments
-lacks_gpu = []
+lacks_gpu = ["pluot_core/lacks_gpu"]
 
 
 [dependencies]
@@ -33,6 +33,7 @@ pluot_core = { workspace = true }
 pluot_zarr = { workspace = true }
 
 inventory.workspace = true
+serde_json.workspace = true
 
 # Python-specific dependencies
 pyo3 = { version = "0.27", optional = true, features = ["extension-module"] }

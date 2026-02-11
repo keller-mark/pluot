@@ -1,5 +1,5 @@
 [package]
-name = "pluot_core"
+name = "pluot_zarr"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,8 +12,8 @@ categories = []
 keywords = []
 
 [lib]
-name = "pluot"
-crate-type = "lib"
+name = "pluot_zarr"
+crate-type = ["lib"]
 
 [features]
 default = []
@@ -29,6 +29,10 @@ inventory.workspace = true
 glam.workspace = true
 encase.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+svg.workspace = true
+futures.workspace = true
 
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.

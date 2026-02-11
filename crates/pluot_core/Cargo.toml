@@ -12,8 +12,8 @@ categories = []
 keywords = []
 
 [lib]
-name = "pluot"
-crate-type = "lib"
+name = "pluot_core"
+crate-type = ["lib"]
 
 [features]
 default = []

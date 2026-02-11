@@ -1,19 +1,17 @@
 pub mod bindings;
 pub mod d3;
-mod params;
+pub mod params;
 mod plots;
-mod cache;
+pub mod cache;
 mod render;
-mod layers;
-
-// TODO: use inventory::submit! to register the layers and params.
-
+pub mod layers;
+pub mod registry;
 
 pub(crate) mod timeout;
 pub mod two;
-mod zarr;
+pub mod zarr;
 
-mod maybe;
+pub mod maybe;
 
 // When using Vello:
 //pub use vello::wgpu;
@@ -25,7 +23,7 @@ pub use wgpu;
 // Export things needed for layer-based plotting via Rust.
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams};
 pub use crate::layers::core::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
-pub use crate::layers::scatterplot_layer::{ScatterplotLayerParams, PointShapeMode};
+pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 
 // Export things needed by workspace packages that define other layers.
 pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};

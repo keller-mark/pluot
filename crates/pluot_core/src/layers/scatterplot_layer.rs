@@ -518,3 +518,13 @@ impl DrawToSvg for ScatterplotLayer {
 
     }
 }
+
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "ScatterplotLayer",
+        create_layer: |value, view_params| {
+            let params: ScatterplotLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(ScatterplotLayer::new(view_params.clone(), params))
+        },
+    }
+}

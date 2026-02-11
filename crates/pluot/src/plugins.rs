@@ -1,1 +1,2 @@
-// TODO: use inventory::collect! to collect the registered/submitted layers and params.
+// Force-link pluot_zarr so that inventory collects its layer registrations.
+pub use pluot_zarr;

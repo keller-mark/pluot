@@ -1,13 +1,15 @@
 // We only run this test on non-WASM targets AND when the "lacks_gpu" feature is not enabled (e.g., CI).
 #![cfg(all(not(target_arch = "wasm32"), not(feature="lacks_gpu")))]
 
+use std::sync::Arc;
 use dify::diff;
 use image::{ImageReader, RgbaImage, save_buffer_with_format, ColorType, ImageFormat};
-use pluot::{
+use pluot_core::{
     render, RenderParams, PlotParams, LayeredPlotRenderParams, GraphicsFormat,
-    AspectRatioMode, LayerParams, ScatterplotLayerParams, UnitsMode, ViewParams,
-    MarginParams, PointShapeMode,
+    AspectRatioMode, LayerParams, UnitsMode, ViewParams,
+    MarginParams,
 };
+use pluot_core::layers::scatterplot_layer::{ScatterplotLayerParams, PointShapeMode};
 
 
 // Reference: https://github.com/jihchi/dify/blob/0e5f1fa546d7cd134cbb12cb019f337d36a3a053/benches/benchmark.rs#L5
@@ -40,22 +42,25 @@ async fn test_render_unit_square_raster() {
         format: GraphicsFormat::Raster,
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: vec![
-                LayerParams::ScatterplotLayer(ScatterplotLayerParams {
-                    layer_id: "my_scatterplot_layer".to_string(),
-                    bounds: Some(MarginParams {
-                        margin_left: Some(0.0),
-                        margin_right: Some(0.0),
-                        margin_top: Some(0.0),
-                        margin_bottom: Some(0.0),
-                    }),
-                    data_unit_mode: UnitsMode::Data,
-                    point_radius: 10.0,
-                    point_radius_unit_mode: UnitsMode::Pixels,
-                    point_shape_mode: PointShapeMode::Square,
-                    x_vec: vec![0.0, 1.0, 1.0, 0.0],
-                    y_vec: vec![0.0, 0.0, 1.0, 1.0],
-                    labels_vec: vec![0, 1, 2, 3],
-                }),
+                LayerParams {
+                    layer_type: "ScatterplotLayer".to_string(),
+                    layer_params: serde_json::to_value(ScatterplotLayerParams {
+                        layer_id: "my_scatterplot_layer".to_string(),
+                        bounds: Some(MarginParams {
+                            margin_left: Some(0.0),
+                            margin_right: Some(0.0),
+                            margin_top: Some(0.0),
+                            margin_bottom: Some(0.0),
+                        }),
+                        data_unit_mode: UnitsMode::Data,
+                        point_radius: 10.0,
+                        point_radius_unit_mode: UnitsMode::Pixels,
+                        point_shape_mode: PointShapeMode::Square,
+                        x_vec: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
+                        y_vec: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
+                        labels_vec: Arc::new(vec![0, 1, 2, 3]),
+                    }).unwrap(),
+                },
             ],
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -112,22 +117,25 @@ async fn test_render_unit_square_vector() { // TODO: move to different file and 
         svg_compression_enabled: false,
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: vec![
-                LayerParams::ScatterplotLayer(ScatterplotLayerParams {
-                    layer_id: "my_scatterplot_layer".to_string(),
-                    bounds: Some(MarginParams {
-                        margin_left: Some(0.0),
-                        margin_right: Some(0.0),
-                        margin_top: Some(0.0),
-                        margin_bottom: Some(0.0),
-                    }),
-                    data_unit_mode: UnitsMode::Data,
-                    point_radius: 10.0,
-                    point_radius_unit_mode: UnitsMode::Pixels,
-                    point_shape_mode: PointShapeMode::Square,
-                    x_vec: vec![0.0, 1.0, 1.0, 0.0],
-                    y_vec: vec![0.0, 0.0, 1.0, 1.0],
-                    labels_vec: vec![0, 1, 2, 3],
-                }),
+                LayerParams {
+                    layer_type: "ScatterplotLayer".to_string(),
+                    layer_params: serde_json::to_value(ScatterplotLayerParams {
+                        layer_id: "my_scatterplot_layer".to_string(),
+                        bounds: Some(MarginParams {
+                            margin_left: Some(0.0),
+                            margin_right: Some(0.0),
+                            margin_top: Some(0.0),
+                            margin_bottom: Some(0.0),
+                        }),
+                        data_unit_mode: UnitsMode::Data,
+                        point_radius: 10.0,
+                        point_radius_unit_mode: UnitsMode::Pixels,
+                        point_shape_mode: PointShapeMode::Square,
+                        x_vec: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
+                        y_vec: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
+                        labels_vec: Arc::new(vec![0, 1, 2, 3]),
+                    }).unwrap(),
+                },
             ],
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

@@ -398,3 +398,13 @@ impl DrawToSvg for AxisLayer {
         base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
     }
 }
+
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "AxisLayer",
+        create_layer: |value, view_params| {
+            let params: AxisLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AxisLayer::new(view_params.clone(), params))
+        },
+    }
+}
