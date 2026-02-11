@@ -33,8 +33,6 @@ pub struct ScatterplotLayerParams {
     pub point_radius_unit_mode: UnitsMode,
     pub point_shape_mode: PointShapeMode,
 
-    // TODO(ref): pass in references instead of owned Vecs?
-    // Would this cause issues when using serde to create layers based on JSON params?
     // TODO: improve naming here - should these be "x", "y", etc?
     pub x_vec: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub y_vec: Arc<Vec<f32>>,
@@ -516,5 +514,15 @@ impl DrawToSvg for ScatterplotLayer {
 
         return updated_group.clone();
 
+    }
+}
+
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "ScatterplotLayer",
+        create_layer: |value, view_params| {
+            let params: ScatterplotLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(ScatterplotLayer::new(view_params.clone(), params))
+        },
     }
 }

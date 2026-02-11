@@ -540,3 +540,13 @@ impl DrawToSvg for RectLayer {
         return updated_group.clone();
     }
 }
+
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "RectLayer",
+        create_layer: |value, view_params| {
+            let params: RectLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(RectLayer::new(view_params.clone(), params))
+        },
+    }
+}

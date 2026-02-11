@@ -140,7 +140,7 @@ importers:
         version: 1.2.0
       pluot:
         specifier: workspace:*
-        version: link:../../crates/pluot_core/pkg
+        version: link:../../crates/pluot/pkg
       quick-lru:
         specifier: ^7.0.1
         version: 7.0.1
@@ -167,7 +167,7 @@ importers:
         specifier: ^0.3.3
         version: 0.3.3(vitest@3.2.4(@types/debug@4.1.12)(jsdom@26.1.0))
 
-  crates/pluot_core/pkg: {}
+  crates/pluot/pkg: {}
 
 packages:
 

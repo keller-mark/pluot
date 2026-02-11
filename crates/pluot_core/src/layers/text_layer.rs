@@ -916,3 +916,13 @@ impl DrawToSvg for TextLayer {
         
     }
 }
+
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "TextLayer",
+        create_layer: |value, view_params| {
+            let params: TextLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(TextLayer::new(view_params.clone(), params))
+        },
+    }
+}

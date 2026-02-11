@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
+use std::sync::Arc;
 use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
@@ -63,11 +64,11 @@ impl AxisLayer {
     /// Calculate the visible data range based on camera view
     fn get_visible_range(&self) -> (f64, f64, f64, f64) {
         let (zoom, translate_x, translate_y) = self.get_view_transform();
-        
+
         let scale_factor = (1.0 / zoom).log2();
 
         let aspect_ratio_mode = self.view_params.aspect_ratio_mode;
-        
+
         let bounds = &self.view_params.margins;
 
         let margin_top = if let Some(margin_params) = &bounds {
@@ -88,7 +89,7 @@ impl AxisLayer {
 
         let layer_w = (viewport_w - (margin_left + margin_right) as f32);
         let layer_h = (viewport_h - (margin_top + margin_bottom) as f32);
-        
+
         let layer_aspect_ratio = layer_w / layer_h;
 
         let mut x_scale_for_aspect_ratio_mode = 1.0;
@@ -138,7 +139,7 @@ impl AxisLayer {
         let max_x = ((((-translate_x + 1.0 + x_adjustment) / zoom) + 1.0) / 2.0);
         let min_y = ((((-translate_y - 1.0 - y_adjustment) / zoom) + 1.0) / 2.0);
         let max_y = ((((-translate_y + 1.0 + y_adjustment) / zoom) + 1.0) / 2.0);
-        
+
         (min_x as f64, max_x as f64, min_y as f64, max_y as f64)
     }
 
@@ -170,13 +171,13 @@ impl AxisLayer {
         let mut line_target_positions: Vec<[f32; 2]> = Vec::new();
         let mut text_positions: Vec<[f32; 2]> = Vec::new();
         let mut text_strings: Vec<String> = Vec::new();
-        
+
         match self.layer_params.position {
             AxisPosition::Bottom => {
                 let mut scale = ScaleLinear::new();
                 scale.set_domain((min_x, max_x));
                 scale.set_range((margin_left, viewport_w - margin_right));
-                
+
                 let ticks = scale.ticks(None);
                 // The pixel-based coordinate system has y=0 at the bottom.
                 let axis_y = margin_bottom;
@@ -189,11 +190,11 @@ impl AxisLayer {
                 for tick in &ticks {
                     let x = scale.scale(tick) as f32;
                     let y = axis_y as f32;
-                    
+
                     // Tick line
                     line_source_positions.push([x, y]);
                     line_target_positions.push([x, y - DEFAULT_TICK_SIZE as f32]);
-                    
+
                     // Label position
                     text_positions.push([x, y - (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32]);
                     text_strings.push(format_tick_value(*tick));
@@ -203,7 +204,7 @@ impl AxisLayer {
                 let mut scale = ScaleLinear::new();
                 scale.set_domain((min_x, max_x));
                 scale.set_range((margin_left, viewport_w - margin_right));
-                
+
                 let ticks = scale.ticks(None);
                 let axis_y = viewport_h - margin_top;
 
@@ -215,11 +216,11 @@ impl AxisLayer {
                 for tick in &ticks {
                     let x = scale.scale(tick) as f32;
                     let y = axis_y as f32;
-                    
+
                     // Tick line (upward)
                     line_source_positions.push([x, y]);
                     line_target_positions.push([x, y + DEFAULT_TICK_SIZE as f32]);
-                    
+
                     // Label position
                     text_positions.push([x, y + (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32]);
                     text_strings.push(format_tick_value(*tick));
@@ -229,7 +230,7 @@ impl AxisLayer {
                 let mut scale = ScaleLinear::new();
                 scale.set_domain((min_y, max_y));
                 scale.set_range((margin_bottom, viewport_h - margin_top)); // TODO: verify lack of inversion here
-                
+
                 let ticks = scale.ticks(None);
                 let axis_x = margin_left;
 
@@ -241,11 +242,11 @@ impl AxisLayer {
                 for tick in &ticks {
                     let x = axis_x as f32;
                     let y = scale.scale(tick) as f32;
-                    
+
                     // Tick line (leftward)
                     line_source_positions.push([x, y]);
                     line_target_positions.push([x - DEFAULT_TICK_SIZE as f32, y]);
-                    
+
                     // Label position
                     text_positions.push([x - (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32, y]);
                     text_strings.push(format_tick_value(*tick));
@@ -255,7 +256,7 @@ impl AxisLayer {
                 let mut scale = ScaleLinear::new();
                 scale.set_domain((min_y, max_y));
                 scale.set_range((margin_bottom, viewport_h - margin_top)); // TODO: verify lack of inversion here
-                
+
                 let ticks = scale.ticks(None);
                 let axis_x = viewport_w - margin_right;
 
@@ -267,11 +268,11 @@ impl AxisLayer {
                 for tick in &ticks {
                     let x = axis_x as f32;
                     let y = scale.scale(tick) as f32;
-                    
+
                     // Tick line (rightward)
                     line_source_positions.push([x, y]);
                     line_target_positions.push([x + DEFAULT_TICK_SIZE as f32, y]);
-                    
+
                     // Label position
                     text_positions.push([x + (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32, y]);
                     text_strings.push(format_tick_value(*tick));
@@ -315,10 +316,10 @@ impl AxisLayer {
             data_unit_mode: UnitsMode::Pixels,
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
-            source_x_vec: line_source_x_vec,
-            source_y_vec: line_source_y_vec,
-            target_x_vec: line_target_x_vec,
-            target_y_vec: line_target_y_vec,
+            source_position_x: Arc::new(line_source_x_vec),
+            source_position_y: Arc::new(line_source_y_vec),
+            target_position_x: Arc::new(line_target_x_vec),
+            target_position_y: Arc::new(line_target_y_vec),
             labels_vec: line_labels_vec, // TODO: make this optional in LineLayerParams
         };
         sublayers.push(Box::new(LineLayer::new(
@@ -396,5 +397,15 @@ impl DrawToCanvas for AxisLayer {
 impl DrawToSvg for AxisLayer {
     async fn draw(&self, group: &Group) -> Group {
         base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    }
+}
+
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "AxisLayer",
+        create_layer: |value, view_params| {
+            let params: AxisLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AxisLayer::new(view_params.clone(), params))
+        },
     }
 }

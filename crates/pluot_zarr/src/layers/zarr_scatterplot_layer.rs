@@ -1,18 +1,14 @@
 use std::sync::Arc;
-use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
-
-use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
-use crate::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerParams, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
-use crate::wgpu;
-use crate::zarr::AsyncZarritaStore;
-use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
-use crate::two::svg::update_svg;
 use svg::node::element::Group;
-use crate::log;
 
-
+use pluot_core::log;
+use pluot_core::wgpu;
+use pluot_core::zarr::AsyncZarritaStore;
+use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
+use pluot_core::two::svg::update_svg;
+use pluot_core::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerParams, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc};
 
 use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::wgpu;
@@ -23,33 +24,20 @@ pub struct LineLayerParams {
     pub line_width: f32,
     pub line_width_unit_mode: UnitsMode,
 
-    // TODO(ref): pass in references instead of owned Vecs?
-    // Would this cause issues when using serde to create layers based on JSON params?
-    // TODO: improve naming here - should these be "source_x", "source_y", etc?
-    pub source_x_vec: Vec<f32>, // TODO: generalize to other numeric dtypes?
-    pub source_y_vec: Vec<f32>,
-    pub target_x_vec: Vec<f32>,
-    pub target_y_vec: Vec<f32>,
+    pub source_position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
+    pub source_position_y: Arc<Vec<f32>>,
+    pub target_position_x: Arc<Vec<f32>>,
+    pub target_position_y: Arc<Vec<f32>>,
+    // TODO: improve naming here
     pub labels_vec: Vec<i32>,
 }
+
+// TODO: defaults for params?
+
 
 pub struct LineLayer {
     view_params: ViewParams,
     layer_params: LineLayerParams,
-    // TODO: getters?
-
-    // Data will be None prior to runninng prepare().
-    data: Option<LineLayerData>,
-}
-
-// Internal representation for LineLayer and its "descendant" layers.
-pub struct LineLayerData {
-    // Lines are from source (x,y) to target (x,y).
-    source_x_arr: Vec<f32>,
-    source_y_arr: Vec<f32>,
-    target_x_arr: Vec<f32>,
-    target_y_arr: Vec<f32>,
-    labels_arr: Vec<i32>,
 }
 
 impl LineLayer {
@@ -61,18 +49,9 @@ impl LineLayer {
         if(layer_params.line_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        let data = Some(LineLayerData {
-            // TODO: can cloning be avoided here?
-            source_x_arr: layer_params.source_x_vec.clone(),
-            source_y_arr: layer_params.source_y_vec.clone(),
-            target_x_arr: layer_params.target_x_vec.clone(),
-            target_y_arr: layer_params.target_y_vec.clone(),
-            labels_arr: layer_params.labels_vec.clone(),
-        });
         Self {
             view_params,
             layer_params,
-            data,
         }
     }
 }
@@ -109,26 +88,22 @@ struct LineLayerUniforms {
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 pub async fn base_draw_line_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
-    data: &LineLayerData,
     view_params: &ViewParams,
-    layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    line_width: f32,
-    line_width_unit_mode: &UnitsMode,
+    layer_params: &LineLayerParams,
 ) {
     // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
-    let source_x_bytes = bytemuck::cast_slice(&data.source_x_arr);
-    let source_y_bytes = bytemuck::cast_slice(&data.source_y_arr);
+    let source_x_bytes = bytemuck::cast_slice(&layer_params.source_position_x);
+    let source_y_bytes = bytemuck::cast_slice(&layer_params.source_position_y);
 
-    let target_x_bytes = bytemuck::cast_slice(&data.target_x_arr);
-    let target_y_bytes = bytemuck::cast_slice(&data.target_y_arr);
+    let target_x_bytes = bytemuck::cast_slice(&layer_params.target_position_x);
+    let target_y_bytes = bytemuck::cast_slice(&layer_params.target_position_y);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = data.labels_arr.len();
+    let n = layer_params.labels_vec.len();
 
     // Convert to f32 and cast to bytes directly - no for loop needed
-    let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&labels_i32);
+    //let labels_i32: Vec<i32> = layer_params.labels_vec.iter().map(|&c| c as i32).collect();
+    let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
 
 
     // Create separate buffers for X and Y coordinates
@@ -183,10 +158,10 @@ pub async fn base_draw_line_layer(
 
     // Use layer-specific bounds if not None, otherwise use the view's margins
     // (which may also be None).
-    let bounds = if layer_bounds.is_none() {
+    let bounds = if layer_params.bounds.is_none() {
         &view_params.margins
     } else {
-        layer_bounds
+        &layer_params.bounds
     };
 
     let margin_top = if let Some(margin_params) = &bounds {
@@ -212,12 +187,12 @@ pub async fn base_draw_line_layer(
     let uniform_struct = LineLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode: match data_unit_mode {
+        data_unit_mode: match layer_params.data_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
-        line_width,
-        line_width_unit_mode: match line_width_unit_mode {
+        line_width: layer_params.line_width,
+        line_width_unit_mode: match layer_params.line_width_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -402,7 +377,7 @@ pub async fn base_draw_line_layer(
         });
 
     // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
-    
+
     // Handle margins by adjusting viewport and scissor rect.
     // This allows us to avoid accounting for margins in the shaders, simplifying them.
     // (Shaders can simply assume the full viewport size is the plot area.)
@@ -444,31 +419,21 @@ pub async fn base_draw_line_layer(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for LineLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
         base_draw_line_layer(
             device, queue, pass,
-            data,
             &self.view_params,
-            &self.layer_params.bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.line_width,
-            &self.layer_params.line_width_unit_mode,
+            &self.layer_params,
         ).await;
     }
 }
 
 
 pub fn base_draw_line_layer_svg(
-    data: &LineLayerData,
     view_params: &ViewParams,
-    layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    line_width: f32,
-    line_width_unit_mode: &UnitsMode,
-    layer_id: &str,
+    layer_params: &LineLayerParams,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
-    let n = data.labels_arr.len();
+    let n = layer_params.labels_vec.len();
 
     // TODO: reduce code reuse here
     let camera_view = view_params.camera_view.unwrap_or([
@@ -481,10 +446,10 @@ pub fn base_draw_line_layer_svg(
 
     // Use layer-specific bounds if not None, otherwise use the view's margins
     // (which may also be None).
-    let bounds = if layer_bounds.is_none() {
+    let bounds = if layer_params.bounds.is_none() {
         &view_params.margins
     } else {
-        layer_bounds
+        &layer_params.bounds
     };
 
     let margin_top = if let Some(margin_params) = &bounds {
@@ -509,10 +474,10 @@ pub fn base_draw_line_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let source_x = data.source_x_arr[i];
-        let source_y = data.source_y_arr[i];
-        let target_x = data.target_x_arr[i];
-        let target_y = data.target_y_arr[i];
+        let source_x = layer_params.source_position_x[i];
+        let source_y = layer_params.source_position_y[i];
+        let target_x = layer_params.target_position_x[i];
+        let target_y = layer_params.target_position_y[i];
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (source_x_px, source_y_px) = get_point_position(
@@ -521,7 +486,7 @@ pub fn base_draw_line_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            *data_unit_mode,
+            layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
             0, // TODO: pass enum value for aspect_ratio_alignment_mode
         );
@@ -531,7 +496,7 @@ pub fn base_draw_line_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            *data_unit_mode,
+            layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
             0, // TODO: pass enum value for aspect_ratio_alignment_mode
         );
@@ -542,7 +507,7 @@ pub fn base_draw_line_layer_svg(
             y1: source_y_px as f64,
             x2: target_x_px as f64,
             y2: target_y_px as f64,
-            linewidth: line_width as f64,
+            linewidth: layer_params.line_width as f64,
             // TODO: more params
             ..Default::default()
         }));
@@ -554,7 +519,7 @@ pub fn base_draw_line_layer_svg(
         TwoElement::Group(TwoGroup {
             elements: svg_elements,
             translate: Some((margin_left, margin_top)),
-            layer_id: Some(layer_id.to_string()),
+            layer_id: Some(layer_params.layer_id.clone()),
             // TODO: check how clip_rect interacts with the translate
             clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
             ..Default::default()
@@ -569,21 +534,11 @@ pub fn base_draw_line_layer_svg(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for LineLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-
-        let view_params = &self.view_params;
-        let bounds = &self.layer_params.bounds;
-
         let svg_elements = base_draw_line_layer_svg(
-            data,
-            view_params,
-            bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.line_width,
-            &self.layer_params.line_width_unit_mode,
-            &self.layer_params.layer_id,
+            &self.view_params,
+            &self.layer_params,
         );
-        
+
         // TODO: refactor to avoid the cloning here?
         let updated_group = update_svg(group.clone(), &svg_elements);
 
@@ -591,3 +546,12 @@ impl DrawToSvg for LineLayer {
     }
 }
 
+inventory::submit! {
+    crate::registry::LayerRegistration {
+        layer_type_name: "LineLayer",
+        create_layer: |value, view_params| {
+            let params: LineLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(LineLayer::new(view_params.clone(), params))
+        },
+    }
+}

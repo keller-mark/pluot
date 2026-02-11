@@ -3,10 +3,20 @@
 [workspace]
 members = [
     "crates/pluot_core",
+    "crates/pluot_zarr",
+    "crates/pluot",
     "examples/pluot_cli",
-    "examples/pluot_http"
 ]
 resolver = "2"
+
+exclude = [
+    # These example crates have lots of subdependencies.
+    # To ensure that they get their own independent Cargo.lock files
+    # to avoid subdependency conflicts, with the workspace packages or with each other,
+    # we exclude them from the workspace and instead specify their dependencies with path = "../../crates/pluot".
+    "examples/pluot_http",
+    "examples/pluot_xilem",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -20,3 +30,99 @@ edition = "2021"
 rust-version = "1.92"
 repository = "https://github.com/keller-mark/pluot"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
+
+# During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
+[workspace.lints.rust]
+unused = "allow"
+non_snake_case = "allow"
+
+
+[workspace.dependencies]
+inventory = "0.3.21"
+
+pyo3 = { version = "0.27", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pythonize = { version = "0.27" }
+pyo3-log = { version = "0.13.2" }
+
+log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings?
+bytemuck = "1.23.2"
+futures = "0.3.31"
+futures-intrusive = "0.5"
+once_cell = "1.21.3"
+# We can use serde to deserialize JSON object parameters passed to the `render` function.
+# Reference: https://docs.rs/serde-wasm-bindgen/latest/serde_wasm_bindgen/
+serde = { version = "1.0.x", features = ["derive", "rc"] }
+
+async-trait = "0.1.74"
+quick_cache = "0.6.16"
+svg = "0.18.0"
+futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "c61a0dd" }
+
+# For OME-Zarr image metadata parsing.
+# We use this fork which relaxes things by not using serde(deny_unknown_fields).
+ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.git", branch = "keller-mark/relaxed-ome-fields" }
+serde_json = "1.0.143"
+
+# Local crates
+# We register these here so that they can be used via .workspace = true by sibling crates.
+pluot_core = { path = "crates/pluot_core" }
+pluot_zarr = { path = "crates/pluot_zarr" }
+pluot = { path = "crates/pluot" }
+
+# WebGPU
+wgpu = { version = "28.0.0" }
+glam = { version = "0.30.8", features = ["encase"] }
+encase = { version = "0.12.0" }
+
+# Matrix multiplication for SVG rendering
+nalgebra-glm = "0.3"
+
+fontdue = "0.9.x" # For font rasterization and text layout.
+
+lz-str = "0.2.1" # To compress SVG strings before passing to JS.
+
+# Dev dependencies
+resvg = "0.46.0" # For SVG rendering during unit tests to compare with raster-format outputs.
+tiny-skia = "0.11.4" # Used when rendering with resvg (Pixmap target for rendering).
+dify = "0.8.0" # For pixel diffing in unit tests.
+image = "0.25.9" # For read/write to image formats like PNG in unit tests.
+
+
+# We depend on tokio for the non-wasm unit tests that call async functions.
+# Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
+tokio = { version = "1.47.1" }
+
+
+# WASM-specific dependencies
+wasm-bindgen = { version = "0.2.106" }
+wasm-bindgen-futures = { version = "0.4.56" }
+wasm-bindgen-shared = { version = "0.2.106" }
+wasm-bindgen-test = "0.3.34"
+web-sys = { version = "0.3.77" }
+js-sys = { version = "0.3.77" }
+serde-wasm-bindgen = { version = "0.6.5" }
+console_error_panic_hook = { version = "0.1.7" }
+
+
+# For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
+# Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
+# We need to specify uuid with feature "js", which is used by zarrrs.
+uuid = { version = "1", features = ["v4", "js"] }
+# Note: zarrs is also specified in dev-dependencies,
+# since its "filesystem" feature is used for unit tests.
+[workspace.dependencies.zarrs]
+version = "0.23.0"
+# path = "../zarrs/zarrs"
+default-features = false
+features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    # "zstd",       # Using the "zstd" and "blosc" features adds ~0.3MB to the .wasm size in --release mode.
+    # "blosc",      # Possible to enable when using a zarrs branch that uses Blusc for blosc.
+    # "filesystem", # Was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
+]
