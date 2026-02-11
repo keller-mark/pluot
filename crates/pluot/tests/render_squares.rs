@@ -4,12 +4,11 @@
 use std::sync::Arc;
 use dify::diff;
 use image::{ImageReader, RgbaImage, save_buffer_with_format, ColorType, ImageFormat};
-use pluot_core::{
+use pluot::{
     render, RenderParams, PlotParams, LayeredPlotRenderParams, GraphicsFormat,
     AspectRatioMode, LayerParams, UnitsMode, ViewParams,
-    MarginParams,
+    MarginParams, ScatterplotLayerParams, PointShapeMode,
 };
-use pluot_core::layers::scatterplot_layer::{ScatterplotLayerParams, PointShapeMode};
 
 
 // Reference: https://github.com/jihchi/dify/blob/0e5f1fa546d7cd134cbb12cb019f337d36a3a053/benches/benchmark.rs#L5

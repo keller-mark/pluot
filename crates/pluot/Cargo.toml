@@ -22,7 +22,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Define features to toggle which dependency is active
-python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log", "pluot_core/python"]
+python = ["pluot_core/python", "pyo3"]
 # Define a feature for running unit tests in GPU-less environments
 lacks_gpu = ["pluot_core/lacks_gpu"]
 
@@ -36,29 +36,10 @@ inventory.workspace = true
 serde_json.workspace = true
 
 # Python-specific dependencies
-pyo3 = { version = "0.27", optional = true, features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"], optional = true }
-pythonize = { git = "https://github.com/tuxu/pythonize.git", rev = "6140fe0", optional = true }
-pyo3-log = { version = "0.13.2", optional = true }
-# Note: tokio is also specified in dev-dependencies,
-# since its "full" feature is used for our async unit tests.
-tokio = { version = "1.47.1", optional = true }
-
-
-# WASM-specific dependencies
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "0.2.106" }
-wasm-bindgen-futures = { version = "0.4.56" }
-wasm-bindgen-shared = { version = "0.2.106" }
-web-sys = { version = "0.3.77" }
-js-sys = { version = "0.3.77" }
-serde-wasm-bindgen = { version = "0.6.5" }
-# The `console_error_panic_hook` crate provides better debugging of panics by
-# logging them with `console.error`. This is great for development, but requires
-# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
-# code size when deploying.
-console_error_panic_hook = { version = "0.1.7" }
-
+# Pyo3 with feature "extension-module" is needed at the level of the crate specified in pyproject.toml.
+# Note that pluot_core also has python-specific dependencies, including pyo3,
+# that are required there due to being used in the binding definitions.
+pyo3 = { workspace = true, optional = true, features = ["extension-module"] }
 
 # Fixes for getrandom. May not be necessary here if added to upstream zarrs config.toml.
 # Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
@@ -82,11 +63,9 @@ image.workspace = true # For read/write to image formats like PNG in unit tests.
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-
 # We depend on tokio for the non-wasm unit tests that call async functions.
 # Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
 tokio = { workspace = true, features = ["full"] }
-
 
 
 [profile.release]
