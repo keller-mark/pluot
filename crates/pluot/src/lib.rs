@@ -1,27 +1,21 @@
-pub mod plugins;
+mod plugins;
 
 // Export things needed for layer-based plotting via Rust.
 pub use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams};
 pub use pluot_core::layers::core::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
-pub use pluot_core::registry::{LayerRegistration, get_layer_from_registry};
+
 
 // Re-export layer param types for convenience.
+// TODO: export more layer params and the required types.
 pub use pluot_core::layers::scatterplot_layer::{ScatterplotLayerParams, PointShapeMode};
+pub use pluot_zarr::layers::zarr_scatterplot_layer::ZarrScatterplotLayerParams;
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
-pub use pluot_core::bindings::wasm::{
-    log, render_wasm, set_panic_hook, zarr_get, zarr_get_range_from_end,
-    zarr_get_range_from_offset, zarr_has,
-};
+pub use pluot_core::bindings::wasm::{render_wasm, set_panic_hook};
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
-pub use pluot_core::bindings::python::{
-    log_info as log, render_py, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset,
-    zarr_has,
-};
+pub use pluot_core::bindings::python::{render_py};
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
-pub use pluot_core::bindings::plain_rust::{
-    log, render, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
-};
+pub use pluot_core::bindings::plain_rust::{render};

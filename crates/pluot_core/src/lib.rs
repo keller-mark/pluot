@@ -31,17 +31,15 @@ pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
 pub use crate::bindings::wasm::{
-    log, render_wasm, set_panic_hook, zarr_get, zarr_get_range_from_end,
-    zarr_get_range_from_offset, zarr_has,
+    log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub use crate::bindings::python::{
-    log_info as log, render_py, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset,
-    zarr_has,
+    log_info as log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 pub use crate::bindings::plain_rust::{
-    log, render, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
 };

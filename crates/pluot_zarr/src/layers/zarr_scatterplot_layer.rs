@@ -1,6 +1,4 @@
 use std::sync::Arc;
-use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
@@ -11,7 +9,6 @@ use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::two::svg::update_svg;
 use pluot_core::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerParams, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
-
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -195,15 +192,5 @@ impl DrawToSvg for ZarrScatterplotLayer {
         let updated_group = update_svg(group.clone(), &svg_elements);
 
         return updated_group.clone();
-    }
-}
-
-inventory::submit! {
-    pluot_core::registry::LayerRegistration {
-        layer_type_name: "ZarrScatterplotLayer",
-        create_layer: |value, view_params| {
-            let params: ZarrScatterplotLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(ZarrScatterplotLayer::new(view_params.clone(), params))
-        },
     }
 }
