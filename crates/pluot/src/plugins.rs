@@ -1,4 +1,4 @@
-// Register layers from external crates (e.g., pluot_zarr).
+// Register layers from outside the core crate (e.g., from pluot_zarr).
 use pluot_core::registry::LayerRegistration;
 use pluot_zarr::layers::zarr_scatterplot_layer::{ZarrScatterplotLayer, ZarrScatterplotLayerParams};
 

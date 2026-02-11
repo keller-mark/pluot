@@ -7,13 +7,16 @@ rust-version.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-exclude = []
+exclude = ["tests"]
 categories = []
 keywords = []
 
 [lib]
 name = "pluot_zarr"
 crate-type = ["lib"]
+
+[lints]
+workspace = true
 
 [features]
 default = []

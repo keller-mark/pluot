@@ -7,13 +7,16 @@ rust-version.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-exclude = []
+exclude = ["tests"]
 categories = []
 keywords = []
 
 [lib]
 name = "pluot_core"
 crate-type = ["lib"]
+
+[lints]
+workspace = true
 
 [features]
 default = []
@@ -28,9 +31,9 @@ inventory.workspace = true
 
 # Python-specific dependencies
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"], optional = true }
-pythonize = { version = "0.27", optional = true }
-pyo3-log = { version = "0.13.2", optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true, features = ["tokio-runtime"] }
+pythonize = { workspace = true, optional = true }
+pyo3-log = { workspace = true, optional = true }
 # Note: tokio is also specified in dev-dependencies,
 # since its "full" feature is used for our async unit tests.
 tokio = { workspace = true, optional = true }
@@ -85,17 +88,17 @@ lz-str.workspace = true # To compress SVG strings before passing to JS.
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "0.2.106" }
-wasm-bindgen-futures = { version = "0.4.56" }
-wasm-bindgen-shared = { version = "0.2.106" }
-web-sys = { version = "0.3.77" }
-js-sys = { version = "0.3.77" }
-serde-wasm-bindgen = { version = "0.6.5" }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+wasm-bindgen-shared = { workspace = true }
+web-sys = { workspace = true }
+js-sys = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
 # all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
 # code size when deploying.
-console_error_panic_hook = { version = "0.1.7" }
+console_error_panic_hook = { workspace = true }
 
 
 [dev-dependencies]

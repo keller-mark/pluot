@@ -33,6 +33,9 @@ non_snake_case = "allow"
 inventory = "0.3.21"
 
 pyo3 = { version = "0.27", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pythonize = { version = "0.27" }
+pyo3-log = { version = "0.13.2" }
 
 log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings?
 bytemuck = "1.23.2"
@@ -96,3 +99,14 @@ image = "0.25.9" # For read/write to image formats like PNG in unit tests.
 # We depend on tokio for the non-wasm unit tests that call async functions.
 # Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
 tokio = { version = "1.47.1", features = ["full"] }
+
+
+# WASM-specific dependencies
+wasm-bindgen = { version = "0.2.106" }
+wasm-bindgen-futures = { version = "0.4.56" }
+wasm-bindgen-shared = { version = "0.2.106" }
+wasm-bindgen-test = "0.3.34"
+web-sys = { version = "0.3.77" }
+js-sys = { version = "0.3.77" }
+serde-wasm-bindgen = { version = "0.6.5" }
+console_error_panic_hook = { version = "0.1.7" }
