@@ -13,3 +13,6 @@ inventory::submit! {
         },
     }
 }
+
+// Note: Moving to the inventory-based registration system may have impacted performance a tiny bit.
+// Consider just using crate features here to conditionally compile in the layers we want, instead of using inventory.
