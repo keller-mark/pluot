@@ -22,22 +22,6 @@ use pluot::{
     MarginParams, ScatterplotLayerParams, PointShapeMode,
 };
 
-
-async fn generate_image(width: u32, height: u32) -> Vec<u8> {
-    let num_pixels = (width * height) as usize;
-    let mut pixels = vec![0u8; (num_pixels * 4)];
-    for y in 0..height as i32 {
-        for x in 0..width as i32 {
-            let index = ((y * width as i32 + x) * 4) as usize;
-            pixels[index] = 255 as u8;
-            pixels[index + 1] = 0 as u8;
-            pixels[index + 2] = 0 as u8;
-            pixels[index + 3] = 255;
-        }
-    }
-    return pixels;
-}
-
 async fn render_unit_square_raster(width: u32, height: u32) -> Vec<u8> {
     let params = RenderParams {
         width: width,
@@ -81,19 +65,21 @@ async fn render_unit_square_raster(width: u32, height: u32) -> Vec<u8> {
 /// The state of the entire application.
 ///
 /// This is owned by Xilem, used to construct the view tree, and updated by event handlers.
-struct Stopwatch {
+struct MyAppState {
     active: bool,
 
     img_size: Size,
     img_pixels: Vec<u8>,
 }
 
-fn app_logic(data: &mut Stopwatch) -> impl WidgetView<Edit<Stopwatch>> + use<> {
+fn app_logic(data: &mut MyAppState) -> impl WidgetView<Edit<MyAppState>> + use<> {
     fork(
         flex_col((
             FlexSpacer::Fixed(1.px()),
             start_stop_button(data),
-            canvas(|state: &mut Stopwatch, _ctx, scene: &mut Scene, size: Size| {
+            // TODO: use an image() view instead of a canvas() view?
+            // See https://github.com/linebender/xilem/blob/5281ffb308732b00f42e0755c6095b6ae234ae16/xilem/examples/http_cats.rs#L202
+            canvas(|state: &mut MyAppState, _ctx, scene: &mut Scene, size: Size| {
                 let pixels = state.img_pixels.clone();
                 let image_data = ImageData {
                     width: size.width as u32,
@@ -111,7 +97,7 @@ fn app_logic(data: &mut Stopwatch) -> impl WidgetView<Edit<Stopwatch>> + use<> {
         data.active.then(|| {
             // Only update while active.
             task(
-                |proxy, data: &mut Stopwatch| {
+                |proxy, data: &mut MyAppState| {
                     let width = data.img_size.width as u32;
                     let height = data.img_size.height as u32;
                     async move {
@@ -119,7 +105,7 @@ fn app_logic(data: &mut Stopwatch) -> impl WidgetView<Edit<Stopwatch>> + use<> {
                         proxy.message(pixels.clone());
                     }
                 },
-                |data: &mut Stopwatch, pixels: Vec<u8>| {
+                |data: &mut MyAppState, pixels: Vec<u8>| {
                     data.img_pixels = pixels;
                 },
             )
@@ -128,13 +114,13 @@ fn app_logic(data: &mut Stopwatch) -> impl WidgetView<Edit<Stopwatch>> + use<> {
 }
 
 
-fn start_stop_button(data: &mut Stopwatch) -> impl WidgetView<Edit<Stopwatch>> + use<> {
+fn start_stop_button(data: &mut MyAppState) -> impl WidgetView<Edit<MyAppState>> + use<> {
     if data.active {
-        Either::A(text_button("Stop", |data: &mut Stopwatch| {
+        Either::A(text_button("Stop", |data: &mut MyAppState| {
             data.active = false;
         }))
     } else {
-        Either::B(text_button("Start", |data: &mut Stopwatch| {
+        Either::B(text_button("Start", |data: &mut MyAppState| {
             data.active = true;
         }))
     }
@@ -142,13 +128,13 @@ fn start_stop_button(data: &mut Stopwatch) -> impl WidgetView<Edit<Stopwatch>> +
 
 
 pub(crate) fn run(event_loop: EventLoopBuilder) -> Result<(), EventLoopError> {
-    let data = Stopwatch {
+    let data = MyAppState {
         active: false,
         img_pixels: vec![255; 450 * 300 * 4],
         img_size: Size::new(450.0, 300.0),
     };
 
-    let window_options = WindowOptions::new("Stopwatch")
+    let window_options = WindowOptions::new("My Plot")
         .with_min_inner_size(LogicalSize::new(300., 200.))
         .with_initial_inner_size(LogicalSize::new(450., 300.));
     let app = Xilem::new_simple(data, app_logic, window_options);
