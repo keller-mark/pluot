@@ -1,5 +1,5 @@
 [package]
-name = "pluot_core"
+name = "pluot"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,12 +8,16 @@ repository.workspace = true
 authors.workspace = true
 
 exclude = []
-categories = []
+categories = ["visualization", "graphics", "rendering", "science", "wasm"]
 keywords = []
+
+# Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Oz']
 
 [lib]
 name = "pluot"
-crate-type = "lib"
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
@@ -24,6 +28,10 @@ lacks_gpu = []
 
 
 [dependencies]
+# Workspace dependencies
+pluot_core = { workspace = true }
+pluot_zarr = { workspace = true }
+
 inventory.workspace = true
 
 # Python-specific dependencies
@@ -35,53 +43,6 @@ pyo3-log = { version = "0.13.2", optional = true }
 # since its "full" feature is used for our async unit tests.
 tokio = { version = "1.47.1", optional = true }
 
-
-# Core dependencies
-log.workspace = true # TODO: make this python-specific, if continues to only be used in python bindings?
-bytemuck.workspace = true
-futures.workspace = true
-futures-intrusive.workspace = true
-once_cell.workspace = true
-# We can use serde to deserialize JSON object parameters passed to the `render` function.
-# Reference: https://docs.rs/serde-wasm-bindgen/latest/serde_wasm_bindgen/
-serde.workspace = true
-# For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
-# Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
-# We need to specify uuid with feature "js", which is used by zarrrs.
-uuid.workspace = true
-# Note: zarrs is also specified in dev-dependencies,
-# since its "filesystem" feature is used for unit tests.
-zarrs = { workspace = true, default-features = false, features = [
-    "ndarray",
-    "crc32c",
-    "gzip",
-    "sharding",
-    "transpose",
-    "async",
-    # "filesystem", # was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
-] }
-async-trait.workspace = true
-quick_cache.workspace = true
-svg.workspace = true
-futures-time.workspace = true
-
-# For OME-Zarr image metadata parsing.
-# We use this fork which relaxes things by not using serde(deny_unknown_fields).
-ome_zarr_metadata.workspace = true
-serde_json.workspace = true
-
-# WebGPU
-wgpu.workspace = true
-glam.workspace = true
-encase.workspace = true
-
-# Matrix multiplication for SVG rendering
-nalgebra-glm.workspace = true
-
-
-fontdue.workspace = true # For font rasterization and text layout.
-
-lz-str.workspace = true # To compress SVG strings before passing to JS.
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -120,17 +81,25 @@ image.workspace = true # For read/write to image formats like PNG in unit tests.
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-# Note zarrs is also used for core dependencies (but without its "filesystem" feature). "filesystem" is needed for unit tests.
-zarrs = { workspace = true, default-features = false, features = [
-    "ndarray",
-    "crc32c",
-    "gzip",
-    "sharding",
-    "transpose",
-    "async",
-    "filesystem",
-] }
 
 # We depend on tokio for the non-wasm unit tests that call async functions.
 # Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
 tokio = { workspace = true, features = ["full"] }
+
+
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+
+# Enable link-time optimization.
+# This gives LLVM many more opportunities to inline and prune functions.
+# Not only will it make the .wasm smaller, but it will also make it faster at runtime!
+# The downside is that compilation will take longer.
+# Reference: https://rustwasm.github.io/book/reference/code-size.html
+lto = true
+
+# Enable "codegen-units = 1" to tell `rustc` to optimize the whole crate at once.
+# This also gives LLVM more opportunities to inline and prune functions.
+# This will make the .wasm smaller and faster, but will also make compilation even longer
+codegen-units = 1

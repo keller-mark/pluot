@@ -1,10 +1,13 @@
-mod bindings;
+pub mod bindings;
 pub mod d3;
 mod params;
 mod plots;
 mod cache;
 mod render;
 mod layers;
+
+// TODO: use inventory::submit! to register the layers and params.
+
 
 pub(crate) mod timeout;
 pub mod two;
@@ -23,6 +26,9 @@ pub use wgpu;
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams};
 pub use crate::layers::core::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 pub use crate::layers::scatterplot_layer::{ScatterplotLayerParams, PointShapeMode};
+
+// Export things needed by workspace packages that define other layers.
+pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]

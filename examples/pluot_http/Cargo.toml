@@ -8,5 +8,5 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-pluot = { path = "../../crates/pluot_core" }
+pluot = { workspace = true }
 rocket = { version = "0.5.1" }

@@ -1,0 +1,64 @@
+[package]
+name = "pluot_core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+#license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+exclude = []
+categories = []
+keywords = []
+
+[lib]
+name = "pluot"
+crate-type = "lib"
+
+[features]
+default = []
+# Define a feature for running unit tests in GPU-less environments
+lacks_gpu = []
+
+
+[dependencies]
+pluot_core = { workspace = true }
+
+inventory.workspace = true
+
+glam.workspace = true
+encase.workspace = true
+serde.workspace = true
+
+# Note: zarrs is also specified in dev-dependencies,
+# since its "filesystem" feature is used for unit tests.
+zarrs = { workspace = true, default-features = false, features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    # "filesystem", # was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
+] }
+
+# For OME-Zarr image metadata parsing.
+# We use this fork which relaxes things by not using serde(deny_unknown_fields).
+ome_zarr_metadata.workspace = true
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Note zarrs is also used for core dependencies (but without its "filesystem" feature). "filesystem" is needed for unit tests.
+zarrs = { workspace = true, default-features = false, features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    "filesystem",
+] }
+
+# We depend on tokio for the non-wasm unit tests that call async functions.
+# Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
+tokio = { workspace = true, features = ["full"] }
