@@ -1,5 +1,5 @@
 packages:
-  - 'pluot_core/pkg'
+  - 'crates/pluot_core/pkg'
   - 'bindings-js/lib'
   - 'bindings-js/demo'
   - 'bindings-js/docs'

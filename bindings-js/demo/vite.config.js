@@ -38,7 +38,7 @@ export function serveDemoFixtures() {
 }
 
 export default defineConfig({
-  base: "/pluot/",
+  base: "/",
   build: {
     target: "esnext",
   },

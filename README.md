@@ -66,7 +66,7 @@ cargo install wasm-pack
 cargo build
 
 # Install pnpm
-# may need to run `wasm-pack build pluot_core --target web` first
+# may need to run `wasm-pack build crates/pluot_core --target web` first
 pnpm install
 
 # Install uv
@@ -84,11 +84,11 @@ uv sync --extra dev
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
-wasm-pack build pluot_core --target web && pnpm run start-demo
+wasm-pack build crates/pluot_core --target web && pnpm run start-demo
 # or
-wasm-pack build pluot_core --dev --target web && pnpm run start-demo
+wasm-pack build crates/pluot_core --dev --target web && pnpm run start-demo
 # or
-wasm-pack build pluot_core --release --target web && pnpm run start-demo
+wasm-pack build crates/pluot_core --release --target web && pnpm run start-demo
 
 ```
 
@@ -107,7 +107,7 @@ Open to http://localhost:3005/www/
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh
-wasm-pack test pluot_core --headless --chrome
+wasm-pack test crates/pluot_core --headless --chrome
 ```
 
 <!-- TODO: update and un-comment once publishing details are established

@@ -2,7 +2,7 @@
 
 [workspace]
 members = [
-    "pluot_core",
+    "crates/pluot_core",
     "examples/pluot_cli",
     "examples/pluot_http"
 ]
@@ -20,4 +20,3 @@ edition = "2021"
 rust-version = "1.92"
 repository = "https://github.com/keller-mark/pluot"
 authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
-
