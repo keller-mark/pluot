@@ -82,7 +82,7 @@ fn extrude_line(
 
     // Calculate the normal vector strictly in screen space.
     let normal = vec2<f32>(-dir.y, dir.x);
-    
+
     // Transform normal back to NDC space for extrusion.
     // The X component needs to be scaled down by aspect ration because
     // NDC X units are wider than NDC Y units (physically).
@@ -110,8 +110,7 @@ struct LineLayerUniforms {
 struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(1) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -212,7 +211,6 @@ fn vs_main(
         var out: VSOut;
         out.position = pos;
         out.color = u.color;
-        out.quad_pos = (corner + 1.0) * 0.5;
         out.instance_index = instance_index;
         return out;
     }
@@ -256,7 +254,6 @@ fn vs_main(
     var out: VSOut;
     out.position = pos;
     out.color = u.color;
-    out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     return out;
 }
@@ -284,8 +281,7 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) color_in: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(1) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
     let category_color = get_categorical_color(labels_coords[instance_index]);
