@@ -9,6 +9,7 @@ use crate::layer_traits::{
     UnitsMode, ViewParams,
 };
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
+use crate::params::{PrepareResult, RenderResult};
 use crate::wgpu;
 
 // A 2D MultiscaleLayer that accepts an array of resolution levels, where each resolution level has its own shape, chunk shape, and scale factor relative to the base resolution.
@@ -317,7 +318,7 @@ impl MultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for MultiscaleLayer {
-    async fn prepare(&mut self) {
+    async fn prepare(&mut self) -> PrepareResult {
         // TODO: Build sublayers should return a list of all tiles in the viewport, from the coarsest resolution
         // to the current resolution. We will run all of their prepare() methods,
         // but we will only draw those whose RenderResult is Ready, so that we can show coarser tiles while finer tiles are loading.
@@ -325,9 +326,14 @@ impl PreparedLayer for MultiscaleLayer {
         // while keeping coarser sublayers if any of the contained finer sublayers are still loading, to avoid visual holes.
         self.sub_layer_instances = self.build_sublayers();
 
+        // TODO: use base_prepare_composite_layer here?
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare().await;
         }
+
+        return PrepareResult {
+            bailed_early: false,
+        };
     }
 }
 

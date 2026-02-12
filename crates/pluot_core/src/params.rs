@@ -125,7 +125,18 @@ pub struct RenderContext<'a> {
     pub out_group: &'a mut Group,
 }
 
+pub struct PrepareResult {
+    // Whether this layer bailed early due to the provided timeout.
+    pub bailed_early: bool,
+    // TODO: do we need a `timeout_remaining` field here to track the time remaining for subsequent layers
+    // after earlier layers have used up a portion of the timeout budget? Or, can we just use maybe_timeout!
+    // on joined futures to handle this instead?
+}
+
 pub struct RenderResult {
+    // Whether one or more layers bailed early due to the provided timeout.
+    // Only relevant in interactive settings.
+    // In non-interactive settings, timeout will be None, so this should always be false.
     pub bailed_early: bool,
 }
 

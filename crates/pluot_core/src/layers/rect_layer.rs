@@ -11,6 +11,7 @@ use crate::layer_traits::{
     AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::layers::position_utils::get_point_position;
+use crate::params::{PrepareResult, RenderResult};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
@@ -62,7 +63,7 @@ impl RectLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for RectLayer {
-    async fn prepare(&mut self) {
+    async fn prepare(&mut self) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -71,6 +72,10 @@ impl PreparedLayer for RectLayer {
         // TODO: execute getters and cache the results.
 
         // For now, it is a no-op, since self.data is set in the constructor.
+
+        return PrepareResult {
+            bailed_early: false,
+        };
     }
 }
 

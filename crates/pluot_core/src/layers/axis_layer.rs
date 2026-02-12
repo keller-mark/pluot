@@ -3,9 +3,10 @@ use svg::node::element::Group;
 
 use std::sync::Arc;
 use crate::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
-use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
+use crate::params::{PrepareResult, RenderResult};
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
 
@@ -373,14 +374,12 @@ fn format_tick_value(value: f64) -> String {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for AxisLayer {
-    async fn prepare(&mut self) {
+    async fn prepare(&mut self) -> PrepareResult {
         // Build sublayers based on current view params
         self.sub_layer_instances = self.build_sublayers();
 
         // Prepare all sublayers
-        for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare().await;
-        }
+        return base_prepare_composite_layer(&mut self.sub_layer_instances).await;
     }
 }
 

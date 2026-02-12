@@ -1,7 +1,7 @@
 use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
-use crate::params::{RenderContext, RenderResult};
+use crate::params::{RenderContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
 use serde::{Deserialize, Serialize};
 
@@ -88,7 +88,7 @@ impl Default for ViewParams {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait PreparedLayer {
-    async fn prepare(&mut self);
+    async fn prepare(&mut self) -> PrepareResult;
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -166,7 +166,11 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
     let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare()).collect();
 
     // Does this actually work like Promise.all? or does it just run things sequentially?
-    futures::future::join_all(prepare_futures).await;
+
+    // Collect all PrepareResult values and update bailed_early if any of them bailed early,
+    // aggregating the prepare results from all layers.
+    let prepare_results = futures::future::join_all(prepare_futures).await;
+    let bailed_early = prepare_results.iter().any(|r| r.bailed_early);
 
     // For pyo3 usage, we need to use iterator types that are Send to avoid the following error
     // when iterating over vectors of layers:
@@ -208,8 +212,7 @@ pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn Prep
         drop(render_pass);
     }
 
-    // TODO: Aggregate results from multiple layers
     RenderResult {
-        bailed_early: false,
+        bailed_early,
     }
 }

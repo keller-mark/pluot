@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::params::{PrepareResult, RenderResult};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
@@ -65,7 +66,7 @@ impl PointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for PointLayer {
-    async fn prepare(&mut self) {
+    async fn prepare(&mut self) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -74,6 +75,9 @@ impl PreparedLayer for PointLayer {
         // TODO: execute getters and cache the results.
 
         // For now, it is a no-op, since self.data is set in the constructor.
+        return PrepareResult {
+            bailed_early: false,
+        };
     }
 }
 
