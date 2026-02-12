@@ -112,8 +112,8 @@ impl PreparedLayer for ZarrPointLayer {
             //let x_result = x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset).await;
             let x_result = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await;
 
-            let x_vec = x_result.unwrap();
-            let x_f32_inner: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
+            let position_x = x_result.unwrap();
+            let x_f32_inner: Vec<f32> = position_x.iter().map(|&x| x as f32).collect();
             x_f32_inner
         }, &x_f32_future_deps, self.view_params.cache_enabled);
 
@@ -126,8 +126,8 @@ impl PreparedLayer for ZarrPointLayer {
             //let y_result = y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset).await;
             let y_result = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await;
 
-            let y_vec = y_result.unwrap();
-            let y_f32_inner: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+            let position_y = y_result.unwrap();
+            let y_f32_inner: Vec<f32> = position_y.iter().map(|&y| y as f32).collect();
             y_f32_inner
         }, &y_f32_future_deps, self.view_params.cache_enabled);
 
@@ -158,8 +158,8 @@ impl DrawToCanvas for ZarrPointLayer {
                 point_radius: self.layer_params.point_radius,
                 point_radius_unit_mode: self.layer_params.point_radius_unit_mode.clone(),
                 point_shape_mode: self.layer_params.point_shape_mode.clone(),
-                x_vec: data.x_arr.clone(),
-                y_vec: data.y_arr.clone(),
+                position_x: data.x_arr.clone(),
+                position_y: data.y_arr.clone(),
                 labels_vec: data.labels_arr.clone(),
             },
         ).await;
@@ -182,8 +182,8 @@ impl DrawToSvg for ZarrPointLayer {
                 point_radius: self.layer_params.point_radius,
                 point_radius_unit_mode: self.layer_params.point_radius_unit_mode.clone(),
                 point_shape_mode: self.layer_params.point_shape_mode.clone(),
-                x_vec: data.x_arr.clone(),
-                y_vec: data.y_arr.clone(),
+                position_x: data.x_arr.clone(),
+                position_y: data.y_arr.clone(),
                 labels_vec: data.labels_arr.clone(),
             },
         );

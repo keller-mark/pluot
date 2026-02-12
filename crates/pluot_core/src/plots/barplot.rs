@@ -71,18 +71,18 @@ pub async fn render_barplot(
     // log(&x_array.metadata().to_string_pretty());
 
     // Read the whole array
-    let x_vec = x_result.unwrap();
-    let y_vec = y_result.unwrap();
+    let position_x = x_result.unwrap();
+    let position_y = y_result.unwrap();
 
     // TODO: how best to obtain a Vec of strings?
     // See alternative at https://github.com/zarrs/zarrs/blob/b1a7a19fd249eca1edce493081aed669e6fd2463/zarrs/examples/array_write_read_string.rs#L98
-    let x_str_vec = x_vec.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+    let x_str_vec = position_x.iter().map(|s| s.to_string()).collect::<Vec<String>>();
 
     log(&x_str_vec[0]);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = x_vec.len();
-    assert_eq!(n, y_vec.len(), "x and y data must have the same length");
+    let n = position_x.len();
+    assert_eq!(n, position_y.len(), "x and y data must have the same length");
 
     // Create uniforms matching the WGSL layout
 
@@ -122,7 +122,7 @@ pub async fn render_barplot(
 
     // Convert to f32 and cast to bytes directly - no for loop needed
     let x_f32: Vec<f32> = x_str_vec.iter().map(|x| x_scale.scale(x) as f32).collect();
-    let y_f32: Vec<f32> = y_vec
+    let y_f32: Vec<f32> = position_y
         .iter()
         .map(|&y| y_scale.scale(&(y as f64)) as f32)
         .collect();

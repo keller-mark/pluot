@@ -33,9 +33,9 @@ pub struct PointLayerParams {
     pub point_radius_unit_mode: UnitsMode,
     pub point_shape_mode: PointShapeMode,
 
-    // TODO: improve naming here - should these be "x", "y", etc?
-    pub x_vec: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub y_vec: Arc<Vec<f32>>,
+    pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
+    pub position_y: Arc<Vec<f32>>,
+    // TODO: improve naming here
     pub labels_vec: Arc<Vec<i32>>,
 }
 
@@ -105,8 +105,8 @@ pub async fn base_draw_point_layer(
 
     // This bytemuck::cast_slice does not clone,
     // it just reinterprets the same memory.
-    let x_bytes = bytemuck::cast_slice(&layer_params.x_vec);
-    let y_bytes = bytemuck::cast_slice(&layer_params.y_vec);
+    let x_bytes = bytemuck::cast_slice(&layer_params.position_x);
+    let y_bytes = bytemuck::cast_slice(&layer_params.position_y);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
     let n = layer_params.labels_vec.len();
@@ -443,8 +443,8 @@ pub fn base_draw_point_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let x = layer_params.x_vec[i];
-        let y = layer_params.y_vec[i];
+        let x = layer_params.position_x[i];
+        let y = layer_params.position_y[i];
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (px, py) = get_point_position(

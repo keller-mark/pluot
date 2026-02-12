@@ -1,12 +1,9 @@
 [toolchain]
-# Reference: https://github.com/RReverser/wasm-bindgen-rayon?tab=readme-ov-file#building-rust-code
-# TODO: identify the specific features that enable the nightly version to work (but not the beta/stable versions).
-# TODO: cross fingers that the required features eventually make it into the stable version.
-# TODO: periodically update the nightly version and try the latest beta/stable versions to check if they work.
-channel = "nightly-2026-02-11"   # works
-# channel = "nightly-2025-12-30" # works
-# channel = "nightly-2025-11-15" # works
-# channel = "1.93.0-beta"        # doesnt work
-# channel = "1.92.0"             # doesnt work
+channel = "1.93.0" # works if not using +atomics in .cargo/config.toml
+# channel = "nightly-2026-02-11" # works with +atomics
+# channel = "nightly-2025-12-30" # works with +atomics
+# channel = "nightly-2025-11-15" # works with +atomics
+# channel = "1.93.0-beta"        # doesnt work with +atomics
+# channel = "1.92.0"             # doesnt work with +atomics
 components = ["rust-src"]
 targets = ["wasm32-unknown-unknown"]

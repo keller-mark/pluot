@@ -301,11 +301,11 @@ impl AxisLayer {
             margin_left: Some(0.0 as f32),
         };
 
-        let line_source_x_vec = line_source_positions.iter().map(|pos| pos[0]).collect();
-        let line_source_y_vec = line_source_positions.iter().map(|pos| pos[1]).collect();
+        let line_source_position_x = line_source_positions.iter().map(|pos| pos[0]).collect();
+        let line_source_position_y = line_source_positions.iter().map(|pos| pos[1]).collect();
 
-        let line_target_x_vec = line_target_positions.iter().map(|pos| pos[0]).collect();
-        let line_target_y_vec = line_target_positions.iter().map(|pos| pos[1]).collect();
+        let line_target_position_x = line_target_positions.iter().map(|pos| pos[0]).collect();
+        let line_target_position_y = line_target_positions.iter().map(|pos| pos[1]).collect();
 
         let line_labels_vec: Vec<i32> = line_source_positions.iter().map(|_| 0 as i32).collect();
 
@@ -316,10 +316,10 @@ impl AxisLayer {
             data_unit_mode: UnitsMode::Pixels,
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
-            source_position_x: Arc::new(line_source_x_vec),
-            source_position_y: Arc::new(line_source_y_vec),
-            target_position_x: Arc::new(line_target_x_vec),
-            target_position_y: Arc::new(line_target_y_vec),
+            source_position_x: Arc::new(line_source_position_x),
+            source_position_y: Arc::new(line_source_position_y),
+            target_position_x: Arc::new(line_target_position_x),
+            target_position_y: Arc::new(line_target_position_y),
             labels_vec: line_labels_vec, // TODO: make this optional in LineLayerParams
         };
         sublayers.push(Box::new(LineLayer::new(
@@ -329,8 +329,8 @@ impl AxisLayer {
 
         // Create TextLayer for tick labels
         if !text_strings.is_empty() {
-            let text_x_vec = text_positions.iter().map(|pos| pos[0]).collect();
-            let text_y_vec = text_positions.iter().map(|pos| pos[1]).collect();
+            let text_position_x = text_positions.iter().map(|pos| pos[0]).collect();
+            let text_position_y = text_positions.iter().map(|pos| pos[1]).collect();
 
             let text_params = TextLayerParams {
                 layer_id: format!("{}_axis_layer_text_sublayer", self.layer_params.layer_id),
@@ -342,8 +342,8 @@ impl AxisLayer {
                 text_baseline_mode: text_baseline_mode,
                 text_rotation: Some(text_rotation as f32),
 
-                x_vec: Arc::new(text_x_vec),
-                y_vec: Arc::new(text_y_vec),
+                position_x: Arc::new(text_position_x),
+                position_y: Arc::new(text_position_y),
                 text_vec: Arc::new(text_strings),
             };
             sublayers.push(Box::new(TextLayer::new(

@@ -55,8 +55,8 @@ async def _(camera_view, render_to_image):
                           margin_bottom=0,
                           margin_left=0,
                         ),
-                        x_vec=[100, 100, 400, 400],
-                        y_vec=[100, 400, 100, 400],
+                        position_x=[100, 100, 400, 400],
+                        position_y=[100, 400, 100, 400],
                         labels_vec=[0, 1, 2, 3],
                       )
                 ),
@@ -78,7 +78,7 @@ def _(np):
     x_arr = ((np.random.rand(500) - 0.5) * 10.0).astype('<f8')
     y_arr = ((np.random.rand(500) - 0.5) * 10.0).astype('<f8')
     color_arr = np.array(
-      [0, 1, 2, 3, 4] * 100
+      [5, 6, 7, 6, 8] * 100
     ).astype('<i8')
     return color_arr, x_arr, y_arr
 

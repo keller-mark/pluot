@@ -151,11 +151,8 @@ pub struct TextLayerParams {
     pub text_baseline_mode: TextBaselineMode,
     pub text_rotation: Option<f32>, // Rotation in degrees
 
-    // TODO(ref): pass in references instead of owned Vecs?
-    // Would this cause issues when using serde to create layers based on JSON params?
-    // TODO: improve naming here - should these be "x", "y", etc?
-    pub x_vec: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub y_vec: Arc<Vec<f32>>,
+    pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
+    pub position_y: Arc<Vec<f32>>,
     pub text_vec: Arc<Vec<String>>,
 }
 
@@ -219,8 +216,8 @@ impl PreparedLayer for TextLayer {
         let cache_keys: Vec<String> = vec![
             self.layer_params.layer_id.clone(),
             format!("{:?}", self.layer_params.text_vec), // TODO: use a better key
-            format!("{:?}", self.layer_params.x_vec), // TODO: use a better key
-            format!("{:?}", self.layer_params.y_vec), // TODO: use a better key
+            format!("{:?}", self.layer_params.position_x), // TODO: use a better key
+            format!("{:?}", self.layer_params.position_y), // TODO: use a better key
             format!("{}", font_size),
             format!("{:?}", text_align_mode),
             format!("{:?}", text_baseline_mode),
@@ -293,8 +290,8 @@ impl PreparedLayer for TextLayer {
             // Iterate over each string
             for elem_i in 0..n {
                 let text_str = &self.layer_params.text_vec[elem_i];
-                let text_x_pos = self.layer_params.x_vec[elem_i];
-                let text_y_pos = self.layer_params.y_vec[elem_i];
+                let text_x_pos = self.layer_params.position_x[elem_i];
+                let text_y_pos = self.layer_params.position_y[elem_i];
 
                 // Measure text width for alignment.
                 // Text width is in pixel units.
@@ -787,8 +784,8 @@ pub fn base_draw_text_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let x = layer_params.x_vec[i];
-        let y = layer_params.y_vec[i];
+        let x = layer_params.position_x[i];
+        let y = layer_params.position_y[i];
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (px, py) = get_point_position(

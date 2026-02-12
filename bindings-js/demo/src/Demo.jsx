@@ -66,8 +66,8 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-            x_vec: [100, 100],
-            y_vec: [100, 200],
+            position_x: [100, 100],
+            position_y: [100, 200],
             labels_vec: [0, 1],
           }
         },
@@ -109,8 +109,8 @@ const DEMOS = {
               margin_left: 0,
             },*/
 
-            x_vec: [10, 110],
-            y_vec: [10, 110],
+            position_x: [10, 110],
+            position_y: [10, 110],
             text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },

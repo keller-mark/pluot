@@ -79,18 +79,18 @@ pub async fn render_scatterplot_3d(
     // log(&x_array.metadata().to_string_pretty());
 
     // Read the whole array
-    let x_vec = x_result.unwrap();
-    let y_vec = y_result.unwrap();
+    let position_x = x_result.unwrap();
+    let position_y = y_result.unwrap();
     let z_vec = z_result.unwrap();
     let labels_vec = labels_result.unwrap();
 
     // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = x_vec.len();
-    assert_eq!(n, y_vec.len(), "x and y data must have the same length");
+    let n = position_x.len();
+    assert_eq!(n, position_y.len(), "x and y data must have the same length");
 
     // Convert to f32 and cast to bytes directly - no for loop needed
-    let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
-    let y_f32: Vec<f32> = y_vec.iter().map(|&y| y as f32).collect();
+    let x_f32: Vec<f32> = position_x.iter().map(|&x| x as f32).collect();
+    let y_f32: Vec<f32> = position_y.iter().map(|&y| y as f32).collect();
     let z_f32: Vec<f32> = z_vec.iter().map(|&z| z as f32).collect();
     let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
 
