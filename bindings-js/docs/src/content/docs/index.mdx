@@ -1,0 +1,68 @@
+---
+title: Implement once, visualize everywhere.
+description: Reuse the same plot rendering implementation across web, desktop, and notebook environments.
+template: splash # Remove or comment out this line to display the site sidebar on this page.
+hero:
+  tagline: Static. Interactive. Raster. Vector. Web. Desktop. 
+  image:
+    file: ../../assets/pluot-logo.png
+  actions:
+    - text: View an example
+      link: /examples/scatterplot/
+      icon: right-arrow
+    - text: Read the docs
+      link: /start/getting-started/
+      icon: right-arrow
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import Footer from '../../components/Footer.astro';
+
+## Visualize data using your favorite language
+
+{/* Icon reference: https://starlight.astro.build/reference/icons/ */}
+
+<CardGrid stagger>
+	<Card title="Rust" icon="seti:rust">
+		Directly use the `pluot` Rust crate to render plots from within your Rust code.
+	</Card>
+	<Card title="JavaScript" icon="seti:wasm">
+		Render static and interactive plots in the web browser.
+		Made possible via WebAssembly bindings in browsers that support WebGPU.
+	</Card>
+	<Card title="Python" icon="seti:python">
+		Render static plots in Python environments via PyO3 bindings to the Rust library.
+		Or, render interactive plots in notebook environments via AnyWidget.
+	</Card>
+	<Card title="More coming soon" icon="seti:json">
+		If you don't see your favorite programming language here, reach out on GitHub.
+	</Card>
+</CardGrid>
+
+## Features
+
+<CardGrid stagger>
+	<Card title="Fast" icon="rocket">
+		Render millions of points on each frame of an animation or user interaction (e.g., pan, zoom).
+	</Card>
+	<Card title="Small" icon="puzzle">
+		The WASM binary size is currently less than 4MB, making it practical to integrate into web applications.
+	</Card>
+	<Card title="Scalable" icon="magnifier">
+		Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies.
+	</Card>
+	<Card title="Raster or vector output" icon="seti:svg">
+		The same plot implementation can support both raster and vector outputs.
+		Use vector outputs for publication-quality graphics exporting.
+		Use raster outputs for high-performance interactive visualization powered by WebGPU.
+	</Card>
+	<Card title="Layer-based API" icon="setting">
+		Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
+	</Card>
+	<Card title="Leave the browser behind" icon="information">
+		Plotting functions are implemented in Rust using `wgpu`, and do not rely on a web browser or JavaScript runtime when plotting in non-web environments.
+	</Card>
+</CardGrid>
+
+<Footer title="Mark Keller" href="https://markk.co" />

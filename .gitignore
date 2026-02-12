@@ -1,4 +1,5 @@
 /target
+target/
 **/*.rs.bk
 Cargo.lock
 bin/
@@ -22,3 +23,11 @@ __pycache__/
 .ropeproject/
 __marimo__/
 .Rproj.user
+
+.astro/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.production

@@ -1,0 +1,10 @@
+[package]
+name = "pluot_http"
+description = "An example HTTP server."
+edition = "2021"
+rust-version = "1.92"
+publish = false
+
+[dependencies]
+pluot = { path = "../../crates/pluot" }
+rocket = { version = "0.5.1" }

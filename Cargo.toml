@@ -1,37 +1,50 @@
-[package]
-name = "pluot"
+# https://doc.rust-lang.org/cargo/reference/workspaces.html
+
+[workspace]
+members = [
+    "crates/pluot_core",
+    "crates/pluot_zarr",
+    "crates/pluot",
+    "examples/pluot_cli",
+]
+resolver = "2"
+
+exclude = [
+    # These example crates have lots of subdependencies.
+    # To ensure that they get their own independent Cargo.lock files
+    # to avoid subdependency conflicts, with the workspace packages or with each other,
+    # we exclude them from the workspace and instead specify their dependencies with path = "../../crates/pluot".
+    "examples/pluot_http",
+    "examples/pluot_xilem",
+]
+
+[workspace.package]
 version = "0.1.0"
-authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
-edition = "2018"
+# TODO: license
+
+# We use the 2021 edition which defaults to Resolver version 2
+# (could alternatively specify resolver = "2" with edition = "2018").
+# This allows us to specify target-specific dev-dependencies,
+# so that `wasm-pack build --dev` does not try to pull in zarrs_filesystem.
+edition = "2021"
 rust-version = "1.92"
-exclude = ["data", "js", "python", "python-notebooks"]
+repository = "https://github.com/keller-mark/pluot"
+authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
 
-# Reference: https://drager.github.io/wasm-pack/book/cargo-toml-configuration.html
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = ['-Oz']
-
-[lib]
-name = "pluot"
-crate-type = ["cdylib", "rlib"]
-
-[features]
-default = []
-# Define features to toggle which dependency is active
-python = ["pyo3", "pyo3-async-runtimes", "pythonize", "tokio", "pyo3-log"]
-test_plain_rust = ["tokio"]
-
-[dependencies]
-
-# Python-specific dependencies
-pyo3 = { version = "0.27", optional = true, features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"], optional = true }
-pythonize = { git = "https://github.com/tuxu/pythonize.git", rev = "6140fe0", optional = true }
-pyo3-log = { git = "https://github.com/a1phyr/pyo3-log.git", rev = "1b4d070", optional = true }
-# tokio is also used for the test_plain_rust feature. "full" is needed for its testing utilities.
-tokio = { version = "1.47.1", features = ["full"], optional = true }
+# During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
+[workspace.lints.rust]
+unused = "allow"
+non_snake_case = "allow"
 
 
-# Core dependencies
+[workspace.dependencies]
+inventory = "0.3.21"
+
+pyo3 = { version = "0.27", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pythonize = { version = "0.27" }
+pyo3-log = { version = "0.13.2" }
+
 log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings?
 bytemuck = "1.23.2"
 futures = "0.3.31"
@@ -39,21 +52,8 @@ futures-intrusive = "0.5"
 once_cell = "1.21.3"
 # We can use serde to deserialize JSON object parameters passed to the `render` function.
 # Reference: https://docs.rs/serde-wasm-bindgen/latest/serde_wasm_bindgen/
-serde = { version = "1.0.x", features = ["derive"] }
-# For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
-# Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
-# We need to specify uuid with feature "js", which is used by zarrrs.
-uuid = { version = "1", features = ["v4", "js"] }
-# Zarrs (ea23432)
-zarrs = { version = "0.22.10", default-features = false, features = [
-    "ndarray",
-    "crc32c",
-    "gzip",
-    "sharding",
-    "transpose",
-    "async",
-    "filesystem",
-] }
+serde = { version = "1.0.x", features = ["derive", "rc"] }
+
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 svg = "0.18.0"
@@ -64,82 +64,65 @@ futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = 
 ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.git", branch = "keller-mark/relaxed-ome-fields" }
 serde_json = "1.0.143"
 
+# Local crates
+# We register these here so that they can be used via .workspace = true by sibling crates.
+pluot_core = { path = "crates/pluot_core" }
+pluot_zarr = { path = "crates/pluot_zarr" }
+pluot = { path = "crates/pluot" }
+
 # WebGPU
 wgpu = { version = "28.0.0" }
 glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 
-# Trying vello for shape/text rendering.
-# Vello (65eea2c4)
-# vello = { git = "https://github.com/linebender/vello.git", rev = "2e96026" }
-# # Add wgpu as a direct dependency to enable the webgl feature. This is still not working in Firefox/Safari.
-# # wgpu = { version = "26.0.1", features = ["webgl"] }
-# # From https://github.com/linebender/vello/blob/main/Cargo.toml
-# # Metadata reader and glyph scaler for OpenType fonts.
-# skrifa = { version = "0.36.0", default-features = false, features = [
-#     "autohint_shaping",
-# ] }
-# # Primitive types for styling vector graphics.
-# # The version of kurbo used below should be kept in sync with the version of kurbo used by peniko.
-# peniko = { version = "0.4.0", default-features = false }
-# # A Rust library for manipulating curves.
-# kurbo = { version = "0.11.3", default-features = false }
+# Matrix multiplication for SVG rendering
+nalgebra-glm = "0.3"
 
-# Trying VGER for shape/text rendering.
-vger = { git = "https://github.com/keller-mark/vger-rs.git", rev = "b579608" }
-euclid = "0.22.11"
-fontdue = "0.9.x"
+fontdue = "0.9.x" # For font rasterization and text layout.
 
-# Trying glyphon for text rendering.
-# glyphon = "0.9.0"
+lz-str = "0.2.1" # To compress SVG strings before passing to JS.
+
+# Dev dependencies
+resvg = "0.46.0" # For SVG rendering during unit tests to compare with raster-format outputs.
+tiny-skia = "0.11.4" # Used when rendering with resvg (Pixmap target for rendering).
+dify = "0.8.0" # For pixel diffing in unit tests.
+image = "0.25.9" # For read/write to image formats like PNG in unit tests.
 
 
-# For testing with local modified version of the rust-blosc-src crate.
-#blosc-src = { path = "../rust-blosc-src" }
+# We depend on tokio for the non-wasm unit tests that call async functions.
+# Note: tokio is also used for the python feature (but without its "full" feature). "full" is needed for its async unit testing functionality.
+tokio = { version = "1.47.1" }
+
 
 # WASM-specific dependencies
-[target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2.106" }
 wasm-bindgen-futures = { version = "0.4.56" }
 wasm-bindgen-shared = { version = "0.2.106" }
+wasm-bindgen-test = "0.3.34"
 web-sys = { version = "0.3.77" }
 js-sys = { version = "0.3.77" }
 serde-wasm-bindgen = { version = "0.6.5" }
-# The `console_error_panic_hook` crate provides better debugging of panics by
-# logging them with `console.error`. This is great for development, but requires
-# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
-# code size when deploying.
 console_error_panic_hook = { version = "0.1.7" }
 
 
-# Fixes for getrandom. May not be necessary here if added to upstream zarrs config.toml.
-# Reference: https://github.com/kylebarron/parquet-wasm/blob/ad18b841a8e788b0d4b17eb9deaca581d02bf887/Cargo.toml#L100C1-L110C18
-[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom_v03]
-package = "getrandom"
-version = "0.3"
-features = ["wasm_js"]
-
-[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom_v02]
-package = "getrandom"
-version = "0.2"
-features = ["js"]
-
-
-[dev-dependencies]
-wasm-bindgen-test = "0.3.34"
-
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
-
-# Enable link-time optimization.
-# This gives LLVM many more opportunities to inline and prune functions.
-# Not only will it make the .wasm smaller, but it will also make it faster at runtime!
-# The downside is that compilation will take longer.
-# Reference: https://rustwasm.github.io/book/reference/code-size.html
-lto = true
-
-# Enable "codegen-units = 1" to tell `rustc` to optimize the whole crate at once.
-# This also gives LLVM more opportunities to inline and prune functions.
-# This will make the .wasm smaller and faster, but will also make compilation even longer
-codegen-units = 1
+# For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
+# Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
+# We need to specify uuid with feature "js", which is used by zarrrs.
+uuid = { version = "1", features = ["v4", "js"] }
+# Note: zarrs is also specified in dev-dependencies,
+# since its "filesystem" feature is used for unit tests.
+[workspace.dependencies.zarrs]
+version = "0.23.0"
+# path = "../zarrs/zarrs"
+default-features = false
+features = [
+    "ndarray",
+    "crc32c",
+    "gzip",
+    "sharding",
+    "transpose",
+    "async",
+    # "zstd",       # Using the "zstd" and "blosc" features adds ~0.3MB to the .wasm size in --release mode.
+    # "blosc",      # Possible to enable when using a zarrs branch that uses Blusc for blosc.
+    # "filesystem", # Was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
+]
