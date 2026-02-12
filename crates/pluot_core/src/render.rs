@@ -32,7 +32,12 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // and which DX12 shader compiler wgpu will use.
     let (device, queue) = get_or_init_gpu_context().await;
 
+    let compute_result = crate::compute_example::compute_example_with_memo(device.clone(), queue.clone()).await;
+    log(&format!("Compute shader with memo result: {}", compute_result));
+
     // Create a texture to render to.
+    // TODO: move this rendering setup logic inside render_canvas, after the layer.prepare() functions,
+    // to allow the prepare functions to do GPGPU / compute shader pipelines prior to the render pass(es).
     let texture_desc = TextureDescriptor {
         // Debug label of the texture. This will show up in graphics debuggers for easy identification.
         label: Some("Final Render Texture"),
@@ -185,7 +190,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
 
     // Finally, we handle the output based on the format.
-    
+
 
     if params.format == GraphicsFormat::Vector {
         // Return the SVG string as bytes.
@@ -202,7 +207,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
 
 
-    
+
 
     // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(
@@ -293,6 +298,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     // Read and depad rows into a tightly packed RGBA buffer
     let data = buffer_slice.get_mapped_range();
+
 
     let NUM_EXTRA_BYTES = 1;
 

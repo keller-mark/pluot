@@ -6,6 +6,7 @@ pub mod cache;
 mod render;
 pub mod layers;
 pub mod registry;
+mod compute_example;
 
 pub(crate) mod timeout;
 pub mod two;
