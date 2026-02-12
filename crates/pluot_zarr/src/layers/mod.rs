@@ -1,1 +1,1 @@
-pub mod zarr_scatterplot_layer;
+pub mod zarr_point_layer;

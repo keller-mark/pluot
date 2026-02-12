@@ -62,7 +62,7 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
     );
 }
 
-struct ScatterplotLayerUniforms {
+struct PointLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     data_unit_mode: u32, // 0: pixel units, 1: data units
@@ -85,7 +85,7 @@ struct FSOut {
     @location(0) color: vec4<f32>,
 };
 
-@group(0) @binding(0) var<uniform> u: ScatterplotLayerUniforms;
+@group(0) @binding(0) var<uniform> u: PointLayerUniforms;
 @group(0) @binding(1) var<storage, read> x_coords: array<f32>;
 @group(0) @binding(2) var<storage, read> y_coords: array<f32>;
 @group(0) @binding(3) var<storage, read> labels_coords: array<i32>;

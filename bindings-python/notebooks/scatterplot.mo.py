@@ -28,8 +28,8 @@ def _():
 async def _(camera_view, render_to_image):
     await render_to_image(
         camera_view=camera_view,
-        width=500, 
-        height=500, 
+        width=500,
+        height=500,
         margin_left=60,
         plot_id="test",
         plot_type="LayeredPlot",
@@ -41,7 +41,7 @@ async def _(camera_view, render_to_image):
             #point_radius=5.0
             layers=[
                 dict(
-                    layer_type="ScatterplotLayer",
+                    layer_type="PointLayer",
                       layer_params=dict(
                         layer_id="layer_2",
                         data_unit_mode="Pixels",
@@ -110,7 +110,7 @@ async def _(
             #point_radius=5.0
             layers=[
                 dict(
-                  layer_type="ZarrScatterplotLayer",
+                  layer_type="ZarrPointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
                     data_unit_mode="Data",

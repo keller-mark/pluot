@@ -33,7 +33,7 @@ pub enum ViewMode {
 /// an opaque JSON value. Layers register themselves via `inventory::submit!` with
 /// a factory function that knows how to deserialize their specific params.
 ///
-/// JSON wire format: `{"layer_type": "ScatterplotLayer", "layer_params": {...}}`
+/// JSON wire format: `{"layer_type": "PointLayer", "layer_params": {...}}`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerParams {
     pub layer_type: String,

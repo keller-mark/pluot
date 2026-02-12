@@ -7,7 +7,7 @@ use image::{ImageReader, RgbaImage, save_buffer_with_format, ColorType, ImageFor
 use pluot::{
     render, RenderParams, PlotParams, LayeredPlotRenderParams, GraphicsFormat,
     AspectRatioMode, LayerParams, UnitsMode, ViewParams,
-    MarginParams, ScatterplotLayerParams, PointShapeMode,
+    MarginParams, PointLayerParams, PointShapeMode,
 };
 
 
@@ -42,9 +42,9 @@ async fn test_render_unit_square_raster() {
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: vec![
                 LayerParams {
-                    layer_type: "ScatterplotLayer".to_string(),
-                    layer_params: serde_json::to_value(ScatterplotLayerParams {
-                        layer_id: "my_scatterplot_layer".to_string(),
+                    layer_type: "PointLayer".to_string(),
+                    layer_params: serde_json::to_value(PointLayerParams {
+                        layer_id: "my_point_layer".to_string(),
                         bounds: Some(MarginParams {
                             margin_left: Some(0.0),
                             margin_right: Some(0.0),
@@ -117,9 +117,9 @@ async fn test_render_unit_square_vector() { // TODO: move to different file and 
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: vec![
                 LayerParams {
-                    layer_type: "ScatterplotLayer".to_string(),
-                    layer_params: serde_json::to_value(ScatterplotLayerParams {
-                        layer_id: "my_scatterplot_layer".to_string(),
+                    layer_type: "PointLayer".to_string(),
+                    layer_params: serde_json::to_value(PointLayerParams {
+                        layer_id: "my_point_layer".to_string(),
                         bounds: Some(MarginParams {
                             margin_left: Some(0.0),
                             margin_right: Some(0.0),
@@ -148,10 +148,10 @@ async fn test_render_unit_square_vector() { // TODO: move to different file and 
 
     let expected_svg_str = r#"
         <g height="100" width="100">
-            <clipPath id="my_scatterplot_layer_clip_path">
+            <clipPath id="my_point_layer_clip_path">
                 <rect height="100" width="100" x="0" y="0"/>
             </clipPath>
-            <g clip-path="url(#my_scatterplot_layer_clip_path)" transform="translate(0,0)">
+            <g clip-path="url(#my_point_layer_clip_path)" transform="translate(0,0)">
                 <rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="-10" y="90"/>
                 <rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="90" y="90"/>
                 <rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="90" y="-10"/>

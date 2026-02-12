@@ -95,7 +95,7 @@ const dom2dCamera = (
   let yAspectRatioModeFactor = 1.0;
 
   /*
-    // Logic for aspect ratio handling in scatterplot_layer.wgsl
+    // Logic for aspect ratio handling in point_layer.wgsl
     if (aspect_ratio_mode == 1u) {
         // fit/contain
         if (layer_aspect_ratio > 1.0) {

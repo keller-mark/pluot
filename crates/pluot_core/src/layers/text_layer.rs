@@ -224,7 +224,7 @@ impl PreparedLayer for TextLayer {
         // TODO: execute getters and cache the results.
 
         // For now, we use this function to prepare the font atlas and glyph cache.
-        
+
 
         // TODO: in the future, we will need to extract the font atlas preparation logic to a base_ function to share with
         // descendant layers, so that they can asynchronously load their data in their prepare function
@@ -325,7 +325,7 @@ impl PreparedLayer for TextLayer {
                     &text_str,
                     font_size as f32,
                 );
-                
+
                 // Calculate offset based on alignment and baseline.
                 // These offsets are in pixel units.
                 let (offset_x, offset_y) = calculate_text_position(
@@ -571,7 +571,7 @@ pub async fn base_draw_text_layer(
         text_rotation: text_rotation,
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
-        // as done by the ScatterplotLayer vertex shader, using these uniform values.
+        // as done by the PointLayer vertex shader, using these uniform values.
         color: Vec4::from([0.0, 0.0, 0.0, 1.0]), // TODO: support per-element colors.
     };
 
@@ -649,7 +649,7 @@ pub async fn base_draw_text_layer(
             bind_group_layouts: &[&bind_group_layout],
             immediate_size: 0,
         });
-    
+
     // Vertex buffer layout: two vec4<f32> per instance
     let vertex_buffers = [wgpu::VertexBufferLayout {
         array_stride: (NUM_VALUES_PER_INSTANCE * std::mem::size_of::<f32>()) as u64,
@@ -908,12 +908,12 @@ impl DrawToSvg for TextLayer {
             self.layer_params.text_rotation.unwrap_or(0.0),
             &self.layer_params.layer_id,
         );
-        
+
         // TODO: refactor to avoid the cloning here?
         let updated_group = update_svg(group.clone(), &svg_elements);
 
         return updated_group.clone();
-        
+
     }
 }
 

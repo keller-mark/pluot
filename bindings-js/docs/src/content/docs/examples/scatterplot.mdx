@@ -22,7 +22,7 @@ This scatterplot renders 1 million points.
     plotParams={{
       layers: [
         {
-          layer_type: "ZarrScatterplotLayer",
+          layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
             data_unit_mode: "Data",
@@ -57,7 +57,7 @@ This scatterplot renders 1 million points.
     plotParams={{
       layers: [
         {
-          layer_type: "ZarrScatterplotLayer",
+          layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
             data_unit_mode: "Data",
@@ -94,7 +94,7 @@ await render_to_image(
     plot_params=dict(
         layers=[
             dict(
-                layer_type="ScatterplotLayer",
+                layer_type="PointLayer",
                   layer_params=dict(
                     layer_id="layer_2",
                     data_unit_mode="Pixels",
@@ -119,4 +119,3 @@ await render_to_image(
 ```
   </TabItem>
 </Tabs>
-

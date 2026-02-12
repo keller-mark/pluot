@@ -1,4 +1,4 @@
-// Inspired by the DeckGL ScatterplotLayer
+// Inspired by the DeckGL PointLayer
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
 use encase::{ShaderType, UniformBuffer};
@@ -24,7 +24,7 @@ pub enum PointShapeMode {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ScatterplotLayerParams {
+pub struct PointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
@@ -41,18 +41,15 @@ pub struct ScatterplotLayerParams {
 
 // TODO: defaults for params?
 
-
-// TODO: rename to PointLayer
-// (to save the name "ScatterplotLayer" for some future compositeLayer that includes axes, etc.)
-pub struct ScatterplotLayer {
+pub struct PointLayer {
     view_params: ViewParams,
-    layer_params: ScatterplotLayerParams,
+    layer_params: PointLayerParams,
 }
 
-impl ScatterplotLayer {
+impl PointLayer {
     pub fn new(
         view_params: ViewParams,
-        layer_params: ScatterplotLayerParams,
+        layer_params: PointLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
         if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
@@ -67,7 +64,7 @@ impl ScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for ScatterplotLayer {
+impl PreparedLayer for PointLayer {
     async fn prepare(&mut self) {
 
         // TODO: include the layer type in the memoization dependencies?
@@ -81,7 +78,7 @@ impl PreparedLayer for ScatterplotLayer {
 }
 
 #[derive(ShaderType, Debug)]
-struct ScatterplotLayerUniforms {
+struct PointLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
     data_unit_mode: u32, // 0 = pixels, 1 = data units
@@ -93,17 +90,17 @@ struct ScatterplotLayerUniforms {
     color: Vec4,         // rgba color for points
 }
 
-// We extract this function for reuse in derived scatterplot layers (e.g., ZarrScatterplotLayer).
+// We extract this function for reuse in derived scatterplot layers (e.g., ZarrPointLayer).
 // TODO: is this the best way to share this logic?
 // See https://www.youtube.com/watch?v=Phk0C-kLlho
 // See https://github.com/linebender/xilem/blob/main/xilem_core/src/views/any_view.rs
 
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
-pub async fn base_draw_scatterplot_layer(
+pub async fn base_draw_point_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
-    layer_params: &ScatterplotLayerParams,
+    layer_params: &PointLayerParams,
 ) {
 
     // This bytemuck::cast_slice does not clone,
@@ -183,7 +180,7 @@ pub async fn base_draw_scatterplot_layer(
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
     // Construct the uniform struct using Encase.
-    let uniform_struct = ScatterplotLayerUniforms {
+    let uniform_struct = PointLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
         data_unit_mode: match layer_params.data_unit_mode {
@@ -224,7 +221,7 @@ pub async fn base_draw_scatterplot_layer(
     // Create bind group layout and bind group for positions + uniforms
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ScatterplotLayer BGL"),
+            label: Some("PointLayer BGL"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     // The uniforms buffer.
@@ -274,7 +271,7 @@ pub async fn base_draw_scatterplot_layer(
         });
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ScatterplotLayer BG"),
+            label: Some("PointLayer BG"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -297,7 +294,7 @@ pub async fn base_draw_scatterplot_layer(
         });
 
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/scatterplot_layer.wgsl"));
+        .create_shader_module(wgpu::include_wgsl!("shaders/point_layer.wgsl"));
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -390,9 +387,9 @@ pub async fn base_draw_scatterplot_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ScatterplotLayer {
+impl DrawToCanvas for PointLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        base_draw_scatterplot_layer(
+        base_draw_point_layer(
             device, queue, pass,
             &self.view_params,
             &self.layer_params,
@@ -400,9 +397,9 @@ impl DrawToCanvas for ScatterplotLayer {
     }
 }
 
-pub fn base_draw_scatterplot_layer_svg(
+pub fn base_draw_point_layer_svg(
     view_params: &ViewParams,
-    layer_params: &ScatterplotLayerParams,
+    layer_params: &PointLayerParams,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
     let n = layer_params.labels_vec.len();
@@ -502,9 +499,9 @@ pub fn base_draw_scatterplot_layer_svg(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for ScatterplotLayer {
+impl DrawToSvg for PointLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let svg_elements = base_draw_scatterplot_layer_svg(
+        let svg_elements = base_draw_point_layer_svg(
             &self.view_params,
             &self.layer_params,
         );
@@ -519,10 +516,10 @@ impl DrawToSvg for ScatterplotLayer {
 
 inventory::submit! {
     crate::registry::LayerRegistration {
-        layer_type_name: "ScatterplotLayer",
+        layer_type_name: "PointLayer",
         create_layer: |value, view_params| {
-            let params: ScatterplotLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(ScatterplotLayer::new(view_params.clone(), params))
+            let params: PointLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(PointLayer::new(view_params.clone(), params))
         },
     }
 }

@@ -19,7 +19,7 @@ use xilem::vello::peniko::{ImageAlphaType, ImageData};
 use pluot::{
     render, RenderParams, PlotParams, LayeredPlotRenderParams, GraphicsFormat,
     AspectRatioMode, LayerParams, UnitsMode, ViewParams,
-    MarginParams, ScatterplotLayerParams, PointShapeMode,
+    MarginParams, PointLayerParams, PointShapeMode,
 };
 
 async fn render_unit_square_raster(width: u32, height: u32) -> Vec<u8> {
@@ -30,9 +30,9 @@ async fn render_unit_square_raster(width: u32, height: u32) -> Vec<u8> {
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: vec![
                 LayerParams {
-                    layer_type: "ScatterplotLayer".to_string(),
-                    layer_params: serde_json::to_value(ScatterplotLayerParams {
-                        layer_id: "my_scatterplot_layer".to_string(),
+                    layer_type: "PointLayer".to_string(),
+                    layer_params: serde_json::to_value(PointLayerParams {
+                        layer_id: "my_point_layer".to_string(),
                         bounds: Some(MarginParams {
                             margin_left: Some(0.0),
                             margin_right: Some(0.0),

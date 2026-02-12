@@ -8,7 +8,7 @@ const DEMOS = {
     plot_params: {
       layers: [
         {
-          layer_type: "ZarrScatterplotLayer",
+          layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
             data_unit_mode: "Data",
@@ -52,7 +52,7 @@ const DEMOS = {
           }
         },
         {
-          layer_type: "ScatterplotLayer",
+          layer_type: "PointLayer",
           layer_params: {
             layer_id: "layer_2",
             data_unit_mode: "Pixels",

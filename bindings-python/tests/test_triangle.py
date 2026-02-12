@@ -11,15 +11,15 @@ camera_view = [
 
 basic_plot_kwargs = dict(
     camera_view=camera_view,
-    width=100, 
-    height=100, 
+    width=100,
+    height=100,
     plot_id="test",
     plot_type="LayeredPlot",
     store_name="my_store",
     plot_params=dict(
         layers=[
             dict(
-                layer_type="ScatterplotLayer",
+                layer_type="PointLayer",
                     layer_params=dict(
                     layer_id="scatter_layer",
                     data_unit_mode="Data",

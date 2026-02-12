@@ -8,11 +8,11 @@ use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::two::svg::update_svg;
 use pluot_core::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
-use pluot_core::layers::scatterplot_layer::{PointShapeMode, ScatterplotLayerParams, base_draw_scatterplot_layer, base_draw_scatterplot_layer_svg};
+use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ZarrScatterplotLayerParams {
+pub struct ZarrPointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
@@ -30,26 +30,26 @@ pub struct ZarrScatterplotLayerParams {
 
 // TODO: defaults for params?
 
-pub struct ZarrScatterplotLayerData {
+pub struct ZarrPointLayerData {
     pub x_arr: Arc<Vec<f32>>,
     pub y_arr: Arc<Vec<f32>>,
     pub labels_arr: Arc<Vec<i32>>,
 }
 
-pub struct ZarrScatterplotLayer {
+pub struct ZarrPointLayer {
     view_params: ViewParams,
-    layer_params: ZarrScatterplotLayerParams,
+    layer_params: ZarrPointLayerParams,
     // TODO: do we want the store or just the store_name here?
     store: Arc<AsyncZarritaStore>,
     store_name: String,
     // Data will be None prior to runninng prepare().
-    data: Option<ZarrScatterplotLayerData>,
+    data: Option<ZarrPointLayerData>,
 }
 
-impl ZarrScatterplotLayer {
+impl ZarrPointLayer {
     pub fn new(
         view_params: ViewParams,
-        layer_params: ZarrScatterplotLayerParams,
+        layer_params: ZarrPointLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
         if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
@@ -79,7 +79,7 @@ impl ZarrScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for ZarrScatterplotLayer {
+impl PreparedLayer for ZarrPointLayer {
     async fn prepare(&mut self) {
         let store = self.store.clone();
 
@@ -134,7 +134,7 @@ impl PreparedLayer for ZarrScatterplotLayer {
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
         let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
 
-        self.data = Some(ZarrScatterplotLayerData {
+        self.data = Some(ZarrPointLayerData {
             x_arr: x_f32,
             y_arr: y_f32,
             labels_arr: l_i32,
@@ -144,14 +144,14 @@ impl PreparedLayer for ZarrScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ZarrScatterplotLayer {
+impl DrawToCanvas for ZarrPointLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
-        base_draw_scatterplot_layer(
+        base_draw_point_layer(
             device, queue, pass,
             &self.view_params,
-            &ScatterplotLayerParams {
+            &PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
                 bounds: self.layer_params.bounds.clone(),
                 data_unit_mode: self.layer_params.data_unit_mode.clone(),
@@ -169,13 +169,13 @@ impl DrawToCanvas for ZarrScatterplotLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for ZarrScatterplotLayer {
+impl DrawToSvg for ZarrPointLayer {
     async fn draw(&self, group: &Group) -> Group {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
-        let svg_elements = base_draw_scatterplot_layer_svg(
+        let svg_elements = base_draw_point_layer_svg(
             &self.view_params,
-            &ScatterplotLayerParams {
+            &PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
                 bounds: self.layer_params.bounds.clone(),
                 data_unit_mode: self.layer_params.data_unit_mode.clone(),
