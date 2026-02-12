@@ -158,13 +158,31 @@ const DEMOS = {
             labels_vec: [4],
           }
         },
-        {
+        /*{
           layer_type: "TileLayer",
           layer_params: {
             layer_id: "tile_layer",
             tile_size: 4,
           }
-        },
+        },*/
+        {
+          layer_type: "MultiscaleLayer",
+          layer_params: {
+            layer_id: "multiscale_layer",
+            resolution_levels: [
+              {
+                shape: [100, 100],
+                chunk_shape: [25, 25],
+                scale: [1.0, 1.0],
+              },
+              {
+                shape: [50, 50],
+                chunk_shape: [25, 25],
+                scale: [2.0, 2.0],
+              }
+            ]
+          }
+        }
       ]
     },
   },
