@@ -7,7 +7,7 @@ Goal: Implement a data visualization once, then render it in multiple contexts\*
 \* currently Rust, Python, and JavaScript (including in a web browser) are supported. Further bindings are future work.
 
 
-How it works: "headless" plotting. Pluot uses Rust and WebGPU to render plots to an array of pixels (or an SVG string), decoupled from any windowing system or other language runtime.
+How it works: "headless" plotting. Pluot uses Rust and WebGPU to quickly render plots to an array of pixels (or an SVG string), decoupled from any windowing system or other language runtime. On each "frame" of an interaction or animation, we re-render with updated plotting parameters.
 
 <!--_In other words: "rewrite it in rust," but for plotting._-->
 
