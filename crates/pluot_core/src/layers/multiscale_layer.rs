@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
-use crate::layers::core::{
+use crate::layer_traits::{
     AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };

@@ -5,7 +5,7 @@ use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
@@ -134,7 +134,7 @@ struct BitmapLayerUniforms {
     data_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
-    
+
     img_size: Vec2, // (img_width, img_height) in pixels // TODO: use u32?
     // TODO: pass model_matrix here
 
@@ -367,7 +367,7 @@ pub async fn base_draw_bitmap_layer(
                 },
             ],
         });
-    
+
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bioimage BG"),
@@ -516,12 +516,12 @@ impl DrawToSvg for BitmapLayer {
             &self.layer_params.data_unit_mode,
             &self.layer_params.layer_id,
         );
-        
+
         // TODO: refactor to avoid the cloning here?
         let updated_group = update_svg(group.clone(), &svg_elements);
 
         return updated_group.clone();
-        
+
     }
 }
 

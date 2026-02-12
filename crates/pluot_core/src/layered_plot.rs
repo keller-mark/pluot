@@ -1,4 +1,4 @@
-use crate::layers::core::{MarginParams, PreparedAndDraw, ViewParams};
+use crate::layer_traits::{MarginParams, PreparedAndDraw, ViewParams};
 use crate::registry::get_layer_from_registry;
 use crate::wgpu;
 use crate::params::{PlotParams, RenderContext, LayerParams};
@@ -7,6 +7,7 @@ pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dy
     get_layer_from_registry(&layer_params.layer_type, layer_params.layer_params.clone(), view_params)
 }
 
+// TODO: rename this to something like get_layers_for_plot, since it doesn't actually do any rendering here.
 pub fn render_layered_plot(
     context: &mut RenderContext<'_>,
     encoder: &mut wgpu::CommandEncoder,

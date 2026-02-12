@@ -5,7 +5,7 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
+use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
@@ -13,7 +13,7 @@ use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoR
 use crate::two::svg::update_svg;
 use crate::layers::position_utils::get_point_position;
 use crate::params::LayerParams;
-use crate::plots::layered_plot::get_layer;
+use crate::layered_plot::get_layer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
@@ -61,7 +61,7 @@ impl PreparedLayer for CompositeLayer {
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare().await;
         }
-        
+
     }
 }
 

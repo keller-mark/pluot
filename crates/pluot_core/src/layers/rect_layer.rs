@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use crate::layers::core::{
+use crate::layer_traits::{
     AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::layers::position_utils::get_point_position;

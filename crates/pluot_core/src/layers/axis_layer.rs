@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 use std::sync::Arc;
-use crate::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
+use crate::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};

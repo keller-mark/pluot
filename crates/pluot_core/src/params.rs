@@ -1,6 +1,6 @@
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
-use crate::layers::core::AspectRatioMode;
+use crate::layer_traits::AspectRatioMode;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
-use crate::layers::core::{
+use crate::layer_traits::{
     AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
