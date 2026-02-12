@@ -9,7 +9,7 @@ import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
 
 Example of a multi-layered plot.
 
-The ScatterplotLayer renders 1 million points.
+The PointLayer renders 1 million points.
 The additional layers demonstrate pixel-based positioning of points, lines, and text.
 The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
 
@@ -26,7 +26,7 @@ The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
     plotParams={{
       layers: [
         {
-          layer_type: "ZarrScatterplotLayer",
+          layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
             data_unit_mode: "Data",
@@ -55,7 +55,7 @@ The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
           },
         },
         {
-          layer_type: "ScatterplotLayer",
+          layer_type: "PointLayer",
           layer_params: {
             layer_id: "layer_2",
             data_unit_mode: "Pixels",
@@ -152,4 +152,3 @@ The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
     marginRight={0}
     marginBottom={50}
 />
-

@@ -123,6 +123,9 @@ importers:
       lightua:
         specifier: 0.1.0
         version: 0.1.0
+      lodash-es:
+        specifier: ^4.17.23
+        version: 4.17.23
       lz-string:
         specifier: ^1.5.0
         version: 1.5.0
@@ -137,7 +140,7 @@ importers:
         version: 1.2.0
       pluot:
         specifier: workspace:*
-        version: link:../../pluot_core/pkg
+        version: link:../../crates/pluot/pkg
       quick-lru:
         specifier: ^7.0.1
         version: 7.0.1
@@ -164,7 +167,7 @@ importers:
         specifier: ^0.3.3
         version: 0.3.3(vitest@3.2.4(@types/debug@4.1.12)(jsdom@26.1.0))
 
-  pluot_core/pkg: {}
+  crates/pluot/pkg: {}
 
 packages:
 
@@ -1823,8 +1826,8 @@ packages:
     resolution: {integrity: sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==}
     engines: {node: '>=8'}
 
-  lodash-es@4.17.21:
-    resolution: {integrity: sha512-mKnC+QJ9pWVzv+C4/U3rRsHapFfHvQFoFB92e52xeyGMcX6/OlIl78je1u8vePzYZSkkogMPJ2yjxxsb89cxyw==}
+  lodash-es@4.17.23:
+    resolution: {integrity: sha512-kVI48u3PZr38HdYz98UmfPnXl2DXrpdctLrFLCd3kOx1xUkOmpFPx7gCWWM5MPkL/fD8zb+Ph0QzjGFs4+hHWg==}
 
   longest-streak@3.1.0:
     resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
@@ -3795,7 +3798,7 @@ snapshots:
       '@use-coordination/constants-internal': 1.0.1
       '@use-coordination/schemas': 1.0.1
       '@use-coordination/utils': 1.0.1
-      lodash-es: 4.17.21
+      lodash-es: 4.17.23
       react: 18.3.1
       zod: 3.25.76
       zustand: 5.0.7(@types/react@18.3.23)(react@18.3.1)
@@ -3810,7 +3813,7 @@ snapshots:
       '@types/lodash-es': 4.17.12
       '@use-coordination/constants-internal': 1.0.1
       '@use-coordination/utils': 1.0.1
-      lodash-es: 4.17.21
+      lodash-es: 4.17.23
       zod: 3.25.76
 
   '@use-coordination/utils@1.0.1': {}
@@ -4900,7 +4903,7 @@ snapshots:
     dependencies:
       p-locate: 4.1.0
 
-  lodash-es@4.17.21: {}
+  lodash-es@4.17.23: {}
 
   longest-streak@3.1.0: {}
 

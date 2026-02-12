@@ -7,6 +7,13 @@ rust-version.workspace = true
 repository.workspace = true
 publish = false
 
+[[bin]]
+name = "pluot"
+path = "src/main.rs"
+
 [dependencies]
-pluot = { path = "../../pluot_core" }
+pluot = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+serde_json = { workspace = true }
+image = { workspace = true }

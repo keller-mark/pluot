@@ -24,7 +24,7 @@ export function CmvExample() {
     }, [storeUrl]);
 
     const [pointRadius, setPointRadius] = useState(5.0);
-    
+
     return (
         <div>
             <Pluot
@@ -37,7 +37,7 @@ export function CmvExample() {
                 plotParams={{
                     layers: [
                         {
-                            layer_type: "ZarrScatterplotLayer",
+                            layer_type: "ZarrPointLayer",
                             layer_params: {
                                 layer_id: "layer_1",
                                 data_unit_mode: "Data",
@@ -70,7 +70,7 @@ export function CmvExample() {
                 plotParams={{
                     layers: [
                         {
-                            layer_type: "ZarrScatterplotLayer",
+                            layer_type: "ZarrPointLayer",
                             layer_params: {
                                 layer_id: "layer_2",
                                 data_unit_mode: "Data",

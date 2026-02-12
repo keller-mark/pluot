@@ -2,76 +2,13 @@ import React, { useState } from "react";
 import { Pluot } from "@pluot/react";
 
 const DEMOS = {
-  /*
-  triangle: {
-    plot_type: "Triangle",
-    store_name: "",
-    plot_params: {},
-  },
-  scatterplot_1m: {
-    plot_type: "Scatterplot",
-    store_name: "gaussian_quantiles_store",
-    plot_params: {
-      x_key: "/n_1000000/x_coords",
-      y_key: "/n_1000000/y_coords",
-      color_key: "/n_1000000/class_labels",
-      //point_radius: pointRadius,
-    },
-  },
-  scatterplot_3d: {
-    plot_type: "Scatterplot3d",
-    store_name: "gaussian_quantiles_store",
-    plot_params: {
-      x_key: "/n_100000/x_coords",
-      y_key: "/n_100000/y_coords",
-      z_key: "/n_100000/z_coords",
-      color_key: "/n_100000/class_labels",
-      point_radius: 5.0,
-    },
-  },
-  scatterplot_mnist: {
-    plot_type: "Scatterplot",
-    store_name: "mnist_store",
-    plot_params: {
-      x_key: "/densmap/x_coords",
-      y_key: "/densmap/y_coords",
-      color_key: "/densmap/class_labels",
-      //point_radius: pointRadius,
-    },
-  },
-  ome_ngff: {
-    plot_type: "Bioimage",
-    store_name: "ome_ngff",
-    plot_params: {
-      // target_z: zIndex,
-      // channel_indices: [0, 1],
-      // channel_windows: [
-      //     ch0Window,
-      //     ch1Window,
-      // ],
-      // channel_colors: [
-      //     ch0color,
-      //     ch1color,
-      // ],
-    },
-  },
-  bar_plot: {
-    // Reference: https://altair-viz.github.io/gallery/bar_chart_with_highlighted_bar.html
-    plot_type: "BarPlot",
-    store_name: "wheat",
-    plot_params: {
-      x_key: "/year",
-      y_key: "/wheat",
-    }
-  },
-  */
   layered_plot: {
     plot_type: "LayeredPlot",
     store_name: "gaussian_quantiles_store",
     plot_params: {
       layers: [
         {
-          layer_type: "ZarrScatterplotLayer",
+          layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
             data_unit_mode: "Data",
@@ -115,7 +52,7 @@ const DEMOS = {
           }
         },
         {
-          layer_type: "ScatterplotLayer",
+          layer_type: "PointLayer",
           layer_params: {
             layer_id: "layer_2",
             data_unit_mode: "Pixels",
@@ -148,10 +85,10 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-            source_x_vec: [10, 110],
-            source_y_vec: [10, 110],
-            target_x_vec: [100, 210],
-            target_y_vec: [100, 210],
+            source_position_x: [10, 110],
+            source_position_y: [10, 110],
+            target_position_x: [100, 210],
+            target_position_y: [100, 210],
             labels_vec: [4, 1],
           }
         },
@@ -206,7 +143,28 @@ const DEMOS = {
               40, 140, 240, 340,
             ],
           }
-        }
+        },
+        {
+          layer_type: "RectLayer",
+          layer_params: {
+            layer_id: "rect_layer",
+            data_unit_mode: "Data",
+            stroke_width_unit_mode: "Pixels",
+            stroke_width: 5.0,
+            position_x0: [1],
+            position_y0: [1],
+            position_x1: [2],
+            position_y1: [2],
+            labels_vec: [4],
+          }
+        },
+        {
+          layer_type: "TileLayer",
+          layer_params: {
+            layer_id: "tile_layer",
+            tile_size: 4,
+          }
+        },
       ]
     },
   },

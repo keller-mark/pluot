@@ -20,7 +20,7 @@
     "clean-deps": "pnpm -r exec -- rm -rf node_modules",
     "clean-all": "pnpm run clean && pnpm run clean-deps",
     "build-docs": "pnpm -r build-docs",
-    "deploy": "wasm-pack build pluot_core --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d bindings-js/docs/dist --cname pluot.dev --nojekyll"
+    "deploy": "wasm-pack build crates/pluot --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d bindings-js/docs/dist --cname pluot.dev --nojekyll"
   },
   "keywords": [],
   "author": "",

@@ -19,7 +19,7 @@ How it works: "headless" plotting. Pluot uses Rust and [WGPU](https://github.com
 ## Features
 
 - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
-- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 3MB) to make it feasible to integrate into web applications.
+- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr to achieve this).
 - __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
 - __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
@@ -70,7 +70,7 @@ cargo install wasm-pack
 cargo build
 
 # Install pnpm
-# may need to run `wasm-pack build pluot_core --target web` first
+# may need to run `wasm-pack build crates/pluot --target web` first
 pnpm install
 
 # Install uv
@@ -88,11 +88,11 @@ uv sync --extra dev
 # Reference: https://github.com/wasm-bindgen/wasm-bindgen/issues/4446#issuecomment-3172624621
 cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
 
-wasm-pack build pluot_core --target web && pnpm run start-demo
+wasm-pack build crates/pluot --target web && pnpm run start-demo
 # or
-wasm-pack build pluot_core --dev --target web && pnpm run start-demo
+wasm-pack build crates/pluot --dev --target web && pnpm run start-demo
 # or
-wasm-pack build pluot_core --release --target web && pnpm run start-demo
+wasm-pack build crates/pluot --release --target web && pnpm run start-demo
 
 ```
 
@@ -111,7 +111,7 @@ Open to http://localhost:3005/www/
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh
-wasm-pack test pluot_core --headless --chrome
+wasm-pack test crates/pluot --headless --chrome
 ```
 
 <!-- TODO: update and un-comment once publishing details are established

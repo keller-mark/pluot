@@ -4,7 +4,7 @@ From the root of the repo:
 
 ```sh
 # nvm use 24 # if needed
-wasm-pack build pluot_core --dev --target web && pnpm run start-docs
+wasm-pack build crates/pluot --dev --target web && pnpm run start-docs
 ```
 
 ### Troubleshooting

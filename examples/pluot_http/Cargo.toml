@@ -1,12 +1,10 @@
 [package]
 name = "pluot_http"
 description = "An example HTTP server."
-edition.workspace = true
-rust-version.workspace = true
-# license.workspace = true
-repository.workspace = true
+edition = "2021"
+rust-version = "1.92"
 publish = false
 
 [dependencies]
-pluot = { path = "../../pluot_core" }
+pluot = { path = "../../crates/pluot" }
 rocket = { version = "0.5.1" }

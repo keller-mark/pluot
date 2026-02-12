@@ -11,6 +11,7 @@ import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
 import lzs from "lz-string";
+import { isEqual } from "lodash-es";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -34,6 +35,7 @@ const stores = {
   // Note: when using a timeout parameter, we still may want to use a cache
   // for in-progress promises (but not for their returned data).
   gaussian_quantiles_store: new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
+  gaussian_quantiles_store_compressed: new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"),
   ome_ngff: lru(
     new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
   ),
@@ -148,7 +150,14 @@ export function Pluot(props) {
       function onCameraEvent(camera, event) {
         camera.tick();
         // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
-        setViewMatrix(mat4.clone(camera.view));
+        setViewMatrix(prev => {
+          // Since camera events happen even on mousemove events that do not change the matrix,
+          // we check for equality here to avoid unnecessary state updates and plot re-renders.
+          if (isEqual(prev, camera.view)) {
+            return prev;
+          }
+          return mat4.clone(camera.view)
+        });
       }
 
       const camera = createDom2dCamera(cameraEl, {
@@ -312,6 +321,8 @@ export function Pluot(props) {
         margin_right: marginRight,
         device_pixel_ratio: window.devicePixelRatio,
         aspect_ratio_mode: aspectRatioMode,
+        view_mode: "2d",
+        pickable: false,
         //zoom, // No longer used
         //targetX, // No longer used
         //targetY, // No longer used
