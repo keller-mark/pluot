@@ -1,6 +1,6 @@
 // TODO: once things are working with react,
 // implement a plain/vanilla JS version.
-import React, { useLayoutEffect, useEffect, useRef, useState, useMemo } from "react";
+import React, { useLayoutEffect, useEffect, useRef, useState, useMemo, useReducer } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
 // import createDom2dCamera from "dom-2d-camera";
@@ -34,7 +34,13 @@ const stores = {
   // since we now have the use_memo_ functions in cache.rs on the rust side.
   // Note: when using a timeout parameter, we still may want to use a cache
   // for in-progress promises (but not for their returned data).
-  gaussian_quantiles_store: new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"),
+
+  // Usage of lru cache results in increased memory usage, since data is stored both in the lru cache and in the wasm cache (via use_memo_ functions in cache.rs).
+  // However, it is necessary especially when the network is slow, since it caches the promises that are re-requested from Rust on every re-render when bailing early due to the timeout parameter.
+  // TODO: consider eviction based on time (N*timeout) following promise resolution, or upon being notified by Rust that it has successfully cached a particular key.
+  // Or, evict following some N successful .get()s after promise resolution, to ensure that Rust has successfully accessed and cached the data while allowing for some timeouts-during-gets (though hopefully unlikely).
+  // Alternatively, have Rust allocate a fixed-size cache, and store data there when promises resolve, caching/returning to Rust only pointers/lengths into this shared memory.
+  gaussian_quantiles_store: lru(new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr")),
   gaussian_quantiles_store_compressed: new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"),
   ome_ngff: lru(
     new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
@@ -66,6 +72,7 @@ if (typeof window !== 'undefined') {
     // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
     return stores[store_name].getRange(`/${key}`, { suffix_length });
   };
+
   window.isPluotInitialized = null;
 }
 
@@ -108,21 +115,24 @@ export function Pluot(props) {
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
-  
+
   const [viewMatrix, setViewMatrix] = useState(
     // Note: We use an initializer function here to avoid
     // sharing the same Float32Array among multiple Pluot
     // component instances that may be rendered on the same page.
     () => new Float32Array(DEFAULT_VIEW)
   );
+  const viewMatrixRef = useRef(new Float32Array(DEFAULT_VIEW));
+
   const [isRendering, setIsRendering] = useState(false);
   const [didFirstRender, setDidFirstRender] = useState(false);
 
-  /*
-    const [zoom, setZoom] = useState(0.0);
-    const [targetX, setTargetX] = useState(0.0);
-    const [targetY, setTargetY] = useState(0.0);
-    */
+  // We keep a backlog of render param settings here.
+  const backlogRef = useRef([]);
+  const rafIdRef = useRef(null);
+  const isRenderingRef = useRef(false);
+
+  const [iteration, incIteration] = useReducer(i => i + 1, 0);
 
   useLayoutEffect(() => {
     const initWasm = async () => {
@@ -150,6 +160,7 @@ export function Pluot(props) {
       function onCameraEvent(camera, event) {
         camera.tick();
         // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
+        /*
         setViewMatrix(prev => {
           // Since camera events happen even on mousemove events that do not change the matrix,
           // we check for equality here to avoid unnecessary state updates and plot re-renders.
@@ -158,6 +169,21 @@ export function Pluot(props) {
           }
           return mat4.clone(camera.view)
         });
+        */
+        if (!isEqual(viewMatrixRef.current, camera.view)) {
+          viewMatrixRef.current = mat4.clone(camera.view);
+          /*
+          const latestBacklogItem = backlogRef.current.pop();
+          if (latestBacklogItem) {
+            backlogRef.current.push({
+              ...latestBacklogItem,
+              camera_view: viewMatrixRef.current,
+            });
+          }
+          */
+          incIteration();
+        }
+
       }
 
       const camera = createDom2dCamera(cameraEl, {
@@ -191,7 +217,7 @@ export function Pluot(props) {
       dispose = camera.dispose;
 
       // Set the initial view matrix.
-      camera.setView(viewMatrix);
+      camera.setView(viewMatrixRef.current);
     } else if (mode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
@@ -283,11 +309,49 @@ export function Pluot(props) {
     // Reset view matrix on plot change.
     // Create a new Float32Array to avoid sharing a mutable array
     // among multiple Pluot component instances.
-    setViewMatrix(new Float32Array(DEFAULT_VIEW));
+    //setViewMatrix(new Float32Array(DEFAULT_VIEW));
+    viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId]);
 
   // TODO: switch this useEffect to use React-Query.
   useEffect(() => {
+    const renderParams = {
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      view_mode: "2d",
+      pickable: false,
+      //zoom, // No longer used
+      //targetX, // No longer used
+      //targetY, // No longer used
+      camera_view: viewMatrixRef.current,
+      plot_id: plotId,
+      plot_type: plotType,
+      store_name: storeName,
+      plot_params: plotParams,
+      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders).
+      timeout: 200, // in ms
+      cache_enabled: true,
+      svg_compression_enabled: true,
+    };
+
+    // TODO: should backlog be a plain state variable instead of a ref?
+    backlogRef.current.push(renderParams);
+    incIteration();
+  }, [isWasmReady, plotId, plotType, plotParams, storeName, format, isVector]);
+
+  useEffect(() => {
+    console.log(backlogRef.current);
+    if(backlogRef.current.length === 0) {
+      return;
+    }
+
     if (!isWasmReady) {
       return;
     }
@@ -295,46 +359,20 @@ export function Pluot(props) {
     // TODO: use react-query to manage the backlog of async render calls?
     // Alternatively, implement a backlog similar to the one used in the Vitessce heatmap.
     // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
-    if(isRendering && !didFirstRender) {
+    if (isRenderingRef.current) {
       // Prevent multiple render calls prior to the first successful render.
       return;
     }
 
-    // Start FPS tracking variables.
-    let frameCount = 0;
-    let lastTime = performance.now();
-    let fps = 0;
-    // End FPS tracking variables.
+    // Pop the most recent render params from the backlog.
+    const latestRenderParams = backlogRef.current.pop();
 
     // Render once or every animation frame.
     // Define the function to render a single frame.
-   async function renderFrame() {
-    setIsRendering(true);
+   async function renderFrame(renderParams) {
+     isRenderingRef.current = true;
       // console.log('wasm.render');
-      const renderParams = {
-        width,
-        height,
-        format: format,
-        margin_bottom: marginBottom,
-        margin_left: marginLeft,
-        margin_top: marginTop,
-        margin_right: marginRight,
-        device_pixel_ratio: window.devicePixelRatio,
-        aspect_ratio_mode: aspectRatioMode,
-        view_mode: "2d",
-        pickable: false,
-        //zoom, // No longer used
-        //targetX, // No longer used
-        //targetY, // No longer used
-        camera_view: viewMatrix,
-        plot_id: plotId,
-        plot_type: plotType,
-        store_name: storeName,
-        plot_params: plotParams,
-        timeout: 200, // in ms
-        cache_enabled: true,
-        svg_compression_enabled: true,
-      };
+
       // TODO: wrap render_wasm in try/catch, to handle Rust panics.
       let arr;
       try {
@@ -342,7 +380,7 @@ export function Pluot(props) {
       } catch (error) {
         console.error("Error during wasm.render_wasm:", error);
         // Cleanup
-        setIsRendering(false);
+        isRenderingRef.current = false;
         return;
       }
 
@@ -379,47 +417,31 @@ export function Pluot(props) {
 
         const bailedEarly = arr.at(-1) === 1;
         if (bailedEarly) {
-          // TODO: do this via react state and useEffect?
           // TODO: prevent infinite loop if always bailing early?
-          requestAnimationFrame(renderFrame);
+          backlogRef.current.push({
+            ...renderParams,
+            // Re-insert into the backlog with the latest camera state,
+            // in case the user has panned/zoomed during the previous render.
+            camera_view: viewMatrixRef.current,
+          });
+          incIteration();
+        } else {
+          // Successful render.
+          // Insert latest renderParams into backlog, without incrementing iteration.
+          backlogRef.current.push({
+            ...renderParams,
+            camera_view: viewMatrixRef.current,
+          });
+          setDidFirstRender(true);
         }
       }
 
-
-      setIsRendering(false);
-      setDidFirstRender(true);
-    }
-    function animate() {
-      // Start FPS tracking logic.
-      const currentTime = performance.now();
-      frameCount++;
-
-      // Calculate FPS every second
-      if (currentTime - lastTime >= 1000) {
-        // The division by 1000 converts the time difference from milliseconds to seconds.
-        // E.g., If 60 frames were rendered in 1000ms: 60 / (1000 / 1000) = 60 FPS
-        // E.g., If 30 frames were rendered in 500ms:  30 / (500  / 1000) = 60 FPS
-        // E.g., If 45 frames were rendered in 1500ms: 45 / (1500 / 1000) = 30 FPS
-        fps = frameCount / ((currentTime - lastTime) / 1000);
-        if (logPerformance) {
-          console.log(`Average FPS: ${fps}`);
-        }
-        frameCount = 0;
-        lastTime = currentTime;
-      }
-      // End FPS tracking logic.
-
-      renderFrame();
-      requestAnimationFrame(animate);
+      isRenderingRef.current = false;
     }
 
-    // Initialize data and kick off the first render.
-    if (renderOnce) {
-      renderFrame();
-    } else {
-      requestAnimationFrame(animate);
-    }
-  }, [isWasmReady, viewMatrix, plotId, plotType, plotParams, storeName, format, isVector, svgRef, didFirstRender]);
+    // Call the async render_wasm function.
+    renderFrame(latestRenderParams);
+  }, [iteration]);
 
   return (
     <>
