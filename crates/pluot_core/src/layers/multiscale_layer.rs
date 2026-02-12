@@ -221,6 +221,10 @@ impl MultiscaleLayer {
     }
 
     /// Build RectLayer sublayers for each visible tile at the selected resolution level.
+    /// TODO: check the RenderResult value returned by each sublayer's prepare() and draw the next-coarsest level
+    /// whose RenderResult is RenderResult::Ready, to provide a fallback while loading higher-res tiles.
+    /// We will need to ensure that drawing of sublayers occurs from coarser to finer, so that finer tiles are drawn on top of coarser tiles.
+    /// This will ensure that we don't have visual holes while loading finer tiles, and that we get a sharper image as soon as finer tiles are ready.
     ///
     /// Tile positions are in physical coordinates:
     ///   - A tile at column `col` starts at x = col * chunk_width * scale_x
@@ -314,6 +318,11 @@ impl MultiscaleLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for MultiscaleLayer {
     async fn prepare(&mut self) {
+        // TODO: Build sublayers should return a list of all tiles in the viewport, from the coarsest resolution
+        // to the current resolution. We will run all of their prepare() methods,
+        // but we will only draw those whose RenderResult is Ready, so that we can show coarser tiles while finer tiles are loading.
+        // We will need to filter out the coarser sublayers if all of the contained finer sublayers are ready,
+        // while keeping coarser sublayers if any of the contained finer sublayers are still loading, to avoid visual holes.
         self.sub_layer_instances = self.build_sublayers();
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
