@@ -342,9 +342,9 @@ impl AxisLayer {
                 text_baseline_mode: text_baseline_mode,
                 text_rotation: Some(text_rotation as f32),
 
-                x_vec: text_x_vec,
-                y_vec: text_y_vec,
-                text_vec: text_strings,
+                x_vec: Arc::new(text_x_vec),
+                y_vec: Arc::new(text_y_vec),
+                text_vec: Arc::new(text_strings),
             };
             sublayers.push(Box::new(TextLayer::new(
                 self.view_params.clone(),
