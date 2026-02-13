@@ -129,10 +129,10 @@ export function Pluot(props) {
 
   // We keep a backlog of render param settings here.
   const backlogRef = useRef([]);
-  const rafIdRef = useRef(null);
   const isRenderingRef = useRef(false);
 
-  const [iteration, incIteration] = useReducer(i => i + 1, 0);
+  const [cameraIteration, incCameraIteration] = useReducer(i => i + 1, 0);
+  const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
 
   useLayoutEffect(() => {
     const initWasm = async () => {
@@ -170,6 +170,7 @@ export function Pluot(props) {
           return mat4.clone(camera.view)
         });
         */
+
         if (!isEqual(viewMatrixRef.current, camera.view)) {
           viewMatrixRef.current = mat4.clone(camera.view);
           /*
@@ -181,9 +182,10 @@ export function Pluot(props) {
             });
           }
           */
-          incIteration();
+          incCameraIteration();
+        } else {
+          incCameraIteration();
         }
-
       }
 
       const camera = createDom2dCamera(cameraEl, {
@@ -343,12 +345,11 @@ export function Pluot(props) {
 
     // TODO: should backlog be a plain state variable instead of a ref?
     backlogRef.current.push(renderParams);
-    incIteration();
-  }, [isWasmReady, plotId, plotType, plotParams, storeName, format, isVector]);
+    incBacklogIteration();
+  }, [isWasmReady, plotId, plotType, plotParams, storeName, format, isVector, cameraIteration]);
 
   useEffect(() => {
-    console.log(backlogRef.current);
-    if(backlogRef.current.length === 0) {
+    if (backlogRef.current.length === 0) {
       return;
     }
 
@@ -376,7 +377,10 @@ export function Pluot(props) {
       // TODO: wrap render_wasm in try/catch, to handle Rust panics.
       let arr;
       try {
-        arr = await wasm.render_wasm(renderParams);
+        arr = await wasm.render_wasm({
+          ...renderParams,
+          camera_view: viewMatrixRef.current,
+        });
       } catch (error) {
         console.error("Error during wasm.render_wasm:", error);
         // Cleanup
@@ -418,20 +422,12 @@ export function Pluot(props) {
         const bailedEarly = arr.at(-1) === 1;
         if (bailedEarly) {
           // TODO: prevent infinite loop if always bailing early?
-          backlogRef.current.push({
-            ...renderParams,
-            // Re-insert into the backlog with the latest camera state,
-            // in case the user has panned/zoomed during the previous render.
-            camera_view: viewMatrixRef.current,
-          });
-          incIteration();
+          backlogRef.current.push(renderParams);
+          incBacklogIteration();
         } else {
           // Successful render.
           // Insert latest renderParams into backlog, without incrementing iteration.
-          backlogRef.current.push({
-            ...renderParams,
-            camera_view: viewMatrixRef.current,
-          });
+          backlogRef.current = [];
           setDidFirstRender(true);
         }
       }
@@ -441,7 +437,7 @@ export function Pluot(props) {
 
     // Call the async render_wasm function.
     renderFrame(latestRenderParams);
-  }, [iteration]);
+  }, [backlogIteration]);
 
   return (
     <>

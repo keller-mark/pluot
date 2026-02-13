@@ -18,7 +18,7 @@ function normalizeKey(key: string, range?: RangeQuery) {
   return `${key}:${range.offset}:${range.offset + range.length - 1}`;
 }
 
-export function lru<S extends zarr.Readable>(store: S, maxSize = 100) {
+export function lru<S extends zarr.AsyncReadable>(store: S, maxSize = 100) {
   const cache = new QuickLRU<string, Promise<Uint8Array | undefined>>({ maxSize });
   let getRange = store.getRange ? store.getRange.bind(store) : undefined;
   function get(...args: Parameters<S["get"]>) {
@@ -27,7 +27,16 @@ export function lru<S extends zarr.Readable>(store: S, maxSize = 100) {
     const cacheKey = normalizeKey(key);
     const cached = cache.get(cacheKey);
     if (cached) return cached;
-    const result = Promise.resolve(store.get(key, opts)).catch((err) => {
+
+    let getResult = store.get(key, opts);
+    if (getResult !== undefined) {
+      getResult = getResult.then(d => {
+        // Delete immediately after
+        //cache.delete(cacheKey);
+        return d;
+      });
+    }
+    const result = Promise.resolve(getResult).catch((err) => {
       cache.delete(cacheKey);
       throw err;
     });
@@ -41,7 +50,15 @@ export function lru<S extends zarr.Readable>(store: S, maxSize = 100) {
       const cacheKey = normalizeKey(key, range);
       const cached = cache.get(cacheKey);
       if (cached) return cached;
-      const result = Promise.resolve(_getRange?.(key, range, opts)).catch((err) => {
+
+      let getRangeResult = _getRange(key, range, opts);
+      if (getRangeResult !== undefined) {
+        getRangeResult = getRangeResult.then(d => {
+          //cache.delete(cacheKey);
+          return d;
+        });
+      }
+      const result = Promise.resolve(getRangeResult).catch((err) => {
         cache.delete(cacheKey);
         throw err;
       });
