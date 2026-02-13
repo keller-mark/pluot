@@ -530,7 +530,6 @@ impl DrawToSvg for BitmapLayer {
     }
 }
 
-/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "BitmapLayer",
@@ -540,4 +539,3 @@ inventory::submit! {
         },
     }
 }
-*/

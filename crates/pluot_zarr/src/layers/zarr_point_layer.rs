@@ -1,21 +1,21 @@
 use std::sync::Arc;
-use crate::params::PrepareResult;
-use crate::params::RenderResult;
+use pluot_core::params::PrepareResult;
+use pluot_core::params::RenderResult;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
-use crate::maybe_timeout;
+use pluot_core::maybe_timeout;
 
-use crate::log;
-use crate::wgpu;
-use crate::zarr::AsyncZarritaStore;
-use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
-use crate::two::svg::update_svg;
-use crate::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
-use crate::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
+use pluot_core::log;
+use pluot_core::wgpu;
+use pluot_core::zarr::AsyncZarritaStore;
+use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
+use pluot_core::two::svg::update_svg;
+use pluot_core::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -157,15 +157,16 @@ impl PreparedLayer for ZarrPointLayer {
 
         let (x_f32, y_f32, l_i32) = match futures_try_join_result {
             Ok((x_f32_result, y_f32_result, l_i32_result)) => {
-                //log("All futures succeeded within the timeout.");
+                log("All futures succeeded within the timeout.");
                 (x_f32_result, y_f32_result, l_i32_result)
             }
             Err(_) => {
                 // TODO: still render something in this case
-                //log("One or more futures timed out or failed");
+                log("One or more futures timed out or failed");
                 return PrepareResult { bailed_early: true };
             }
         };
+
 
         self.data = Some(ZarrPointLayerData {
             x_arr: x_f32,

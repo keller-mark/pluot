@@ -3,7 +3,7 @@
 [workspace]
 members = [
     "crates/pluot_core",
-    #"crates/pluot_zarr",
+    "crates/pluot_zarr",
     "crates/pluot",
     "examples/pluot_cli",
 ]

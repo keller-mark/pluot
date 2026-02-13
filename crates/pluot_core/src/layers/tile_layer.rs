@@ -209,7 +209,6 @@ impl DrawToSvg for TileLayer {
     }
 }
 
-/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "TileLayer",
@@ -219,4 +218,3 @@ inventory::submit! {
         },
     }
 }
-*/

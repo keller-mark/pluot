@@ -28,7 +28,7 @@ lacks_gpu = []
 
 
 [dependencies]
-#inventory.workspace = true
+inventory.workspace = true
 
 # Python-specific dependencies
 pyo3 = { workspace = true, optional = true }

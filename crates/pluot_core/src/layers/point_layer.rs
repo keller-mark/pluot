@@ -518,7 +518,6 @@ impl DrawToSvg for PointLayer {
     }
 }
 
-/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "PointLayer",
@@ -528,4 +527,3 @@ inventory::submit! {
         },
     }
 }
-*/

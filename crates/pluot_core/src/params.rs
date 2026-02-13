@@ -5,17 +5,6 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
 
-use crate::layers::point_layer::PointLayerParams;
-use crate::layers::line_layer::LineLayerParams;
-use crate::layers::rect_layer::RectLayerParams;
-use crate::layers::text_layer::TextLayerParams;
-use crate::layers::bitmap_layer::BitmapLayerParams;
-use crate::layers::axis_layer::AxisLayerParams;
-use crate::layers::tile_layer::TileLayerParams;
-use crate::layers::multiscale_layer::MultiscaleLayerParams;
-use crate::zarr_layers::zarr_point_layer::ZarrPointLayerParams;
-
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GraphicsFormat {
     // 0: pixels
@@ -39,7 +28,6 @@ pub enum ViewMode {
     // Reference: https://github.com/mikolalysenko/3d-view
 }
 
-/*
 /// Extensible layer parameters. Each layer type is identified by its `layer_type`
 /// string, and the `layer_params` field holds the layer-specific parameters as
 /// an opaque JSON value. Layers register themselves via `inventory::submit!` with
@@ -50,27 +38,6 @@ pub enum ViewMode {
 pub struct LayerParams {
     pub layer_type: String,
     pub layer_params: serde_json::Value,
-}
-*/
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "layer_type", content = "layer_params")]
-pub enum LayerParams {
-    // Using adjacently tagged enum representation.
-    // { "layer_type": "ScatterplotLayer" }
-    // Reference: https://serde.rs/enum-representations.html
-
-    PointLayer(PointLayerParams),
-    ZarrPointLayer(ZarrPointLayerParams),
-
-    LineLayer(LineLayerParams),
-    RectLayer(RectLayerParams),
-    TextLayer(TextLayerParams),
-    BitmapLayer(BitmapLayerParams),
-
-    AxisLayer(AxisLayerParams),
-    TileLayer(TileLayerParams),
-    MultiscaleLayer(MultiscaleLayerParams),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

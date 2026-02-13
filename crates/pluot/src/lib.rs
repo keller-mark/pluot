@@ -1,4 +1,4 @@
-//mod plugins;
+mod plugins;
 
 // Export things needed for layer-based plotting via Rust.
 pub use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
@@ -8,7 +8,7 @@ pub use pluot_core::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, Margi
 // Re-export layer param types for convenience.
 // TODO: export more layer params and the required types.
 pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
-pub use pluot_core::zarr_layers::zarr_point_layer::ZarrPointLayerParams;
+pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]

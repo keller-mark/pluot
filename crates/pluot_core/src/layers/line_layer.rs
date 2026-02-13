@@ -551,7 +551,6 @@ impl DrawToSvg for LineLayer {
     }
 }
 
-/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "LineLayer",
@@ -561,4 +560,3 @@ inventory::submit! {
         },
     }
 }
-*/
