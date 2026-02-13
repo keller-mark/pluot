@@ -94,6 +94,8 @@ export function Pluot(props) {
     marginRight =  100.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
     format = "Raster", // "Raster", "Vector"
+    minTimeout = 50,
+    maxTimeout = 500,
   } = props;
 
   const isVector = format === "Vector";
@@ -130,6 +132,7 @@ export function Pluot(props) {
   // We keep a backlog of render param settings here.
   const backlogRef = useRef([]);
   const isRenderingRef = useRef(false);
+  const currentTimeout = useRef(maxTimeout);
 
   const [cameraIteration, incCameraIteration] = useReducer(i => i + 1, 0);
   const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
@@ -182,10 +185,10 @@ export function Pluot(props) {
             });
           }
           */
-          incCameraIteration();
-        } else {
-          incCameraIteration();
         }
+        // The user is interacting, so we reduce the timeout to improve responsiveness.
+        currentTimeout.current = minTimeout;
+        incCameraIteration();
       }
 
       const camera = createDom2dCamera(cameraEl, {
@@ -380,6 +383,7 @@ export function Pluot(props) {
         arr = await wasm.render_wasm({
           ...renderParams,
           camera_view: viewMatrixRef.current,
+          timeout: currentTimeout.current,
         });
       } catch (error) {
         console.error("Error during wasm.render_wasm:", error);
@@ -428,6 +432,9 @@ export function Pluot(props) {
           // Successful render.
           // Insert latest renderParams into backlog, without incrementing iteration.
           backlogRef.current = [];
+          currentTimeout.current = maxTimeout;
+
+          // TODO: clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
           setDidFirstRender(true);
         }
       }

@@ -18,6 +18,8 @@ function normalizeKey(key: string, range?: RangeQuery) {
   return `${key}:${range.offset}:${range.offset + range.length - 1}`;
 }
 
+// TODO: switch implementation from proxy to Store wrapper class.
+// TODO: add a clearCache method to clear all cached entries for a given store.
 export function lru<S extends zarr.AsyncReadable>(store: S, maxSize = 100) {
   const cache = new QuickLRU<string, Promise<Uint8Array | undefined>>({ maxSize });
   let getRange = store.getRange ? store.getRange.bind(store) : undefined;
