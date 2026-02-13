@@ -353,6 +353,7 @@ impl DrawToSvg for MultiscaleLayer {
     }
 }
 
+/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "MultiscaleLayer",
@@ -362,3 +363,4 @@ inventory::submit! {
         },
     }
 }
+*/

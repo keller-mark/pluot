@@ -399,6 +399,7 @@ impl DrawToSvg for AxisLayer {
     }
 }
 
+/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "AxisLayer",
@@ -408,3 +409,4 @@ inventory::submit! {
         },
     }
 }
+*/

@@ -4,7 +4,7 @@ use crate::wgpu;
 use crate::params::{PlotParams, RenderContext, LayerParams};
 
 pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dyn PreparedAndDraw> {
-    get_layer_from_registry(&layer_params.layer_type, layer_params.layer_params.clone(), view_params)
+    get_layer_from_registry(layer_params, view_params)
 }
 
 // TODO: rename this to something like get_layers_for_plot, since it doesn't actually do any rendering here.

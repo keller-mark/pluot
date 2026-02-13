@@ -7,6 +7,7 @@ pub mod layer_traits;
 pub mod layered_plot;
 mod render;
 pub mod layers;
+pub mod zarr_layers;
 pub mod registry;
 
 pub(crate) mod timeout;
@@ -25,7 +26,7 @@ pub use wgpu;
 // Export things needed for layer-based plotting via Rust.
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
 pub use crate::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
-pub use crate::registry::{LayerRegistration, get_layer_from_registry};
+pub use crate::registry::{get_layer_from_registry};
 
 // Export things needed by workspace packages that define other layers.
 pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};

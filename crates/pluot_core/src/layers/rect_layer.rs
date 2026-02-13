@@ -546,6 +546,7 @@ impl DrawToSvg for RectLayer {
     }
 }
 
+/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "RectLayer",
@@ -555,3 +556,4 @@ inventory::submit! {
         },
     }
 }
+*/
