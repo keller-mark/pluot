@@ -13,18 +13,20 @@ How it works: "headless" plotting. Pluot uses Rust and WebGPU to quickly render 
 
 
 ## Features
-<!--- __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
+<!-- - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
 - __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr via [zarrs](https://github.com/zarrs/zarrs) to achieve this).
 - __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
 - __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
 - __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported.
-- __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types.
+<!-- - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types. -->
 
 ## How it works
 
 Plotting functions are implemented in Rust using the [wgpu](github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser).
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
+
+When the language bindings are used, you can think of this as a form of "remote rendering", which is actually happening locally; rather than the "remote" being a far-away server, it is just across the language binding boundary.
 
 <!--
 - To render plots in the web browser, the Rust code is compiled to WebAssembly (WASM).
