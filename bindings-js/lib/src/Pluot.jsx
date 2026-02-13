@@ -25,7 +25,8 @@ const DEFAULT_VIEW = new Float32Array([
 //const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
 const baseUrl = "http://localhost:5173/@data/mnist.zarr";
 
-// TODO: move store registration into demo subpackage and via props (rather than constructing stores in lib subpackage).
+// TODO: remove these hard-coded stores once things are working, and only allow providing via props.
+// (We will still need the global `stores` object so that the stores are available to the window.zarr_ functions.)
 const stores = {
   // Wrap store in a cache.
   // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
@@ -118,6 +119,7 @@ export function Pluot(props) {
   const cameraRef = useRef(null);
   const [isWasmReady, setIsWasmReady] = useState(false);
 
+  // TODO: remove viewMatrix/setViewMatrix once the 3D camera has been updated.
   const [viewMatrix, setViewMatrix] = useState(
     // Note: We use an initializer function here to avoid
     // sharing the same Float32Array among multiple Pluot
@@ -126,8 +128,7 @@ export function Pluot(props) {
   );
   const viewMatrixRef = useRef(new Float32Array(DEFAULT_VIEW));
 
-  const [isRendering, setIsRendering] = useState(false);
-  const [didFirstRender, setDidFirstRender] = useState(false);
+  const [bailedEarly, setBailedEarly] = useState(true);
 
   // We keep a backlog of render param settings here.
   const backlogRef = useRef([]);
@@ -163,32 +164,18 @@ export function Pluot(props) {
       function onCameraEvent(camera, event) {
         camera.tick();
         // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
-        /*
-        setViewMatrix(prev => {
-          // Since camera events happen even on mousemove events that do not change the matrix,
-          // we check for equality here to avoid unnecessary state updates and plot re-renders.
-          if (isEqual(prev, camera.view)) {
-            return prev;
-          }
-          return mat4.clone(camera.view)
-        });
-        */
+        const nextViewMatrix = mat4.clone(camera.view);
 
-        if (!isEqual(viewMatrixRef.current, camera.view)) {
-          viewMatrixRef.current = mat4.clone(camera.view);
-          /*
-          const latestBacklogItem = backlogRef.current.pop();
-          if (latestBacklogItem) {
-            backlogRef.current.push({
-              ...latestBacklogItem,
-              camera_view: viewMatrixRef.current,
-            });
-          }
-          */
+        if (!isEqual(viewMatrixRef.current, nextViewMatrix)) {
+          viewMatrixRef.current = nextViewMatrix;
+          // The user is interacting, so we reduce the timeout to improve responsiveness.
+          currentTimeout.current = minTimeout;
+          incCameraIteration();
+        } else {
+          currentTimeout.current = maxTimeout;
         }
-        // The user is interacting, so we reduce the timeout to improve responsiveness.
-        currentTimeout.current = minTimeout;
-        incCameraIteration();
+
+        // TODO: prevent incrementing on mouseMove events that do not change the matrix
       }
 
       const camera = createDom2dCamera(cameraEl, {
@@ -377,12 +364,14 @@ export function Pluot(props) {
      isRenderingRef.current = true;
       // console.log('wasm.render');
 
-      // TODO: wrap render_wasm in try/catch, to handle Rust panics.
+     let cameraMatrixUsed = viewMatrixRef.current;
+
+      // Wrap render_wasm in try/catch, to handle Rust panics.
       let arr;
       try {
         arr = await wasm.render_wasm({
           ...renderParams,
-          camera_view: viewMatrixRef.current,
+          camera_view: cameraMatrixUsed,
           timeout: currentTimeout.current,
         });
       } catch (error) {
@@ -423,19 +412,32 @@ export function Pluot(props) {
         );
         ctx.putImageData(imageData, 0, 0);
 
-        const bailedEarly = arr.at(-1) === 1;
-        if (bailedEarly) {
+        const frameBailedEarly = arr.at(-1) === 1;
+        if (frameBailedEarly) {
           // TODO: prevent infinite loop if always bailing early?
           backlogRef.current.push(renderParams);
           incBacklogIteration();
+          setBailedEarly(true);
         } else {
           // Successful render.
-          // Insert latest renderParams into backlog, without incrementing iteration.
-          backlogRef.current = [];
-          currentTimeout.current = maxTimeout;
+          // Check that the camera matrix did not change during the render.
+          if(!isEqual(cameraMatrixUsed, viewMatrixRef.current)) {
+            // If the camera matrix changed, then we should trigger another render immediately, since the rendered frame does not reflect the current camera view.
+            backlogRef.current.push(renderParams);
+            incBacklogIteration();
+          } else {
+            backlogRef.current = [];
+            currentTimeout.current = maxTimeout;
+          }
 
-          // TODO: clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-          setDidFirstRender(true);
+          setBailedEarly(false);
+
+          // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
+          const storeUsed = stores[renderParams.store_name];
+          if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
+            storeUsed.clearCache();
+          }
+
         }
       }
 
@@ -444,7 +446,7 @@ export function Pluot(props) {
 
     // Call the async render_wasm function.
     renderFrame(latestRenderParams);
-  }, [backlogIteration]);
+  }, [backlogIteration, cameraIteration]);
 
   return (
     <>
@@ -482,7 +484,7 @@ export function Pluot(props) {
           />
         )}
       </div>
-      {!didFirstRender ? (
+      {bailedEarly ? (
           <p>Loading...</p>
         ) : null}
     </>

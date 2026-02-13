@@ -171,13 +171,13 @@ const DEMOS = {
             layer_id: "multiscale_layer",
             resolution_levels: [
               {
-                shape: [100, 100],
-                chunk_shape: [25, 25],
+                shape: [200, 200],
+                chunk_shape: [50, 50],
                 scale: [1.0, 1.0],
               },
               {
-                shape: [50, 50],
-                chunk_shape: [25, 25],
+                shape: [100, 100],
+                chunk_shape: [50, 50],
                 scale: [2.0, 2.0],
               }
             ]
