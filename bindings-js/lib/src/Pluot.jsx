@@ -1,6 +1,6 @@
 // TODO: once things are working with react,
 // implement a plain/vanilla JS version.
-import React, { useLayoutEffect, useEffect, useRef, useState, useMemo, useReducer } from "react";
+import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
 import * as wasm from "pluot";
 import { FetchStore } from "zarrita";
 // import createDom2dCamera from "dom-2d-camera";
@@ -150,6 +150,48 @@ export function Pluot(props) {
     }
   }, []);
 
+
+  // TODO: use React-Query for async callbacks/effects?
+
+  // We want to use an effectEvent because we want it to always have the latest
+  // values of props and state.
+  const pushToBacklog = useEffectEvent(() => {
+    const renderParams = {
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      view_mode: "2d",
+      pickable: false,
+      //zoom, // No longer used
+      //targetX, // No longer used
+      //targetY, // No longer used
+      camera_view: viewMatrixRef.current,
+      plot_id: plotId,
+      plot_type: plotType,
+      store_name: storeName,
+      plot_params: plotParams,
+      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders).
+      timeout: 200, // in ms
+      cache_enabled: true,
+      svg_compression_enabled: true,
+    };
+
+    // TODO: should backlog be a plain state variable instead of a ref?
+    backlogRef.current.push(renderParams);
+  });
+
+  useEffect(() => {
+    pushToBacklog();
+    incBacklogIteration();
+  }, [isWasmReady, plotId, plotType, plotParams, storeName, format]);
+
+
   useEffect(() => {
     // Set up the camera.
     const cameraEl = cameraRef.current;
@@ -170,7 +212,10 @@ export function Pluot(props) {
           viewMatrixRef.current = nextViewMatrix;
           // The user is interacting, so we reduce the timeout to improve responsiveness.
           currentTimeout.current = minTimeout;
-          incCameraIteration();
+
+          pushToBacklog();
+          incBacklogIteration();
+          console.log("pushed to backlog");
         } else {
           currentTimeout.current = maxTimeout;
         }
@@ -305,40 +350,93 @@ export function Pluot(props) {
     viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId]);
 
-  // TODO: switch this useEffect to use React-Query.
-  useEffect(() => {
-    const renderParams = {
-      width,
-      height,
-      format: format,
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
-      device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      view_mode: "2d",
-      pickable: false,
-      //zoom, // No longer used
-      //targetX, // No longer used
-      //targetY, // No longer used
-      camera_view: viewMatrixRef.current,
-      plot_id: plotId,
-      plot_type: plotType,
-      store_name: storeName,
-      plot_params: plotParams,
-      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders).
-      timeout: 200, // in ms
-      cache_enabled: true,
-      svg_compression_enabled: true,
-    };
+  // The renderFrame callback
+  const renderFrame = useCallback(async (renderParams) => {
+    isRenderingRef.current = true;
+    console.log('wasm.render');
 
-    // TODO: should backlog be a plain state variable instead of a ref?
-    backlogRef.current.push(renderParams);
-    incBacklogIteration();
-  }, [isWasmReady, plotId, plotType, plotParams, storeName, format, isVector, cameraIteration]);
+    let cameraMatrixUsed = viewMatrixRef.current;
+
+    // Wrap render_wasm in try/catch, to handle Rust panics.
+    let arr;
+    try {
+      arr = await wasm.render_wasm({
+        ...renderParams,
+        camera_view: cameraMatrixUsed,
+        timeout: currentTimeout.current,
+      });
+    } catch (error) {
+      console.error("Error during wasm.render_wasm:", error);
+      // Cleanup
+      isRenderingRef.current = false;
+      return;
+    }
+
+    isRenderingRef.current = false;
+
+    if (isVector) {
+      // Format: Vector (render to SVG)
+      const gContents = decompressFromUint8Array(arr);
+
+      //console.log(gContents)
+
+      if (!svgRef.current) {
+        return;
+      }
+      svgRef.current.innerHTML = gContents;
+
+      // TODO: check for bailed early
+    } else {
+      // Format: Raster (render to canvas)
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return;
+      }
+      // TODO: is there a more efficient way to do this?
+      // E.g., write to a webgl texture? or is this fast enough already?
+      const imageData = new ImageData(
+        new Uint8ClampedArray(arr.subarray(0, -1)),
+        width,
+        height,
+      );
+      ctx.putImageData(imageData, 0, 0);
+
+      const frameBailedEarly = arr.at(-1) === 1;
+      if (frameBailedEarly) {
+        // TODO: prevent infinite loop if always bailing early?
+        backlogRef.current.push(renderParams);
+        incBacklogIteration();
+        setBailedEarly(true);
+      } else {
+        // Successful render.
+        // Check that the camera matrix did not change during the render.
+        if(backlogRef.current.length > 0) {
+          // If the camera matrix changed, then we should trigger another render immediately, since the rendered frame does not reflect the current camera view.
+          //backlogRef.current.push(renderParams);
+          incBacklogIteration();
+        } else {
+          backlogRef.current = [];
+          currentTimeout.current = maxTimeout;
+        }
+
+        setBailedEarly(false);
+
+        // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
+        const storeUsed = stores[renderParams.store_name];
+        if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
+          storeUsed.clearCache();
+        }
+
+      }
+    }
+  }, []);
 
   useEffect(() => {
+    console.log('Checking backlog in useLayoutEffect, backlog length:', backlogRef.current.length);
     if (backlogRef.current.length === 0) {
       return;
     }
@@ -357,96 +455,11 @@ export function Pluot(props) {
 
     // Pop the most recent render params from the backlog.
     const latestRenderParams = backlogRef.current.pop();
+    backlogRef.current = [];
 
-    // Render once or every animation frame.
-    // Define the function to render a single frame.
-   async function renderFrame(renderParams) {
-     isRenderingRef.current = true;
-      // console.log('wasm.render');
-
-     let cameraMatrixUsed = viewMatrixRef.current;
-
-      // Wrap render_wasm in try/catch, to handle Rust panics.
-      let arr;
-      try {
-        arr = await wasm.render_wasm({
-          ...renderParams,
-          camera_view: cameraMatrixUsed,
-          timeout: currentTimeout.current,
-        });
-      } catch (error) {
-        console.error("Error during wasm.render_wasm:", error);
-        // Cleanup
-        isRenderingRef.current = false;
-        return;
-      }
-
-      if (isVector) {
-        // Format: Vector (render to SVG)
-        const gContents = decompressFromUint8Array(arr);
-
-        //console.log(gContents)
-
-        if (!svgRef.current) {
-          return;
-        }
-        svgRef.current.innerHTML = gContents;
-
-        // TODO: check for bailed early
-      } else {
-        // Format: Raster (render to canvas)
-        const canvas = canvasRef.current;
-        if (!canvas) {
-          return;
-        }
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          return;
-        }
-        // TODO: is there a more efficient way to do this?
-        // E.g., write to a webgl texture? or is this fast enough already?
-        const imageData = new ImageData(
-          new Uint8ClampedArray(arr.subarray(0, -1)),
-          width,
-          height,
-        );
-        ctx.putImageData(imageData, 0, 0);
-
-        const frameBailedEarly = arr.at(-1) === 1;
-        if (frameBailedEarly) {
-          // TODO: prevent infinite loop if always bailing early?
-          backlogRef.current.push(renderParams);
-          incBacklogIteration();
-          setBailedEarly(true);
-        } else {
-          // Successful render.
-          // Check that the camera matrix did not change during the render.
-          if(!isEqual(cameraMatrixUsed, viewMatrixRef.current)) {
-            // If the camera matrix changed, then we should trigger another render immediately, since the rendered frame does not reflect the current camera view.
-            backlogRef.current.push(renderParams);
-            incBacklogIteration();
-          } else {
-            backlogRef.current = [];
-            currentTimeout.current = maxTimeout;
-          }
-
-          setBailedEarly(false);
-
-          // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-          const storeUsed = stores[renderParams.store_name];
-          if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
-            storeUsed.clearCache();
-          }
-
-        }
-      }
-
-      isRenderingRef.current = false;
-    }
-
-    // Call the async render_wasm function.
-    renderFrame(latestRenderParams);
-  }, [backlogIteration, cameraIteration]);
+    // Render on the next animation frame.
+    window.requestAnimationFrame(() => renderFrame(latestRenderParams));
+  }, [backlogIteration]);
 
   return (
     <>
