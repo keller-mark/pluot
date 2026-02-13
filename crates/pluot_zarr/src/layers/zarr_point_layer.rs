@@ -157,12 +157,12 @@ impl PreparedLayer for ZarrPointLayer {
 
         let (x_f32, y_f32, l_i32) = match futures_try_join_result {
             Ok((x_f32_result, y_f32_result, l_i32_result)) => {
-                log("All futures succeeded within the timeout.");
+                // log("All futures succeeded within the timeout.");
                 (x_f32_result, y_f32_result, l_i32_result)
             }
             Err(_) => {
                 // TODO: still render something in this case
-                log("One or more futures timed out or failed");
+                // log("One or more futures timed out or failed");
                 return PrepareResult { bailed_early: true };
             }
         };

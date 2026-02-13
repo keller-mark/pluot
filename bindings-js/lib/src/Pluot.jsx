@@ -117,26 +117,26 @@ export function Pluot(props) {
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
+
+  // We may want to update these things without triggering a re-render.
+  const isRenderingRef = useRef(false);
+  const currentTimeout = useRef(maxTimeout);
+
+  // We keep a backlog of render param settings here.
+
+  const backlogRef = useRef([]);
+  const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
+
+
   const [isWasmReady, setIsWasmReady] = useState(false);
 
-  // TODO: remove viewMatrix/setViewMatrix once the 3D camera has been updated.
   const [viewMatrix, setViewMatrix] = useState(
     // Note: We use an initializer function here to avoid
     // sharing the same Float32Array among multiple Pluot
     // component instances that may be rendered on the same page.
     () => new Float32Array(DEFAULT_VIEW)
   );
-  const viewMatrixRef = useRef(new Float32Array(DEFAULT_VIEW));
-
   const [bailedEarly, setBailedEarly] = useState(true);
-
-  // We keep a backlog of render param settings here.
-  const backlogRef = useRef([]);
-  const isRenderingRef = useRef(false);
-  const currentTimeout = useRef(maxTimeout);
-
-  const [cameraIteration, incCameraIteration] = useReducer(i => i + 1, 0);
-  const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
 
   useLayoutEffect(() => {
     const initWasm = async () => {
@@ -171,7 +171,7 @@ export function Pluot(props) {
       //zoom, // No longer used
       //targetX, // No longer used
       //targetY, // No longer used
-      camera_view: viewMatrixRef.current,
+      camera_view: viewMatrix,
       plot_id: plotId,
       plot_type: plotType,
       store_name: storeName,
@@ -186,10 +186,11 @@ export function Pluot(props) {
     backlogRef.current.push(renderParams);
   });
 
-  useEffect(() => {
+
+  useLayoutEffect(() => {
     pushToBacklog();
     incBacklogIteration();
-  }, [isWasmReady, plotId, plotType, plotParams, storeName, format]);
+  }, [isWasmReady, plotId, plotType, plotParams, storeName, format, viewMatrix]);
 
 
   useEffect(() => {
@@ -206,6 +207,17 @@ export function Pluot(props) {
       function onCameraEvent(camera, event) {
         camera.tick();
         // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
+
+        setViewMatrix(prev => {
+          // Since camera events happen even on mousemove events that do not change the matrix,
+          // we check for equality here to avoid unnecessary state updates and plot re-renders.
+          if (isEqual(prev, camera.view)) {
+            return prev;
+          }
+          return mat4.clone(camera.view)
+        });
+
+        /*
         const nextViewMatrix = mat4.clone(camera.view);
 
         if (!isEqual(viewMatrixRef.current, nextViewMatrix)) {
@@ -219,6 +231,7 @@ export function Pluot(props) {
         } else {
           currentTimeout.current = maxTimeout;
         }
+        */
 
         // TODO: prevent incrementing on mouseMove events that do not change the matrix
       }
@@ -254,7 +267,7 @@ export function Pluot(props) {
       dispose = camera.dispose;
 
       // Set the initial view matrix.
-      camera.setView(viewMatrixRef.current);
+      camera.setView(viewMatrix);
     } else if (mode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
@@ -342,27 +355,26 @@ export function Pluot(props) {
     return dispose;
   }, [cameraRef, mode, aspectRatioMode]);
 
+
   useEffect(() => {
     // Reset view matrix on plot change.
     // Create a new Float32Array to avoid sharing a mutable array
     // among multiple Pluot component instances.
-    //setViewMatrix(new Float32Array(DEFAULT_VIEW));
-    viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
+    setViewMatrix(new Float32Array(DEFAULT_VIEW));
+    //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId]);
 
   // The renderFrame callback
-  const renderFrame = useCallback(async (renderParams) => {
+  const renderFrame = useEffectEvent(async (renderParams) => {
     isRenderingRef.current = true;
     console.log('wasm.render');
-
-    let cameraMatrixUsed = viewMatrixRef.current;
 
     // Wrap render_wasm in try/catch, to handle Rust panics.
     let arr;
     try {
       arr = await wasm.render_wasm({
         ...renderParams,
-        camera_view: cameraMatrixUsed,
+        camera_view: viewMatrix, // Should see the latest view matrix here, since renderFrame is wrapped in useEffectEvent.
         timeout: currentTimeout.current,
       });
     } catch (error) {
@@ -430,13 +442,12 @@ export function Pluot(props) {
         if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
           storeUsed.clearCache();
         }
-
       }
     }
-  }, []);
+  });
 
-  useEffect(() => {
-    console.log('Checking backlog in useLayoutEffect, backlog length:', backlogRef.current.length);
+  useLayoutEffect(() => {
+    //console.log('Checking backlog in useLayoutEffect, backlog length:', backlogRef.current.length);
     if (backlogRef.current.length === 0) {
       return;
     }
@@ -459,7 +470,7 @@ export function Pluot(props) {
 
     // Render on the next animation frame.
     window.requestAnimationFrame(() => renderFrame(latestRenderParams));
-  }, [backlogIteration]);
+  }, [backlogIteration, isWasmReady, viewMatrix]);
 
   return (
     <>
