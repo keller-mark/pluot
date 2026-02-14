@@ -96,7 +96,7 @@ export function Pluot(props) {
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
     format = "Raster", // "Raster", "Vector"
     minTimeout = 50,
-    maxTimeout = 500,
+    maxTimeout = 100,
   } = props;
 
   const isVector = format === "Vector";
@@ -152,46 +152,6 @@ export function Pluot(props) {
 
 
   // TODO: use React-Query for async callbacks/effects?
-
-  // We want to use an effectEvent because we want it to always have the latest
-  // values of props and state.
-  const pushToBacklog = useEffectEvent(() => {
-    const renderParams = {
-      width,
-      height,
-      format: format,
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
-      device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      view_mode: "2d",
-      pickable: false,
-      //zoom, // No longer used
-      //targetX, // No longer used
-      //targetY, // No longer used
-      camera_view: viewMatrix,
-      plot_id: plotId,
-      plot_type: plotType,
-      store_name: storeName,
-      plot_params: plotParams,
-      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders).
-      timeout: 200, // in ms
-      cache_enabled: true,
-      svg_compression_enabled: true,
-    };
-
-    // TODO: should backlog be a plain state variable instead of a ref?
-    backlogRef.current.push(renderParams);
-  });
-
-
-  useLayoutEffect(() => {
-    pushToBacklog();
-    incBacklogIteration();
-  }, [isWasmReady, plotId, plotType, plotParams, storeName, format, viewMatrix]);
-
 
   useEffect(() => {
     // Set up the camera.
@@ -365,26 +325,47 @@ export function Pluot(props) {
   }, [plotId]);
 
   // The renderFrame callback
-  const renderFrame = useEffectEvent(async (renderParams) => {
+  const renderFrame = useEffectEvent(async () => {
     isRenderingRef.current = true;
     console.log('wasm.render');
+
+    const renderParams = {
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      view_mode: "2d",
+      pickable: false,
+      //zoom, // No longer used
+      //targetX, // No longer used
+      //targetY, // No longer used
+      camera_view: viewMatrix, // Should see the latest view matrix here, since renderFrame is wrapped in useEffectEvent.
+      plot_id: plotId,
+      plot_type: plotType,
+      store_name: storeName,
+      plot_params: plotParams,
+      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders).
+      timeout: currentTimeout.current, // in ms
+      cache_enabled: true,
+      svg_compression_enabled: true,
+    };
 
     // Wrap render_wasm in try/catch, to handle Rust panics.
     let arr;
     try {
-      arr = await wasm.render_wasm({
-        ...renderParams,
-        camera_view: viewMatrix, // Should see the latest view matrix here, since renderFrame is wrapped in useEffectEvent.
-        timeout: currentTimeout.current,
-      });
+      arr = await wasm.render_wasm(renderParams);
+      isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);
       // Cleanup
       isRenderingRef.current = false;
       return;
     }
-
-    isRenderingRef.current = false;
 
     if (isVector) {
       // Format: Vector (render to SVG)
@@ -420,22 +401,12 @@ export function Pluot(props) {
       const frameBailedEarly = arr.at(-1) === 1;
       if (frameBailedEarly) {
         // TODO: prevent infinite loop if always bailing early?
-        backlogRef.current.push(renderParams);
-        incBacklogIteration();
-        setBailedEarly(true);
+        // backlogRef.current.push(renderParams);
+        incBacklogIteration(); // Increment this to force a re-render.
+        setBailedEarly(true); // Update this to show the loading indicator.
       } else {
         // Successful render.
-        // Check that the camera matrix did not change during the render.
-        if(backlogRef.current.length > 0) {
-          // If the camera matrix changed, then we should trigger another render immediately, since the rendered frame does not reflect the current camera view.
-          //backlogRef.current.push(renderParams);
-          incBacklogIteration();
-        } else {
-          backlogRef.current = [];
-          currentTimeout.current = maxTimeout;
-        }
-
-        setBailedEarly(false);
+        setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
         const storeUsed = stores[renderParams.store_name];
@@ -446,12 +417,7 @@ export function Pluot(props) {
     }
   });
 
-  useLayoutEffect(() => {
-    //console.log('Checking backlog in useLayoutEffect, backlog length:', backlogRef.current.length);
-    if (backlogRef.current.length === 0) {
-      return;
-    }
-
+  useEffect(() => {
     if (!isWasmReady) {
       return;
     }
@@ -464,13 +430,9 @@ export function Pluot(props) {
       return;
     }
 
-    // Pop the most recent render params from the backlog.
-    const latestRenderParams = backlogRef.current.pop();
-    backlogRef.current = [];
-
     // Render on the next animation frame.
-    window.requestAnimationFrame(() => renderFrame(latestRenderParams));
-  }, [backlogIteration, isWasmReady, viewMatrix]);
+    window.requestAnimationFrame(renderFrame);
+  }, [isWasmReady, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format]);
 
   return (
     <>
