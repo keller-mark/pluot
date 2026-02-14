@@ -123,20 +123,25 @@ export function Pluot(props) {
   const isRenderingRef = useRef(false);
   const currentTimeout = useRef(maxTimeout);
 
-  // We keep a backlog of render param settings here.
+  // TODO: do we want to use the backlog approach or not?
+  // (Similar to the one used in the Vitessce heatmap)
+  // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
   //const backlogRef = useRef([]);
   const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
 
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [didFirstRender, setDidFirstRender] = useState(false);
+  const [bailedEarly, setBailedEarly] = useState(true);
 
+  // TODO: handle a viewMatrix that is provided and set via props,
+  // to enable usage as a controlled component
+  // (e.g., for linked views with shared cameras).
   const [viewMatrix, setViewMatrix] = useState(
     // Note: We use an initializer function here to avoid
     // sharing the same Float32Array among multiple Pluot
     // component instances that may be rendered on the same page.
     () => new Float32Array(DEFAULT_VIEW)
   );
-  const [bailedEarly, setBailedEarly] = useState(true);
 
   useLayoutEffect(() => {
     const initWasm = async () => {
@@ -151,8 +156,7 @@ export function Pluot(props) {
   }, []);
 
 
-  // TODO: use React-Query for async callbacks/effects?
-
+  // Set up the camera.
   useEffect(() => {
     // Set up the camera.
     const cameraEl = cameraRef.current;
@@ -327,15 +331,13 @@ export function Pluot(props) {
       aspect_ratio_mode: aspectRatioMode,
       view_mode: "2d",
       pickable: false,
-      //zoom, // No longer used
-      //targetX, // No longer used
-      //targetY, // No longer used
-      camera_view: viewMatrix, // Should see the latest view matrix here, since renderFrame is wrapped in useEffectEvent.
+      // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
+      camera_view: viewMatrix,
       plot_id: plotId,
       plot_type: plotType,
       store_name: storeName,
       plot_params: plotParams,
-      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders).
+      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms
       cache_enabled: true,
       svg_compression_enabled: true,
@@ -404,8 +406,6 @@ export function Pluot(props) {
   });
 
   // TODO: use react-query?
-  // Alternatively, implement a backlog similar to the one used in the Vitessce heatmap.
-  // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
   useEffect(() => {
     if (!isWasmReady) {
       return;
