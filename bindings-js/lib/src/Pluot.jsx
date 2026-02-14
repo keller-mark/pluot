@@ -19,7 +19,10 @@ import { isEqual } from "lodash-es";
 const { decompressFromUint8Array } = lzs;
 
 const DEFAULT_VIEW = new Float32Array([
-  1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
 ]);
 
 //const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
@@ -97,7 +100,7 @@ export function Pluot(props) {
     format = "Raster", // "Raster", "Vector"
     minTimeout = 50,
     maxTimeout = 200,
-    allowSimultaneousRenders = true,
+    allowSimultaneousRenders = false,
   } = props;
 
   const isVector = format === "Vector";
