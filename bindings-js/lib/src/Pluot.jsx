@@ -96,7 +96,8 @@ export function Pluot(props) {
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
     format = "Raster", // "Raster", "Vector"
     minTimeout = 50,
-    maxTimeout = 100,
+    maxTimeout = 200,
+    allowSimultaneousRenders = true,
   } = props;
 
   const isVector = format === "Vector";
@@ -123,12 +124,11 @@ export function Pluot(props) {
   const currentTimeout = useRef(maxTimeout);
 
   // We keep a backlog of render param settings here.
-
-  const backlogRef = useRef([]);
+  //const backlogRef = useRef([]);
   const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
 
-
   const [isWasmReady, setIsWasmReady] = useState(false);
+  const [didFirstRender, setDidFirstRender] = useState(false);
 
   const [viewMatrix, setViewMatrix] = useState(
     // Note: We use an initializer function here to avoid
@@ -177,23 +177,7 @@ export function Pluot(props) {
           return mat4.clone(camera.view)
         });
 
-        /*
-        const nextViewMatrix = mat4.clone(camera.view);
-
-        if (!isEqual(viewMatrixRef.current, nextViewMatrix)) {
-          viewMatrixRef.current = nextViewMatrix;
-          // The user is interacting, so we reduce the timeout to improve responsiveness.
-          currentTimeout.current = minTimeout;
-
-          pushToBacklog();
-          incBacklogIteration();
-          console.log("pushed to backlog");
-        } else {
-          currentTimeout.current = maxTimeout;
-        }
-        */
-
-        // TODO: prevent incrementing on mouseMove events that do not change the matrix
+        currentTimeout.current = minTimeout;
       }
 
       const camera = createDom2dCamera(cameraEl, {
@@ -324,7 +308,9 @@ export function Pluot(props) {
     //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId]);
 
-  // The renderFrame callback
+  // The renderFrame callback.
+  // We use useEffectEvent because we want to "see"
+  // the latest values of viewMatrix, plotProps, etc.
   const renderFrame = useEffectEvent(async () => {
     isRenderingRef.current = true;
     console.log('wasm.render');
@@ -400,8 +386,7 @@ export function Pluot(props) {
 
       const frameBailedEarly = arr.at(-1) === 1;
       if (frameBailedEarly) {
-        // TODO: prevent infinite loop if always bailing early?
-        // backlogRef.current.push(renderParams);
+        currentTimeout.current = maxTimeout;
         incBacklogIteration(); // Increment this to force a re-render.
         setBailedEarly(true); // Update this to show the loading indicator.
       } else {
@@ -415,24 +400,29 @@ export function Pluot(props) {
         }
       }
     }
+    setDidFirstRender(true);
   });
 
+  // TODO: use react-query?
+  // Alternatively, implement a backlog similar to the one used in the Vitessce heatmap.
+  // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
   useEffect(() => {
     if (!isWasmReady) {
       return;
     }
 
-    // TODO: use react-query to manage the backlog of async render calls?
-    // Alternatively, implement a backlog similar to the one used in the Vitessce heatmap.
-    // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
-    if (isRenderingRef.current) {
+    // We want to allow for simultaneous renders, as this makes user interactions feel
+    // much smoother. However, we allow for users to opt-out, and we also
+    // need to prevent simultaneous renders prior to the first render, as the first
+    // render initializes cached values and stuff.
+    if (isRenderingRef.current && (!didFirstRender || bailedEarly || !allowSimultaneousRenders)) {
       // Prevent multiple render calls prior to the first successful render.
       return;
     }
 
     // Render on the next animation frame.
     window.requestAnimationFrame(renderFrame);
-  }, [isWasmReady, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format]);
+  }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format]);
 
   return (
     <>
