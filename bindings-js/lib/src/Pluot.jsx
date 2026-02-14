@@ -11,7 +11,7 @@ import { mat4, vec4 } from "gl-matrix";
 import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
 import lzs from "lz-string";
-import { isEqual } from "lodash-es";
+import { isEqual, throttle } from "lodash-es";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -100,7 +100,7 @@ export function Pluot(props) {
     format = "Raster", // "Raster", "Vector"
     minTimeout = 50,
     maxTimeout = 200,
-    allowSimultaneousRenders = false,
+    allowSimultaneousRenders = true,
   } = props;
 
   const isVector = format === "Vector";
@@ -408,6 +408,18 @@ export function Pluot(props) {
     setDidFirstRender(true);
   });
 
+  // Place this after the renderFrame definition (~line 408) and before the useEffect (~line 411).
+  const throttledRender = useMemo(
+    () => throttle(() => {
+      window.requestAnimationFrame(renderFrame);
+    }, 32, { leading: true, trailing: true }), // ~30fps cap; adjust as needed
+    [] // stable because renderFrame (useEffectEvent) is a stable ref
+  );
+
+  useEffect(() => {
+    return () => throttledRender.cancel();
+  }, [throttledRender]);
+
   // TODO: use react-query?
   useEffect(() => {
     if (!isWasmReady) {
@@ -424,7 +436,7 @@ export function Pluot(props) {
     }
 
     // Render on the next animation frame.
-    window.requestAnimationFrame(renderFrame);
+    throttledRender();
   }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format]);
 
   return (
