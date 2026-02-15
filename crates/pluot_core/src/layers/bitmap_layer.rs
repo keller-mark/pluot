@@ -4,6 +4,7 @@
 use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::params::{PrepareResult, RenderResult};
@@ -14,7 +15,6 @@ use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoR
 use crate::two::svg::update_svg;
 use crate::layers::position_utils::get_point_position;
 use crate::log;
-
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -58,36 +58,19 @@ pub struct BitmapLayerParams {
 
     pub opacity: f32,
 
-    // TODO: channel window and color params
-
-    // TODO(ref): pass in references instead of owned Vecs?
-    // Would this cause issues when using serde to create layers based on JSON params?
-    // TODO: improve naming here
-    // TODO: array of channel vecs for multi-channel images?
-
     // TODO: accept a dimension order array,
     // a shape array (one size per dimension),
     // and then accept a flat Vec for the image data in its original dimension order.
 
-    pub ch0_vec: Vec<u16>, // TODO: generalize to other numeric dtypes?
+    pub ch0_vec: Arc<Vec<u16>>, // TODO: generalize to other numeric dtypes?
 }
 
 // TODO: defaults for params?
 
 
-// Internal representation for BitmapLayer and its "descendant" layers.
-pub struct BitmapLayerData {
-    pub ch0_arr: Vec<u16>,
-}
-
-
 pub struct BitmapLayer {
     view_params: ViewParams,
     layer_params: BitmapLayerParams,
-    // TODO: getters?
-
-    // Data may be None prior to runninng prepare().
-    data: Option<BitmapLayerData>,
 }
 
 impl BitmapLayer {
@@ -95,14 +78,9 @@ impl BitmapLayer {
         view_params: ViewParams,
         layer_params: BitmapLayerParams,
     ) -> Self {
-        let data = Some(BitmapLayerData {
-            // TODO: can cloning be avoided here?
-            ch0_arr: layer_params.ch0_vec.clone(),
-        });
         Self {
             view_params,
             layer_params,
-            data,
         }
     }
 }
@@ -152,40 +130,27 @@ struct BitmapLayerUniforms {
 }
 
 
-// We extract this function for reuse in derived scatterplot layers (e.g., ZarrBitmapLayer).
-// TODO: is this the best way to share this logic?
-// See https://www.youtube.com/watch?v=Phk0C-kLlho
-// See https://github.com/linebender/xilem/blob/main/xilem_core/src/views/any_view.rs
-
-// TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
-
 pub async fn base_draw_bitmap_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
-    data: &BitmapLayerData,
     view_params: &ViewParams,
-    layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    img_size_w: u32,
-    img_size_h: u32,
-    opacity: f32,
-    channel_settings: &[ChannelSettings],
+    layer_params: &BitmapLayerParams,
 ) {
     // Store the ndarray::ArrayD in a WGPU texture.
     // Create a texture to store the image data (R16Uint).
 
     let num_channels = 1; // TODO: extend to multi-channel images
 
-    let combined_pixel_data: &[u8] = bytemuck::cast_slice(&data.ch0_arr);
+    let combined_pixel_data: &[u8] = bytemuck::cast_slice(&layer_params.ch0_vec);
 
     // TODO: does this need to be padded to 256 bytes per row?
     let bytes_per_pixel: u32 = 2; // R16Uint has 2 bytes per pixel.
-    let unpadded_bytes_per_row = img_size_w as u32 * bytes_per_pixel;
+    let unpadded_bytes_per_row = layer_params.img_size_w as u32 * bytes_per_pixel;
     let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
     let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
 
     let texture_size = wgpu::Extent3d {
-        width: img_size_w as u32,
-        height: img_size_h as u32,
+        width: layer_params.img_size_w as u32,
+        height: layer_params.img_size_h as u32,
         depth_or_array_layers: num_channels as u32,
     };
     let image_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -218,7 +183,7 @@ pub async fn base_draw_bitmap_layer(
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(unpadded_bytes_per_row),
-            rows_per_image: Some(img_size_h as u32),
+            rows_per_image: Some(layer_params.img_size_h as u32),
         },
         texture_size,
     );
@@ -273,10 +238,10 @@ pub async fn base_draw_bitmap_layer(
 
     // Use layer-specific bounds if not None, otherwise use the view's margins
     // (which may also be None).
-    let bounds = if layer_bounds.is_none() {
+    let bounds = if layer_params.bounds.is_none() {
         &view_params.margins
     } else {
-        layer_bounds
+        &layer_params.bounds
     };
 
     let margin_top = if let Some(margin_params) = &bounds {
@@ -299,7 +264,7 @@ pub async fn base_draw_bitmap_layer(
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
     // Define the uniforms, matching the WGSL layout (handled by using encase).
-    let channel_uniforms: Vec<ChannelUniforms> = channel_settings
+    let channel_uniforms: Vec<ChannelUniforms> = layer_params.channel_settings
         .iter()
         .map(|channel_setting| {
             ChannelUniforms {
@@ -312,7 +277,7 @@ pub async fn base_draw_bitmap_layer(
     let uniform_struct = BitmapLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode: match data_unit_mode {
+        data_unit_mode: match layer_params.data_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -322,8 +287,8 @@ pub async fn base_draw_bitmap_layer(
             AspectRatioMode::Cover => 2,
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
-        img_size: Vec2::new(img_size_w as f32, img_size_h as f32),
-        opacity,
+        img_size: Vec2::new(layer_params.img_size_w as f32, layer_params.img_size_h as f32),
+        opacity: layer_params.opacity,
         num_channels: Default::default(),
         channels: channel_uniforms,
     };
@@ -479,27 +444,17 @@ pub async fn base_draw_bitmap_layer(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for BitmapLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
         base_draw_bitmap_layer(
             device, queue, pass,
-            data,
             &self.view_params,
-            &self.layer_params.bounds,
-            &self.layer_params.data_unit_mode,
-            self.layer_params.img_size_w,
-            self.layer_params.img_size_h,
-            self.layer_params.opacity,
-            &self.layer_params.channel_settings,
+            &self.layer_params,
         ).await;
     }
 }
 
 pub fn base_draw_bitmap_layer_svg(
-    data: &BitmapLayerData,
     view_params: &ViewParams,
-    layer_bounds: &Option<MarginParams>,
-    data_unit_mode: &UnitsMode,
-    layer_id: &str,
+    layer_params: &BitmapLayerParams,
 ) -> Vec<TwoElement> {
     return vec![]; // TODO
 }
@@ -509,17 +464,9 @@ pub fn base_draw_bitmap_layer_svg(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for BitmapLayer {
     async fn draw(&self, group: &Group) -> Group {
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-
-        let view_params = &self.view_params;
-        let bounds = &self.layer_params.bounds;
-
         let svg_elements = base_draw_bitmap_layer_svg(
-            data,
-            view_params,
-            bounds,
-            &self.layer_params.data_unit_mode,
-            &self.layer_params.layer_id,
+            &self.view_params,
+            &self.layer_params,
         );
 
         // TODO: refactor to avoid the cloning here?

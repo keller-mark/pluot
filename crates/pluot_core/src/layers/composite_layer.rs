@@ -54,7 +54,7 @@ impl CompositeLayer {
 
 
 pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn PreparedAndDraw>]) -> PrepareResult {
-    // TODO: use futures::join, the same as in the core::render functions.
+    // TODO: use futures::join, the same as in the layer_traits::render functions.
     let mut bailed_early = false;
     for sub_layer in sub_layer_instances.iter_mut() {
         let sub_layer_result = sub_layer.prepare().await;
