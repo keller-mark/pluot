@@ -408,11 +408,16 @@ export function Pluot(props) {
     setDidFirstRender(true);
   });
 
-  // Place this after the renderFrame definition (~line 408) and before the useEffect (~line 411).
   const throttledRender = useMemo(
-    () => throttle(renderFrame, 16, { leading: true, trailing: true }), // ~30fps cap; adjust as needed
-    [] // stable because renderFrame (useEffectEvent) is a stable ref
-  );
+    () => throttle(
+      renderFrame,
+      16, // ~60fps
+      // When both leading and trailing are true (the default):
+      // - First call -> executes immediately (leading edge)
+      // - Calls during the wait window -> ignored, but the most recent one is remembered.
+      // - After the wait period expires -> the last remembered call is executed (trailing edge).
+      { leading: true, trailing: true }
+    ), []);
 
   useEffect(() => {
     return () => throttledRender.cancel();
