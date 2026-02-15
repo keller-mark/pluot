@@ -128,8 +128,8 @@ const DEMOS = {
             channel_settings: [
               {
                 c_index: 0,
-                window: [0.0, 255000.0],
-                color: [255.0, 0.0, 0.0],
+                window: [0.0, 500.0],
+                color: [1.0, 0.0, 0.0],
               }
             ],
 

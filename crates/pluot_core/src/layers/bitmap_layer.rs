@@ -134,6 +134,40 @@ impl BitmapLayer {
         view_params: ViewParams,
         layer_params: BitmapLayerParams,
     ) -> Self {
+        // Validate that dimension_order string is valid.
+        let dim_order = &layer_params.dimension_order;
+        let valid_dims: &[char] = &['X', 'Y', 'Z', 'C', 'T'];
+
+        // May not contain any invalid characters.
+        for ch in dim_order.chars() {
+            if !valid_dims.contains(&ch) {
+                panic!("Invalid character '{}' in dimension_order \"{}\". Valid characters are: X, Y, Z, C, T.", ch, dim_order);
+            }
+        }
+
+        // Must contain 'X' and 'Y'.
+        if !dim_order.contains('X') || !dim_order.contains('Y') {
+            panic!("dimension_order \"{}\" must contain both 'X' and 'Y'.", dim_order);
+        }
+
+        // May not contain duplicate dimensions.
+        let mut seen = std::collections::HashSet::new();
+        for ch in dim_order.chars() {
+            if !seen.insert(ch) {
+                panic!("Duplicate dimension '{}' in dimension_order \"{}\".", ch, dim_order);
+            }
+        }
+
+        // Validate that the colors in ChannelSettings are in the range [0.0, 1.0].
+        for (i, channel) in layer_params.channel_settings.iter().enumerate() {
+            let (r, g, b) = channel.color;
+            if !(0.0..=1.0).contains(&r) || !(0.0..=1.0).contains(&g) || !(0.0..=1.0).contains(&b) {
+                panic!(
+                    "Channel {} color ({}, {}, {}) has components outside the range [0.0, 1.0].",
+                    i, r, g, b
+                );
+            }
+        }
         Self {
             view_params,
             layer_params,
