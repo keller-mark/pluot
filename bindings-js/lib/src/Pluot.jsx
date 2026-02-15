@@ -410,9 +410,7 @@ export function Pluot(props) {
 
   // Place this after the renderFrame definition (~line 408) and before the useEffect (~line 411).
   const throttledRender = useMemo(
-    () => throttle(() => {
-      window.requestAnimationFrame(renderFrame);
-    }, 32, { leading: true, trailing: true }), // ~30fps cap; adjust as needed
+    () => throttle(renderFrame, 16, { leading: true, trailing: true }), // ~30fps cap; adjust as needed
     [] // stable because renderFrame (useEffectEvent) is a stable ref
   );
 
