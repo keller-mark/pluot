@@ -91,8 +91,6 @@ pub async fn base_draw_composite_layer(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for CompositeLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        // TODO: ensure this works with pyO3. If needed, change trait to take &mut self,
-        // and then use the same pattern as in the core::render_ functions.
         base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
     }
 }

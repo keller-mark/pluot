@@ -17,6 +17,56 @@ use crate::layers::position_utils::get_point_position;
 use crate::log;
 
 
+/// Typed numeric array supporting multiple dtypes.
+/// Serialized as a tagged enum, e.g. `{"Uint16": [1, 2, 3]}`.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum NumericData {
+    Uint8(Arc<Vec<u8>>),
+    Uint16(Arc<Vec<u16>>),
+    Uint32(Arc<Vec<u32>>),
+    Uint64(Arc<Vec<u64>>),
+    Int8(Arc<Vec<i8>>),
+    Int16(Arc<Vec<i16>>),
+    Int32(Arc<Vec<i32>>),
+    Int64(Arc<Vec<i64>>),
+    Float32(Arc<Vec<f32>>),
+    Float64(Arc<Vec<f64>>),
+}
+
+impl NumericData {
+    /// Number of elements in the array.
+    fn len(&self) -> usize {
+        match self {
+            NumericData::Uint8(v) => v.len(),
+            NumericData::Uint16(v) => v.len(),
+            NumericData::Uint32(v) => v.len(),
+            NumericData::Uint64(v) => v.len(),
+            NumericData::Int8(v) => v.len(),
+            NumericData::Int16(v) => v.len(),
+            NumericData::Int32(v) => v.len(),
+            NumericData::Int64(v) => v.len(),
+            NumericData::Float32(v) => v.len(),
+            NumericData::Float64(v) => v.len(),
+        }
+    }
+
+    /// Get element at index as f32.
+    fn get_f32(&self, idx: usize) -> f32 {
+        match self {
+            NumericData::Uint8(v) => v[idx] as f32,
+            NumericData::Uint16(v) => v[idx] as f32,
+            NumericData::Uint32(v) => v[idx] as f32,
+            NumericData::Uint64(v) => v[idx] as f32,
+            NumericData::Int8(v) => v[idx] as f32,
+            NumericData::Int16(v) => v[idx] as f32,
+            NumericData::Int32(v) => v[idx] as f32,
+            NumericData::Int64(v) => v[idx] as f32,
+            NumericData::Float32(v) => v[idx],
+            NumericData::Float64(v) => v[idx] as f32,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChannelSettings {
     pub c_index: u32,
@@ -46,23 +96,29 @@ pub struct BitmapLayerParams {
     // but without a model_matrix specified we assume that 1 pixel = 1 meter).
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
-    pub img_size_w: u32,
-    pub img_size_h: u32,
-    pub img_size_c: Option<u32>, // Number of channels in the image.
-    pub img_size_z: Option<u32>, // Number of z slices in the image.
-    pub img_size_t: Option<u32>, // Number of timepoints in the image.
+    /// The order of dimensions in the flat `data` array.
+    /// Must contain 'X' and 'Y'. May also contain 'Z', 'C', and 'T'.
+    /// Examples: "XY", "XYC", "XYCZT", "TCZYX".
+    /// Dimensions can be in any order.
+    pub dimension_order: String,
+
+    /// The size of each dimension, in the same order as `dimension_order`.
+    /// For example, if `dimension_order` is "XYCZT" and the image is
+    /// 256x256 with 3 channels, 10 z-slices, and 5 timepoints,
+    /// then `shape` would be [256, 256, 3, 10, 5].
+    pub shape: Vec<u32>,
 
     pub channel_settings: Vec<ChannelSettings>,
+    /// The z-slice index to render (0-based). Required if 'Z' is in dimension_order.
     pub z_index: Option<u32>,
+    /// The timepoint index to render (0-based). Required if 'T' is in dimension_order.
     pub t_index: Option<u32>,
 
     pub opacity: f32,
 
-    // TODO: accept a dimension order array,
-    // a shape array (one size per dimension),
-    // and then accept a flat Vec for the image data in its original dimension order.
-
-    pub ch0_vec: Arc<Vec<u16>>, // TODO: generalize to other numeric dtypes?
+    /// Flat array of pixel data in the order specified by `dimension_order`.
+    /// Supports multiple numeric dtypes (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64).
+    pub data: NumericData,
 }
 
 // TODO: defaults for params?
@@ -90,11 +146,7 @@ impl BitmapLayer {
 impl PreparedLayer for BitmapLayer {
     async fn prepare(&mut self) -> PrepareResult {
 
-        // TODO: include the layer type in the memoization dependencies?
-        // But what if we want multiple layers to be able to reuse the same cached data?
-        // Then we should also avoid including the layer_id...
-
-        // TODO: execute getters and cache the results.
+        // TODO: cache the sliced texture data here for the specified z/t/channel settings.
 
         // For now, it is a no-op, since self.data is set in the constructor.
 
@@ -130,28 +182,122 @@ struct BitmapLayerUniforms {
 }
 
 
+/// Parse dimension_order and shape into a map from dimension char to (index_in_order, size).
+fn parse_dimensions(dimension_order: &str, shape: &[u32]) -> std::collections::HashMap<char, (usize, u32)> {
+    assert_eq!(
+        dimension_order.len(),
+        shape.len(),
+        "dimension_order length ({}) must match shape length ({})",
+        dimension_order.len(),
+        shape.len()
+    );
+    dimension_order
+        .chars()
+        .enumerate()
+        .zip(shape.iter())
+        .map(|((i, ch), &sz)| (ch, (i, sz)))
+        .collect()
+}
+
+/// Compute the stride for each dimension given the shape and dimension order.
+/// Strides are in units of elements (not bytes).
+/// The last dimension in the order is the fastest-varying (stride=1).
+fn compute_strides(shape: &[u32]) -> Vec<usize> {
+    let ndim = shape.len();
+    let mut strides = vec![1usize; ndim];
+    for i in (0..ndim.saturating_sub(1)).rev() {
+        strides[i] = strides[i + 1] * shape[i + 1] as usize;
+    }
+    strides
+}
+
+/// Extract a 2D XY slice from the flat nD data array for a given channel, z-index, and t-index.
+/// Converts to f32 regardless of the source dtype.
+/// Returns a Vec<f32> of length (img_w * img_h) in row-major order (Y outer, X inner).
+fn extract_xy_slice(
+    data: &NumericData,
+    dimension_order: &str,
+    shape: &[u32],
+    c_index: Option<u32>,
+    z_index: Option<u32>,
+    t_index: Option<u32>,
+) -> Vec<f32> {
+    let dims = parse_dimensions(dimension_order, shape);
+    let strides = compute_strides(shape);
+
+    let (x_dim_idx, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
+    let (y_dim_idx, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
+    let img_w = *img_w as usize;
+    let img_h = *img_h as usize;
+
+    // Compute the base offset from fixed dimensions (C, Z, T).
+    let mut base_offset: usize = 0;
+    if let Some(&(dim_idx, _sz)) = dims.get(&'C') {
+        let c = c_index.unwrap_or(0) as usize;
+        base_offset += c * strides[dim_idx];
+    }
+    if let Some(&(dim_idx, _sz)) = dims.get(&'Z') {
+        let z = z_index.unwrap_or(0) as usize;
+        base_offset += z * strides[dim_idx];
+    }
+    if let Some(&(dim_idx, _sz)) = dims.get(&'T') {
+        let t = t_index.unwrap_or(0) as usize;
+        base_offset += t * strides[dim_idx];
+    }
+
+    let x_stride = strides[*x_dim_idx];
+    let y_stride = strides[*y_dim_idx];
+
+    let mut slice = Vec::with_capacity(img_w * img_h);
+    for y in 0..img_h {
+        for x in 0..img_w {
+            let idx = base_offset + y * y_stride + x * x_stride;
+            slice.push(data.get_f32(idx));
+        }
+    }
+    slice
+}
+
 pub async fn base_draw_bitmap_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &BitmapLayerParams,
 ) {
-    // Store the ndarray::ArrayD in a WGPU texture.
-    // Create a texture to store the image data (R16Uint).
+    let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
+    let (_, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
+    let (_, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
+    let img_w = *img_w;
+    let img_h = *img_h;
 
-    let num_channels = 1; // TODO: extend to multi-channel images
+    let num_channels = layer_params.channel_settings.len() as u32;
 
-    let combined_pixel_data: &[u8] = bytemuck::cast_slice(&layer_params.ch0_vec);
+    // Extract a 2D XY slice for each channel and concatenate into a single buffer
+    // for upload as a 2D texture array (one layer per channel).
+    // Values are converted to f32 regardless of the source dtype.
+    let mut combined_pixel_data: Vec<f32> = Vec::with_capacity(
+        (img_w * img_h * num_channels) as usize,
+    );
+    for channel_setting in &layer_params.channel_settings {
+        let has_c_dim = dims.contains_key(&'C');
+        let c_index = if has_c_dim { Some(channel_setting.c_index) } else { None };
+        let slice = extract_xy_slice(
+            &layer_params.data,
+            &layer_params.dimension_order,
+            &layer_params.shape,
+            c_index,
+            layer_params.z_index,
+            layer_params.t_index,
+        );
+        combined_pixel_data.extend_from_slice(&slice);
+    }
 
-    // TODO: does this need to be padded to 256 bytes per row?
-    let bytes_per_pixel: u32 = 2; // R16Uint has 2 bytes per pixel.
-    let unpadded_bytes_per_row = layer_params.img_size_w as u32 * bytes_per_pixel;
-    let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
-    let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
+    let bytes_per_pixel: u32 = 4; // R32Float has 4 bytes per pixel.
+    let unpadded_bytes_per_row = img_w * bytes_per_pixel;
 
     let texture_size = wgpu::Extent3d {
-        width: layer_params.img_size_w as u32,
-        height: layer_params.img_size_h as u32,
-        depth_or_array_layers: num_channels as u32,
+        width: img_w,
+        height: img_h,
+        depth_or_array_layers: num_channels,
     };
     let image_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Image Texture"),
@@ -159,8 +305,9 @@ pub async fn base_draw_bitmap_layer(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        // R16Uint is a 16-bit unsigned integer format.
-        format: wgpu::TextureFormat::R16Uint,
+        // TODO: make format dynamic, dependent on the numeric dtype of the `data` array.
+        // Then, use WESL for to dynamically specify the dtype used for the corresponding `texture_2d_array` in the shader.
+        format: wgpu::TextureFormat::R32Float,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -178,12 +325,11 @@ pub async fn base_draw_bitmap_layer(
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        // The pixel data as a byte slice.
         bytemuck::cast_slice(&combined_pixel_data),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(unpadded_bytes_per_row),
-            rows_per_image: Some(layer_params.img_size_h as u32),
+            rows_per_image: Some(img_h),
         },
         texture_size,
     );
@@ -287,7 +433,7 @@ pub async fn base_draw_bitmap_layer(
             AspectRatioMode::Cover => 2,
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
-        img_size: Vec2::new(layer_params.img_size_w as f32, layer_params.img_size_h as f32),
+        img_size: Vec2::new(img_w as f32, img_h as f32),
         opacity: layer_params.opacity,
         num_channels: Default::default(),
         channels: channel_uniforms,
@@ -329,7 +475,7 @@ pub async fn base_draw_bitmap_layer(
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Uint,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },

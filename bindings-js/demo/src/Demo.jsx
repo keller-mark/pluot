@@ -120,28 +120,25 @@ const DEMOS = {
             layer_id: "layer_bitmap",
             data_unit_mode: "Data",
 
-            img_size_w: 4,
-            img_size_h: 4,
-            img_size_c: null,
-            img_size_z: null,
-            img_size_t: null,
+            dimension_order: "YX",
+            shape: [4, 4],
             z_index: null,
             t_index: null,
             opacity: 0.5,
             channel_settings: [
               {
                 c_index: 0,
-                window: [0.0, 10.0],
+                window: [0.0, 255000.0],
                 color: [255.0, 0.0, 0.0],
               }
             ],
 
-            ch0_vec: [
+            data: { Uint16: [
               300, 110, 210, 310,
               20, 120, 220, 320,
               30, 130, 230, 330,
               40, 140, 240, 340,
-            ],
+            ]},
           }
         },
         {
@@ -185,175 +182,7 @@ const DEMOS = {
         }
       ]
     },
-  },
-  multiscale_plot: {
-    plot_type: "LayeredPlot",
-    store_name: "gaussian_quantiles_store",
-    plot_params: {
-      layers: [
-        {
-          layer_type: "AxisLayer",
-          layer_params: {
-            layer_id: "bottom_axis",
-            position: "Bottom",
-          }
-        },
-        {
-          layer_type: "AxisLayer",
-          layer_params: {
-            layer_id: "left_axis",
-            position: "Left",
-          }
-        },
-        {
-          layer_type: "AxisLayer",
-          layer_params: {
-            layer_id: "right_axis",
-            position: "Right",
-          }
-        },
-        {
-          layer_type: "AxisLayer",
-          layer_params: {
-            layer_id: "top_axis",
-            position: "Top",
-          }
-        },
-        {
-          layer_type: "PointLayer",
-          layer_params: {
-            layer_id: "layer_2",
-            data_unit_mode: "Pixels",
-            point_radius_unit_mode: "Pixels",
-            point_shape_mode: "Square",
-            point_radius: 15.0,
-            store_name: "gaussian_quantiles_store",
-            bounds: {
-              margin_top: 0,
-              margin_right: 0,
-              margin_bottom: 0,
-              margin_left: 0,
-            },
-            position_x: [100, 100],
-            position_y: [100, 200],
-            labels_vec: [0, 1],
-          }
-        },
-        {
-          layer_type: "LineLayer",
-          layer_params: {
-            layer_id: "layer_3",
-            data_unit_mode: "Pixels",
-            line_width_unit_mode: "Pixels",
-            line_width: 5.0,
-            store_name: "gaussian_quantiles_store",
-            bounds: {
-              margin_top: 0,
-              margin_right: 0,
-              margin_bottom: 0,
-              margin_left: 0,
-            },
-            source_position_x: [10, 110],
-            source_position_y: [10, 110],
-            target_position_x: [100, 210],
-            target_position_y: [100, 210],
-            labels_vec: [4, 1],
-          }
-        },
-        {
-          layer_type: "TextLayer",
-          layer_params: {
-            layer_id: "layer_text",
-            data_unit_mode: "Pixels",
-            text_size_unit_mode: "Pixels",
-            text_size: 25.0,
-            text_align_mode: "Start",
-            text_baseline_mode: "Bottom",
-            bounds: null,
-            /*bounds: {
-              margin_top: 0,
-              margin_right: 0,
-              margin_bottom: 0,
-              margin_left: 0,
-            },*/
-
-            position_x: [10, 110],
-            position_y: [10, 110],
-            text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
-          }
-        },
-        {
-          layer_type: "BitmapLayer",
-          layer_params: {
-            layer_id: "layer_bitmap",
-            data_unit_mode: "Data",
-
-            img_size_w: 4,
-            img_size_h: 4,
-            img_size_c: null,
-            img_size_z: null,
-            img_size_t: null,
-            z_index: null,
-            t_index: null,
-            opacity: 0.5,
-            channel_settings: [
-              {
-                c_index: 0,
-                window: [0.0, 10.0],
-                color: [255.0, 0.0, 0.0],
-              }
-            ],
-
-            ch0_vec: [
-              300, 110, 210, 310,
-              20, 120, 220, 320,
-              30, 130, 230, 330,
-              40, 140, 240, 340,
-            ],
-          }
-        },
-        {
-          layer_type: "RectLayer",
-          layer_params: {
-            layer_id: "rect_layer",
-            data_unit_mode: "Data",
-            stroke_width_unit_mode: "Pixels",
-            stroke_width: 5.0,
-            position_x0: [1],
-            position_y0: [1],
-            position_x1: [2],
-            position_y1: [2],
-            labels_vec: [4],
-          }
-        },
-        /*{
-          layer_type: "TileLayer",
-          layer_params: {
-            layer_id: "tile_layer",
-            tile_size: 4,
-          }
-        },*/
-        {
-          layer_type: "MultiscaleLayer",
-          layer_params: {
-            layer_id: "multiscale_layer",
-            resolution_levels: [
-              {
-                shape: [210, 310],
-                chunk_shape: [50, 50],
-                scale: [1.0, 1.0],
-              },
-              {
-                shape: [105, 155],
-                chunk_shape: [50, 50],
-                scale: [2.0, 2.0],
-              }
-            ]
-          }
-        }
-      ]
-    },
-  },
+  }
 };
 
 export function Demo() {

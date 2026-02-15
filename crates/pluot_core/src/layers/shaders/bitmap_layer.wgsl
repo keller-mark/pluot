@@ -91,11 +91,10 @@ struct VSOut {
     @location(0) tex_coord: vec2<f32>, // Pass texture coordinates to fragment shader
 };
 
-// The texture is bound as a read-only storage texture.
-// Even though the data is 16-bit, WGSL promotes integer texture formats to 32-bit integers
-// (u32 for unsigned, i32 for signed) when they are read in the shader.
+// The data is converted to f32 on the CPU side (regardless of original dtype)
+// and uploaded as an R32Float texture.
 @group(0) @binding(0) var<storage, read> u: Uniforms;
-@group(0) @binding(1) var img_tex: texture_2d_array<u32>;
+@group(0) @binding(1) var img_tex: texture_2d_array<f32>;
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
 // The corresponding texture coordinates (UVs) for each vertex.
@@ -244,27 +243,23 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
     // Loop over num_channels
     for (var channel_index: u32 = 0u; channel_index < u.num_channels; channel_index++) {
-        // Load the texel value. Since it's a u32 texture, we use textureLoad.
-        // We assume the data is in the first channel (.r).
+        // Load the texel value from the f32 texture.
+        // The data has been converted to f32 on the CPU side (regardless of original dtype).
         // The fourth argument to textureLoad is the mip level, which is 0 for us.
-        let ch0_intensity_u32 = textureLoad(img_tex, texel_coords, channel_index, 0).r;
-        let ch0_color = u.channels[channel_index].color; // Color for channel 0
-        let ch0_window = u.channels[channel_index].window; // Window for channel 0
-
-        // Normalize the intensity to a 0.0-1.0 float.
-        // This assumes the input data is 16-bit (max value 65535).
-        // Adjust the normalization factor if your data has a different bit depth.
-        let ch0_intensity_f32 = f32(ch0_intensity_u32) / 65535.0;
+        let intensity = textureLoad(img_tex, texel_coords, channel_index, 0).r;
+        let ch_color = u.channels[channel_index].color;
+        let ch_window = u.channels[channel_index].window;
 
         // Apply windowing to adjust contrast limits.
+        // The window (min, max) values should be in the same units as the original data values.
         // Reference: https://github.com/hms-dbmi/viv/blob/08a74203b99f54bc62307c741944ed61e33e810c/packages/layers/src/xr-layer/shader-modules/channel-intensity.js#L2
-        let ch0_windowed = clamp((ch0_intensity_f32 - ch0_window.x) / max(0.0005, (ch0_window.y - ch0_window.x)), 0.0, 1.0);
+        let windowed = clamp((intensity - ch_window.x) / max(0.0005, (ch_window.y - ch_window.x)), 0.0, 1.0);
 
         // Additively blend the colors based on their intensity.
         // References:
         // - https://github.com/hms-dbmi/viv/blob/main/packages/extensions/src/color-palette-extension/color-palette-module.js
         // - https://github.com/hms-dbmi/viv/blob/08a74203b99f54bc62307c741944ed61e33e810c/packages/layers/src/xr-layer/xr-layer-fragment.glsl.js#L39
-        final_color += ch0_color * ch0_windowed;
+        final_color += ch_color * windowed;
     }
 
     // Output the blended color.
