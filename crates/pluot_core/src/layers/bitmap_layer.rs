@@ -100,6 +100,9 @@ pub struct BitmapLayerParams {
     /// Must contain 'X' and 'Y'. May also contain 'Z', 'C', and 'T'.
     /// Examples: "XY", "XYC", "XYCZT", "TCZYX".
     /// Dimensions can be in any order.
+    /// TODO: change this to an enum or tuple of dimension descriptors,
+    /// to better represent the valid values via the type system /
+    /// to avoid parsing the string and potential user errors in formatting.
     pub dimension_order: String,
 
     /// The size of each dimension, in the same order as `dimension_order`.
@@ -245,6 +248,18 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
     strides
 }
 
+// TODO: rather than always using extract_xy_slice, we should first check if the XY dimensions are already
+// contiguous in the original array (i.e., in "TZCXY" order) for the given c_index, z_index, and t_index, and
+// if so we can skip the slicing and directly upload the data to a GPU texture.
+// The shader should be able to handle slight variations in the data layout,
+// e.g. by using a uniform to indicate XY vs YX ordering, and adjusting the indexing math accordingly.
+// We should also be able to generalize this logic to the "C" dimension,
+// e.g., by uploading the data as a 3D texture with dimensions (img_w, img_h, num_channels)
+// if the data is in "CXY" order, and adjusting the shader indexing math accordingly.
+// We will just need to handle copying the per-channel subarrays for the selected channels
+// into contiguous buffers for texture upload, and setting the uniforms to indicate the dimension ordering appropriately.
+// For dimension orderings beyond this, we will still need the Rust-side slicing to extract the XY slices into
+// contiguous arrays for upload.
 /// Extract a 2D XY slice from the flat nD data array for a given channel, z-index, and t-index.
 /// Converts to f32 regardless of the source dtype.
 /// Returns a Vec<f32> of length (img_w * img_h) in row-major order (Y outer, X inner).
