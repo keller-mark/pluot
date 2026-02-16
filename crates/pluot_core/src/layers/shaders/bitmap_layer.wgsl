@@ -75,10 +75,18 @@ struct Uniforms {
     data_unit_mode: u32, // 0: pixel units, 1: data units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    
+
     img_size: vec2<f32>, // (img_w, img_h) in pixels // TODO: use u32?
-    
+
     opacity: f32, // Layer opacity
+
+    // Strides for each dimension (in units of f32 elements),
+    // allowing the shader to index into the flat data buffer
+    // regardless of the dimension ordering (e.g., CYX vs YXC).
+    x_stride: u32,
+    y_stride: u32,
+    c_stride: u32,
+
     num_channels: u32,
 
     // See "runtime sized arrays" info
@@ -92,9 +100,10 @@ struct VSOut {
 };
 
 // The data is converted to f32 on the CPU side (regardless of original dtype)
-// and uploaded as an R32Float texture.
+// and uploaded as a flat storage buffer. The shader uses strides to index
+// into the buffer, handling any dimension ordering (e.g., CYX vs YXC).
 @group(0) @binding(0) var<storage, read> u: Uniforms;
-@group(0) @binding(1) var img_tex: texture_2d_array<f32>;
+@group(0) @binding(1) var<storage, read> img_data: array<f32>;
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
 // The corresponding texture coordinates (UVs) for each vertex.
@@ -139,7 +148,7 @@ fn vs_main(
     // or to adjust the pixel size.
     // (e.g., most bioimaging formats store images with 1 pixel = 1 micrometer,
     // but without a model_matrix specified we assume that 1 pixel = 1 meter).
-    
+
 
     // Layer aspect ratio
     // By "layer", we mean the inner plotting area, excluding margins.
@@ -227,12 +236,12 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    // Get texture dimensions to convert normalized coordinates to pixel coordinates.
-    let tex_dims = vec2<f32>(textureDimensions(img_tex));
+    // Use image dimensions from uniforms to convert normalized coordinates to pixel coordinates.
+    let tex_dims = u.img_size;
 
     // Calculate integer pixel coordinates from normalized texture coordinates.
     // We need to clamp to avoid reading out of bounds if tex_coord is exactly 1.0.
-    let texel_coords = vec2<i32>(
+    let texel_coords = vec2<u32>(
         min(
             floor(in.tex_coord * tex_dims),
             tex_dims - vec2<f32>(1.0, 1.0)
@@ -243,10 +252,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
     // Loop over num_channels
     for (var channel_index: u32 = 0u; channel_index < u.num_channels; channel_index++) {
-        // Load the texel value from the f32 texture.
-        // The data has been converted to f32 on the CPU side (regardless of original dtype).
-        // The fourth argument to textureLoad is the mip level, which is 0 for us.
-        let intensity = textureLoad(img_tex, texel_coords, channel_index, 0).r;
+        // Compute the flat index into the storage buffer using per-dimension strides.
+        // This handles any dimension ordering (e.g., CYX, YXC, XYC, etc.).
+        let idx = texel_coords.y * u.y_stride + texel_coords.x * u.x_stride + channel_index * u.c_stride;
+        let intensity = img_data[idx];
         let ch_color = u.channels[channel_index].color;
         let ch_window = u.channels[channel_index].window;
 

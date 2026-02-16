@@ -4,6 +4,7 @@
 use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
@@ -63,6 +64,24 @@ impl NumericData {
             NumericData::Int64(v) => v[idx] as f32,
             NumericData::Float32(v) => v[idx],
             NumericData::Float64(v) => v[idx] as f32,
+        }
+    }
+
+    /// Convert the entire data array to f32 in one go.
+    /// For Float32 data, this borrows the existing slice via bytemuck (zero-copy).
+    /// For other dtypes, values are batch-converted to f32 via iterators.
+    fn as_f32(&self) -> Cow<'_, [f32]> {
+        match self {
+            NumericData::Float32(v) => Cow::Borrowed(v.as_slice()),
+            NumericData::Uint8(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Uint16(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Uint32(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Uint64(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Int8(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Int16(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Int32(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Int64(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
+            NumericData::Float64(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
         }
     }
 }
@@ -152,10 +171,11 @@ pub struct BitmapLayerParams {
     /// For example, if `dimension_order` is "XYCZT" and the image is
     /// 256x256 with 3 channels, 10 z-slices, and 5 timepoints,
     /// then `shape` would be [256, 256, 3, 10, 5].
-    // TODO: use a 2/3-element tuple here instead?
+    // TODO: use a 3-element tuple here instead?
     pub shape: Vec<u32>,
 
     // TODO: allow to specify photometric_interpretation here, to easily support RGB images?
+    // Alternatively, delegate to some parent layer.
 
     pub channel_settings: Vec<ChannelSettings>,
 
@@ -270,6 +290,14 @@ struct BitmapLayerUniforms {
     // TODO: pass model_matrix here
 
     opacity: f32,
+
+    // Strides for each dimension (in units of f32 elements),
+    // allowing the shader to index into the flat data buffer
+    // regardless of the dimension ordering (e.g., CYX vs YXC).
+    x_stride: u32,
+    y_stride: u32,
+    c_stride: u32,
+
     num_channels: ArrayLength,
     // Note: WGSL only allows one runtime-sized array in a struct,
     // and it must be the last field.
@@ -309,42 +337,7 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
     strides
 }
 
-// TODO: rather than using extract_xy_slice, the shader should be able to handle the variations in dimension ordering,
-// by using a uniform to indicate YXC vs CYX ordering, and adjusting the indexing math accordingly.
-// We should be doing minimal work on the Rust side to prepare the data, only using bytemuck to cast the data into the expected dtype for the shader.
-fn extract_xy_slice(
-    data: &NumericData,
-    dimension_order: &DimensionOrder,
-    shape: &[u32],
-    c_index: Option<u32>,
-) -> Vec<f32> {
-    let dims = parse_dimensions(dimension_order, shape);
-    let strides = compute_strides(shape);
 
-    let (x_dim_idx, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
-    let (y_dim_idx, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
-    let img_w = *img_w as usize;
-    let img_h = *img_h as usize;
-
-    // Compute the base offset from fixed dimensions (C).
-    let mut base_offset: usize = 0;
-    if let Some(&(dim_idx, _sz)) = dims.get(&'C') {
-        let c = c_index.unwrap_or(0) as usize;
-        base_offset += c * strides[dim_idx];
-    }
-
-    let x_stride = strides[*x_dim_idx];
-    let y_stride = strides[*y_dim_idx];
-
-    let mut slice = Vec::with_capacity(img_w * img_h);
-    for y in 0..img_h {
-        for x in 0..img_w {
-            let idx = base_offset + y * y_stride + x * x_stride;
-            slice.push(data.get_f32(idx));
-        }
-    }
-    slice
-}
 
 
 pub async fn base_draw_bitmap_layer(
@@ -353,71 +346,38 @@ pub async fn base_draw_bitmap_layer(
     layer_params: &BitmapLayerParams,
 ) {
     let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
-    let (_, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
-    let (_, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
+    let (x_dim_idx, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
+    let (y_dim_idx, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
+    let (c_dim_idx, _) = dims.get(&'C').expect("dimension_order must contain 'C'");
     let img_w = *img_w;
     let img_h = *img_h;
 
     let num_channels = layer_params.channel_settings.len() as u32;
 
-    // Extract a 2D XY slice for each channel and concatenate into a single buffer
-    // for upload as a 2D texture array (one layer per channel).
-    // Values are converted to f32 regardless of the source dtype.
-    let mut combined_pixel_data: Vec<f32> = Vec::with_capacity(
-        (img_w * img_h * num_channels) as usize,
-    );
-    for c_index in 0..layer_params.channel_settings.len() {
-        let slice = extract_xy_slice(
-            &layer_params.data,
-            &layer_params.dimension_order,
-            &layer_params.shape,
-            Some(c_index as u32),
-        );
-        combined_pixel_data.extend_from_slice(&slice);
-    }
+    // Compute strides so the shader can index into the flat data buffer
+    // regardless of the dimension ordering (e.g., CYX vs YXC).
+    let strides = compute_strides(&layer_params.shape);
+    let x_stride = strides[*x_dim_idx] as u32;
+    let y_stride = strides[*y_dim_idx] as u32;
+    let c_stride = strides[*c_dim_idx] as u32;
 
-    let bytes_per_pixel: u32 = 4; // R32Float has 4 bytes per pixel.
-    let unpadded_bytes_per_row = img_w * bytes_per_pixel;
+    // Convert the entire data array to f32 in one go using bytemuck (zero-copy for Float32).
+    // The flat memory layout is preserved; the shader uses strides to handle dimension ordering.
+    let data_f32 = layer_params.data.as_f32();
+    let data_bytes: &[u8] = bytemuck::cast_slice(&data_f32);
 
-    let texture_size = wgpu::Extent3d {
-        width: img_w,
-        height: img_h,
-        depth_or_array_layers: num_channels,
-    };
-    let image_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Image Texture"),
-        size: texture_size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        // TODO: make format dynamic, dependent on the numeric dtype of the `data` array.
-        // Then, use WESL for to dynamically specify the dtype used for the corresponding `texture_2d_array` in the shader.
-        format: wgpu::TextureFormat::R32Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
+    // Upload the flat f32 data as a storage buffer (not a texture),
+    // so the shader can index into it using strides.
+    // TODO: switch back to using a texture if performance becomes an issue;
+    // textures supposedly have optimizations for 2D spatial access patterns,
+    // but we may need to do more CPU transposing for that to be effective.
+    let image_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Image Data Storage Buffer"),
+        size: data_bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
-    let image_view = image_texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("Image Texture View"),
-        dimension: Some(wgpu::TextureViewDimension::D2Array),
-        ..Default::default()
-    });
-
-    // Upload the pixel data to the texture.
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &image_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        bytemuck::cast_slice(&combined_pixel_data),
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(unpadded_bytes_per_row),
-            rows_per_image: Some(img_h),
-        },
-        texture_size,
-    );
+    queue.write_buffer(&image_data_buffer, 0, data_bytes);
 
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
@@ -520,6 +480,9 @@ pub async fn base_draw_bitmap_layer(
         aspect_ratio_alignment_mode: 0, // center. TODO
         img_size: Vec2::new(img_w as f32, img_h as f32),
         opacity: layer_params.opacity,
+        x_stride,
+        y_stride,
+        c_stride,
         num_channels: Default::default(),
         channels: channel_uniforms,
     };
@@ -556,13 +519,13 @@ pub async fn base_draw_bitmap_layer(
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The image pixel texture.
+                    // The image pixel data storage buffer.
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2Array,
-                        multisampled: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -580,7 +543,7 @@ pub async fn base_draw_bitmap_layer(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&image_view),
+                    resource: image_data_buffer.as_entire_binding(),
                 },
             ],
         });
