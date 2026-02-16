@@ -48,3 +48,65 @@ pub fn bounding_box(rects: &[&PhysicalRect]) -> PhysicalRect {
     }
     PhysicalRect { x0, y0, x1, y1 }
 }
+
+
+pub enum OmeDimension {
+    C,
+    Z,
+    T,
+    X,
+    Y,
+}
+
+impl OmeDimension {
+    /// Returns the string representation of the dimension order (e.g., "CYX").
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OmeDimension::C => "C",
+            OmeDimension::Z => "Z",
+            OmeDimension::T => "T",
+            OmeDimension::X => "X",
+            OmeDimension::Y => "Y",
+        }
+    }
+
+    pub fn as_char(&self) -> char {
+        self.as_str().chars().next().unwrap()
+    }
+}
+
+pub struct OmeDimensionOrder {
+    dimension_order: String,
+}
+
+impl OmeDimensionOrder {
+    pub fn new(dimension_order: String) -> Self {
+        // Validate that dimension_order only contains valid characters (e.g. 'C', 'Z', 'T', 'X', 'Y').
+        for c in dimension_order.chars() {
+            if !matches!(c, 'C' | 'Z' | 'T' | 'X' | 'Y') {
+                panic!("Invalid character '{}' in dimension order '{}'", c, dimension_order);
+            }
+        }
+        // Validate that dimension_order contains both X and Y
+
+
+        // Validate that there are no duplicate characters in dimension_order
+
+        Self { dimension_order }
+    }
+
+    /// Returns the number of dimensions.
+    pub fn num_dims(&self) -> usize {
+        self.dimension_order.len()
+    }
+
+    pub fn has_dim(&self, dim: OmeDimension) -> bool {
+        self.dimension_order.contains(dim.as_str())
+    }
+
+    /// Returns the position of the channel dimension in the shape array, if present.
+    pub fn index_of(&self, dim: OmeDimension) -> Option<usize> {
+        self.dimension_order.chars()
+            .position(|c| c == dim.as_char())
+    }
+}

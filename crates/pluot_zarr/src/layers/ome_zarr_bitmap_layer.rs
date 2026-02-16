@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
-use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
@@ -12,15 +10,8 @@ use pluot_core::layer_traits::{
 };
 use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
-    base_draw_bitmap_layer, base_draw_bitmap_layer_svg,
-};
-use pluot_core::layers::multiscale_utils::{
-    ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
 use pluot_core::params::PrepareResult;
-use pluot_core::two::svg::update_svg;
-
-use ome_zarr_metadata::v0_5::{RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale};
 
 use crate::layers::ome_zarr_utils::OmeZarrChannelSetting;
 
@@ -29,33 +20,39 @@ pub struct OmeZarrBitmapLayerParams {
     /// Zarr store name. Falls back to view_params.store_name if None.
     pub store_name: Option<String>,
 
-    // Tile identity
-    pub level_idx: usize,
-    pub row: i32,
-    pub col: i32,
-    pub tile_pixels_h: u64,
-    pub tile_pixels_w: u64,
-    pub tile_y_start: u64,
-    pub tile_x_start: u64,
+    /// Path to the zarr array (e.g., "/0/0" for the first dataset at the first level).
+    pub array_path: String,
+    /// Full shape of the zarr array at this resolution level.
+    pub array_shape: Vec<u64>,
+    /// Chunk shape of the zarr array at this resolution level (used for cache key derivation).
+    pub array_chunk_shape: Vec<u64>,
+    /// Dimension order string (e.g., "tczyx"). Each character is one of t, c, z, y, x.
+    pub array_dimension_order: String,
 
-    // Metadata from the parent (subset needed for loading)
-    pub dataset_path: String,
-    pub full_shape: Vec<u64>,
-    pub x_dim_i: usize,
-    pub y_dim_i: usize,
-    pub z_dim_i: Option<usize>,
-    pub c_dim_i: Option<usize>,
-    pub t_dim_i: Option<usize>,
-    pub scale: [f64; 2], // [scale_y, scale_x]
+    /// Z slice index. Only required if the array has a Z dimension.
+    pub target_z: Option<u64>,
+    /// T slice index. Only required if the array has a T dimension.
+    pub target_t: Option<u64>,
 
-    // Rendering params
-    pub layer_id: String,
+    /// Model matrix encoding the physical voxel size and any affine transforms.
+    /// The parent layer should convert per-resolution scale values into this matrix.
+    pub model_matrix: [f32; 16],
+
+    /// Start of the array subset to load (one value per dimension).
+    /// For the C dimension, this value is ignored — channels are loaded
+    /// individually based on `channel_settings`.
+    pub start_slice: Vec<u64>,
+    /// Stop (exclusive) of the array subset to load (one value per dimension).
+    /// For the C dimension, this value is ignored.
+    pub stop_slice: Vec<u64>,
+
+    /// Channel settings specifying which channels to render and how.
+    /// Each entry's `c_index` determines which slice of the C dimension to load.
+    pub channel_settings: Vec<OmeZarrChannelSetting>,
+
     pub bounds: Option<MarginParams>,
-    pub channel_settings: Vec<ChannelSettings>,
-    pub ome_channel_settings: Vec<OmeZarrChannelSetting>,
-    pub target_z: u64,
-    pub target_t: u64,
     pub opacity: f32,
+    pub layer_id: String,
 }
 
 /// A sublayer that loads a single OME-Zarr tile in `prepare()` and delegates
@@ -98,75 +95,62 @@ impl OmeZarrBitmapLayer {
         }
     }
 
+    /// Find the index of a dimension character in the dimension order string.
+    fn dim_index(&self, dim_char: char) -> Option<usize> {
+        self.layer_params.array_dimension_order.chars().position(|c| c == dim_char)
+    }
+
     /// Load tile data from the zarr array, using the cache.
     async fn load_tile_data(&self) -> NumericData {
         let store = self.store.clone();
-        let dataset_path = self.layer_params.dataset_path.clone();
-        let full_shape = self.layer_params.full_shape.clone();
-        let x_dim_i = self.layer_params.x_dim_i;
-        let y_dim_i = self.layer_params.y_dim_i;
-        let z_dim_i = self.layer_params.z_dim_i;
-        let c_dim_i = self.layer_params.c_dim_i;
-        let t_dim_i = self.layer_params.t_dim_i;
-        let tile_y_start = self.layer_params.tile_y_start;
-        let tile_x_start = self.layer_params.tile_x_start;
-        let tile_h = self.layer_params.tile_pixels_h;
-        let tile_w = self.layer_params.tile_pixels_w;
-        let target_z = self.layer_params.target_z;
-        let target_t = self.layer_params.target_t;
-        let ome_channel_settings = self.layer_params.ome_channel_settings.clone();
-        let level_idx = self.layer_params.level_idx;
-        let row = self.layer_params.row;
-        let col = self.layer_params.col;
+        let array_path = self.layer_params.array_path.clone();
+        let start_slice = self.layer_params.start_slice.clone();
+        let stop_slice = self.layer_params.stop_slice.clone();
+        let channel_settings = self.layer_params.channel_settings.clone();
+        let c_dim_i = self.dim_index('c');
+
+        let y_dim_i = self.dim_index('y').expect("array_dimension_order must contain 'y'");
+        let x_dim_i = self.dim_index('x').expect("array_dimension_order must contain 'x'");
+
+        // Compute tile pixel dimensions from the slice range.
+        let tile_h = stop_slice[y_dim_i] - start_slice[y_dim_i];
+        let tile_w = stop_slice[x_dim_i] - start_slice[x_dim_i];
 
         // Build cache keys that uniquely identify this tile's data.
         let mut keys: Vec<String> = vec![
             self.store_name.clone(),
-            dataset_path.clone(),
-            format!("level_{}", level_idx),
-            format!("row_{}", row),
-            format!("col_{}", col),
-            format!("z_{}", target_z),
-            format!("t_{}", target_t),
+            array_path.clone(),
+            format!("start_{:?}", start_slice),
+            format!("stop_{:?}", stop_slice),
         ];
-        for cs in &ome_channel_settings {
+        for cs in &channel_settings {
             keys.push(format!("c_{}", cs.c_index));
         }
 
         let cached = use_memo_numeric_data(async || {
-            let num_channels = ome_channel_settings.len();
+            let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
 
-            let array = zarrs::array::Array::async_open(store.clone(), &dataset_path)
+            let array = zarrs::array::Array::async_open(store.clone(), &array_path)
                 .await
                 .unwrap_or_else(|e| {
-                    panic!("Failed to open array at {}: {:?}", dataset_path, e)
+                    panic!("Failed to open array at {}: {:?}", array_path, e)
                 });
 
             // Build array subsets for each channel.
-            let subsets: Vec<zarrs::array::ArraySubset> = ome_channel_settings
+            let subsets: Vec<zarrs::array::ArraySubset> = channel_settings
                 .iter()
                 .map(|cs| {
-                    let ndim = full_shape.len();
-                    let mut start = vec![0u64; ndim];
-                    let mut shape = vec![1u64; ndim];
+                    let ndim = start_slice.len();
+                    let mut start = start_slice.clone();
+                    let mut shape: Vec<u64> = stop_slice.iter().zip(start_slice.iter())
+                        .map(|(stop, start)| stop - start)
+                        .collect();
 
-                    start[y_dim_i] = tile_y_start;
-                    shape[y_dim_i] = tile_h;
-                    start[x_dim_i] = tile_x_start;
-                    shape[x_dim_i] = tile_w;
-
+                    // Override the C dimension for this specific channel.
                     if let Some(c_dim_i) = c_dim_i {
                         start[c_dim_i] = cs.c_index as u64;
                         shape[c_dim_i] = 1;
-                    }
-                    if let Some(z_dim_i) = z_dim_i {
-                        start[z_dim_i] = target_z;
-                        shape[z_dim_i] = 1;
-                    }
-                    if let Some(t_dim_i) = t_dim_i {
-                        start[t_dim_i] = target_t;
-                        shape[t_dim_i] = 1;
                     }
 
                     zarrs::array::ArraySubset::new_with_start_shape(start, shape)
@@ -190,8 +174,8 @@ impl OmeZarrBitmapLayer {
                             .await
                             .unwrap_or_else(|e| {
                                 panic!(
-                                    "Failed to load tile data at level {} ({},{}): {:?}",
-                                    level_idx, row, col, e
+                                    "Failed to load tile data for {}: {:?}",
+                                    array_path, e
                                 )
                             });
                         combined.extend_from_slice(&chunk);
@@ -226,34 +210,43 @@ impl PreparedLayer for OmeZarrBitmapLayer {
     async fn prepare(&mut self) -> PrepareResult {
         let data = self.load_tile_data().await;
 
-        let num_channels = self.layer_params.channel_settings.len();
-        let scale_x = self.layer_params.scale[1] as f32;
-        let scale_y = self.layer_params.scale[0] as f32;
+        let y_dim_i = self.dim_index('y').expect("array_dimension_order must contain 'y'");
+        let x_dim_i = self.dim_index('x').expect("array_dimension_order must contain 'x'");
 
-        let model_matrix: [f32; 16] = [
-            scale_x, 0.0, 0.0, 0.0,
-            0.0, scale_y, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ];
+        let num_channels = self.layer_params.channel_settings.len();
+        let tile_h = (self.layer_params.stop_slice[y_dim_i] - self.layer_params.start_slice[y_dim_i]) as u32;
+        let tile_w = (self.layer_params.stop_slice[x_dim_i] - self.layer_params.start_slice[x_dim_i]) as u32;
+
+        let pixel_offset_x = self.layer_params.start_slice[x_dim_i] as u32;
+        let pixel_offset_y = self.layer_params.start_slice[y_dim_i] as u32;
+
+        let channel_settings: Vec<ChannelSettings> = self
+            .layer_params
+            .channel_settings
+            .iter()
+            .map(|cs| ChannelSettings {
+                window: (cs.window.0, cs.window.1),
+                color: (cs.color.0, cs.color.1, cs.color.2),
+            })
+            .collect();
 
         let bitmap_params = BitmapLayerParams {
             layer_id: self.layer_params.layer_id.clone(),
             bounds: self.layer_params.bounds.clone(),
             data_unit_mode: UnitsMode::Data,
-            pixel_offset: Some((self.layer_params.tile_x_start as u32, self.layer_params.tile_y_start as u32)),
-            model_matrix: Some(model_matrix),
-            dimension_order: if self.layer_params.y_dim_i < self.layer_params.x_dim_i {
+            pixel_offset: Some((pixel_offset_x, pixel_offset_y)),
+            model_matrix: Some(self.layer_params.model_matrix),
+            dimension_order: if y_dim_i < x_dim_i {
                 DimensionOrder::CYX
             } else {
                 DimensionOrder::CXY
             },
-            shape: if self.layer_params.y_dim_i < self.layer_params.x_dim_i {
-                vec![num_channels as u32, self.layer_params.tile_pixels_h as u32, self.layer_params.tile_pixels_w as u32]
+            shape: if y_dim_i < x_dim_i {
+                vec![num_channels as u32, tile_h, tile_w]
             } else {
-                vec![num_channels as u32, self.layer_params.tile_pixels_w as u32, self.layer_params.tile_pixels_h as u32]
+                vec![num_channels as u32, tile_w, tile_h]
             },
-            channel_settings: self.layer_params.channel_settings.clone(),
+            channel_settings,
             opacity: self.layer_params.opacity,
             data,
         };

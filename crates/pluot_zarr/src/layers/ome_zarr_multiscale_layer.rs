@@ -8,19 +8,14 @@ use svg::node::element::Group;
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
+use pluot_core::cache::get_or_init_store;
 use pluot_core::layer_traits::{
-    DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
-};
-use pluot_core::layers::bitmap_layer::{
-    BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
-    base_draw_bitmap_layer, base_draw_bitmap_layer_svg,
+    DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, ViewParams,
 };
 use pluot_core::layers::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
 use pluot_core::params::PrepareResult;
-use pluot_core::two::svg::update_svg;
 
 use ome_zarr_metadata::v0_5::{RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale};
 
@@ -97,6 +92,10 @@ struct OmeZarrMultiscaleMetadata {
     dataset_paths: Vec<String>,
     /// Full array shape at each resolution level.
     full_shapes: Vec<Vec<u64>>,
+    /// Chunk shape at each resolution level (full ndim).
+    chunk_shapes: Vec<Vec<u64>>,
+    /// Dimension order string (e.g., "tczyx").
+    dimension_order: String,
     /// Axis index for X dimension.
     x_dim_i: usize,
     /// Axis index for Y dimension.
@@ -205,9 +204,16 @@ impl OmeZarrMultiscaleLayer {
             let c_dim_i = multiscale.axes.iter().position(|a| a.name == "c");
             let t_dim_i = multiscale.axes.iter().position(|a| a.name == "t");
 
+            // Build dimension order string from axes.
+            // TODO: use OmeDimensionOrder struct.
+            let dimension_order: String = multiscale.axes.iter()
+                .map(|a| a.name.chars().next().unwrap_or('?'))
+                .collect();
+
             let mut resolution_levels = Vec::new();
             let mut dataset_paths = Vec::new();
             let mut full_shapes = Vec::new();
+            let mut chunk_shapes = Vec::new();
 
             for dataset in &multiscale.datasets {
                 let array_path = if group_path == "/" {
@@ -246,6 +252,9 @@ impl OmeZarrMultiscaleLayer {
                     }
                 }
 
+                // Build full chunk shape vector (all dimensions).
+                let full_chunk_shape: Vec<u64> = chunk_shape_vec.iter().map(|s| s.get()).collect();
+
                 resolution_levels.push(ResolutionLevel {
                     shape: [img_h as u32, img_w as u32],
                     chunk_shape: [chunk_h as u32, chunk_w as u32],
@@ -253,12 +262,16 @@ impl OmeZarrMultiscaleLayer {
                 });
                 dataset_paths.push(array_path);
                 full_shapes.push(shape);
+                chunk_shapes.push(full_chunk_shape);
             }
 
             OmeZarrMultiscaleMetadata {
                 resolution_levels,
                 dataset_paths,
                 full_shapes,
+                chunk_shapes,
+                dimension_order,
+                // TODO: use OmeDimensionOrder struct, rather than passing individual axis indices.
                 x_dim_i,
                 y_dim_i,
                 z_dim_i,
@@ -281,18 +294,8 @@ impl OmeZarrMultiscaleLayer {
 
         let num_levels = metadata.resolution_levels.len();
 
-        let target_z = self.layer_params.target_z.unwrap_or(0) as u64;
-        let target_t = self.layer_params.target_t.unwrap_or(0) as u64;
-
-        let channel_settings: Vec<ChannelSettings> = self
-            .layer_params
-            .channel_settings
-            .iter()
-            .map(|cs| ChannelSettings {
-                window: (cs.window.0, cs.window.1),
-                color: (cs.color.0, cs.color.1, cs.color.2),
-            })
-            .collect();
+        let target_z = self.layer_params.target_z.map(|v| v as u64);
+        let target_t = self.layer_params.target_t.map(|v| v as u64);
 
         let mut all_level_sublayers = Vec::new();
 
@@ -310,6 +313,17 @@ impl OmeZarrMultiscaleLayer {
 
             let dataset_path = &metadata.dataset_paths[level_idx];
             let full_shape = &metadata.full_shapes[level_idx];
+            let chunk_shape = &metadata.chunk_shapes[level_idx];
+
+            // Convert per-resolution scale to a model_matrix.
+            let scale_x = level.scale[1] as f32;
+            let scale_y = level.scale[0] as f32;
+            let model_matrix: [f32; 16] = [
+                scale_x, 0.0, 0.0, 0.0,
+                0.0, scale_y, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ];
 
             let mut sublayers = Vec::new();
             let mut tile_rects = Vec::new();
@@ -317,40 +331,64 @@ impl OmeZarrMultiscaleLayer {
             for tile in &tiles {
                 let tile_h = tile.tile_pixels_h as u64;
                 let tile_w = tile.tile_pixels_w as u64;
+
+                // TODO: account for the coordinate system having (0, 0) in bottom left when computing slice indices.
+                // The code currently assumes (0, 0) is top left, so it computes tile_y_start based on the tile row index and chunk height.
+                // If the coordinate system is bottom-left, we would need to compute tile_y_start based on the distance from the bottom of the image.
+                // We will also need to flip each tile vertically when rendering.
+                // We can pass a uniform bool to BitmapLayer so that the flipping can be done in the shader.
+
                 let tile_y_start = tile.row as u64 * level.chunk_shape[0] as u64;
                 let tile_x_start = tile.col as u64 * level.chunk_shape[1] as u64;
+
+                // Build start_slice and stop_slice for the full ndim array.
+                let ndim = full_shape.len();
+
+
+                let mut start_slice = vec![0u64; ndim];
+                let mut stop_slice = vec![1u64; ndim];
+
+                start_slice[metadata.y_dim_i] = tile_y_start;
+                stop_slice[metadata.y_dim_i] = tile_y_start + tile_h;
+                start_slice[metadata.x_dim_i] = tile_x_start;
+                stop_slice[metadata.x_dim_i] = tile_x_start + tile_w;
+
+                if let Some(z_dim_i) = metadata.z_dim_i {
+                    let z = target_z.unwrap_or(0);
+                    start_slice[z_dim_i] = z;
+                    stop_slice[z_dim_i] = z + 1;
+                }
+                if let Some(t_dim_i) = metadata.t_dim_i {
+                    let t = target_t.unwrap_or(0);
+                    start_slice[t_dim_i] = t;
+                    stop_slice[t_dim_i] = t + 1;
+                }
+                // C dimension: set to 0..1 as placeholder; OmeZarrBitmapLayer
+                // overrides per-channel based on channel_settings c_index.
+                if let Some(c_dim_i) = metadata.c_dim_i {
+                    start_slice[c_dim_i] = 0;
+                    stop_slice[c_dim_i] = 1;
+                }
 
                 sublayers.push(OmeZarrBitmapLayer::new(
                     self.view_params.clone(),
                     OmeZarrBitmapLayerParams {
                         store_name: Some(self.store_name.clone()),
-
-                        level_idx,
-                        row: tile.row,
-                        col: tile.col,
-                        tile_pixels_h: tile_h,
-                        tile_pixels_w: tile_w,
-                        tile_y_start,
-                        tile_x_start,
-
-                        dataset_path: dataset_path.clone(),
-                        full_shape: full_shape.clone(),
-                        x_dim_i: metadata.x_dim_i,
-                        y_dim_i: metadata.y_dim_i,
-                        z_dim_i: metadata.z_dim_i,
-                        c_dim_i: metadata.c_dim_i,
-                        t_dim_i: metadata.t_dim_i,
-                        scale: level.scale,
-
+                        array_path: dataset_path.clone(),
+                        array_shape: full_shape.clone(),
+                        array_chunk_shape: chunk_shape.clone(),
+                        array_dimension_order: metadata.dimension_order.clone(),
+                        target_z,
+                        target_t,
+                        model_matrix,
+                        start_slice,
+                        stop_slice,
+                        channel_settings: self.layer_params.channel_settings.clone(),
                         layer_id: format!(
                             "{}_level{}_tile_{}_{}",
                             self.layer_params.layer_id, level_idx, tile.row, tile.col
                         ),
                         bounds: self.layer_params.bounds.clone(),
-                        channel_settings: channel_settings.clone(),
-                        ome_channel_settings: self.layer_params.channel_settings.clone(),
-                        target_z,
-                        target_t,
                         opacity: self.layer_params.opacity,
                     },
                 ));

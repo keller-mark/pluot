@@ -123,6 +123,14 @@ const TEX_COORDS: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(1.0, 1.0), // bottom-right
     vec2<f32>(0.0, 0.0), // top-left
     vec2<f32>(1.0, 0.0)  // top-right
+
+    // To flip in Y direction:
+    /*
+    vec2<f32>(0.0, 0.0), // bottom-left
+    vec2<f32>(1.0, 0.0), // bottom-right
+    vec2<f32>(0.0, 1.0), // top-left
+    vec2<f32>(1.0, 1.0)  // top-right
+    */
 );
 
 @vertex
