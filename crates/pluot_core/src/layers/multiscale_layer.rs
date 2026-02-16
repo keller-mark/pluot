@@ -222,10 +222,6 @@ impl MultiscaleLayer {
     }
 
     /// Build RectLayer sublayers for each visible tile at the selected resolution level.
-    /// TODO: check the PrepareResult value returned by each sublayer's prepare() and draw the next-coarsest level
-    /// whose PrepareResult is `bailed_early: false`, to provide a fallback while loading higher-res tiles.
-    /// We will need to ensure that drawing of sublayers occurs from coarser to finer, so that finer tiles are drawn on top of coarser tiles.
-    /// This will ensure that we don't have visual holes while loading finer tiles, and that we get a sharper image as soon as finer tiles are ready.
     ///
     /// Tile positions are in physical coordinates:
     ///   - A tile at column `col` starts at x = col * chunk_width * scale_x
