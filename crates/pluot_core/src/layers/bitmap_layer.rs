@@ -69,9 +69,58 @@ impl NumericData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChannelSettings {
-    pub c_index: u32,
+    // pub c_index: u32, // Rather than using c_index, we can just assume that the channel settings are provided in-order.
     pub window: (f32, f32),
     pub color: (f32, f32, f32), // RGB colors as floats in [0.0, 1.0]
+}
+
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum DimensionOrder {
+    // The data array must be 3D, with dimensions in the specified order.
+    // For example, if dimension_order is "XYC", then the data array must be in (X, Y, C) order,
+    // and the shape would be [img_w, img_h, num_channels].
+    // For 2D images, the parent can simply specify dimension_order = "CXY" with num_channels of 1,
+    // as the contiguous data array will be the same regardless of whether the order is CXY vs XY.
+    // This also allows avoiding handling the lack-of-C-dimension as a special case everywhere,
+    // and forces the parent to provide channel settings.
+    // For 4D and 5D images with T and Z dimensions, the parent layer would be expected to
+    // slice the data into 3D XY(C) slices for the specified z_index and t_index before passing to the shader.
+    // Similarly, if the original data array contains more channels than being visualized,
+    // the parent layer is responsible to slice them and provide them in the order that corresponds with
+    // the provided channel_settings c_index values.
+    CXY,
+    CYX,
+    XCY,
+    XYC,
+    YCX,
+    YXC,
+}
+
+impl DimensionOrder {
+    /// Returns the string representation of the dimension order (e.g., "CYX").
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DimensionOrder::CXY => "CXY",
+            DimensionOrder::CYX => "CYX",
+            DimensionOrder::XCY => "XCY",
+            DimensionOrder::XYC => "XYC",
+            DimensionOrder::YCX => "YCX",
+            DimensionOrder::YXC => "YXC",
+        }
+    }
+
+    /// Returns the number of dimensions.
+    pub fn num_dims(&self) -> usize {
+        self.as_str().len()
+    }
+
+    /// Returns the position of the channel dimension in the shape array, if present.
+    pub fn channel_dim_index(&self) -> usize {
+        self.as_str().chars()
+            .position(|c| c == 'C')
+            .expect("Dimension order must include a channel dimension")
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -97,25 +146,18 @@ pub struct BitmapLayerParams {
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
     /// The order of dimensions in the flat `data` array.
-    /// Must contain 'X' and 'Y'. May also contain 'Z', 'C', and 'T'.
-    /// Examples: "XY", "XYC", "XYCZT", "TCZYX".
-    /// Dimensions can be in any order.
-    /// TODO: change this to an enum or tuple of dimension descriptors,
-    /// to better represent the valid values via the type system /
-    /// to avoid parsing the string and potential user errors in formatting.
-    pub dimension_order: String,
+    pub dimension_order: DimensionOrder,
 
     /// The size of each dimension, in the same order as `dimension_order`.
     /// For example, if `dimension_order` is "XYCZT" and the image is
     /// 256x256 with 3 channels, 10 z-slices, and 5 timepoints,
     /// then `shape` would be [256, 256, 3, 10, 5].
+    // TODO: use a 2/3-element tuple here instead?
     pub shape: Vec<u32>,
 
+    // TODO: allow to specify photometric_interpretation here, to easily support RGB images?
+
     pub channel_settings: Vec<ChannelSettings>,
-    /// The z-slice index to render (0-based). Required if 'Z' is in dimension_order.
-    pub z_index: Option<u32>,
-    /// The timepoint index to render (0-based). Required if 'T' is in dimension_order.
-    pub t_index: Option<u32>,
 
     pub opacity: f32,
 
@@ -137,28 +179,45 @@ impl BitmapLayer {
         view_params: ViewParams,
         layer_params: BitmapLayerParams,
     ) -> Self {
-        // Validate that dimension_order string is valid.
-        let dim_order = &layer_params.dimension_order;
-        let valid_dims: &[char] = &['X', 'Y', 'Z', 'C', 'T'];
+        // Validate that dimension_order, shape, channel_settings, and data length are consistent with each other.
+        let expected_num_dims = layer_params.dimension_order.num_dims();
 
-        // May not contain any invalid characters.
-        for ch in dim_order.chars() {
-            if !valid_dims.contains(&ch) {
-                panic!("Invalid character '{}' in dimension_order \"{}\". Valid characters are: X, Y, Z, C, T.", ch, dim_order);
-            }
+        // 1. shape length must match the number of dimensions in dimension_order.
+        if layer_params.shape.len() != expected_num_dims {
+            panic!(
+                "shape length ({}) must match the number of dimensions in dimension_order {:?} ({})",
+                layer_params.shape.len(),
+                layer_params.dimension_order,
+                expected_num_dims,
+            );
         }
 
-        // Must contain 'X' and 'Y'.
-        if !dim_order.contains('X') || !dim_order.contains('Y') {
-            panic!("dimension_order \"{}\" must contain both 'X' and 'Y'.", dim_order);
+        // 2. The product of all shape dimensions must equal the data length.
+        let expected_data_len: usize = layer_params.shape.iter().map(|&s| s as usize).product();
+        if layer_params.data.len() != expected_data_len {
+            panic!(
+                "data length ({}) must equal the product of shape dimensions {:?} (= {})",
+                layer_params.data.len(),
+                layer_params.shape,
+                expected_data_len,
+            );
         }
 
-        // May not contain duplicate dimensions.
-        let mut seen = std::collections::HashSet::new();
-        for ch in dim_order.chars() {
-            if !seen.insert(ch) {
-                panic!("Duplicate dimension '{}' in dimension_order \"{}\".", ch, dim_order);
-            }
+        // 3. channel_settings must not be empty.
+        if layer_params.channel_settings.is_empty() {
+            panic!("channel_settings must contain at least one channel");
+        }
+
+        // 4. Validate the number of provided channel_settings against the size of the C dimension.
+        let c_dim_idx = layer_params.dimension_order.channel_dim_index();
+        let c_size = layer_params.shape[c_dim_idx];
+        let num_channel_settings = layer_params.channel_settings.len() as u32;
+        if num_channel_settings != c_size {
+            panic!(
+                "channel_settings length {} did not match C dimension size ({})",
+                num_channel_settings,
+                c_size,
+            );
         }
 
         // Validate that the colors in ChannelSettings are in the range [0.0, 1.0].
@@ -220,15 +279,17 @@ struct BitmapLayerUniforms {
 
 
 /// Parse dimension_order and shape into a map from dimension char to (index_in_order, size).
-fn parse_dimensions(dimension_order: &str, shape: &[u32]) -> std::collections::HashMap<char, (usize, u32)> {
+fn parse_dimensions(dimension_order: &DimensionOrder, shape: &[u32]) -> std::collections::HashMap<char, (usize, u32)> {
+    let dim_str = dimension_order.as_str();
     assert_eq!(
-        dimension_order.len(),
+        dim_str.len(),
         shape.len(),
-        "dimension_order length ({}) must match shape length ({})",
-        dimension_order.len(),
+        "dimension_order {:?} length ({}) must match shape length ({})",
+        dimension_order,
+        dim_str.len(),
         shape.len()
     );
-    dimension_order
+    dim_str
         .chars()
         .enumerate()
         .zip(shape.iter())
@@ -248,28 +309,14 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
     strides
 }
 
-// TODO: rather than always using extract_xy_slice, we should first check if the XY dimensions are already
-// contiguous in the original array (i.e., in "TZCXY" order) for the given c_index, z_index, and t_index, and
-// if so we can skip the slicing and directly upload the data to a GPU texture.
-// The shader should be able to handle slight variations in the data layout,
-// e.g. by using a uniform to indicate XY vs YX ordering, and adjusting the indexing math accordingly.
-// We should also be able to generalize this logic to the "C" dimension,
-// e.g., by uploading the data as a 3D texture with dimensions (img_w, img_h, num_channels)
-// if the data is in "CXY" order, and adjusting the shader indexing math accordingly.
-// We will just need to handle copying the per-channel subarrays for the selected channels
-// into contiguous buffers for texture upload, and setting the uniforms to indicate the dimension ordering appropriately.
-// For dimension orderings beyond this, we will still need the Rust-side slicing to extract the XY slices into
-// contiguous arrays for upload.
-/// Extract a 2D XY slice from the flat nD data array for a given channel, z-index, and t-index.
-/// Converts to f32 regardless of the source dtype.
-/// Returns a Vec<f32> of length (img_w * img_h) in row-major order (Y outer, X inner).
+// TODO: rather than using extract_xy_slice, the shader should be able to handle the variations in dimension ordering,
+// by using a uniform to indicate YXC vs CYX ordering, and adjusting the indexing math accordingly.
+// We should be doing minimal work on the Rust side to prepare the data, only using bytemuck to cast the data into the expected dtype for the shader.
 fn extract_xy_slice(
     data: &NumericData,
-    dimension_order: &str,
+    dimension_order: &DimensionOrder,
     shape: &[u32],
     c_index: Option<u32>,
-    z_index: Option<u32>,
-    t_index: Option<u32>,
 ) -> Vec<f32> {
     let dims = parse_dimensions(dimension_order, shape);
     let strides = compute_strides(shape);
@@ -279,19 +326,11 @@ fn extract_xy_slice(
     let img_w = *img_w as usize;
     let img_h = *img_h as usize;
 
-    // Compute the base offset from fixed dimensions (C, Z, T).
+    // Compute the base offset from fixed dimensions (C).
     let mut base_offset: usize = 0;
     if let Some(&(dim_idx, _sz)) = dims.get(&'C') {
         let c = c_index.unwrap_or(0) as usize;
         base_offset += c * strides[dim_idx];
-    }
-    if let Some(&(dim_idx, _sz)) = dims.get(&'Z') {
-        let z = z_index.unwrap_or(0) as usize;
-        base_offset += z * strides[dim_idx];
-    }
-    if let Some(&(dim_idx, _sz)) = dims.get(&'T') {
-        let t = t_index.unwrap_or(0) as usize;
-        base_offset += t * strides[dim_idx];
     }
 
     let x_stride = strides[*x_dim_idx];
@@ -306,6 +345,7 @@ fn extract_xy_slice(
     }
     slice
 }
+
 
 pub async fn base_draw_bitmap_layer(
     device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
@@ -326,16 +366,12 @@ pub async fn base_draw_bitmap_layer(
     let mut combined_pixel_data: Vec<f32> = Vec::with_capacity(
         (img_w * img_h * num_channels) as usize,
     );
-    for channel_setting in &layer_params.channel_settings {
-        let has_c_dim = dims.contains_key(&'C');
-        let c_index = if has_c_dim { Some(channel_setting.c_index) } else { None };
+    for c_index in 0..layer_params.channel_settings.len() {
         let slice = extract_xy_slice(
             &layer_params.data,
             &layer_params.dimension_order,
             &layer_params.shape,
-            c_index,
-            layer_params.z_index,
-            layer_params.t_index,
+            Some(c_index as u32),
         );
         combined_pixel_data.extend_from_slice(&slice);
     }

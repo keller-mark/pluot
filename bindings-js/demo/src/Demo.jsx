@@ -120,14 +120,11 @@ const DEMOS = {
             layer_id: "layer_bitmap",
             data_unit_mode: "Data",
 
-            dimension_order: "YX",
-            shape: [4, 4],
-            z_index: null,
-            t_index: null,
+            dimension_order: "CYX",
+            shape: [1, 4, 4],
             opacity: 0.5,
             channel_settings: [
               {
-                c_index: 0,
                 window: [0.0, 500.0],
                 color: [1.0, 0.0, 0.0],
               }
