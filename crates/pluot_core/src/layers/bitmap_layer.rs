@@ -293,7 +293,8 @@ struct BitmapLayerUniforms {
 
     img_size: Vec2, // (img_width, img_height) in pixels // TODO: use u32?
     pixel_offset: Vec2, // (x_offset, y_offset) in pixels
-    // TODO: pass model_matrix here
+
+    model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
 
     opacity: f32,
 
@@ -489,6 +490,13 @@ pub async fn base_draw_bitmap_layer(
             layer_params.pixel_offset.map_or(0.0, |(x, _)| x as f32),
             layer_params.pixel_offset.map_or(0.0, |(_, y)| y as f32),
         ),
+        model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+            // Column 0
+            1.0, 0.0, 0.0, 0.0, // Column 1
+            0.0, 1.0, 0.0, 0.0, // Column 2
+            0.0, 0.0, 1.0, 0.0, // Column 3
+            0.0, 0.0, 0.0, 1.0,
+        ])),
         opacity: layer_params.opacity,
         x_stride,
         y_stride,

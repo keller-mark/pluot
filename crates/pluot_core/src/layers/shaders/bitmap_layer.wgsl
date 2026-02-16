@@ -79,6 +79,8 @@ struct Uniforms {
     img_size: vec2<f32>, // (img_w, img_h) in pixels // TODO: use u32?
     pixel_offset: vec2<f32>, // (x_offset, y_offset) in pixels, for tiling support
 
+    model_matrix: mat4x4<f32>,
+
     opacity: f32, // Layer opacity
 
     // Strides for each dimension (in units of f32 elements),
@@ -179,7 +181,7 @@ fn vs_main(
             vertex_pos_px.x / layer_width_px,
             vertex_pos_px.y / layer_height_px
         );
-        let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
+        let point_pos_ndc = NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
         // TODO: handle the model_matrix
 
@@ -197,7 +199,7 @@ fn vs_main(
     // References:
     // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
     // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
-    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view * u.model_matrix;
 
     // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
     // Where:

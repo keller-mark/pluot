@@ -243,8 +243,16 @@ impl PreparedLayer for OmeZarrBitmapLayer {
             data_unit_mode: UnitsMode::Data,
             pixel_offset: Some((self.layer_params.tile_x_start as u32, self.layer_params.tile_y_start as u32)),
             model_matrix: Some(model_matrix),
-            dimension_order: DimensionOrder::CYX,
-            shape: vec![num_channels as u32, self.layer_params.tile_pixels_h as u32, self.layer_params.tile_pixels_w as u32],
+            dimension_order: if self.layer_params.y_dim_i < self.layer_params.x_dim_i {
+                DimensionOrder::CYX
+            } else {
+                DimensionOrder::CXY
+            },
+            shape: if self.layer_params.y_dim_i < self.layer_params.x_dim_i {
+                vec![num_channels as u32, self.layer_params.tile_pixels_h as u32, self.layer_params.tile_pixels_w as u32]
+            } else {
+                vec![num_channels as u32, self.layer_params.tile_pixels_w as u32, self.layer_params.tile_pixels_h as u32]
+            },
             channel_settings: self.layer_params.channel_settings.clone(),
             opacity: self.layer_params.opacity,
             data,
