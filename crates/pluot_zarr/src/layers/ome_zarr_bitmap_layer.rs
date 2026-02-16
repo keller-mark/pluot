@@ -64,37 +64,9 @@ pub struct OmeZarrBitmapLayerParams {
 /// do not re-fetch from the zarr store.
 pub struct OmeZarrBitmapLayer {
     view_params: ViewParams,
+    layer_params: OmeZarrBitmapLayerParams,
     store: Arc<AsyncZarritaStore>,
     store_name: String,
-    cache_enabled: bool,
-
-    // Tile identity
-    level_idx: usize,
-    row: i32,
-    col: i32,
-    tile_pixels_h: u64,
-    tile_pixels_w: u64,
-    tile_y_start: u64,
-    tile_x_start: u64,
-
-    // Metadata from the parent (subset needed for loading)
-    dataset_path: String,
-    full_shape: Vec<u64>,
-    x_dim_i: usize,
-    y_dim_i: usize,
-    z_dim_i: Option<usize>,
-    c_dim_i: Option<usize>,
-    t_dim_i: Option<usize>,
-    scale: [f64; 2], // [scale_y, scale_x]
-
-    // Rendering params
-    layer_id: String,
-    bounds: Option<MarginParams>,
-    channel_settings: Vec<ChannelSettings>,
-    ome_channel_settings: Vec<OmeZarrChannelSetting>,
-    target_z: u64,
-    target_t: u64,
-    opacity: f32,
 
     /// The inner BitmapLayer, constructed during `prepare()`.
     inner: Option<BitmapLayer>,
@@ -118,36 +90,10 @@ impl OmeZarrBitmapLayer {
         let store = get_or_init_store(&store_name);
 
         Self {
-            cache_enabled: view_params.cache_enabled,
             view_params,
+            layer_params,
             store,
             store_name,
-
-            level_idx: layer_params.level_idx,
-            row: layer_params.row,
-            col: layer_params.col,
-            tile_pixels_h: layer_params.tile_pixels_h,
-            tile_pixels_w: layer_params.tile_pixels_w,
-            tile_y_start: layer_params.tile_y_start,
-            tile_x_start: layer_params.tile_x_start,
-
-            dataset_path: layer_params.dataset_path,
-            full_shape: layer_params.full_shape,
-            x_dim_i: layer_params.x_dim_i,
-            y_dim_i: layer_params.y_dim_i,
-            z_dim_i: layer_params.z_dim_i,
-            c_dim_i: layer_params.c_dim_i,
-            t_dim_i: layer_params.t_dim_i,
-            scale: layer_params.scale,
-
-            layer_id: layer_params.layer_id,
-            bounds: layer_params.bounds,
-            channel_settings: layer_params.channel_settings,
-            ome_channel_settings: layer_params.ome_channel_settings,
-            target_z: layer_params.target_z,
-            target_t: layer_params.target_t,
-            opacity: layer_params.opacity,
-
             inner: None,
         }
     }
@@ -155,23 +101,23 @@ impl OmeZarrBitmapLayer {
     /// Load tile data from the zarr array, using the cache.
     async fn load_tile_data(&self) -> NumericData {
         let store = self.store.clone();
-        let dataset_path = self.dataset_path.clone();
-        let full_shape = self.full_shape.clone();
-        let x_dim_i = self.x_dim_i;
-        let y_dim_i = self.y_dim_i;
-        let z_dim_i = self.z_dim_i;
-        let c_dim_i = self.c_dim_i;
-        let t_dim_i = self.t_dim_i;
-        let tile_y_start = self.tile_y_start;
-        let tile_x_start = self.tile_x_start;
-        let tile_h = self.tile_pixels_h;
-        let tile_w = self.tile_pixels_w;
-        let target_z = self.target_z;
-        let target_t = self.target_t;
-        let ome_channel_settings = self.ome_channel_settings.clone();
-        let level_idx = self.level_idx;
-        let row = self.row;
-        let col = self.col;
+        let dataset_path = self.layer_params.dataset_path.clone();
+        let full_shape = self.layer_params.full_shape.clone();
+        let x_dim_i = self.layer_params.x_dim_i;
+        let y_dim_i = self.layer_params.y_dim_i;
+        let z_dim_i = self.layer_params.z_dim_i;
+        let c_dim_i = self.layer_params.c_dim_i;
+        let t_dim_i = self.layer_params.t_dim_i;
+        let tile_y_start = self.layer_params.tile_y_start;
+        let tile_x_start = self.layer_params.tile_x_start;
+        let tile_h = self.layer_params.tile_pixels_h;
+        let tile_w = self.layer_params.tile_pixels_w;
+        let target_z = self.layer_params.target_z;
+        let target_t = self.layer_params.target_t;
+        let ome_channel_settings = self.layer_params.ome_channel_settings.clone();
+        let level_idx = self.layer_params.level_idx;
+        let row = self.layer_params.row;
+        let col = self.layer_params.col;
 
         // Build cache keys that uniquely identify this tile's data.
         let mut keys: Vec<String> = vec![
@@ -267,7 +213,7 @@ impl OmeZarrBitmapLayer {
                 "float64" => load_tile_data!(f64, Float64),
                 _ => panic!("Unsupported zarr data type: {}", dtype_name),
             }
-        }, &keys, self.cache_enabled).await;
+        }, &keys, self.view_params.cache_enabled).await;
 
         // Unwrap the Arc to get the owned NumericData.
         Arc::unwrap_or_clone(cached)
@@ -280,9 +226,9 @@ impl PreparedLayer for OmeZarrBitmapLayer {
     async fn prepare(&mut self) -> PrepareResult {
         let data = self.load_tile_data().await;
 
-        let num_channels = self.channel_settings.len();
-        let scale_x = self.scale[1] as f32;
-        let scale_y = self.scale[0] as f32;
+        let num_channels = self.layer_params.channel_settings.len();
+        let scale_x = self.layer_params.scale[1] as f32;
+        let scale_y = self.layer_params.scale[0] as f32;
 
         let model_matrix: [f32; 16] = [
             scale_x, 0.0, 0.0, 0.0,
@@ -292,15 +238,15 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         ];
 
         let bitmap_params = BitmapLayerParams {
-            layer_id: self.layer_id.clone(),
-            bounds: self.bounds.clone(),
+            layer_id: self.layer_params.layer_id.clone(),
+            bounds: self.layer_params.bounds.clone(),
             data_unit_mode: UnitsMode::Data,
-            pixel_offset: Some((self.tile_x_start as u32, self.tile_y_start as u32)),
+            pixel_offset: Some((self.layer_params.tile_x_start as u32, self.layer_params.tile_y_start as u32)),
             model_matrix: Some(model_matrix),
             dimension_order: DimensionOrder::CYX,
-            shape: vec![num_channels as u32, self.tile_pixels_h as u32, self.tile_pixels_w as u32],
-            channel_settings: self.channel_settings.clone(),
-            opacity: self.opacity,
+            shape: vec![num_channels as u32, self.layer_params.tile_pixels_h as u32, self.layer_params.tile_pixels_w as u32],
+            channel_settings: self.layer_params.channel_settings.clone(),
+            opacity: self.layer_params.opacity,
             data,
         };
 
