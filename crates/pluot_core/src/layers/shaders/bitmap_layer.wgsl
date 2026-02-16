@@ -77,6 +77,7 @@ struct Uniforms {
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
 
     img_size: vec2<f32>, // (img_w, img_h) in pixels // TODO: use u32?
+    pixel_offset: vec2<f32>, // (x_offset, y_offset) in pixels, for tiling support
 
     opacity: f32, // Layer opacity
 
@@ -131,8 +132,8 @@ fn vs_main(
     // Obtain a position for this vertex in (0 to 1) normalized space.
     let vertex_pos_norm = QUAD[vertex_index];
     let vertex_pos_px = vec2<f32>(
-        vertex_pos_norm.x * u.img_size.x,
-        vertex_pos_norm.y * u.img_size.y
+        vertex_pos_norm.x * u.img_size.x + u.pixel_offset.x,
+        vertex_pos_norm.y * u.img_size.y + u.pixel_offset.y
     );
 
     // How positioning works for the bitmap layer:

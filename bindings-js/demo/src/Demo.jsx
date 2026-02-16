@@ -119,6 +119,7 @@ const DEMOS = {
           layer_params: {
             layer_id: "layer_bitmap",
             data_unit_mode: "Data",
+            pixel_offset: [1, 1],
 
             dimension_order: "CYX",
             shape: [2, 4, 4],

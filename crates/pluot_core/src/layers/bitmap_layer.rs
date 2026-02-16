@@ -149,6 +149,11 @@ pub struct BitmapLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode: UnitsMode,
 
+    // (x_offset, y_offset) in pixels, applied before model_matrix,
+    // to enable this layer to be used to render an individual "tile" of a larger image layer,
+    // where tiles correspond to the way the original image array is chunked/tiled on disk.
+    pub pixel_offset: Option<(u32, u32)>,
+
     // How positioning works for the bitmap layer:
     // If data_unit_mode = Pixels, then the image is positioned in pixel space,
     // with the origin at the bottom left of the layer's bounds (i.e., margins).
@@ -287,6 +292,7 @@ struct BitmapLayerUniforms {
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
 
     img_size: Vec2, // (img_width, img_height) in pixels // TODO: use u32?
+    pixel_offset: Vec2, // (x_offset, y_offset) in pixels
     // TODO: pass model_matrix here
 
     opacity: f32,
@@ -479,6 +485,10 @@ pub async fn base_draw_bitmap_layer(
         },
         aspect_ratio_alignment_mode: 0, // center. TODO
         img_size: Vec2::new(img_w as f32, img_h as f32),
+        pixel_offset: Vec2::new(
+            layer_params.pixel_offset.map_or(0.0, |(x, _)| x as f32),
+            layer_params.pixel_offset.map_or(0.0, |(_, y)| y as f32),
+        ),
         opacity: layer_params.opacity,
         x_stride,
         y_stride,
