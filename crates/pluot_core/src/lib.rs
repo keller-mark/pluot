@@ -28,7 +28,7 @@ pub use crate::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginPara
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 
 // Export things needed by workspace packages that define other layers.
-pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
+pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
