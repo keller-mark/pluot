@@ -299,6 +299,11 @@ impl OmeZarrMultiscaleLayer {
 
         let mut all_level_sublayers = Vec::new();
 
+        // TODO: when timeout is None, we should start at the target resolution level already;
+        // In the case of timeout==None, we do not need to worry about loading coarser levels than we need,
+        // as we can just wait for the target level to load without worrying about a timeout.
+        // (i.e., we only need to load coarser levels when we have a timeout and want to show something while waiting for the target level to load.)
+
         // Iterate from coarsest to target level (inclusive).
         // Levels are ordered finest-first (index 0 = finest), so coarsest is last.
         let coarsest_idx = num_levels - 1;
