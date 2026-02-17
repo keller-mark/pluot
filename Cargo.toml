@@ -112,8 +112,8 @@ uuid = { version = "1", features = ["v4", "js"] }
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
 [workspace.dependencies.zarrs]
-version = "0.23.0"
-# path = "../zarrs/zarrs"
+#version = "0.23.0"
+path = "../zarrs/zarrs"
 default-features = false
 features = [
     "ndarray",
@@ -122,8 +122,8 @@ features = [
     "sharding",
     "transpose",
     "async",
-    # "zstd",       # Using the "zstd" and "blosc" features adds ~0.3MB to the .wasm size in --release mode.
-    # "blosc",      # Possible to enable when using a zarrs branch that uses Blusc for blosc.
+    "zstd",       # Using the "zstd" and "blosc" features adds ~0.3MB to the .wasm size in --release mode.
+    "blosc",      # Possible to enable when using a zarrs branch that uses Blusc for blosc.
     # "filesystem", # Was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
 ]
 

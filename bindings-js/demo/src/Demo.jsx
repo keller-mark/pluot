@@ -18,9 +18,9 @@ const DEMOS = {
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_1000000/x_coords",
-            y_key: "/n_1000000/y_coords",
-            color_key: "/n_1000000/class_labels",
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
           }
         },
         {
@@ -185,6 +185,23 @@ const DEMOS = {
               }
             ]
           }
+        },
+        {
+          layer_type: "OmeZarrMultiscaleLayer",
+          layer_params: {
+            layer_id: "ome_zarr_multiscale_layer",
+            store_name: "ome_ngff",
+            target_z: 99,
+            target_t: null,
+            channel_settings: [
+              {
+                c_index: 0,
+                window: [0.0, 1000.0],
+                color: [1.0, 0.0, 0.0],
+              }
+            ],
+            opacity: 1.0,
+          },
         }
       ]
     },

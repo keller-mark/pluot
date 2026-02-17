@@ -208,6 +208,7 @@ impl OmeZarrBitmapLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrBitmapLayer {
     async fn prepare(&mut self) -> PrepareResult {
+        // TODO: use maybe_timeout here, and bail early if loading takes too long.
         let data = self.load_tile_data().await;
 
         let y_dim_i = self.dim_index('y').expect("array_dimension_order must contain 'y'");

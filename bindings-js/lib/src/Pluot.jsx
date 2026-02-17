@@ -19,9 +19,9 @@ import { isEqual, throttle } from "lodash-es";
 const { decompressFromUint8Array } = lzs;
 
 const DEFAULT_VIEW = new Float32Array([
-  1, 0, 0, 0,
-  0, 1, 0, 0,
-  0, 0, 1, 0,
+  1/200, 0, 0, 0,
+  0, 1/200, 0, 0,
+  0, 0, 1/200, 0,
   0, 0, 0, 1,
 ]);
 

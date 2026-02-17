@@ -469,6 +469,8 @@ impl OmeZarrMultiscaleLayer {
 impl PreparedLayer for OmeZarrMultiscaleLayer {
     async fn prepare(&mut self) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
+
+        // TODO: use maybe_timeout here, and bail out early if loading metadata takes too long.
         let metadata = self.load_metadata().await;
         self.metadata = Some(metadata.clone());
         let metadata = metadata.as_ref();
@@ -478,6 +480,9 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         self.level_sublayers = self.build_sublayers(metadata);
 
         log(&format!("Preparing {} sublayers", self.level_sublayers.len()));
+
+        // TODO: collect all sublayers at each resolution level (coarse to fine),
+        // and prepare them on a per-layer basis, using maybe_timeout to bail early at each level.
 
         // Prepare all sublayers (each loads its own tile data with caching).
         let mut any_bailed = false;
