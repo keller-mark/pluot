@@ -43,6 +43,9 @@ pub struct VisibleTile {
     pub tile_pixels_w: f64,
     /// Height of this tile in pixels (may be less than chunk_shape for edge tiles).
     pub tile_pixels_h: f64,
+
+    pub num_tile_cols: i32, // total number of tile columns at this level
+    pub num_tile_rows: i32, // total number of tile rows at this level
 }
 
 /// Extract zoom and translation from the camera_view matrix.
@@ -202,12 +205,14 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
             // Clamp to the physical extent of the image at this level.
             // The last tile in a row/column may be a partial tile if the
             // image shape is not evenly divisible by the chunk shape.
-            let pixels_remaining_x =
-                level.shape[1] as f64 - (col as f64 * level.chunk_shape[1] as f64);
-            let pixels_remaining_y =
-                level.shape[0] as f64 - (row as f64 * level.chunk_shape[0] as f64);
+            let pixels_remaining_x = level.shape[1] as f64 - (col as f64 * level.chunk_shape[1] as f64);
+            let pixels_remaining_y = level.shape[0] as f64 - (row as f64 * level.chunk_shape[0] as f64);
             let tile_pixels_w = (level.chunk_shape[1] as f64).min(pixels_remaining_x);
             let tile_pixels_h = (level.chunk_shape[0] as f64).min(pixels_remaining_y);
+
+            // TODO: something is wrong with the calculation of which tiles are in view.
+            // To fix it, we will need to account for the coordinate system origin being in bottom left,
+            // while the image coordinate system origin is in the top left.
 
             tiles.push(VisibleTile {
                 col,
@@ -216,6 +221,8 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
                 phys_y0,
                 tile_pixels_w,
                 tile_pixels_h,
+                num_tile_rows,
+                num_tile_cols,
             });
         }
     }

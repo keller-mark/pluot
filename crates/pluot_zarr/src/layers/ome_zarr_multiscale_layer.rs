@@ -349,6 +349,8 @@ impl OmeZarrMultiscaleLayer {
                 // Build start_slice and stop_slice for the full ndim array.
                 let ndim = full_shape.len();
 
+                log(&format!("Building sublayer for tile at level {}, row {}, col {}: tile_y_start={}, tile_x_start={}, tile_h={}, tile_w={}", level_idx, tile.row, tile.col, tile_y_start, tile_x_start, tile_h, tile_w));
+
 
                 let mut start_slice = vec![0u64; ndim];
                 let mut stop_slice = vec![1u64; ndim];

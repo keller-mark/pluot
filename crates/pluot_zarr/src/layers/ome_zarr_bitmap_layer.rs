@@ -218,7 +218,9 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         let tile_w = (self.layer_params.stop_slice[x_dim_i] - self.layer_params.start_slice[x_dim_i]) as u32;
 
         let pixel_offset_x = self.layer_params.start_slice[x_dim_i] as u32;
-        let pixel_offset_y = self.layer_params.start_slice[y_dim_i] as u32;
+        // Here, we account for the fact that our coordinate system origin is at the bottom left,
+        // while the zarr array's Y=0 is at the top. So we need to compute the pixel offset from the bottom.
+        let pixel_offset_y = ((self.layer_params.array_shape[y_dim_i] - self.layer_params.start_slice[y_dim_i] - tile_h as u64)).max(0) as u32;
 
         let channel_settings: Vec<ChannelSettings> = self
             .layer_params
