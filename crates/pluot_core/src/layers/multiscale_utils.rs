@@ -30,14 +30,18 @@ pub struct ResolutionLevel {
 }
 
 /// A visible tile at a given resolution level.
+///
+/// The coordinate system has (0,0) at the bottom-left. Tile row 0 is the
+/// bottom row of the image in physical space (which corresponds to the
+/// *last* rows of the image array, since arrays are stored top-to-bottom).
 pub struct VisibleTile {
-    /// Tile column index.
+    /// Tile column index (0 = leftmost).
     pub col: i32,
-    /// Tile row index.
+    /// Tile row index in physical space (0 = bottom).
     pub row: i32,
     /// Physical X coordinate of the tile's left edge.
     pub phys_x0: f64,
-    /// Physical Y coordinate of the tile's top edge.
+    /// Physical Y coordinate of the tile's bottom edge.
     pub phys_y0: f64,
     /// Width of this tile in pixels (may be less than chunk_shape for edge tiles).
     pub tile_pixels_w: f64,
@@ -175,9 +179,18 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
 
 /// Compute all visible tiles at a given resolution level for the current viewport.
 ///
+/// The coordinate system has (0,0) at the bottom-left. Physical Y increases
+/// upward. Tile row 0 is the bottom of the image.
+///
+/// Because image arrays are stored top-to-bottom, the bottom physical row
+/// corresponds to the last rows of the array. The `row` field on each
+/// `VisibleTile` counts from the bottom in physical space; callers that need
+/// array indices should convert via `array_row = num_tile_rows - 1 - row`.
+///
 /// Tile positions are in physical coordinates:
 ///   - A tile at column `col` starts at x = col * chunk_width * scale_x
-///   - Its width is chunk_width * scale_x (or smaller for partial edge tiles)
+///   - A tile at row `row` starts at y = row * chunk_height * scale_y
+///   - Its width/height is chunk_shape * scale (or smaller for partial edge tiles)
 pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> Vec<VisibleTile> {
     let (min_x, max_x, min_y, max_y) = get_visible_range(view_params);
 
@@ -190,6 +203,7 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
     let num_tile_rows = (level.shape[0] as f64 / level.chunk_shape[0] as f64).ceil() as i32;
 
     // Determine the range of tile indices that overlap the visible area.
+    // Row/col indices count from bottom-left in physical space.
     let tile_col_start = ((min_x / tile_phys_w).floor() as i32).max(0);
     let tile_col_end = ((max_x / tile_phys_w).ceil() as i32).min(num_tile_cols);
     let tile_row_start = ((min_y / tile_phys_h).floor() as i32).max(0);
@@ -202,17 +216,22 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
             let phys_x0 = col as f64 * tile_phys_w;
             let phys_y0 = row as f64 * tile_phys_h;
 
+            // Convert physical-space row to array-space row.
+            // Physical row 0 = bottom of image = last rows of the array.
+            let array_row = num_tile_rows - 1 - row;
+
             // Clamp to the physical extent of the image at this level.
-            // The last tile in a row/column may be a partial tile if the
-            // image shape is not evenly divisible by the chunk shape.
+            // The partial (edge) tile in X is always the last column.
+            // The partial (edge) tile in Y is at array_row 0 (physical top,
+            // i.e., the highest physical row), which is physical row
+            // num_tile_rows-1. But because array_row 0 may be partial,
+            // the *bottom* physical row (array_row = num_tile_rows-1) is
+            // always a full tile, while the *top* physical row
+            // (array_row = 0) may be partial.
             let pixels_remaining_x = level.shape[1] as f64 - (col as f64 * level.chunk_shape[1] as f64);
-            let pixels_remaining_y = level.shape[0] as f64 - (row as f64 * level.chunk_shape[0] as f64);
+            let pixels_remaining_y = level.shape[0] as f64 - (array_row as f64 * level.chunk_shape[0] as f64);
             let tile_pixels_w = (level.chunk_shape[1] as f64).min(pixels_remaining_x);
             let tile_pixels_h = (level.chunk_shape[0] as f64).min(pixels_remaining_y);
-
-            // TODO: something is wrong with the calculation of which tiles are in view.
-            // To fix it, we will need to account for the coordinate system origin being in bottom left,
-            // while the image coordinate system origin is in the top left.
 
             tiles.push(VisibleTile {
                 col,
@@ -527,6 +546,10 @@ mod tests {
         // Image 300x300 with chunk 256x256, scale 1.0.
         // Tile grid: ceil(300/256) = 2 cols x 2 rows.
         // Edge tiles should be partial: 300 - 256 = 44 pixels.
+        //
+        // With bottom-left origin, the partial row in Y is at the bottom
+        // (physical row 0 → array_row 1, which has 44 px remaining).
+        // The top row (physical row 1 → array_row 0) has a full 256 px.
         let level = ResolutionLevel {
             shape: [300, 300],
             chunk_shape: [256, 256],
@@ -537,13 +560,13 @@ mod tests {
         let tiles = get_visible_tiles(&vp, &level);
         assert_eq!(tiles.len(), 4);
 
-        // Find the bottom-right edge tile (col=1, row=1).
-        let edge_tile = tiles.iter().find(|t| t.col == 1 && t.row == 1).unwrap();
+        // The bottom-right tile (col=1, row=0) is partial in both X and Y.
+        let edge_tile = tiles.iter().find(|t| t.col == 1 && t.row == 0).unwrap();
         assert_eq!(edge_tile.tile_pixels_w, 44.0);
         assert_eq!(edge_tile.tile_pixels_h, 44.0);
 
-        // Full tiles should have full chunk_shape dimensions.
-        let full_tile = tiles.iter().find(|t| t.col == 0 && t.row == 0).unwrap();
+        // The top-left tile (col=0, row=1) should have full chunk_shape dimensions.
+        let full_tile = tiles.iter().find(|t| t.col == 0 && t.row == 1).unwrap();
         assert_eq!(full_tile.tile_pixels_w, 256.0);
         assert_eq!(full_tile.tile_pixels_h, 256.0);
     }
@@ -586,7 +609,8 @@ mod tests {
 
     #[test]
     fn test_get_visible_tiles_tile_ordering() {
-        // Verify tiles are returned in row-major order (row 0 first, then row 1, etc).
+        // Verify tiles are returned in row-major order (bottom row first, then next row up).
+        // Row 0 = bottom of the image in physical space.
         let level = ResolutionLevel {
             shape: [512, 512],
             chunk_shape: [256, 256],
@@ -595,7 +619,7 @@ mod tests {
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
         let tiles = get_visible_tiles(&vp, &level);
         assert_eq!(tiles.len(), 4);
-        // Row-major: (0,0), (0,1), (1,0), (1,1)
+        // Bottom row first: (row=0,col=0), (row=0,col=1), then top row: (row=1,col=0), (row=1,col=1)
         assert_eq!((tiles[0].row, tiles[0].col), (0, 0));
         assert_eq!((tiles[1].row, tiles[1].col), (0, 1));
         assert_eq!((tiles[2].row, tiles[2].col), (1, 0));

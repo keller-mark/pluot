@@ -337,13 +337,10 @@ impl OmeZarrMultiscaleLayer {
                 let tile_h = tile.tile_pixels_h as u64;
                 let tile_w = tile.tile_pixels_w as u64;
 
-                // TODO: account for the coordinate system having (0, 0) in bottom left when computing slice indices.
-                // The code currently assumes (0, 0) is top left, so it computes tile_y_start based on the tile row index and chunk height.
-                // If the coordinate system is bottom-left, we would need to compute tile_y_start based on the distance from the bottom of the image.
-                // We will also need to flip each tile vertically when rendering.
-                // We can pass a uniform bool to BitmapLayer so that the flipping can be done in the shader.
-
-                let tile_y_start = tile.row as u64 * level.chunk_shape[0] as u64;
+                // Convert physical-space row (0 = bottom) to array-space row
+                // (0 = top). The array is stored top-to-bottom, so:
+                let array_row = tile.num_tile_rows - 1 - tile.row;
+                let tile_y_start = array_row as u64 * level.chunk_shape[0] as u64;
                 let tile_x_start = tile.col as u64 * level.chunk_shape[1] as u64;
 
                 // Build start_slice and stop_slice for the full ndim array.
