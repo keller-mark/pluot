@@ -52,6 +52,9 @@ const stores = {
   wheat: lru(
     new FetchStore("http://localhost:5173/@data/wheat.zarr"),
   ),
+  ome_ngff_2: lru(
+    new FetchStore('https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr')
+  )
 };
 
 // Only use window if it is defined (i.e., in the browser).

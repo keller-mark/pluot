@@ -190,13 +190,13 @@ const DEMOS = {
           layer_type: "OmeZarrMultiscaleLayer",
           layer_params: {
             layer_id: "ome_zarr_multiscale_layer",
-            store_name: "ome_ngff",
-            target_z: 99,
-            target_t: null,
+            store_name: "ome_ngff_2",
+            target_z: 40,
+            target_t: 0,
             channel_settings: [
               {
                 c_index: 0,
-                window: [0.0, 1000.0],
+                window: [0.0, 90000.0],
                 color: [1.0, 0.0, 0.0],
               }
             ],
