@@ -174,8 +174,8 @@ impl OmeZarrBitmapLayer {
                             .await
                             .unwrap_or_else(|e| {
                                 panic!(
-                                    "Failed to load tile data for {}: {:?}",
-                                    array_path, e
+                                    "Failed to load tile data for {} {}: {:?}",
+                                    array_path, subset, e
                                 )
                             });
                         combined.extend_from_slice(&chunk);

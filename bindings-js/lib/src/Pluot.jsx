@@ -74,7 +74,7 @@ if (typeof window !== 'undefined') {
   };
   window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
     // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
-    return stores[store_name].getRange(`/${key}`, { suffix_length });
+    return stores[store_name].getRange(`/${key}`, { suffixLength: suffix_length });
   };
 
   window.isPluotInitialized = null;
