@@ -131,6 +131,9 @@ impl OmeZarrBitmapLayer {
             let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
 
+            // TODO: use Array::new_with_metadata here instead of async_open,
+            // if we already have the metadata from the parent.
+
             let array = zarrs::array::Array::async_open(store.clone(), &array_path)
                 .await
                 .unwrap_or_else(|e| {

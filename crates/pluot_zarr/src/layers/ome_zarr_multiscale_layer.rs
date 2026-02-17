@@ -292,6 +292,8 @@ impl OmeZarrMultiscaleLayer {
             &metadata.resolution_levels,
         );
 
+        log(&format!("Selected resolution level {}", target_level));
+
         let num_levels = metadata.resolution_levels.len();
 
         let target_z = self.layer_params.target_z.map(|v| v as u64);
@@ -400,8 +402,8 @@ impl OmeZarrMultiscaleLayer {
                 tile_rects.push(PhysicalRect {
                     x0: tile.phys_x0,
                     y0: tile.phys_y0,
-                    x1: tile.phys_x0 + tile.tile_pixels_w * level.scale[1],
-                    y1: tile.phys_y0 + tile.tile_pixels_h * level.scale[0],
+                    x1: tile.phys_x1,
+                    y1: tile.phys_y1,
                 });
             }
 

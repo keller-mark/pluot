@@ -198,6 +198,16 @@ const DEMOS = {
                 c_index: 0,
                 window: [0.0, 90000.0],
                 color: [1.0, 0.0, 0.0],
+              },
+              {
+                c_index: 1,
+                window: [0.0, 90000.0],
+                color: [0.0, 1.0, 0.0],
+              },
+              {
+                c_index: 2,
+                window: [0.0, 90000.0],
+                color: [0.0, 0.0, 1.0],
               }
             ],
             opacity: 1.0,
@@ -284,7 +294,7 @@ export function Demo() {
           />
         </div>
       ) : null}
-      {plotType === "LayeredPlot" ? (
+      {false && plotType === "LayeredPlot" ? (
         <div>
           <label>Point Radius (for LayeredPlot):</label>
           <input

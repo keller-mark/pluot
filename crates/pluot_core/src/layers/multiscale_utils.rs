@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::layer_traits::{AspectRatioMode, ViewParams};
+use crate::log;
 
 /// A single resolution level in the multiscale pyramid.
 ///
@@ -43,6 +44,10 @@ pub struct VisibleTile {
     pub phys_x0: f64,
     /// Physical Y coordinate of the tile's bottom edge.
     pub phys_y0: f64,
+    /// Physical X coordinate of the tile's right edge.
+    pub phys_x1: f64,
+    /// Physical Y coordinate of the tile's top edge.
+    pub phys_y1: f64,
     /// Width of this tile in pixels (may be less than chunk_shape for edge tiles).
     pub tile_pixels_w: f64,
     /// Height of this tile in pixels (may be less than chunk_shape for edge tiles).
@@ -194,6 +199,12 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
 pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> Vec<VisibleTile> {
     let (min_x, max_x, min_y, max_y) = get_visible_range(view_params);
 
+    log(&format!("Width, height, camera_view: {}, {}, {:?}", view_params.width, view_params.height, view_params.camera_view));
+
+    log(&format!("Visible range: min_x={}, max_x={}, min_y={}, max_y={}", min_x, max_x, min_y, max_y));
+
+    log(&format!("Level info: shape=({},{}), chunk_shape=({},{}) scale=({},{})", level.shape[0], level.shape[1], level.chunk_shape[0], level.chunk_shape[1], level.scale[0], level.scale[1]));
+
     // Physical size of one full tile at this resolution level.
     let tile_phys_w = level.chunk_shape[1] as f64 * level.scale[1];
     let tile_phys_h = level.chunk_shape[0] as f64 * level.scale[0];
@@ -201,6 +212,8 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
     // Total number of tile columns and rows at this resolution level.
     let num_tile_cols = (level.shape[1] as f64 / level.chunk_shape[1] as f64).ceil() as i32;
     let num_tile_rows = (level.shape[0] as f64 / level.chunk_shape[0] as f64).ceil() as i32;
+
+    log(&format!("Tile info: tile_phys_w={}, tile_phys_h={}, num_tile_cols={}, num_tile_rows={}", tile_phys_w, tile_phys_h, num_tile_cols, num_tile_rows));
 
     // Determine the range of tile indices that overlap the visible area.
     // Row/col indices count from bottom-left in physical space.
@@ -233,11 +246,16 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
             let tile_pixels_w = (level.chunk_shape[1] as f64).min(pixels_remaining_x);
             let tile_pixels_h = (level.chunk_shape[0] as f64).min(pixels_remaining_y);
 
+            let phys_x1 = phys_x0 + tile_pixels_w * level.scale[1];
+            let phys_y1 = phys_y0 + tile_pixels_h * level.scale[0];
+
             tiles.push(VisibleTile {
                 col,
                 row,
                 phys_x0,
                 phys_y0,
+                phys_x1,
+                phys_y1,
                 tile_pixels_w,
                 tile_pixels_h,
                 num_tile_rows,
@@ -286,6 +304,91 @@ mod tests {
             ResolutionLevel { shape: [2048, 2048], chunk_shape: [256, 256], scale: [1.0, 1.0] },
             ResolutionLevel { shape: [1024, 1024], chunk_shape: [256, 256], scale: [2.0, 2.0] },
         ]
+    }
+
+    #[test]
+    fn test_debug_plant_tiles() {
+        // Width, height, camera_view: 800, 800, Some([3.4370332e-5, 0.0, 0.0, 0.0, 0.0, 3.4370332e-5, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0, -15.321514, -16.47842, 0.0, 1.0])
+        // Visible range: min_x=208341.71875, max_x=237436.578125, min_y=225171.734375, max_y=254266.59375
+        // scale factor: 14.828477
+        // Level 0: chunk_shape=(1024,1024) scale=(70.55555725097656,70.55555725097656)
+        // Level 1: chunk_shape=(1024,1024) scale=(141.11111450195313,141.11111450195313)
+        // Level 2: chunk_shape=(1024,1024) scale=(282.22222900390625,282.22222900390625)
+        let mut vp = make_view_params(800, 800, Some([3.4370332e-5, 0.0, 0.0, 0.0, 0.0, 3.4370332e-5, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0, -15.321514, -16.47842, 0.0, 1.0]));
+        vp.margins = Some(MarginParams {
+            margin_left: Some(100.0),
+            margin_right: Some(100.0),
+            margin_top: Some(100.0),
+            margin_bottom: Some(100.0),
+        });
+
+        let (zoom, tx, ty) = get_view_transform(&vp);
+        assert_eq!(zoom, 3.4370332e-5);
+        assert_eq!(tx, -15.321514);
+        assert_eq!(ty, -16.47842);
+
+
+        let (w, h) = get_layer_size(&vp);
+        assert_eq!(w, 600.0); // 800 - 100 - 100
+        assert_eq!(h, 600.0);  // 800 - 100 - 100
+
+        let levels = vec![
+            ResolutionLevel { shape: [5464,8192], chunk_shape: [1024,1024], scale: [70.55555725097656,70.55555725097656] },
+            ResolutionLevel { shape: [2732,4096], chunk_shape: [1024,1024], scale: [141.11111450195313,141.11111450195313] },
+            ResolutionLevel { shape: [1366,2048], chunk_shape: [1024,1024], scale: [282.22222900390625,282.22222900390625] },
+        ];
+
+        assert_eq!(select_resolution_level(&vp, &levels), 0);
+
+        let level = levels[0].clone();
+
+        let visible_tiles = get_visible_tiles(&vp, &level);
+        for tile in visible_tiles {
+            println!(
+                "Tile: col={}, row={}, phys_x0={}, phys_y0={}, phys_x1={}, phys_y1={}, tile_pixels_w={}, tile_pixels_h={}",
+                tile.col, tile.row, tile.phys_x0, tile.phys_y0, tile.phys_x1, tile.phys_y1, tile.tile_pixels_w, tile.tile_pixels_h,
+            );
+            // Printed:
+            // Tile: col=2, row=3, phys_x0=144497.78125, phys_y0=216746.671875, phys_x1=216746.671875, phys_y1=288995.5625, tile_pixels_w=1024, tile_pixels_h=1024
+            // Tile: col=3, row=3, phys_x0=216746.671875, phys_y0=216746.671875, phys_x1=288995.5625, phys_y1=288995.5625, tile_pixels_w=1024, tile_pixels_h=1024
+
+            let tile_h = tile.tile_pixels_h as u64;
+            let tile_w = tile.tile_pixels_w as u64;
+
+            // Convert physical-space row (0 = bottom) to array-space row
+            // (0 = top). The array is stored top-to-bottom, so:
+            let array_row = tile.num_tile_rows - 1 - tile.row;
+            let tile_y_start = array_row as u64 * level.chunk_shape[0] as u64;
+            let tile_x_start = tile.col as u64 * level.chunk_shape[1] as u64;
+
+            println!("Tile slice: x=[{}, {}], y=[{}, {}]", tile_x_start, tile_x_start + tile_w, tile_y_start, tile_y_start + tile_h);
+
+            // Printed:
+            // Tile: col=2, row=3, phys_x0=144497.78125, phys_y0=216746.671875, phys_x1=216746.671875, phys_y1=288995.5625, tile_pixels_w=1024, tile_pixels_h=1024
+            // Tile slice: x=[2048, 3072], y=[2048, 3072]
+            // Tile: col=3, row=3, phys_x0=216746.671875, phys_y0=216746.671875, phys_x1=288995.5625, phys_y1=288995.5625, tile_pixels_w=1024, tile_pixels_h=1024
+            // Tile slice: x=[3072, 4096], y=[2048, 3072]
+
+            // TODO: calculate the ground truth slices for these axis extents.
+            // Verify that the calculated slices match the expected slices based on the level's chunk shape and scale.
+
+
+
+            /*
+            let mut start_slice = vec![0u64; ndim];
+            let mut stop_slice = vec![1u64; ndim];
+
+            start_slice[metadata.y_dim_i] = tile_y_start;
+            stop_slice[metadata.y_dim_i] = tile_y_start + tile_h;
+            start_slice[metadata.x_dim_i] = tile_x_start;
+            stop_slice[metadata.x_dim_i] = tile_x_start + tile_w;
+            */
+
+        }
+
+
+
+
     }
 
     // ========================================================================
