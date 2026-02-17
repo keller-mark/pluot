@@ -21,7 +21,7 @@ use ome_zarr_metadata::v0_5::{RelaxedOmeFields, CoordinateTransform, CoordinateT
 
 use crate::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
 use crate::layers::ome_zarr_utils::OmeZarrChannelSetting;
-use crate::layers::ome_zarr_utils::{PhysicalRect, rects_overlap, bounding_box};
+use crate::layers::ome_zarr_utils::{PhysicalRect, rects_overlap, bounding_box, to_y_slice};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrMultiscaleLayerParams {
@@ -339,25 +339,22 @@ impl OmeZarrMultiscaleLayer {
                 let tile_h = tile.tile_pixels_h as u64;
                 let tile_w = tile.tile_pixels_w as u64;
 
-                // Convert physical-space row (0 = bottom) to array-space row
-                // (0 = top). The array is stored top-to-bottom, so:
-                let array_row = tile.num_tile_rows - 1 - tile.row;
-                let tile_y_start = array_row as u64 * level.chunk_shape[0] as u64;
-                let tile_x_start = tile.col as u64 * level.chunk_shape[1] as u64;
 
                 // Build start_slice and stop_slice for the full ndim array.
                 let ndim = full_shape.len();
 
-                log(&format!("Building sublayer for tile at level {}, row {}, col {}: tile_y_start={}, tile_x_start={}, tile_h={}, tile_w={}", level_idx, tile.row, tile.col, tile_y_start, tile_x_start, tile_h, tile_w));
+                //log(&format!("Building sublayer for tile at level {}, row {}, col {}: tile_y_start={}, tile_x_start={}, tile_h={}, tile_w={}", level_idx, tile.row, tile.col, tile_y_start, tile_x_start, tile_h, tile_w));
 
+
+                let (tile_y_start, tile_y_end) = to_y_slice(tile.tile_y_start, tile.tile_y_end, full_shape[metadata.y_dim_i]);
 
                 let mut start_slice = vec![0u64; ndim];
                 let mut stop_slice = vec![1u64; ndim];
 
                 start_slice[metadata.y_dim_i] = tile_y_start;
-                stop_slice[metadata.y_dim_i] = tile_y_start + tile_h;
-                start_slice[metadata.x_dim_i] = tile_x_start;
-                stop_slice[metadata.x_dim_i] = tile_x_start + tile_w;
+                stop_slice[metadata.y_dim_i] = tile_y_end;
+                start_slice[metadata.x_dim_i] = tile.tile_x_start;
+                stop_slice[metadata.x_dim_i] = tile.tile_x_end;
 
                 if let Some(z_dim_i) = metadata.z_dim_i {
                     let z = target_z.unwrap_or(0);

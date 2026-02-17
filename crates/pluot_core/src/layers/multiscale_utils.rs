@@ -53,6 +53,11 @@ pub struct VisibleTile {
     /// Height of this tile in pixels (may be less than chunk_shape for edge tiles).
     pub tile_pixels_h: f64,
 
+    pub tile_x_start: u64, // indexing into the image array for this resolution level
+    pub tile_x_end: u64, // indexing into the image array for this resolution level
+    pub tile_y_start: u64, // indexing into the image array for this resolution level
+    pub tile_y_end: u64, // indexing into the image array for this resolution level
+
     pub num_tile_cols: i32, // total number of tile columns at this level
     pub num_tile_rows: i32, // total number of tile rows at this level
 }
@@ -249,6 +254,11 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
             let phys_x1 = phys_x0 + tile_pixels_w * level.scale[1];
             let phys_y1 = phys_y0 + tile_pixels_h * level.scale[0];
 
+            let tile_x_start = col as u64 * level.chunk_shape[1] as u64;
+            let tile_x_end = tile_x_start + tile_pixels_w as u64;
+            let tile_y_start = array_row as u64 * level.chunk_shape[0] as u64;
+            let tile_y_end = tile_y_start + tile_pixels_h as u64;
+
             tiles.push(VisibleTile {
                 col,
                 row,
@@ -260,6 +270,10 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
                 tile_pixels_h,
                 num_tile_rows,
                 num_tile_cols,
+                tile_x_start,
+                tile_x_end,
+                tile_y_start,
+                tile_y_end,
             });
         }
     }
