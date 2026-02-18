@@ -290,10 +290,6 @@ impl OmeZarrMultiscaleLayer {
         // We iterate from coarsest down to target (which is finer).
         let x_dim_i = metadata.dimension_order.index_of(OmeDim::X).unwrap();
         let y_dim_i = metadata.dimension_order.index_of(OmeDim::Y).unwrap();
-        let z_dim_i = metadata.dimension_order.index_of(OmeDim::Z);
-        let c_dim_i = metadata.dimension_order.index_of(OmeDim::C);
-        let t_dim_i = metadata.dimension_order.index_of(OmeDim::T);
-
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
             let tiles = get_visible_tiles(&self.view_params, level);
@@ -321,42 +317,7 @@ impl OmeZarrMultiscaleLayer {
             let mut tile_rects = Vec::new();
 
             for tile in &tiles {
-                let tile_h = tile.tile_pixels_h as u64;
-                let tile_w = tile.tile_pixels_w as u64;
-
-
-                // Build start_slice and stop_slice for the full ndim array.
-                let ndim = full_shape.len();
-
-                //log(&format!("Building sublayer for tile at level {}, row {}, col {}: tile_y_start={}, tile_x_start={}, tile_h={}, tile_w={}", level_idx, tile.row, tile.col, tile_y_start, tile_x_start, tile_h, tile_w));
-
-
                 let (tile_y_start, tile_y_end) = to_y_slice(tile.tile_y_start, tile.tile_y_end, full_shape[y_dim_i]);
-
-                let mut start_slice = vec![0u64; ndim];
-                let mut stop_slice = vec![1u64; ndim];
-
-                start_slice[y_dim_i] = tile_y_start;
-                stop_slice[y_dim_i] = tile_y_end;
-                start_slice[x_dim_i] = tile.tile_x_start;
-                stop_slice[x_dim_i] = tile.tile_x_end;
-
-                if let Some(z_dim_i) = z_dim_i {
-                    let z = target_z.unwrap_or(0);
-                    start_slice[z_dim_i] = z;
-                    stop_slice[z_dim_i] = z + 1;
-                }
-                if let Some(t_dim_i) = t_dim_i {
-                    let t = target_t.unwrap_or(0);
-                    start_slice[t_dim_i] = t;
-                    stop_slice[t_dim_i] = t + 1;
-                }
-                // C dimension: set to 0..1 as placeholder; OmeZarrBitmapLayer
-                // overrides per-channel based on channel_settings c_index.
-                if let Some(c_dim_i) = c_dim_i {
-                    start_slice[c_dim_i] = 0;
-                    stop_slice[c_dim_i] = 1;
-                }
 
                 sublayers.push(OmeZarrBitmapLayer::new(
                     self.view_params.clone(),
@@ -370,8 +331,8 @@ impl OmeZarrMultiscaleLayer {
                         target_z,
                         target_t,
                         model_matrix,
-                        start_slice,
-                        stop_slice,
+                        slice_x: Some((tile.tile_x_start, tile.tile_x_end)),
+                        slice_y: Some((tile_y_start, tile_y_end)),
                         channel_settings: self.layer_params.channel_settings.clone(),
                         layer_id: format!(
                             "{}_level{}_tile_{}_{}",

@@ -42,13 +42,9 @@ pub struct OmeZarrBitmapLayerParams {
     /// The parent layer should convert per-resolution scale values into this matrix.
     pub model_matrix: [f32; 16],
 
-    /// Start of the array subset to load (one value per dimension).
-    /// For the C dimension, this value is ignored — channels are loaded
-    /// individually based on `channel_settings`.
-    pub start_slice: Vec<u64>,
-    /// Stop (exclusive) of the array subset to load (one value per dimension).
-    /// For the C dimension, this value is ignored.
-    pub stop_slice: Vec<u64>,
+    // Optional X and Y slice ranges for this tile. If None, the full range of the array is loaded.
+    pub slice_x: Option<(u64, u64)>,
+    pub slice_y: Option<(u64, u64)>,
 
     /// Channel settings specifying which channels to render and how.
     /// Each entry's `c_index` determines which slice of the C dimension to load.
@@ -108,24 +104,35 @@ impl OmeZarrBitmapLayer {
         let store = self.store.clone();
         let array_path = self.layer_params.array_path.clone();
         let array_metadata = self.layer_params.array_metadata.clone();
-        let start_slice = self.layer_params.start_slice.clone();
-        let stop_slice = self.layer_params.stop_slice.clone();
+        let slice_x = self.layer_params.slice_x;
+        let slice_y = self.layer_params.slice_y;
         let channel_settings = self.layer_params.channel_settings.clone();
         let c_dim_i = self.dim_index(OmeDim::C);
 
         let y_dim_i = self.dim_index(OmeDim::Y).expect("array_dimension_order must contain Y");
         let x_dim_i = self.dim_index(OmeDim::X).expect("array_dimension_order must contain X");
 
+        let array_shape = self.layer_params.array_shape.clone();
+        let (y_start, y_end) = slice_y.unwrap_or((0, array_shape[y_dim_i]));
+        let (x_start, x_end) = slice_x.unwrap_or((0, array_shape[x_dim_i]));
+
+        let z_dim_i = self.dim_index(OmeDim::Z);
+        let t_dim_i = self.dim_index(OmeDim::T);
+        let target_z = self.layer_params.target_z;
+        let target_t = self.layer_params.target_t;
+
         // Compute tile pixel dimensions from the slice range.
-        let tile_h = stop_slice[y_dim_i] - start_slice[y_dim_i];
-        let tile_w = stop_slice[x_dim_i] - start_slice[x_dim_i];
+        let tile_h = y_end - y_start;
+        let tile_w = x_end - x_start;
 
         // Build cache keys that uniquely identify this tile's data.
         let mut keys: Vec<String> = vec![
             self.store_name.clone(),
             array_path.clone(),
-            format!("start_{:?}", start_slice),
-            format!("stop_{:?}", stop_slice),
+            format!("slice_x_{:?}", slice_x),
+            format!("slice_y_{:?}", slice_y),
+            format!("z_{:?}", target_z),
+            format!("t_{:?}", target_t),
         ];
         for cs in &channel_settings {
             keys.push(format!("c_{}", cs.c_index));
@@ -152,11 +159,24 @@ impl OmeZarrBitmapLayer {
             let subsets: Vec<zarrs::array::ArraySubset> = channel_settings
                 .iter()
                 .map(|cs| {
-                    let ndim = start_slice.len();
-                    let mut start = start_slice.clone();
-                    let mut shape: Vec<u64> = stop_slice.iter().zip(start_slice.iter())
-                        .map(|(stop, start)| stop - start)
-                        .collect();
+                    let mut start = array_shape.iter().map(|_| 0u64).collect::<Vec<_>>();
+                    let mut shape = array_shape.clone();
+
+                    start[y_dim_i] = y_start;
+                    shape[y_dim_i] = tile_h;
+                    start[x_dim_i] = x_start;
+                    shape[x_dim_i] = tile_w;
+
+                    if let Some(z_dim_i) = z_dim_i {
+                        let z = target_z.unwrap_or(0);
+                        start[z_dim_i] = z;
+                        shape[z_dim_i] = 1;
+                    }
+                    if let Some(t_dim_i) = t_dim_i {
+                        let t = target_t.unwrap_or(0);
+                        start[t_dim_i] = t;
+                        shape[t_dim_i] = 1;
+                    }
 
                     // Override the C dimension for this specific channel.
                     if let Some(c_dim_i) = c_dim_i {
@@ -225,15 +245,18 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         let y_dim_i = self.dim_index(OmeDim::Y).expect("array_dimension_order must contain Y");
         let x_dim_i = self.dim_index(OmeDim::X).expect("array_dimension_order must contain X");
 
-        let num_channels = self.layer_params.channel_settings.len();
-        let tile_h = (self.layer_params.stop_slice[y_dim_i] - self.layer_params.start_slice[y_dim_i]) as u32;
-        let tile_w = (self.layer_params.stop_slice[x_dim_i] - self.layer_params.start_slice[x_dim_i]) as u32;
+        let (y_start, y_end) = self.layer_params.slice_y.unwrap_or((0, self.layer_params.array_shape[y_dim_i]));
+        let (x_start, x_end) = self.layer_params.slice_x.unwrap_or((0, self.layer_params.array_shape[x_dim_i]));
 
-        let pixel_offset_x = self.layer_params.start_slice[x_dim_i] as u32;
+        let num_channels = self.layer_params.channel_settings.len();
+        let tile_h = (y_end - y_start) as u32;
+        let tile_w = (x_end - x_start) as u32;
+
+        let pixel_offset_x = x_start as u32;
         // Flip array-space Y slice to physical-space (Y=0 at bottom) using to_y_slice.
         let (pixel_offset_y_phys, _) = to_y_slice(
-            self.layer_params.start_slice[y_dim_i],
-            self.layer_params.stop_slice[y_dim_i],
+            y_start,
+            y_end,
             self.layer_params.array_shape[y_dim_i],
         );
         let pixel_offset_y = pixel_offset_y_phys as u32;
