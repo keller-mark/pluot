@@ -22,6 +22,10 @@ pub struct OmeZarrBitmapLayerParams {
 
     /// Path to the zarr array (e.g., "/0/0" for the first dataset at the first level).
     pub array_path: String,
+    /// Pre-fetched array metadata from the parent multiscale layer, used to avoid
+    /// re-opening the array from storage in `load_tile_data`. If None, the array
+    /// is opened from storage via `async_open`.
+    pub array_metadata: Option<zarrs::array::ArrayMetadata>,
     /// Full shape of the zarr array at this resolution level.
     pub array_shape: Vec<u64>,
     /// Chunk shape of the zarr array at this resolution level (used for cache key derivation).
@@ -103,6 +107,7 @@ impl OmeZarrBitmapLayer {
     async fn load_tile_data(&self) -> NumericData {
         let store = self.store.clone();
         let array_path = self.layer_params.array_path.clone();
+        let array_metadata = self.layer_params.array_metadata.clone();
         let start_slice = self.layer_params.start_slice.clone();
         let stop_slice = self.layer_params.stop_slice.clone();
         let channel_settings = self.layer_params.channel_settings.clone();
@@ -130,14 +135,18 @@ impl OmeZarrBitmapLayer {
             let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
 
-            // TODO: use Array::new_with_metadata here instead of async_open,
-            // if we already have the metadata from the parent.
-
-            let array = zarrs::array::Array::async_open(store.clone(), &array_path)
-                .await
-                .unwrap_or_else(|e| {
-                    panic!("Failed to open array at {}: {:?}", array_path, e)
-                });
+            let array = if let Some(metadata) = array_metadata {
+                zarrs::array::Array::new_with_metadata(store.clone(), &array_path, metadata)
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to create array at {}: {:?}", array_path, e)
+                    })
+            } else {
+                zarrs::array::Array::async_open(store.clone(), &array_path)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to open array at {}: {:?}", array_path, e)
+                    })
+            };
 
             // Build array subsets for each channel.
             let subsets: Vec<zarrs::array::ArraySubset> = channel_settings

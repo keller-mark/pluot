@@ -94,6 +94,8 @@ struct OmeZarrMultiscaleMetadata {
     full_shapes: Vec<Vec<u64>>,
     /// Chunk shape at each resolution level (full ndim).
     chunk_shapes: Vec<Vec<u64>>,
+    /// Zarr array metadata for each resolution level (used to avoid re-opening arrays downstream).
+    array_metadatas: Vec<zarrs::array::ArrayMetadata>,
     /// Ordered dimension list (e.g., [T, C, Z, Y, X] for "tczyx").
     dimension_order: OmeDimensionOrder,
 }
@@ -190,6 +192,7 @@ impl OmeZarrMultiscaleLayer {
             let mut dataset_paths = Vec::new();
             let mut full_shapes = Vec::new();
             let mut chunk_shapes = Vec::new();
+            let mut array_metadatas = Vec::new();
 
             for dataset in &multiscale.datasets {
                 let array_path = if group_path == "/" {
@@ -203,9 +206,7 @@ impl OmeZarrMultiscaleLayer {
                     .await
                     .unwrap_or_else(|e| panic!("Failed to open array at {}: {:?}", array_path, e));
 
-                // TODO: cache enough metadata to avoid having to open the array again;
-                // we want to use Array::new_from_metadata() downstream instead.
-
+                let array_metadata = array.metadata().clone();
                 let shape = array.shape().to_vec();
 
                 let x_dim_i = dimension_order.index_of(OmeDim::X).unwrap();
@@ -244,6 +245,7 @@ impl OmeZarrMultiscaleLayer {
                 dataset_paths.push(array_path);
                 full_shapes.push(shape);
                 chunk_shapes.push(full_chunk_shape);
+                array_metadatas.push(array_metadata);
             }
 
             OmeZarrMultiscaleMetadata {
@@ -251,6 +253,7 @@ impl OmeZarrMultiscaleLayer {
                 dataset_paths,
                 full_shapes,
                 chunk_shapes,
+                array_metadatas,
                 dimension_order,
             }
         }, &keys, cache_enabled).await
@@ -302,6 +305,7 @@ impl OmeZarrMultiscaleLayer {
             let dataset_path = &metadata.dataset_paths[level_idx];
             let full_shape = &metadata.full_shapes[level_idx];
             let chunk_shape = &metadata.chunk_shapes[level_idx];
+            let array_metadata = &metadata.array_metadatas[level_idx];
 
             // Convert per-resolution scale to a model_matrix.
             let scale_x = level.scale[1] as f32;
@@ -359,6 +363,7 @@ impl OmeZarrMultiscaleLayer {
                     OmeZarrBitmapLayerParams {
                         store_name: Some(self.store_name.clone()),
                         array_path: dataset_path.clone(),
+                        array_metadata: Some(array_metadata.clone()),
                         array_shape: full_shape.clone(),
                         array_chunk_shape: chunk_shape.clone(),
                         array_dimension_order: metadata.dimension_order.clone(),
