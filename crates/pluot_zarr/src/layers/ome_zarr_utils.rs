@@ -59,64 +59,154 @@ pub fn bounding_box(rects: &[&PhysicalRect]) -> PhysicalRect {
 }
 
 
-pub enum OmeDimension {
-    C,
-    Z,
-    T,
-    X,
-    Y,
-}
+/// A single OME-NGFF dimension axis.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum OmeDim { T, Z, C, Y, X }
 
-impl OmeDimension {
-    /// Returns the string representation of the dimension order (e.g., "CYX").
-    pub fn as_str(&self) -> &'static str {
+impl OmeDim {
+    pub fn as_char(self) -> char {
         match self {
-            OmeDimension::C => "C",
-            OmeDimension::Z => "Z",
-            OmeDimension::T => "T",
-            OmeDimension::X => "X",
-            OmeDimension::Y => "Y",
+            OmeDim::T => 'T',
+            OmeDim::Z => 'Z',
+            OmeDim::C => 'C',
+            OmeDim::Y => 'Y',
+            OmeDim::X => 'X',
         }
     }
 
-    pub fn as_char(&self) -> char {
-        self.as_str().chars().next().unwrap()
+    pub fn from_char(c: char) -> Option<Self> {
+        match c {
+            'T' | 't' => Some(OmeDim::T),
+            'Z' | 'z' => Some(OmeDim::Z),
+            'C' | 'c' => Some(OmeDim::C),
+            'Y' | 'y' => Some(OmeDim::Y),
+            'X' | 'x' => Some(OmeDim::X),
+            _ => None,
+        }
     }
 }
 
-pub struct OmeDimensionOrder {
-    dimension_order: String,
+impl std::fmt::Display for OmeDim {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_char())
+    }
 }
+
+/// Ordered list of unique OME-NGFF dimensions, e.g. `[T, Z, C, Y, X]` for `"TZCYX"`.
+///
+/// Invariants enforced by the constructor:
+/// - All elements are unique.
+/// - Both `X` and `Y` are present.
+/// - At most 5 dimensions (one of each variant).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OmeDimensionOrder(Vec<OmeDim>);
 
 impl OmeDimensionOrder {
-    pub fn new(dimension_order: String) -> Self {
-        // Validate that dimension_order only contains valid characters (e.g. 'C', 'Z', 'T', 'X', 'Y').
-        for c in dimension_order.chars() {
-            if !matches!(c, 'C' | 'Z' | 'T' | 'X' | 'Y') {
-                panic!("Invalid character '{}' in dimension order '{}'", c, dimension_order);
+    /// Construct from an ordered list of `OmeDim` values.
+    /// Panics if invariants are violated.
+    pub fn new(dims: Vec<OmeDim>) -> Self {
+        assert!(dims.len() <= 5, "OmeDimensionOrder cannot have more than 5 dimensions");
+
+        // Check for duplicates.
+        for i in 0..dims.len() {
+            for j in (i + 1)..dims.len() {
+                assert_ne!(dims[i], dims[j], "Duplicate dimension '{}'", dims[i]);
             }
         }
-        // Validate that dimension_order contains both X and Y
 
+        // X and Y must both be present.
+        assert!(dims.contains(&OmeDim::X), "OmeDimensionOrder must contain X");
+        assert!(dims.contains(&OmeDim::Y), "OmeDimensionOrder must contain Y");
 
-        // Validate that there are no duplicate characters in dimension_order
-
-        Self { dimension_order }
+        Self(dims)
     }
 
     /// Returns the number of dimensions.
     pub fn num_dims(&self) -> usize {
-        self.dimension_order.len()
+        self.0.len()
     }
 
-    pub fn has_dim(&self, dim: OmeDimension) -> bool {
-        self.dimension_order.contains(dim.as_str())
+    /// Returns `true` if the given dimension is present.
+    pub fn has_dim(&self, dim: OmeDim) -> bool {
+        self.0.contains(&dim)
     }
 
-    /// Returns the position of the channel dimension in the shape array, if present.
-    pub fn index_of(&self, dim: OmeDimension) -> Option<usize> {
-        self.dimension_order.chars()
-            .position(|c| c == dim.as_char())
+    /// Returns the index (position in the order) of the given dimension, if present.
+    pub fn index_of(&self, dim: OmeDim) -> Option<usize> {
+        self.0.iter().position(|&d| d == dim)
+    }
+
+    /// Returns a slice of the ordered dimensions.
+    pub fn dims(&self) -> &[OmeDim] {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for OmeDimensionOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for d in &self.0 {
+            write!(f, "{}", d)?;
+        }
+        Ok(())
+    }
+}
+
+impl TryFrom<&str> for OmeDimensionOrder {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let dims: Result<Vec<OmeDim>, _> = s
+            .chars()
+            .map(|c| OmeDim::from_char(c).ok_or_else(|| format!("Invalid dimension character '{}'", c)))
+            .collect();
+        let dims = dims?;
+
+        // Reuse new() for invariant checks, converting panics to errors.
+        if dims.len() > 5 {
+            return Err(format!("Too many dimensions: {}", dims.len()));
+        }
+        for i in 0..dims.len() {
+            for j in (i + 1)..dims.len() {
+                if dims[i] == dims[j] {
+                    return Err(format!("Duplicate dimension '{}'", dims[i]));
+                }
+            }
+        }
+        if !dims.contains(&OmeDim::X) {
+            return Err("OmeDimensionOrder must contain X".to_string());
+        }
+        if !dims.contains(&OmeDim::Y) {
+            return Err("OmeDimensionOrder must contain Y".to_string());
+        }
+
+        Ok(Self(dims))
+    }
+}
+
+impl TryFrom<String> for OmeDimensionOrder {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        OmeDimensionOrder::try_from(s.as_str())
+    }
+}
+
+impl From<OmeDimensionOrder> for String {
+    fn from(order: OmeDimensionOrder) -> String {
+        order.to_string()
+    }
+}
+
+impl Serialize for OmeDimensionOrder {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for OmeDimensionOrder {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        OmeDimensionOrder::try_from(s.as_str()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -139,5 +229,76 @@ mod tests {
         let (y_start, y_end) = to_y_slice(0, 1, height);
         assert_eq!(y_start, 99);
         assert_eq!(y_end, 100);
+    }
+
+    #[test]
+    fn test_ome_dim_order_new() {
+        let order = OmeDimensionOrder::new(vec![OmeDim::T, OmeDim::Z, OmeDim::C, OmeDim::Y, OmeDim::X]);
+        assert_eq!(order.num_dims(), 5);
+        assert_eq!(order.index_of(OmeDim::X), Some(4));
+        assert_eq!(order.index_of(OmeDim::T), Some(0));
+        assert!(order.has_dim(OmeDim::C));
+        assert_eq!(order.to_string(), "TZCYX");
+    }
+
+    #[test]
+    fn test_ome_dim_order_from_str() {
+        let order = OmeDimensionOrder::try_from("CZYX").unwrap();
+        assert_eq!(order.num_dims(), 4);
+        assert_eq!(order.index_of(OmeDim::C), Some(0));
+        assert_eq!(order.index_of(OmeDim::Z), Some(1));
+        assert_eq!(order.index_of(OmeDim::Y), Some(2));
+        assert_eq!(order.index_of(OmeDim::X), Some(3));
+        assert!(!order.has_dim(OmeDim::T));
+        assert_eq!(order.to_string(), "CZYX");
+    }
+
+    #[test]
+    fn test_ome_dim_order_lowercase() {
+        // Lowercase input is accepted; order is preserved, output is uppercase.
+        let order = OmeDimensionOrder::try_from("tczyx").unwrap();
+        assert_eq!(order.to_string(), "TCZYX");
+    }
+
+    #[test]
+    fn test_ome_dim_order_into_string() {
+        let order = OmeDimensionOrder::new(vec![OmeDim::C, OmeDim::Y, OmeDim::X]);
+        let s: String = order.into();
+        assert_eq!(s, "CYX");
+    }
+
+    #[test]
+    fn test_ome_dim_order_err_no_x() {
+        assert!(OmeDimensionOrder::try_from("CY").is_err());
+    }
+
+    #[test]
+    fn test_ome_dim_order_err_no_y() {
+        assert!(OmeDimensionOrder::try_from("CX").is_err());
+    }
+
+    #[test]
+    fn test_ome_dim_order_err_duplicate() {
+        assert!(OmeDimensionOrder::try_from("XYXY").is_err());
+    }
+
+    #[test]
+    fn test_ome_dim_order_err_invalid_char() {
+        assert!(OmeDimensionOrder::try_from("AXY").is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ome_dim_order_new_panics_on_duplicate() {
+        OmeDimensionOrder::new(vec![OmeDim::X, OmeDim::Y, OmeDim::X]);
+    }
+
+    #[test]
+    fn test_ome_dim_order_serde_roundtrip() {
+        let order = OmeDimensionOrder::new(vec![OmeDim::T, OmeDim::C, OmeDim::Z, OmeDim::Y, OmeDim::X]);
+        let json = serde_json::to_string(&order).unwrap();
+        assert_eq!(json, "\"TCZYX\"");
+        let decoded: OmeDimensionOrder = serde_json::from_str(&json).unwrap();
+        assert_eq!(order, decoded);
     }
 }

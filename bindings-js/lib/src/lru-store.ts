@@ -95,6 +95,7 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
   }
 
   clearCache() {
+    // TODO: Use AbortSignal in clearCache for promises that have not yet been resolved.
     this.#cache.clear();
   }
 }

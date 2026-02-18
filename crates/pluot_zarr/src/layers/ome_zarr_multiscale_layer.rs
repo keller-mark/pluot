@@ -21,7 +21,7 @@ use ome_zarr_metadata::v0_5::{RelaxedOmeFields, CoordinateTransform, CoordinateT
 
 use crate::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
 use crate::layers::ome_zarr_utils::OmeZarrChannelSetting;
-use crate::layers::ome_zarr_utils::{PhysicalRect, rects_overlap, bounding_box, to_y_slice};
+use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, PhysicalRect, rects_overlap, bounding_box, to_y_slice};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrMultiscaleLayerParams {
@@ -94,18 +94,8 @@ struct OmeZarrMultiscaleMetadata {
     full_shapes: Vec<Vec<u64>>,
     /// Chunk shape at each resolution level (full ndim).
     chunk_shapes: Vec<Vec<u64>>,
-    /// Dimension order string (e.g., "tczyx").
-    dimension_order: String,
-    /// Axis index for X dimension.
-    x_dim_i: usize,
-    /// Axis index for Y dimension.
-    y_dim_i: usize,
-    /// Axis index for Z dimension (if present).
-    z_dim_i: Option<usize>,
-    /// Axis index for C (channel) dimension (if present).
-    c_dim_i: Option<usize>,
-    /// Axis index for T (time) dimension (if present).
-    t_dim_i: Option<usize>,
+    /// Ordered dimension list (e.g., [T, C, Z, Y, X] for "tczyx").
+    dimension_order: OmeDimensionOrder,
 }
 
 // ---------------------------------------------------------------------------
@@ -189,26 +179,12 @@ impl OmeZarrMultiscaleLayer {
 
             let multiscale = &multiscales[multiscale_index];
 
-            // Find axis indices for x, y, and optionally z, c, t.
-            let x_dim_i = multiscale
-                .axes
-                .iter()
-                .position(|a| a.name == "x")
-                .expect("OME-Zarr must have an x axis");
-            let y_dim_i = multiscale
-                .axes
-                .iter()
-                .position(|a| a.name == "y")
-                .expect("OME-Zarr must have a y axis");
-            let z_dim_i = multiscale.axes.iter().position(|a| a.name == "z");
-            let c_dim_i = multiscale.axes.iter().position(|a| a.name == "c");
-            let t_dim_i = multiscale.axes.iter().position(|a| a.name == "t");
-
-            // Build dimension order string from axes.
-            // TODO: use OmeDimensionOrder struct.
-            let dimension_order: String = multiscale.axes.iter()
+            // Build OmeDimensionOrder from the axes list.
+            let dimension_order_str: String = multiscale.axes.iter()
                 .map(|a| a.name.chars().next().unwrap_or('?'))
                 .collect();
+            let dimension_order = OmeDimensionOrder::try_from(dimension_order_str.as_str())
+                .unwrap_or_else(|e| panic!("Invalid OME-Zarr dimension order '{}': {}", dimension_order_str, e));
 
             let mut resolution_levels = Vec::new();
             let mut dataset_paths = Vec::new();
@@ -227,8 +203,13 @@ impl OmeZarrMultiscaleLayer {
                     .await
                     .unwrap_or_else(|e| panic!("Failed to open array at {}: {:?}", array_path, e));
 
+                // TODO: cache enough metadata to avoid having to open the array again;
+                // we want to use Array::new_from_metadata() downstream instead.
+
                 let shape = array.shape().to_vec();
 
+                let x_dim_i = dimension_order.index_of(OmeDim::X).unwrap();
+                let y_dim_i = dimension_order.index_of(OmeDim::Y).unwrap();
                 let img_h = shape[y_dim_i];
                 let img_w = shape[x_dim_i];
 
@@ -271,12 +252,6 @@ impl OmeZarrMultiscaleLayer {
                 full_shapes,
                 chunk_shapes,
                 dimension_order,
-                // TODO: use OmeDimensionOrder struct, rather than passing individual axis indices.
-                x_dim_i,
-                y_dim_i,
-                z_dim_i,
-                c_dim_i,
-                t_dim_i,
             }
         }, &keys, cache_enabled).await
     }
@@ -310,6 +285,12 @@ impl OmeZarrMultiscaleLayer {
         // Levels are ordered finest-first (index 0 = finest), so coarsest is last.
         let coarsest_idx = num_levels - 1;
         // We iterate from coarsest down to target (which is finer).
+        let x_dim_i = metadata.dimension_order.index_of(OmeDim::X).unwrap();
+        let y_dim_i = metadata.dimension_order.index_of(OmeDim::Y).unwrap();
+        let z_dim_i = metadata.dimension_order.index_of(OmeDim::Z);
+        let c_dim_i = metadata.dimension_order.index_of(OmeDim::C);
+        let t_dim_i = metadata.dimension_order.index_of(OmeDim::T);
+
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
             let tiles = get_visible_tiles(&self.view_params, level);
@@ -346,29 +327,29 @@ impl OmeZarrMultiscaleLayer {
                 //log(&format!("Building sublayer for tile at level {}, row {}, col {}: tile_y_start={}, tile_x_start={}, tile_h={}, tile_w={}", level_idx, tile.row, tile.col, tile_y_start, tile_x_start, tile_h, tile_w));
 
 
-                let (tile_y_start, tile_y_end) = to_y_slice(tile.tile_y_start, tile.tile_y_end, full_shape[metadata.y_dim_i]);
+                let (tile_y_start, tile_y_end) = to_y_slice(tile.tile_y_start, tile.tile_y_end, full_shape[y_dim_i]);
 
                 let mut start_slice = vec![0u64; ndim];
                 let mut stop_slice = vec![1u64; ndim];
 
-                start_slice[metadata.y_dim_i] = tile_y_start;
-                stop_slice[metadata.y_dim_i] = tile_y_end;
-                start_slice[metadata.x_dim_i] = tile.tile_x_start;
-                stop_slice[metadata.x_dim_i] = tile.tile_x_end;
+                start_slice[y_dim_i] = tile_y_start;
+                stop_slice[y_dim_i] = tile_y_end;
+                start_slice[x_dim_i] = tile.tile_x_start;
+                stop_slice[x_dim_i] = tile.tile_x_end;
 
-                if let Some(z_dim_i) = metadata.z_dim_i {
+                if let Some(z_dim_i) = z_dim_i {
                     let z = target_z.unwrap_or(0);
                     start_slice[z_dim_i] = z;
                     stop_slice[z_dim_i] = z + 1;
                 }
-                if let Some(t_dim_i) = metadata.t_dim_i {
+                if let Some(t_dim_i) = t_dim_i {
                     let t = target_t.unwrap_or(0);
                     start_slice[t_dim_i] = t;
                     stop_slice[t_dim_i] = t + 1;
                 }
                 // C dimension: set to 0..1 as placeholder; OmeZarrBitmapLayer
                 // overrides per-channel based on channel_settings c_index.
-                if let Some(c_dim_i) = metadata.c_dim_i {
+                if let Some(c_dim_i) = c_dim_i {
                     start_slice[c_dim_i] = 0;
                     stop_slice[c_dim_i] = 1;
                 }

@@ -13,7 +13,7 @@ use pluot_core::layers::bitmap_layer::{
 };
 use pluot_core::params::PrepareResult;
 
-use crate::layers::ome_zarr_utils::{OmeZarrChannelSetting, to_y_slice};
+use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting, to_y_slice};
 
 /// Parameters for constructing an `OmeZarrBitmapLayer`.
 pub struct OmeZarrBitmapLayerParams {
@@ -26,8 +26,8 @@ pub struct OmeZarrBitmapLayerParams {
     pub array_shape: Vec<u64>,
     /// Chunk shape of the zarr array at this resolution level (used for cache key derivation).
     pub array_chunk_shape: Vec<u64>,
-    /// Dimension order string (e.g., "tczyx"). Each character is one of t, c, z, y, x.
-    pub array_dimension_order: String,
+    /// Ordered dimension list (e.g., [T, C, Z, Y, X] for "tczyx").
+    pub array_dimension_order: OmeDimensionOrder,
 
     /// Z slice index. Only required if the array has a Z dimension.
     pub target_z: Option<u64>,
@@ -95,9 +95,8 @@ impl OmeZarrBitmapLayer {
         }
     }
 
-    /// Find the index of a dimension character in the dimension order string.
-    fn dim_index(&self, dim_char: char) -> Option<usize> {
-        self.layer_params.array_dimension_order.chars().position(|c| c == dim_char)
+    fn dim_index(&self, dim: OmeDim) -> Option<usize> {
+        self.layer_params.array_dimension_order.index_of(dim)
     }
 
     /// Load tile data from the zarr array, using the cache.
@@ -107,10 +106,10 @@ impl OmeZarrBitmapLayer {
         let start_slice = self.layer_params.start_slice.clone();
         let stop_slice = self.layer_params.stop_slice.clone();
         let channel_settings = self.layer_params.channel_settings.clone();
-        let c_dim_i = self.dim_index('c');
+        let c_dim_i = self.dim_index(OmeDim::C);
 
-        let y_dim_i = self.dim_index('y').expect("array_dimension_order must contain 'y'");
-        let x_dim_i = self.dim_index('x').expect("array_dimension_order must contain 'x'");
+        let y_dim_i = self.dim_index(OmeDim::Y).expect("array_dimension_order must contain Y");
+        let x_dim_i = self.dim_index(OmeDim::X).expect("array_dimension_order must contain X");
 
         // Compute tile pixel dimensions from the slice range.
         let tile_h = stop_slice[y_dim_i] - start_slice[y_dim_i];
@@ -214,8 +213,8 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         // TODO: use maybe_timeout here, and bail early if loading takes too long.
         let data = self.load_tile_data().await;
 
-        let y_dim_i = self.dim_index('y').expect("array_dimension_order must contain 'y'");
-        let x_dim_i = self.dim_index('x').expect("array_dimension_order must contain 'x'");
+        let y_dim_i = self.dim_index(OmeDim::Y).expect("array_dimension_order must contain Y");
+        let x_dim_i = self.dim_index(OmeDim::X).expect("array_dimension_order must contain X");
 
         let num_channels = self.layer_params.channel_settings.len();
         let tile_h = (self.layer_params.stop_slice[y_dim_i] - self.layer_params.start_slice[y_dim_i]) as u32;
