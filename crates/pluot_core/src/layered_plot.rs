@@ -21,6 +21,7 @@ pub fn render_layered_plot(
     let margin_bottom = context.params.margin_bottom.unwrap_or(0.0) as f32;
     let margin_left = context.params.margin_left.unwrap_or(0.0) as f32;
 
+    #[allow(irrefutable_let_patterns)]
     let PlotParams::LayeredPlot(plot_params) = &context.params.plot_params else {
         panic!("Expected layered plot params");
     };
