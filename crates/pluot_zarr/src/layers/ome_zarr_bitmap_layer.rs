@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use svg::node::element::Group;
 
+use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
@@ -13,7 +14,8 @@ use pluot_core::layers::bitmap_layer::{
 };
 use pluot_core::params::PrepareResult;
 
-use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting, to_y_slice};
+use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
+use pluot_core::layers::multiscale_utils::to_y_slice;
 
 /// Parameters for constructing an `OmeZarrBitmapLayer`.
 pub struct OmeZarrBitmapLayerParams {
@@ -115,6 +117,10 @@ impl OmeZarrBitmapLayer {
         let array_shape = self.layer_params.array_shape.clone();
         let (y_start, y_end) = slice_y.unwrap_or((0, array_shape[y_dim_i]));
         let (x_start, x_end) = slice_x.unwrap_or((0, array_shape[x_dim_i]));
+
+        log(&format!("Loading tile data for array '{}', slice_x={:?}, slice_y={:?}, target_z={:?}, target_t={:?}, channels={:?}",
+            array_path, slice_x, slice_y, self.layer_params.target_z, self.layer_params.target_t, channel_settings.iter().map(|cs| cs.c_index).collect::<Vec<_>>()
+        ));
 
         let z_dim_i = self.dim_index(OmeDim::Z);
         let t_dim_i = self.dim_index(OmeDim::T);

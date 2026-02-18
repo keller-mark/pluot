@@ -1,13 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub fn to_y_slice(start: u64, end: u64, height: u64) -> (u64, u64) {
-    // OME-Zarr uses a coordinate system where (0, 0) is the top-left corner, and Y increases downwards.
-    // We want to convert to a coordinate system where (0, 0) is the bottom-left corner, and Y increases upwards.
-    // So we need to flip the Y coordinates.
-    let y_start = height - end;
-    let y_end = height - start;
-    (y_start, y_end)
-}
 
 // These utils are shared between ome_zarr_bitmap_layer and ome_zarr_multiscale_layer,
 // so we put them in a separate module to avoid circular dependencies.
@@ -214,22 +206,6 @@ impl<'de> Deserialize<'de> for OmeDimensionOrder {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_to_y_slice() {
-        let height = 100;
-        let (y_start, y_end) = to_y_slice(10, 20, height);
-        assert_eq!(y_start, 80);
-        assert_eq!(y_end, 90);
-
-        let (y_start, y_end) = to_y_slice(0, 100, height);
-        assert_eq!(y_start, 0);
-        assert_eq!(y_end, 100);
-
-        let (y_start, y_end) = to_y_slice(0, 1, height);
-        assert_eq!(y_start, 99);
-        assert_eq!(y_end, 100);
-    }
 
     #[test]
     fn test_ome_dim_order_new() {

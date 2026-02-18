@@ -63,8 +63,10 @@ impl MultiscaleLayer {
         let mut labels_vec: Vec<i32> = Vec::new();
 
         for tile in &tiles {
-            let phys_x1 = tile.phys_x0 + tile.tile_pixels_w * level.scale[1];
-            let phys_y1 = tile.phys_y0 + tile.tile_pixels_h * level.scale[0];
+            let tile_pixels_w = (tile.tile_x_end - tile.tile_x_start) as f64;
+            let tile_pixels_h = (tile.tile_y_end - tile.tile_y_start) as f64;
+            let phys_x1 = tile.phys_x0 + tile_pixels_w * level.scale[1];
+            let phys_y1 = tile.phys_y0 + tile_pixels_h * level.scale[0];
 
             x0_vec.push(tile.phys_x0 as f32);
             y0_vec.push(tile.phys_y0 as f32);

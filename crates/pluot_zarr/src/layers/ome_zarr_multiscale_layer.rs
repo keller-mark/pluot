@@ -21,7 +21,7 @@ use ome_zarr_metadata::v0_5::{RelaxedOmeFields, CoordinateTransform, CoordinateT
 
 use crate::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
 use crate::layers::ome_zarr_utils::OmeZarrChannelSetting;
-use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, PhysicalRect, rects_overlap, bounding_box, to_y_slice};
+use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, PhysicalRect, rects_overlap, bounding_box};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrMultiscaleLayerParams {
@@ -292,6 +292,7 @@ impl OmeZarrMultiscaleLayer {
         let y_dim_i = metadata.dimension_order.index_of(OmeDim::Y).unwrap();
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
+            log(&format!("=========Building sublayers for level {} with scale {:?} and shape {:?}", level_idx, level.scale, level.shape));
             let tiles = get_visible_tiles(&self.view_params, level);
 
             if tiles.is_empty() {
@@ -317,7 +318,6 @@ impl OmeZarrMultiscaleLayer {
             let mut tile_rects = Vec::new();
 
             for tile in &tiles {
-                let (tile_y_start, tile_y_end) = to_y_slice(tile.tile_y_start, tile.tile_y_end, full_shape[y_dim_i]);
 
                 sublayers.push(OmeZarrBitmapLayer::new(
                     self.view_params.clone(),
@@ -332,7 +332,7 @@ impl OmeZarrMultiscaleLayer {
                         target_t,
                         model_matrix,
                         slice_x: Some((tile.tile_x_start, tile.tile_x_end)),
-                        slice_y: Some((tile_y_start, tile_y_end)),
+                        slice_y: Some((tile.tile_y_start, tile.tile_y_end)),
                         channel_settings: self.layer_params.channel_settings.clone(),
                         layer_id: format!(
                             "{}_level{}_tile_{}_{}",
