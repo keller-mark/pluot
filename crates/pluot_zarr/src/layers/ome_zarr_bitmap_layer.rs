@@ -28,6 +28,10 @@ pub struct OmeZarrBitmapLayerParams {
     /// re-opening the array from storage in `load_tile_data`. If None, the array
     /// is opened from storage via `async_open`.
     pub array_metadata: Option<zarrs::array::ArrayMetadata>,
+
+    // TODO: make this layer easier to use in the absence of a parent multiscale layer
+    // by making array_shape, array_chunk_shape, and array_dimension_order optional,
+    // and fetching them from the array attrs or parent OME-NGFF attrs as needed.
     /// Full shape of the zarr array at this resolution level.
     pub array_shape: Vec<u64>,
     /// Chunk shape of the zarr array at this resolution level (used for cache key derivation).
