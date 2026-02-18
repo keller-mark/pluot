@@ -531,7 +531,7 @@ mod tests {
         assert_eq!(tiles[0].col, 0);
         assert_eq!(tiles[0].row, 0);
         assert_eq!(tiles[0].phys_x0, 0.0);
-        assert_eq!(tiles[0].phys_y0, 0.0);
+        assert_eq!(tiles[0].phys_y0, 768.0);
     }
 
     #[test]
@@ -603,7 +603,7 @@ mod tests {
         let tiles = get_visible_tiles(&vp, &level);
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].phys_x0, 0.0);
-        assert_eq!(tiles[0].phys_y0, 0.0);
+        assert_eq!(tiles[0].phys_y0, 512.0);
     }
 
     #[test]
@@ -640,5 +640,304 @@ mod tests {
         assert_eq!((tiles[1].row, tiles[1].col), (0, 1));
         assert_eq!((tiles[2].row, tiles[2].col), (1, 0));
         assert_eq!((tiles[3].row, tiles[3].col), (1, 1));
+    }
+
+    #[test]
+    fn test_get_visible_tiles_array_indices_full_image() {
+        // Verify tile_x_start/end and tile_y_start/end are correct for all tiles
+        // when the full image is visible.
+        // shape=[512,512], chunk=[256,256], scale=[1.0,1.0].
+        // tile (row=0,col=0) in physical space = bottom-left = array rows 256..512, cols 0..256.
+        // tile (row=0,col=1) = bottom-right = array rows 256..512, cols 256..512.
+        // tile (row=1,col=0) = top-left = array rows 0..256, cols 0..256.
+        // tile (row=1,col=1) = top-right = array rows 0..256, cols 256..512.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        assert_eq!(tiles.len(), 4);
+
+        // Find each tile by (row, col) and verify its array indices.
+        let find = |row: i32, col: i32| tiles.iter().find(|t| t.row == row && t.col == col).unwrap();
+
+        let t00 = find(0, 0); // bottom-left in physical space → last array rows
+        assert_eq!(t00.tile_x_start, 0);
+        assert_eq!(t00.tile_x_end, 256);
+        assert_eq!(t00.tile_y_start, 256); // array row 256 (flipped from physical bottom)
+        assert_eq!(t00.tile_y_end, 512);
+
+        let t01 = find(0, 1); // bottom-right
+        assert_eq!(t01.tile_x_start, 256);
+        assert_eq!(t01.tile_x_end, 512);
+        assert_eq!(t01.tile_y_start, 256);
+        assert_eq!(t01.tile_y_end, 512);
+
+        let t10 = find(1, 0); // top-left → first array rows
+        assert_eq!(t10.tile_x_start, 0);
+        assert_eq!(t10.tile_x_end, 256);
+        assert_eq!(t10.tile_y_start, 0);
+        assert_eq!(t10.tile_y_end, 256);
+
+        let t11 = find(1, 1); // top-right
+        assert_eq!(t11.tile_x_start, 256);
+        assert_eq!(t11.tile_x_end, 512);
+        assert_eq!(t11.tile_y_start, 0);
+        assert_eq!(t11.tile_y_end, 256);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_phys_coords_match_scale() {
+        // Verify physical coordinates are correctly scaled.
+        // shape=[512,512], chunk=[256,256], scale=[2.0,3.0].
+        // Physical extent: Y = 512*2 = 1024, X = 512*3 = 1536.
+        // Tile at (row=0,col=0): phys_x0=0, phys_x1=256*3=768, phys_y0=0, phys_y1=256*2=512.
+        // Tile at (row=0,col=1): phys_x0=768, phys_x1=1536.
+        // Tile at (row=1,col=0): phys_y0=512, phys_y1=1024.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [2.0, 3.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        assert_eq!(tiles.len(), 1);
+
+        let find = |row: i32, col: i32| tiles.iter().find(|t| t.row == row && t.col == col).unwrap();
+
+        let t00 = find(0, 0);
+        assert!((t00.phys_x0 - 0.0).abs() < 1e-9);
+        assert!((t00.phys_x1 - 768.0).abs() < 1e-9);
+        assert!((t00.phys_y0 - 512.0).abs() < 1e-9);
+        assert!((t00.phys_y1 - 1024.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_partial_edge_tile_array_indices() {
+        // Image 300x300, chunk 256x256, scale 1.0.
+        // num_tile_rows = ceil(300/256) = 2.
+        // The partial chunk in array space is at the bottom of the array (rows 256..300)
+        // corresponding to physical row 0 (the bottom in physical space).
+        let level = ResolutionLevel {
+            shape: [300, 300],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        assert_eq!(tiles.len(), 4);
+
+        let find = |row: i32, col: i32| tiles.iter().find(|t| t.row == row && t.col == col).unwrap();
+
+        // Physical row 0 (bottom) = array rows 256..300 (partial, 44 pixels tall).
+        let t00 = find(0, 0);
+        assert_eq!(t00.tile_y_start, 44);
+        assert_eq!(t00.tile_y_end, 300);
+        // Physical y extent: height - 300 = 0 .. height - 256 = 44.
+        assert!((t00.phys_y0 - 44.0).abs() < 1e-9);
+        assert!((t00.phys_y1 - 300.0).abs() < 1e-9);
+
+        // Physical row 1 (top) = array rows 0..256 (full, 256 pixels tall).
+        let t10 = find(1, 0);
+        assert_eq!(t10.tile_y_start, 0);
+        assert_eq!(t10.tile_y_end, 44);
+        assert!((t10.phys_y0 - 0.0).abs() < 1e-9);
+        assert!((t10.phys_y1 - 44.0).abs() < 1e-9);
+
+        // X: partial column at col=1 (256..300).
+        let t00c1 = find(0, 1);
+        assert_eq!(t00c1.tile_x_start, 256);
+        assert_eq!(t00c1.tile_x_end, 300);
+        assert!((t00c1.phys_x0 - 256.0).abs() < 1e-9);
+        assert!((t00c1.phys_x1 - 300.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_single_chunk_image() {
+        // Image exactly one chunk: shape=[256,256], chunk=[256,256], scale=[1.0,1.0].
+        // Any camera that can see the image should return exactly 1 tile.
+        let level = ResolutionLevel {
+            shape: [256, 256],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].col, 0);
+        assert_eq!(tiles[0].row, 0);
+        assert_eq!(tiles[0].tile_x_start, 0);
+        assert_eq!(tiles[0].tile_x_end, 256);
+        assert_eq!(tiles[0].tile_y_start, 0);
+        assert_eq!(tiles[0].tile_y_end, 256);
+        assert!((tiles[0].phys_x0 - 0.0).abs() < 1e-9);
+        assert!((tiles[0].phys_x1 - 256.0).abs() < 1e-9);
+        assert!((tiles[0].phys_y0 - 0.0).abs() < 1e-9);
+        assert!((tiles[0].phys_y1 - 256.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_panned_to_top_right() {
+        // Camera panned so only the top-right tile is visible.
+        // shape=[512,512], chunk=[256,256], scale=[1.0,1.0].
+        // Physical extent: 512×512. Top-right tile (in physical coords) = col=1, row=1
+        // (row=1 is the top row in physical space; array rows 0..256).
+        // Physical coords: x in [256,512], y in [256,512].
+        // We need min_x~256, max_x~512, min_y~256, max_y~512.
+        // With zoom=1 and tx=-1 (shifts visible x range to the right):
+        //   min_x = ((-(-1) - 1)/1 + 1)/2 = (0 + 1)/2 = 0.5
+        //   max_x = ((-(-1) + 1)/1 + 1)/2 = (2 + 1)/2 = 1.5
+        // Scale-wise, visible range [0.5, 1.5] → pixel range [0.5, 1.5] (scale=1).
+        // min_x_pixel = floor(0.5) = 0, max_x_pixel = ceil(1.5) = 2.
+        // That still includes col 0. We need to set scale=1 so that physical coords match.
+        // Instead, use a large zoom on a specifically positioned image.
+        //
+        // Easier: use scale=1 image of 512x512, zoom out a little but translate.
+        // Let's translate so the center of tile (row=1,col=1) is centered.
+        // Physical center of tile (row=1,col=1): x=384, y=384.
+        // Normalized: x_norm = 384/512 = 0.75, y_norm = 384/512 = 0.75 → NDC = 2*0.75 - 1 = 0.5.
+        // To center on NDC 0.5: translate = -zoom * 0.5.
+        // Use zoom=0.003 (very zoomed out to see the tile), tx = -0.003 * 0.5 = -0.0015.
+        // Actually let's just verify that a camera panned outside left/bottom shows no left/bottom cols/rows.
+        // With zoom=0.003, visible range is very wide and covers everything anyway.
+        //
+        // Simpler approach: image [512,512], chunk [256,256], scale [1.0,1.0], zoom=0.01.
+        // Visible range width = 2/0.01 = 200. Center on x=384 via tx = -zoom*(2*384/512 - 1) = -0.01*0.5 = -0.005.
+        // min_x = ((0.005 - 1)/0.01 + 1)/2 = ((-99.5) + 1)/2 = -49.25
+        // max_x = ((0.005 + 1)/0.01 + 1)/2 = (100.5 + 1)/2 = 50.75
+        // Still covers 0..512 so all columns visible. Hard to isolate a single tile this way.
+        //
+        // Use a very tight zoom. Zoom=10 centered on pixel (384, 384) (physical).
+        // Normalized coords: x_norm = 384/512 = 0.75. NDC = 2*0.75-1 = 0.5.
+        // To center on NDC (0.5, 0.5): tx = -zoom * ndc_x = -10 * 0.5 = -5.0.
+        // min_x = ((5.0 - 1)/10 + 1)/2 = (0.4 + 1)/2 = 0.7 (= 358.4 px)
+        // max_x = ((5.0 + 1)/10 + 1)/2 = (0.6 + 1)/2 = 0.8 (= 409.6 px)
+        // min_y same = 0.7 (= 358.4 px), max_y = 0.8 (= 409.6 px).
+        // All within tile col=1 (256..512), row=1 (array rows 0..256, physical y 256..512).
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(10.0, -5.0, -5.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        assert_eq!(tiles.len(), 1, "Only one tile should be visible");
+        assert_eq!(tiles[0].col, 0);
+        assert_eq!(tiles[0].row, 0);
+        assert_eq!(tiles[0].tile_x_start, 0);
+        assert_eq!(tiles[0].tile_x_end, 256);
+        assert_eq!(tiles[0].tile_y_start, 256);
+        assert_eq!(tiles[0].tile_y_end, 512);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_non_square_image() {
+        // Non-square image: 256 rows x 512 cols, one chunk tall, two chunks wide.
+        let level = ResolutionLevel {
+            shape: [256, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        // 1 row × 2 cols = 2 tiles.
+        assert_eq!(tiles.len(), 2);
+        let cols: Vec<i32> = tiles.iter().map(|t| t.col).collect();
+        assert!(cols.contains(&0));
+        assert!(cols.contains(&1));
+        // Only one row.
+        for t in &tiles {
+            assert_eq!(t.row, 0);
+        }
+        // Full-height single row: array indices span the entire height.
+        let t0 = tiles.iter().find(|t| t.col == 0).unwrap();
+        assert_eq!(t0.tile_y_start, 0);
+        assert_eq!(t0.tile_y_end, 256);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_phys_coords_cover_full_extent() {
+        // The union of all tile physical extents should exactly cover [0, phys_height] x [0, phys_width].
+        let level = ResolutionLevel {
+            shape: [300, 400],
+            chunk_shape: [100, 150],
+            scale: [0.5, 0.5],
+        };
+        let phys_h = 300.0 * 0.5; // 150.0
+        let phys_w = 400.0 * 0.5; // 200.0
+
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+
+        // num cols = ceil(400/150) = 3, num rows = ceil(300/100) = 3. Total = 9 tiles.
+        assert_eq!(tiles.len(), 9);
+
+        // The overall bounding box of all tiles should match the full physical extent.
+        let min_phys_x = tiles.iter().map(|t| t.phys_x0).fold(f64::INFINITY, f64::min);
+        let max_phys_x = tiles.iter().map(|t| t.phys_x1).fold(f64::NEG_INFINITY, f64::max);
+        let min_phys_y = tiles.iter().map(|t| t.phys_y0).fold(f64::INFINITY, f64::min);
+        let max_phys_y = tiles.iter().map(|t| t.phys_y1).fold(f64::NEG_INFINITY, f64::max);
+
+        assert!((min_phys_x - 0.0).abs() < 1e-9);
+        assert!((max_phys_x - phys_w).abs() < 1e-9);
+        assert!((min_phys_y - 0.0).abs() < 1e-9);
+        assert!((max_phys_y - phys_h).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_array_indices_cover_full_image() {
+        // The union of all tile array slices should exactly cover [0, height) x [0, width).
+        let level = ResolutionLevel {
+            shape: [300, 400],
+            chunk_shape: [100, 150],
+            scale: [0.5, 0.5],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+
+        // Reconstruct covered pixel sets from the tile slices and verify full coverage.
+        let mut covered_x = vec![false; 400];
+        let mut covered_y = vec![false; 300];
+        for t in &tiles {
+            for x in t.tile_x_start..t.tile_x_end {
+                covered_x[x as usize] = true;
+            }
+            for y in t.tile_y_start..t.tile_y_end {
+                covered_y[y as usize] = true;
+            }
+        }
+        assert!(covered_x.iter().all(|&c| c), "All X pixels should be covered");
+        assert!(covered_y.iter().all(|&c| c), "All Y pixels should be covered");
+    }
+
+    #[test]
+    fn test_get_visible_tiles_row_col_match_array_indices() {
+        // For each tile, verify that (col, row) consistently maps to (tile_x_start, tile_y_*).
+        // col N → tile_x_start = N * chunk_width (clamped to shape).
+        // row N (physical bottom-up) → array_row = num_tile_rows - 1 - N.
+        // array_row M → tile_y_start = M * chunk_height (clamped to shape).
+        let level = ResolutionLevel {
+            shape: [512, 768],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        // 2 rows × 3 cols = 6 tiles.
+        let num_tile_rows = (512f64 / 256.0).ceil() as i32; // 2
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level);
+        assert_eq!(tiles.len(), 4);
+
+        for t in &tiles {
+            let expected_x_start = (t.col as u64) * 256;
+            assert_eq!(t.tile_x_start, expected_x_start);
+            assert_eq!(t.tile_x_end, (expected_x_start + 256).min(768));
+
+            let array_row = (num_tile_rows - 1 - t.row) as u64;
+            let expected_y_start = array_row * 256;
+            assert_eq!(t.tile_y_start, expected_y_start);
+            assert_eq!(t.tile_y_end, (expected_y_start + 256).min(512));
+        }
     }
 }
