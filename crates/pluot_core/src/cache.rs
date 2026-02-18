@@ -271,3 +271,9 @@ pub async fn use_memo_numeric_data(
 // TODO: Every render, try to clear things from the use_memo cache hash maps.
 // See egui FrameCache approach: clear any variables that were not used in the previous frame
 // (corresponding to the same plot ID and format (i.e., raster/vector)).
+// We should also incorporate a size limit, so we only clear the least recently used items,
+// up to a certain size threshold.
+// This will help to ensure that we don't clear things that are expensive to re-create,
+// but also don't let the cache grow indefinitely.
+// We could make the size limit configurable via a parameter in the PlotParams,
+// or make it dynamic based on available memory or other factors.

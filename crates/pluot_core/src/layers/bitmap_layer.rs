@@ -410,7 +410,7 @@ pub async fn base_draw_bitmap_layer(
     // scale_factor of -3 means zoom = 8.0 (zoomed in to octuple)
     let scale_factor = (1.0 / zoom).log2();
 
-    log(&format!("scale factor: {}", scale_factor));
+    // log(&format!("scale factor: {}", scale_factor));
 
     // X translation interpretation:
     // A translate_x value of 1.0 means a point at x=-1.0 (left edge of viewport/screen-quad) is now at the center of the viewport.

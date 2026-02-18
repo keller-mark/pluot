@@ -52,7 +52,6 @@ async fn use_memo_multiscale_metadata(
     cache_enabled: bool,
 ) -> Arc<OmeZarrMultiscaleMetadata> {
     if !cache_enabled {
-        log("Cache disabled for OME-Zarr metadata, skipping cache lookup and initialization.");
         return Arc::new(initializer().await);
     }
 
@@ -63,11 +62,8 @@ async fn use_memo_multiscale_metadata(
     });
 
     if let Some(data) = data_exists {
-        log("Cache hit for OME-Zarr metadata");
         return data;
     }
-
-    log("Cache miss for OME-Zarr metadata, running initializer.");
 
     let data = Arc::new(initializer().await);
 
@@ -270,8 +266,6 @@ impl OmeZarrMultiscaleLayer {
             &metadata.resolution_levels,
         );
 
-        log(&format!("Selected resolution level {}", target_level));
-
         let num_levels = metadata.resolution_levels.len();
 
         let target_z = self.layer_params.target_z.map(|v| v as u64);
@@ -292,7 +286,6 @@ impl OmeZarrMultiscaleLayer {
         let y_dim_i = metadata.dimension_order.index_of(OmeDim::Y).unwrap();
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
-            log(&format!("=========Building sublayers for level {} with scale {:?} and shape {:?}", level_idx, level.scale, level.shape));
             let tiles = get_visible_tiles(&self.view_params, level);
 
             if tiles.is_empty() {
@@ -424,8 +417,6 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         // Build sublayers for all visible tiles at each level from coarsest to target.
         // No tile data is loaded here — only sublayer structs are constructed.
         self.level_sublayers = self.build_sublayers(metadata);
-
-        log(&format!("Preparing {} sublayers", self.level_sublayers.len()));
 
         // TODO: collect all sublayers at each resolution level (coarse to fine),
         // and prepare them on a per-layer basis, using maybe_timeout to bail early at each level.
