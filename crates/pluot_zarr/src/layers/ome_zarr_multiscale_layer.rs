@@ -5,6 +5,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
+use futures_time::future::FutureExt;
+use futures_time::time::Duration;
+use pluot_core::maybe_timeout;
+
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
@@ -161,7 +165,7 @@ impl OmeZarrMultiscaleLayer {
             format!("multiscale_{}", multiscale_index),
         ];
 
-        use_memo_multiscale_metadata(async || {
+        let metadata_future = use_memo_multiscale_metadata(async || {
             let group = zarrs::group::Group::async_open(store.clone(), &group_path)
                 .await
                 .expect("Failed to open zarr group for OME-Zarr metadata");
@@ -252,7 +256,9 @@ impl OmeZarrMultiscaleLayer {
                 array_metadatas,
                 dimension_order,
             }
-        }, &keys, cache_enabled).await
+        }, &keys, cache_enabled).await;
+
+        return metadata_future;
     }
 
     /// Build OmeZarrBitmapLayer sublayers for visible tiles at levels from coarsest to target_level.
@@ -409,8 +415,19 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
     async fn prepare(&mut self) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
 
-        // TODO: use maybe_timeout here, and bail out early if loading metadata takes too long.
-        let metadata = self.load_metadata().await;
+        // Use maybe_timeout to bail out early if loading metadata takes too long.
+        let metadata_future = self.load_metadata();
+        let future_result = maybe_timeout!(metadata_future, self.view_params.timeout)
+            .await;
+
+        let metadata = match future_result {
+            Ok(metadata_result) => metadata_result,
+            Err(_) => {
+                // Return early.
+                return PrepareResult { bailed_early: true };
+            }
+        };
+
         self.metadata = Some(metadata.clone());
         let metadata = metadata.as_ref();
 
@@ -418,10 +435,11 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         // No tile data is loaded here — only sublayer structs are constructed.
         self.level_sublayers = self.build_sublayers(metadata);
 
-        // TODO: collect all sublayers at each resolution level (coarse to fine),
+        // Collect all sublayers at each resolution level (coarse to fine),
         // and prepare them on a per-layer basis, using maybe_timeout to bail early at each level.
 
         // Prepare all sublayers (each loads its own tile data with caching).
+        /*
         let mut any_bailed = false;
         for level_group in &mut self.level_sublayers {
             let mut results = Vec::new();
@@ -434,9 +452,30 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
             }
             level_group.prepare_results = results;
         }
+        */
+        // Prepare all sublayers concurrently across all levels.
+        let level_futures = self.level_sublayers.iter_mut().map(|level_group| async {
+            let futures = level_group.sublayers.iter_mut().map(|sublayer| sublayer.prepare());
+            let results = futures::future::join_all(futures).await;
 
-        PrepareResult {
-            bailed_early: any_bailed,
+            let group_bailed = results.iter().any(|r| r.bailed_early);
+            level_group.prepare_results = results;
+            group_bailed
+        });
+
+        let level_results_future = futures::future::join_all(level_futures);
+        let level_results_result = maybe_timeout!(level_results_future, self.view_params.timeout)
+            .await;
+
+        match level_results_result {
+            Ok(level_results_vec) => {
+                let any_bailed = level_results_vec.into_iter().any(|b| b);
+                return PrepareResult { bailed_early: any_bailed };
+            },
+            Err(_) => {
+                // Return early.
+                return PrepareResult { bailed_early: true };
+            }
         }
     }
 }
@@ -451,14 +490,6 @@ impl DrawToCanvas for OmeZarrMultiscaleLayer {
         let num_groups = self.level_sublayers.len();
 
         for (group_i, level_group) in self.level_sublayers.iter().enumerate() {
-            let all_ready = level_group
-                .prepare_results
-                .iter()
-                .all(|r| !r.bailed_early);
-
-            if !all_ready {
-                continue;
-            }
 
             // For non-finest groups, check if each coarse tile is fully covered
             // by ready tiles at any single finer level.

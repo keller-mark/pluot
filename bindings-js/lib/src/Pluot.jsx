@@ -101,8 +101,8 @@ export function Pluot(props) {
     marginRight =  100.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
     format = "Raster", // "Raster", "Vector"
-    minTimeout = 50,
-    maxTimeout = 200,
+    minTimeout = 32,
+    maxTimeout = 128,
     allowSimultaneousRenders = true,
   } = props;
 

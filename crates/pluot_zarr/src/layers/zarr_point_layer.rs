@@ -4,7 +4,6 @@ use pluot_core::params::RenderResult;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
-
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 use pluot_core::maybe_timeout;

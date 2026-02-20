@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use svg::node::element::Group;
 
+use futures_time::future::FutureExt;
+use futures_time::time::Duration;
+use pluot_core::maybe_timeout;
+
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
@@ -245,8 +249,19 @@ impl OmeZarrBitmapLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrBitmapLayer {
     async fn prepare(&mut self) -> PrepareResult {
-        // TODO: use maybe_timeout here, and bail early if loading takes too long.
-        let data = self.load_tile_data().await;
+        // Use maybe_timeout to bail early if loading takes too long.
+        let data_future = self.load_tile_data();
+
+        let future_result = maybe_timeout!(data_future, self.view_params.timeout)
+            .await;
+
+        let data = match future_result {
+            Ok(data_result) => data_result,
+            Err(_) => {
+                // Return early.
+                return PrepareResult { bailed_early: true };
+            }
+        };
 
         let y_dim_i = self.dim_index(OmeDim::Y).expect("array_dimension_order must contain Y");
         let x_dim_i = self.dim_index(OmeDim::X).expect("array_dimension_order must contain X");
