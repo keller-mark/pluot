@@ -13,14 +13,15 @@ function normalizeKey(key: string, range?: RangeQuery) {
 // even if it doesn't define a getRange method.
 // If the store does have a native getRange method, we use that instead.
 // Reference: https://github.com/vitessce/vitessce/blob/main/packages/utils/zarr-utils/src/base-getrange.ts
-export function createGetRange(store: AsyncReadable) {
+export function createGetRange<S extends AsyncReadable>(store: S) {
   // TODO: support options param for getRange?
-  return async (key: AbsolutePath, range: RangeQuery): Promise<Uint8Array | undefined> => {
+  return async (...args: Parameters<NonNullable<S["getRange"]>>): Promise<Uint8Array | undefined> => {
+    const [key, range, opts] = args;
     if (typeof store.getRange === 'function') {
-      return store.getRange(key, range);
+      return store.getRange(key, range, opts);
     }
     // Store does not have a native getRange method; falling back to get. This may be inefficient for large data.
-    const arr = await store.get(key);
+    const arr = await store.get(key, opts);
     if (!arr) return undefined;
     const { buffer } = arr;
     if ('suffixLength' in range) {
@@ -39,11 +40,11 @@ export function createGetRange(store: AsyncReadable) {
 // Reference: https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/lru-store.ts
 class LruStore<S extends AsyncReadable> implements AsyncReadable {
   #inner_store: S;
-  #cache: QuickLRU<string, Promise<Uint8Array | undefined>>;
+  #cache: QuickLRU<string, [Promise<Uint8Array | undefined>, AbortController]>;
 
   constructor(store: S, maxSize = 100) {
     this.#inner_store = store;
-    this.#cache = new QuickLRU<string, Promise<Uint8Array | undefined>>({ maxSize });
+    this.#cache = new QuickLRU<string, [Promise<Uint8Array | undefined>, AbortController]>({ maxSize });
   }
 
   async get(...args: Parameters<S["get"]>): Promise<Uint8Array | undefined> {
@@ -51,21 +52,19 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
     // console.log(`LRU get: ${key}`);
     const cacheKey = normalizeKey(key);
     const cached = this.#cache.get(cacheKey);
-    if (cached) return cached;
-
-    let getResult = this.#inner_store.get(key, opts);
-    if (getResult !== undefined) {
-      getResult = getResult.then(d => {
-        // Delete immediately after
-        //cache.delete(cacheKey);
-        return d;
-      });
+    if (cached) {
+      return cached[0];
     }
+    const controller = new AbortController();
+    let getResult = this.#inner_store.get(key, {
+      signal: controller.signal,
+      ...(opts ?? {})
+    });
     const result = Promise.resolve(getResult).catch((err) => {
       this.#cache.delete(cacheKey);
       throw err;
     });
-    this.#cache.set(cacheKey, result);
+    this.#cache.set(cacheKey, [result, controller]);
     return result;
   }
 
@@ -73,29 +72,35 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
     const [key, range, opts] = args;
     const cacheKey = normalizeKey(key, range);
     const cached = this.#cache.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      return cached[0];
+    }
 
     const _getRange = typeof this.#inner_store.getRange === 'function'
       ? this.#inner_store.getRange.bind(this.#inner_store)
       : createGetRange(this.#inner_store);
 
-    let getRangeResult = _getRange(key, range, opts);
-    if (getRangeResult !== undefined) {
-      getRangeResult = getRangeResult.then(d => {
-        //cache.delete(cacheKey);
-        return d;
-      });
-    }
+    const controller = new AbortController();
+    // @ts-expect-error
+    let getRangeResult = _getRange(key, range, {
+      signal: controller.signal,
+      ...(opts ?? {})
+    });
     const result = Promise.resolve(getRangeResult).catch((err) => {
       this.#cache.delete(cacheKey);
       throw err;
     });
-    this.#cache.set(cacheKey, result);
+    this.#cache.set(cacheKey, [result, controller]);
     return result;
   }
 
   clearCache() {
-    // TODO: Use AbortSignal in clearCache for promises that have not yet been resolved.
+    // Use AbortSignal in clearCache for promises that have not yet been resolved.
+    this.#cache.forEach(([promise, controller]) => {
+      // TODO: check if promise is still pending before aborting? Or just always abort?
+      // TODO: verify that this aborting is actually working
+      controller.abort()
+    });
     this.#cache.clear();
   }
 }
