@@ -19,8 +19,8 @@ import { isEqual, throttle } from "lodash-es";
 const { decompressFromUint8Array } = lzs;
 
 const DEFAULT_VIEW = new Float32Array([
-  1/200, 0, 0, 0,
-  0, 1/200, 0, 0,
+  1, 0, 0, 0,
+  0, 1, 0, 0,
   0, 0, 1/200, 0,
   0, 0, 0, 1,
 ]);
@@ -92,8 +92,6 @@ export function Pluot(props) {
     store,
     storeName: storeNameProp,
     plotParams,
-    renderOnce = true,
-    logPerformance = false,
     mode = "2d",
     marginBottom = 100.0,
     marginLeft = 100.0,
