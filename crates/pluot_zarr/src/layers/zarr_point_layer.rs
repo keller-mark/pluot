@@ -1,13 +1,19 @@
 use std::sync::Arc;
+use pluot_core::params::PrepareResult;
+use pluot_core::params::RenderResult;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
+
+use futures_time::future::FutureExt;
+use futures_time::time::Duration;
+use pluot_core::maybe_timeout;
 
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::two::svg::update_svg;
-use pluot_core::layers::core::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 
 
@@ -44,6 +50,8 @@ pub struct ZarrPointLayer {
     store_name: String,
     // Data will be None prior to runninng prepare().
     data: Option<ZarrPointLayerData>,
+
+    ready_to_draw: bool,
 }
 
 impl ZarrPointLayer {
@@ -73,6 +81,7 @@ impl ZarrPointLayer {
             store,
             store_name,
             data: None,
+            ready_to_draw: false,
         }
     }
 }
@@ -80,7 +89,7 @@ impl ZarrPointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for ZarrPointLayer {
-    async fn prepare(&mut self) {
+    async fn prepare(&mut self) -> PrepareResult {
         let store = self.store.clone();
 
         // TODO: include the layer type in the memoization dependencies?
@@ -132,13 +141,42 @@ impl PreparedLayer for ZarrPointLayer {
         }, &y_f32_future_deps, self.view_params.cache_enabled);
 
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
-        let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
+        //let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
+
+        let futures_try_join_result = futures::try_join!(
+            maybe_timeout!(x_f32_future, self.view_params.timeout),
+            maybe_timeout!(y_f32_future, self.view_params.timeout),
+            maybe_timeout!(l_i32_future, self.view_params.timeout),
+        );
+
+        // TODO: load image data as vec of individual chunks (rather than requesting the full slice)
+        // to allow for progressive rendering of large images as the chunks load.
+        // We want to render the chunks that have loaded prior to the timeout (if there was a timeout specified).
+        // First convert the requested slice to the chunk keys?
+
+        let (x_f32, y_f32, l_i32) = match futures_try_join_result {
+            Ok((x_f32_result, y_f32_result, l_i32_result)) => {
+                // log("All futures succeeded within the timeout.");
+                (x_f32_result, y_f32_result, l_i32_result)
+            }
+            Err(_) => {
+                // TODO: still render something in this case
+                // log("One or more futures timed out or failed");
+                return PrepareResult { bailed_early: true };
+            }
+        };
+
 
         self.data = Some(ZarrPointLayerData {
             x_arr: x_f32,
             y_arr: y_f32,
             labels_arr: l_i32,
         });
+
+        self.ready_to_draw = true;
+        return PrepareResult {
+            bailed_early: false,
+        };
     }
 }
 
@@ -146,6 +184,10 @@ impl PreparedLayer for ZarrPointLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for ZarrPointLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+        if !self.ready_to_draw {
+            log("ZarrPointLayer was not ready to draw. Skipping draw call.");
+            return;
+        }
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         base_draw_point_layer(
@@ -171,6 +213,10 @@ impl DrawToCanvas for ZarrPointLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for ZarrPointLayer {
     async fn draw(&self, group: &Group) -> Group {
+        if !self.ready_to_draw {
+            log("ZarrPointLayer was not ready to draw. Skipping draw call.");
+            return group.clone();
+        }
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         let svg_elements = base_draw_point_layer_svg(

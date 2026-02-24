@@ -88,6 +88,9 @@ These returned pixels will be accompanied by a flag to indicate to the caller wh
 (How to use this flag value is up to the caller, for instance, to show a loading indicator.)
 In the latter case, the caller can wait an animation frame and call the plot rendering function again.
 
+<Aside type="note" title="Note">This timeout mechanism is an implementation detail that is subject to change; we are exploring alternative approaches to rendering-while-loading-data.</Aside>
+
+
 ### Coordinated Multiple Views
 
 Pluot's plot rendering functions are concerned with rendering a single plot.

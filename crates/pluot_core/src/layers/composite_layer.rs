@@ -5,15 +5,15 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
+use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::update_svg;
 use crate::layers::position_utils::get_point_position;
-use crate::params::LayerParams;
-use crate::plots::layered_plot::get_layer;
+use crate::params::{LayerParams, PrepareResult, RenderResult};
+use crate::layered_plot::get_layer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
@@ -52,16 +52,26 @@ impl CompositeLayer {
     }
 }
 
+
+pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn PreparedAndDraw>]) -> PrepareResult {
+    // TODO: use futures::join, the same as in the layer_traits::render functions.
+    let mut bailed_early = false;
+    for sub_layer in sub_layer_instances.iter_mut() {
+        let sub_layer_result = sub_layer.prepare().await;
+        if sub_layer_result.bailed_early {
+            bailed_early = true;
+        }
+    }
+    return PrepareResult {
+        bailed_early,
+    };
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CompositeLayer {
-    async fn prepare(&mut self) {
-
-        // TODO: use futures::join, the same as in the core::render functions.
-        for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare().await;
-        }
-        
+    async fn prepare(&mut self) -> PrepareResult {
+        return base_prepare_composite_layer(&mut self.sub_layer_instances).await;
     }
 }
 
@@ -81,8 +91,6 @@ pub async fn base_draw_composite_layer(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToCanvas for CompositeLayer {
     async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        // TODO: ensure this works with pyO3. If needed, change trait to take &mut self,
-        // and then use the same pattern as in the core::render_ functions.
         base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
     }
 }

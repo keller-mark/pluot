@@ -11,7 +11,7 @@ Example of a multi-layered plot.
 
 The PointLayer renders 1 million points.
 The additional layers demonstrate pixel-based positioning of points, lines, and text.
-The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
+{/*The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.*/}
 
 
 <PluotWrapper
@@ -112,36 +112,6 @@ The BitmapLayer demonstrates rendering of a small 4x4 image with one channel.
             position_x: [10, 110],
             position_y: [10, 110],
             text_vec: ["Hello", "world"],
-          }
-        },
-        {
-          layer_type: "BitmapLayer",
-          layer_params: {
-            layer_id: "layer_bitmap",
-            data_unit_mode: "Data",
-
-            img_size_w: 4,
-            img_size_h: 4,
-            img_size_c: null,
-            img_size_z: null,
-            img_size_t: null,
-            z_index: null,
-            t_index: null,
-            opacity: 0.5,
-            channel_settings: [
-              {
-                c_index: 0,
-                window: [0.0, 10.0],
-                color: [255.0, 0.0, 0.0],
-              }
-            ],
-
-            ch0_vec: [
-              300, 110, 210, 310,
-              20, 120, 220, 320,
-              30, 130, 230, 330,
-              40, 140, 240, 340,
-            ],
           }
         }
       ]

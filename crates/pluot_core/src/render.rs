@@ -1,11 +1,7 @@
 use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::two::svg::init_svg;
-use crate::layers::core::{render_svg, render_canvas, ViewParams};
-/*use vello::{
-    peniko::{Blob, Brush, Color, Fill, Font},
-    AaConfig, AaSupport, Renderer, RendererOptions, Scene,
-};*/
+use crate::layer_traits::{render_svg, render_canvas, ViewParams};
 use crate::log;
 
 use futures::FutureExt;
@@ -13,7 +9,7 @@ use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::params::{GraphicsFormat, RenderContext};
 pub use crate::params::{PlotParams, RenderParams, RenderResult};
-use crate::plots;
+use crate::layered_plot;
 use crate::cache::{get_or_init_gpu_context, get_or_init_store};
 
 // This function should accept width and height as parameters,
@@ -159,7 +155,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         PlotParams::BarPlot(_) => plots::barplot::render_barplot(&mut context, &mut encoder).await,
         */
         PlotParams::LayeredPlot(_) => {
-            plots::layered_plot::render_layered_plot(&mut context, &mut encoder)
+            crate::layered_plot::render_layered_plot(&mut context, &mut encoder)
         }
         _ => panic!("Unsupported plot type"),
     };
@@ -185,7 +181,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
 
     // Finally, we handle the output based on the format.
-    
+
 
     if params.format == GraphicsFormat::Vector {
         // Return the SVG string as bytes.
@@ -202,7 +198,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
 
 
-    
+
 
     // Copy the texture to the output buffer.
     encoder.copy_texture_to_buffer(

@@ -18,9 +18,9 @@ const DEMOS = {
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_1000000/x_coords",
-            y_key: "/n_1000000/y_coords",
-            color_key: "/n_1000000/class_labels",
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
           }
         },
         {
@@ -119,29 +119,32 @@ const DEMOS = {
           layer_params: {
             layer_id: "layer_bitmap",
             data_unit_mode: "Data",
+            pixel_offset: [1, 1],
 
-            img_size_w: 4,
-            img_size_h: 4,
-            img_size_c: null,
-            img_size_z: null,
-            img_size_t: null,
-            z_index: null,
-            t_index: null,
+            dimension_order: "CYX",
+            shape: [2, 4, 4],
             opacity: 0.5,
             channel_settings: [
               {
-                c_index: 0,
-                window: [0.0, 10.0],
-                color: [255.0, 0.0, 0.0],
+                window: [0.0, 500.0],
+                color: [1.0, 0.0, 0.0],
+              },
+              {
+                window: [0.0, 500.0],
+                color: [0.0, 0.0, 1.0],
               }
             ],
 
-            ch0_vec: [
-              300, 110, 210, 310,
+            data: { Uint16: [
+              0, 110, 210, 310,
               20, 120, 220, 320,
               30, 130, 230, 330,
               40, 140, 240, 340,
-            ],
+              300, 110, 210, 310,
+              20, 120, 220, 320,
+              30, 130, 230, 330,
+              40, 140, 240, 0,
+            ]},
           }
         },
         {
@@ -158,16 +161,61 @@ const DEMOS = {
             labels_vec: [4],
           }
         },
-        {
+        /*{
           layer_type: "TileLayer",
           layer_params: {
             layer_id: "tile_layer",
             tile_size: 4,
           }
+        },*/
+        {
+          layer_type: "MultiscaleLayer",
+          layer_params: {
+            layer_id: "multiscale_layer",
+            resolution_levels: [
+              {
+                shape: [200, 200],
+                chunk_shape: [50, 50],
+                scale: [1.0, 1.0],
+              },
+              {
+                shape: [100, 100],
+                chunk_shape: [50, 50],
+                scale: [2.0, 2.0],
+              }
+            ]
+          }
         },
+        {
+          layer_type: "OmeZarrMultiscaleLayer",
+          layer_params: {
+            layer_id: "ome_zarr_multiscale_layer",
+            store_name: "ome_ngff_2",
+            target_z: 40,
+            target_t: 0,
+            channel_settings: [
+              {
+                c_index: 0,
+                window: [0.0, 90000.0],
+                color: [1.0, 0.0, 0.0],
+              },
+              {
+                c_index: 1,
+                window: [0.0, 90000.0],
+                color: [0.0, 1.0, 0.0],
+              },
+              {
+                c_index: 2,
+                window: [0.0, 90000.0],
+                color: [0.0, 0.0, 1.0],
+              }
+            ],
+            opacity: 1.0,
+          },
+        }
       ]
     },
-  },
+  }
 };
 
 export function Demo() {
@@ -246,7 +294,7 @@ export function Demo() {
           />
         </div>
       ) : null}
-      {plotType === "LayeredPlot" ? (
+      {false && plotType === "LayeredPlot" ? (
         <div>
           <label>Point Radius (for LayeredPlot):</label>
           <input

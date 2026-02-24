@@ -90,6 +90,19 @@ The data filtering operations themselves will always be performed in Rust.
 - Rendering something before all data has been loaded.
 - Extensibility, enabling implementation of new plot types outside the pluot crate.
 
+## Troubleshooting Rust compilation
+
+```sh
+brew install cmake # for zfp-sys for zarrs
+brew install llvm # for zstd for zarrs
+
+# In ~/.zshrc
+# For rust compilation of zstd for zarrs
+# Reference: https://github.com/gyscos/zstd-rs/issues/93#issuecomment-1058772951
+export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+export CC=/opt/homebrew/opt/llvm/bin/clang
+export AR=/opt/homebrew/opt/llvm/bin/llvm-ar
+```
 
 
 ## Rust learning resources
