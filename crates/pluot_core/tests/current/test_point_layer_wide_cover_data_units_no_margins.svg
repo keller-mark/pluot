@@ -1,0 +1,11 @@
+<g height="100" width="200">
+<clipPath id="my_point_layer_clip_path">
+<rect height="100" width="200" x="0" y="0"/>
+</clipPath>
+<g clip-path="url(#my_point_layer_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="-10" y="140"/>
+<rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="190" y="140"/>
+<rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="190" y="-60"/>
+<rect fill="rgb(0, 0, 0)" height="20" opacity="1" width="20" x="-10" y="-60"/>
+</g>
+</g>
