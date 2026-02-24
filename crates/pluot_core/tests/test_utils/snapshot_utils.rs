@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use kompari::color::Rgba8;
 use kompari::{compare_images, load_image, ImageDifference, MinImage};
 
-use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
-use pluot_core::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
-use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
+use pluot_core::params::{RenderParams, GraphicsFormat};
 use pluot_core::bindings::plain_rust::{render};
 
 fn snapshots_dir() -> PathBuf {
@@ -60,6 +58,30 @@ pub async fn render_and_check_raster_snapshot(params: RenderParams, name: &str) 
 
     let image = rgba_bytes_to_image(pixel_data, width, height);
     check_raster_snapshot(&image, name);
+}
+
+/// Render with both Raster and Vector formats and check snapshots for both.
+///
+/// `base_params` should have `format` left at its default; this function overrides
+/// it for each format. Snapshot names are derived from `base_name` by appending
+/// `.png` (raster) and `.svg` (vector).
+pub async fn render_and_check_both_snapshots(base_params: RenderParams, base_name: &str) {
+    // Only run on non-WASM targets and when the GPU is available.
+    #[cfg(all(not(target_arch = "wasm32"), not(feature = "lacks_gpu")))]
+    {
+        let raster_params = RenderParams {
+            format: GraphicsFormat::Raster,
+            ..base_params.clone()
+        };
+        render_and_check_raster_snapshot(raster_params, &format!("{base_name}.png")).await;
+    }
+    // Always run the vector tests.
+    let vector_params = RenderParams {
+        format: GraphicsFormat::Vector,
+        svg_compression_enabled: false,
+        ..base_params
+    };
+    render_and_check_svg_snapshot(vector_params, &format!("{base_name}.svg")).await;
 }
 
 /// Render with the given params and compare the SVG output against a text snapshot.

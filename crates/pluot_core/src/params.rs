@@ -40,13 +40,13 @@ pub struct LayerParams {
     pub layer_params: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayeredPlotRenderParams {
     pub layers: Vec<LayerParams>,
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "plot_type", content = "plot_params")]
 pub enum PlotParams {
     // Using adjacently tagged enum representation.
@@ -56,7 +56,7 @@ pub enum PlotParams {
     LayeredPlot(LayeredPlotRenderParams),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParams {
     pub width: u32,
     pub height: u32,
