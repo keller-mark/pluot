@@ -74,6 +74,8 @@ pub async fn render_and_check_both_snapshots(base_params: RenderParams, base_nam
             ..base_params.clone()
         };
         render_and_check_raster_snapshot(raster_params, &format!("{base_name}.png")).await;
+
+        // TODO: add checks to compare the SVG and PNG output (by rasterizing the SVG using resvg).
     }
     // Always run the vector tests.
     let vector_params = RenderParams {
@@ -87,6 +89,9 @@ pub async fn render_and_check_both_snapshots(base_params: RenderParams, base_nam
 /// Render with the given params and compare the SVG output against a text snapshot.
 pub async fn render_and_check_svg_snapshot(params: RenderParams, name: &str) {
     let result_vec = render(params).await;
+
+    // TODO: add a helper function or option to render the parent <svg/> element, so that the outputs are valid and render in other apps.
+
     let svg_string = String::from_utf8(result_vec).expect("Invalid UTF-8 in SVG output");
     check_svg_snapshot(&svg_string, name);
 }
