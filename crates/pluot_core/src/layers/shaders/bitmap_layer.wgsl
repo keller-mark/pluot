@@ -207,7 +207,7 @@ fn vs_main(
     // References:
     // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
     // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
-    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view * u.model_matrix;
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
     // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
     // Where:
@@ -234,7 +234,7 @@ fn vs_main(
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
         // TODO: support applying a model matrix (arbitrarily passed by the user)
         // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(vertex_pos_px, 0.0, 1.0)
+        * u.model_matrix * vec4(vertex_pos_px, 0.0, 1.0)
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 

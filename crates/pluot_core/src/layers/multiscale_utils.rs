@@ -157,21 +157,25 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
     let (layer_w, layer_h) = get_layer_size(view_params);
     let dpr = view_params.device_pixel_ratio as f64;
 
-    // The visible range is already in physical coordinates (same coordinate
-    // system as scale values), so we can directly compute the physical size
-    // of one screen pixel.
-    let screen_pixel_phys_x = (max_x - min_x) / (layer_w * dpr);
-    let screen_pixel_phys_y = (max_y - min_y) / (layer_h * dpr);
+    // Number of meters in x and y directions based on current view params (camera, etc).
+    let num_m_in_x = max_x - min_x;
+    let num_m_in_y = max_y - min_y;
 
-    // Use the smaller screen pixel size (the more demanding dimension)
-    // to ensure sharpness in both directions.
-    let screen_pixel_phys = screen_pixel_phys_x.min(screen_pixel_phys_y);
+    let viewport_px_in_x = layer_w * dpr;
+    let viewport_px_in_y = layer_h * dpr;
+
+    let num_m_per_viewport_px_in_x = num_m_in_x / viewport_px_in_x;
+    let num_m_per_viewport_px_in_y = num_m_in_y / viewport_px_in_y;
 
     // Iterate from coarsest to finest. Return the first (coarsest) level
     // whose voxel size is ≤ the screen pixel size.
     for i in (0..levels.len()).rev() {
-        let voxel_size = levels[i].scale[0].max(levels[i].scale[1]);
-        if voxel_size <= screen_pixel_phys {
+        let num_m_per_img_px_in_x = levels[i].scale[1];
+        let num_m_per_img_px_in_y = levels[i].scale[0];
+
+        let min_img_px_per_viewport_px = (num_m_per_img_px_in_x / num_m_per_viewport_px_in_x).min(num_m_per_img_px_in_y / num_m_per_viewport_px_in_y);
+
+        if min_img_px_per_viewport_px <= 1.0 {
             return i;
         }
     }
@@ -208,22 +212,21 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
     // Compute the visible extent with respect to the coordinate system.
     let (min_x, max_x, min_y, max_y) = get_visible_range(view_params);
 
-    // Map the physical extent to pixel indices.
-    let min_x_pixel = ((min_x / level.scale[1]).floor() as i32).max(0);
-    let max_x_pixel = ((max_x / level.scale[1]).ceil() as i32).min(level.shape[1] as i32);
-    // Note min_y_pixel here is below max_y_pixel (we have not yet flipped).
-    let min_y_pixel_below = ((min_y / level.scale[0]).floor() as i32).max(0);
-    let max_y_pixel_above = ((max_y / level.scale[0]).ceil() as i32).min(level.shape[0] as i32);
+    let num_img_px_per_m_in_x = 1.0 / level.scale[1];
+    let num_img_px_per_m_in_y = 1.0 / level.scale[0];
 
-    // Flip the Y pixel indices to match the array coordinate system (0 = top).
-    // let (min_y_pixel_above, max_y_pixel_below) = to_y_slice(min_y_pixel_below as u64, max_y_pixel_above as u64, level.shape[0] as u64);
+    // Map the physical extent to pixel indices.
+    let min_x_pixel = ((min_x * num_img_px_per_m_in_x).floor() as i32).max(0);
+    let max_x_pixel = ((max_x * num_img_px_per_m_in_x).ceil() as i32).min(level.shape[1] as i32);
+    // Note min_y_pixel here is below max_y_pixel (we have not yet flipped).
+    let min_y_pixel_below = ((min_y * num_img_px_per_m_in_y).floor() as i32).max(0);
+    let max_y_pixel_above = ((max_y * num_img_px_per_m_in_y).ceil() as i32).min(level.shape[0] as i32);
+
 
     // Convert the pixel indices to tile indices, accounting for irregular edge tiles.
     // NOTE: It is possible for the final chunk along each axis to be a partial tile.
     // When accounting for this, we must keep in mind that pixel (0, 0) is at the top left,
     // but our coordinate system has physical row 0 at the bottom.
-    let bottom_tile_height = level.shape[0] as f64 % level.chunk_shape[0] as f64;
-    let right_tile_width = level.shape[1] as f64 % level.chunk_shape[1] as f64;
 
     // Total number of tile columns and rows at this resolution level.
     let num_tile_cols = (level.shape[1] as f64 / level.chunk_shape[1] as f64).ceil() as i32;
@@ -255,6 +258,7 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
             let phys_y0 = phys_height - (tile_y_end_bottom as f64 * level.scale[0]);
             let phys_y1 = phys_height - (tile_y_start_top as f64 * level.scale[0]);
 
+            // Flip the Y pixel indices to match the array coordinate system (0 = top).
             let (tile_y_start, tile_y_end) = to_y_slice(tile_y_start_top, tile_y_end_bottom, level.shape[0] as u64);
 
             tiles.push(VisibleTile {

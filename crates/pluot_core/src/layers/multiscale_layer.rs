@@ -15,8 +15,6 @@ use crate::layers::multiscale_utils::{
 use crate::params::PrepareResult;
 use crate::wgpu;
 
-// Re-export ResolutionLevel so existing code that imports from this module still works.
-pub use crate::layers::multiscale_utils::ResolutionLevel as ResolutionLevelReexport;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MultiscaleLayerParams {
