@@ -87,6 +87,7 @@ resvg = "0.46.0" # For SVG rendering during unit tests to compare with raster-fo
 tiny-skia = "0.11.4" # Used when rendering with resvg (Pixmap target for rendering).
 dify = "0.8.0" # For pixel diffing in unit tests.
 image = "0.25.9" # For read/write to image formats like PNG in unit tests.
+kompari = { git = "https://github.com/linebender/kompari", rev = "63476ab", default-features = false }
 
 
 # We depend on tokio for the non-wasm unit tests that call async functions.
