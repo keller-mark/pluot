@@ -173,12 +173,6 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
         let num_m_per_img_px_in_x = levels[i].scale[1];
         let num_m_per_img_px_in_y = levels[i].scale[0];
 
-        log(&format!(
-            "Level {} with shape ({}, {}) and scale ({}, {}); num_m_per_img_px_in_x={}, num_m_per_img_px_in_y={}, num_m_per_viewport_px_in_x={}, num_m_per_viewport_px_in_y={}",
-            i, levels[i].shape[1], levels[i].shape[0], levels[i].scale[1], levels[i].scale[0],
-            num_m_per_img_px_in_x, num_m_per_img_px_in_y, num_m_per_viewport_px_in_x, num_m_per_viewport_px_in_y
-        ));
-
         let min_img_px_per_viewport_px = (num_m_per_img_px_in_x / num_m_per_viewport_px_in_x).min(num_m_per_img_px_in_y / num_m_per_viewport_px_in_y);
 
         if min_img_px_per_viewport_px <= 1.0 {

@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ome_zarr_metadata::v0_5::MultiscaleImage;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
@@ -186,7 +185,7 @@ impl OmeZarrMultiscaleLayer {
                 .multiscales
                 .expect("Expected OME-NGFF multiscales metadata");
 
-            let multiscale: &MultiscaleImage = &multiscales[multiscale_index];
+            let multiscale = &multiscales[multiscale_index];
 
             // Build OmeDimensionOrder from the axes list.
             let dimension_order_str: String = multiscale.axes.iter()
@@ -296,7 +295,6 @@ impl OmeZarrMultiscaleLayer {
             &self.view_params,
             &metadata.resolution_levels,
         );
-        log(&format!("Selected resolution level {} for target zoom", target_level));
 
         let num_levels = metadata.resolution_levels.len();
 
@@ -321,7 +319,6 @@ impl OmeZarrMultiscaleLayer {
             let tiles = get_visible_tiles(&self.view_params, level);
 
             if tiles.is_empty() {
-                log(&format!("No visible tiles at level {}", level_idx));
                 continue;
             }
 
