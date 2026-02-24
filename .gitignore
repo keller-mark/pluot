@@ -32,4 +32,4 @@ pnpm-debug.log*
 .env.production
 
 # Snapshot test outputs (reference snapshots are in tests/snapshots/)
-crates/pluot/tests/current/
+current/
