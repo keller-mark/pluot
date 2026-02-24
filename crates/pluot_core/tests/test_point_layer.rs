@@ -13,7 +13,10 @@ use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 // - Both data and pixel data_unit_modes
 // - With and without margins at the view level
 // - With and without margins (bounds) at the layer level
+// - Multiple camera matrices (identity, zoomed-in, zoomed-out, panned)
 // - Raster and vector (which the helper function already handles for us)
+// - Layer-specific stuff
+//   - For PointLayer, this includes testing different point shapes, sizes, and point radius unit modes
 
 // Helper: 4 points at the corners of [0,1]x[0,1] in data space
 fn corner_points_data() -> PointLayerParams {
