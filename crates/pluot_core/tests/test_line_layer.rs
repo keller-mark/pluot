@@ -17,7 +17,7 @@ use pluot_core::layers::line_layer::LineLayerParams;
 // - Layer-specific stuff
 //   - For LineLayer, this includes testing different line widths and line width unit modes
 
-// Helper: 4 lines connecting opposite corners of [0,1]x[0,1] in data space
+// Helper: 8 lines forming a toy house with a chimney in a 1×1 data space
 fn cross_lines_data() -> LineLayerParams {
     LineLayerParams {
         layer_id: "my_line_layer".to_string(),
@@ -25,15 +25,15 @@ fn cross_lines_data() -> LineLayerParams {
         data_unit_mode: UnitsMode::Data,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
-        source_position_x: Arc::new(vec![0.0, 1.0, 0.5, 0.0]),
-        source_position_y: Arc::new(vec![0.0, 0.0, 0.5, 0.5]),
-        target_position_x: Arc::new(vec![1.0, 0.5, 0.5, 1.0]),
-        target_position_y: Arc::new(vec![1.0, 0.5, 1.0, 0.5]),
-        labels_vec: vec![0, 1, 2, 3],
+        source_position_x: Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70]),
+        source_position_y: Arc::new(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.75, 0.50, 1.00]),
+        target_position_x: Arc::new(vec![1.0, 0.0, 1.0, 0.5, 0.5, 0.70, 1.00, 1.00]),
+        target_position_y: Arc::new(vec![0.0, 0.5, 0.5, 1.0, 1.0, 1.00, 1.00, 1.00]),
+        labels_vec: vec![0, 1, 2, 3, 4, 5, 6, 7],
     }
 }
 
-// Helper: 4 lines in a 100x100 pixel space
+// Helper: 8 lines forming a toy house with a chimney in a 100x100 pixel space
 fn cross_lines_pixels() -> LineLayerParams {
     LineLayerParams {
         layer_id: "my_line_layer".to_string(),
@@ -41,11 +41,11 @@ fn cross_lines_pixels() -> LineLayerParams {
         data_unit_mode: UnitsMode::Pixels,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
-        source_position_x: Arc::new(vec![0.0, 100.0, 50.0, 0.0]),
-        source_position_y: Arc::new(vec![0.0, 0.0, 50.0, 50.0]),
-        target_position_x: Arc::new(vec![100.0, 100.0, 50.0, 100.0]),
-        target_position_y: Arc::new(vec![100.0, 50.0, 100.0, 50.0]),
-        labels_vec: vec![0, 1, 2, 3],
+        source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
+        source_position_y: Arc::new(vec![  0.0,  0.0,   0.0, 50.0,  50.0,  75.0,  50.0, 100.0]),
+        target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
+        target_position_y: Arc::new(vec![  0.0, 50.0,  50.0,100.0, 100.0, 100.0, 100.0, 100.0]),
+        labels_vec: vec![0, 1, 2, 3, 4, 5, 6, 7],
     }
 }
 
@@ -240,10 +240,10 @@ async fn test_line_layer_wide_contain_pixel_units_no_margins() {
         height: 100,
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: layer_params(LineLayerParams {
-                source_position_x: Arc::new(vec![0.0, 200.0, 100.0, 0.0]),
-                source_position_y: Arc::new(vec![0.0, 0.0, 50.0, 50.0]),
-                target_position_x: Arc::new(vec![200.0, 200.0, 100.0, 200.0]),
-                target_position_y: Arc::new(vec![100.0, 50.0, 100.0, 50.0]),
+                source_position_x: Arc::new(vec![  0.0,  0.0, 200.0,   0.0, 200.0, 140.0, 200.0, 140.0]),
+                source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,  50.0,  50.0,  75.0,  75.0, 100.0]),
+                target_position_x: Arc::new(vec![200.0,  0.0, 200.0, 100.0, 100.0, 140.0, 200.0, 200.0]),
+                target_position_y: Arc::new(vec![  0.0, 50.0,  50.0, 100.0, 100.0, 100.0, 100.0, 100.0]),
                 ..cross_lines_pixels()
             }),
         }),
@@ -344,10 +344,10 @@ async fn test_line_layer_tall_contain_pixel_units_no_margins() {
         height: 200,
         plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
             layers: layer_params(LineLayerParams {
-                source_position_x: Arc::new(vec![0.0, 100.0, 50.0, 0.0]),
-                source_position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
-                target_position_x: Arc::new(vec![100.0, 100.0, 50.0, 100.0]),
-                target_position_y: Arc::new(vec![200.0, 100.0, 200.0, 100.0]),
+                source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
+                source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,100.0, 100.0, 150.0, 150.0, 200.0]),
+                target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
+                target_position_y: Arc::new(vec![  0.0,100.0, 100.0,200.0, 200.0, 200.0, 200.0, 200.0]),
                 ..cross_lines_pixels()
             }),
         }),
