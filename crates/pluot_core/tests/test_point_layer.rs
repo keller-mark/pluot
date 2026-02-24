@@ -1,15 +1,14 @@
 // We only run this test on non-WASM targets AND when the "lacks_gpu" feature is not enabled (e.g., CI).
 #![cfg(all(not(target_arch = "wasm32"), not(feature="lacks_gpu")))]
 
-mod snapshot_utils;
-
 use std::sync::Arc;
-use pluot::{
-    RenderParams, PlotParams, LayeredPlotRenderParams, GraphicsFormat,
-    AspectRatioMode, LayerParams, UnitsMode,
-    MarginParams, PointLayerParams, PointShapeMode,
-};
-use snapshot_utils::{render_and_check_raster_snapshot, render_and_check_svg_snapshot};
+
+mod test_utils;
+use test_utils::{render_and_check_raster_snapshot, render_and_check_svg_snapshot};
+
+use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
+use pluot_core::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
+use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 
 
 #[tokio::test]

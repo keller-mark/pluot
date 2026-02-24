@@ -2,7 +2,11 @@ use std::path::{Path, PathBuf};
 
 use kompari::color::Rgba8;
 use kompari::{compare_images, load_image, ImageDifference, MinImage};
-use pluot::{render, RenderParams};
+
+use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
+use pluot_core::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
+use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
+use pluot_core::bindings::plain_rust::{render};
 
 fn snapshots_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
