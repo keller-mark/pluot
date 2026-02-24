@@ -1,4 +1,72 @@
 use serde::{Deserialize, Serialize};
+use ome_zarr_metadata::v0_5::{
+    Axis, AxisType, AxisUnit, AxisUnitSpace,
+};
+
+/*
+// Reference: https://github.com/hms-dbmi/viv/blob/6cf019ac1608242682109ffe93d412103667271d/packages/layers/src/utils.js#L158C1-L181C1
+const SI_PREFIXES = [
+   { symbol: 'Y', exponent: 24 },
+   { symbol: 'Z', exponent: 21 },
+   { symbol: 'E', exponent: 18 },
+   { symbol: 'P', exponent: 15 },
+   { symbol: 'T', exponent: 12 },
+   { symbol: 'G', exponent: 9 },
+   { symbol: 'M', exponent: 6 },
+   { symbol: 'k', exponent: 3 },
+   { symbol: 'h', exponent: 2 },
+   { symbol: 'da', exponent: 1 },
+   { symbol: '', exponent: 0 },
+   { symbol: 'd', exponent: -1 },
+   { symbol: 'c', exponent: -2 },
+   { symbol: 'm', exponent: -3 },
+   { symbol: 'µ', exponent: -6 },
+   { symbol: 'n', exponent: -9 },
+   { symbol: 'p', exponent: -12 },
+   { symbol: 'f', exponent: -15 },
+   { symbol: 'a', exponent: -18 },
+   { symbol: 'z', exponent: -21 },
+   { symbol: 'y', exponent: -24 }
+ ];
+ */
+pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
+    // Returns the coefficient and exponent for converting non-SI units to meters
+    // (in scientific notation format where the tuple is `(coefficient, exponent)` meaning `coefficient × 10^exponent` meters)
+    match unit {
+        // SI prefixes with positive exponents (multiples of meter)
+        AxisUnitSpace::Yottameter => (1.0, 24),
+        AxisUnitSpace::Zettameter => (1.0, 21),
+        AxisUnitSpace::Exameter => (1.0, 18),
+        AxisUnitSpace::Petameter => (1.0, 15),
+        AxisUnitSpace::Terameter => (1.0, 12),
+        AxisUnitSpace::Gigameter => (1.0, 9),
+        AxisUnitSpace::Megameter => (1.0, 6),
+        AxisUnitSpace::Kilometer => (1.0, 3),
+        AxisUnitSpace::Hectometer => (1.0, 2),
+        // TODO: decameter is not currently part of AxisUnitSpace, but it would be (1.0, 1).
+        AxisUnitSpace::Meter => (1.0, 0),
+        // SI prefixes with negative exponents (submultiples of meter)
+        AxisUnitSpace::Decimeter => (1.0, -1),
+        AxisUnitSpace::Centimeter => (1.0, -2),
+        AxisUnitSpace::Millimeter => (1.0, -3),
+        AxisUnitSpace::Micrometer => (1.0, -6),
+        AxisUnitSpace::Nanometer => (1.0, -9),
+        AxisUnitSpace::Angstrom => (1.0, -10), // Note: not SI since between -9 to -12 exponents.
+        AxisUnitSpace::Picometer => (1.0, -12),
+        AxisUnitSpace::Femtometer => (1.0, -15),
+        AxisUnitSpace::Attometer => (1.0, -18),
+        AxisUnitSpace::Zeptometer => (1.0, -21),
+        AxisUnitSpace::Yoctometer => (1.0, -24),
+        // Non-SI units with coefficients relative to meter
+        AxisUnitSpace::Inch => (2.54, -2),      // 0.0254 m = 2.54 × 10⁻² m
+        AxisUnitSpace::Foot => (3.048, -1),     // 0.3048 m = 3.048 × 10⁻¹ m
+        AxisUnitSpace::Yard => (9.144, -1),     // 0.9144 m = 9.144 × 10⁻¹ m
+        AxisUnitSpace::Mile => (1.609344, 3),   // 1609.344 m = 1.609344 × 10³ m
+        AxisUnitSpace::Parsec => (3.0857, 16),  // ~3.0857 × 10¹⁶ m
+        // TODO: would it be better to just interpret as meters if unrecognized?
+        _ => panic!("Unrecognized AxisUnitSpace unit: {:?}", unit),
+    }
+}
 
 
 // These utils are shared between ome_zarr_bitmap_layer and ome_zarr_multiscale_layer,

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use ome_zarr_metadata::v0_5::MultiscaleImage;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
@@ -21,11 +22,17 @@ use pluot_core::layers::multiscale_utils::{
 };
 use pluot_core::params::PrepareResult;
 
-use ome_zarr_metadata::v0_5::{RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale};
+use ome_zarr_metadata::v0_5::{
+    RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale,
+    Axis, AxisType, AxisUnit, AxisUnitSpace,
+};
 
 use crate::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
-use crate::layers::ome_zarr_utils::OmeZarrChannelSetting;
-use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, PhysicalRect, rects_overlap, bounding_box};
+use crate::layers::ome_zarr_utils::{
+    OmeZarrChannelSetting, OmeDim, OmeDimensionOrder,
+    PhysicalRect, rects_overlap, bounding_box,
+    axis_unit_space_to_coefficient_and_exponent,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrMultiscaleLayerParams {
@@ -179,7 +186,7 @@ impl OmeZarrMultiscaleLayer {
                 .multiscales
                 .expect("Expected OME-NGFF multiscales metadata");
 
-            let multiscale = &multiscales[multiscale_index];
+            let multiscale: &MultiscaleImage = &multiscales[multiscale_index];
 
             // Build OmeDimensionOrder from the axes list.
             let dimension_order_str: String = multiscale.axes.iter()
@@ -187,6 +194,20 @@ impl OmeZarrMultiscaleLayer {
                 .collect();
             let dimension_order = OmeDimensionOrder::try_from(dimension_order_str.as_str())
                 .unwrap_or_else(|e| panic!("Invalid OME-Zarr dimension order '{}': {}", dimension_order_str, e));
+
+            let x_dim_i = dimension_order.index_of(OmeDim::X).unwrap();
+            let y_dim_i = dimension_order.index_of(OmeDim::Y).unwrap();
+
+            let (x_unit_coeff, x_unit_exp) = match &multiscale.axes[x_dim_i].unit {
+                Some(AxisUnit::Space(unit)) => axis_unit_space_to_coefficient_and_exponent(unit),
+                None => (1.0, -6), // Default to 1 px = 1 micrometer units.
+                _ => panic!("Expected space unit for X axis, got non-space unit: {:?}", multiscale.axes[x_dim_i].unit),
+            };
+            let (y_unit_coeff, y_unit_exp) = match &multiscale.axes[y_dim_i].unit {
+                Some(AxisUnit::Space(unit)) => axis_unit_space_to_coefficient_and_exponent(unit),
+                None => (1.0, -6), // Default to 1 px = 1 micrometer units.
+                _ => panic!("Expected space unit for Y axis, got non-space unit: {:?}", multiscale.axes[y_dim_i].unit),
+            };
 
             let mut resolution_levels = Vec::new();
             let mut dataset_paths = Vec::new();
@@ -209,8 +230,6 @@ impl OmeZarrMultiscaleLayer {
                 let array_metadata = array.metadata().clone();
                 let shape = array.shape().to_vec();
 
-                let x_dim_i = dimension_order.index_of(OmeDim::X).unwrap();
-                let y_dim_i = dimension_order.index_of(OmeDim::Y).unwrap();
                 let img_h = shape[y_dim_i];
                 let img_w = shape[x_dim_i];
 
@@ -237,10 +256,16 @@ impl OmeZarrMultiscaleLayer {
                 // Build full chunk shape vector (all dimensions).
                 let full_chunk_shape: Vec<u64> = chunk_shape_vec.iter().map(|s| s.get()).collect();
 
+                // Convert scale values to meters for consistent physical coordinates.
+                // The scale from coordinate_transformations is in the axis's declared unit.
+                // Multiply by the unit coefficient and 10^exponent to get meters.
+                let scale_x_in_meters = scale_x * x_unit_coeff * 10_f64.powi(x_unit_exp);
+                let scale_y_in_meters = scale_y * y_unit_coeff * 10_f64.powi(y_unit_exp);
+
                 resolution_levels.push(ResolutionLevel {
                     shape: [img_h as u32, img_w as u32],
                     chunk_shape: [chunk_h as u32, chunk_w as u32],
-                    scale: [scale_y, scale_x],
+                    scale: [scale_y_in_meters, scale_x_in_meters],
                 });
                 dataset_paths.push(array_path);
                 full_shapes.push(shape);
@@ -271,6 +296,7 @@ impl OmeZarrMultiscaleLayer {
             &self.view_params,
             &metadata.resolution_levels,
         );
+        log(&format!("Selected resolution level {} for target zoom", target_level));
 
         let num_levels = metadata.resolution_levels.len();
 
@@ -295,6 +321,7 @@ impl OmeZarrMultiscaleLayer {
             let tiles = get_visible_tiles(&self.view_params, level);
 
             if tiles.is_empty() {
+                log(&format!("No visible tiles at level {}", level_idx));
                 continue;
             }
 

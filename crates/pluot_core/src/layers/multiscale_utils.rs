@@ -157,21 +157,31 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
     let (layer_w, layer_h) = get_layer_size(view_params);
     let dpr = view_params.device_pixel_ratio as f64;
 
-    // The visible range is already in physical coordinates (same coordinate
-    // system as scale values), so we can directly compute the physical size
-    // of one screen pixel.
-    let screen_pixel_phys_x = (max_x - min_x) / (layer_w * dpr);
-    let screen_pixel_phys_y = (max_y - min_y) / (layer_h * dpr);
+    // Number of meters in x and y directions based on current view params (camera, etc).
+    let num_m_in_x = max_x - min_x;
+    let num_m_in_y = max_y - min_y;
 
-    // Use the smaller screen pixel size (the more demanding dimension)
-    // to ensure sharpness in both directions.
-    let screen_pixel_phys = screen_pixel_phys_x.min(screen_pixel_phys_y);
+    let viewport_px_in_x = layer_w * dpr;
+    let viewport_px_in_y = layer_h * dpr;
+
+    let num_m_per_viewport_px_in_x = num_m_in_x / viewport_px_in_x;
+    let num_m_per_viewport_px_in_y = num_m_in_y / viewport_px_in_y;
 
     // Iterate from coarsest to finest. Return the first (coarsest) level
     // whose voxel size is ≤ the screen pixel size.
     for i in (0..levels.len()).rev() {
-        let voxel_size = levels[i].scale[0].max(levels[i].scale[1]);
-        if voxel_size <= screen_pixel_phys {
+        let num_m_per_img_px_in_x = levels[i].scale[1];
+        let num_m_per_img_px_in_y = levels[i].scale[0];
+
+        log(&format!(
+            "Level {} with shape ({}, {}) and scale ({}, {}); num_m_per_img_px_in_x={}, num_m_per_img_px_in_y={}, num_m_per_viewport_px_in_x={}, num_m_per_viewport_px_in_y={}",
+            i, levels[i].shape[1], levels[i].shape[0], levels[i].scale[1], levels[i].scale[0],
+            num_m_per_img_px_in_x, num_m_per_img_px_in_y, num_m_per_viewport_px_in_x, num_m_per_viewport_px_in_y
+        ));
+
+        let min_img_px_per_viewport_px = (num_m_per_img_px_in_x / num_m_per_viewport_px_in_x).min(num_m_per_img_px_in_y / num_m_per_viewport_px_in_y);
+
+        if min_img_px_per_viewport_px <= 1.0 {
             return i;
         }
     }
