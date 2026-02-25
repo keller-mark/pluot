@@ -7,17 +7,52 @@ use std::sync::Arc;
 
 use crate::params::RenderParams;
 
-
-pub struct RenderContext<'a> {
-    pub store: &'a Arc<AsyncZarritaStore>,
+pub struct GpuContext<'a> {
     pub device: &'a wgpu::Device,
-    pub texture_desc: &'a wgpu::TextureDescriptor<'a>,
-    pub out_tex: &'a wgpu::Texture,
     pub queue: &'a wgpu::Queue,
-    pub params: &'a RenderParams,
+}
 
+pub struct GpuRenderContext<'a> {
+    pub gpu_context: GpuContext<'a>,
+    pub out_tex: &'a wgpu::Texture,
+}
+
+pub struct CpuRenderContext {
+    // TODO: Is anything needed here?
+}
+
+pub struct SvgRenderContext<'a> {
+    pub gpu_context: Option<GpuRenderContext<'a>>,
     // TODO: create a container struct that holds the SVG stuff, as noted in two/svg.rs
     pub out_group: &'a mut Group,
+}
+
+pub struct GpuComputeContext<'a> {
+    pub gpu_context: GpuContext<'a>,
+}
+
+pub struct CpuComputeContext {
+    // TODO: Is anything needed here?
+}
+
+pub enum RenderContextEnum<'a> {
+    GpuRender(GpuRenderContext<'a>),
+    CpuRender(CpuRenderContext),
+    SvgRender(SvgRenderContext<'a>),
+}
+
+pub enum ComputeContextEnum<'a> {
+    GpuCompute(GpuComputeContext<'a>),
+    CpuCompute(CpuComputeContext),
+}
+
+pub struct RenderAndComputeContext<'a> {
+    pub params: &'a RenderParams,
+    pub store: &'a Arc<AsyncZarritaStore>,
+
+    // These enums will depend on RenderParams.render_backend and RenderParams.compute_backend, respectively.
+    pub render_context: RenderContextEnum<'a>,
+    pub compute_context: ComputeContextEnum<'a>,
 }
 
 pub struct PrepareResult {

@@ -20,6 +20,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     let height = params.height;
     let store_name = &params.store_name;
 
+    // Depending on params.render_backend and params.compute_backend, set up the WgpuContext struct.
+
+
     // The Instance is the context for all other wgpu objects.
     // This is the first thing you create when using wgpu.
     // Its primary use is to create Adapters and Surfaces.
