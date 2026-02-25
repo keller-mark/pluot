@@ -12,7 +12,8 @@ use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::update_svg;
 use crate::layers::position_utils::get_point_position;
-use crate::params::{LayerParams, PrepareResult, RenderResult};
+use crate::params::{LayerParams};
+use crate::render_types::{PrepareResult, RenderResult};
 use crate::layered_plot::get_layer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

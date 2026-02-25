@@ -6,7 +6,7 @@ use crate::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, Pr
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
-use crate::params::{PrepareResult, RenderResult};
+use crate::render_types::{PrepareResult, RenderResult};
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
 

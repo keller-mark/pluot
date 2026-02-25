@@ -219,6 +219,7 @@ async fn main() {
         cache_enabled: false,
         svg_compression_enabled: false,
         pickable: false,
+        ..Default::default()
     };
 
     let width = params.width;

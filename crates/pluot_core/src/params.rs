@@ -5,12 +5,27 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
 
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum RenderBackend {
+    Gpu,
+    Cpu,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ComputeBackend {
+    Gpu,
+    Cpu,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GraphicsFormat {
     // 0: pixels
     Raster,
     // 1: SVG.
     Vector,
+
+    // TODO: add AccessKit as a GraphicsFormat?
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -44,7 +59,6 @@ pub struct LayerParams {
 pub struct LayeredPlotRenderParams {
     pub layers: Vec<LayerParams>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "plot_type", content = "plot_params")]
@@ -110,34 +124,12 @@ pub struct RenderParams {
     // to facilitate picking, but will only be true in certain situations
     // (e.g., interactive plots).
     pub pickable: bool,
-}
-pub struct RenderContext<'a> {
-    pub store: &'a Arc<AsyncZarritaStore>,
-    pub device: &'a wgpu::Device,
-    pub texture_desc: &'a wgpu::TextureDescriptor<'a>,
-    pub out_tex: &'a wgpu::Texture,
-    pub queue: &'a wgpu::Queue,
-    pub params: &'a RenderParams,
 
-    pub vello_tex: &'a wgpu::Texture,
-    //pub vello_scene: &'a mut vello::Scene,
+    // If None, try GPU, then fallback to CPU.
+    pub render_backend: Option<RenderBackend>,
 
-    pub out_group: &'a mut Group,
-}
-
-pub struct PrepareResult {
-    // Whether this layer bailed early due to the provided timeout.
-    pub bailed_early: bool,
-    // TODO: do we need a `timeout_remaining` field here to track the time remaining for subsequent layers
-    // after earlier layers have used up a portion of the timeout budget? Or, can we just use maybe_timeout!
-    // on joined futures to handle this instead?
-}
-
-pub struct RenderResult {
-    // Whether one or more layers bailed early due to the provided timeout.
-    // Only relevant in interactive settings.
-    // In non-interactive settings, timeout will be None, so this should always be false.
-    pub bailed_early: bool,
+    // If None, try GPU, then fallback to CPU.
+    pub compute_backend: Option<ComputeBackend>,
 }
 
 impl Default for RenderParams {
@@ -167,6 +159,8 @@ impl Default for RenderParams {
             margin_top: None,
             margin_bottom: None,
             pickable: false,
+            render_backend: None,
+            compute_backend: None,
         }
     }
 }

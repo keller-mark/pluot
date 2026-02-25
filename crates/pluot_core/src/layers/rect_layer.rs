@@ -11,7 +11,7 @@ use crate::layer_traits::{
     AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::layers::position_utils::get_point_position;
-use crate::params::{PrepareResult, RenderResult};
+use crate::render_types::{PrepareResult, RenderResult};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };

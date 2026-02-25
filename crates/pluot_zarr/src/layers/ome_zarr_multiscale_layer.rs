@@ -19,7 +19,7 @@ use pluot_core::layer_traits::{
 use pluot_core::layers::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
-use pluot_core::params::PrepareResult;
+use pluot_core::render_types::{PrepareResult};
 
 use ome_zarr_metadata::v0_5::{
     RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale,

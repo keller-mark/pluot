@@ -12,7 +12,7 @@ use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::layers::multiscale_utils::{
     self, ResolutionLevel, get_visible_tiles, select_resolution_level,
 };
-use crate::params::PrepareResult;
+use crate::render_types::{PrepareResult, RenderResult};
 use crate::wgpu;
 
 

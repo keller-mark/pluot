@@ -7,8 +7,9 @@ use crate::log;
 use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 
-use crate::params::{GraphicsFormat, RenderContext};
-pub use crate::params::{PlotParams, RenderParams, RenderResult};
+use crate::params::{GraphicsFormat};
+pub use crate::params::{PlotParams, RenderParams};
+use crate::render_types::{RenderContext, PrepareResult, RenderResult};
 use crate::layered_plot;
 use crate::cache::{get_or_init_gpu_context, get_or_init_store};
 
@@ -58,34 +59,6 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     let texture = device.create_texture(&texture_desc);
     //let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // Create vello scene and texture.
-    let vello_tex = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Shape/Text Overlay Texture"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-
-        // For Vello:
-        // Important: Use a non-sRGB UNORM format for Vello offscreen rendering.
-        // Note: Vello requires TextureUsages::STORAGE_BINDING, which requires Rgba8Unorm (incompatible with Rgba8UnormSrgb format)
-        /*format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::STORAGE_BINDING
-            | wgpu::TextureUsages::COPY_SRC,*/
-        // For VGER:
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    //let mut vello_scene = vello::Scene::new();
 
     // Create a buffer to store the output (RGBA8)
     let bytes_per_pixel: u32 = 4;
@@ -133,8 +106,6 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         queue: &queue,
         params: &params,
 
-        vello_tex: &vello_tex,
-        //vello_scene: &mut vello_scene,
         out_group: &mut group,
     };
 

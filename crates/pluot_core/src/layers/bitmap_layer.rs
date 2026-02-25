@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
-use crate::params::{PrepareResult, RenderResult};
+use crate::render_types::{PrepareResult, RenderResult};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;

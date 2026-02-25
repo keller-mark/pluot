@@ -11,7 +11,7 @@ use crate::layer_traits::{
 };
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
-use crate::params::{PrepareResult, RenderResult};
+use crate::render_types::{PrepareResult, RenderResult};
 use crate::wgpu;
 
 

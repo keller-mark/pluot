@@ -236,6 +236,8 @@ impl Default for TwoGroup {
     }
 }
 
+// TODO: TwoImage element for <image/> elements.
+
 #[derive(Clone, Debug)]
 pub enum TwoElement {
     Rectangle(TwoRectangle),

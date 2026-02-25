@@ -1,7 +1,7 @@
 use crate::wgpu;
 use crate::two::svg::{init_svg};
 use svg::node::element::Group;
-use crate::params::{RenderContext, PrepareResult, RenderResult};
+use crate::render_types::{RenderContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
 use serde::{Deserialize, Serialize};
 

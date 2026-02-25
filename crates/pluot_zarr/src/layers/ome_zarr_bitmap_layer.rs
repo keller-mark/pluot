@@ -16,7 +16,7 @@ use pluot_core::layer_traits::{
 use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
 };
-use pluot_core::params::PrepareResult;
+use pluot_core::render_types::{PrepareResult};
 
 use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
 use pluot_core::layers::multiscale_utils::to_y_slice;
