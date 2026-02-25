@@ -126,6 +126,38 @@ pub trait PreparedAndDraw: PreparedAndDrawToCanvas + PreparedAndDrawToSvg {}
 impl<T: PreparedAndDrawToCanvas + PreparedAndDrawToSvg> PreparedAndDraw for T {}
 
 
+// TODO: Split DrawToCanvas into DrawToRasterCpu and DrawToRasterGpu
+
+// TODO: Define traits for ComputeCpu and ComputeGpu
+
+pub fn get_layers(view_params: ViewParams, plot_params: PlotParams) -> Vec<Box<dyn PreparedAndDraw>> {
+    // TODO: Move logic from layered_plot.rs here.
+}
+
+// If using the CPU compute backend, the caller will pass None for gpu_context.
+pub async fn prepare_layers(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, gpu_context: Some(&mut GpuContext<'_>)) -> Vec<PrepareResult> {
+    // Collect references first to avoid Send issues with the iterator
+    let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare(gpu_context)).collect();
+
+    // Does this actually work like Promise.all? or does it just run things sequentially?
+    let prepare_results = futures::future::join_all(prepare_futures).await;
+
+    return prepare_results;
+}
+
+// If using the CPU render backend, the caller will pass None for gpu_context.
+pub async fn draw_layers_to_vector(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, gpu_context: Some(&mut GpuContext<'_>)) -> Vec<RenderResult> {
+    // TODO
+}
+
+// If using the CPU render backend, the caller will pass None for gpu_context.
+pub async fn draw_layers_to_raster(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, gpu_context: Some(&mut GpuContext<'_>)) -> Vec<RenderResult> {
+    // TODO
+}
+
+
+
+
 // TODO: figure out how to make the type of `layers` Vec<Box<dyn PreparedAndDrawToSvg>>  (no need for canvas as well).
 pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, context: &mut RenderContext<'_>) -> RenderResult {
     let (_, group) = init_svg(view_params.width as f64, view_params.height as f64);
@@ -157,6 +189,8 @@ pub async fn render_svg(view_params: ViewParams, mut layers: Vec<Box<dyn Prepare
         bailed_early: false,
     }
 }
+
+// TODO: consolidate the following functions and the code in render.rs
 
 // TODO: figure out how to make the type of `layers` Vec<Box<dyn PreparedAndDrawToCanvas>>  (no need for SVG as well).
 pub async fn render_canvas(view_params: ViewParams, mut layers: Vec<Box<dyn PreparedAndDraw>>, context: &mut RenderContext<'_>, encoder: &mut wgpu::CommandEncoder) -> RenderResult {

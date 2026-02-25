@@ -13,6 +13,13 @@ use crate::render_types::{RenderContext, PrepareResult, RenderResult};
 use crate::layered_plot;
 use crate::cache::{get_or_init_gpu_context, get_or_init_store};
 
+
+
+
+
+
+
+
 // This function should accept width and height as parameters,
 // and return a Uint8Array containing the rendered image data.
 pub async fn render(params: RenderParams) -> Vec<u8> {
