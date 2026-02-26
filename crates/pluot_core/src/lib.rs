@@ -5,7 +5,6 @@ pub mod render_types;
 // mod plots;
 pub mod cache;
 pub mod layer_traits;
-pub mod layered_plot;
 mod render;
 pub mod layers;
 pub mod registry;

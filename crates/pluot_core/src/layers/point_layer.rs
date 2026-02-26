@@ -8,6 +8,7 @@ use std::sync::{Arc};
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
@@ -66,7 +67,7 @@ impl PointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for PointLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?

@@ -14,7 +14,8 @@ use crate::two::svg::update_svg;
 use crate::layers::position_utils::get_point_position;
 use crate::params::{LayerParams};
 use crate::render_types::{PrepareResult, RenderResult};
-use crate::layered_plot::get_layer;
+use crate::render_types::GpuContext;
+use crate::registry::get_layer_from_registry;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
@@ -41,7 +42,7 @@ impl CompositeLayer {
         let sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = layer_params.sub_layers
             .iter()
             .map(|layer_param| {
-                get_layer(layer_param, &view_params)
+                get_layer_from_registry(&layer_param.layer_type, layer_param.layer_params.clone(), &view_params)
             })
             .collect();
 
@@ -58,7 +59,7 @@ pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn Pre
     // TODO: use futures::join, the same as in the layer_traits::render functions.
     let mut bailed_early = false;
     for sub_layer in sub_layer_instances.iter_mut() {
-        let sub_layer_result = sub_layer.prepare().await;
+        let sub_layer_result = sub_layer.prepare(None).await;
         if sub_layer_result.bailed_early {
             bailed_early = true;
         }
@@ -71,7 +72,7 @@ pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn Pre
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CompositeLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         return base_prepare_composite_layer(&mut self.sub_layer_instances).await;
     }
 }

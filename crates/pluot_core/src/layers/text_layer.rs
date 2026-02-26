@@ -13,6 +13,7 @@ use fontdue::{Font, FontSettings};
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_internal_text_layer_data, CachedInternalTextLayerData};
@@ -192,7 +193,7 @@ impl TextLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TextLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?

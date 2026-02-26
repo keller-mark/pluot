@@ -14,7 +14,7 @@ use pluot_core::two::svg::update_svg;
 use pluot_core::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 use pluot_core::render_types::{PrepareResult, RenderResult};
-
+use pluot_core::render_types::GpuContext;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrPointLayerParams {
@@ -88,7 +88,7 @@ impl ZarrPointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for ZarrPointLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
 
         // TODO: include the layer type in the memoization dependencies?

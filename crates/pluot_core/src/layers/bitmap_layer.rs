@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
@@ -265,7 +266,7 @@ impl BitmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for BitmapLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
 
         // TODO: cache the sliced texture data here for the specified z/t/channel settings.
 

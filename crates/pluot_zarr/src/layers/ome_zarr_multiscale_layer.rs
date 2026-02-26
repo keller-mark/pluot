@@ -20,7 +20,7 @@ use pluot_core::layers::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
 use pluot_core::render_types::{PrepareResult};
-
+use pluot_core::render_types::GpuContext;
 use ome_zarr_metadata::v0_5::{
     RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale,
     Axis, AxisType, AxisUnit, AxisUnitSpace,
@@ -436,7 +436,7 @@ impl OmeZarrMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrMultiscaleLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
 
         // Use maybe_timeout to bail out early if loading metadata takes too long.
@@ -479,7 +479,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         */
         // Prepare all sublayers concurrently across all levels.
         let level_futures = self.level_sublayers.iter_mut().map(|level_group| async {
-            let futures = level_group.sublayers.iter_mut().map(|sublayer| sublayer.prepare());
+            let futures = level_group.sublayers.iter_mut().map(|sublayer| sublayer.prepare(None));
             let results = futures::future::join_all(futures).await;
 
             let group_bailed = results.iter().any(|r| r.bailed_early);

@@ -17,7 +17,7 @@ use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
 };
 use pluot_core::render_types::{PrepareResult};
-
+use pluot_core::render_types::GpuContext;
 use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
 use pluot_core::layers::multiscale_utils::to_y_slice;
 
@@ -248,7 +248,7 @@ impl OmeZarrBitmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrBitmapLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         // Use maybe_timeout to bail early if loading takes too long.
         let data_future = self.load_tile_data();
 
@@ -314,7 +314,7 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         };
 
         let mut inner = BitmapLayer::new(self.view_params.clone(), bitmap_params);
-        let result = inner.prepare().await;
+        let result = inner.prepare(None).await;
         self.inner = Some(inner);
 
         result

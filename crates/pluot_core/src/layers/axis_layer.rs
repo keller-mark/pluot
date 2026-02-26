@@ -7,6 +7,7 @@ use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_compos
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
 
@@ -374,7 +375,7 @@ fn format_tick_value(value: f64) -> String {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for AxisLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         // Build sublayers based on current view params
         self.sub_layer_instances = self.build_sublayers();
 

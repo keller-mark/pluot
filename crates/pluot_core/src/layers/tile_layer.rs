@@ -12,6 +12,7 @@ use crate::layer_traits::{
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 
 
@@ -180,11 +181,11 @@ impl TileLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TileLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         self.sub_layer_instances = self.build_sublayers();
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare().await;
+            sub_layer.prepare(None).await;
         }
 
         return PrepareResult {

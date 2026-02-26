@@ -1,24 +1,8 @@
 use crate::wgpu;
-use crate::zarr::AsyncZarritaStore;
-use crate::layer_traits::AspectRatioMode;
-use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
-use std::sync::Arc;
-
-use crate::params::RenderParams;
 
 pub struct GpuContext<'a> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
-}
-
-pub struct RenderAndComputeContext<'a> {
-    pub params: &'a RenderParams,
-    pub store: &'a Arc<AsyncZarritaStore>,
-
-    pub gpu_context: Option<GpuContext<'a>>,
-
-    // pub out_tex: &'a wgpu::Texture,
 }
 
 pub struct PrepareResult {

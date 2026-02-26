@@ -13,6 +13,7 @@ use crate::layers::multiscale_utils::{
     self, ResolutionLevel, get_visible_tiles, select_resolution_level,
 };
 use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 
 
@@ -104,11 +105,11 @@ impl MultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for MultiscaleLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         self.sub_layer_instances = self.build_sublayers();
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare().await;
+            sub_layer.prepare(None).await;
         }
 
         PrepareResult {
