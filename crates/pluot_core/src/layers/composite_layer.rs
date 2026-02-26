@@ -5,7 +5,7 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::layer_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use svg::node::element::Group;
@@ -55,11 +55,11 @@ impl CompositeLayer {
 }
 
 
-pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn PreparedAndDraw>], mut gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn PreparedAndDraw>], gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
     // TODO: use futures::join, the same as in the layer_traits::render functions.
     let mut bailed_early = false;
     for sub_layer in sub_layer_instances.iter_mut() {
-        let sub_layer_result = sub_layer.prepare(gpu_context.as_deref_mut()).await;
+        let sub_layer_result = sub_layer.prepare(gpu_context).await;
         if sub_layer_result.bailed_early {
             bailed_early = true;
         }
@@ -72,7 +72,7 @@ pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn Pre
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CompositeLayer {
-    async fn prepare(&mut self, gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         return base_prepare_composite_layer(&mut self.sub_layer_instances, gpu_context).await;
     }
 }
@@ -80,7 +80,7 @@ impl PreparedLayer for CompositeLayer {
 // Reusable function that can be used by other composite layers: raster variant.
 pub async fn base_draw_composite_layer(
     sub_layer_instances: &[Box<dyn PreparedAndDraw>],
-    gpu_context: &mut GpuContext<'_>,
+    gpu_context: &GpuContext<'_>,
     pass: &mut wgpu::RenderPass<'_>,
 ) {
     for sub_layer in sub_layer_instances.iter() {
@@ -91,7 +91,7 @@ pub async fn base_draw_composite_layer(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for CompositeLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

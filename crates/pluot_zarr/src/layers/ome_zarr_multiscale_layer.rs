@@ -13,7 +13,7 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::get_or_init_store;
-use pluot_core::layer_traits::{
+use pluot_core::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, ViewParams,
 };
 use pluot_core::layers::multiscale_utils::{
@@ -436,7 +436,7 @@ impl OmeZarrMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrMultiscaleLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
 
         // Use maybe_timeout to bail out early if loading metadata takes too long.
@@ -507,7 +507,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         // level_sublayers is ordered coarsest-first.
         // Draw levels from coarsest to finest, but skip coarser tiles that are
         // fully occluded by ready finer-level tiles.

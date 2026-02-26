@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 use std::sync::Arc;
-use crate::layer_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
+use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
@@ -375,7 +375,7 @@ fn format_tick_value(value: f64) -> String {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for AxisLayer {
-    async fn prepare(&mut self, gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Build sublayers based on current view params
         self.sub_layer_instances = self.build_sublayers();
 
@@ -387,7 +387,7 @@ impl PreparedLayer for AxisLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for AxisLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

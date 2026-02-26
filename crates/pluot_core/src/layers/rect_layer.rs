@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use crate::layer_traits::{
+use crate::render_traits::{
     AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::layers::position_utils::get_point_position;
@@ -64,7 +64,7 @@ impl RectLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for RectLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -96,7 +96,7 @@ struct RectLayerUniforms {
 // TODO: is this the best way to share this logic?
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 pub async fn base_draw_rect_layer(
-    gpu_context: &mut GpuContext<'_>,
+    gpu_context: &GpuContext<'_>,
     pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &RectLayerParams,
@@ -422,7 +422,7 @@ pub async fn base_draw_rect_layer(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for RectLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_rect_layer(
             gpu_context, pass,
             &self.view_params,

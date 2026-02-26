@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::layer_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -266,7 +266,7 @@ impl BitmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for BitmapLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
 
         // TODO: cache the sliced texture data here for the specified z/t/channel settings.
 
@@ -349,7 +349,7 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
 
 
 pub async fn base_draw_bitmap_layer(
-    gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &BitmapLayerParams,
 ) {
@@ -657,7 +657,7 @@ pub async fn base_draw_bitmap_layer(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for BitmapLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_bitmap_layer(
             gpu_context, pass,
             &self.view_params,

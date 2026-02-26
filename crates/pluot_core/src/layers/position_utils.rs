@@ -1,7 +1,7 @@
 // Simulated vertex shader logic for SVG point positioning.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 
-use crate::layer_traits::{AspectRatioMode, UnitsMode};
+use crate::render_traits::{AspectRatioMode, UnitsMode};
 
 
 fn scale(x: f32, y: f32, z: f32) -> Mat4 {

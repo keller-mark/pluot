@@ -4,7 +4,7 @@ pub mod params;
 pub mod render_types;
 // mod plots;
 pub mod cache;
-pub mod layer_traits;
+pub mod render_traits;
 mod render;
 pub mod layers;
 pub mod registry;
@@ -24,7 +24,7 @@ pub use wgpu;
 
 // Export things needed for layer-based plotting via Rust.
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
-pub use crate::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
+pub use crate::render_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 
 // Export things needed by workspace packages that define other layers.

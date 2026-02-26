@@ -1,15 +1,11 @@
 use crate::wgpu;
-use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::two::svg::init_svg;
 use svg::node::element::Group;
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
-use crate::params::{GraphicsFormat, PlotParams, RenderParams, LayerParams};
+use crate::params::LayerParams;
 use crate::registry::get_layer_from_registry;
-use crate::cache::get_or_init_gpu_context;
 use serde::{Deserialize, Serialize};
-
-use futures_intrusive::channel::shared::oneshot_channel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioMode {
@@ -94,7 +90,7 @@ impl Default for ViewParams {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait PreparedLayer {
-    async fn prepare(&mut self, gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult;
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult;
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -108,7 +104,7 @@ pub trait DrawToSvg {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToRasterGpu: MaybeSend + MaybeSync {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass);
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass);
 }
 
 // Stub trait for CPU-based raster rendering (software rasterizer).
@@ -132,7 +128,7 @@ pub trait ComputeCpu: MaybeSend + MaybeSync {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait ComputeGpu: MaybeSend + MaybeSync {
     // TODO: what should this return?
-    async fn compute(&self, gpu_context: &mut GpuContext<'_>);
+    async fn compute(&self, gpu_context: &GpuContext<'_>);
 }
 
 pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync {}
@@ -165,13 +161,13 @@ pub fn get_layers(layers: &[LayerParams], view_params: &ViewParams) -> Vec<Box<d
 // that cannot be shared across concurrent futures.
 pub async fn prepare_layers(
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    mut gpu_context: Option<&mut GpuContext<'_>>,
+    gpu_context: Option<&GpuContext<'_>>,
 ) -> Vec<PrepareResult> {
     // TODO: if gpu_context is None, and RenderParams.compute_backend is GPU, panic.
     let mut results = Vec::with_capacity(layers.len());
     for layer in layers.iter_mut() {
         // Pass None per-layer for now; GPU compute support will need a per-layer context strategy.
-        let result = layer.prepare(gpu_context.as_deref_mut()).await;
+        let result = layer.prepare(gpu_context).await;
         results.push(result);
     }
     results
@@ -180,7 +176,7 @@ pub async fn prepare_layers(
 pub async fn draw_layers_to_vector(
     view_params: &ViewParams,
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    _gpu_context: Option<&mut GpuContext<'_>>,
+    _gpu_context: Option<&GpuContext<'_>>,
 ) -> (Group, RenderResult) {
     let (_, mut group) = init_svg(view_params.width as f64, view_params.height as f64);
 
@@ -195,7 +191,7 @@ pub async fn draw_layers_to_vector(
 pub async fn draw_layers_to_raster(
     view_params: &ViewParams,
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    gpu_context: &mut GpuContext<'_>,
+    gpu_context: &GpuContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
     out_tex: &wgpu::Texture,
 ) -> RenderResult {
@@ -221,7 +217,7 @@ pub async fn draw_layers_to_raster(
         });
 
         for layer in layers.iter_mut() {
-            DrawToRasterGpu::draw(layer.as_ref(), gpu_context, &mut render_pass).await;
+            DrawToRasterGpu::draw(layer.as_ref(), &gpu_context, &mut render_pass).await;
         }
 
         drop(render_pass);
@@ -231,161 +227,3 @@ pub async fn draw_layers_to_raster(
     RenderResult { bailed_early }
 }
 
-// TODO: move this function back into render.rs
-pub async fn render(params: RenderParams) -> Vec<u8> {
-    let width = params.width;
-    let height = params.height;
-
-    let view_params = ViewParams {
-        view_id: params.plot_id.clone(),
-        width,
-        height,
-        margins: Some(MarginParams {
-            margin_top: Some(params.margin_top.unwrap_or(0.0)),
-            margin_right: Some(params.margin_right.unwrap_or(0.0)),
-            margin_bottom: Some(params.margin_bottom.unwrap_or(0.0)),
-            margin_left: Some(params.margin_left.unwrap_or(0.0)),
-        }),
-        device_pixel_ratio: params.device_pixel_ratio,
-        camera_view: params.camera_view,
-        timeout: params.timeout,
-        cache_enabled: params.cache_enabled,
-        aspect_ratio_mode: params.aspect_ratio_mode,
-        store_name: Some(params.store_name.clone()),
-    };
-
-    #[allow(irrefutable_let_patterns)]
-    let PlotParams::LayeredPlot(plot_params) = &params.plot_params else {
-        panic!("Expected layered plot params");
-    };
-
-    let mut layers = get_layers(&plot_params.layers, &view_params);
-
-    match params.format {
-        GraphicsFormat::Vector => {
-            prepare_layers(&mut layers, None).await;
-
-            let (group, _render_result) = draw_layers_to_vector(&view_params, &mut layers, None).await;
-
-            let svg_string = group.to_string();
-
-            if !params.svg_compression_enabled {
-                return svg_string.as_bytes().to_vec();
-            }
-            return lz_str::compress_to_uint8_array(&svg_string);
-        }
-        GraphicsFormat::Raster => {
-            let (device, queue) = get_or_init_gpu_context().await;
-
-            let texture_desc = TextureDescriptor {
-                label: Some("Final Render Texture"),
-                size: Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: TextureFormat::Rgba8UnormSrgb,
-                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-                view_formats: &[],
-            };
-            let texture = device.create_texture(&texture_desc);
-
-            let bytes_per_pixel: u32 = 4;
-            let unpadded_bytes_per_row = width * bytes_per_pixel;
-            let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-            let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
-            let output_buffer_size = (padded_bytes_per_row as u64) * (height as u64);
-
-            let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Output Buffer"),
-                size: output_buffer_size,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-            let mut gpu_context = GpuContext { device: &device, queue: &queue };
-            prepare_layers(&mut layers, Some(&mut gpu_context)).await;
-
-            let render_result = draw_layers_to_raster(
-                &view_params,
-                &mut layers,
-                &mut gpu_context,
-                &mut encoder,
-                &texture,
-            ).await;
-
-            encoder.copy_texture_to_buffer(
-                texture.as_image_copy(),
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &output_buffer,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(padded_bytes_per_row),
-                        rows_per_image: None,
-                    },
-                },
-                texture_desc.size,
-            );
-
-            queue.submit(Some(encoder.finish()));
-
-            let buffer_slice = output_buffer.slice(..);
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                let (sender, receiver) = oneshot_channel();
-                buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-                    if res.is_err() {
-                        panic!("Failed to map texture for reading");
-                    }
-                    sender.send(res).ok();
-                });
-
-                let _ = device.poll(wgpu::PollType::Poll);
-                receiver.receive().await.unwrap().unwrap();
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-                    if result.is_err() {
-                        panic!("Failed to map texture for reading");
-                    }
-                });
-                let _ = device.poll(wgpu::PollType::wait_indefinitely());
-            }
-
-            // TODO: add back comments from render.rs
-
-            let data = buffer_slice.get_mapped_range();
-
-            let num_extra_bytes = 1;
-            let mut pixels = vec![0u8; (unpadded_bytes_per_row * height + num_extra_bytes) as usize];
-
-            for y in 0..height {
-                let src_start = (y as usize) * (padded_bytes_per_row as usize);
-                let src_end = src_start + (unpadded_bytes_per_row as usize);
-                let dst_start = (y as usize) * (unpadded_bytes_per_row as usize);
-                let dst_end = dst_start + (unpadded_bytes_per_row as usize);
-                pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
-            }
-
-            // Final byte encodes the RenderResult for the caller.
-            pixels[(unpadded_bytes_per_row * height) as usize] = match render_result.bailed_early {
-                false => 0,
-                true => 1,
-            };
-
-            drop(data);
-            output_buffer.unmap();
-
-            pixels
-        }
-    }
-}

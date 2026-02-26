@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::layer_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -193,7 +193,7 @@ impl TextLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TextLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -423,7 +423,7 @@ struct TextLayerUniforms {
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
 pub async fn base_draw_text_layer(
-    gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &TextLayerParams,
     internal_data: &InternalTextLayerData,
@@ -733,7 +733,7 @@ pub async fn base_draw_text_layer(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for TextLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         let internal_data = self.internal_data.as_ref().expect("Internal data was not prepared. Call prepare() first.");
         base_draw_text_layer(
             gpu_context, pass,

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::layer_traits::{AspectRatioMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, ViewParams};
 use crate::log;
 
 /// A single resolution level in the multiscale pyramid.
@@ -282,7 +282,7 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer_traits::MarginParams;
+    use crate::render_traits::MarginParams;
 
     /// Helper to create a ViewParams with sensible defaults for testing.
     fn make_view_params(

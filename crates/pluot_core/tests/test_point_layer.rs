@@ -4,7 +4,7 @@ mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
 use pluot_core::params::{RenderParams, PlotParams, LayerParams, LayeredPlotRenderParams};
-use pluot_core::layer_traits::{AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):

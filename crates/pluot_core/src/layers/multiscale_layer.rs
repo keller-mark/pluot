@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
-use crate::layer_traits::{
+use crate::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
@@ -105,11 +105,11 @@ impl MultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for MultiscaleLayer {
-    async fn prepare(&mut self, mut gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         self.sub_layer_instances = self.build_sublayers();
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare(gpu_context.as_deref_mut()).await;
+            sub_layer.prepare(gpu_context).await;
         }
 
         PrepareResult {
@@ -121,7 +121,7 @@ impl PreparedLayer for MultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for MultiscaleLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

@@ -11,7 +11,7 @@ use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::two::svg::update_svg;
-use pluot_core::layer_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use pluot_core::render_types::GpuContext;
@@ -88,7 +88,7 @@ impl ZarrPointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for ZarrPointLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
 
         // TODO: include the layer type in the memoization dependencies?
@@ -182,7 +182,7 @@ impl PreparedLayer for ZarrPointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for ZarrPointLayer {
-    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         if !self.ready_to_draw {
             log("ZarrPointLayer was not ready to draw. Skipping draw call.");
             return;
