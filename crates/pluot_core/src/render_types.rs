@@ -5,6 +5,16 @@ pub struct GpuContext<'a> {
     pub queue: &'a wgpu::Queue,
 }
 
+// Stub context for CPU-based raster rendering (software rasterizer).
+// Fields will be added when a CPU render path is implemented.
+pub struct CpuContext<'a> {
+    pub _marker: std::marker::PhantomData<&'a ()>,
+}
+
+// Stub render pass for CPU-based raster rendering.
+// Fields will be added when a CPU render path is implemented.
+pub struct CpuRenderPass;
+
 pub struct PrepareResult {
     // Whether this layer bailed early due to the provided timeout.
     pub bailed_early: bool,

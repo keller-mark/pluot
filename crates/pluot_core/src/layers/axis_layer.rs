@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 use std::sync::Arc;
-use crate::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
+use crate::layer_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
-use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
@@ -375,21 +375,27 @@ fn format_tick_value(value: f64) -> String {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for AxisLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         // Build sublayers based on current view params
         self.sub_layer_instances = self.build_sublayers();
 
         // Prepare all sublayers
-        return base_prepare_composite_layer(&mut self.sub_layer_instances).await;
+        return base_prepare_composite_layer(&mut self.sub_layer_instances, gpu_context).await;
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for AxisLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
+impl DrawToRasterGpu for AxisLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for AxisLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

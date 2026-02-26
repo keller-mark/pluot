@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
-use crate::render_types::{PrepareResult, RenderResult};
+use crate::layer_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
@@ -423,11 +423,12 @@ struct TextLayerUniforms {
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
 pub async fn base_draw_text_layer(
-    device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &TextLayerParams,
     internal_data: &InternalTextLayerData,
 ) {
+    let GpuContext { device, queue } = gpu_context;
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
         // Column 0
@@ -731,16 +732,22 @@ pub async fn base_draw_text_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for TextLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for TextLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         let internal_data = self.internal_data.as_ref().expect("Internal data was not prepared. Call prepare() first.");
         base_draw_text_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &self.layer_params,
             &internal_data,
         ).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for TextLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_text_layer_svg(

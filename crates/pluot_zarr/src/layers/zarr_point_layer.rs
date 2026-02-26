@@ -11,9 +11,9 @@ use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::two::svg::update_svg;
-use pluot_core::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::layer_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
-use pluot_core::render_types::{PrepareResult, RenderResult};
+use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use pluot_core::render_types::GpuContext;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -181,8 +181,8 @@ impl PreparedLayer for ZarrPointLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ZarrPointLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for ZarrPointLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         if !self.ready_to_draw {
             log("ZarrPointLayer was not ready to draw. Skipping draw call.");
             return;
@@ -190,7 +190,7 @@ impl DrawToCanvas for ZarrPointLayer {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         base_draw_point_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
@@ -205,6 +205,12 @@ impl DrawToCanvas for ZarrPointLayer {
             },
         ).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for ZarrPointLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 

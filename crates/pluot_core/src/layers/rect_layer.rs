@@ -8,10 +8,10 @@ use std::sync::{Arc};
 
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::layer_traits::{
-    AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::layers::position_utils::get_point_position;
-use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
@@ -96,12 +96,12 @@ struct RectLayerUniforms {
 // TODO: is this the best way to share this logic?
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 pub async fn base_draw_rect_layer(
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    gpu_context: &mut GpuContext<'_>,
     pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &RectLayerParams,
 ) {
+    let GpuContext { device, queue } = gpu_context;
     // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
     let position_x0_bytes = bytemuck::cast_slice(&layer_params.position_x0);
     let position_y0_bytes = bytemuck::cast_slice(&layer_params.position_y0);
@@ -421,15 +421,21 @@ pub async fn base_draw_rect_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for RectLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for RectLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_rect_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &self.layer_params,
         )
         .await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for RectLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_rect_layer_svg(

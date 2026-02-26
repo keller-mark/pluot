@@ -11,12 +11,12 @@ use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
 use pluot_core::layer_traits::{
-    DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
 use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
 };
-use pluot_core::render_types::{PrepareResult};
+use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
 use pluot_core::layers::multiscale_utils::to_y_slice;
@@ -248,7 +248,7 @@ impl OmeZarrBitmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrBitmapLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         // Use maybe_timeout to bail early if loading takes too long.
         let data_future = self.load_tile_data();
 
@@ -314,7 +314,7 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         };
 
         let mut inner = BitmapLayer::new(self.view_params.clone(), bitmap_params);
-        let result = inner.prepare(None).await;
+        let result = inner.prepare(gpu_context).await;
         self.inner = Some(inner);
 
         result
@@ -323,12 +323,18 @@ impl PreparedLayer for OmeZarrBitmapLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for OmeZarrBitmapLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for OmeZarrBitmapLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         if let Some(inner) = &self.inner {
-            DrawToCanvas::draw(inner, device, queue, pass).await;
+            DrawToRasterGpu::draw(inner, gpu_context, pass).await;
         }
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for OmeZarrBitmapLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

@@ -14,12 +14,12 @@ use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::get_or_init_store;
 use pluot_core::layer_traits::{
-    DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, ViewParams,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, ViewParams,
 };
 use pluot_core::layers::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
-use pluot_core::render_types::{PrepareResult};
+use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use ome_zarr_metadata::v0_5::{
     RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale,
@@ -506,8 +506,8 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for OmeZarrMultiscaleLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         // level_sublayers is ordered coarsest-first.
         // Draw levels from coarsest to finest, but skip coarser tiles that are
         // fully occluded by ready finer-level tiles.
@@ -531,12 +531,17 @@ impl DrawToCanvas for OmeZarrMultiscaleLayer {
                 };
 
                 if should_draw {
-                    DrawToCanvas::draw(sublayer, device.clone(), queue.clone(), pass)
-                        .await;
+                    DrawToRasterGpu::draw(sublayer, gpu_context, pass).await;
                 }
             }
         }
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for OmeZarrMultiscaleLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
-use crate::render_types::{PrepareResult, RenderResult};
+use crate::layer_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
@@ -349,10 +349,11 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
 
 
 pub async fn base_draw_bitmap_layer(
-    device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &BitmapLayerParams,
 ) {
+    let GpuContext { device, queue } = gpu_context;
     let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
     let (x_dim_idx, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
     let (y_dim_idx, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
@@ -655,14 +656,20 @@ pub async fn base_draw_bitmap_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for BitmapLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for BitmapLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_bitmap_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &self.layer_params,
         ).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for BitmapLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_bitmap_layer_svg(

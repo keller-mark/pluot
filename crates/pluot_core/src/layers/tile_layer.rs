@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 
 use crate::layer_traits::{
-    AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedAndDraw, PreparedLayer,
+    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
-use crate::render_types::{PrepareResult, RenderResult};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
 
@@ -181,11 +181,11 @@ impl TileLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TileLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, mut gpu_context: Option<&mut GpuContext<'_>>) -> PrepareResult {
         self.sub_layer_instances = self.build_sublayers();
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare(None).await;
+            sub_layer.prepare(gpu_context.as_deref_mut()).await;
         }
 
         return PrepareResult {
@@ -196,10 +196,16 @@ impl PreparedLayer for TileLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for TileLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
+impl DrawToRasterGpu for TileLayer {
+    async fn draw(&self, gpu_context: &mut GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for TileLayer {
+    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

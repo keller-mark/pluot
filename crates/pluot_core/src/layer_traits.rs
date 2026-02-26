@@ -2,7 +2,7 @@ use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::two::svg::init_svg;
 use svg::node::element::Group;
-use crate::render_types::{GpuContext, PrepareResult, RenderResult};
+use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, LayerParams};
 use crate::registry::get_layer_from_registry;
@@ -115,7 +115,6 @@ pub trait DrawToRasterGpu: MaybeSend + MaybeSync {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToRasterCpu: MaybeSend + MaybeSync {
-    // TODO: create stub structs for CpuContext and CpuRenderPass in render_types.rs
     async fn draw(&self, cpu_context: &mut CpuContext<'_>, pass: &mut CpuRenderPass);
 }
 
@@ -139,14 +138,15 @@ pub trait ComputeGpu: MaybeSend + MaybeSync {
 pub trait PreparedAndDrawToSvg: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync {}
 impl<T: PreparedLayer + DrawToSvg + MaybeSend + MaybeSync> PreparedAndDrawToSvg for T {}
 
-pub trait PreparedAndDrawToCanvas: PreparedLayer + DrawToCanvas + MaybeSend + MaybeSync {}
-impl<T: PreparedLayer + DrawToCanvas + MaybeSend + MaybeSync> PreparedAndDrawToCanvas for T {}
+pub trait PreparedAndDrawToRasterGpu: PreparedLayer + DrawToRasterGpu + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToRasterGpu + MaybeSend + MaybeSync> PreparedAndDrawToRasterGpu for T {}
 
-// Trait for layers that can render to both SVG and Canvas
+pub trait PreparedAndDrawToRasterCpu: PreparedLayer + DrawToRasterCpu + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToRasterCpu + MaybeSend + MaybeSync> PreparedAndDrawToRasterCpu for T {}
 
-// TODO: create a trait that represents all prepare and draw variants.
-pub trait PreparedAndDraw: PreparedAndDrawToCanvas + PreparedAndDrawToSvg {}
-impl<T: PreparedAndDrawToCanvas + PreparedAndDrawToSvg> PreparedAndDraw for T {}
+// Trait for layers that can prepare and render to all output formats.
+pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + MaybeSend + MaybeSync> PreparedAndDraw for T {}
 
 
 pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dyn PreparedAndDraw> {
@@ -165,13 +165,13 @@ pub fn get_layers(layers: &[LayerParams], view_params: &ViewParams) -> Vec<Box<d
 // that cannot be shared across concurrent futures.
 pub async fn prepare_layers(
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    gpu_context: Option<&mut GpuContext<'_>>,
+    mut gpu_context: Option<&mut GpuContext<'_>>,
 ) -> Vec<PrepareResult> {
     // TODO: if gpu_context is None, and RenderParams.compute_backend is GPU, panic.
     let mut results = Vec::with_capacity(layers.len());
     for layer in layers.iter_mut() {
         // Pass None per-layer for now; GPU compute support will need a per-layer context strategy.
-        let result = layer.prepare(gpu_context).await;
+        let result = layer.prepare(gpu_context.as_deref_mut()).await;
         results.push(result);
     }
     results
@@ -180,13 +180,8 @@ pub async fn prepare_layers(
 pub async fn draw_layers_to_vector(
     view_params: &ViewParams,
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    // TODO: pass Option<gpu_context>
+    _gpu_context: Option<&mut GpuContext<'_>>,
 ) -> (Group, RenderResult) {
-    // TODO: if gpu_context is None, and RenderParams.compute_backend is GPU, panic.
-
-    // TODO: Use a match statement to select the GPU/CPU rendering paths.
-
-
     let (_, mut group) = init_svg(view_params.width as f64, view_params.height as f64);
 
     for layer in layers.iter_mut() {
@@ -200,16 +195,10 @@ pub async fn draw_layers_to_vector(
 pub async fn draw_layers_to_raster(
     view_params: &ViewParams,
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    // TODO: pass Option<gpu_context>
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    gpu_context: &mut GpuContext<'_>,
     encoder: &mut wgpu::CommandEncoder,
     out_tex: &wgpu::Texture,
 ) -> RenderResult {
-    // TODO: if gpu_context is None, and RenderParams.render_backend is GPU, panic.
-
-    // TODO: Use a match statement to select the GPU/CPU rendering paths.
-
     let out_view = out_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
     {
@@ -232,7 +221,7 @@ pub async fn draw_layers_to_raster(
         });
 
         for layer in layers.iter_mut() {
-            DrawToCanvas::draw(layer.as_ref(), device.clone(), queue.clone(), &mut render_pass).await;
+            DrawToRasterGpu::draw(layer.as_ref(), gpu_context, &mut render_pass).await;
         }
 
         drop(render_pass);
@@ -276,7 +265,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         GraphicsFormat::Vector => {
             prepare_layers(&mut layers, None).await;
 
-            let (group, _render_result) = draw_layers_to_vector(&view_params, &mut layers).await;
+            let (group, _render_result) = draw_layers_to_vector(&view_params, &mut layers, None).await;
 
             let svg_string = group.to_string();
 
@@ -327,8 +316,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             let render_result = draw_layers_to_raster(
                 &view_params,
                 &mut layers,
-                &device,
-                &queue,
+                &mut gpu_context,
                 &mut encoder,
                 &texture,
             ).await;
