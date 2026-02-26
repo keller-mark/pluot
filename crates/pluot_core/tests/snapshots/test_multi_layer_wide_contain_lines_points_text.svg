@@ -1,0 +1,31 @@
+<svg height="100" width="200" xmlns="http://www.w3.org/2000/svg">
+<g height="100" width="200">
+<clipPath id="lines_clip_path">
+<rect height="100" width="200" x="0" y="0"/>
+</clipPath>
+<g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="50" x2="150" y1="100" y2="0"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="150" x2="50" y1="100" y2="0"/>
+</g>
+<g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="42" y="92"/>
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="142" y="92"/>
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="142" y="-8"/>
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="42" y="-8"/>
+</g>
+<g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 50 100)" x="50" y="100">
+A
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 150 100)" x="150" y="100">
+B
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 150 0)" x="150" y="0">
+C
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 50 0)" x="50" y="0">
+D
+</text>
+</g>
+</g>
+</svg>

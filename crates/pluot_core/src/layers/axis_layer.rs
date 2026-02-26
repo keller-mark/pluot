@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
 
 use std::sync::Arc;
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, AspectRatioMode};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
+use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -401,8 +401,8 @@ impl DrawToRasterCpu for AxisLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for AxisLayer {
-    async fn draw(&self, group: &Group) -> Group {
-        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    async fn draw(&self, ctx: &mut SvgContext) {
+        base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
 

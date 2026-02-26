@@ -3,13 +3,12 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
-
 use crate::render_traits::{
     AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use crate::two::svg::SvgContext;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
@@ -211,8 +210,8 @@ impl DrawToRasterCpu for TileLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for TileLayer {
-    async fn draw(&self, group: &Group) -> Group {
-        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    async fn draw(&self, ctx: &mut SvgContext) {
+        base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
 

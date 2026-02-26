@@ -345,6 +345,7 @@ export function Pluot(props) {
       timeout: currentTimeout.current, // in ms
       cache_enabled: true,
       svg_compression_enabled: true,
+      svg_include_document: false,
     };
 
     // Wrap render_wasm in try/catch, to handle Rust panics.

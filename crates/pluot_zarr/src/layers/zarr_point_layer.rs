@@ -1,7 +1,5 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
-
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 use pluot_core::maybe_timeout;
@@ -10,7 +8,7 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
-use pluot_core::two::svg::update_svg;
+use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -217,10 +215,10 @@ impl DrawToRasterCpu for ZarrPointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for ZarrPointLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         if !self.ready_to_draw {
             log("ZarrPointLayer was not ready to draw. Skipping draw call.");
-            return group.clone();
+            return;
         }
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
@@ -239,9 +237,6 @@ impl DrawToSvg for ZarrPointLayer {
             },
         );
 
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
+        update_svg(ctx, &svg_elements);
     }
 }

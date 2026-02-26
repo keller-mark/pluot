@@ -1,11 +1,86 @@
 // Reference: https://github.com/keller-mark/deck-to-svg/blob/main/lib/src/svg.js
 
+use std::collections::HashMap;
+
 use svg::node::element::{Circle, Group, Line, Path, Rectangle, Text};
 use svg::Document;
 
 use crate::two::shapes::{TwoColor, TwoElement, TwoTextBaseline};
 
-pub fn init_svg(width: f64, height: f64) -> (Document, Group) {
+/// Container that pairs an SVG `Document` and `Group` with shared rendering
+/// state threaded through the recursive `update_svg` call tree.
+///
+/// Currently it tracks clip-path definitions so that:
+/// - identical clip rectangles are reused (same `id`, no duplicate `<clipPath>`
+///   elements emitted), and
+/// - anonymous clip paths get stable, unique IDs even when multiple groups lack
+///   an explicit `layer_id`.
+pub struct SvgContext {
+    /// The `<svg>` document wrapper (used when serializing with `include_document = true`).
+    pub document: Document,
+    pub group: Group,
+    /// Map from the bit-patterns of `(x, y, width, height)` → clip-path id.
+    /// Keyed on bit-patterns so that identical `f64` values map to the same id
+    /// without any floating-point tolerance concerns.
+    clip_path_ids: HashMap<(u64, u64, u64, u64), String>,
+    next_clip_id: u32,
+}
+
+impl SvgContext {
+    pub fn new(document: Document, group: Group) -> Self {
+        Self {
+            document,
+            group,
+            clip_path_ids: HashMap::new(),
+            next_clip_id: 1,
+        }
+    }
+
+    /// Serialize the context to an SVG string.
+    ///
+    /// - `include_document = true`: wraps the group inside the `<svg>` document element.
+    /// - `include_document = false`: returns only the inner `<g>` group string.
+    pub fn to_svg_string(&self, include_document: bool) -> String {
+        if include_document {
+            self.document.clone().add(self.group.clone()).to_string()
+        } else {
+            self.group.to_string()
+        }
+    }
+
+    /// Returns `(id, is_new)`.
+    ///
+    /// If `clip_rect` has been seen before the existing id is returned and
+    /// `is_new` is `false` — no `<clipPath>` element should be emitted.
+    ///
+    /// On the first occurrence `preferred_id` is used when provided, otherwise
+    /// a fresh `clipPathN` id is generated.  `is_new` is `true` and the caller
+    /// should emit the corresponding `<clipPath>` element.
+    fn get_or_create_clip_path_id(
+        &mut self,
+        clip_rect: (f64, f64, f64, f64),
+        preferred_id: Option<String>,
+    ) -> (String, bool) {
+        let key = (
+            clip_rect.0.to_bits(),
+            clip_rect.1.to_bits(),
+            clip_rect.2.to_bits(),
+            clip_rect.3.to_bits(),
+        );
+        if let Some(existing) = self.clip_path_ids.get(&key) {
+            return (existing.clone(), false);
+        }
+        let id = preferred_id.unwrap_or_else(|| {
+            let id = format!("clipPath{}", self.next_clip_id);
+            self.next_clip_id += 1;
+            id
+        });
+        self.clip_path_ids.insert(key, id.clone());
+        (id, true)
+    }
+}
+
+pub fn init_svg(width: f64, height: f64) -> SvgContext {
     let document = Document::new()
         .set("width", width)
         .set("height", height)
@@ -13,13 +88,13 @@ pub fn init_svg(width: f64, height: f64) -> (Document, Group) {
 
     let group = Group::new().set("width", width).set("height", height);
 
-    // TODO: is defs needed? or is it possible to put clipPaths anywhere in the node tree?
-    let defs = svg::node::element::Definitions::new();
-
-    (document, group)
+    SvgContext::new(document, group)
 }
 
-pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
+/// Append `elements` into `ctx.group`, threading clip-path state through `ctx`.
+pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
+    let mut group = std::mem::replace(&mut ctx.group, Group::new());
+
     for element in elements {
         group = match element {
             TwoElement::Group(d) => {
@@ -34,31 +109,43 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
                     // TODO: use layer_type here?
                     // Or change layer_id to group_id,
                     // and the caller can handle "{layer_type}_{layer_id}" concatenation.
-                    let clip_path_id = if let Some(layer_id) = &d.layer_id {
-                        &format!("{}_clip_path", layer_id)
-                    } else {
-                        // TODO: generate unique IDs if multiple clip paths are needed.
-                        // Keep track of used ids by passing down some kind of container struct that wraps the group
-                        // to keep track of this state.
-                        "clipPath1"
-                    };
-                    let clip_path = svg::node::element::ClipPath::new()
-                        .set("id", clip_path_id)
-                        .add(
-                            Rectangle::new()
-                                .set("x", clip_rect.0)
-                                .set("y", clip_rect.1)
-                                .set("width", clip_rect.2)
-                                .set("height", clip_rect.3),
-                        );
-                    // TODO: does the clip path need to be within <defs>?
-                    // TODO: does it matter if the clipPath is inserted into a translated group?
-                    sub_group = sub_group.set("clip-path", format!("url(#{})", clip_path_id));
-                    group = group.add(clip_path);
+                    let preferred = d.layer_id.as_ref().map(|id| format!("{}_clip_path", id));
+                    let (clip_path_id, is_new) =
+                        ctx.get_or_create_clip_path_id(clip_rect, preferred);
+
+                    if is_new {
+                        let clip_path = svg::node::element::ClipPath::new()
+                            .set("id", clip_path_id.as_str())
+                            .add(
+                                Rectangle::new()
+                                    .set("x", clip_rect.0)
+                                    .set("y", clip_rect.1)
+                                    .set("width", clip_rect.2)
+                                    .set("height", clip_rect.3),
+                            );
+                        // clipPath elements are inserted into the parent group so
+                        // they are defined before any sub-group that references them.
+                        // TODO: does the clip path need to be within <defs>?
+                        // TODO: does it matter if the clipPath is inserted into a translated group?
+                        group = group.add(clip_path);
+                    }
+
+                    sub_group =
+                        sub_group.set("clip-path", format!("url(#{})", clip_path_id));
                 }
-                // Recursion.
-                sub_group = update_svg(sub_group, &d.elements);
-                group.add(sub_group)
+
+                // Recurse — share clip-path state with the child context.
+                let mut sub_ctx = SvgContext {
+                    document: ctx.document.clone(),
+                    group: sub_group,
+                    clip_path_ids: std::mem::take(&mut ctx.clip_path_ids),
+                    next_clip_id: ctx.next_clip_id,
+                };
+                update_svg(&mut sub_ctx, &d.elements);
+                ctx.clip_path_ids = sub_ctx.clip_path_ids;
+                ctx.next_clip_id = sub_ctx.next_clip_id;
+
+                group.add(sub_ctx.group)
             }
             TwoElement::Rectangle(d) => {
                 let mut rect = Rectangle::new()
@@ -173,7 +260,8 @@ pub fn update_svg(mut group: Group, elements: &[TwoElement]) -> Group {
             }
         };
     }
-    group
+
+    ctx.group = group;
 }
 
 #[cfg(test)]
@@ -200,12 +288,23 @@ mod tests {
 
     #[test]
     fn test_init_svg() {
-        let (doc, group) = init_svg(100.0, 200.0);
+        let ctx = init_svg(100.0, 200.0);
         let expected_doc_str =
             r#"<svg height="200" width="100" xmlns="http://www.w3.org/2000/svg"/>"#;
         let expected_group_str = r#"<g height="200" width="100"/>"#;
-        assert_eq!(doc.to_string(), expected_doc_str);
-        assert_eq!(group.to_string(), expected_group_str);
+        assert_eq!(ctx.document.to_string(), expected_doc_str);
+        assert_eq!(ctx.group.to_string(), expected_group_str);
+    }
+
+    #[test]
+    fn test_to_svg_string() {
+        let ctx = init_svg(50.0, 60.0);
+        let without_doc = ctx.to_svg_string(false);
+        let with_doc = ctx.to_svg_string(true);
+        assert_eq!(without_doc, r#"<g height="60" width="50"/>"#);
+        assert!(with_doc.starts_with("<svg"));
+        assert!(with_doc.contains(r#"width="50""#));
+        assert!(with_doc.contains("<g"));
     }
 
     #[test]
@@ -264,8 +363,8 @@ mod tests {
             }),
         ];
 
-        let (_, group) = init_svg(200.0, 200.0);
-        let updated_group = update_svg(group, &elements);
+        let mut ctx = init_svg(200.0, 200.0);
+        update_svg(&mut ctx, &elements);
 
         let expected_svg_str = r#"
             <g height="200" width="200">
@@ -277,6 +376,62 @@ mod tests {
             </g>
         "#;
 
-        assert_strings_equal_ignore_whitespace(&updated_group.to_string(), expected_svg_str);
+        assert_strings_equal_ignore_whitespace(&ctx.group.to_string(), expected_svg_str);
+    }
+
+    #[test]
+    fn test_clip_path_deduplication() {
+        use crate::two::shapes::TwoGroup;
+
+        let clip_rect = (0.0_f64, 0.0_f64, 100.0_f64, 100.0_f64);
+
+        // Two groups with the same clip rect but different layer_ids — the second
+        // should reuse the first clip-path id and not emit a duplicate <clipPath>.
+        let elements = vec![
+            TwoElement::Group(TwoGroup {
+                layer_id: Some("layerA".to_string()),
+                clip_rect: Some(clip_rect),
+                ..TwoGroup::default()
+            }),
+            TwoElement::Group(TwoGroup {
+                layer_id: Some("layerB".to_string()),
+                clip_rect: Some(clip_rect),
+                ..TwoGroup::default()
+            }),
+        ];
+
+        let mut ctx = init_svg(200.0, 200.0);
+        update_svg(&mut ctx, &elements);
+
+        let svg_str = ctx.group.to_string();
+        // Only one <clipPath> element should appear.
+        assert_eq!(svg_str.matches("<clipPath").count(), 1);
+        // Both sub-groups should reference the same clip-path id (layerA wins).
+        assert_eq!(svg_str.matches("url(#layerA_clip_path)").count(), 2);
+    }
+
+    #[test]
+    fn test_clip_path_unique_ids_for_distinct_rects() {
+        use crate::two::shapes::TwoGroup;
+
+        let elements = vec![
+            TwoElement::Group(TwoGroup {
+                clip_rect: Some((0.0, 0.0, 50.0, 50.0)),
+                ..TwoGroup::default()
+            }),
+            TwoElement::Group(TwoGroup {
+                clip_rect: Some((10.0, 10.0, 80.0, 80.0)),
+                ..TwoGroup::default()
+            }),
+        ];
+
+        let mut ctx = init_svg(200.0, 200.0);
+        update_svg(&mut ctx, &elements);
+
+        let svg_str = ctx.group.to_string();
+        // Two distinct rects → two distinct <clipPath> elements.
+        assert_eq!(svg_str.matches("<clipPath").count(), 2);
+        assert!(svg_str.contains("clipPath1"));
+        assert!(svg_str.contains("clipPath2"));
     }
 }

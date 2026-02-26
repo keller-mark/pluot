@@ -112,6 +112,8 @@ pub struct RenderParams {
 
     // Whether to compress the SVG string using LZ-string if the output format is Vector.
     pub svg_compression_enabled: bool,
+    // Whether to include the parent <svg> document tag, versus only the inner <g> group/contents.
+    pub svg_include_document: bool,
 
     // Margins for plots that need them (e.g. scatterplot axes).
     // TODO: make non-optional
@@ -154,6 +156,7 @@ impl Default for RenderParams {
             timeout: None,
             cache_enabled: true,
             svg_compression_enabled: false,
+            svg_include_document: true,
             margin_left: None,
             margin_right: None,
             margin_top: None,

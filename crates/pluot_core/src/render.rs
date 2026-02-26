@@ -38,11 +38,14 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     let owned_gpu_context: Option<(wgpu::Device, wgpu::Queue)>;
     if params.render_backend == Some(RenderBackend::Gpu) || params.compute_backend == Some(ComputeBackend::Gpu) {
-        // TODO: ensure this panics on machines without GPU support
-        owned_gpu_context = Some(get_or_init_gpu_context().await);
+        // GPU explicitly requested: panic if GPU support is unavailable.
+        owned_gpu_context = Some(
+            get_or_init_gpu_context().await
+                .expect("No suitable GPU adapters found on the system!")
+        );
     } else if params.render_backend == None || params.compute_backend == None {
-        // Try GPU, then fallback to CPU gracefully without panicking if GPU support isn't available.
-        owned_gpu_context = Some(get_or_init_gpu_context().await);
+        // Backend not specified: try GPU, then fall back to CPU gracefully without panicking.
+        owned_gpu_context = get_or_init_gpu_context().await;
     } else {
         owned_gpu_context = None;
     }
@@ -62,9 +65,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     match params.format {
         GraphicsFormat::Vector => {
-            let (group, _render_result) = draw_layers_to_vector(&view_params, &mut layers, gpu_context.as_ref()).await;
+            let (ctx, _render_result) = draw_layers_to_vector(&view_params, &mut layers, gpu_context.as_ref()).await;
 
-            let svg_string = group.to_string();
+            let svg_string = ctx.to_svg_string(params.svg_include_document);
 
             if !params.svg_compression_enabled {
                 return svg_string.as_bytes().to_vec();

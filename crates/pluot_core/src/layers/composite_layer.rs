@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
-use crate::two::svg::update_svg;
+use crate::two::svg::SvgContext;
 use crate::layers::position_utils::get_point_position;
 use crate::params::{LayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -106,20 +105,18 @@ impl DrawToRasterCpu for CompositeLayer {
 // Reusable function that can be used by other composite layers: SVG variant.
 pub async fn base_draw_composite_layer_svg(
     sub_layer_instances: &[Box<dyn PreparedAndDraw>],
-    group: &Group,
-) -> Group {
-    let mut updated_group = group.clone();
+    ctx: &mut SvgContext,
+) {
     for sub_layer in sub_layer_instances.iter() {
-        updated_group = DrawToSvg::draw(sub_layer.as_ref(), &updated_group).await;
+        DrawToSvg::draw(sub_layer.as_ref(), ctx).await;
     }
-    updated_group
 }
 
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for CompositeLayer {
-    async fn draw(&self, group: &Group) -> Group {
-        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    async fn draw(&self, ctx: &mut SvgContext) {
+        base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }

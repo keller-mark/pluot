@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
 
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
@@ -16,6 +15,7 @@ use pluot_core::cache::get_or_init_store;
 use pluot_core::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, ViewParams,
 };
+use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
@@ -547,9 +547,7 @@ impl DrawToRasterCpu for OmeZarrMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for OmeZarrMultiscaleLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, _ctx: &mut SvgContext) {
         // SVG rendering is not yet supported for bitmap-based layers.
-        // Return the group unchanged.
-        group.clone()
     }
 }

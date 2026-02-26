@@ -1,6 +1,5 @@
 use crate::wgpu;
-use crate::two::svg::init_svg;
-use svg::node::element::Group;
+use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
 use crate::params::LayerParams;
@@ -96,8 +95,7 @@ pub trait PreparedLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToSvg {
-    // TODO: take an SVG container struct instead, see comments in two/svg.rs
-    async fn draw(&self, group: &Group) -> Group;
+    async fn draw(&self, ctx: &mut SvgContext);
 }
 
 
@@ -160,15 +158,15 @@ pub async fn draw_layers_to_vector(
     view_params: &ViewParams,
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
     _gpu_context: Option<&GpuContext<'_>>,
-) -> (Group, RenderResult) {
-    let (_, mut group) = init_svg(view_params.width as f64, view_params.height as f64);
+) -> (SvgContext, RenderResult) {
+    let mut ctx = init_svg(view_params.width as f64, view_params.height as f64);
 
     for layer in layers.iter_mut() {
-        group = DrawToSvg::draw(layer.as_ref(), &group).await;
+        DrawToSvg::draw(layer.as_ref(), &mut ctx).await;
     }
 
     let bailed_early = false; // TODO: aggregate from prepare_results when timeout support is added.
-    (group, RenderResult { bailed_early })
+    (ctx, RenderResult { bailed_early })
 }
 
 pub async fn draw_layers_to_raster(

@@ -16,9 +16,8 @@ use crate::render_types::GpuContext;
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
-use crate::two::svg::update_svg;
+use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
-use svg::node::element::Group;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RectLayerParams {
@@ -540,16 +539,12 @@ pub fn base_draw_rect_layer_svg(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for RectLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         let svg_elements = base_draw_rect_layer_svg(
             &self.view_params,
             &self.layer_params,
         );
-
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
+        update_svg(ctx, &svg_elements);
     }
 }
 

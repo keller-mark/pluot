@@ -32,7 +32,7 @@ thread_local! {
     static USE_MEMO_CACHE_NUMERIC_DATA: RefCell<Option<HashMap<Vec<String>, Arc<NumericData>>>> = const { RefCell::new(None) };
 }
 
-async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+async fn init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     // Apparently this is expensive, so we try to cache it in the get_or_init_gpu_context function.
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
     // We can try to enable WebGL fallback here, but it is not working,
@@ -54,41 +54,40 @@ async fn init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await
-        .expect("No suitable GPU adapters found on the system!");
+        .ok()?;
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor::default())
         .await
-        .expect("Failed to create device");
-    (device, queue)
+        .ok()?;
+    Some((device, queue))
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+pub async fn get_or_init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     // Check if already initialized
     let existing = GPU_CONTEXT.with(|ctx| ctx.borrow().clone());
     if let Some(context) = existing {
-        return context;
+        return Some(context);
     }
 
     // Initialize GPU context
-    let (device, queue) = init_gpu_context().await;
+    let (device, queue) = init_gpu_context().await?;
 
     // Store the context
     GPU_CONTEXT.with(|ctx| {
         *ctx.borrow_mut() = Some((device.clone(), queue.clone()));
     });
 
-    (device, queue)
+    Some((device, queue))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn get_or_init_gpu_context() -> (wgpu::Device, wgpu::Queue) {
+pub async fn get_or_init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     // The tokio::test will fail if we rely on thread_local to cache the GPU context.
     // So we just create a new context each time for now.
 
     // TODO: cache in a way that is compatible with tokio::test.
-    let (device, queue) = init_gpu_context().await;
-    (device, queue)
+    init_gpu_context().await
 }
 
 pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {

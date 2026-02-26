@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
 
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use crate::two::svg::SvgContext;
 use crate::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
@@ -135,8 +135,8 @@ impl DrawToRasterCpu for MultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for MultiscaleLayer {
-    async fn draw(&self, group: &Group) -> Group {
-        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    async fn draw(&self, ctx: &mut SvgContext) {
+        base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
 

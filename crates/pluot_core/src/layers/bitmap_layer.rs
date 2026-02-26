@@ -12,9 +12,8 @@ use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
-use crate::two::svg::update_svg;
+use crate::two::svg::{update_svg, SvgContext};
 use crate::layers::position_utils::get_point_position;
 use crate::log;
 
@@ -683,17 +682,12 @@ pub fn base_draw_bitmap_layer_svg(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for BitmapLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         let svg_elements = base_draw_bitmap_layer_svg(
             &self.view_params,
             &self.layer_params,
         );
-
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
-
+        update_svg(ctx, &svg_elements);
     }
 }
 

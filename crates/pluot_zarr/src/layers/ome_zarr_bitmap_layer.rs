@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use svg::node::element::Group;
-
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 use pluot_core::maybe_timeout;
@@ -13,6 +11,7 @@ use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
 use pluot_core::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
+use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
 };
@@ -340,11 +339,9 @@ impl DrawToRasterCpu for OmeZarrBitmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for OmeZarrBitmapLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         if let Some(inner) = &self.inner {
-            DrawToSvg::draw(inner, group).await
-        } else {
-            group.clone()
+            DrawToSvg::draw(inner, ctx).await
         }
     }
 }
