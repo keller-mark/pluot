@@ -111,7 +111,7 @@ pub trait DrawToRasterGpu: MaybeSend + MaybeSync {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToRasterCpu: MaybeSend + MaybeSync {
-    async fn draw(&self, cpu_context: &mut CpuContext<'_>, pass: &mut CpuRenderPass);
+    async fn draw(&self, cpu_context: &CpuContext<'_>, pass: &mut CpuRenderPass);
 }
 
 
@@ -120,7 +120,7 @@ pub trait DrawToRasterCpu: MaybeSend + MaybeSync {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait ComputeCpu: MaybeSend + MaybeSync {
     // TODO: what should this return?
-    async fn compute(&self, cpu_context: &mut CpuContext<'_>);
+    async fn compute(&self, cpu_context: &CpuContext<'_>);
 }
 
 // Stub trait for GPU-based compute operations via wgpu compute shaders.

@@ -406,7 +406,7 @@ impl DrawToRasterGpu for PointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterCpu for PointLayer {
-    async fn draw(&self, _cpu_context: &mut CpuContext<'_>, _pass: &mut CpuRenderPass) {}
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_point_layer_svg(
