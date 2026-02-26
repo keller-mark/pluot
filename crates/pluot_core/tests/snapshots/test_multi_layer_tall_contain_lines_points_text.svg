@@ -1,8 +1,11 @@
 <svg height="200" width="100" xmlns="http://www.w3.org/2000/svg">
-<g height="200" width="100">
+<g>
+<defs>
 <clipPath id="lines_clip_path">
 <rect height="200" width="100" x="0" y="0"/>
 </clipPath>
+</defs>
+<g height="200" width="100">
 <g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="100" y1="150" y2="50"/>
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="100" x2="0" y1="150" y2="50"/>
@@ -26,6 +29,7 @@ C
 <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 50)" x="0" y="50">
 D
 </text>
+</g>
 </g>
 </g>
 </svg>

@@ -1,8 +1,11 @@
 <svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
-<g height="100" width="100">
+<g>
+<defs>
 <clipPath id="points_clip_path">
 <rect height="100" width="50" x="0" y="0"/>
 </clipPath>
+</defs>
+<g height="100" width="100">
 <g clip-path="url(#points_clip_path)" transform="translate(0,0)">
 <rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="-8" y="67"/>
 <rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="42" y="67"/>
@@ -12,6 +15,7 @@
 <g clip-path="url(#points_clip_path)" transform="translate(50,0)">
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="50" y1="75" y2="25"/>
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="50" x2="0" y1="75" y2="25"/>
+</g>
 </g>
 </g>
 </svg>

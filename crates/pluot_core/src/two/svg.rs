@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use svg::node::element::{Circle, Group, Line, Path, Rectangle, Text};
+use svg::node::element::{Circle, Definitions, Group, Line, Path, Rectangle, Text};
 use svg::Document;
 
 use crate::two::shapes::{TwoColor, TwoElement, TwoTextBaseline};
@@ -15,6 +15,9 @@ use crate::two::shapes::{TwoColor, TwoElement, TwoTextBaseline};
 ///   elements emitted), and
 /// - anonymous clip paths get stable, unique IDs even when multiple groups lack
 ///   an explicit `layer_id`.
+///
+/// All `<clipPath>` elements are collected in `clip_paths` and emitted into a
+/// `<defs>` block at serialization time, in conformance with the SVG spec.
 pub struct SvgContext {
     /// The `<svg>` document wrapper (used when serializing with `include_document = true`).
     pub document: Document,
@@ -24,6 +27,8 @@ pub struct SvgContext {
     /// without any floating-point tolerance concerns.
     clip_path_ids: HashMap<(u64, u64, u64, u64), String>,
     next_clip_id: u32,
+    /// Accumulated `<clipPath>` elements to be written into `<defs>` on serialization.
+    clip_paths: Vec<svg::node::element::ClipPath>,
 }
 
 impl SvgContext {
@@ -33,6 +38,7 @@ impl SvgContext {
             group,
             clip_path_ids: HashMap::new(),
             next_clip_id: 1,
+            clip_paths: Vec::new(),
         }
     }
 
@@ -40,11 +46,28 @@ impl SvgContext {
     ///
     /// - `include_document = true`: wraps the group inside the `<svg>` document element.
     /// - `include_document = false`: returns only the inner `<g>` group string.
+    ///
+    /// If any clip paths were accumulated during `update_svg`, they are emitted
+    /// inside a `<defs>` element that precedes the main group, per the SVG spec.
     pub fn to_svg_string(&self, include_document: bool) -> String {
-        if include_document {
-            self.document.clone().add(self.group.clone()).to_string()
+        // Build <defs> if needed, then the root group.
+        let root_group: svg::node::element::Element = if self.clip_paths.is_empty() {
+            self.group.clone().into()
         } else {
-            self.group.to_string()
+            let mut defs = Definitions::new();
+            for cp in &self.clip_paths {
+                defs = defs.add(cp.clone());
+            }
+            // Wrap defs + group in an outer <g> so the returned string is always a single element.
+            // TODO: is this extra <g> parent of <defs> valid/allowed per the SVG spec?
+            // How to avoid this?
+            Group::new().add(defs).add(self.group.clone()).into()
+        };
+
+        if include_document {
+            self.document.clone().add(root_group).to_string()
+        } else {
+            root_group.to_string()
         }
     }
 
@@ -123,11 +146,8 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                                     .set("width", clip_rect.2)
                                     .set("height", clip_rect.3),
                             );
-                        // clipPath elements are inserted into the parent group so
-                        // they are defined before any sub-group that references them.
-                        // TODO: does the clip path need to be within <defs>?
-                        // TODO: does it matter if the clipPath is inserted into a translated group?
-                        group = group.add(clip_path);
+                        // Collect the <clipPath> for later emission inside <defs>.
+                        ctx.clip_paths.push(clip_path);
                     }
 
                     sub_group =
@@ -140,10 +160,12 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                     group: sub_group,
                     clip_path_ids: std::mem::take(&mut ctx.clip_path_ids),
                     next_clip_id: ctx.next_clip_id,
+                    clip_paths: std::mem::take(&mut ctx.clip_paths),
                 };
                 update_svg(&mut sub_ctx, &d.elements);
                 ctx.clip_path_ids = sub_ctx.clip_path_ids;
                 ctx.next_clip_id = sub_ctx.next_clip_id;
+                ctx.clip_paths = sub_ctx.clip_paths;
 
                 group.add(sub_ctx.group)
             }
@@ -403,9 +425,10 @@ mod tests {
         let mut ctx = init_svg(200.0, 200.0);
         update_svg(&mut ctx, &elements);
 
-        let svg_str = ctx.group.to_string();
-        // Only one <clipPath> element should appear.
+        let svg_str = ctx.to_svg_string(false);
+        // Only one <clipPath> element should appear, inside <defs>.
         assert_eq!(svg_str.matches("<clipPath").count(), 1);
+        assert!(svg_str.contains("<defs>"));
         // Both sub-groups should reference the same clip-path id (layerA wins).
         assert_eq!(svg_str.matches("url(#layerA_clip_path)").count(), 2);
     }
@@ -428,9 +451,10 @@ mod tests {
         let mut ctx = init_svg(200.0, 200.0);
         update_svg(&mut ctx, &elements);
 
-        let svg_str = ctx.group.to_string();
-        // Two distinct rects → two distinct <clipPath> elements.
+        let svg_str = ctx.to_svg_string(false);
+        // Two distinct rects → two distinct <clipPath> elements, inside <defs>.
         assert_eq!(svg_str.matches("<clipPath").count(), 2);
+        assert!(svg_str.contains("<defs>"));
         assert!(svg_str.contains("clipPath1"));
         assert!(svg_str.contains("clipPath2"));
     }

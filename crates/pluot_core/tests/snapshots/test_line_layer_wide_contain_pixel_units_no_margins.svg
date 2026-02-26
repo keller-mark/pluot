@@ -1,8 +1,11 @@
 <svg height="100" width="200" xmlns="http://www.w3.org/2000/svg">
-<g height="100" width="200">
+<g>
+<defs>
 <clipPath id="my_line_layer_clip_path">
 <rect height="100" width="200" x="0" y="0"/>
 </clipPath>
+</defs>
+<g height="100" width="200">
 <g clip-path="url(#my_line_layer_clip_path)" transform="translate(0,0)">
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="200" y1="100" y2="100"/>
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="0" y1="100" y2="50"/>
@@ -12,6 +15,7 @@
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="140" x2="140" y1="25" y2="0"/>
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="200" x2="200" y1="25" y2="0"/>
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="140" x2="200" y1="0" y2="0"/>
+</g>
 </g>
 </g>
 </svg>
