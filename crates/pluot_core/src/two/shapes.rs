@@ -236,7 +236,46 @@ impl Default for TwoGroup {
     }
 }
 
-// TODO: TwoImage element for <image/> elements.
+#[derive(Clone, Debug)]
+pub enum TwoImageRenderingStyle {
+    Pixelated,
+}
+
+
+impl ToString for TwoImageRenderingStyle {
+    fn to_string(&self) -> String {
+        match self {
+            TwoImageRenderingStyle::Pixelated => "pixelated".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TwoImage {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// The image URL or data URI for the `href` attribute.
+    pub href: String,
+    pub opacity: f64,
+
+    pub image_rendering_style: Option<TwoImageRenderingStyle>,
+}
+
+impl Default for TwoImage {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            href: String::new(),
+            opacity: 1.0,
+            image_rendering_style: None,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum TwoElement {
@@ -246,4 +285,5 @@ pub enum TwoElement {
     Path(TwoPath),
     Text(TwoText),
     Group(TwoGroup),
+    Image(TwoImage),
 }

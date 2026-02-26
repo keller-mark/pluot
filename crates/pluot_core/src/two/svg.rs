@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use svg::node::element::{Circle, Definitions, Group, Line, Path, Rectangle, Text};
+use svg::node::element::{Circle, Definitions, Group, Image, Line, Path, Rectangle, Text};
 use svg::Document;
 
 use crate::two::shapes::{TwoColor, TwoElement, TwoTextBaseline};
@@ -279,6 +279,22 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                     text = text.set("transform", format!("rotate({} {} {})", rotation, d.x, d.y));
                 }
                 group.add(text)
+            }
+            TwoElement::Image(d) => {
+                let mut image = Image::new()
+                    .set("x", d.x)
+                    .set("y", d.y)
+                    .set("width", d.width)
+                    .set("height", d.height)
+                    .set("href", d.href.as_str())
+                    .set("opacity", d.opacity);
+
+                if let Some(image_rendering_style) = &d.image_rendering_style {
+                    let style_str = image_rendering_style.to_string();
+                    image = image.set("style", format!("image-rendering: {}", style_str));
+                }
+
+                group.add(image)
             }
         };
     }

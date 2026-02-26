@@ -1,8 +1,10 @@
 // Inspired by the DeckGL BitmapLayer
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{Mat4, Vec2, Vec3, Vec4};
+use image::{codecs::bmp::BmpEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -12,7 +14,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::shapes::{TwoElement, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::layers::position_utils::get_point_position;
 use crate::log;
@@ -671,11 +673,98 @@ impl DrawToRasterCpu for BitmapLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
+/// Encode raw RGBA pixels as a BMP byte stream using the `image` crate.
+/// TODO: it seems this is not supported in all environments (e.g., macOS Preview),
+/// so we may want to switch to a different encoding approach.
+fn encode_bmp_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    let img: ImageBuffer<Rgba<u8>, _> =
+        ImageBuffer::from_raw(width, height, rgba.to_vec()).expect("valid dimensions");
+    let mut buf = Vec::new();
+    BmpEncoder::new(&mut buf)
+        .write_image(img.as_raw(), width, height, ExtendedColorType::Rgba8)
+        .expect("BMP encode");
+    buf
+}
+
+/// Encode bytes to a base64 string using the `base64` crate.
+fn base64_encode(data: &[u8]) -> String {
+    BASE64_STANDARD.encode(data)
+}
+
 pub fn base_draw_bitmap_layer_svg(
     view_params: &ViewParams,
     layer_params: &BitmapLayerParams,
 ) -> Vec<TwoElement> {
-    return vec![]; // TODO
+    let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
+    let (x_dim_idx, img_w) = dims[&'X'];
+    let (y_dim_idx, img_h) = dims[&'Y'];
+    let (c_dim_idx, _)     = dims[&'C'];
+
+    let strides = compute_strides(&layer_params.shape);
+    let x_stride = strides[x_dim_idx];
+    let y_stride = strides[y_dim_idx];
+    let c_stride = strides[c_dim_idx];
+
+    let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
+
+    for y in 0..img_h as usize {
+        for x in 0..img_w as usize {
+            // Accumulate blended RGB across channels (additive).
+            let mut r = 0.0f32;
+            let mut g = 0.0f32;
+            let mut b = 0.0f32;
+
+            for (c, ch) in layer_params.channel_settings.iter().enumerate() {
+                let idx = y * y_stride + x * x_stride + c * c_stride;
+                let raw = layer_params.data.get_f32(idx);
+
+                // Apply window [lo, hi] → normalize to [0, 1], clamp.
+                let (lo, hi) = ch.window;
+                let t = ((raw - lo) / (hi - lo)).clamp(0.0, 1.0);
+
+                r += t * ch.color.0;
+                g += t * ch.color.1;
+                b += t * ch.color.2;
+            }
+
+            let pixel_idx = (y * img_w as usize + x) * 4;
+            rgba[pixel_idx]     = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[pixel_idx + 1] = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[pixel_idx + 2] = (b.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[pixel_idx + 3] = 255 as u8;
+        }
+    }
+
+    let bmp = encode_bmp_rgba(img_w, img_h, &rgba);
+    let href = format!("data:image/bmp;base64,{}", base64_encode(&bmp));
+
+    let margin_top = layer_params.bounds.as_ref()
+        .or(view_params.margins.as_ref())
+        .and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
+    let margin_left = layer_params.bounds.as_ref()
+        .or(view_params.margins.as_ref())
+        .and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
+    let margin_right = layer_params.bounds.as_ref()
+        .or(view_params.margins.as_ref())
+        .and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
+    let margin_bottom = layer_params.bounds.as_ref()
+        .or(view_params.margins.as_ref())
+        .and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
+
+    let draw_w = view_params.width as f64 - margin_left - margin_right;
+    let draw_h = view_params.height as f64 - margin_top - margin_bottom;
+
+    vec![TwoElement::Image(TwoImage {
+        // TODO: fix the positioning so that it matches the logic in the shader.
+        // It will need to use position_utils, but will also be more complicated.
+        x: margin_left,
+        y: margin_top,
+        width: draw_w,
+        height: draw_h,
+        href,
+        opacity: layer_params.opacity as f64,
+        image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
+    })]
 }
 
 
@@ -683,6 +772,10 @@ pub fn base_draw_bitmap_layer_svg(
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for BitmapLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
+        // Draw to an SVG <image/> element.
+        // Do this as naively as possible; for example with a nested for loop over the pixels, computing the color and position of each,
+        // and finally converting to an image HREF.
+
         let svg_elements = base_draw_bitmap_layer_svg(
             &self.view_params,
             &self.layer_params,

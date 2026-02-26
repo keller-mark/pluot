@@ -85,6 +85,8 @@ nalgebra-glm.workspace = true
 
 
 fontdue.workspace = true # For font rasterization and text layout.
+image.workspace = true
+base64.workspace = true
 
 lz-str.workspace = true # To compress SVG strings before passing to JS.
 
