@@ -156,23 +156,6 @@ pub fn get_layers(layers: &[LayerParams], view_params: &ViewParams) -> Vec<Box<d
     }).collect()
 }
 
-// gpu_context is None when using the CPU compute backend.
-// Layers prepare sequentially because gpu_context holds an exclusive &mut reference
-// that cannot be shared across concurrent futures.
-pub async fn prepare_layers(
-    layers: &mut Vec<Box<dyn PreparedAndDraw>>,
-    gpu_context: Option<&GpuContext<'_>>,
-) -> Vec<PrepareResult> {
-    // TODO: if gpu_context is None, and RenderParams.compute_backend is GPU, panic.
-    let mut results = Vec::with_capacity(layers.len());
-    for layer in layers.iter_mut() {
-        // Pass None per-layer for now; GPU compute support will need a per-layer context strategy.
-        let result = layer.prepare(gpu_context).await;
-        results.push(result);
-    }
-    results
-}
-
 pub async fn draw_layers_to_vector(
     view_params: &ViewParams,
     layers: &mut Vec<Box<dyn PreparedAndDraw>>,
@@ -195,6 +178,11 @@ pub async fn draw_layers_to_raster(
     encoder: &mut wgpu::CommandEncoder,
     out_tex: &wgpu::Texture,
 ) -> RenderResult {
+    // For pyo3 usage, we need to use iterator types that are Send to avoid the following error
+    // when iterating over vectors of layers:
+    // "has type `std::slice::Iter<'_, Box<dyn PreparedAndDrawToCanvas>>` which is not `Send`"
+    let layer_refs: Vec<_> = layers.iter_mut().collect();
+
     let out_view = out_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
     {
@@ -216,7 +204,9 @@ pub async fn draw_layers_to_raster(
             multiview_mask: None,
         });
 
-        for layer in layers.iter_mut() {
+        for layer in layer_refs {
+            // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
+            // Should we instead assume the layer already has the necessary info from view_params?
             DrawToRasterGpu::draw(layer.as_ref(), &gpu_context, &mut render_pass).await;
         }
 
@@ -226,4 +216,3 @@ pub async fn draw_layers_to_raster(
     let bailed_early = false; // TODO: aggregate from prepare_results when timeout support is added.
     RenderResult { bailed_early }
 }
-

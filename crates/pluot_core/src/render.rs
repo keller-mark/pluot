@@ -1,8 +1,8 @@
 use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::render_types::GpuContext;
-use crate::params::{GraphicsFormat, PlotParams, RenderParams};
-use crate::render_traits::{MarginParams, ViewParams, get_layers, prepare_layers, draw_layers_to_vector, draw_layers_to_raster};
+use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
+use crate::render_traits::{MarginParams, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
 
 use futures_intrusive::channel::shared::oneshot_channel;
@@ -37,7 +37,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     let mut layers = get_layers(&plot_params.layers, &view_params);
 
     let owned_gpu_context: Option<(wgpu::Device, wgpu::Queue)>;
-    if params.render_backend == Some(crate::params::RenderBackend::Gpu) || params.compute_backend == Some(crate::params::ComputeBackend::Gpu) {
+    if params.render_backend == Some(RenderBackend::Gpu) || params.compute_backend == Some(ComputeBackend::Gpu) {
         // TODO: ensure this panics on machines without GPU support
         owned_gpu_context = Some(get_or_init_gpu_context().await);
     } else if params.render_backend == None || params.compute_backend == None {
@@ -49,7 +49,16 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
     let gpu_context = owned_gpu_context.as_ref().map(|(device, queue)| GpuContext { device, queue });
 
-    let prepare_result = prepare_layers(&mut layers, gpu_context.as_ref()).await;
+    // Collect references first to avoid Send issues with the iterator
+    let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare(gpu_context.as_ref())).collect();
+
+    // Does this actually work like Promise.all? or does it just run things sequentially?
+
+    // Collect all PrepareResult values and update bailed_early if any of them bailed early,
+    // aggregating the prepare results from all layers.
+    // TODO: use maybe_timeout! here?
+    let prepare_results = futures::future::join_all(prepare_futures).await;
+    let prepare_bailed_early = prepare_results.iter().any(|r| r.bailed_early);
 
     match params.format {
         GraphicsFormat::Vector => {
@@ -160,8 +169,11 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
             }
 
+            let mut bailed_early = prepare_bailed_early;
+            bailed_early = bailed_early || render_result.bailed_early;
+
             // Final byte encodes the RenderResult for the caller.
-            pixels[(unpadded_bytes_per_row * height) as usize] = match render_result.bailed_early {
+            pixels[(unpadded_bytes_per_row * height) as usize] = match bailed_early {
                 false => 0,
                 true => 1,
             };
