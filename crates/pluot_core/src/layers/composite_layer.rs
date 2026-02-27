@@ -14,7 +14,7 @@ use crate::layers::position_utils::get_point_position;
 use crate::params::{LayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
-use crate::registry::get_layer_from_registry;
+use crate::render_traits::get_layer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
@@ -41,7 +41,7 @@ impl CompositeLayer {
         let sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = layer_params.sub_layers
             .iter()
             .map(|layer_param| {
-                get_layer_from_registry(&layer_param.layer_type, layer_param.layer_params.clone(), &view_params)
+                get_layer(&layer_param, &view_params)
             })
             .collect();
 

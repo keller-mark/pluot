@@ -59,8 +59,7 @@ impl SvgContext {
                 defs = defs.add(cp.clone());
             }
             // Wrap defs + group in an outer <g> so the returned string is always a single element.
-            // TODO: is this extra <g> parent of <defs> valid/allowed per the SVG spec?
-            // How to avoid this?
+            // TODO: is this extra <g> parent of <defs> valid/allowed per the SVG spec? How to avoid this?
             Group::new().add(defs).add(self.group.clone()).into()
         };
 

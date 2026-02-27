@@ -55,11 +55,9 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
     // Collect references first to avoid Send issues with the iterator
     let prepare_futures: Vec<_> = layers.iter_mut().map(|layer| layer.prepare(gpu_context.as_ref())).collect();
 
-    // Does this actually work like Promise.all? or does it just run things sequentially?
-
     // Collect all PrepareResult values and update bailed_early if any of them bailed early,
     // aggregating the prepare results from all layers.
-    // TODO: use maybe_timeout! here?
+    // TODO: use maybe_timeout! here? or only within individual prepare functions?
     let prepare_results = futures::future::join_all(prepare_futures).await;
     let prepare_bailed_early = prepare_results.iter().any(|r| r.bailed_early);
 
