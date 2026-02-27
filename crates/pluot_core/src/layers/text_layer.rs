@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::borrow::Cow;
 
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
@@ -616,8 +617,17 @@ pub async fn base_draw_text_layer(
             ],
         });
 
+    let shader_string = wesl::Wesl::new("src/layers/shaders")
+        .compile(&"package::text_layer".parse().unwrap())
+        .inspect_err(|e| eprintln!("WESL error: {e}")) // pretty errors with `display()`
+        .unwrap()
+        .to_string();
+
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/text_layer.wgsl"));
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Text Layer Shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_string)),
+        });
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

@@ -4,7 +4,9 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use wesl::include_wesl;
 use std::sync::{Arc};
+use std::borrow::Cow;
 
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -14,6 +16,7 @@ use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::layers::position_utils::get_point_position;
+use crate::log;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -329,8 +332,39 @@ pub async fn base_draw_line_layer(
             ],
         });
 
+    // It seems that the runtime file-based resolution does not work on WASM.
+    // On wasm, we need to either use the VirtualResolver
+    // or create a package for our WESL code within the workspace
+    // (I suspect packages use virtual resolution under the hood).
+    // Reference: https://github.com/Wumpf/terrain_and_stuff/blob/5b39ae114bd797e19b7dccb5f68b3bedbe1e3252/terrain_and_stuff/src/resource_managers/shader_cache.rs#L16
+
+    /*let shader_string = wesl::Wesl::new("src/layers/shaders")
+        .compile(&"package::line_layer".parse().unwrap())
+        .inspect_err(|e| log(&format!("WESL error: {e}"))) // pretty errors with `display()`
+        .unwrap()
+        .to_string();*/
+
+    let resolver = wesl::VirtualResolver::new();
+    resolver.add_module("package::line_layer", include_wesl!("src/layers/shaders/line_layer.wesl"));
+
+    let wesl_compiler = wesl::Wesl::new()
+        .with_resolver(resolver);
+
+    let shader_string = wesl::Wesl::new_with_resolver(resolver)
+        .compile(&"package::line_layer".parse().unwrap())
+        .inspect_err(|e| log(&format!("WESL error: {e}"))) // pretty errors with `display()`
+        .unwrap()
+        .to_string();
+
+
+
+    log(&format!("Compiled shader:\n{}", shader_string));
+
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/line_layer.wgsl"));
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Line Layer Shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_string)),
+        });
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

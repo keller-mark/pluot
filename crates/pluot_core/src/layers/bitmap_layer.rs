@@ -569,8 +569,17 @@ pub async fn base_draw_bitmap_layer(
             ],
         });
 
+    let shader_string = wesl::Wesl::new("src/layers/shaders")
+        .compile(&"package::bitmap_layer".parse().unwrap())
+        .inspect_err(|e| eprintln!("WESL error: {e}")) // pretty errors with `display()`
+        .unwrap()
+        .to_string();
+
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Bitmap Layer Shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_string)),
+        });
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

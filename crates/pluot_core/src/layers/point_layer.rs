@@ -5,6 +5,7 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
+use std::borrow::Cow;
 
 use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -298,8 +299,17 @@ pub async fn base_draw_point_layer(
             ],
         });
 
+    let shader_string = wesl::Wesl::new("src/layers/shaders")
+        .compile(&"package::point_layer".parse().unwrap())
+        .inspect_err(|e| eprintln!("WESL error: {e}")) // pretty errors with `display()`
+        .unwrap()
+        .to_string();
+
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/point_layer.wgsl"));
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Point Layer Shader"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_string)),
+        });
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

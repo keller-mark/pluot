@@ -1,78 +1,4 @@
-fn rotate_z(angle_deg: f32) -> mat4x4<f32> {
-    let angle_rad = (-1.0 * angle_deg) * 3.14159265359 / 180.0; // Convert degrees to radians
-    let c = cos(angle_rad);
-    let s = sin(angle_rad);
-    return mat4x4<f32>(
-        vec4<f32>(c, s, 0.0, 0.0),
-        vec4<f32>(-s, c, 0.0, 0.0),
-        vec4<f32>(0.0, 0.0, 1.0, 0.0),
-        vec4<f32>(0.0, 0.0, 0.0, 1.0)
-    );
-}
-
-fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(x, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, y, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, z, 0.0),
-    vec4<f32>(0.0, 0.0, 0.0, 1.0)
-  );
-}
-
-fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(1.0, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, 1.0, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, 1.0, 0.0),
-    vec4<f32>(x, y, z, 1.0),
-  );
-}
-
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
-    // Determine the x and y extents to use,
-    // based on the aspect ratio mode and layer aspect ratio.
-    // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
-    var x_scale_for_aspect_ratio_mode = 1.0;
-    var y_scale_for_aspect_ratio_mode = 1.0;
-    if (aspect_ratio_mode == 1u) {
-        // fit/contain
-        if (layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    } else if (aspect_ratio_mode == 2u) {
-        // fill/cover
-        if(layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    }
-
-    // Only scaling will result in the (0, 1) region being centered.
-    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    // TODO: implement aspect_ratio_alignment_mode
-    return scale(
-        x_scale_for_aspect_ratio_mode,
-        y_scale_for_aspect_ratio_mode,
-        1.0
-    );
-}
+import super::utils::{rotate_z, scale, translate, get_aspect_ratio_mat};
 
 struct TextLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
@@ -123,7 +49,7 @@ fn vs_main(
 ) -> VSOut {
     let elem_pos_x_orig = elem_pos.x; // Note: elem_pos is the position for the whole text element, not the individual glyph.
     let elem_pos_y_orig = elem_pos.y; // Note: elem_pos is the position for the whole text element, not the individual glyph.
-    
+
     let glyph_offset_x_px = glyph_px.x;
     let glyph_offset_y_px = glyph_px.y;
     let glyph_width_px = glyph_px.z;
@@ -144,7 +70,7 @@ fn vs_main(
     let cy = f32((vertex_index >> 1u) & 1u);
     let uv_corner = vec2<f32>(cx, cy);
 
-    // Flip Y for UVs so that the bottom of the quad (corner.y=0) 
+    // Flip Y for UVs so that the bottom of the quad (corner.y=0)
     // maps to the bottom of the glyph texture (max V / uv_rect.w),
     // and the top of the quad (corner.y=1) maps to the top (min V / uv_rect.y).
     let uv = vec2<f32>(
@@ -231,7 +157,7 @@ fn vs_main(
     let elem_pos_orig = vec2<f32>(
         elem_pos_x_orig,
         elem_pos_y_orig
-    );    
+    );
 
     /// Model-view-projection matrix
     // References:
@@ -268,7 +194,7 @@ fn vs_main(
     );
 
     let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
-    
+
     // Compute the glyph position in normalized space.
     let glyph_size_norm = vec4f(
         glyph_width_px / layer_width_px,

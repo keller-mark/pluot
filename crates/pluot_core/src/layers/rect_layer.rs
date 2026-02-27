@@ -5,6 +5,7 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
+use std::borrow::Cow;
 
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::render_traits::{
@@ -329,7 +330,16 @@ pub async fn base_draw_rect_layer(
         ],
     });
 
-    let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/rect_layer.wgsl"));
+    let shader_string = wesl::Wesl::new("src/layers/shaders")
+        .compile(&"package::rect_layer".parse().unwrap())
+        .inspect_err(|e| eprintln!("WESL error: {e}")) // pretty errors with `display()`
+        .unwrap()
+        .to_string();
+
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Rect Layer Shader"),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader_string)),
+    });
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("RectLayer PLD"),
