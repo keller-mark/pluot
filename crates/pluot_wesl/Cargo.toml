@@ -1,0 +1,18 @@
+[package]
+name = "pluot_wesl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Package for WGSL/WESL"
+repository.workspace = true
+#license.workspace = true
+publish = false
+
+[dependencies]
+wesl = { workspace = true }
+
+[build-dependencies]
+wesl = { workspace = true, features = ["package"] }
+
+[lints]
+workspace = true

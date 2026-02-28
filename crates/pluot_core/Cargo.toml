@@ -80,6 +80,7 @@ wgpu.workspace = true
 glam.workspace = true
 encase.workspace = true
 wesl.workspace = true
+pluot_wesl.workspace = true
 
 # Matrix multiplication for SVG rendering
 nalgebra-glm.workspace = true

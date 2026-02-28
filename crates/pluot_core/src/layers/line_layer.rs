@@ -344,21 +344,12 @@ pub async fn base_draw_line_layer(
         .unwrap()
         .to_string();*/
 
-    let resolver = wesl::VirtualResolver::new();
-    resolver.add_module("package::line_layer", include_wesl!("src/layers/shaders/line_layer.wesl"));
-
-    let wesl_compiler = wesl::Wesl::new()
-        .with_resolver(resolver);
-
-    let shader_string = wesl::Wesl::new_with_resolver(resolver)
-        .compile(&"package::line_layer".parse().unwrap())
+    let shader_string = wesl::Wesl::new("src/layers/shaders")
+        .add_package(&pluot_wesl::PACKAGE)
+        .compile(&"pluot_wesl::line_layer".parse().unwrap())
         .inspect_err(|e| log(&format!("WESL error: {e}"))) // pretty errors with `display()`
         .unwrap()
         .to_string();
-
-
-
-    log(&format!("Compiled shader:\n{}", shader_string));
 
     let shader = device
         .create_shader_module(wgpu::ShaderModuleDescriptor {

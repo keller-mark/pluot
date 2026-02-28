@@ -618,7 +618,8 @@ pub async fn base_draw_text_layer(
         });
 
     let shader_string = wesl::Wesl::new("src/layers/shaders")
-        .compile(&"package::text_layer".parse().unwrap())
+        .add_package(&pluot_wesl::PACKAGE)
+        .compile(&"pluot_wesl::text_layer".parse().unwrap())
         .inspect_err(|e| eprintln!("WESL error: {e}")) // pretty errors with `display()`
         .unwrap()
         .to_string();

@@ -2,6 +2,7 @@
 
 [workspace]
 members = [
+    "crates/pluot_wesl",
     "crates/pluot_core",
     "crates/pluot_zarr",
     "crates/pluot",
@@ -66,6 +67,7 @@ serde_json = "1.0.143"
 
 # Local crates
 # We register these here so that they can be used via .workspace = true by sibling crates.
+pluot_wesl = { path = "crates/pluot_wesl" }
 pluot_core = { path = "crates/pluot_core" }
 pluot_zarr = { path = "crates/pluot_zarr" }
 pluot = { path = "crates/pluot" }
