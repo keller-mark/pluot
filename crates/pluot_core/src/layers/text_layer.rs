@@ -22,7 +22,7 @@ use crate::two::shapes::{
     TwoColor, TwoText, TwoTextAlign, TwoTextBaseline
 };
 use crate::two::svg::{update_svg, SvgContext};
-use crate::layers::position_utils::get_point_position;
+use crate::positioning::get_point_position;
 use crate::log;
 
 const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();

@@ -10,7 +10,7 @@ use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::render_traits::{
     AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
 };
-use crate::layers::position_utils::get_point_position;
+use crate::positioning::get_point_position;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::two::shapes::{
