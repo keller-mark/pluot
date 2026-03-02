@@ -94,7 +94,7 @@ pub fn get_point_position(
 
     if (data_unit_mode == UnitsMode::Pixels) {
         // Pixel units mode: positions are already in pixel units.
-        return (pos_x, layer_height_px - pos_y);
+        return (pos_x, pos_y);
     }
 
     let camera_view = Mat4::from_column_slice(camera_view_raw);
@@ -187,10 +187,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(0.0, 100.0),
             Vec2::new(0.0, 0.0),
-            Vec2::new(100.0, 100.0),
+            Vec2::new(0.0, 100.0),
             Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -235,10 +235,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(0.0, 100.0),
             Vec2::new(0.0, 0.0),
-            Vec2::new(200.0, 100.0),
+            Vec2::new(0.0, 100.0),
             Vec2::new(200.0, 0.0),
+            Vec2::new(200.0, 100.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -286,10 +286,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "contain" aspect_ratio_mode,
             // the X coordinates of the unit square will be compressed.
-            Vec2::new(50.0, 100.0),
             Vec2::new(50.0, 0.0),
-            Vec2::new(150.0, 100.0),
+            Vec2::new(50.0, 100.0),
             Vec2::new(150.0, 0.0),
+            Vec2::new(150.0, 100.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -335,10 +335,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "contain" aspect_ratio_mode,
             // the Y coordinates of the unit square will be compressed.
-            Vec2::new(0.0, 150.0),
             Vec2::new(0.0, 50.0),
-            Vec2::new(100.0, 150.0),
+            Vec2::new(0.0, 150.0),
             Vec2::new(100.0, 50.0),
+            Vec2::new(100.0, 150.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -385,10 +385,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "cover" aspect_ratio_mode,
             // the Y coordinates of the unit square will be outside of NDC.
-            Vec2::new(0.0, 150.0),
             Vec2::new(0.0, -50.0),
-            Vec2::new(200.0, 150.0),
+            Vec2::new(0.0, 150.0),
             Vec2::new(200.0, -50.0),
+            Vec2::new(200.0, 150.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -434,10 +434,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "cover" aspect_ratio_mode,
             // the Y coordinates of the unit square will be outside of NDC.
-            Vec2::new(-50.0, 200.0),
             Vec2::new(-50.0, 0.0),
-            Vec2::new(150.0, 200.0),
+            Vec2::new(-50.0, 200.0),
             Vec2::new(150.0, 0.0),
+            Vec2::new(150.0, 200.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -495,10 +495,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(-50.0, 150.0),
             Vec2::new(-50.0, -50.0),
-            Vec2::new(150.0, 150.0),
+            Vec2::new(-50.0, 150.0),
             Vec2::new(150.0, -50.0),
+            Vec2::new(150.0, 150.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -553,10 +553,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(-150.0, 250.0),
             Vec2::new(-150.0, -150.0),
-            Vec2::new(250.0, 250.0),
+            Vec2::new(-150.0, 250.0),
             Vec2::new(250.0, -150.0),
+            Vec2::new(250.0, 250.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -611,10 +611,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(25.0, 75.0),
             Vec2::new(25.0, 25.0),
-            Vec2::new(75.0, 75.0),
+            Vec2::new(25.0, 75.0),
             Vec2::new(75.0, 25.0),
+            Vec2::new(75.0, 75.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -669,10 +669,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(37.5, 62.5),
             Vec2::new(37.5, 37.5),
-            Vec2::new(62.5, 62.5),
+            Vec2::new(37.5, 62.5),
             Vec2::new(62.5, 37.5),
+            Vec2::new(62.5, 62.5),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
