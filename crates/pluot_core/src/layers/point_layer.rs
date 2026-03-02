@@ -475,14 +475,14 @@ pub fn base_draw_point_layer_svg(
         svg_elements.push(match layer_params.point_shape_mode {
             PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
                 x: px as f64,
-                y: py as f64,
+                y: (layer_h - py) as f64,
                 radius: point_radius as f64,
                 // TODO: more params
                 ..Default::default()
             }),
             PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
                 x: (px - point_radius) as f64,
-                y: (py - point_radius) as f64,
+                y: ((layer_h - py) - point_radius) as f64,
                 width: (point_radius * 2.0) as f64,
                 height: (point_radius * 2.0) as f64,
                 // TODO: more params

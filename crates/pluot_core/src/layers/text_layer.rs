@@ -814,7 +814,7 @@ pub fn base_draw_text_layer_svg(
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
-            y: py as f64,
+            y: (layer_h - py) as f64,
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),

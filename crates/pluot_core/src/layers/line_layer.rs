@@ -516,9 +516,9 @@ pub fn base_draw_line_layer_svg(
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Line(TwoLine {
             x1: source_x_px as f64,
-            y1: source_y_px as f64,
+            y1: (layer_h - source_y_px) as f64,
             x2: target_x_px as f64,
-            y2: target_y_px as f64,
+            y2: (layer_h - target_y_px) as f64,
             linewidth: layer_params.line_width as f64,
             // TODO: more params
             ..Default::default()
