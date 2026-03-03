@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::render_traits::{AspectRatioMode, ViewParams};
+use crate::render_traits::ViewParams;
 use crate::log;
+use crate::viewport::get_bounds;
 
 /// A single resolution level in the multiscale pyramid.
 ///
@@ -66,63 +67,6 @@ pub fn get_view_transform(view_params: &ViewParams) -> (f32, f32, f32) {
     (zoom, translate_x, translate_y)
 }
 
-/// Calculate the visible data range based on camera view.
-/// Returns (min_x, max_x, min_y, max_y) in data coordinates.
-///
-/// The returned range is in whatever coordinate system the camera_view is
-/// configured for. When the camera is set up to frame physical coordinates
-/// (e.g., micrometers), this returns physical coordinates.
-pub fn get_visible_range(view_params: &ViewParams) -> (f64, f64, f64, f64) {
-    let (zoom, translate_x, translate_y) = get_view_transform(view_params);
-
-    let aspect_ratio_mode = view_params.aspect_ratio_mode;
-
-    let bounds = &view_params.margins;
-
-    let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
-    let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
-    let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
-    let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
-
-    let viewport_w = view_params.width as f32;
-    let viewport_h = view_params.height as f32;
-
-    let layer_w = viewport_w - (margin_left + margin_right) as f32;
-    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-
-    let layer_aspect_ratio = layer_w / layer_h;
-
-    let mut x_scale_for_aspect_ratio_mode = 1.0_f32;
-    let mut y_scale_for_aspect_ratio_mode = 1.0_f32;
-    match aspect_ratio_mode {
-        AspectRatioMode::Ignore => {}
-        AspectRatioMode::Contain => {
-            if layer_aspect_ratio > 1.0 {
-                x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-            } else if layer_aspect_ratio < 1.0 {
-                y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-            }
-        }
-        AspectRatioMode::Cover => {
-            if layer_aspect_ratio > 1.0 {
-                y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-            } else if layer_aspect_ratio < 1.0 {
-                x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-            }
-        }
-    }
-
-    let x_adjustment = x_scale_for_aspect_ratio_mode - 1.0;
-    let y_adjustment = y_scale_for_aspect_ratio_mode - 1.0;
-
-    let min_x = (((-translate_x - 1.0 - x_adjustment) / zoom) + 1.0) / 2.0;
-    let max_x = (((-translate_x + 1.0 + x_adjustment) / zoom) + 1.0) / 2.0;
-    let min_y = (((-translate_y - 1.0 - y_adjustment) / zoom) + 1.0) / 2.0;
-    let max_y = (((-translate_y + 1.0 + y_adjustment) / zoom) + 1.0) / 2.0;
-
-    (min_x as f64, max_x as f64, min_y as f64, max_y as f64)
-}
-
 /// Compute the effective layer size in CSS pixels (accounting for margins).
 pub fn get_layer_size(view_params: &ViewParams) -> (f64, f64) {
     let bounds = &view_params.margins;
@@ -153,7 +97,8 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
         return 0;
     }
 
-    let (min_x, max_x, min_y, max_y) = get_visible_range(view_params);
+    let b = get_bounds(view_params);
+    let (min_x, max_x, min_y, max_y) = (b.x_min as f64, b.x_max as f64, b.y_min as f64, b.y_max as f64);
     let (layer_w, layer_h) = get_layer_size(view_params);
     let dpr = view_params.device_pixel_ratio as f64;
 
@@ -210,7 +155,8 @@ pub fn to_y_slice(start: u64, end: u64, height: u64) -> (u64, u64) {
 ///   - Its width/height is chunk_shape * scale (or smaller for partial edge tiles)
 pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> Vec<VisibleTile> {
     // Compute the visible extent with respect to the coordinate system.
-    let (min_x, max_x, min_y, max_y) = get_visible_range(view_params);
+    let b = get_bounds(view_params);
+    let (min_x, max_x, min_y, max_y) = (b.x_min as f64, b.x_max as f64, b.y_min as f64, b.y_max as f64);
 
     let num_img_px_per_m_in_x = 1.0 / level.scale[1];
     let num_img_px_per_m_in_y = 1.0 / level.scale[0];
@@ -282,7 +228,7 @@ pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render_traits::MarginParams;
+    use crate::render_traits::{AspectRatioMode, MarginParams};
 
     /// Helper to create a ViewParams with sensible defaults for testing.
     fn make_view_params(
@@ -368,61 +314,61 @@ mod tests {
     }
 
     // ========================================================================
-    // get_visible_range
+    // get_bounds (formerly get_visible_range)
     // ========================================================================
 
     #[test]
-    fn test_get_visible_range_identity_camera_square() {
+    fn test_get_bounds_identity_camera_square() {
         // Identity camera on a square viewport with Ignore aspect ratio mode.
         let mut vp = make_view_params(100, 100, None);
         vp.aspect_ratio_mode = AspectRatioMode::Ignore;
-        let (min_x, max_x, min_y, max_y) = get_visible_range(&vp);
+        let b = get_bounds(&vp);
         // With identity camera, the visible range maps NDC [-1,1] to [0,1].
-        assert!((min_x - 0.0).abs() < 1e-6);
-        assert!((max_x - 1.0).abs() < 1e-6);
-        assert!((min_y - 0.0).abs() < 1e-6);
-        assert!((max_y - 1.0).abs() < 1e-6);
+        assert!((b.x_min - 0.0).abs() < 1e-6);
+        assert!((b.x_max - 1.0).abs() < 1e-6);
+        assert!((b.y_min - 0.0).abs() < 1e-6);
+        assert!((b.y_max - 1.0).abs() < 1e-6);
     }
 
     #[test]
-    fn test_get_visible_range_zoomed_in_2x() {
+    fn test_get_bounds_zoomed_in_2x() {
         // Zoomed in 2x: visible range should be [0.25, 0.75] in both axes.
         let mut vp = make_view_params(100, 100, Some(camera_matrix(2.0, 0.0, 0.0)));
         vp.aspect_ratio_mode = AspectRatioMode::Ignore;
-        let (min_x, max_x, min_y, max_y) = get_visible_range(&vp);
-        assert!((min_x - 0.25).abs() < 1e-6);
-        assert!((max_x - 0.75).abs() < 1e-6);
-        assert!((min_y - 0.25).abs() < 1e-6);
-        assert!((max_y - 0.75).abs() < 1e-6);
+        let b = get_bounds(&vp);
+        assert!((b.x_min - 0.25).abs() < 1e-6);
+        assert!((b.x_max - 0.75).abs() < 1e-6);
+        assert!((b.y_min - 0.25).abs() < 1e-6);
+        assert!((b.y_max - 0.75).abs() < 1e-6);
     }
 
     #[test]
-    fn test_get_visible_range_zoomed_out_2x() {
+    fn test_get_bounds_zoomed_out_2x() {
         // Zoomed out 0.5x: visible range should be [-0.5, 1.5] in both axes.
         let mut vp = make_view_params(100, 100, Some(camera_matrix(0.5, 0.0, 0.0)));
         vp.aspect_ratio_mode = AspectRatioMode::Ignore;
-        let (min_x, max_x, min_y, max_y) = get_visible_range(&vp);
-        assert!((min_x - (-0.5)).abs() < 1e-6);
-        assert!((max_x - 1.5).abs() < 1e-6);
-        assert!((min_y - (-0.5)).abs() < 1e-6);
-        assert!((max_y - 1.5).abs() < 1e-6);
+        let b = get_bounds(&vp);
+        assert!((b.x_min - (-0.5)).abs() < 1e-6);
+        assert!((b.x_max - 1.5).abs() < 1e-6);
+        assert!((b.y_min - (-0.5)).abs() < 1e-6);
+        assert!((b.y_max - 1.5).abs() < 1e-6);
     }
 
     #[test]
-    fn test_get_visible_range_with_contain_wide_viewport() {
+    fn test_get_bounds_with_contain_wide_viewport() {
         // Wide viewport (200x100) with Contain mode.
         // The (0,1) data square should be contained in the viewport,
         // so the visible x range extends beyond (0,1) symmetrically.
         let mut vp = make_view_params(200, 100, None);
         vp.aspect_ratio_mode = AspectRatioMode::Contain;
-        let (min_x, max_x, min_y, max_y) = get_visible_range(&vp);
+        let b = get_bounds(&vp);
         // Y range stays [0,1]; X range expands to accommodate the wider viewport.
-        assert!((min_y - 0.0).abs() < 1e-6);
-        assert!((max_y - 1.0).abs() < 1e-6);
-        assert!(min_x < 0.0, "min_x should be negative for wide contain");
-        assert!(max_x > 1.0, "max_x should exceed 1 for wide contain");
+        assert!((b.y_min - 0.0).abs() < 1e-6);
+        assert!((b.y_max - 1.0).abs() < 1e-6);
+        assert!(b.x_min < 0.0, "x_min should be negative for wide contain");
+        assert!(b.x_max > 1.0, "x_max should exceed 1 for wide contain");
         // The X range should be symmetric around 0.5.
-        let x_center = (min_x + max_x) / 2.0;
+        let x_center = (b.x_min + b.x_max) / 2.0;
         assert!((x_center - 0.5).abs() < 1e-6);
     }
 

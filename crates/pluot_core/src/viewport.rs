@@ -170,7 +170,6 @@ pub fn camera_matrix_to_zoom_and_translation(camera_view: Option<[f32; 16]>) -> 
 }
 
 // Calculate the visible data range based on camera view and other view parameters.
-// TODO: refactor layers that currently implement a self.get_visible_range to instead use this get_bounds function.
 pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
     let (zoom, translate_x, translate_y) = camera_matrix_to_zoom_and_translation(view_params.camera_view);
 
