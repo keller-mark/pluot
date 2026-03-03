@@ -352,6 +352,8 @@ export function Pluot(props) {
     let arr;
     try {
       arr = await wasm.render_wasm(renderParams);
+
+      console.log(await wasm.pick_wasm(renderParams, 400, 400));
       isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);

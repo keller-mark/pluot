@@ -1,10 +1,12 @@
 pub use crate::params::RenderParams;
 pub use crate::render::render;
+pub use crate::picking::{pick, PickingResult};
+pub use crate::viewport::ScreenCoord;
 
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, RenderParams};
+    use super::{render, pick, RenderParams, ScreenCoord};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -102,6 +104,17 @@ pub mod wasm {
         // Return a Uint8Array of RGBA bytes
         js_sys::Uint8Array::from(pixels.as_slice())
     }
+
+    #[wasm_bindgen]
+    pub async fn pick_wasm(params: JsValue, screen_x: f32, screen_y: f32) -> JsValue {
+        let params: RenderParams =
+            serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
+
+        let screen_coord = ScreenCoord { x: screen_x, y: screen_y };
+        let result = pick(params, screen_coord).await;
+
+        serde_wasm_bindgen::to_value(&result).expect("Failed to serialize PickingResult")
+    }
 }
 
 // === Python Bindings ===
@@ -115,7 +128,7 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, RenderParams};
+    use super::{render, pick, RenderParams, ScreenCoord};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
@@ -207,6 +220,23 @@ pub mod python {
     }
 
     #[pyfunction]
+    #[pyo3(signature = (screen_x, screen_y, **kwds))]
+    pub fn pick_py(py: Python, screen_x: f32, screen_y: f32, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
+        let params: RenderParams = if let Some(dict) = kwds {
+            depythonize::<RenderParams>(&dict.into_bound(py)).unwrap()
+        } else {
+            RenderParams::default()
+        };
+
+        let screen_coord = ScreenCoord { x: screen_x, y: screen_y };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = pick(params, screen_coord).await;
+            Python::attach(|py| pythonize::pythonize(py, &result).map_err(|e| e.into()))
+        })
+    }
+
+    #[pyfunction]
     #[pyo3(signature = (**kwds))]
     pub fn render_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
         // Use the py parameter directly instead of Python::with_gil
@@ -230,6 +260,7 @@ pub mod python {
 
         m.add_function(wrap_pyfunction!(log_info, m)?)?;
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
+        m.add_function(wrap_pyfunction!(pick_py, m)?)?;
         Ok(())
     }
 }

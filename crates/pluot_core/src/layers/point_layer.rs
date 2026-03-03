@@ -6,7 +6,10 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use std::collections::HashMap;
+use crate::picking::LayerPickingResult;
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -527,5 +530,42 @@ inventory::submit! {
             let params: PointLayerParams = serde_json::from_value(value).unwrap();
             Box::new(PointLayer::new(view_params.clone(), params))
         },
+    }
+}
+
+impl PickableLayer for PointLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+
+        let n = self.layer_params.labels_vec.len();
+        if n == 0 {
+            return None;
+        }
+
+        let mut min_dist_sq = f32::MAX;
+        let mut closest_idx = 0usize;
+
+        for i in 0..n {
+            let dx = self.layer_params.position_x[i] - cx;
+            let dy = self.layer_params.position_y[i] - cy;
+            let dist_sq = dx * dx + dy * dy;
+            if dist_sq < min_dist_sq {
+                min_dist_sq = dist_sq;
+                closest_idx = i;
+            }
+        }
+
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), closest_idx.to_string());
+        info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
+        info.insert("x".to_string(), self.layer_params.position_x[closest_idx].to_string());
+        info.insert("y".to_string(), self.layer_params.position_y[closest_idx].to_string());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
     }
 }

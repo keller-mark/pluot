@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedAndDraw, PreparedLayer,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
@@ -149,3 +149,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for MultiscaleLayer {}

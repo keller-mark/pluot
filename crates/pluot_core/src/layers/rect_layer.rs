@@ -8,7 +8,7 @@ use std::sync::{Arc};
 
 use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::render_traits::{
-    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::positioning::get_point_position;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -557,3 +557,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for RectLayer {}

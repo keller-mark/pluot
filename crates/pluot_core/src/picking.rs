@@ -1,21 +1,24 @@
 use std::collections::HashMap;
+use serde::Serialize;
 
 use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::render_types::GpuContext;
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
-use crate::render_traits::{MarginParams, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
+use crate::render_traits::{MarginParams, PickableLayer, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::viewport::{DataCoord, ScreenCoord, unproject};
 
+#[derive(Serialize)]
 pub struct LayerPickingResult {
     pub layer_id: String,
     pub info: HashMap<String, String>, // Additional info about the picked element (e.g., index in data array, value, etc.)
 }
 
+#[derive(Serialize)]
 pub struct PickingResult {
     pub data_coord: Option<DataCoord>,
     pub screen_coord: ScreenCoord,
@@ -77,14 +80,15 @@ pub async fn pick(params: RenderParams, screen_coord: ScreenCoord) -> PickingRes
     let prepare_results = futures::future::join_all(prepare_futures).await;
     // let prepare_bailed_early = prepare_results.iter().any(|r| r.bailed_early);
 
-    // TODO: iterate over layers and call each layer's pick function.
-    // Collect the results into a PickingResult struct and return it.
-
     let data_coord = unproject(&view_params, None, screen_coord.clone());
+
+    let layer_results: Vec<LayerPickingResult> = layers.iter_mut()
+        .filter_map(|layer| layer.pick(screen_coord.clone(), data_coord.clone()))
+        .collect();
 
     return PickingResult {
         data_coord: data_coord,
         screen_coord: screen_coord,
-        layer_results: vec![], // TODO: populate with actual picking results from each layer
+        layer_results,
     };
 }

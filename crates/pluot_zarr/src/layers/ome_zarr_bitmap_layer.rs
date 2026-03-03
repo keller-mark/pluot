@@ -9,7 +9,7 @@ use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
 use pluot_core::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmap_layer::{
@@ -345,3 +345,5 @@ impl DrawToSvg for OmeZarrBitmapLayer {
         }
     }
 }
+
+impl PickableLayer for OmeZarrBitmapLayer {}

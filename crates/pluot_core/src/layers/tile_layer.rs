@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedAndDraw, PreparedLayer,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
 use crate::viewport::get_bounds;
@@ -160,3 +160,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for TileLayer {}

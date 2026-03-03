@@ -1,3 +1,5 @@
+use crate::picking::LayerPickingResult;
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -112,6 +114,16 @@ pub trait DrawToRasterCpu: MaybeSend + MaybeSync {
     async fn draw(&self, cpu_context: &CpuContext<'_>, pass: &mut CpuRenderPass);
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+pub trait PickableLayer {
+    // TODO: should this be async?
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        // Default implementation: not pickable, return empty result.
+        None
+    }
+}
+
 
 // Stub trait for CPU-based compute operations.
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -139,8 +151,9 @@ pub trait PreparedAndDrawToRasterCpu: PreparedLayer + DrawToRasterCpu + MaybeSen
 impl<T: PreparedLayer + DrawToRasterCpu + MaybeSend + MaybeSync> PreparedAndDrawToRasterCpu for T {}
 
 // Trait for layers that can prepare and render to all output formats.
-pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + MaybeSend + MaybeSync {}
-impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + MaybeSend + MaybeSync> PreparedAndDraw for T {}
+pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + MaybeSend + MaybeSync> PreparedAndDraw for T {}
+
 
 
 pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dyn PreparedAndDraw> {

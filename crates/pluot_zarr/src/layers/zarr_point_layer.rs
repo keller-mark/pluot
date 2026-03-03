@@ -1,4 +1,7 @@
 use std::sync::Arc;
+use pluot_core::layers::point_layer::PointLayer;
+use pluot_core::viewport::DataCoord;
+use pluot_core::viewport::ScreenCoord;
 use serde::{Deserialize, Serialize};
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
@@ -9,10 +12,11 @@ use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use pluot_core::render_types::GpuContext;
+use pluot_core::LayerPickingResult;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrPointLayerParams {
@@ -238,5 +242,32 @@ impl DrawToSvg for ZarrPointLayer {
         );
 
         update_svg(ctx, &svg_elements);
+    }
+}
+
+impl PickableLayer for ZarrPointLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+
+        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+
+        let layer = PointLayer::new(
+            self.view_params.clone(),
+            PointLayerParams {
+                layer_id: self.layer_params.layer_id.clone(),
+                bounds: self.layer_params.bounds.clone(),
+                data_unit_mode: self.layer_params.data_unit_mode.clone(),
+                point_radius: self.layer_params.point_radius,
+                point_radius_unit_mode: self.layer_params.point_radius_unit_mode.clone(),
+                point_shape_mode: self.layer_params.point_shape_mode.clone(),
+                position_x: data.x_arr.clone(),
+                position_y: data.y_arr.clone(),
+                labels_vec: data.labels_arr.clone(),
+            },
+        );
+
+        layer.pick(_screen_coord, data_coord)
     }
 }

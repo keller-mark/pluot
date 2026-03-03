@@ -1,10 +1,11 @@
 // Viewport utilities intended for use by layers, to implement features like picking.
 // We may also want to expose functions like project, unproject, and get_bounds via the public API and bindings.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
+use serde::{Deserialize, Serialize};
 use crate::render_traits::{MarginParams, ViewParams, AspectRatioMode, UnitsMode};
 use crate::positioning::{get_point_position, get_scale_mat, get_translate_mat, get_aspect_ratio_mat};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScreenCoord {
     pub x: f32,
     // Note: we treat the Y coordinate as increasing upwards, for consistency with the data coordinate system.
@@ -12,7 +13,7 @@ pub struct ScreenCoord {
     pub y: f32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DataCoord {
     TwoD { x: f32, y: f32 },
     ThreeD { x: f32, y: f32, z: f32 },
