@@ -212,6 +212,12 @@ const DEMOS = {
             ],
             opacity: 1.0,
           },
+        },
+        {
+          layer_type: "ComputeLayer",
+          layer_params: {
+            layer_id: "compute_layer",
+          }
         }
       ]
     },

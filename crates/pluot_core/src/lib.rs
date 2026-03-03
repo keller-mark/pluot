@@ -11,6 +11,7 @@ pub mod viewport;
 mod picking;
 pub mod layers;
 pub mod registry;
+pub mod compute;
 
 pub(crate) mod timeout;
 pub mod two;
