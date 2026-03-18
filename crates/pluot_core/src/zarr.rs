@@ -1,3 +1,4 @@
+use std::io;
 use crate::{
     zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
@@ -55,6 +56,10 @@ fn normalize_key(key: &str, byte_range: Option<ByteRange>) -> String {
     }
 }
 
+fn make_storage_error() -> StorageError {
+    return StorageError::IOError(Arc::new(io::Error::new(io::ErrorKind::TimedOut, "too slow")));
+}
+
 // References:
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/storage_async.rs
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/store/memory_store.rs
@@ -81,7 +86,7 @@ impl AsyncZarritaStore {
         if !self.wait_for_store_gets {
             let promise_status = zarr_has_status(&self.store_name, key.as_str());
             if promise_status == ZarrPeekResult::Pending {
-                return Err(StorageError::Other("too_slow".to_string()));
+                return Err(make_storage_error());
             }
         }
 
@@ -120,7 +125,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         if !self.wait_for_store_gets {
             let promise_status = zarr_get_status(&self.store_name, key.as_str());
             if promise_status == ZarrPeekResult::Pending {
-                return Err(StorageError::Other("too_slow".to_string()));
+                return Err(make_storage_error());
             }
         }
 
@@ -160,7 +165,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                             );
                             if promise_status == ZarrPeekResult::Pending {
                                 // We cannot await and the promise is still pending.
-                                Err(StorageError::Other("too_slow".to_string()))
+                                Err(make_storage_error())
                             } else {
                                 //  We cannot await but the promise is either fulfilled or rejected.
                                 Ok(zarr_get_range_from_offset(
@@ -192,7 +197,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                             );
                             if promise_status == ZarrPeekResult::Pending {
                                 // We cannot await and the promise is still pending.
-                                Err(StorageError::Other("too_slow".to_string()))
+                                Err(make_storage_error())
                             } else {
                                 //  We cannot await but the promise is either fulfilled or rejected.
                                 Ok(zarr_get_range_from_end(
@@ -236,7 +241,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                                 );
                                 if promise_status == ZarrPeekResult::Pending {
                                     // We cannot await and the promise is still pending.
-                                    Err(StorageError::Other("too_slow".to_string()))
+                                    Err(make_storage_error())
                                 } else {
                                     //  We cannot await but the promise is either fulfilled or rejected.
                                     Ok(zarr_get_range_from_offset(
@@ -268,7 +273,7 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                                 );
                                 if promise_status == ZarrPeekResult::Pending {
                                     // We cannot await and the promise is still pending.
-                                    Err(StorageError::Other("too_slow".to_string()))
+                                    Err(make_storage_error())
                                 } else {
                                     //  We cannot await but the promise is either fulfilled or rejected.
                                     Ok(zarr_get_range_from_end(
