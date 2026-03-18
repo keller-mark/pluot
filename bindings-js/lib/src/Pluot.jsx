@@ -66,18 +66,37 @@ if (typeof window !== 'undefined') {
     return stores[store_name].get(`/${key}`);
   };
 
+  window.zarr_get_status = (store_name, key) => {
+    return stores[store_name].getPeek(`/${key}`);
+  };
+
   window.zarr_has = async (store_name, key) => {
     // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
     return stores[store_name].get(`/${key}`) !== undefined;
+  };
+
+  window.zarr_has_status = (store_name, key) => {
+    return stores[store_name].getPeek(`/${key}`);
   };
 
   window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
     // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
     return stores[store_name].getRange(`/${key}`, { offset, length });
   };
+
+  window.zarr_get_range_from_offset_status = (store_name, key, offset, length) => {
+    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
+    return stores[store_name].getRangePeek(`/${key}`, { offset, length })
+  };
+
   window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
     // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
     return stores[store_name].getRange(`/${key}`, { suffixLength: suffix_length });
+  };
+
+  window.zarr_get_range_from_end_status = (store_name, key, suffix_length) => {
+    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
+    return stores[store_name].getRangePeek(`/${key}`, { suffixLength: suffix_length });
   };
 
   window.isPluotInitialized = null;
@@ -342,7 +361,8 @@ export function Pluot(props) {
       store_name: storeName,
       plot_params: plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
-      timeout: currentTimeout.current, // in ms
+      timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
+      wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
       cache_enabled: true,
       svg_compression_enabled: true,
       svg_include_document: false,

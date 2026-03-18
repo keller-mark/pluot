@@ -16,7 +16,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_internal_text_layer_data, CachedInternalTextLayerData};
+use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle,
     TwoColor, TwoText, TwoTextAlign, TwoTextBaseline

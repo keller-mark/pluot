@@ -248,6 +248,7 @@ mod tests {
             device_pixel_ratio: 1.0,
             camera_view,
             timeout: None,
+            wait_for_store_gets: true,
             cache_enabled: false,
             margins: None,
             store_name: None,
@@ -501,6 +502,7 @@ mod tests {
             device_pixel_ratio: 1.0,
             camera_view: identity_camera(),
             timeout: None,
+            wait_for_store_gets: true,
             cache_enabled: false,
             margins: Some(MarginParams {
                 margin_left: Some(20.0),

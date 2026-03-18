@@ -15,6 +15,7 @@ pub mod compute;
 
 pub(crate) mod timeout;
 pub mod two;
+pub mod zarr_types;
 pub mod zarr;
 
 pub mod maybe;
@@ -39,14 +40,17 @@ pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, us
 #[cfg(target_arch = "wasm32")]
 pub use crate::bindings::wasm::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub use crate::bindings::python::{
     log_info as log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 pub use crate::bindings::plain_rust::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };

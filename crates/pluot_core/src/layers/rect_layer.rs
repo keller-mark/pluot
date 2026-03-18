@@ -6,7 +6,6 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::render_traits::{
     AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };

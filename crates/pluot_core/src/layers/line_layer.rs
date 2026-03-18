@@ -10,7 +10,6 @@ use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, Pickable
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::get_point_position;

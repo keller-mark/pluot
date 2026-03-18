@@ -57,6 +57,8 @@ pub struct ViewParams {
     // Timeout in ms before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
 
+    pub wait_for_store_gets: bool,
+
     // Allow disabling memoization/cacheing. Useful for testing/debugging.
     pub cache_enabled: bool,
 
@@ -80,6 +82,7 @@ impl Default for ViewParams {
             device_pixel_ratio: 1.0,
             camera_view: None,
             timeout: None,
+            wait_for_store_gets: true,
             cache_enabled: true,
             margins: None,
             store_name: None,
