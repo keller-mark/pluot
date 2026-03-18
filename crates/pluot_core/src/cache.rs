@@ -148,6 +148,36 @@ pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys:
     buffer
 }
 
+/// Like `use_memo_vec_f32`, but the initializer returns a `Result`.
+/// Only caches on `Ok`; errors are propagated to the caller.
+pub async fn use_memo_vec_f32_result<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<f32>>, E> {
+    if !cache_enabled {
+        return Ok(Arc::new(initializer().await?));
+    }
+
+    let buffer_exists = USE_MEMO_CACHE_VEC_F32.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(keys).cloned())
+    });
+
+    if let Some(buffer) = buffer_exists {
+        return Ok(buffer);
+    }
+
+    let buffer = Arc::new(initializer().await?);
+
+    USE_MEMO_CACHE_VEC_F32.with(|map| {
+        let mut map_ref = map.borrow_mut();
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
+    });
+
+    Ok(buffer)
+}
+
 // TODO: is there a better way to define a generic use_memo function that works for multiple types (e.g., Vec<f32>, Vec<i32>, etc.)?
 // We want to balance type safety with code duplication.
 // I.e., we may want to avoid using Box<dyn Any> or similar approaches that lose type information,
@@ -192,6 +222,36 @@ pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys:
     });
 
     buffer
+}
+
+/// Like `use_memo_vec_i32`, but the initializer returns a `Result`.
+/// Only caches on `Ok`; errors are propagated to the caller.
+pub async fn use_memo_vec_i32_result<E>(initializer: impl AsyncFnOnce() -> Result<Vec<i32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<i32>>, E> {
+    if !cache_enabled {
+        return Ok(Arc::new(initializer().await?));
+    }
+
+    let buffer_exists = USE_MEMO_CACHE_VEC_I32.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(keys).cloned())
+    });
+
+    if let Some(buffer) = buffer_exists {
+        return Ok(buffer);
+    }
+
+    let buffer = Arc::new(initializer().await?);
+
+    USE_MEMO_CACHE_VEC_I32.with(|map| {
+        let mut map_ref = map.borrow_mut();
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
+    });
+
+    Ok(buffer)
 }
 
 pub async fn use_memo_internal_text_layer_data(
@@ -265,6 +325,42 @@ pub async fn use_memo_numeric_data(
     });
 
     data
+}
+
+/// Like `use_memo_numeric_data`, but the initializer returns a `Result`.
+/// Only caches on `Ok`; errors are propagated to the caller.
+pub async fn use_memo_numeric_data_result<E>(
+    initializer: impl AsyncFnOnce() -> Result<NumericData, E>,
+    keys: &[String],
+    cache_enabled: bool
+) -> Result<Arc<NumericData>, E> {
+    if !cache_enabled {
+        return Ok(Arc::new(initializer().await?));
+    }
+
+    let data_exists = USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(keys).cloned())
+    });
+
+    if let Some(data) = data_exists {
+        return Ok(data);
+    }
+
+    let data = Arc::new(initializer().await?);
+
+    USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
+        let mut map_ref = map.borrow_mut();
+
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+
+        map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
+    });
+
+    Ok(data)
 }
 
 // TODO: Every render, try to clear things from the use_memo cache hash maps.

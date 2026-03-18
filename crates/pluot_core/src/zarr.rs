@@ -60,6 +60,31 @@ fn make_storage_error() -> StorageError {
     return StorageError::IOError(Arc::new(io::Error::new(io::ErrorKind::TimedOut, "too slow")));
 }
 
+fn is_storage_error_timed_out(err: &StorageError) -> bool {
+    match err {
+        StorageError::IOError(io_err) => io_err.kind() == io::ErrorKind::TimedOut,
+        _ => false,
+    }
+}
+
+fn is_codec_error_timed_out(err: &zarrs::array::CodecError) -> bool {
+    match err {
+        zarrs::array::CodecError::StorageError(se) => is_storage_error_timed_out(se),
+        zarrs::array::CodecError::IOError(io_err) => io_err.kind() == io::ErrorKind::TimedOut,
+        _ => false,
+    }
+}
+
+/// Check whether a zarrs `ArrayError` wraps a `TimedOut` IO error,
+/// possibly nested inside `StorageError` or `CodecError(StorageError)`.
+pub fn is_timed_out_zarrs_error(err: &zarrs::array::ArrayError) -> bool {
+    match err {
+        zarrs::array::ArrayError::StorageError(se) => is_storage_error_timed_out(se),
+        zarrs::array::ArrayError::CodecError(ce) => is_codec_error_timed_out(ce),
+        _ => false,
+    }
+}
+
 // References:
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/storage_async.rs
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/store/memory_store.rs

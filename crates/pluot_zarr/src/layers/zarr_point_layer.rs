@@ -10,7 +10,8 @@ use pluot_core::maybe_timeout;
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
+use pluot_core::cache::{get_or_init_store, use_memo_vec_f32_result, use_memo_vec_i32_result};
+use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
@@ -97,48 +98,38 @@ impl PreparedLayer for ZarrPointLayer {
         // But what if we want multiple layers to be able to reuse the same cached data?
         // Then we should also avoid including the layer_id...
         let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let l_i32_future = use_memo_vec_i32(async || {
+        let l_i32_future = use_memo_vec_i32_result(async || {
             let labels_array_path = &self.layer_params.color_key.as_ref().expect("Color key");
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
             let labels_array = labels_array_future.await.unwrap();
             let labels_subset = labels_array.subset_all();
-            //let labels_result = labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset).await;
-            let labels_result = labels_array.async_retrieve_array_subset::<Vec<i64>>(&labels_subset).await;
-
-            let labels_vec = labels_result.unwrap();
-            // More efficient version that eliminates intermediate vectors and redundant operations
-            // Convert to f32 and cast to bytes directly - no for loop needed
+            let labels_vec = labels_array.async_retrieve_array_subset::<Vec<i64>>(&labels_subset).await?;
+            // Convert to i32
             let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
-            labels_i32
+            Ok(labels_i32)
         }, &l_i32_future_deps, self.view_params.cache_enabled);
 
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
         let x_f32_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let x_f32_future = use_memo_vec_f32(async || {
+        let x_f32_future = use_memo_vec_f32_result(async || {
             let x_array_path = &self.layer_params.x_key.as_ref();
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
             let x_array = x_array_future.await.unwrap();
             let x_subset = x_array.subset_all();
-            //let x_result = x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset).await;
-            let x_result = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await;
-
-            let position_x = x_result.unwrap();
+            let position_x = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await?;
             let x_f32_inner: Vec<f32> = position_x.iter().map(|&x| x as f32).collect();
-            x_f32_inner
+            Ok(x_f32_inner)
         }, &x_f32_future_deps, self.view_params.cache_enabled);
 
         let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let y_f32_future = use_memo_vec_f32(async || {
+        let y_f32_future = use_memo_vec_f32_result(async || {
             let y_array_path = &self.layer_params.y_key.as_ref();
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
             let y_array = y_array_future.await.unwrap();
             let y_subset = y_array.subset_all();
-            //let y_result = y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset).await;
-            let y_result = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await;
-
-            let position_y = y_result.unwrap();
+            let position_y = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await?;
             let y_f32_inner: Vec<f32> = position_y.iter().map(|&y| y as f32).collect();
-            y_f32_inner
+            Ok(y_f32_inner)
         }, &y_f32_future_deps, self.view_params.cache_enabled);
 
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
@@ -157,12 +148,20 @@ impl PreparedLayer for ZarrPointLayer {
 
         let (x_f32, y_f32, l_i32) = match futures_try_join_result {
             Ok((x_f32_result, y_f32_result, l_i32_result)) => {
-                // log("All futures succeeded within the timeout.");
-                (x_f32_result, y_f32_result, l_i32_result)
+                // Each result is Result<Arc<Vec<_>>, ArrayError> from the _result cache fns.
+                match (x_f32_result, y_f32_result, l_i32_result) {
+                    (Ok(x), Ok(y), Ok(l)) => (x, y, l),
+                    (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                        if is_timed_out_zarrs_error(&e) {
+                            return PrepareResult { bailed_early: true };
+                        } else {
+                            panic!("Zarrs error during ZarrPointLayer prepare: {:?}", e);
+                        }
+                    }
+                }
             }
             Err(_) => {
-                // TODO: still render something in this case
-                // log("One or more futures timed out or failed");
+                // Wall-clock timeout from maybe_timeout!
                 return PrepareResult { bailed_early: true };
             }
         };

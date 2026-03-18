@@ -7,7 +7,8 @@ use pluot_core::maybe_timeout;
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
+use pluot_core::cache::{get_or_init_store, use_memo_numeric_data_result};
+use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
@@ -109,7 +110,7 @@ impl OmeZarrBitmapLayer {
     }
 
     /// Load tile data from the zarr array, using the cache.
-    async fn load_tile_data(&self) -> NumericData {
+    async fn load_tile_data(&self) -> Result<NumericData, zarrs::array::ArrayError> {
         let store = self.store.clone();
         let array_path = self.layer_params.array_path.clone();
         let array_metadata = self.layer_params.array_metadata.clone();
@@ -147,7 +148,7 @@ impl OmeZarrBitmapLayer {
             keys.push(format!("c_{}", cs.c_index));
         }
 
-        let cached = use_memo_numeric_data(async || {
+        let cached = use_memo_numeric_data_result(async || {
             let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
 
@@ -211,20 +212,14 @@ impl OmeZarrBitmapLayer {
                     for subset in &subsets {
                         let chunk = array
                             .async_retrieve_array_subset::<Vec<$rust_ty>>(subset)
-                            .await
-                            .unwrap_or_else(|e| {
-                                panic!(
-                                    "Failed to load tile data for {} {}: {:?}",
-                                    array_path, subset, e
-                                )
-                            });
+                            .await?;
                         combined.extend_from_slice(&chunk);
                     }
                     NumericData::$variant(Arc::new(combined))
                 }};
             }
 
-            match &*dtype_name {
+            Ok(match &*dtype_name {
                 "uint8" => load_tile_data!(u8, Uint8),
                 "uint16" => load_tile_data!(u16, Uint16),
                 "uint32" => load_tile_data!(u32, Uint32),
@@ -236,11 +231,14 @@ impl OmeZarrBitmapLayer {
                 "float32" => load_tile_data!(f32, Float32),
                 "float64" => load_tile_data!(f64, Float64),
                 _ => panic!("Unsupported zarr data type: {}", dtype_name),
-            }
+            })
         }, &keys, self.view_params.cache_enabled).await;
 
-        // Unwrap the Arc to get the owned NumericData.
-        Arc::unwrap_or_clone(cached)
+        // cached is Result<Arc<NumericData>, ArrayError>
+        match cached {
+            Ok(data) => Ok(Arc::unwrap_or_clone(data)),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -255,9 +253,17 @@ impl PreparedLayer for OmeZarrBitmapLayer {
             .await;
 
         let data = match future_result {
-            Ok(data_result) => data_result,
+            Ok(Ok(data_result)) => data_result,
+            Ok(Err(e)) => {
+                // Zarrs error from async_retrieve_array_subset.
+                if is_timed_out_zarrs_error(&e) {
+                    return PrepareResult { bailed_early: true };
+                } else {
+                    panic!("Zarrs error during OmeZarrBitmapLayer prepare: {:?}", e);
+                }
+            }
             Err(_) => {
-                // Return early.
+                // Wall-clock timeout from maybe_timeout!
                 return PrepareResult { bailed_early: true };
             }
         };
