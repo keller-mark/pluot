@@ -10,7 +10,7 @@ use pluot_core::maybe_timeout;
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_vec_f32_result, use_memo_vec_i32_result};
+use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
@@ -98,7 +98,7 @@ impl PreparedLayer for ZarrPointLayer {
         // But what if we want multiple layers to be able to reuse the same cached data?
         // Then we should also avoid including the layer_id...
         let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let l_i32_future = use_memo_vec_i32_result(async || {
+        let l_i32_future = use_memo_vec_i32(async || {
             let labels_array_path = &self.layer_params.color_key.as_ref().expect("Color key");
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
             let labels_array = labels_array_future.await.unwrap();
@@ -111,7 +111,7 @@ impl PreparedLayer for ZarrPointLayer {
 
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
         let x_f32_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let x_f32_future = use_memo_vec_f32_result(async || {
+        let x_f32_future = use_memo_vec_f32(async || {
             let x_array_path = &self.layer_params.x_key.as_ref();
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
             let x_array = x_array_future.await.unwrap();
@@ -122,7 +122,7 @@ impl PreparedLayer for ZarrPointLayer {
         }, &x_f32_future_deps, self.view_params.cache_enabled);
 
         let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let y_f32_future = use_memo_vec_f32_result(async || {
+        let y_f32_future = use_memo_vec_f32(async || {
             let y_array_path = &self.layer_params.y_key.as_ref();
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
             let y_array = y_array_future.await.unwrap();

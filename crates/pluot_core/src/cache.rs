@@ -107,50 +107,7 @@ pub fn get_or_init_store(name: &str, wait_for_store_gets: bool) -> Arc<AsyncZarr
 
 // TODO: Should we also implement a non-async variant of this cacheing/memoization function?
 // Is there a downside to always using async, i.e., even if the `initializer` function never .awaits anything?
-pub async fn use_memo_vec_f32(initializer: impl AsyncFnOnce() -> Vec<f32>, keys: &[String], cache_enabled: bool) -> Arc<Vec<f32>> {
-    // Initializer param
-    // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
-
-    if !cache_enabled {
-        return Arc::new(initializer().await);
-    }
-
-    // This thread_local approach seems to work fine with futures::join!.
-    // First, check if the buffer already exists
-    let buffer_exists = USE_MEMO_CACHE_VEC_F32.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(buffer) = buffer_exists {
-        //log("Buffer found in cache");
-        return buffer;
-    }
-
-    // Buffer doesn't exist, so create it
-    //log("Creating new buffer");
-    let buffer = Arc::new(initializer().await);
-
-    // Store it in the cache
-    USE_MEMO_CACHE_VEC_F32.with(|map| {
-        let mut map_ref = map.borrow_mut();
-
-        // Initialize the map if it doesn't exist
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-
-        // Insert the buffer
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
-    });
-
-    buffer
-}
-
-/// Like `use_memo_vec_f32`, but the initializer returns a `Result`.
-/// Only caches on `Ok`; errors are propagated to the caller.
-pub async fn use_memo_vec_f32_result<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<f32>>, E> {
+pub async fn use_memo_vec_f32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<f32>>, E> {
     if !cache_enabled {
         return Ok(Arc::new(initializer().await?));
     }
@@ -183,50 +140,7 @@ pub async fn use_memo_vec_f32_result<E>(initializer: impl AsyncFnOnce() -> Resul
 // I.e., we may want to avoid using Box<dyn Any> or similar approaches that lose type information,
 // since we don't want the downstream calling code to be doing a bunch of type casting/checking.
 // Maybe a macro could help here? Or enums, one enum per layer.data struct type?
-pub async fn use_memo_vec_i32(initializer: impl AsyncFnOnce() -> Vec<i32>, keys: &[String], cache_enabled: bool) -> Arc<Vec<i32>> {
-    // Initializer param
-    // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
-
-    if !cache_enabled {
-        return Arc::new(initializer().await);
-    }
-
-    // This thread_local approach seems to work fine with futures::join!.
-    // First, check if the buffer already exists
-    let buffer_exists = USE_MEMO_CACHE_VEC_I32.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(buffer) = buffer_exists {
-        //log("Buffer found in cache");
-        return buffer;
-    }
-
-    // Buffer doesn't exist, so create it
-    //log("Creating new buffer");
-    let buffer = Arc::new(initializer().await);
-
-    // Store it in the cache
-    USE_MEMO_CACHE_VEC_I32.with(|map| {
-        let mut map_ref = map.borrow_mut();
-
-        // Initialize the map if it doesn't exist
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-
-        // Insert the buffer
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
-    });
-
-    buffer
-}
-
-/// Like `use_memo_vec_i32`, but the initializer returns a `Result`.
-/// Only caches on `Ok`; errors are propagated to the caller.
-pub async fn use_memo_vec_i32_result<E>(initializer: impl AsyncFnOnce() -> Result<Vec<i32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<i32>>, E> {
+pub async fn use_memo_vec_i32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<i32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<i32>>, E> {
     if !cache_enabled {
         return Ok(Arc::new(initializer().await?));
     }
@@ -293,43 +207,7 @@ pub async fn use_memo_internal_text_layer_data(
     data
 }
 
-pub async fn use_memo_numeric_data(
-    initializer: impl AsyncFnOnce() -> NumericData,
-    keys: &[String],
-    cache_enabled: bool
-) -> Arc<NumericData> {
-    if !cache_enabled {
-        return Arc::new(initializer().await);
-    }
-
-    let data_exists = USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(data) = data_exists {
-        return data;
-    }
-
-    let data = Arc::new(initializer().await);
-
-    USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
-        let mut map_ref = map.borrow_mut();
-
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
-    });
-
-    data
-}
-
-/// Like `use_memo_numeric_data`, but the initializer returns a `Result`.
-/// Only caches on `Ok`; errors are propagated to the caller.
-pub async fn use_memo_numeric_data_result<E>(
+pub async fn use_memo_numeric_data<E>(
     initializer: impl AsyncFnOnce() -> Result<NumericData, E>,
     keys: &[String],
     cache_enabled: bool

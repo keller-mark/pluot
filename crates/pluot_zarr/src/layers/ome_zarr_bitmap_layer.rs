@@ -7,7 +7,7 @@ use pluot_core::maybe_timeout;
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_numeric_data_result};
+use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
@@ -148,7 +148,7 @@ impl OmeZarrBitmapLayer {
             keys.push(format!("c_{}", cs.c_index));
         }
 
-        let cached = use_memo_numeric_data_result(async || {
+        let cached = use_memo_numeric_data(async || {
             let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
 

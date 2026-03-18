@@ -249,8 +249,8 @@ pub async fn compute_example_with_memo(gpu_context: &GpuContext<'_>) -> f32 {
         let mut x_f32_inner: Vec<f32> = vec![1.0, 2.0, 3.0];
         let compute_result = compute_example(gpu_context).await; // Call the compute example to ensure it runs and we can see the memoization in action.
         x_f32_inner[0] = compute_result; // Update the first element with the result from the compute example.
-        x_f32_inner
+        Ok::<Vec<f32>, std::convert::Infallible>(x_f32_inner)
     }, &x_f32_future_deps, true);
 
-    return x_f32_future.await[0];
+    return x_f32_future.await.unwrap()[0];
 }
