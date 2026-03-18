@@ -15,6 +15,7 @@ pub mod compute;
 
 pub(crate) mod timeout;
 pub mod two;
+pub mod zarr_types;
 pub mod zarr;
 
 pub mod maybe;

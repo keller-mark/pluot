@@ -3,7 +3,7 @@ use crate::{
     zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
-use crate::bindings::ZarrPeekResult;
+use crate::zarr_types::ZarrPeekResult;
 
 use futures::{stream, StreamExt, TryStreamExt};
 use zarrs::storage::{

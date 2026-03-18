@@ -2,20 +2,13 @@ pub use crate::params::RenderParams;
 pub use crate::render::render;
 pub use crate::picking::{pick, PickingResult};
 pub use crate::viewport::ScreenCoord;
+pub use crate::zarr_types::ZarrPeekResult;
 
-// TODO: move this to a different .rs file?
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ZarrPeekResult {
-    Pending,
-    Fulfilled,
-    Rejected,
-}
 
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, pick, RenderParams, ScreenCoord};
-    use crate::bindings::ZarrPeekResult;
+    use super::{render, pick, RenderParams, ScreenCoord, ZarrPeekResult};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -430,10 +423,7 @@ pub mod python {
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 pub mod plain_rust {
     use core::panic;
-
-    use crate::bindings::ZarrPeekResult;
-
-    pub use super::render;
+    pub use super::{render, ZarrPeekResult};
 
     pub fn log(s: &str) {
         println!("{}", s);
