@@ -90,7 +90,7 @@ pub async fn get_or_init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     init_gpu_context().await
 }
 
-pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
+pub fn get_or_init_store(name: &str, wait_for_store_gets: bool) -> Arc<AsyncZarritaStore> {
     let map_mutex = ZARR_STORES.get_or_init(|| Mutex::new(HashMap::new()));
     let map = map_mutex.lock().unwrap();
 
@@ -100,7 +100,7 @@ pub fn get_or_init_store(name: &str) -> Arc<AsyncZarritaStore> {
         drop(map);
         let mut map = map_mutex.lock().unwrap();
         map.entry(name.to_string())
-            .or_insert_with(|| Arc::new(AsyncZarritaStore::new(name.to_string())))
+            .or_insert_with(|| Arc::new(AsyncZarritaStore::new(name.to_string(), wait_for_store_gets)))
             .clone()
     }
 }

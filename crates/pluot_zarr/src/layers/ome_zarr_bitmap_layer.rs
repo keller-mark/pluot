@@ -93,7 +93,7 @@ impl OmeZarrBitmapLayer {
             },
         };
 
-        let store = get_or_init_store(&store_name);
+        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
 
         Self {
             view_params,

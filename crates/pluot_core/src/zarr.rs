@@ -70,10 +70,10 @@ pub struct AsyncZarritaStore {
 impl AsyncZarritaStore {
     /// Create a new [`AsyncZarritaStore`].
     #[must_use]
-    pub fn new(store_name: String) -> Self {
+    pub fn new(store_name: String, wait_for_store_gets: bool) -> Self {
         Self {
             store_name,
-            wait_for_store_gets: false,
+            wait_for_store_gets,
         }
     }
 

@@ -43,6 +43,7 @@ pub async fn pick(params: RenderParams, screen_coord: ScreenCoord) -> PickingRes
         device_pixel_ratio: params.device_pixel_ratio,
         camera_view: params.camera_view,
         timeout: params.timeout,
+        wait_for_store_gets: params.wait_for_store_gets,
         cache_enabled: params.cache_enabled,
         aspect_ratio_mode: params.aspect_ratio_mode,
         store_name: Some(params.store_name.clone()),
