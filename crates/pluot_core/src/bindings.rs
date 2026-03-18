@@ -216,11 +216,80 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, pick, RenderParams, ScreenCoord};
+    use super::{render, pick, RenderParams, ScreenCoord, ZarrPeekResult};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
         info!("{}", s);
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module.call_method1("zarr_has_status", (store_name, key)).unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module.call_method1("zarr_get_status", (store_name, key)).unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module
+                .call_method1("zarr_get_range_from_offset_status", (store_name, key, offset, length))
+                .unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module
+                .call_method1("zarr_get_range_from_end_status", (store_name, key, suffix_length))
+                .unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
     }
 
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
@@ -320,7 +389,11 @@ pub mod python {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let result = pick(params, screen_coord).await;
-            Python::attach(|py| pythonize::pythonize(py, &result).map_err(|e| e.into()))
+            Python::attach(|py| {
+                pythonize::pythonize(py, &result)
+                    .map(|v| v.unbind())
+                    .map_err(|e| PyErr::from(e))
+            })
         })
     }
 
