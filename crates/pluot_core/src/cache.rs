@@ -108,10 +108,13 @@ pub fn get_or_init_store(name: &str, wait_for_store_gets: bool) -> Arc<AsyncZarr
 // TODO: Should we also implement a non-async variant of this cacheing/memoization function?
 // Is there a downside to always using async, i.e., even if the `initializer` function never .awaits anything?
 pub async fn use_memo_vec_f32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<f32>>, E> {
+    // Initializer param
+    // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
     if !cache_enabled {
         return Ok(Arc::new(initializer().await?));
     }
-
+    // This thread_local approach seems to work fine with futures::join!.
+    // First, check if the buffer already exists
     let buffer_exists = USE_MEMO_CACHE_VEC_F32.with(|map| {
         map.borrow()
             .as_ref()
@@ -122,13 +125,16 @@ pub async fn use_memo_vec_f32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f
         return Ok(buffer);
     }
 
+    // Buffer doesn't exist, so create it
     let buffer = Arc::new(initializer().await?);
 
+    // Store it in the cache
     USE_MEMO_CACHE_VEC_F32.with(|map| {
         let mut map_ref = map.borrow_mut();
         if map_ref.is_none() {
             *map_ref = Some(HashMap::new());
         }
+        // Insert the buffer
         map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
     });
 
