@@ -1,4 +1,8 @@
-use crate::{zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has};
+use crate::{
+    zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
+};
+use crate::bindings::ZarrPeekResult;
 
 use futures::{stream, StreamExt, TryStreamExt};
 use zarrs::storage::{
@@ -60,19 +64,28 @@ fn normalize_key(key: &str, byte_range: Option<ByteRange>) -> String {
 /// An asynchronous store backed by an [`object_store::ObjectStore`].
 pub struct AsyncZarritaStore {
     store_name: String,
+    wait_for_store_gets: bool,
 }
 
 impl AsyncZarritaStore {
     /// Create a new [`AsyncZarritaStore`].
     #[must_use]
     pub fn new(store_name: String) -> Self {
-        Self { store_name }
+        Self {
+            store_name,
+            wait_for_store_gets: false,
+        }
     }
 
     pub async fn has(&self, key: &StoreKey) -> Result<bool, StorageError> {
-        let store_name = self.store_name.clone();
+        if !self.wait_for_store_gets {
+            let promise_status = zarr_has_status(&self.store_name, key.as_str());
+            if promise_status == ZarrPeekResult::Pending {
+                return Err(StorageError::Other("too_slow".to_string()));
+            }
+        }
 
-        let has = zarr_has(&store_name, key.as_str()).await;
+        let has = zarr_has(&self.store_name, key.as_str()).await;
         Ok(has)
     }
 }
@@ -103,6 +116,14 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         if !self.has(key).await.expect("store.has failed") {
             return Ok(None);
         }
+
+        if !self.wait_for_store_gets {
+            let promise_status = zarr_get_status(&self.store_name, key.as_str());
+            if promise_status == ZarrPeekResult::Pending {
+                return Err(StorageError::Other("too_slow".to_string()));
+            }
+        }
+
         // Use the zarr_get_js function to fetch the data
         let bytes = zarr_get(&self.store_name, key.as_str()).await;
 
@@ -127,28 +148,74 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
 
             if !ZARR_CACHE_ENABLED {
                 // Use the zarr_get_js function to fetch the data
-                let bytes = match byte_range {
+                let bytes_result = match byte_range {
                     ByteRange::FromStart(start, Some(len)) => {
-                        zarr_get_range_from_offset(
-                            &self.store_name,
-                            key.as_str(),
-                            start as u32,
-                            len as u32,
-                        )
-                        .await
+                        // This is the getRange({ offset, length }) case.
+                        if !self.wait_for_store_gets {
+                            let promise_status = zarr_get_range_from_offset_status(
+                                &self.store_name,
+                                key.as_str(),
+                                start as u32,
+                                len as u32,
+                            );
+                            if promise_status == ZarrPeekResult::Pending {
+                                // We cannot await and the promise is still pending.
+                                Err(StorageError::Other("too_slow".to_string()))
+                            } else {
+                                //  We cannot await but the promise is either fulfilled or rejected.
+                                Ok(zarr_get_range_from_offset(
+                                    &self.store_name,
+                                    key.as_str(),
+                                    start as u32,
+                                    len as u32,
+                                )
+                                .await)
+                            }
+                        } else {
+                            // We can await.
+                            Ok(zarr_get_range_from_offset(
+                                &self.store_name,
+                                key.as_str(),
+                                start as u32,
+                                len as u32,
+                            )
+                            .await)
+                        }
                     }
                     ByteRange::Suffix(suffix_length) => {
-                        zarr_get_range_from_end(
-                            &self.store_name,
-                            key.as_str(),
-                            suffix_length as u32,
-                        )
-                        .await
+                        // This is the getRange({ suffixLength }) case.
+                        if !self.wait_for_store_gets {
+                            let promise_status = zarr_get_range_from_end_status(
+                                &self.store_name,
+                                key.as_str(),
+                                suffix_length as u32,
+                            );
+                            if promise_status == ZarrPeekResult::Pending {
+                                // We cannot await and the promise is still pending.
+                                Err(StorageError::Other("too_slow".to_string()))
+                            } else {
+                                //  We cannot await but the promise is either fulfilled or rejected.
+                                Ok(zarr_get_range_from_end(
+                                    &self.store_name,
+                                    key.as_str(),
+                                    suffix_length as u32,
+                                )
+                                .await)
+                            }
+                        } else {
+                            // We can await.
+                            Ok(zarr_get_range_from_end(
+                                &self.store_name,
+                                key.as_str(),
+                                suffix_length as u32,
+                            )
+                            .await)
+                        }
                     }
                     _ => panic!("Unsupported ByteRange variant"),
                 };
                 // Append to results
-                results.push(Ok(bytes));
+                results.push(bytes_result);
             } else {
                 // Cache is enabled.
                 // Check the cache first
@@ -157,32 +224,80 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
                     results.push(Ok(cached.clone()));
                 } else {
                     // Cache miss.
-                    let bytes = match byte_range {
+                    let bytes_result = match byte_range {
                         ByteRange::FromStart(start, Some(len)) => {
-                            zarr_get_range_from_offset(
-                                &self.store_name,
-                                key.as_str(),
-                                start as u32,
-                                len as u32,
-                            )
-                            .await
+                            // This is the getRange({ offset, length }) case.
+                            if !self.wait_for_store_gets {
+                                let promise_status = zarr_get_range_from_offset_status(
+                                    &self.store_name,
+                                    key.as_str(),
+                                    start as u32,
+                                    len as u32,
+                                );
+                                if promise_status == ZarrPeekResult::Pending {
+                                    // We cannot await and the promise is still pending.
+                                    Err(StorageError::Other("too_slow".to_string()))
+                                } else {
+                                    //  We cannot await but the promise is either fulfilled or rejected.
+                                    Ok(zarr_get_range_from_offset(
+                                        &self.store_name,
+                                        key.as_str(),
+                                        start as u32,
+                                        len as u32,
+                                    )
+                                    .await)
+                                }
+                            } else {
+                                // We can await.
+                                Ok(zarr_get_range_from_offset(
+                                    &self.store_name,
+                                    key.as_str(),
+                                    start as u32,
+                                    len as u32,
+                                )
+                                .await)
+                            }
                         }
                         ByteRange::Suffix(suffix_length) => {
-                            zarr_get_range_from_end(
-                                &self.store_name,
-                                key.as_str(),
-                                suffix_length as u32,
-                            )
-                            .await
+                            // This is the getRange({ suffixLength }) case.
+                            if !self.wait_for_store_gets {
+                                let promise_status = zarr_get_range_from_end_status(
+                                    &self.store_name,
+                                    key.as_str(),
+                                    suffix_length as u32,
+                                );
+                                if promise_status == ZarrPeekResult::Pending {
+                                    // We cannot await and the promise is still pending.
+                                    Err(StorageError::Other("too_slow".to_string()))
+                                } else {
+                                    //  We cannot await but the promise is either fulfilled or rejected.
+                                    Ok(zarr_get_range_from_end(
+                                        &self.store_name,
+                                        key.as_str(),
+                                        suffix_length as u32,
+                                    )
+                                    .await)
+                                }
+                            } else {
+                                // We can await.
+                                Ok(zarr_get_range_from_end(
+                                    &self.store_name,
+                                    key.as_str(),
+                                    suffix_length as u32,
+                                )
+                                .await)
+                            }
                         }
                         _ => panic!("Unsupported ByteRange variant"),
                     };
 
-                    // Store in cache
-                    cache.insert(key_str, bytes.clone());
-
                     // Append to results
-                    results.push(Ok(bytes));
+                    results.push(bytes_result.clone());
+
+                    // Store in cache
+                    if let Ok(bytes) = bytes_result {
+                        cache.insert(key_str, bytes);
+                    }
                 }
             }
         }

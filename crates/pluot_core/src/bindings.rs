@@ -4,7 +4,7 @@ pub use crate::picking::{pick, PickingResult};
 pub use crate::viewport::ScreenCoord;
 
 // TODO: move this to a different .rs file?
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ZarrPeekResult {
     Pending,
     Fulfilled,
