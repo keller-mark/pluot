@@ -40,11 +40,22 @@ export function createGetRange<S extends AsyncReadable>(store: S) {
 // Reference: https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/lru-store.ts
 class LruStore<S extends AsyncReadable> implements AsyncReadable {
   #inner_store: S;
+
   #cache: QuickLRU<string, [Promise<Uint8Array | undefined>, AbortController]>;
+
+  // We need a way to synchronously peek at the promise state (a-la Bun's peek or Effect's Deferred.poll).
+  // We can probably do something more sophisticated but will try this first.
+  #promise_states: Map<string, 'pending' | 'fulfilled' | 'rejected'>;
 
   constructor(store: S, maxSize = 100) {
     this.#inner_store = store;
-    this.#cache = new QuickLRU<string, [Promise<Uint8Array | undefined>, AbortController]>({ maxSize });
+    this.#promise_states = new Map();
+    this.#cache = new QuickLRU({
+      maxSize,
+      onEviction: (key, _value) => {
+        this.#promise_states.delete(key);
+      },
+    });
   }
 
   async get(...args: Parameters<S["get"]>): Promise<Uint8Array | undefined> {
@@ -60,12 +71,29 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
       signal: controller.signal,
       ...(opts ?? {})
     });
-    const result = Promise.resolve(getResult).catch((err) => {
+
+    const getResultPromise = Promise.resolve(getResult);
+    this.#promise_states.set(cacheKey, 'pending');
+
+    const result = getResultPromise.then((val) => {
+      this.#promise_states.set(cacheKey, 'fulfilled');
+      return val;
+    }).catch((err) => {
+      this.#promise_states.set(cacheKey, 'rejected');
       this.#cache.delete(cacheKey);
       throw err;
     });
     this.#cache.set(cacheKey, [result, controller]);
     return result;
+  }
+
+  // Synchronously peek at the promise state.
+  getPeek(...args: Parameters<S["get"]>): 'pending' | 'fulfilled' | 'rejected' | undefined {
+    this.get(...args); // Kick off the promise but do not await. TODO: do we want to do this here?
+    const [key, opts] = args;
+    // console.log(`LRU getPeek: ${key}`);
+    const cacheKey = normalizeKey(key);
+    return this.#promise_states.get(cacheKey);
   }
 
   async getRange(...args: Parameters<NonNullable<S["getRange"]>>): Promise<Uint8Array | undefined> {
@@ -86,12 +114,28 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
       signal: controller.signal,
       ...(opts ?? {})
     });
-    const result = Promise.resolve(getRangeResult).catch((err) => {
+
+    const getRangeResultPromise = Promise.resolve(getRangeResult);
+    this.#promise_states.set(cacheKey, 'pending');
+
+    const result = getRangeResultPromise.then((val) => {
+      this.#promise_states.set(cacheKey, 'fulfilled');
+      return val;
+    }).catch((err) => {
+      this.#promise_states.set(cacheKey, 'rejected');
       this.#cache.delete(cacheKey);
       throw err;
     });
     this.#cache.set(cacheKey, [result, controller]);
     return result;
+  }
+
+  // Synchronously peek at the promise state.
+  getRangePeek(...args: Parameters<NonNullable<S["getRange"]>>): 'pending' | 'fulfilled' | 'rejected' | undefined {
+    this.getRange(...args); // Kick off the promise but do not await. TODO: do we want to do this here?
+    const [key, range, opts] = args;
+    const cacheKey = normalizeKey(key, range);
+    return this.#promise_states.get(cacheKey);
   }
 
   clearCache() {
@@ -102,6 +146,7 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
       controller.abort()
     });
     this.#cache.clear();
+    this.#promise_states = new Map();
   }
 }
 

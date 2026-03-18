@@ -3,11 +3,29 @@ pub use crate::render::render;
 pub use crate::picking::{pick, PickingResult};
 pub use crate::viewport::ScreenCoord;
 
+// TODO: move this to a different .rs file?
+#[derive(Copy, Clone, Debug)]
+pub enum ZarrPeekResult {
+    Pending,
+    Fulfilled,
+    Rejected,
+}
+
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
     use super::{render, pick, RenderParams, ScreenCoord};
+    use crate::bindings::ZarrPeekResult;
     use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen]
+    #[derive(Copy, Clone, Debug)]
+    pub enum JsZarrPeekResult {
+        // Reference: https://wasm-bindgen.github.io/wasm-bindgen/reference/types/imported-js-types.html
+        Pending = "pending",
+        Fulfilled = "fulfilled",
+        Rejected = "rejected",
+    }
 
     #[wasm_bindgen]
     extern "C" {
@@ -20,8 +38,14 @@ pub mod wasm {
         #[wasm_bindgen(js_name = zarr_has)]
         async fn zarr_has_js(store_name: &str, key: &str) -> js_sys::Boolean;
 
+        #[wasm_bindgen(js_name = zarr_has_status)]
+        fn zarr_has_status_js(store_name: &str, key: &str) -> JsZarrPeekResult;
+
         #[wasm_bindgen(js_name = zarr_get)]
         async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_status)]
+        fn zarr_get_status_js(store_name: &str, key: &str) -> JsZarrPeekResult;
 
         #[wasm_bindgen(js_name = zarr_get_range_from_offset)]
         async fn zarr_get_range_from_offset_js(
@@ -31,12 +55,27 @@ pub mod wasm {
             length: u32,
         ) -> js_sys::Uint8Array;
 
+        #[wasm_bindgen(js_name = zarr_get_range_from_offset_status)]
+        fn zarr_get_range_from_offset_status_js(
+            store_name: &str,
+            key: &str,
+            offset: u32,
+            length: u32,
+        ) -> JsZarrPeekResult;
+
         #[wasm_bindgen(js_name = zarr_get_range_from_end)]
         async fn zarr_get_range_from_end_js(
             store_name: &str,
             key: &str,
             suffix_length: u32,
         ) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_range_from_end_status)]
+        fn zarr_get_range_from_end_status_js(
+            store_name: &str,
+            key: &str,
+            suffix_length: u32,
+        ) -> JsZarrPeekResult;
     }
 
     fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
@@ -57,9 +96,29 @@ pub mod wasm {
         has.is_truthy()
     }
 
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let status_js = zarr_has_status_js(store_name, key);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_js(store_name, key).await;
         convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let status_js = zarr_get_status_js(store_name, key);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
     }
 
     pub async fn zarr_get_range_from_offset(
@@ -72,6 +131,21 @@ pub mod wasm {
         convert_to_bytes(js_bytes)
     }
 
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        let status_js = zarr_get_range_from_offset_status_js(store_name, key, offset, length);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
     pub async fn zarr_get_range_from_end(
         store_name: &str,
         key: &str,
@@ -79,6 +153,20 @@ pub mod wasm {
     ) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_range_from_end_js(store_name, key, suffix_length).await;
         convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        let status_js = zarr_get_range_from_end_status_js(store_name, key, suffix_length);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
     }
 
     #[wasm_bindgen]
@@ -270,6 +358,8 @@ pub mod python {
 pub mod plain_rust {
     use core::panic;
 
+    use crate::bindings::ZarrPeekResult;
+
     pub use super::render;
 
     pub fn log(s: &str) {
@@ -280,8 +370,16 @@ pub mod plain_rust {
         panic!("zarr_has is not implemented in plain Rust mode.");
     }
 
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        panic!("zarr_has_status is not implemented in plain Rust mode.");
+    }
+
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         panic!("zarr_get is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        panic!("zarr_has_status is not implemented in plain Rust mode.");
     }
 
     pub async fn zarr_get_range_from_offset(
@@ -293,11 +391,28 @@ pub mod plain_rust {
         panic!("zarr_get_range_from_offset is not implemented in plain Rust mode.");
     }
 
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        panic!("zarr_get_range_from_offset_status is not implemented in plain Rust mode.");
+    }
+
     pub async fn zarr_get_range_from_end(
         store_name: &str,
         key: &str,
         suffix_length: u32,
     ) -> zarrs::storage::Bytes {
+        panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
         panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
     }
 }
