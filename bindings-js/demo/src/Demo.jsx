@@ -221,6 +221,36 @@ const DEMOS = {
         }
       ]
     },
+  },
+  three_d_plot: {
+    plot_type: "LayeredPlot",
+    store_name: "gaussian_quantiles_store",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "ZarrPoint3dLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            data_unit_mode: "Data",
+            point_radius_unit_mode: "Pixels",
+            point_shape_mode: "Circle",
+            point_radius: 5.0,
+            store_name: "gaussian_quantiles_store",
+            bounds: {
+              margin_top: 0,
+              margin_right: 0,
+              margin_bottom: 0,
+              margin_left: 0,
+            },
+
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            z_key: "/n_1000/z_coords",
+            color_key: "/n_1000/class_labels",
+          }
+        }
+      ]
+    },
   }
 };
 
@@ -282,7 +312,7 @@ export function Demo() {
                   : {}),
               }
         }
-        mode={plotType === "Scatterplot3d" ? "3d" : "2d"}
+        viewMode={currPlotId === "three_d_plot" ? "3d" : "2d"}
       />
       {plotType === "Scatterplot" ? (
         <div>
