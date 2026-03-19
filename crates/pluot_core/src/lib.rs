@@ -2,7 +2,6 @@ pub mod bindings;
 pub mod d3;
 pub mod params;
 pub mod render_types;
-// mod plots;
 pub mod cache;
 pub mod render_traits;
 mod render;
