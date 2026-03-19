@@ -246,6 +246,11 @@ impl DrawToSvg for ZarrPointLayer {
 
 impl PickableLayer for ZarrPointLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        if !self.ready_to_draw {
+            log("ZarrPointLayer was not ready to draw. Skipping picking.");
+            return None;
+        }
+
         let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
             return None;
         };
