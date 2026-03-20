@@ -23,7 +23,7 @@ How it works: "headless" plotting. Pluot uses Rust 🦀 and WebGPU to quickly re
 - __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported.
 <!-- - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types. -->
 
-⚠️ Pluot does not yet implement very many chart types (e.g., waffle charts or sankey diagrams). Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, if you do put in such effort, it will pay off: you can render the plot whereever Pluot rendering works: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future.
+⚠️ Pluot does not yet implement very many chart types (e.g., waffle charts or sankey diagrams). Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, it will pay off: you can **render the plot whereever Pluot rendering works**: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future.
 
 ## How it works
 
