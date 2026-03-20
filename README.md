@@ -1,5 +1,7 @@
 # pluot
 
+[![Crates.io Link and Latest Version Info](https://img.shields.io/crates/v/pluot.svg)](https://crates.io/crates/pluot)
+
 <a href="https://commons.wikimedia.org/wiki/File:Red_pluots.JPG"><img src="bindings-js/docs/src/assets/red-pluots.jpg" align="right" height="250" alt="pluots" /></a>
 
 Goal: Implement a data visualization once, then render it in multiple contexts (across languages, static or interactive, raster or vector).
