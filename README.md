@@ -27,7 +27,7 @@ How it works: "headless" plotting. Pluot uses Rust 🦀 and WebGPU to quickly re
 
 ## How it works
 
-Plotting functions are implemented in Rust using the [wgpu](github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser), when plotting to raster-based outputs (the vector-based outputs do not use WebGPU for rendering, but may still use WebGPU for GPGPU operations).
+Plotting functions are implemented in Rust using the [wgpu](github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser), when plotting to raster-based outputs or performing GPGPU compute operations.
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
 
 When the language bindings are used, you can think of this as a form of "remote rendering", which is actually happening locally; rather than the "remote" being a far-away server, it is just across the language binding boundary.
