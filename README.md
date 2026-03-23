@@ -25,6 +25,21 @@ How it works: "headless" plotting. Pluot uses Rust 🦀 and WebGPU to quickly re
 
 ⚠️ Pluot does not yet implement very many "chart types". Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, it will pay off: you can **render the plot whereever Pluot rendering works**: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future. 🤗 Hopefully, this will change in the future as we implement additional layer types (both primitive and composite layers).
 
+
+## Citation
+
+If you found this useful, please cite:
+
+```bibtex
+@article{keller2026pluot,
+  title = {{Pluot: Towards 'write once, run everywhere' visualization software}},
+  author = {Keller, Mark S. and Gehlenborg, Nils},
+  journal = {arXiv},
+  year = {2026}
+}
+```
+
+
 ## How it works
 
 Plotting functions are implemented in Rust using the [wgpu](https://github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser), when plotting to raster-based outputs or performing GPGPU compute operations.
