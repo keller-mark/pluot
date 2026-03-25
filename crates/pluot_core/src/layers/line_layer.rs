@@ -334,7 +334,7 @@ pub async fn base_draw_line_layer(
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("LineLayer PLD"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 

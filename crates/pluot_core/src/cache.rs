@@ -34,7 +34,7 @@ thread_local! {
 
 async fn init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     // Apparently this is expensive, so we try to cache it in the get_or_init_gpu_context function.
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     // We can try to enable WebGL fallback here, but it is not working,
     // even when we add wgpu as a direct dependency with the "webgl" feature enabled.
     // References:
