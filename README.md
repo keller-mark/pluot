@@ -1,5 +1,7 @@
 # pluot
 
+[![Crates.io Link and Latest Version Info](https://img.shields.io/crates/v/pluot.svg)](https://crates.io/crates/pluot)
+
 <a href="https://commons.wikimedia.org/wiki/File:Red_pluots.JPG"><img src="bindings-js/docs/src/assets/red-pluots.jpg" align="right" height="250" alt="pluots" /></a>
 
 Goal: Implement a data visualization once, then render it in multiple contexts (across languages, static or interactive, raster or vector).
@@ -21,9 +23,26 @@ How it works: "headless" plotting. Pluot uses Rust 🦀 and WebGPU to quickly re
 - __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported.
 <!-- - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types. -->
 
+⚠️ Pluot does not yet implement very many "chart types". Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, it will pay off: you can **render the plot whereever Pluot rendering works**: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future. 🤗 Hopefully, this will change in the future as we implement additional layer types (both primitive and composite layers).
+
+
+## Citation
+
+If you found this useful, please cite:
+
+```bibtex
+@article{keller2026pluot,
+  title = {{Pluot: Towards 'write once, run everywhere' visualization software}},
+  author = {Keller, Mark S. and Gehlenborg, Nils},
+  journal = {arXiv},
+  year = {2026}
+}
+```
+
+
 ## How it works
 
-Plotting functions are implemented in Rust using the [wgpu](github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser).
+Plotting functions are implemented in Rust using the [wgpu](https://github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser), when plotting to raster-based outputs or performing GPGPU compute operations.
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
 
 When the language bindings are used, you can think of this as a form of "remote rendering", which is actually happening locally; rather than the "remote" being a far-away server, it is just across the language binding boundary.
