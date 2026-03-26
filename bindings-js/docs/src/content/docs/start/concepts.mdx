@@ -77,7 +77,7 @@ To support similar interactions in a desktop application context, analogous inte
 
 As previously noted, we are often plotting data that is stored remotely, requiring network requests to retreive the data prior to rendering it in a visualization.
 We must account for slow network connections and request failures.
-Pluot has two mechanisms to handle this:  `wait_for_data` (bool) and `timeout` (Option<int>) parameters that are passed to the plot rendering function.
+Pluot has two mechanisms to handle this:  `wait_for_data` (boolean) and `timeout` (optional integer) parameters that are passed to the plot rendering function.
 
 
 When creating static plots, we often want to wait for all data to be received prior to plot rendering.
