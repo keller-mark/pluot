@@ -5,10 +5,15 @@ build-backend = "maturin"
 [project]
 name = "pluot"
 requires-python = ">=3.10"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+  {name = "Mark Keller"}
+]
+readme = "README.md"
 classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
 dependencies = [

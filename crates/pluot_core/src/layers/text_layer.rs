@@ -11,18 +11,18 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::layer_traits::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
-use crate::params::{PrepareResult, RenderResult};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_internal_text_layer_data, CachedInternalTextLayerData};
-use svg::node::element::Group;
+use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle,
     TwoColor, TwoText, TwoTextAlign, TwoTextBaseline
 };
-use crate::two::svg::update_svg;
-use crate::layers::position_utils::get_point_position;
+use crate::two::svg::{update_svg, SvgContext};
+use crate::positioning::get_point_position;
 use crate::log;
 
 const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();
@@ -192,7 +192,7 @@ impl TextLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TextLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -422,11 +422,12 @@ struct TextLayerUniforms {
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
 pub async fn base_draw_text_layer(
-    device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &TextLayerParams,
     internal_data: &InternalTextLayerData,
 ) {
+    let GpuContext { device, queue } = gpu_context;
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
         // Column 0
@@ -621,7 +622,7 @@ pub async fn base_draw_text_layer(
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -730,16 +731,22 @@ pub async fn base_draw_text_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for TextLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for TextLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         let internal_data = self.internal_data.as_ref().expect("Internal data was not prepared. Call prepare() first.");
         base_draw_text_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &self.layer_params,
             &internal_data,
         ).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for TextLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_text_layer_svg(
@@ -807,7 +814,7 @@ pub fn base_draw_text_layer_svg(
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
-            y: py as f64,
+            y: (layer_h - py) as f64,
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
@@ -851,17 +858,12 @@ pub fn base_draw_text_layer_svg(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for TextLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         let svg_elements = base_draw_text_layer_svg(
             &self.view_params,
             &self.layer_params,
         );
-
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
-
+        update_svg(ctx, &svg_elements);
     }
 }
 
@@ -874,3 +876,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for TextLayer {}

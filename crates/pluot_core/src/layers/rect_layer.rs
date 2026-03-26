@@ -6,18 +6,17 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use crate::layer_traits::{
-    AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+use crate::render_traits::{
+    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
-use crate::layers::position_utils::get_point_position;
-use crate::params::{PrepareResult, RenderResult};
+use crate::positioning::get_point_position;
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
 };
-use crate::two::svg::update_svg;
+use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
-use svg::node::element::Group;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RectLayerParams {
@@ -63,7 +62,7 @@ impl RectLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for RectLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -95,12 +94,12 @@ struct RectLayerUniforms {
 // TODO: is this the best way to share this logic?
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 pub async fn base_draw_rect_layer(
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    gpu_context: &GpuContext<'_>,
     pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &RectLayerParams,
 ) {
+    let GpuContext { device, queue } = gpu_context;
     // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
     let position_x0_bytes = bytemuck::cast_slice(&layer_params.position_x0);
     let position_y0_bytes = bytemuck::cast_slice(&layer_params.position_y0);
@@ -333,7 +332,7 @@ pub async fn base_draw_rect_layer(
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("RectLayer PLD"),
-        bind_group_layouts: &[&bind_group_layout],
+        bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
 
@@ -420,15 +419,21 @@ pub async fn base_draw_rect_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for RectLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for RectLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_rect_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &self.layer_params,
         )
         .await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for RectLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_rect_layer_svg(
@@ -533,16 +538,12 @@ pub fn base_draw_rect_layer_svg(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for RectLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         let svg_elements = base_draw_rect_layer_svg(
             &self.view_params,
             &self.layer_params,
         );
-
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
+        update_svg(ctx, &svg_elements);
     }
 }
 
@@ -555,3 +556,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for RectLayer {}

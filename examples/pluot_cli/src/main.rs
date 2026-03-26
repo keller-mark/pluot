@@ -218,7 +218,9 @@ async fn main() {
         timeout: None,
         cache_enabled: false,
         svg_compression_enabled: false,
+        svg_include_document: true,
         pickable: false,
+        ..Default::default()
     };
 
     let width = params.width;
@@ -230,18 +232,12 @@ async fn main() {
 
     // Write the output.
     if is_vector {
-        // Vector: the render function returns an SVG <g/> element as UTF-8 bytes.
-        // Wrap it in a root <svg> element so it can be displayed as a standalone file.
-        let svg_inner = String::from_utf8_lossy(&result);
-        let svg_document = format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">\n{}\n</svg>\n",
-            width, height, width, height, svg_inner
-        );
-        match fs::write(&args.output, &svg_document.as_bytes()) {
+        // Vector: the render function returns a complete SVG document as UTF-8 bytes.
+        match fs::write(&args.output, &result) {
             Ok(_) => {
                 eprintln!(
-                    "Wrote SVG 2 output ({} bytes) to {}",
-                    svg_document.len(),
+                    "Wrote SVG output ({} bytes) to {}",
+                    result.len(),
                     args.output.display()
                 );
             }

@@ -1,5 +1,5 @@
-pub mod position_utils;
 pub mod point_layer;
+pub mod point_3d_layer;
 pub mod line_layer;
 pub mod rect_layer;
 pub mod text_layer;
@@ -9,3 +9,4 @@ pub mod axis_layer;
 pub mod tile_layer;
 pub mod multiscale_utils;
 pub mod multiscale_layer;
+pub mod compute_layer;

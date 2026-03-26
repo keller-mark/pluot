@@ -1,9 +1,22 @@
 use crate::wgpu;
 use crate::zarr::AsyncZarritaStore;
-use crate::layer_traits::AspectRatioMode;
+use crate::render_traits::AspectRatioMode;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
+
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum RenderBackend {
+    Gpu,
+    Cpu,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ComputeBackend {
+    Gpu,
+    Cpu,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GraphicsFormat {
@@ -11,6 +24,8 @@ pub enum GraphicsFormat {
     Raster,
     // 1: SVG.
     Vector,
+
+    // TODO: add AccessKit as a GraphicsFormat?
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -44,7 +59,6 @@ pub struct LayerParams {
 pub struct LayeredPlotRenderParams {
     pub layers: Vec<LayerParams>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "plot_type", content = "plot_params")]
@@ -90,6 +104,13 @@ pub struct RenderParams {
     pub plot_id: String,
     pub store_name: String,
 
+    // Whether to wait for store.get and store.getRange async calls to resolve.
+    // If true, we will try to wait for .get/.getRange async calls to resolve (BUT we will still bail early if `timeout` elapses first).
+    // If false, proceed to rendering something partially, without waiting for all .get/.getRange async calls to successfully resolve.
+    pub wait_for_store_gets: bool,
+
+    // TODO: combine wait_for_store_gets and timeout into a single enum, since the timeout value is irrelevant when wait_for_store_gets is false
+
     // Timeout in ms before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
 
@@ -98,6 +119,8 @@ pub struct RenderParams {
 
     // Whether to compress the SVG string using LZ-string if the output format is Vector.
     pub svg_compression_enabled: bool,
+    // Whether to include the parent <svg> document tag, versus only the inner <g> group/contents.
+    pub svg_include_document: bool,
 
     // Margins for plots that need them (e.g. scatterplot axes).
     // TODO: make non-optional
@@ -110,34 +133,12 @@ pub struct RenderParams {
     // to facilitate picking, but will only be true in certain situations
     // (e.g., interactive plots).
     pub pickable: bool,
-}
-pub struct RenderContext<'a> {
-    pub store: &'a Arc<AsyncZarritaStore>,
-    pub device: &'a wgpu::Device,
-    pub texture_desc: &'a wgpu::TextureDescriptor<'a>,
-    pub out_tex: &'a wgpu::Texture,
-    pub queue: &'a wgpu::Queue,
-    pub params: &'a RenderParams,
 
-    pub vello_tex: &'a wgpu::Texture,
-    //pub vello_scene: &'a mut vello::Scene,
+    // If None, try GPU, then fallback to CPU.
+    pub render_backend: Option<RenderBackend>,
 
-    pub out_group: &'a mut Group,
-}
-
-pub struct PrepareResult {
-    // Whether this layer bailed early due to the provided timeout.
-    pub bailed_early: bool,
-    // TODO: do we need a `timeout_remaining` field here to track the time remaining for subsequent layers
-    // after earlier layers have used up a portion of the timeout budget? Or, can we just use maybe_timeout!
-    // on joined futures to handle this instead?
-}
-
-pub struct RenderResult {
-    // Whether one or more layers bailed early due to the provided timeout.
-    // Only relevant in interactive settings.
-    // In non-interactive settings, timeout will be None, so this should always be false.
-    pub bailed_early: bool,
+    // If None, try GPU, then fallback to CPU.
+    pub compute_backend: Option<ComputeBackend>,
 }
 
 impl Default for RenderParams {
@@ -159,14 +160,18 @@ impl Default for RenderParams {
             plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
                 layers: vec![],
             }),
+            wait_for_store_gets: true,
             timeout: None,
             cache_enabled: true,
             svg_compression_enabled: false,
+            svg_include_document: true,
             margin_left: None,
             margin_right: None,
             margin_top: None,
             margin_bottom: None,
             pickable: false,
+            render_backend: None,
+            compute_backend: None,
         }
     }
 }

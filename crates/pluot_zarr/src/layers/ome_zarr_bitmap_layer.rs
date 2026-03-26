@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use svg::node::element::Group;
-
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 use pluot_core::maybe_timeout;
@@ -10,14 +8,16 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
-use pluot_core::layer_traits::{
-    DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+use pluot_core::zarr::is_timed_out_zarrs_error;
+use pluot_core::render_traits::{
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
+use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
 };
-use pluot_core::params::PrepareResult;
-
+use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::render_types::GpuContext;
 use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
 use pluot_core::layers::multiscale_utils::to_y_slice;
 
@@ -94,7 +94,7 @@ impl OmeZarrBitmapLayer {
             },
         };
 
-        let store = get_or_init_store(&store_name);
+        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
 
         Self {
             view_params,
@@ -110,7 +110,7 @@ impl OmeZarrBitmapLayer {
     }
 
     /// Load tile data from the zarr array, using the cache.
-    async fn load_tile_data(&self) -> NumericData {
+    async fn load_tile_data(&self) -> Result<NumericData, zarrs::array::ArrayError> {
         let store = self.store.clone();
         let array_path = self.layer_params.array_path.clone();
         let array_metadata = self.layer_params.array_metadata.clone();
@@ -212,20 +212,14 @@ impl OmeZarrBitmapLayer {
                     for subset in &subsets {
                         let chunk = array
                             .async_retrieve_array_subset::<Vec<$rust_ty>>(subset)
-                            .await
-                            .unwrap_or_else(|e| {
-                                panic!(
-                                    "Failed to load tile data for {} {}: {:?}",
-                                    array_path, subset, e
-                                )
-                            });
+                            .await?;
                         combined.extend_from_slice(&chunk);
                     }
                     NumericData::$variant(Arc::new(combined))
                 }};
             }
 
-            match &*dtype_name {
+            Ok(match &*dtype_name {
                 "uint8" => load_tile_data!(u8, Uint8),
                 "uint16" => load_tile_data!(u16, Uint16),
                 "uint32" => load_tile_data!(u32, Uint32),
@@ -237,18 +231,21 @@ impl OmeZarrBitmapLayer {
                 "float32" => load_tile_data!(f32, Float32),
                 "float64" => load_tile_data!(f64, Float64),
                 _ => panic!("Unsupported zarr data type: {}", dtype_name),
-            }
+            })
         }, &keys, self.view_params.cache_enabled).await;
 
-        // Unwrap the Arc to get the owned NumericData.
-        Arc::unwrap_or_clone(cached)
+        // cached is Result<Arc<NumericData>, ArrayError>
+        match cached {
+            Ok(data) => Ok(Arc::unwrap_or_clone(data)),
+            Err(e) => Err(e),
+        }
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrBitmapLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Use maybe_timeout to bail early if loading takes too long.
         let data_future = self.load_tile_data();
 
@@ -256,9 +253,17 @@ impl PreparedLayer for OmeZarrBitmapLayer {
             .await;
 
         let data = match future_result {
-            Ok(data_result) => data_result,
+            Ok(Ok(data_result)) => data_result,
+            Ok(Err(e)) => {
+                // Zarrs error from async_retrieve_array_subset.
+                if is_timed_out_zarrs_error(&e) {
+                    return PrepareResult { bailed_early: true };
+                } else {
+                    panic!("Zarrs error during OmeZarrBitmapLayer prepare: {:?}", e);
+                }
+            }
             Err(_) => {
-                // Return early.
+                // Wall-clock timeout from maybe_timeout!
                 return PrepareResult { bailed_early: true };
             }
         };
@@ -314,7 +319,7 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         };
 
         let mut inner = BitmapLayer::new(self.view_params.clone(), bitmap_params);
-        let result = inner.prepare().await;
+        let result = inner.prepare(gpu_context).await;
         self.inner = Some(inner);
 
         result
@@ -323,22 +328,28 @@ impl PreparedLayer for OmeZarrBitmapLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for OmeZarrBitmapLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for OmeZarrBitmapLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         if let Some(inner) = &self.inner {
-            DrawToCanvas::draw(inner, device, queue, pass).await;
+            DrawToRasterGpu::draw(inner, gpu_context, pass).await;
         }
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for OmeZarrBitmapLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for OmeZarrBitmapLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         if let Some(inner) = &self.inner {
-            DrawToSvg::draw(inner, group).await
-        } else {
-            group.clone()
+            DrawToSvg::draw(inner, ctx).await
         }
     }
 }
+
+impl PickableLayer for OmeZarrBitmapLayer {}

@@ -1,18 +1,19 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
 
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
-use crate::layer_traits::{
-    DrawToCanvas, DrawToSvg, PreparedAndDraw, PreparedLayer,
+use crate::two::svg::SvgContext;
+use crate::render_traits::{
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::layers::multiscale_utils::{
     self, ResolutionLevel, get_visible_tiles, select_resolution_level,
 };
-use crate::params::PrepareResult;
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 
 
@@ -104,11 +105,11 @@ impl MultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for MultiscaleLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         self.sub_layer_instances = self.build_sublayers();
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare().await;
+            sub_layer.prepare(gpu_context).await;
         }
 
         PrepareResult {
@@ -119,17 +120,23 @@ impl PreparedLayer for MultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for MultiscaleLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
+impl DrawToRasterGpu for MultiscaleLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for MultiscaleLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for MultiscaleLayer {
-    async fn draw(&self, group: &Group) -> Group {
-        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    async fn draw(&self, ctx: &mut SvgContext) {
+        base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
 
@@ -142,3 +149,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for MultiscaleLayer {}

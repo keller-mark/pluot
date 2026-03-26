@@ -12,7 +12,7 @@ no_compression = dict(filters=None, compressors=None, serializer="auto")
 
 def replace_arr_with_key(d, store):
     """Replace _arr keys with _key keys in a dict, inserting NumPy array data into a Zarr store."""
-    
+
     if isinstance(d, list):
         return [
             replace_arr_with_key(item, store)
@@ -20,7 +20,7 @@ def replace_arr_with_key(d, store):
         ]
     elif not isinstance(d, dict):
         return d  # Base case: not a dict, return as is.
-    
+
     # D is a dict.
     new_d = {}
     for key, val in d.items():
@@ -62,7 +62,7 @@ async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
-    result = await render_py(timeout=None, cache_enabled=True, device_pixel_ratio=1.0, aspect_ratio_mode="Contain", format="Raster", view_mode="2d", pickable=False, svg_compression_enabled=False, **new_kwargs)
+    result = await render_py(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, aspect_ratio_mode="Contain", format="Raster", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True, **new_kwargs)
     return result
 
 async def render_to_array(**kwargs):

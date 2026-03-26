@@ -245,8 +245,8 @@ mod tests {
         let axis = Axis::new(AxisOrientation::Bottom).ticks(Some(5), None);
         let elements = axis.generate_elements(&scale);
 
-        let (_, group) = init_svg(500.0, 30.0);
-        let updated_group = update_svg(group, &elements);
+        let mut ctx = init_svg(500.0, 30.0);
+        update_svg(&mut ctx, &elements);
 
         let expected_svg_str = r#"
             <g height="30" width="500">
@@ -277,7 +277,7 @@ mod tests {
                 </text>
             </g>
         "#;
-        assert_strings_equal_ignore_whitespace(&updated_group.to_string(), expected_svg_str);
+        assert_strings_equal_ignore_whitespace(&ctx.group.to_string(), expected_svg_str);
     }
 
     #[test]
@@ -289,8 +289,8 @@ mod tests {
         let axis = Axis::new(AxisOrientation::Left).ticks(Some(5), None);
         let elements = axis.generate_elements(&scale);
 
-        let (_, group) = init_svg(30.0, 500.0);
-        let updated_group = update_svg(group, &elements);
+        let mut ctx = init_svg(30.0, 500.0);
+        update_svg(&mut ctx, &elements);
 
         let expected_svg_str = r#"
             <g height="500" width="30">
@@ -321,6 +321,6 @@ mod tests {
                 </text>
             </g>
         "#;
-        assert_strings_equal_ignore_whitespace(&updated_group.to_string(), expected_svg_str);
+        assert_strings_equal_ignore_whitespace(&ctx.group.to_string(), expected_svg_str);
     }
 }

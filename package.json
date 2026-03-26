@@ -23,8 +23,8 @@
     "deploy": "wasm-pack build crates/pluot --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d bindings-js/docs/dist --cname pluot.dev --nojekyll"
   },
   "keywords": [],
-  "author": "",
-  "license": "",
+  "author": "Mark Keller",
+  "license": "Apache-2.0",
   "devDependencies": {
     "vitest": "^3.2.4",
     "vite": "^6.1.1",

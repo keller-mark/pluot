@@ -4,11 +4,12 @@ description = "Internal core crate"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-#license.workspace = true
+license-file.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
-exclude = ["tests"]
+exclude = ["pkg", "tests"]
 categories = []
 keywords = []
 
@@ -85,6 +86,8 @@ nalgebra-glm.workspace = true
 
 
 fontdue.workspace = true # For font rasterization and text layout.
+image.workspace = true
+base64.workspace = true
 
 lz-str.workspace = true # To compress SVG strings before passing to JS.
 

@@ -66,18 +66,37 @@ if (typeof window !== 'undefined') {
     return stores[store_name].get(`/${key}`);
   };
 
+  window.zarr_get_status = (store_name, key) => {
+    return stores[store_name].getPeek(`/${key}`);
+  };
+
   window.zarr_has = async (store_name, key) => {
     // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
     return stores[store_name].get(`/${key}`) !== undefined;
+  };
+
+  window.zarr_has_status = (store_name, key) => {
+    return stores[store_name].getPeek(`/${key}`);
   };
 
   window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
     // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
     return stores[store_name].getRange(`/${key}`, { offset, length });
   };
+
+  window.zarr_get_range_from_offset_status = (store_name, key, offset, length) => {
+    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
+    return stores[store_name].getRangePeek(`/${key}`, { offset, length })
+  };
+
   window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
     // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
     return stores[store_name].getRange(`/${key}`, { suffixLength: suffix_length });
+  };
+
+  window.zarr_get_range_from_end_status = (store_name, key, suffix_length) => {
+    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
+    return stores[store_name].getRangePeek(`/${key}`, { suffixLength: suffix_length });
   };
 
   window.isPluotInitialized = null;
@@ -92,7 +111,7 @@ export function Pluot(props) {
     store,
     storeName: storeNameProp,
     plotParams,
-    mode = "2d",
+    viewMode = "2d",
     marginBottom = 100.0,
     marginLeft = 100.0,
     marginTop = 100.0,
@@ -171,7 +190,7 @@ export function Pluot(props) {
     let dispose = () => {};
 
     // Create a 2D camera for handling zoom and pan.
-    if (mode === "2d") {
+    if (viewMode === "2d") {
       function onCameraEvent(camera, event) {
         camera.tick();
         // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
@@ -220,16 +239,24 @@ export function Pluot(props) {
 
       // Set the initial view matrix.
       camera.setView(viewMatrix);
-    } else if (mode === "3d") {
+    } else if (viewMode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
         console.log(camera.matrix);
-        setViewMatrix(mat4.clone(camera.matrix));
+        // Note: the 3D camera stores the matrix in camera.matrix (not camera.view).
+        setViewMatrix(prev => {
+          // Since camera events happen even on mousemove events that do not change the matrix,
+          // we check for equality here to avoid unnecessary state updates and plot re-renders.
+          if (isEqual(prev, camera.matrix)) {
+            return prev;
+          }
+          return mat4.clone(camera.matrix)
+        });
       }
 
       const camera = createCamera(cameraEl, {
         mode: "orbit",
-        zoomSpeed: -3,
+        zoomSpeed: -5,
       });
 
       // TODO:
@@ -305,7 +332,7 @@ export function Pluot(props) {
     }
 
     return dispose;
-  }, [cameraRef, mode, aspectRatioMode]);
+  }, [cameraRef, viewMode, aspectRatioMode]);
 
 
   useEffect(() => {
@@ -333,7 +360,7 @@ export function Pluot(props) {
       margin_right: marginRight,
       device_pixel_ratio: window.devicePixelRatio,
       aspect_ratio_mode: aspectRatioMode,
-      view_mode: "2d",
+      view_mode: viewMode,
       pickable: false,
       // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
       camera_view: viewMatrix,
@@ -342,15 +369,19 @@ export function Pluot(props) {
       store_name: storeName,
       plot_params: plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
-      timeout: currentTimeout.current, // in ms
+      timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
+      wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
       cache_enabled: true,
       svg_compression_enabled: true,
+      svg_include_document: false,
     };
 
     // Wrap render_wasm in try/catch, to handle Rust panics.
     let arr;
     try {
       arr = await wasm.render_wasm(renderParams);
+
+      console.log(await wasm.pick_wasm(renderParams, 400, 400));
       isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);

@@ -1,0 +1,19 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="points_a_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#points_a_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="-8" y="92"/>
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="92" y="92"/>
+</g>
+<g clip-path="url(#points_a_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="-8" y="-8"/>
+<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="92" y="-8"/>
+</g>
+</g>
+</g>
+</svg>

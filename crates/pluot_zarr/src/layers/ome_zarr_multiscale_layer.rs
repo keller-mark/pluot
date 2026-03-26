@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
 
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
@@ -13,14 +12,15 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::get_or_init_store;
-use pluot_core::layer_traits::{
-    DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, ViewParams,
+use pluot_core::render_traits::{
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams,
 };
+use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
 };
-use pluot_core::params::PrepareResult;
-
+use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::render_types::GpuContext;
 use ome_zarr_metadata::v0_5::{
     RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale,
     Axis, AxisType, AxisUnit, AxisUnitSpace,
@@ -142,7 +142,7 @@ impl OmeZarrMultiscaleLayer {
             },
         };
 
-        let store = get_or_init_store(&store_name);
+        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
 
         Self {
             view_params,
@@ -436,7 +436,7 @@ impl OmeZarrMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for OmeZarrMultiscaleLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
 
         // Use maybe_timeout to bail out early if loading metadata takes too long.
@@ -479,7 +479,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         */
         // Prepare all sublayers concurrently across all levels.
         let level_futures = self.level_sublayers.iter_mut().map(|level_group| async {
-            let futures = level_group.sublayers.iter_mut().map(|sublayer| sublayer.prepare());
+            let futures = level_group.sublayers.iter_mut().map(|sublayer| sublayer.prepare(None));
             let results = futures::future::join_all(futures).await;
 
             let group_bailed = results.iter().any(|r| r.bailed_early);
@@ -506,8 +506,8 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for OmeZarrMultiscaleLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         // level_sublayers is ordered coarsest-first.
         // Draw levels from coarsest to finest, but skip coarser tiles that are
         // fully occluded by ready finer-level tiles.
@@ -531,8 +531,7 @@ impl DrawToCanvas for OmeZarrMultiscaleLayer {
                 };
 
                 if should_draw {
-                    DrawToCanvas::draw(sublayer, device.clone(), queue.clone(), pass)
-                        .await;
+                    DrawToRasterGpu::draw(sublayer, gpu_context, pass).await;
                 }
             }
         }
@@ -541,10 +540,16 @@ impl DrawToCanvas for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for OmeZarrMultiscaleLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for OmeZarrMultiscaleLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, _ctx: &mut SvgContext) {
         // SVG rendering is not yet supported for bitmap-based layers.
-        // Return the group unchanged.
-        group.clone()
     }
 }
+
+impl PickableLayer for OmeZarrMultiscaleLayer {}

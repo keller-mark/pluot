@@ -1,0 +1,28 @@
+<svg height="200" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_text_layer_clip_path">
+<rect height="200" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="200" width="100">
+<g clip-path="url(#my_text_layer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 -50 200)" x="-50" y="200">
+A
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 150 200)" x="150" y="200">
+B
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 150 0)" x="150" y="0">
+C
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 -50 0)" x="-50" y="0">
+D
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 50 100)" x="50" y="100">
+Hello world
+</text>
+</g>
+</g>
+</g>
+</svg>

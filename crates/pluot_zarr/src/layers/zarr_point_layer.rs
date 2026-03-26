@@ -1,9 +1,8 @@
 use std::sync::Arc;
-use pluot_core::params::PrepareResult;
-use pluot_core::params::RenderResult;
+use pluot_core::layers::point_layer::PointLayer;
+use pluot_core::viewport::DataCoord;
+use pluot_core::viewport::ScreenCoord;
 use serde::{Deserialize, Serialize};
-use svg::node::element::Group;
-
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 use pluot_core::maybe_timeout;
@@ -12,10 +11,13 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
-use pluot_core::two::svg::update_svg;
-use pluot_core::layer_traits::{DrawToCanvas, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::zarr::is_timed_out_zarrs_error;
+use pluot_core::two::svg::{update_svg, SvgContext};
+use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
-
+use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use pluot_core::render_types::GpuContext;
+use pluot_core::LayerPickingResult;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrPointLayerParams {
@@ -74,7 +76,7 @@ impl ZarrPointLayer {
             }
         };
 
-        let store = get_or_init_store(&store_name);
+        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
         Self {
             view_params,
             layer_params,
@@ -89,7 +91,7 @@ impl ZarrPointLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for ZarrPointLayer {
-    async fn prepare(&mut self) -> PrepareResult {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
 
         // TODO: include the layer type in the memoization dependencies?
@@ -101,14 +103,10 @@ impl PreparedLayer for ZarrPointLayer {
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
             let labels_array = labels_array_future.await.unwrap();
             let labels_subset = labels_array.subset_all();
-            //let labels_result = labels_array.async_retrieve_array_subset_ndarray::<i64>(&labels_subset).await;
-            let labels_result = labels_array.async_retrieve_array_subset::<Vec<i64>>(&labels_subset).await;
-
-            let labels_vec = labels_result.unwrap();
-            // More efficient version that eliminates intermediate vectors and redundant operations
-            // Convert to f32 and cast to bytes directly - no for loop needed
+            let labels_vec = labels_array.async_retrieve_array_subset::<Vec<i64>>(&labels_subset).await?;
+            // Convert to i32
             let labels_i32: Vec<i32> = labels_vec.iter().map(|&c| c as i32).collect();
-            labels_i32
+            Ok(labels_i32)
         }, &l_i32_future_deps, self.view_params.cache_enabled);
 
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
@@ -118,12 +116,9 @@ impl PreparedLayer for ZarrPointLayer {
             let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
             let x_array = x_array_future.await.unwrap();
             let x_subset = x_array.subset_all();
-            //let x_result = x_array.async_retrieve_array_subset_ndarray::<f64>(&x_subset).await;
-            let x_result = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await;
-
-            let position_x = x_result.unwrap();
+            let position_x = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await?;
             let x_f32_inner: Vec<f32> = position_x.iter().map(|&x| x as f32).collect();
-            x_f32_inner
+            Ok(x_f32_inner)
         }, &x_f32_future_deps, self.view_params.cache_enabled);
 
         let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
@@ -132,12 +127,9 @@ impl PreparedLayer for ZarrPointLayer {
             let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
             let y_array = y_array_future.await.unwrap();
             let y_subset = y_array.subset_all();
-            //let y_result = y_array.async_retrieve_array_subset_ndarray::<f64>(&y_subset).await;
-            let y_result = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await;
-
-            let position_y = y_result.unwrap();
+            let position_y = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await?;
             let y_f32_inner: Vec<f32> = position_y.iter().map(|&y| y as f32).collect();
-            y_f32_inner
+            Ok(y_f32_inner)
         }, &y_f32_future_deps, self.view_params.cache_enabled);
 
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
@@ -156,12 +148,21 @@ impl PreparedLayer for ZarrPointLayer {
 
         let (x_f32, y_f32, l_i32) = match futures_try_join_result {
             Ok((x_f32_result, y_f32_result, l_i32_result)) => {
-                // log("All futures succeeded within the timeout.");
-                (x_f32_result, y_f32_result, l_i32_result)
+                // Each result is Result<Arc<Vec<_>>, ArrayError> from the _result cache fns.
+                match (x_f32_result, y_f32_result, l_i32_result) {
+                    (Ok(x), Ok(y), Ok(l)) => (x, y, l),
+                    (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                        if is_timed_out_zarrs_error(&e) {
+                            // TODO: still render something in this case?
+                            return PrepareResult { bailed_early: true };
+                        } else {
+                            panic!("Zarrs error during ZarrPointLayer prepare: {:?}", e);
+                        }
+                    }
+                }
             }
             Err(_) => {
-                // TODO: still render something in this case
-                // log("One or more futures timed out or failed");
+                // Wall-clock timeout from maybe_timeout!
                 return PrepareResult { bailed_early: true };
             }
         };
@@ -182,8 +183,8 @@ impl PreparedLayer for ZarrPointLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for ZarrPointLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for ZarrPointLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         if !self.ready_to_draw {
             log("ZarrPointLayer was not ready to draw. Skipping draw call.");
             return;
@@ -191,7 +192,7 @@ impl DrawToCanvas for ZarrPointLayer {
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
         base_draw_point_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
@@ -208,14 +209,20 @@ impl DrawToCanvas for ZarrPointLayer {
     }
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for ZarrPointLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
+}
+
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for ZarrPointLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         if !self.ready_to_draw {
             log("ZarrPointLayer was not ready to draw. Skipping draw call.");
-            return group.clone();
+            return;
         }
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
@@ -234,9 +241,38 @@ impl DrawToSvg for ZarrPointLayer {
             },
         );
 
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
+        update_svg(ctx, &svg_elements);
+    }
+}
 
-        return updated_group.clone();
+impl PickableLayer for ZarrPointLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        if !self.ready_to_draw {
+            log("ZarrPointLayer was not ready to draw. Skipping picking.");
+            return None;
+        }
+
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+
+        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
+
+        let layer = PointLayer::new(
+            self.view_params.clone(),
+            PointLayerParams {
+                layer_id: self.layer_params.layer_id.clone(),
+                bounds: self.layer_params.bounds.clone(),
+                data_unit_mode: self.layer_params.data_unit_mode.clone(),
+                point_radius: self.layer_params.point_radius,
+                point_radius_unit_mode: self.layer_params.point_radius_unit_mode.clone(),
+                point_shape_mode: self.layer_params.point_shape_mode.clone(),
+                position_x: data.x_arr.clone(),
+                position_y: data.y_arr.clone(),
+                labels_vec: data.labels_arr.clone(),
+            },
+        );
+
+        layer.pick(_screen_coord, data_coord)
     }
 }

@@ -1,16 +1,20 @@
 pub mod bindings;
 pub mod d3;
 pub mod params;
-// mod plots;
+pub mod render_types;
 pub mod cache;
-pub mod layer_traits;
-pub mod layered_plot;
+pub mod render_traits;
 mod render;
+mod positioning;
+pub mod viewport;
+mod picking;
 pub mod layers;
 pub mod registry;
+pub mod compute;
 
 pub(crate) mod timeout;
 pub mod two;
+pub mod zarr_types;
 pub mod zarr;
 
 pub mod maybe;
@@ -24,8 +28,9 @@ pub use wgpu;
 
 // Export things needed for layer-based plotting via Rust.
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
-pub use crate::layer_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
+pub use crate::render_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
+pub use crate::picking::LayerPickingResult;
 
 // Export things needed by workspace packages that define other layers.
 pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
@@ -34,14 +39,17 @@ pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, us
 #[cfg(target_arch = "wasm32")]
 pub use crate::bindings::wasm::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub use crate::bindings::python::{
     log_info as log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 pub use crate::bindings::plain_rust::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
+    zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
