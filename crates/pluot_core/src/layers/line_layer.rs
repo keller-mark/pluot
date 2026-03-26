@@ -6,14 +6,13 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::layers::position_utils::get_point_position;
+use crate::positioning::get_point_position;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -335,7 +334,7 @@ pub async fn base_draw_line_layer(
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("LineLayer PLD"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -516,9 +515,9 @@ pub fn base_draw_line_layer_svg(
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Line(TwoLine {
             x1: source_x_px as f64,
-            y1: source_y_px as f64,
+            y1: (layer_h - source_y_px) as f64,
             x2: target_x_px as f64,
-            y2: target_y_px as f64,
+            y2: (layer_h - target_y_px) as f64,
             linewidth: layer_params.line_width as f64,
             // TODO: more params
             ..Default::default()
@@ -563,3 +562,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for LineLayer {}

@@ -104,6 +104,13 @@ pub struct RenderParams {
     pub plot_id: String,
     pub store_name: String,
 
+    // Whether to wait for store.get and store.getRange async calls to resolve.
+    // If true, we will try to wait for .get/.getRange async calls to resolve (BUT we will still bail early if `timeout` elapses first).
+    // If false, proceed to rendering something partially, without waiting for all .get/.getRange async calls to successfully resolve.
+    pub wait_for_store_gets: bool,
+
+    // TODO: combine wait_for_store_gets and timeout into a single enum, since the timeout value is irrelevant when wait_for_store_gets is false
+
     // Timeout in ms before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
 
@@ -153,6 +160,7 @@ impl Default for RenderParams {
             plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
                 layers: vec![],
             }),
+            wait_for_store_gets: true,
             timeout: None,
             cache_enabled: true,
             svg_compression_enabled: false,

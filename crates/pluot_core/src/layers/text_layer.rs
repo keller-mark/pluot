@@ -11,18 +11,18 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_internal_text_layer_data, CachedInternalTextLayerData};
+use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle,
     TwoColor, TwoText, TwoTextAlign, TwoTextBaseline
 };
 use crate::two::svg::{update_svg, SvgContext};
-use crate::layers::position_utils::get_point_position;
+use crate::positioning::get_point_position;
 use crate::log;
 
 const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();
@@ -622,7 +622,7 @@ pub async fn base_draw_text_layer(
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -814,7 +814,7 @@ pub fn base_draw_text_layer_svg(
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
-            y: py as f64,
+            y: (layer_h - py) as f64,
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
@@ -876,3 +876,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for TextLayer {}

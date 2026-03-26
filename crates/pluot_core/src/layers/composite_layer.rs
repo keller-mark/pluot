@@ -5,12 +5,11 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
 use crate::wgpu;
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::SvgContext;
-use crate::layers::position_utils::get_point_position;
+use crate::positioning::get_point_position;
 use crate::params::{LayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
@@ -120,3 +119,5 @@ impl DrawToSvg for CompositeLayer {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
+
+impl PickableLayer for CompositeLayer {}

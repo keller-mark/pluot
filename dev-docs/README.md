@@ -104,9 +104,3 @@ export CC=/opt/homebrew/opt/llvm/bin/clang
 export AR=/opt/homebrew/opt/llvm/bin/llvm-ar
 ```
 
-
-## Rust learning resources
-- Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
-- Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
-- Learnxinyminutes: https://learnxinyminutes.com/rust/
-- A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust

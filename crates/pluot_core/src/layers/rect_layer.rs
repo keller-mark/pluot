@@ -6,11 +6,10 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use crate::render_traits::{
-    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams,
+    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
-use crate::layers::position_utils::get_point_position;
+use crate::positioning::get_point_position;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::two::shapes::{
@@ -333,7 +332,7 @@ pub async fn base_draw_rect_layer(
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("RectLayer PLD"),
-        bind_group_layouts: &[&bind_group_layout],
+        bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
 
@@ -557,3 +556,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for RectLayer {}

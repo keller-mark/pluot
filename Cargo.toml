@@ -20,7 +20,7 @@ exclude = [
 
 [workspace.package]
 version = "0.1.0"
-# TODO: license
+license-file = "LICENSE"
 
 # We use the 2021 edition which defaults to Resolver version 2
 # (could alternatively specify resolver = "2" with edition = "2018").
@@ -29,7 +29,11 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.92"
 repository = "https://github.com/keller-mark/pluot"
-authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
+homepage = "https://pluot.dev"
+authors = ["Mark Keller"]
+
+categories = ["visualization", "graphics", "rendering", "science", "wasm"]
+keywords = []
 
 # During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
 [workspace.lints.rust]
@@ -71,7 +75,7 @@ pluot_zarr = { path = "crates/pluot_zarr" }
 pluot = { path = "crates/pluot" }
 
 # WebGPU
-wgpu = { version = "28.0.0" }
+wgpu = { version = "29.0.0" }
 glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 

@@ -4,7 +4,7 @@ use nalgebra_glm::{Vec2, Vec4, Mat4};
 use crate::render_traits::{AspectRatioMode, UnitsMode};
 
 
-fn scale(x: f32, y: f32, z: f32) -> Mat4 {
+pub fn get_scale_mat(x: f32, y: f32, z: f32) -> Mat4 {
   return Mat4::from_columns(&[
     Vec4::new(x, 0.0, 0.0, 0.0),
     Vec4::new(0.0, y, 0.0, 0.0),
@@ -13,7 +13,7 @@ fn scale(x: f32, y: f32, z: f32) -> Mat4 {
   ]);
 }
 
-fn translate(x: f32, y: f32, z: f32) -> Mat4 {
+pub fn get_translate_mat(x: f32, y: f32, z: f32) -> Mat4 {
   return Mat4::from_columns(&[
     Vec4::new(1.0, 0.0, 0.0, 0.0),
     Vec4::new(0.0, 1.0, 0.0, 0.0),
@@ -22,7 +22,7 @@ fn translate(x: f32, y: f32, z: f32) -> Mat4 {
   ]);
 }
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioMode) -> Mat4 {
+pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioMode) -> Mat4 {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -60,17 +60,22 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioM
 
     // Only scaling will result in the (0, 1) region being centered.
     // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    return scale(
+    return get_scale_mat(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
     );
 }
 
+// TODO: get_margin_mat for handling of margins?
+// (despite not needing to handle them in get_point_position)
+
 // Here, we "simulate" the vertex shader logic in Rust,
 // enabling us to check the logic that we are using for handling margins, aspect ratios, and camera transforms.
 // It will require us to manually keep things in sync with the actual shader code, but that is ok.
 // The rust syntax is luckily very similar to WGSL.
+// Note: we treat the Y coordinate as increasing upwards, for consistency with the data coordinate system.
+// Conversion to a coordinate system where Y increases downwards (e.g., for HTML canvas) is delegated to the caller.
 pub fn get_point_position(
     pos_x: f32,
     pos_y: f32,
@@ -89,7 +94,7 @@ pub fn get_point_position(
 
     if (data_unit_mode == UnitsMode::Pixels) {
         // Pixel units mode: positions are already in pixel units.
-        return (pos_x, layer_height_px - pos_y);
+        return (pos_x, pos_y);
     }
 
     let camera_view = Mat4::from_column_slice(camera_view_raw);
@@ -104,9 +109,9 @@ pub fn get_point_position(
 
     // We operate in (0 to 1) space, since it is more intuitive.
     // We therefore need matrices to transform (0, 1) into clip space ("NDC") (-1 to 1)
-    let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1 (i.e., translating in the scaled-up space)
+    let NORM_TO_NDC_MAT = get_translate_mat(-1.0, -1.0, 0.0) * get_scale_mat(2.0, 2.0, 1.0); // Scale up by 2, THEN translate by -1 (i.e., translating in the scaled-up space)
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
-    let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
+    let NDC_TO_NORM_MAT =  get_translate_mat(0.5, 0.5, 0.0) * get_scale_mat(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
     // Model-view-projection matrix
     // References:
@@ -145,14 +150,15 @@ pub fn get_point_position(
     // Matrix to convert from normalized (0 to 1) space to pixel space.
     // Note: the SVG coordinate system has (0,0) at the top-left,
     // with +X to the right and +Y downwards, so we also need to flip the Y axis.
-    let NORM_TO_PX_MAT = scale(
+    let NORM_TO_PX_MAT = get_scale_mat(
         layer_width_px,
         layer_height_px,
         1.0
     );
     let point_pos_px  = NORM_TO_PX_MAT * Vec4::new(point_pos_norm.x, point_pos_norm.y, 0.0, 1.0);
 
-    return (point_pos_px.x, layer_height_px - point_pos_px.y);
+    // Don't flip the Y coordinate here, and instead delegate to the caller if flipping is required.
+    return (point_pos_px.x, point_pos_px.y);
 }
 
 #[cfg(test)]
@@ -181,10 +187,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(0.0, 100.0),
             Vec2::new(0.0, 0.0),
-            Vec2::new(100.0, 100.0),
+            Vec2::new(0.0, 100.0),
             Vec2::new(100.0, 0.0),
+            Vec2::new(100.0, 100.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -229,10 +235,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(0.0, 100.0),
             Vec2::new(0.0, 0.0),
-            Vec2::new(200.0, 100.0),
+            Vec2::new(0.0, 100.0),
             Vec2::new(200.0, 0.0),
+            Vec2::new(200.0, 100.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -280,10 +286,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "contain" aspect_ratio_mode,
             // the X coordinates of the unit square will be compressed.
-            Vec2::new(50.0, 100.0),
             Vec2::new(50.0, 0.0),
-            Vec2::new(150.0, 100.0),
+            Vec2::new(50.0, 100.0),
             Vec2::new(150.0, 0.0),
+            Vec2::new(150.0, 100.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -329,10 +335,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "contain" aspect_ratio_mode,
             // the Y coordinates of the unit square will be compressed.
-            Vec2::new(0.0, 150.0),
             Vec2::new(0.0, 50.0),
-            Vec2::new(100.0, 150.0),
+            Vec2::new(0.0, 150.0),
             Vec2::new(100.0, 50.0),
+            Vec2::new(100.0, 150.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -379,10 +385,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "cover" aspect_ratio_mode,
             // the Y coordinates of the unit square will be outside of NDC.
-            Vec2::new(0.0, 150.0),
             Vec2::new(0.0, -50.0),
-            Vec2::new(200.0, 150.0),
+            Vec2::new(0.0, 150.0),
             Vec2::new(200.0, -50.0),
+            Vec2::new(200.0, 150.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -428,10 +434,10 @@ mod tests {
         let expected_points_ndc = vec![
             // Due to the "cover" aspect_ratio_mode,
             // the Y coordinates of the unit square will be outside of NDC.
-            Vec2::new(-50.0, 200.0),
             Vec2::new(-50.0, 0.0),
-            Vec2::new(150.0, 200.0),
+            Vec2::new(-50.0, 200.0),
             Vec2::new(150.0, 0.0),
+            Vec2::new(150.0, 200.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -489,10 +495,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(-50.0, 150.0),
             Vec2::new(-50.0, -50.0),
-            Vec2::new(150.0, 150.0),
+            Vec2::new(-50.0, 150.0),
             Vec2::new(150.0, -50.0),
+            Vec2::new(150.0, 150.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -547,10 +553,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(-150.0, 250.0),
             Vec2::new(-150.0, -150.0),
-            Vec2::new(250.0, 250.0),
+            Vec2::new(-150.0, 250.0),
             Vec2::new(250.0, -150.0),
+            Vec2::new(250.0, 250.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -605,10 +611,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(25.0, 75.0),
             Vec2::new(25.0, 25.0),
-            Vec2::new(75.0, 75.0),
+            Vec2::new(25.0, 75.0),
             Vec2::new(75.0, 25.0),
+            Vec2::new(75.0, 75.0),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
@@ -663,10 +669,10 @@ mod tests {
 
         // These are in pixel space relative to the layer dimensions.
         let expected_points_ndc = vec![
-            Vec2::new(37.5, 62.5),
             Vec2::new(37.5, 37.5),
-            Vec2::new(62.5, 62.5),
+            Vec2::new(37.5, 62.5),
             Vec2::new(62.5, 37.5),
+            Vec2::new(62.5, 62.5),
         ];
 
         let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
