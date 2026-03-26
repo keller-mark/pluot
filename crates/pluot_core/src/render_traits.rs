@@ -8,6 +8,58 @@ use crate::params::LayerParams;
 use crate::registry::get_layer_from_registry;
 use serde::{Deserialize, Serialize};
 
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CategoricalColormap {
+    // Reference: https://vega.github.io/vega/docs/schemes/
+    Accent,
+    Category10,
+    Category20,
+    Category20b,
+    Category20c,
+    Observable10,
+    Dark2,
+    Paired,
+    Pastel1,
+    Pastel2,
+    Set1,
+    Set2,
+    Set3,
+    Tableau10,
+    Tableau20,
+}
+
+// TODO: a special "Custom" categorical colormap type accompanied by a list of RGB values per item?
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum QuantitativeColormap {
+    // Reference: https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/colormaps.in.glsl
+    Plasma,
+    Viridis,
+    Greys,
+    Magma,
+    Jet,
+    Bone,
+    Copper,
+    Density,
+    Inferno,
+    Cool,
+    Hot,
+    Spring,
+    Summer,
+    Autumn,
+    Winter,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ColorParam {
+    // TODO: support an interleaved variant of RgbVec?
+    RgbVec(Vec<u8>, Vec<u8>, Vec<u8>),
+    RgbValue(u8, u8, u8),
+    CategoricalVec(Vec<i32>, CategoricalColormap),
+    QuantitativeVec(Vec<f32>, QuantitativeColormap),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioMode {
     /*

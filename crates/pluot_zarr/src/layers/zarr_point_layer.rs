@@ -13,11 +13,23 @@ use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams, ColorParam, CategoricalColormap, QuantitativeColormap};
 use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_draw_point_layer, base_draw_point_layer_svg};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
+
+
+// TODO: move this type to a more common file and share among other zarr layers.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ZarrColorParam {
+    // TODO: support an interleaved variant of RgbVec?
+    RgbVec(String, String, String),
+    RgbValue(u8, u8, u8),
+    CategoricalVec(String, CategoricalColormap),
+    QuantitativeVec(String, QuantitativeColormap),
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrPointLayerParams {
@@ -31,9 +43,9 @@ pub struct ZarrPointLayerParams {
 
     // Data keys
     pub store_name: Option<String>,
-    pub x_key: String,
-    pub y_key: String,
-    pub color_key: Option<String>,
+    pub position_x: String,
+    pub position_y: String,
+    pub fill_color: ZarrColorParam,
 }
 
 // TODO: defaults for params?

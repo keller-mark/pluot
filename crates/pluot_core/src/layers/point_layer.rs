@@ -8,7 +8,7 @@ use std::sync::{Arc};
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{CategoricalColormap, ColorParam, QuantitativeColormap, AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
@@ -26,20 +26,28 @@ pub enum PointShapeMode {
     Circle,
 }
 
+
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
     pub data_unit_mode: UnitsMode,
-    pub point_radius: f32,
     pub point_radius_unit_mode: UnitsMode,
     pub point_shape_mode: PointShapeMode,
 
-    pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
+    // TODO: generalize to other numeric dtypes? Use NumericData from bitmapLayer, or a different approach?
+    pub position_x: Arc<Vec<f32>>,
     pub position_y: Arc<Vec<f32>>,
+
+    // TODO: support either a single value OR one value per data point
+    // TODO: generalize to other numeric dtypes.
+    pub point_radius: f32,
+
     // TODO: improve naming here
-    pub labels_vec: Arc<Vec<i32>>,
+    pub fill_color: Arc<ColorParam>,
+    pub stroke_color: Arc<ColorParam>,
 }
 
 // TODO: defaults for params?
@@ -96,12 +104,52 @@ struct PointLayerUniforms {
     color: Vec4,         // rgba color for points
 }
 
+fn to_categorical_colormap_index(colormap: &CategoricalColormap) -> i32 {
+    // Must be kept in sync with shader logic.
+    match colormap {
+        CategoricalColormap::Accent => 0,
+        CategoricalColormap::Category10 => 1,
+        CategoricalColormap::Category20 => 2,
+        CategoricalColormap::Category20b => 3,
+        CategoricalColormap::Category20c => 4,
+        CategoricalColormap::Observable10 => 5,
+        CategoricalColormap::Dark2 => 6,
+        CategoricalColormap::Paired => 7,
+        CategoricalColormap::Pastel1 => 8,
+        CategoricalColormap::Pastel2 => 9,
+        CategoricalColormap::Set1 => 10,
+        CategoricalColormap::Set2 => 11,
+        CategoricalColormap::Set3 => 12,
+        CategoricalColormap::Tableau10 => 13,
+        CategoricalColormap::Tableau20 => 14,
+    }
+}
+
+fn to_quantitative_colormap_index(colormap: &QuantitativeColormap) -> i32 {
+    // Must be kept in sync with shader logic.
+    match colormap {
+        QuantitativeColormap::Plasma => 0,
+        QuantitativeColormap::Viridis => 1,
+        QuantitativeColormap::Greys => 2,
+        QuantitativeColormap::Magma => 3,
+        QuantitativeColormap::Jet => 4,
+        QuantitativeColormap::Bone => 5,
+        QuantitativeColormap::Copper => 6,
+        QuantitativeColormap::Density => 7,
+        QuantitativeColormap::Inferno => 8,
+        QuantitativeColormap::Cool => 9,
+        QuantitativeColormap::Hot => 10,
+        QuantitativeColormap::Spring => 11,
+        QuantitativeColormap::Summer => 12,
+        QuantitativeColormap::Autumn => 13,
+        QuantitativeColormap::Winter => 14,
+    }
+}
+
 // We extract this function for reuse in derived scatterplot layers (e.g., ZarrPointLayer).
 // TODO: is this the best way to share this logic?
 // See https://www.youtube.com/watch?v=Phk0C-kLlho
 // See https://github.com/linebender/xilem/blob/main/xilem_core/src/views/any_view.rs
-
-// TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
 pub async fn base_draw_point_layer(
     gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
@@ -116,11 +164,20 @@ pub async fn base_draw_point_layer(
     let y_bytes = bytemuck::cast_slice(&layer_params.position_y);
 
     // More efficient version that eliminates intermediate vectors and redundant operations
-    let n = layer_params.labels_vec.len();
+    let n = layer_params.position_x.len();
 
     // Convert to f32 and cast to bytes directly - no for loop needed
     //let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
+
+    let (fill_color_mode, fill_color_bytes, colormap_index): (u8, Vec<u8>, i32) = match layer_params.fill_color.as_ref() {
+        ColorParam::RgbValue(r, g, b) => (0, vec![*r, *g, *b], -1),
+        // TODO: Is this memory-efficient?
+        ColorParam::RgbVec(r_vec, g_vec, b_vec) => (1, [r_vec.as_slice(), g_vec.as_slice(), b_vec.as_slice()].concat(), -1),
+        ColorParam::CategoricalVec(labels, colormap) => (2, bytemuck::cast_slice(labels.as_slice()).to_vec(), to_categorical_colormap_index(colormap)),
+        ColorParam::QuantitativeVec(values, colormap) => (3, bytemuck::cast_slice(values.as_slice()).to_vec(), to_quantitative_colormap_index(colormap)),
+    };
+
+    // TODO: need to pass fill_color_mode and colormap_index to shader. Need to handle the different coloring options in shader as well.
 
     // TODO: can more of this be memoized/cached?
     // Which parts need to be re-executed every draw call? Which parts have high overhead?
@@ -144,11 +201,11 @@ pub async fn base_draw_point_layer(
 
     let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Class labels Storage Buffer"),
-        size: labels_bytes.len() as u64,
+        size: fill_color_bytes.len() as u64,
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+    queue.write_buffer(&labels_buffer, 0, &fill_color_bytes);
 
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
@@ -415,7 +472,7 @@ pub fn base_draw_point_layer_svg(
     layer_params: &PointLayerParams,
 ) -> Vec<TwoElement> {
     // Iterate over the data points and create SVG elements.
-    let n = layer_params.labels_vec.len();
+    let n = layer_params.position_x.len();
 
     // TODO: reduce code reuse here
     let camera_view = view_params.camera_view.unwrap_or([
@@ -538,7 +595,7 @@ impl PickableLayer for PointLayer {
             return None;
         };
 
-        let n = self.layer_params.labels_vec.len();
+        let n = self.layer_params.position_x.len();
         if n == 0 {
             return None;
         }
@@ -558,7 +615,7 @@ impl PickableLayer for PointLayer {
 
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
+        //info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
         info.insert("x".to_string(), self.layer_params.position_x[closest_idx].to_string());
         info.insert("y".to_string(), self.layer_params.position_y[closest_idx].to_string());
 
