@@ -4,7 +4,7 @@ mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
 use pluot_core::params::{RenderParams, PlotParams, LayerParams, LayeredPlotRenderParams};
-use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams, ColorParam, CategoricalColormap, QuantitativeColormap};
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -29,7 +29,8 @@ fn corner_points_data() -> PointLayerParams {
         point_shape_mode: PointShapeMode::Square,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
-        labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        fill_color: Arc::new(ColorParam::CategoricalVec(vec![0, 1, 2, 3], CategoricalColormap::Category10)),
+        stroke_color: Arc::new(ColorParam::RgbValue(0, 0, 0)),
     }
 }
 
@@ -44,7 +45,8 @@ fn corner_points_pixels() -> PointLayerParams {
         point_shape_mode: PointShapeMode::Square,
         position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
-        labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        fill_color: Arc::new(ColorParam::CategoricalVec(vec![0, 1, 2, 3], CategoricalColormap::Category10)),
+        stroke_color: Arc::new(ColorParam::RgbValue(0, 0, 0)),
     }
 }
 
