@@ -40,6 +40,13 @@ keywords = []
 unused = "allow"
 non_snake_case = "allow"
 
+[workspace.lints.clippy]
+needless_return = "allow"
+to_string_trait_impl = "allow"
+neg_multiply = "allow"
+let_and_return = "allow"
+type_complexity = "allow"
+
 
 [workspace.dependencies]
 inventory = "0.3.21"
