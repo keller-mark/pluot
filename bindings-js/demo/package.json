@@ -23,5 +23,5 @@
     "@types/react": "^19.2.14",
     "serve-static": "^2.2.0"
   },
-  "keywords": [],
+  "keywords": []
 }
