@@ -200,27 +200,10 @@ cargo test --features lacks_gpu
 
 ## Inspired by
 
-This work has been informed by my experiences in contributing to the following projects:
+This work has been informed by my experiences in contributing to projects including [vitessce](https://github.com/vitessce/vitessce), [use-coordination](https://github.com/keller-mark/use-coordination), [viv](https://github.com/hms-dbmi/viv), [cistrome-explorer](https://github.com/hms-dbmi/cistrome-explorer), [deck-to-svg](https://github.com/keller-mark/deck-to-svg), [higlass](https://github.com/higlass/higlass), [vueplotlib](https://github.com/keller-mark/vueplotlib), and [easy_vitessce](https://github.com/vitessce/easy_vitessce).
 
-- https://github.com/vitessce/vitessce
-- https://github.com/keller-mark/use-coordination
-- https://github.com/hms-dbmi/viv
-- https://github.com/hms-dbmi/cistrome-explorer
-- https://github.com/keller-mark/deck-to-svg
-- https://github.com/higlass/higlass
-- https://github.com/keller-mark/vueplotlib
-- https://github.com/vitessce/easy_vitessce
 
-and has also been inspired by the following projects:
-
-- https://github.com/visgl/deck.gl
-- https://github.com/UnfoldedInc/deck.gl-native
-- https://github.com/observablehq/plot
-- https://github.com/flekschas/jupyter-scatter
-- https://github.com/gosling-lang/gosling.js
-- https://github.com/scverse/napari-spatialdata
-- https://github.com/scverse/spatialdata-plot
-- https://github.com/scverse/scanpy
+It is also inspired by many other projects such as [deck.gl](https://github.com/visgl/deck.gl), [deck.gl-native](https://github.com/UnfoldedInc/deck.gl-native), [observable plot](https://github.com/observablehq/plot), [jupyter-scatter](https://github.com/flekschas/jupyter-scatter), [gosling](https://github.com/gosling-lang/gosling.js), [napari-spatialdata](https://github.com/scverse/napari-spatialdata), [spatialdata-plot](https://github.com/scverse/spatialdata-plot), and [scanpy](https://github.com/scverse/scanpy).
 
 ## Related work
 
