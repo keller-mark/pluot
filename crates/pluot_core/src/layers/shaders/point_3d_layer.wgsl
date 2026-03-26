@@ -119,6 +119,8 @@ fn fs_main(
 ) -> FSOut {
 
     // Handling of circle point shape mode
+    // Anti-aliased circle using linearstep, based on https://github.com/flekschas/regl-scatterplot/blob/main/src/point.fs
+    // Reference: https://github.com/flekschas/regl-scatterplot/blob/90f0c951233b20bebd4fd1cb15ce1c4128ce9edf/src/constants.js#L175
     var alpha = 1.0;
     if(u.point_shape_mode == 1u) {
         let dist = length(corner);
