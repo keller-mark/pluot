@@ -73,23 +73,20 @@ To support similar interactions in a desktop application context, analogous inte
 <Aside type="tip" title="Another way to think about it">With its headless plotting architecture, interactive plotting can be considered similar to the React model of re-renders upon state changes, with memoization and caching strategies that check dependencies.</Aside>
 
 
-### Timeouts
+### Partial rendering (while awaiting data)
 
 As previously noted, we are often plotting data that is stored remotely, requiring network requests to retreive the data prior to rendering it in a visualization.
 We must account for slow network connections and request failures.
-Pluot handles this with a `timeout` parameter that is passed to the plot rendering function.
+Pluot has two mechanisms to handle this:  `wait_for_data` (bool) and `timeout` (Option<int>) parameters that are passed to the plot rendering function.
 
 
-Recall that Pluot is designed to work in both static and interactive plotting scenarios.
 When creating static plots, we often want to wait for all data to be received prior to plot rendering.
 This differs from interactive scenarios, in which we often want to render visualizations incrementally, so that the user begins to see a subset of data while the rest is still loading.
 In interactive scenarios, we can set `timeout` to a small value such as `100ms`, after which Pluot will return some pixels regardless of whether all data has been received.
-These returned pixels will be accompanied by a flag to indicate to the caller whether the visualization is complete or not.
+Alternatively, if `wait_for_data` is `true`, the timeout will be ignored: instead, Pluot will treat async data-loading operations as synchronous (if the Promise/Future has not already resolved, then we proceed to rendering without waiting at all).
+In both cases, the returned pixels will be accompanied by a flag to indicate to the caller whether the visualization is complete or not.
 (How to use this flag value is up to the caller, for instance, to show a loading indicator.)
 In the latter case, the caller can wait an animation frame and call the plot rendering function again.
-
-<Aside type="note" title="Note">This timeout mechanism is an implementation detail that is subject to change; we are exploring alternative approaches to rendering-while-loading-data.</Aside>
-
 
 ### Coordinated Multiple Views
 
