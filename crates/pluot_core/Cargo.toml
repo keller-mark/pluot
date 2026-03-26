@@ -4,11 +4,12 @@ description = "Internal core crate"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-#license.workspace = true
+license-file.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
-exclude = ["tests"]
+exclude = ["pkg", "tests"]
 categories = []
 keywords = []
 

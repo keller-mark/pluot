@@ -4,13 +4,14 @@ description = "Plotting library designed for usage from Rust, Python, and JavaSc
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-#license.workspace = true
+license-file.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 
 exclude = ["pkg", "tests"]
-categories = ["visualization", "graphics", "rendering", "science", "wasm"]
-keywords = []
+categories.workspace = true
+keywords.workspace = true
 
 [lib]
 name = "pluot"

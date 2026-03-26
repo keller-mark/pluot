@@ -1,8 +1,9 @@
 {
   "name": "demo",
   "private": true,
-  "version": "1.0.26",
-  "description": "",
+  "version": "0.0.1",
+  "author": "Mark Keller",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -23,6 +24,4 @@
     "serve-static": "^2.2.0"
   },
   "keywords": [],
-  "author": "",
-  "license": ""
 }
