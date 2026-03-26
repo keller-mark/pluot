@@ -8,6 +8,7 @@ wasm-pack.log
 .DS_Store
 node_modules/
 
+crates/LICENSE
 dist/
 dist-tsc/
 tsconfig.tsbuildinfo
