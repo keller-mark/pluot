@@ -132,6 +132,7 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                     // Or change layer_id to group_id,
                     // and the caller can handle "{layer_type}_{layer_id}" concatenation.
                     let preferred = d.layer_id.as_ref().map(|id| format!("{}_clip_path", id));
+                    // Generate unique IDs if multiple clip paths are needed. Keep track of used ids.
                     let (clip_path_id, is_new) =
                         ctx.get_or_create_clip_path_id(clip_rect, preferred);
 
@@ -149,11 +150,11 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                         ctx.clip_paths.push(clip_path);
                     }
 
+                    // TODO: does it matter if the clipPath is inserted into a translated group?
                     sub_group =
                         sub_group.set("clip-path", format!("url(#{})", clip_path_id));
                 }
 
-                // Recurse — share clip-path state with the child context.
                 let mut sub_ctx = SvgContext {
                     document: ctx.document.clone(),
                     group: sub_group,
@@ -161,6 +162,7 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                     next_clip_id: ctx.next_clip_id,
                     clip_paths: std::mem::take(&mut ctx.clip_paths),
                 };
+                // Recursion.
                 update_svg(&mut sub_ctx, &d.elements);
                 ctx.clip_path_ids = sub_ctx.clip_path_ids;
                 ctx.next_clip_id = sub_ctx.next_clip_id;

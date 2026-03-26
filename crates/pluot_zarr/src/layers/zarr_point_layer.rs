@@ -153,6 +153,7 @@ impl PreparedLayer for ZarrPointLayer {
                     (Ok(x), Ok(y), Ok(l)) => (x, y, l),
                     (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
                         if is_timed_out_zarrs_error(&e) {
+                            // TODO: still render something in this case?
                             return PrepareResult { bailed_early: true };
                         } else {
                             panic!("Zarrs error during ZarrPointLayer prepare: {:?}", e);

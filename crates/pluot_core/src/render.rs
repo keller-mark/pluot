@@ -66,36 +66,58 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         GraphicsFormat::Vector => {
             let (ctx, _render_result) = draw_layers_to_vector(&view_params, &mut layers, gpu_context.as_ref()).await;
 
+            // Return the SVG string as bytes.
             let svg_string = ctx.to_svg_string(params.svg_include_document);
 
+            // If compression is not enabled, return the SVG string bytes.
             if !params.svg_compression_enabled {
                 return svg_string.as_bytes().to_vec();
             }
+            // If compression is enabled, use lz-string before returning the Uint8Array.
             return lz_str::compress_to_uint8_array(&svg_string);
         }
         GraphicsFormat::Raster => {
             // TODO: allow for CPU raster rendering if GPU isn't available or if compute_backend is CPU.
 
             let gpu_context = gpu_context.expect("GPU context should be available for raster rendering");
+
+
+            // Create a texture to render to.
             let texture_desc = TextureDescriptor {
+                // Debug label of the texture. This will show up in graphics debuggers for easy identification.
                 label: Some("Final Render Texture"),
+                // Size of the texture. All components must be greater than zero.
+                // For a regular 1D/2D texture, the unused sizes will be 1.
+                // For 2DArray textures, Z is the number of 2D textures in that array.
                 size: Extent3d {
                     width,
                     height,
                     depth_or_array_layers: 1,
                 },
+                // Mip count of texture. For a texture with no extra mips, this must be 1.
                 mip_level_count: 1,
+                // Sample count of texture. If this is not 1, texture must have [BindingType::Texture::multisampled] set to true.
                 sample_count: 1,
+                // Dimensions of the texture.
                 dimension: wgpu::TextureDimension::D2,
+                // Format of the texture.
+                // If using vello: Must use a non-sRGB UNORM format for Vello offscreen rendering.
+                // Vello also requires TextureUsages::STORAGE_BINDING, which requires Rgba8Unorm (incompatible with Rgba8UnormSrgb format)
+                // If using vger: Use Rgba8UnormSrgb.
                 format: TextureFormat::Rgba8UnormSrgb,
+                // Allowed usages of the texture. If used in other ways, the operation will panic.
                 usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+                // Specifies what view formats will be allowed when calling Texture::create_view on this texture.
+                // View formats of the same format as the texture are always allowed.
+                // Note: currently, only the srgb-ness is allowed to change. (ex: Rgba8Unorm texture + Rgba8UnormSrgb view)
                 view_formats: &[],
             };
             let texture = gpu_context.device.create_texture(&texture_desc);
 
+            // Create a buffer to store the output (RGBA8)
             let bytes_per_pixel: u32 = 4;
             let unpadded_bytes_per_row = width * bytes_per_pixel;
-            let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+            let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
             let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
             let output_buffer_size = (padded_bytes_per_row as u64) * (height as u64);
 
@@ -118,13 +140,16 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 &texture,
             ).await;
 
+            // Copy the texture to the output buffer.
             encoder.copy_texture_to_buffer(
                 texture.as_image_copy(),
                 wgpu::TexelCopyBufferInfo {
                     buffer: &output_buffer,
                     layout: wgpu::TexelCopyBufferLayout {
                         offset: 0,
+                        // Must be 256-byte aligned on WebGPU
                         bytes_per_row: Some(padded_bytes_per_row),
+                        //rows_per_image: Some(height),
                         rows_per_image: None,
                     },
                 },
@@ -133,6 +158,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
             gpu_context.queue.submit(Some(encoder.finish()));
 
+            // Map and await completion without blocking the browser thread
             let buffer_slice = output_buffer.slice(..);
 
             #[cfg(target_arch = "wasm32")]
@@ -158,6 +184,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 let _ = gpu_context.device.poll(wgpu::PollType::wait_indefinitely());
             }
 
+            // Read and depad rows into a tightly packed RGBA buffer
             let data = buffer_slice.get_mapped_range();
 
             let num_extra_bytes = 1;
@@ -174,7 +201,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             let mut bailed_early = prepare_bailed_early;
             bailed_early = bailed_early || render_result.bailed_early;
 
-            // Final byte encodes the RenderResult for the caller.
+            // Add final byte to provide the RenderResult values to the caller.
             pixels[(unpadded_bytes_per_row * height) as usize] = match bailed_early {
                 false => 0,
                 true => 1,

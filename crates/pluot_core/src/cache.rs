@@ -33,6 +33,15 @@ thread_local! {
 }
 
 async fn init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
+    // The Instance is the context for all other wgpu objects.
+    // This is the first thing you create when using wgpu.
+    // Its primary use is to create Adapters and Surfaces.
+    // Does not have to be kept alive.
+
+    // The InstanceDescriptor has fields for which backends wgpu will choose during instantiation,
+    // and which DX12 shader compiler wgpu will use.
+
+    
     // Apparently this is expensive, so we try to cache it in the get_or_init_gpu_context function.
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     // We can try to enable WebGL fallback here, but it is not working,
