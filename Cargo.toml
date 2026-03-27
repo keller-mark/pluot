@@ -68,7 +68,7 @@ serde = { version = "1.0.x", features = ["derive", "rc"] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 svg = "0.18.0"
-futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "c61a0dd" }
+futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "506d7bf" }
 
 # For OME-Zarr image metadata parsing.
 # We use this fork which relaxes things by not using serde(deny_unknown_fields).
