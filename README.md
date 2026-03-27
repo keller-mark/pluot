@@ -190,13 +190,29 @@ uv run jupyter lab --notebook-dir bindings-python/notebooks
 cargo build
 ```
 
-Run tests:
+### Run tests
 
 ```sh
 cargo test
 # or
 cargo test --features lacks_gpu
 ```
+
+### Lint with clippy
+
+```sh
+cargo clippy
+cargo clippy --fix
+```
+
+### Generate crate docs locally
+
+```sh
+cargo doc --no-deps
+open target/doc/pluot/index.html
+```
+
+
 
 ## Inspired by
 
