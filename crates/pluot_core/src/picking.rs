@@ -63,7 +63,7 @@ pub async fn pick(params: RenderParams, screen_coord: ScreenCoord) -> PickingRes
             get_or_init_gpu_context().await
                 .expect("No suitable GPU adapters found on the system!")
         );
-    } else if params.render_backend == None || params.compute_backend == None {
+    } else if params.render_backend.is_none() || params.compute_backend.is_none() {
         // Backend not specified: try GPU, then fall back to CPU gracefully without panicking.
         owned_gpu_context = get_or_init_gpu_context().await;
     } else {
@@ -81,15 +81,15 @@ pub async fn pick(params: RenderParams, screen_coord: ScreenCoord) -> PickingRes
     let prepare_results = futures::future::join_all(prepare_futures).await;
     // let prepare_bailed_early = prepare_results.iter().any(|r| r.bailed_early);
 
-    let data_coord = unproject(&view_params, None, screen_coord.clone());
+    let data_coord = unproject(&view_params, None, screen_coord);
 
     let layer_results: Vec<LayerPickingResult> = layers.iter_mut()
-        .filter_map(|layer| layer.pick(screen_coord.clone(), data_coord.clone()))
+        .filter_map(|layer| layer.pick(screen_coord, data_coord))
         .collect();
 
     return PickingResult {
-        data_coord: data_coord,
-        screen_coord: screen_coord,
+        data_coord,
+        screen_coord,
         layer_results,
     };
 }

@@ -314,7 +314,7 @@ impl Scaleable<String, f64> for ScaleBand {
     /// Maps a domain value to its corresponding range position.
     /// Returns `None` if the value is not in the domain.
     fn scale(&self, value: &String) -> f64 {
-        self.range_map.get(value).unwrap().clone()
+        *self.range_map.get(value).unwrap()
     }
 }
 
@@ -434,7 +434,7 @@ pub fn tick_format(
     let step = tick_step(start, stop, count);
     let specifier = specifier.unwrap_or(",f");
     let precision = if let Some(idx) = specifier.find('.') {
-        if let Some(end) = specifier[idx + 1..].chars().find(|c| !c.is_digit(10)) {
+        if let Some(end) = specifier[idx + 1..].chars().find(|c| !c.is_ascii_digit()) {
             specifier[idx + 1..specifier.len() - end.len_utf8()]
                 .parse::<usize>()
                 .unwrap_or(0)

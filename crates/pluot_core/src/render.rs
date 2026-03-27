@@ -44,7 +44,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             get_or_init_gpu_context().await
                 .expect("No suitable GPU adapters found on the system!")
         );
-    } else if params.render_backend == None || params.compute_backend == None {
+    } else if params.render_backend.is_none() || params.compute_backend.is_none() {
         // Backend not specified: try GPU, then fall back to CPU gracefully without panicking.
         owned_gpu_context = get_or_init_gpu_context().await;
     } else {
@@ -118,7 +118,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             let bytes_per_pixel: u32 = 4;
             let unpadded_bytes_per_row = width * bytes_per_pixel;
             let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // 256
-            let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
+            let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
             let output_buffer_size = (padded_bytes_per_row as u64) * (height as u64);
 
             let output_buffer = gpu_context.device.create_buffer(&wgpu::BufferDescriptor {

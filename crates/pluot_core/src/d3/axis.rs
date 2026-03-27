@@ -146,7 +146,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
 
         // Ticks
         for value in values {
-            let position = scale.scale(&value) as f64 + self.offset;
+            let position = scale.scale(&value) + self.offset;
 
             // Tick line
             let (x1, y1, x2, y2) = match self.orient {

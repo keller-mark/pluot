@@ -40,7 +40,7 @@ impl CompositeLayer {
         let sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = layer_params.sub_layers
             .iter()
             .map(|layer_param| {
-                get_layer(&layer_param, &view_params)
+                get_layer(layer_param, &view_params)
             })
             .collect();
 

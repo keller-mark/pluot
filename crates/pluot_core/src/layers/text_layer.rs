@@ -36,7 +36,7 @@ struct FontAtlasCache {
 }
 
 thread_local! {
-    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = RefCell::new(None);
+    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = const { RefCell::new(None) };
 }
 
 fn get_or_init_font_atlas() -> FontAtlasCache {
@@ -241,7 +241,7 @@ impl PreparedLayer for TextLayer {
             for text_str in self.layer_params.text_vec.iter() {
                 layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(&text_str, font_size as f32, 0),
+                    &TextStyle::new(text_str, font_size, 0),
                 );
             }
 
@@ -298,14 +298,14 @@ impl PreparedLayer for TextLayer {
                 // Text width is in pixel units.
                 let text_width = measure_text_width(
                     &font_atlas.font,
-                    &text_str,
-                    font_size as f32,
+                    text_str,
+                    font_size,
                 );
 
                 // Calculate offset based on alignment and baseline.
                 // These offsets are in pixel units.
                 let (offset_x, offset_y) = calculate_text_position(
-                    font_size as f32,
+                    font_size,
                     text_align_mode,
                     text_baseline_mode,
                     text_width
@@ -320,7 +320,7 @@ impl PreparedLayer for TextLayer {
                 });
                 element_layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(&text_str, font_size as f32, 0),
+                    &TextStyle::new(text_str, font_size, 0),
                 );
 
                 let element_glyphs = element_layout.glyphs();
@@ -333,8 +333,8 @@ impl PreparedLayer for TextLayer {
                     let (m, bmp) = &rasters[total_instances as usize + i];
 
                     // Actual bitmap dimensions
-                    let gw = m.width.max(0) as usize;
-                    let gh = m.height.max(0) as usize;
+                    let gw = m.width.max(0);
+                    let gh = m.height.max(0);
 
                     // Copy bitmap into atlas with padding offset
                     if gw > 0 && gh > 0 {
@@ -352,8 +352,8 @@ impl PreparedLayer for TextLayer {
                     // Compute screen-space rect for this glyph
                     // TODO: update this logic so that the rect is in whatever data_units_mode is?
                     // (ensure the text measurement is happening in the correct units too).
-                    let x_px = offset_x + g.x as f32;
-                    let y_px = offset_y + g.y as f32;
+                    let x_px = offset_x + g.x;
+                    let y_px = offset_y + g.y;
                     let w_px = g.width as f32;
                     let h_px: f32 = g.height as f32;
 
@@ -492,7 +492,7 @@ pub async fn base_draw_text_layer(
 
     queue.write_texture(
         atlas_tex.as_image_copy(),
-        &atlas,
+        atlas,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(atlas_width as u32),
@@ -521,7 +521,7 @@ pub async fn base_draw_text_layer(
     let instance_buffer = device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Text Instances"),
-            contents: bytemuck::cast_slice(&all_instance_data),
+            contents: bytemuck::cast_slice(all_instance_data),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -738,7 +738,7 @@ impl DrawToRasterGpu for TextLayer {
             gpu_context, pass,
             &self.view_params,
             &self.layer_params,
-            &internal_data,
+            internal_data,
         ).await;
     }
 }
