@@ -65,6 +65,8 @@ pub enum ViewMode {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerParams {
     pub layer_type: String,
+    // TODO: figure out how to enable this value to be type-checked
+    // when used within Rust code.
     pub layer_params: serde_json::Value,
 }
 
@@ -84,7 +86,7 @@ pub enum PlotParams {
     LayeredPlot(LayeredPlotRenderParams),
 }
 
-/// The params that are passed to the [`render`] function.
+/// The params that are passed to the [`crate::render::render`] function.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParams {
     /// The width of the plot, in pixels.
