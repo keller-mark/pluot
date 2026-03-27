@@ -91,7 +91,7 @@ pub fn is_timed_out_zarrs_error(err: &zarrs::array::ArrayError) -> bool {
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/store_test.rs#L238
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_object_store/src/lib.rs
 
-/// An asynchronous store backed by an [`object_store::ObjectStore`].
+/// An asynchronous store that calls bound functions.
 pub struct AsyncZarritaStore {
     store_name: String,
     wait_for_store_gets: bool,

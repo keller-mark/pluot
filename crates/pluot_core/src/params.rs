@@ -53,8 +53,8 @@ pub enum ViewMode {
     // Reference: https://github.com/mikolalysenko/3d-view
 }
 
-/// Layer parameters in their raw serde Value form,
-/// prior to being decoded into their layer-specific enum types.
+/// Layer parameters in their raw serde Value form.
+///
 /// Each layer type is identified by its `layer_type` string,
 /// and the `layer_params` field holds the layer-specific parameters as
 /// an opaque JSON value.
@@ -84,7 +84,7 @@ pub enum PlotParams {
     LayeredPlot(LayeredPlotRenderParams),
 }
 
-/// The params that are passed to the render() function.
+/// The params that are passed to the [`render`] function.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParams {
     /// The width of the plot, in pixels.
@@ -143,7 +143,8 @@ pub struct RenderParams {
     /// Whether to compress the SVG string using LZ-string if the output format is Vector.
     pub svg_compression_enabled: bool,
 
-    /// Whether to include the parent <svg> document tag, versus only the inner <g> group/contents.
+    /// Whether to include the parent `<svg>` document tag,
+    /// versus only the inner `<g>` group/contents.
     pub svg_include_document: bool,
 
     // TODO: make non-optional
