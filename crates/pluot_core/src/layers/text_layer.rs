@@ -867,6 +867,7 @@ impl DrawToSvg for TextLayer {
     }
 }
 
+/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "TextLayer",
@@ -876,5 +877,6 @@ inventory::submit! {
         },
     }
 }
+*/
 
 impl PickableLayer for TextLayer {}

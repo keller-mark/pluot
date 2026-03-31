@@ -359,6 +359,7 @@ impl DrawToSvg for Point3dLayer {
     }
 }
 
+/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "Point3dLayer",
@@ -368,6 +369,7 @@ inventory::submit! {
         },
     }
 }
+*/
 
 impl PickableLayer for Point3dLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

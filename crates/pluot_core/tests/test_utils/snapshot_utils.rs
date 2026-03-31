@@ -4,7 +4,7 @@ use kompari::color::Rgba8;
 use kompari::{compare_images, load_image, ImageDifference, MinImage};
 
 use pluot_core::params::{RenderParams, GraphicsFormat};
-use pluot_core::bindings::plain_rust::{render};
+use pluot_core::bindings_from::plain_rust::{render};
 
 fn snapshots_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

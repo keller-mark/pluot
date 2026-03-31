@@ -9,10 +9,8 @@ use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::SvgContext;
 use crate::positioning::get_point_position;
-use crate::params::{LayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
-use crate::render_traits::get_layer;
 use crate::compute::example::compute_example_with_memo;
 
 
@@ -137,6 +135,7 @@ impl DrawToSvg for ComputeLayer {
     }
 }
 
+/*
 inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "ComputeLayer",
@@ -146,5 +145,6 @@ inventory::submit! {
         },
     }
 }
+*/
 
 impl PickableLayer for ComputeLayer {}

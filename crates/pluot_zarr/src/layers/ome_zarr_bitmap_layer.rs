@@ -4,6 +4,8 @@ use futures_time::future::FutureExt;
 use futures_time::time::Duration;
 use pluot_core::maybe_timeout;
 
+use serde::{Deserialize, Serialize};
+
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
@@ -22,6 +24,7 @@ use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSet
 use pluot_core::layers::multiscale_utils::to_y_slice;
 
 /// Parameters for constructing an `OmeZarrBitmapLayer`.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrBitmapLayerParams {
     /// Zarr store name. Falls back to view_params.store_name if None.
     pub store_name: Option<String>,

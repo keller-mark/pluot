@@ -4,7 +4,6 @@ use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
-use crate::params::LayerParams;
 use crate::registry::get_layer_from_registry;
 use serde::{Deserialize, Serialize};
 
@@ -158,7 +157,7 @@ pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToR
 impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + MaybeSend + MaybeSync> PreparedAndDraw for T {}
 
 
-
+/*
 pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dyn PreparedAndDraw> {
     get_layer_from_registry(&layer_params.layer_type, layer_params.layer_params.clone(), view_params)
 }
@@ -169,6 +168,7 @@ pub fn get_layers(layers: &[LayerParams], view_params: &ViewParams) -> Vec<Box<d
         get_layer(layer_params, view_params)
     }).collect()
 }
+*/
 
 pub async fn draw_layers_to_vector(
     view_params: &ViewParams,

@@ -1,10 +1,10 @@
-pub mod bindings;
+pub mod bindings_from;
 pub mod d3;
 pub mod params;
 pub mod render_types;
 pub mod cache;
 pub mod render_traits;
-mod render;
+//mod render;
 mod positioning;
 pub mod viewport;
 mod picking;
@@ -27,30 +27,31 @@ pub mod maybe;
 pub use wgpu;
 
 // Export things needed for layer-based plotting via Rust.
-pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
+pub use crate::params::{GraphicsFormat, ViewMode};
 pub use crate::render_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
-pub use crate::picking::{pick, PickingResult, LayerPickingResult};
+pub use crate::picking::{PickingResult, LayerPickingResult};
 pub use crate::viewport::{project, unproject, get_bounds, camera_matrix_to_zoom_and_translation};
 
 // Export things needed by workspace packages that define other layers.
 pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
 
+
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
-pub use crate::bindings::wasm::{
+pub use crate::bindings_from::wasm::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
-pub use crate::bindings::python::{
+pub use crate::bindings_from::python::{
     log_info as log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
-pub use crate::bindings::plain_rust::{
+pub use crate::bindings_from::plain_rust::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };

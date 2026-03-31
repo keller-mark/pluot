@@ -1,6 +1,11 @@
 //! `pluot` is a Rust crate that supports static and interactive visualization.
 
-mod plugins;
+mod layer_params;
+mod params;
+mod render;
+mod picking;
+mod bindings_to;
+//mod plugins;
 
 // Export things needed for layer-based plotting via Rust.
 pub use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
@@ -22,10 +27,10 @@ pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerPar
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]
-pub use pluot_core::bindings::wasm::{render_wasm, set_panic_hook};
+pub use pluot_core::bindings_from::wasm::{render_wasm, set_panic_hook};
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
-pub use pluot_core::bindings::python::{render_py};
+pub use pluot_core::bindings_from::python::{render_py};
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
-pub use pluot_core::bindings::plain_rust::{render};
+pub use pluot_core::bindings_from::plain_rust::{render};

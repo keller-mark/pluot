@@ -1,0 +1,415 @@
+pub use crate::zarr_types::ZarrPeekResult;
+
+
+// == WASM Bindings ===
+#[cfg(target_arch = "wasm32")]
+pub mod wasm {
+    use super::{ZarrPeekResult};
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen]
+    #[derive(Copy, Clone, Debug)]
+    pub enum JsZarrPeekResult {
+        // Reference: https://wasm-bindgen.github.io/wasm-bindgen/reference/types/imported-js-types.html
+        Pending = "pending",
+        Fulfilled = "fulfilled",
+        Rejected = "rejected",
+    }
+
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = console)]
+        pub fn log(s: &str);
+
+        // We need to define a `has` function, since the zarr_get_js function
+        // may return undefined, and wasm_bindgen does not allow
+        // Option<Uint8Array> as a return type annotation.
+        #[wasm_bindgen(js_name = zarr_has)]
+        async fn zarr_has_js(store_name: &str, key: &str) -> js_sys::Boolean;
+
+        #[wasm_bindgen(js_name = zarr_has_status)]
+        fn zarr_has_status_js(store_name: &str, key: &str) -> JsZarrPeekResult;
+
+        #[wasm_bindgen(js_name = zarr_get)]
+        async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_status)]
+        fn zarr_get_status_js(store_name: &str, key: &str) -> JsZarrPeekResult;
+
+        #[wasm_bindgen(js_name = zarr_get_range_from_offset)]
+        async fn zarr_get_range_from_offset_js(
+            store_name: &str,
+            key: &str,
+            offset: u32,
+            length: u32,
+        ) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_range_from_offset_status)]
+        fn zarr_get_range_from_offset_status_js(
+            store_name: &str,
+            key: &str,
+            offset: u32,
+            length: u32,
+        ) -> JsZarrPeekResult;
+
+        #[wasm_bindgen(js_name = zarr_get_range_from_end)]
+        async fn zarr_get_range_from_end_js(
+            store_name: &str,
+            key: &str,
+            suffix_length: u32,
+        ) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_range_from_end_status)]
+        fn zarr_get_range_from_end_status_js(
+            store_name: &str,
+            key: &str,
+            suffix_length: u32,
+        ) -> JsZarrPeekResult;
+    }
+
+    fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
+        // Copy data from Uint8Array into a Rust Vec<u8>
+        let mut vec = vec![0u8; u8arr.length() as usize];
+
+        // TODO: can this be done without copying?
+        // The issue is that the original Uint8Array is created via JS fetch() within zarrita fetchStore.
+
+        u8arr.copy_to(&mut vec);
+
+        // Convert Vec<u8> into Bytes
+        zarrs::storage::Bytes::from(vec)
+    }
+
+    pub async fn zarr_has(store_name: &str, key: &str) -> bool {
+        let has = zarr_has_js(store_name, key).await;
+        has.is_truthy()
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let status_js = zarr_has_status_js(store_name, key);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
+        let js_bytes = zarr_get_js(store_name, key).await;
+        convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let status_js = zarr_get_status_js(store_name, key);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> zarrs::storage::Bytes {
+        let js_bytes = zarr_get_range_from_offset_js(store_name, key, offset, length).await;
+        convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        let status_js = zarr_get_range_from_offset_status_js(store_name, key, offset, length);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
+    pub async fn zarr_get_range_from_end(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
+        let js_bytes = zarr_get_range_from_end_js(store_name, key, suffix_length).await;
+        convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        let status_js = zarr_get_range_from_end_status_js(store_name, key, suffix_length);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn set_panic_hook() {
+        // When the `console_error_panic_hook` feature is enabled, we can call the
+        // `set_panic_hook` function at least once during initialization, and then
+        // we will get better error messages if our code ever panics.
+        //
+        // For more details see
+        // https://github.com/rustwasm/console_error_panic_hook#readme
+        console_error_panic_hook::set_once();
+    }
+
+}
+
+// === Python Bindings ===
+#[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
+pub mod python {
+    use log::info;
+    use pyo3::prelude::*;
+    use pyo3::types::{PyAny, PyBytes, PyDict, PyTuple};
+    use pyo3::wrap_pyfunction;
+    use pyo3::IntoPyObject;
+    use pyo3_log::{Caching, Logger};
+    use pythonize::depythonize;
+
+    use super::{ZarrPeekResult};
+
+    #[pyfunction]
+    pub fn log_info(s: &str) {
+        info!("{}", s);
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module.call_method1("zarr_has_status", (store_name, key)).unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module.call_method1("zarr_get_status", (store_name, key)).unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module
+                .call_method1("zarr_get_range_from_offset_status", (store_name, key, offset, length))
+                .unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module
+                .call_method1("zarr_get_range_from_end_status", (store_name, key, suffix_length))
+                .unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub async fn zarr_has(store_name: &str, key: &str) -> bool {
+        // Acquire the Python GIL. This must be done for all Python interactions.
+        let py_obj = Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+
+            // Call the async function, which returns a coroutine
+            let coroutine = zarr_module
+                .call_method1("zarr_has", (store_name, key))
+                .unwrap();
+
+            // Convert the Python coroutine into a Rust future
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+
+        Python::attach(|py| py_obj.bind(py).extract::<bool>())
+            .expect("Failed to extract bool from Python object")
+    }
+
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
+        let py_obj = Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let coroutine = zarr_module
+                .call_method1("zarr_get", (store_name, key))
+                .unwrap();
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+
+        let result = Python::attach(|py| py_obj.bind(py).extract::<Vec<u8>>())
+            .expect("Failed to extract bytes from Python object");
+        zarrs::storage::Bytes::from(result)
+    }
+
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> zarrs::storage::Bytes {
+        let py_obj = Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let coroutine = zarr_module
+                .call_method1(
+                    "zarr_get_range_from_offset",
+                    (store_name, key, offset, length),
+                )
+                .unwrap();
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+
+        let result = Python::attach(|py| py_obj.bind(py).extract::<Vec<u8>>())
+            .expect("Failed to extract bytes from Python object");
+        zarrs::storage::Bytes::from(result)
+    }
+
+    pub async fn zarr_get_range_from_end(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
+        let py_obj = Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let coroutine = zarr_module
+                .call_method1("zarr_get_range_from_end", (store_name, key, suffix_length))
+                .unwrap();
+            pyo3_async_runtimes::tokio::into_future(coroutine)
+        })
+        .expect("Failed to create future")
+        .await
+        .expect("Failed to await future");
+
+        let result = Python::attach(|py| py_obj.bind(py).extract::<Vec<u8>>())
+            .expect("Failed to extract bytes from Python object");
+        zarrs::storage::Bytes::from(result)
+    }
+
+    // This function creates the Python module.
+    #[pymodule]
+    fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+        pyo3_log::init();
+        let _ = Logger::new(_py, Caching::LoggersAndLevels)?.install();
+
+        m.add_function(wrap_pyfunction!(log_info, m)?)?;
+        Ok(())
+    }
+}
+
+// === Rust-only Bindings ===
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
+pub mod plain_rust {
+    use core::panic;
+    pub use super::{ZarrPeekResult};
+
+    pub fn log(s: &str) {
+        println!("{}", s);
+    }
+
+    pub async fn zarr_has(store_name: &str, key: &str) -> bool {
+        panic!("zarr_has is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        panic!("zarr_has_status is not implemented in plain Rust mode.");
+    }
+
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
+        panic!("zarr_get is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        panic!("zarr_has_status is not implemented in plain Rust mode.");
+    }
+
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> zarrs::storage::Bytes {
+        panic!("zarr_get_range_from_offset is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        panic!("zarr_get_range_from_offset_status is not implemented in plain Rust mode.");
+    }
+
+    pub async fn zarr_get_range_from_end(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
+        panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
+    }
+}

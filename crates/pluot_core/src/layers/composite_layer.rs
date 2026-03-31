@@ -10,11 +10,10 @@ use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::SvgContext;
 use crate::positioning::get_point_position;
-use crate::params::{LayerParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
-use crate::render_traits::get_layer;
 
+/*
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
     // pub layer_id: String, // TODO: do we need a layer_id here?
@@ -51,7 +50,7 @@ impl CompositeLayer {
         }
     }
 }
-
+*/
 
 pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn PreparedAndDraw>], gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
     // TODO: use futures::join, the same as in the layer_traits::render functions.
@@ -67,6 +66,7 @@ pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn Pre
     };
 }
 
+/*
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CompositeLayer {
@@ -74,6 +74,7 @@ impl PreparedLayer for CompositeLayer {
         return base_prepare_composite_layer(&mut self.sub_layer_instances, gpu_context).await;
     }
 }
+*/
 
 // Reusable function that can be used by other composite layers: raster variant.
 pub async fn base_draw_composite_layer(
@@ -86,6 +87,7 @@ pub async fn base_draw_composite_layer(
     }
 }
 
+/*
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for CompositeLayer {
@@ -94,12 +96,13 @@ impl DrawToRasterGpu for CompositeLayer {
     }
 }
 
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterCpu for CompositeLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
-
+*/
 
 // Reusable function that can be used by other composite layers: SVG variant.
 pub async fn base_draw_composite_layer_svg(
@@ -111,7 +114,7 @@ pub async fn base_draw_composite_layer_svg(
     }
 }
 
-
+/*
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for CompositeLayer {
@@ -121,3 +124,4 @@ impl DrawToSvg for CompositeLayer {
 }
 
 impl PickableLayer for CompositeLayer {}
+*/
