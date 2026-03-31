@@ -89,7 +89,7 @@ pub async fn base_draw_point_3d_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&x_buffer, 0, &x_bytes);
+    queue.write_buffer(&x_buffer, 0, x_bytes);
 
     let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Y Coordinates Storage Buffer"),
@@ -97,7 +97,7 @@ pub async fn base_draw_point_3d_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&y_buffer, 0, &y_bytes);
+    queue.write_buffer(&y_buffer, 0, y_bytes);
 
     let z_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Z Coordinates Storage Buffer"),
@@ -105,7 +105,7 @@ pub async fn base_draw_point_3d_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&z_buffer, 0, &z_bytes);
+    queue.write_buffer(&z_buffer, 0, z_bytes);
 
     let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Class labels Storage Buffer"),
@@ -113,7 +113,7 @@ pub async fn base_draw_point_3d_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+    queue.write_buffer(&labels_buffer, 0, labels_bytes);
 
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([

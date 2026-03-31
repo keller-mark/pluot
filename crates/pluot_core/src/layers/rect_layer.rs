@@ -121,7 +121,7 @@ pub async fn base_draw_rect_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&position_x0_buffer, 0, &position_x0_bytes);
+    queue.write_buffer(&position_x0_buffer, 0, position_x0_bytes);
 
     let position_y0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("y0 Coordinates Storage Buffer"),
@@ -129,7 +129,7 @@ pub async fn base_draw_rect_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&position_y0_buffer, 0, &position_y0_bytes);
+    queue.write_buffer(&position_y0_buffer, 0, position_y0_bytes);
 
     let position_x1_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("x1 Coordinates Storage Buffer"),
@@ -137,7 +137,7 @@ pub async fn base_draw_rect_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&position_x1_buffer, 0, &position_x1_bytes);
+    queue.write_buffer(&position_x1_buffer, 0, position_x1_bytes);
 
     let position_y1_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("y1 Coordinates Storage Buffer"),
@@ -145,7 +145,7 @@ pub async fn base_draw_rect_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&position_y1_buffer, 0, &position_y1_bytes);
+    queue.write_buffer(&position_y1_buffer, 0, position_y1_bytes);
 
     let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Class labels Storage Buffer"),
@@ -153,7 +153,7 @@ pub async fn base_draw_rect_layer(
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    queue.write_buffer(&labels_buffer, 0, &labels_bytes);
+    queue.write_buffer(&labels_buffer, 0, labels_bytes);
 
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([

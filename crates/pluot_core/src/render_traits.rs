@@ -166,7 +166,7 @@ pub fn get_layer(layer_params: &LayerParams, view_params: &ViewParams) -> Box<dy
 
 pub fn get_layers(layers: &[LayerParams], view_params: &ViewParams) -> Vec<Box<dyn PreparedAndDraw>> {
     layers.iter().map(|layer_params| {
-        get_layer(&layer_params, &view_params)
+        get_layer(layer_params, view_params)
     }).collect()
 }
 
@@ -221,7 +221,7 @@ pub async fn draw_layers_to_raster(
         for layer in layer_refs {
             // TODO: when/where to pass view_params to each layer? during draw call? before draw call?
             // Should we instead assume the layer already has the necessary info from view_params?
-            DrawToRasterGpu::draw(layer.as_ref(), &gpu_context, &mut render_pass).await;
+            DrawToRasterGpu::draw(layer.as_ref(), gpu_context, &mut render_pass).await;
         }
 
         drop(render_pass);

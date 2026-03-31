@@ -67,11 +67,11 @@ impl PreparedLayer for ComputeLayer {
             layer_id: format!("{}_text", self.layer_params.layer_id),
             bounds: self.view_params.margins.clone(),
             data_unit_mode: UnitsMode::Pixels,
-            text_size: 24.0 as f32,
+            text_size: 24.0_f32,
             text_size_unit_mode: UnitsMode::Pixels,
             text_align_mode: TextAlignMode::Start,
             text_baseline_mode: TextBaselineMode::Middle,
-            text_rotation: Some(0.0 as f32),
+            text_rotation: Some(0.0_f32),
 
             position_x: Arc::new(text_position_x),
             position_y: Arc::new(text_position_y),

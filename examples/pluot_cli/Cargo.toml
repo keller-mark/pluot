@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "pluot"
+name = "pluot_cli"
 path = "src/main.rs"
 
 [dependencies]

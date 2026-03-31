@@ -40,6 +40,13 @@ keywords = []
 unused = "allow"
 non_snake_case = "allow"
 
+[workspace.lints.clippy]
+needless_return = "allow"
+to_string_trait_impl = "allow"
+neg_multiply = "allow"
+let_and_return = "allow"
+type_complexity = "allow"
+
 
 [workspace.dependencies]
 inventory = "0.3.21"
@@ -61,11 +68,11 @@ serde = { version = "1.0.x", features = ["derive", "rc"] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 svg = "0.18.0"
-futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "c61a0dd" }
+futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "506d7bf" }
 
 # For OME-Zarr image metadata parsing.
 # We use this fork which relaxes things by not using serde(deny_unknown_fields).
-ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.git", branch = "keller-mark/relaxed-ome-fields" }
+ome_zarr_metadata = "0.3.0"
 serde_json = "1.0.143"
 
 # Local crates

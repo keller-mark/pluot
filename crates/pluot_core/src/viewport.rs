@@ -108,10 +108,10 @@ pub fn unproject(view_params: &ViewParams, layer_bounds: Option<MarginParams>, c
         &layer_bounds
     };
 
-    let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f32;
-    let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f32;
-    let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f32;
-    let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f32;
+    let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0);
+    let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0);
+    let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0);
+    let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0);
 
     let layer_screen_coord = ScreenCoord {
         x: coord.x - margin_left,
@@ -222,10 +222,10 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
     let max_y = (((-translate_y + 1.0 + y_adjustment) / zoom) + 1.0) / 2.0;
 
     DataBounds {
-        x_min: min_x as f32,
-        x_max: max_x as f32,
-        y_min: min_y as f32,
-        y_max: max_y as f32,
+        x_min: min_x,
+        x_max: max_x,
+        y_min: min_y,
+        y_max: max_y,
     }
 }
 

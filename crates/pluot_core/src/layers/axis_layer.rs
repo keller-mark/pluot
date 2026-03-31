@@ -203,10 +203,10 @@ impl AxisLayer {
         // as the AxisLayer itself is responsible for positioning,
         // and it will need to render things into the margins.
         let bounds = MarginParams {
-            margin_top: Some(0.0 as f32),
-            margin_right: Some(0.0 as f32),
-            margin_bottom: Some(0.0 as f32),
-            margin_left: Some(0.0 as f32),
+            margin_top: Some(0.0_f32),
+            margin_right: Some(0.0_f32),
+            margin_bottom: Some(0.0_f32),
+            margin_left: Some(0.0_f32),
         };
 
         let line_source_position_x = line_source_positions.iter().map(|pos| pos[0]).collect();
@@ -215,7 +215,7 @@ impl AxisLayer {
         let line_target_position_x = line_target_positions.iter().map(|pos| pos[0]).collect();
         let line_target_position_y = line_target_positions.iter().map(|pos| pos[1]).collect();
 
-        let line_labels_vec: Vec<i32> = line_source_positions.iter().map(|_| 0 as i32).collect();
+        let line_labels_vec: Vec<i32> = line_source_positions.iter().map(|_| 0_i32).collect();
 
         // Create LineLayer for axis line and ticks
         let line_params = LineLayerParams {
@@ -246,8 +246,8 @@ impl AxisLayer {
                 data_unit_mode: UnitsMode::Pixels,
                 text_size: DEFAULT_FONT_SIZE as f32,
                 text_size_unit_mode: UnitsMode::Pixels,
-                text_align_mode: text_align_mode,
-                text_baseline_mode: text_baseline_mode,
+                text_align_mode,
+                text_baseline_mode,
                 text_rotation: Some(text_rotation as f32),
 
                 position_x: Arc::new(text_position_x),

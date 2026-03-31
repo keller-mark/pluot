@@ -86,7 +86,7 @@ impl TileLayer {
                 x1_vec.push(x1 as f32);
                 y1_vec.push(y1 as f32);
                 // Use a label derived from tile coordinates for potential coloring/debugging.
-                labels_vec.push(((row + col) % 2) as i32);
+                labels_vec.push((((row + col) % 2)));
             }
         }
 

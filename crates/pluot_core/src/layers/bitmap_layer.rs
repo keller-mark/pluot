@@ -730,7 +730,7 @@ pub fn base_draw_bitmap_layer_svg(
             rgba[pixel_idx]     = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
             rgba[pixel_idx + 1] = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
             rgba[pixel_idx + 2] = (b.clamp(0.0, 1.0) * 255.0).round() as u8;
-            rgba[pixel_idx + 3] = 255 as u8;
+            rgba[pixel_idx + 3] = 255_u8;
         }
     }
 

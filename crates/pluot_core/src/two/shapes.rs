@@ -210,6 +210,7 @@ impl Default for TwoText {
 }
 
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct TwoGroup {
     pub elements: Vec<TwoElement>,
     // Strings to add optional data attributes for debugging.
@@ -223,18 +224,6 @@ pub struct TwoGroup {
     // TODO: add data- or aria- attributes for accessibility or hooking up event handlers?
 }
 
-impl Default for TwoGroup {
-    fn default() -> Self {
-        Self {
-            elements: Vec::new(),
-            layer_type: None,
-            layer_id: None,
-            rotation: None,
-            translate: None,
-            clip_rect: None,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub enum TwoImageRenderingStyle {
