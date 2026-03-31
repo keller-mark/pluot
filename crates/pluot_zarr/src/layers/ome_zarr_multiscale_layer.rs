@@ -22,7 +22,7 @@ use pluot_core::layers::multiscale_utils::{
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use ome_zarr_metadata::v0_5::{
-    RelaxedOmeFields, CoordinateTransform, CoordinateTransformScale,
+    OmeFields, CoordinateTransform, CoordinateTransformScale,
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 
@@ -177,7 +177,7 @@ impl OmeZarrMultiscaleLayer {
                 .expect("Failed to open zarr group for OME-Zarr metadata");
 
             let attrs = group.attributes();
-            let ome_fields: RelaxedOmeFields =
+            let ome_fields: OmeFields =
                 serde_json::from_value(attrs.get("ome").expect("OME attribute missing").clone())
                     .expect("Failed to parse OME attributes");
 
