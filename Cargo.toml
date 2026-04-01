@@ -16,6 +16,7 @@ exclude = [
     "examples/pluot_cli",
     "examples/pluot_http",
     "examples/pluot_xilem",
+    "examples/pluot_egui",
 ]
 
 [workspace.package]

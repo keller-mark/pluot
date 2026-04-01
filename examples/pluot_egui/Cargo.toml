@@ -1,0 +1,16 @@
+[package]
+name = "pluot_egui"
+description = "An example desktop GUI built with the Egui framework."
+edition = "2021"
+rust-version = "1.92"
+publish = false
+
+[[bin]]
+name = "pluot_egui"
+path = "src/main.rs"
+
+[dependencies]
+pluot = { path = "../../crates/pluot" }
+eframe = "0.31"
+egui = "0.31"
+tokio = { version = "1.47.1", features = ["full"] }
