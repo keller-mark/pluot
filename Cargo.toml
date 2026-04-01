@@ -126,8 +126,8 @@ uuid = { version = "1", features = ["v4", "js"] }
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
 [workspace.dependencies.zarrs]
-#version = "0.23.0"
-path = "../zarrs/zarrs"
+version = "0.23.9"
+# path = "../zarrs/zarrs"
 default-features = false
 features = [
     "ndarray",
