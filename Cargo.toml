@@ -5,7 +5,6 @@ members = [
     "crates/pluot_core",
     "crates/pluot_zarr",
     "crates/pluot",
-    "examples/pluot_cli",
 ]
 resolver = "2"
 
@@ -14,6 +13,7 @@ exclude = [
     # To ensure that they get their own independent Cargo.lock files
     # to avoid subdependency conflicts, with the workspace packages or with each other,
     # we exclude them from the workspace and instead specify their dependencies with path = "../../crates/pluot".
+    "examples/pluot_cli",
     "examples/pluot_http",
     "examples/pluot_xilem",
 ]

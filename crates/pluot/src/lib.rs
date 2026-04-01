@@ -3,7 +3,7 @@
 mod plugins;
 
 // Export things needed for layer-based plotting via Rust.
-pub use pluot_core::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
+pub use pluot_core::params::{GraphicsFormat, ViewMode};
 pub use pluot_core::render_traits::{AspectRatioMode, UnitsMode, ViewParams, MarginParams};
 
 
@@ -31,4 +31,4 @@ pub use pluot_core::bindings::python::{render_py};
 mod render;
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
-pub use crate::render::render;
+pub use crate::render::{render, RenderParams, LayerParams};

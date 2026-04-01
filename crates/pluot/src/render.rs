@@ -12,8 +12,10 @@ pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
 pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
 
-
-pub use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams};
+use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams};
+use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
+pub use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend};
+pub use pluot_core::render_traits::AspectRatioMode;
 
 pub use pluot_core::bindings::plain_rust::{render as raw_render};
 
@@ -42,35 +44,104 @@ pub enum LayerParams {
     ZarrPoint3dLayer(ZarrPoint3dLayerParams),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct LayeredPlotRenderParams {
+/// Strongly-typed render params. Mirrors [`RawRenderParams`] but accepts
+/// `layers` as a typed [`LayerParams`] enum instead of raw JSON values.
+#[derive(Debug, Clone)]
+pub struct RenderParams {
     pub layers: Vec<LayerParams>,
+    pub width: u32,
+    pub height: u32,
+    pub format: GraphicsFormat,
+    pub device_pixel_ratio: f32,
+    pub camera_view: Option<[f32; 16]>,
+    pub aspect_ratio_mode: AspectRatioMode,
+    pub view_mode: ViewMode,
+    pub plot_id: String,
+    pub store_name: String,
+    pub wait_for_store_gets: bool,
+    pub timeout: Option<u32>,
+    pub cache_enabled: bool,
+    pub svg_compression_enabled: bool,
+    pub svg_include_document: bool,
+    pub margin_left: Option<f32>,
+    pub margin_right: Option<f32>,
+    pub margin_top: Option<f32>,
+    pub margin_bottom: Option<f32>,
+    pub pickable: bool,
+    pub render_backend: Option<RenderBackend>,
+    pub compute_backend: Option<ComputeBackend>,
+}
+
+impl Default for RenderParams {
+    fn default() -> Self {
+        let raw = RawRenderParams::default();
+        Self {
+            layers: vec![],
+            width: raw.width,
+            height: raw.height,
+            format: raw.format,
+            device_pixel_ratio: raw.device_pixel_ratio,
+            camera_view: raw.camera_view,
+            aspect_ratio_mode: raw.aspect_ratio_mode,
+            view_mode: raw.view_mode,
+            plot_id: raw.plot_id,
+            store_name: raw.store_name,
+            wait_for_store_gets: raw.wait_for_store_gets,
+            timeout: raw.timeout,
+            cache_enabled: raw.cache_enabled,
+            svg_compression_enabled: raw.svg_compression_enabled,
+            svg_include_document: raw.svg_include_document,
+            margin_left: raw.margin_left,
+            margin_right: raw.margin_right,
+            margin_top: raw.margin_top,
+            margin_bottom: raw.margin_bottom,
+            pickable: raw.pickable,
+            render_backend: raw.render_backend,
+            compute_backend: raw.compute_backend,
+        }
+    }
 }
 
 fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
-    vec![
-        // TODO: convert each element of layers to a RawLayerParams object.
+    layers.iter().map(|layer| {
+        // LayerParams is tagged as { "layer_type": "...", "layer_params": {...} }
+        // which matches the fields of RawLayerParams exactly.
+        let value = serde_json::to_value(layer).expect("LayerParams serialization failed");
+        let obj = value.as_object().expect("LayerParams must serialize to an object");
         RawLayerParams {
-            layer_type: "LineLayer".to_string(),
-            layer_params: serde_json::to_value(typed_layer_params).unwrap(),
+            layer_type: obj["layer_type"].as_str().expect("layer_type must be a string").to_string(),
+            layer_params: obj["layer_params"].clone(),
         }
-    ]
+    }).collect()
 }
 
-// TODO: raw_render accepts layer_params (within plot_params) as serde_json Value type.
-// Here, we want to define a render() function that accepts layer_params as a strongly-typed value instead.
-// We need to define a strongly-typed RenderParams and convert from LayerParams to RawLayerParams.
-pub async fn render(render_params: RenderParams) {
-
-
+pub async fn render(render_params: RenderParams) -> Vec<u8> {
+    let raw_layers = to_raw_layer_params(&render_params.layers);
     let raw_params = RawRenderParams {
-        // TODO
-        plot_params // TODO
+        width: render_params.width,
+        height: render_params.height,
+        format: render_params.format,
+        device_pixel_ratio: render_params.device_pixel_ratio,
+        camera_view: render_params.camera_view,
+        aspect_ratio_mode: render_params.aspect_ratio_mode,
+        view_mode: render_params.view_mode,
+        plot_id: render_params.plot_id,
+        store_name: render_params.store_name,
+        wait_for_store_gets: render_params.wait_for_store_gets,
+        timeout: render_params.timeout,
+        cache_enabled: render_params.cache_enabled,
+        svg_compression_enabled: render_params.svg_compression_enabled,
+        svg_include_document: render_params.svg_include_document,
+        margin_left: render_params.margin_left,
+        margin_right: render_params.margin_right,
+        margin_top: render_params.margin_top,
+        margin_bottom: render_params.margin_bottom,
+        pickable: render_params.pickable,
+        render_backend: render_params.render_backend,
+        compute_backend: render_params.compute_backend,
+        plot_params: PlotParams::LayeredPlot(RawLayeredPlotRenderParams {
+            layers: raw_layers,
+        }),
     };
-
-
-    // Render the plot.
-    let result = raw_render(raw_params).await;
-
-    return result;
+    raw_render(raw_params).await
 }
