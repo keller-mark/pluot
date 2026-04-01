@@ -39,6 +39,7 @@ pluot_core = { workspace = true }
 pluot_zarr = { workspace = true }
 
 inventory.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 # Python-specific dependencies

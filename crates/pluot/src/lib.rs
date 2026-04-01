@@ -28,4 +28,7 @@ pub use pluot_core::bindings::wasm::{render_wasm, set_panic_hook};
 pub use pluot_core::bindings::python::{render_py};
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
-pub use pluot_core::bindings::plain_rust::{render};
+mod render;
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
+pub use crate::render::render;
