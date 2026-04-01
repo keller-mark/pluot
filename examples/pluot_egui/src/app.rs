@@ -77,7 +77,7 @@ impl eframe::App for PluotApp {
             let num_points = exp_to_num_points(self.num_points_exp);
             let points_changed = ui
                 .add(
-                    egui::Slider::new(&mut self.num_points_exp, 1.0..=7.0)
+                    egui::Slider::new(&mut self.num_points_exp, 1.0..=5.0)
                         .text(format!("Points (10^exp = {num_points})"))
                         .step_by(0.01),
                 )
