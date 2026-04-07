@@ -119,7 +119,7 @@ export function Pluot(props) {
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
     format = "Raster", // "Raster", "Vector"
     minTimeout = 32,
-    maxTimeout = 128,
+    maxTimeout = 32,
     allowSimultaneousRenders = true,
   } = props;
 

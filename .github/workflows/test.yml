@@ -69,6 +69,14 @@ jobs:
       with:
         toolchain: stable
         targets: wasm32-unknown-unknown
+    # Install clang/LLVM to fix errors with zstd crate compilation for wasm32-unknown-unknown target.
+    - name: Install clang via Brew
+      run: brew install cmake && brew install llvm
+    - name: Set clang path
+      run: echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+    - name: Set llvm-ar path
+      run: echo "AR=$(brew --prefix llvm)/bin/llvm-ar" >> $GITHUB_ENV
+    # End troubleshooting zfp-sys and zstd.
     - uses: Swatinem/rust-cache@v2
     # Python-specific stuff
     - name: Install dependencies
