@@ -11,20 +11,6 @@ Rust, Python, and JavaScript (including in a web browser) are currently supporte
 
 How it works: "headless" plotting. Pluot uses Rust 🦀 and WebGPU to quickly render plots to an array of pixels (or an SVG string), decoupled from any windowing system or other language runtime. On each "frame" of an interaction or animation, we re-render with updated plotting parameters, and we hope rendering will be fast enough.
 
-<!--_In other words: "rewrite it in rust," but for plotting._-->
-
-
-## Features
-<!-- - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
-- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
-- __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr via [zarrs](https://github.com/zarrs/zarrs) to achieve this).
-- __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
-- __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
-- __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported.
-<!-- - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types. -->
-
-⚠️ Pluot does not yet implement very many "chart types" (visual encodings). Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, you will be able to **render the plot whereever Pluot rendering works**: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future. (Hopefully, we will be able to remove this warning in the future as we implement additional visual encodings and layers).
-
 
 ## Citation
 
@@ -38,6 +24,20 @@ If you found this useful, please cite:
   year = {2026}
 }
 ```
+
+## Features
+<!-- - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
+- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
+- __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr via [zarrs](https://github.com/zarrs/zarrs) to achieve this).
+- __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
+- __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
+- __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported.
+<!-- - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types. -->
+
+⚠️ Pluot does not yet implement very many "chart types" (visual encodings). Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, you will be able to **render the plot whereever Pluot rendering works**: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future. (Hopefully, we will be able to remove this warning in the future as we implement additional visual encodings and layers).
+
+
+
 
 
 ## How it works
@@ -228,7 +228,7 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 ## About the name
 
 - A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The fruit's pit is to its flesh as the Rust core of this project is to its other programming language bindings.
-- "Plot" with an extra "u" (from R<strong>u</strong>st and/or from <strong>u</strong>nified)
+- "Plot" with an extra "u" (from R<strong>u</strong>st and/or <strong>u</strong>nified)
 
 ## Rust learning resources
 - Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
@@ -239,6 +239,6 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 
 ## License
 
-(c) 2025 - 2026 Mark Keller.
+&copy; 2026 Mark Keller.
 
 See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
