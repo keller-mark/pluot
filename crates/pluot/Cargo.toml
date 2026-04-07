@@ -62,7 +62,9 @@ features = ["js"]
 
 
 [dev-dependencies]
+wasm-bindgen.workspace = true
 wasm-bindgen-test.workspace = true
+serde-wasm-bindgen.workspace = true
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

@@ -3,7 +3,7 @@
 // We only run this test on WASM targets AND when the "lacks_gpu" feature is not enabled (e.g., CI).
 #![cfg(all(target_arch = "wasm32", not(feature="lacks_gpu")))]
 
-use pluot::{render_wasm, RenderParams};
+use pluot::{render_wasm, RawRenderParams};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::*;
 
@@ -13,7 +13,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 async fn test_render_triangle() {
     let width = 32;
     let height = 32;
-    let params: JsValue = serde_wasm_bindgen::to_value(&RenderParams {
+    let params: JsValue = serde_wasm_bindgen::to_value(&RawRenderParams {
         width,
         height,
         camera_view: None,

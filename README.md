@@ -132,7 +132,13 @@ Open to http://localhost:3005/www/
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh
-wasm-pack test crates/pluot --headless --chrome
+wasm-pack test --headless --chrome crates/pluot
+# or
+wasm-pack test --headless --chrome crates/pluot -- --nocapture
+# or
+wasm-pack test --chrome crates/pluot
+# or
+wasm-pack test --firefox crates/pluot
 ```
 
 <!-- TODO: update and un-comment once publishing details are established
