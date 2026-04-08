@@ -14,7 +14,7 @@ const theme = {
     "elevation1": "#5c5c5c", // BG of top part.
     "highlight1": "#ffffff", // FG of top part.
     "highlight2": "#ffffff", // Label text.
-    "accent2": "#6b47cb", // Colors of buttons, checkboxes, sliders, etc.
+    "accent2": "#e7711f", // Colors of buttons, checkboxes, sliders, etc.
   },
   fontSizes: {
     root: "12px"
@@ -42,32 +42,30 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     // Camera Enabled, Hover-based picking, Click-based picking, etc.
     // Perhaps use a conditional Leva folder to do this,
     // where the checked "Interactive" checkbox enables the folder to be shown?
+    /*
     interactive: {
       value: true,
       label: 'Interactive',
     },
+    */
     size: {
       value: {
         width: 500,
         height: 500
       },
+      min: 0,
+      step: 1,
       joystick: false,
       lock: true,
       label: 'Plot Size'
-    },
-    format: {
-      value: 'Raster',
-      options: {
-        Raster: 'Raster',
-        Vector: 'Vector',
-      },
-      label: 'Graphics Format'
     },
     verticalMargins: {
       value: {
         bottom: 0,
         top: 0,
       },
+      min: 0,
+      step: 1,
       joystick: false,
       lock: true,
       label: 'Margins (Vertical)'
@@ -77,6 +75,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
         left: 0,
         right: 0,
       },
+      min: 0,
+      step: 1,
       joystick: false,
       lock: true,
       label: 'Margins (Horizontal)'
@@ -95,6 +95,16 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       label: 'Show Margins',
       hint: 'For debugging, display a 1px border indicating margin boundaries.'
     },
+    // TODO: need to conditionally show the Format selector, hiding when the plot renders > ~10,000 points.
+    /*
+    format: {
+      value: 'Raster',
+      options: {
+        Raster: 'Raster',
+        Vector: 'Vector',
+      },
+      label: 'Graphics Format'
+    },
     'Reset Camera': button(
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
@@ -103,6 +113,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
     ),
+    */
     ...(plotSpecificOptions ? ({
       'Plot-Specific Options': folder(
         plotSpecificOptions,
