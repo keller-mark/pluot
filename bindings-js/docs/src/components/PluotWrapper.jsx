@@ -17,39 +17,40 @@ const Pluot = lazy(async () => {
 */
 
 export function PluotWrapper(props) {
-    const {
-        storeUrl,
-        width = 500,
-        height = 500,
-        plotId = "example-plot",
-    } = props;
+  const {
+    storeUrl,
+    plotId = "example-plot",
+  } = props;
 
   const controlValues = usePlotControls();
   console.log(controlValues);
 
-    const store = useMemo(() => {
-        return new FetchStore(storeUrl);
-    }, [storeUrl]);
+  const store = useMemo(() => {
+    return new FetchStore(storeUrl);
+  }, [storeUrl]);
+
+  const width = controlValues.size.width;
+  const height = controlValues.size.height;
 
   return (
-      <>
-          <Pluot
-            store={store}
-            width={width}
-            height={height}
-            plotId={plotId}
-            plotType={"LayeredPlot"}
-            plotParams={{
-                layers: []
-            }}
-            mode={"2d"}
-            marginLeft={0}
-            marginTop={0}
-            marginRight={0}
-            marginBottom={0}
-            {...props}
-          />
-          <PlotControls />
-        </>
-    );
+    <>
+      <Pluot
+        store={store}
+        width={width}
+        height={height}
+        plotId={plotId}
+        plotType={"LayeredPlot"}
+        plotParams={{
+            layers: []
+        }}
+        mode={"2d"}
+        marginLeft={0}
+        marginTop={0}
+        marginRight={0}
+        marginBottom={0}
+        {...props}
+      />
+      <PlotControls />
+    </>
+  );
 }

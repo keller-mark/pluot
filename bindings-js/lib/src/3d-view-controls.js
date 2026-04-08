@@ -168,8 +168,8 @@ export default function createCamera(element, options) {
   })
 
   element.addEventListener('contextmenu', function(ev) {
-    ev.preventDefault()
-    return false
+    //ev.preventDefault()
+    //return false
   })
 
   var lastX = 0, lastY = 0, lastMods = {shift: false, control: false, alt: false, meta: false}

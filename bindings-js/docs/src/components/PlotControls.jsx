@@ -24,7 +24,18 @@ const theme = {
   }
 };
 
-export function usePlotControls() {
+export function usePlotControls(plotSpecificOptions) {
+  // plotSpecificOptions will be an object like
+  /*
+      {
+        pointRadius: {
+          value: 5,
+          min: 0,
+          max: 100,
+          label: 'Point Radius'
+        }
+      }
+  */
   return useControls({
     interactive: {
       value: true,
@@ -32,8 +43,8 @@ export function usePlotControls() {
     },
     size: {
       value: {
-        width: 200,
-        height: 300
+        width: 500,
+        height: 500
       },
       joystick: false,
       lock: true,
@@ -82,14 +93,12 @@ export function usePlotControls() {
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
     ),
-    'Plot-Specific Options': folder({
-      pointRadius: {
-        value: 5,
-        min: 0,
-        max: 100,
-        label: 'Point Radius'
-      }
-    }, { collapsed: false })
+    ...(plotSpecificOptions ? ({
+      'Plot-Specific Options': folder(
+        plotSpecificOptions,
+        { collapsed: false }
+      ),
+    }) : {}),
   });
 }
 

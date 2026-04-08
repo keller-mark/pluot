@@ -25,6 +25,14 @@ const DEFAULT_VIEW = new Float32Array([
   0, 0, 0, 1,
 ]);
 
+
+const DEFAULT_3D_VIEW = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, -10, 1,
+]);
+
 //const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
 const baseUrl = "http://localhost:5173/@data/mnist.zarr";
 
@@ -104,8 +112,8 @@ if (typeof window !== 'undefined') {
 
 export function Pluot(props) {
   const {
-    width,
-    height,
+    width: widthProp,
+    height: heightProp,
     plotId,
     plotType,
     store,
@@ -122,6 +130,9 @@ export function Pluot(props) {
     maxTimeout = 32,
     allowSimultaneousRenders = true,
   } = props;
+
+  const width = Math.floor(widthProp);
+  const height = Math.floor(heightProp);
 
   const isVector = format === "Vector";
 
@@ -178,13 +189,21 @@ export function Pluot(props) {
     }
   }, []);
 
+  useEffect(() => {
+    // Reset view matrix on plot change.
+    // Create a new Float32Array to avoid sharing a mutable array
+    // among multiple Pluot component instances.
+    setViewMatrix(new Float32Array(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW));
+    //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
+  }, [plotId, viewMode]);
+
 
   // Set up the camera.
   useEffect(() => {
     // Set up the camera.
     const cameraEl = cameraRef.current;
     if (!cameraEl) {
-      return;
+      return () => {};
     }
 
     let dispose = () => {};
@@ -235,14 +254,16 @@ export function Pluot(props) {
         },
         aspectRatioMode: aspectRatioMode,
       });
-      dispose = camera.dispose;
+      dispose = () => {
+        camera.dispose();
+      };
 
       // Set the initial view matrix.
-      camera.setView(viewMatrix);
+      // We need to ensure we create a new copy of the array.
+      camera.setView(new Float32Array(viewMatrix));
     } else if (viewMode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
-        console.log(camera.matrix);
         // Note: the 3D camera stores the matrix in camera.matrix (not camera.view).
         setViewMatrix(prev => {
           // Since camera events happen even on mousemove events that do not change the matrix,
@@ -327,21 +348,18 @@ export function Pluot(props) {
         cameraEl.removeEventListener("mousemove", mouseMoveHandler);
         cameraEl.removeEventListener("wheel", wheelHandler);
       };
+
+      //camera.matrix = new Float32Array(viewMatrix);
+
     } else {
       throw new Error("Unknown mode found.");
     }
 
     return dispose;
-  }, [cameraRef, viewMode, aspectRatioMode]);
+  }, [cameraRef, viewMode, aspectRatioMode, width, height]);
 
 
-  useEffect(() => {
-    // Reset view matrix on plot change.
-    // Create a new Float32Array to avoid sharing a mutable array
-    // among multiple Pluot component instances.
-    setViewMatrix(new Float32Array(DEFAULT_VIEW));
-    //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
-  }, [plotId]);
+
 
   // The renderFrame callback.
   // We use useEffectEvent because we want to "see"
@@ -472,7 +490,7 @@ export function Pluot(props) {
 
     // Render on the next animation frame.
     throttledRender();
-  }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format]);
+  }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format, width, height]);
 
   return (
     <>
