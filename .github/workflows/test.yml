@@ -58,9 +58,11 @@ jobs:
       run: uv sync --extra dev
     - name: Compile Rust code
       run: uv run maturin develop --features python
+
   py_and_wasm_unit_tests:
+    # We use a macOS runner for tests that rely on the GPU.
     runs-on: macos-latest
-    # We only run these macOS-dependent tests if the previous jobs succeeded.
+    # But we only run these macOS-dependent tests if the previous jobs succeeded.
     needs: [py_compile]
     steps:
     - uses: actions/checkout@v4
