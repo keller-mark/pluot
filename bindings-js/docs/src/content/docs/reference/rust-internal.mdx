@@ -1,13 +1,54 @@
 ---
-title: Rust API
+title: Rust internals
 description: Details on the Rust internals of Pluot.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
     order: 99
 ---
+import { Aside } from '@astrojs/starlight/components';
 
-Eventually, documentation of the Rust internals will be provided here (or links to the official crate docs).
 
+<Aside type="caution" title="In flux">
+    Eventually, more comprehensive documentation will be provided here.
+    The Rust internals are still being actively developed and subject to frequent changes.
+</Aside>
 
-The Rust internals are still being actively developed and subject to frequent changes.
-The Rust [source code](https://github.com/keller-mark/pluot/tree/main/crates/pluot_core) and markdown files in [dev-docs](https://github.com/keller-mark/pluot/tree/main/dev-docs) are the best reference materials at this time.
+## Bindings
+
+When using Pluot across programming language boundaries, we need to consider bindings in both directions (to/from).
+
+### Bindings _to_ (the Rust program)
+
+The non-Rust environment *calls* these.
+
+#### `render`
+
+Or its bound variant (e.g., `render_py`, `render_wasm`, etc.) which handles serialization/deserialization or other platform-specific things.
+
+#### `pick`
+
+Perform "picking" to look-up the value at a specific (relative) screen coordinate.
+Used during hover and click event handling (e.g., to show tooltips).
+
+### Bindings _from_ (the non-Rust program)
+
+The non-Rust environment *provides* these (for Rust to call).
+
+#### `log`
+
+Call the platform-specific logging function (e.g., `console.log` on WASM, `logger.info` on Python, etc.).
+
+#### `get_font`
+
+WASM-specific.
+
+Get a font from the system environment. (This avoids the need to bundle a bunch of fonts, which would both impact the bundle size and run into font licensing challenges).
+
+#### `zarr_get`
+#### `zarr_get_range_from_end`
+#### `zarr_get_range_from_offset`
+#### `zarr_has`
+#### `zarr_get_status`
+#### `zarr_get_range_from_end_status`
+#### `zarr_get_range_from_offset_status`
+#### `zarr_has_status`

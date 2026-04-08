@@ -22,7 +22,7 @@ jobs:
       # Rendering tests do not work on non-macos runners since they lack GPUs.
       run: cargo test --verbose --features lacks_gpu
 
-  plain_rust_build_example_cli:
+  plain_rust_check_examples:
     runs-on: ubuntu-latest
     needs: [plain_rust_unit_tests]
     steps:
@@ -31,9 +31,13 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
-      - name: Compile CLI
-        run: cargo build --verbose
+      - name: Compile Example CLI
+        run: cargo check --verbose
         working-directory: ./examples/pluot_cli
+      - name: Compile Example GUI
+        run: cargo check --verbose
+        working-directory: ./examples/pluot_egui
+      # TODO: include more examples here as they are developed
 
   py_compile:
     runs-on: ubuntu-latest
@@ -54,9 +58,11 @@ jobs:
       run: uv sync --extra dev
     - name: Compile Rust code
       run: uv run maturin develop --features python
+
   py_and_wasm_unit_tests:
+    # We use a macOS runner for tests that rely on the GPU.
     runs-on: macos-latest
-    # We only run these macOS-dependent tests if the previous jobs succeeded.
+    # But we only run these macOS-dependent tests if the previous jobs succeeded.
     needs: [py_compile]
     steps:
     - uses: actions/checkout@v4
@@ -98,6 +104,18 @@ jobs:
       run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
     #- uses: Swatinem/rust-cache@v2
     - name: Compile Rust code to WASM
-      run: wasm-pack build crates/pluot --target web
+      run: wasm-pack build crates/pluot --release --target web
     - name: Run unit tests
       run: wasm-pack test --headless --chrome crates/pluot
+    # Ensure that WASM bundle size is below some threshold.
+    - name: Check WASM bundle size
+      run: |
+        # Get size in bytes
+        WASM_SIZE=$(stat -f%z "crates/pluot/pkg/pluot_bg.wasm")
+        WASM_SIZE_THRESHOLD=4000000 # 4MB in bytes
+
+        if [ "$WASM_SIZE" -gt "$WASM_SIZE_THRESHOLD" ]; then
+          echo "Error: File is too large ($WASM_SIZE bytes). Limit is $WASM_SIZE_THRESHOLD bytes."
+          exit 1
+        fi
+        echo "File size check passed ($WASM_SIZE bytes)."
