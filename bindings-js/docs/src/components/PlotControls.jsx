@@ -133,6 +133,7 @@ export function PlotControls() {
         }
       `}</style>
       <Leva
+        collapsed={true}
         fill={true}
         titleBar={titleBar}
         hideCopyButton={true}

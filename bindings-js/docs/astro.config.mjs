@@ -14,7 +14,7 @@ export default defineConfig({
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/keller-mark/pluot' }],
 			sidebar: [
 				{
-					label: 'Start Here',
+					label: 'Overview',
 					// Autogenerate a group of links for the 'constellations' directory.
 					autogenerate: { directory: 'start' },
 				},
