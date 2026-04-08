@@ -129,6 +129,7 @@ export function Pluot(props) {
     minTimeout = 32,
     maxTimeout = 32,
     allowSimultaneousRenders = true,
+    debugMargins = false,
   } = props;
 
   const width = Math.floor(widthProp);
@@ -356,7 +357,7 @@ export function Pluot(props) {
     }
 
     return dispose;
-  }, [cameraRef, viewMode, aspectRatioMode, width, height]);
+  }, [cameraRef, viewMode, aspectRatioMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
 
 
@@ -490,7 +491,8 @@ export function Pluot(props) {
 
     // Render on the next animation frame.
     throttledRender();
-  }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format, width, height]);
+  }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format,
+    width, height, aspectRatioMode, marginLeft, marginRight, marginTop, marginBottom]);
 
   return (
     <>
@@ -506,7 +508,7 @@ export function Pluot(props) {
             left: marginLeft,
             width: width - marginLeft - marginRight,
             height: height - marginTop - marginBottom,
-            border: "0px solid red",
+            border: `${debugMargins ? 1 : 0}px solid red`,
           }}
         />
         {isVector ? (

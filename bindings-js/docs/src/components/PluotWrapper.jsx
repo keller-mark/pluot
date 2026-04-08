@@ -20,6 +20,7 @@ export function PluotWrapper(props) {
   const {
     storeUrl,
     plotId = "example-plot",
+    // TODO: if defaults for margins, sizes, etc. are provided here, pass to usePlotControls.
   } = props;
 
   const controlValues = usePlotControls();
@@ -29,8 +30,14 @@ export function PluotWrapper(props) {
     return new FetchStore(storeUrl);
   }, [storeUrl]);
 
+  const { aspectRatioMode, format, debugMargins } = controlValues;
   const width = controlValues.size.width;
   const height = controlValues.size.height;
+  const marginLeft = controlValues.horizontalMargins.left;
+  const marginRight = controlValues.horizontalMargins.right;
+  const marginTop = controlValues.verticalMargins.top;
+  const marginBottom = controlValues.verticalMargins.bottom;
+
 
   return (
     <>
@@ -41,13 +48,16 @@ export function PluotWrapper(props) {
         plotId={plotId}
         plotType={"LayeredPlot"}
         plotParams={{
-            layers: []
+          layers: []
         }}
         mode={"2d"}
-        marginLeft={0}
-        marginTop={0}
-        marginRight={0}
-        marginBottom={0}
+        marginLeft={marginLeft}
+        marginTop={marginTop}
+        marginRight={marginRight}
+        marginBottom={marginBottom}
+        aspectRatioMode={aspectRatioMode}
+        format={format}
+        debugMargins={debugMargins}
         {...props}
       />
       <PlotControls />

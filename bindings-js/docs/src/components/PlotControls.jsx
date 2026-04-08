@@ -24,7 +24,8 @@ const theme = {
   }
 };
 
-export function usePlotControls(plotSpecificOptions) {
+export function usePlotControls(defaultOptions, plotSpecificOptions) {
+  // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
       {
@@ -37,6 +38,10 @@ export function usePlotControls(plotSpecificOptions) {
       }
   */
   return useControls({
+    // TODO: split "interactive" into multiple aspects:
+    // Camera Enabled, Hover-based picking, Click-based picking, etc.
+    // Perhaps use a conditional Leva folder to do this,
+    // where the checked "Interactive" checkbox enables the folder to be shown?
     interactive: {
       value: true,
       label: 'Interactive',
@@ -51,10 +56,10 @@ export function usePlotControls(plotSpecificOptions) {
       label: 'Plot Size'
     },
     format: {
-      value: 'raster',
+      value: 'Raster',
       options: {
-        Raster: 'raster',
-        Vector: 'vector',
+        Raster: 'Raster',
+        Vector: 'Vector',
       },
       label: 'Graphics Format'
     },
@@ -77,13 +82,18 @@ export function usePlotControls(plotSpecificOptions) {
       label: 'Margins (Horizontal)'
     },
     aspectRatioMode: {
-      value: 'contain',
+      value: 'Contain',
       options: {
-        'Contain (fit)': 'contain',
-        'Cover (fill)': 'cover',
-        'Ignore (stretch)': 'ignore',
+        'Contain (fit)': 'Contain',
+        'Cover (fill)': 'Cover',
+        'Ignore (stretch)': 'Ignore',
       },
       label: 'Aspect Ratio Mode'
+    },
+    debugMargins: {
+      value: false,
+      label: 'Show Margins',
+      hint: 'For debugging, display a 1px border indicating margin boundaries.'
     },
     'Reset Camera': button(
       get => alert(`Interactive value is ${get('interactive')}`),
