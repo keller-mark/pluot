@@ -190,13 +190,18 @@ fn vs_main(
         let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
 
         // Handle rotation of the glyph position offset and corner position.
-        let glyph_offset_norm = vec4f(
-            (glyph_offset_x_px / layer_width_px) + (glyph_size_norm.x / 2.0),
-            (glyph_offset_y_px / layer_height_px) + (glyph_size_norm.y / 2.0),
+        // Rotate in pixel space (isotropic), then convert to normalized space.
+        let glyph_offset_px = vec4f(
+            glyph_offset_x_px + glyph_width_px / 2.0,
+            glyph_offset_y_px + glyph_height_px / 2.0,
             0.0,
             1.0
         );
-        let rotated_glyph_offset_norm = (ROTATION_MAT * glyph_offset_norm).xy;
+        let rotated_glyph_offset_px = (ROTATION_MAT * glyph_offset_px).xy;
+        let rotated_glyph_offset_norm = vec2f(
+            rotated_glyph_offset_px.x / layer_width_px,
+            rotated_glyph_offset_px.y / layer_height_px
+        );
 
         // Compute the glyph position in normalized space.
         let glyph_pos_norm = vec2f(
@@ -205,11 +210,15 @@ fn vs_main(
         );
         let glyph_pos_ndc = NORM_TO_NDC_MAT * vec4f(glyph_pos_norm.xy, 0.0, 1.0);
 
-        // Rotate the corner around the glyph center.
-        let rotated_corner = (ROTATION_MAT * vec4f(
-            corner.x * glyph_size_ndc.x / 2.0,
-            corner.y * glyph_size_ndc.y / 2.0,
-            0.0, 1.0)).xy;
+        // Rotate the corner around the glyph center in pixel space, then convert to NDC.
+        let corner_px = vec4f(
+            corner.x * glyph_width_px / 2.0,
+            corner.y * glyph_height_px / 2.0,
+            0.0, 1.0);
+        let rotated_corner_px = (ROTATION_MAT * corner_px).xy;
+        let rotated_corner = vec2f(
+            rotated_corner_px.x / layer_width_px * 2.0,
+            rotated_corner_px.y / layer_height_px * 2.0);
 
         // The final point position in NDC space.
         let pos = vec4f(
@@ -279,13 +288,18 @@ fn vs_main(
     let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
 
     // Handle rotation of the glyph position offset and corner position.
-    let glyph_offset_norm = vec4f(
-        (glyph_offset_x_px / layer_width_px) + (glyph_size_norm.x / 2.0),
-        (glyph_offset_y_px / layer_height_px) + (glyph_size_norm.y / 2.0),
+    // Rotate in pixel space (isotropic), then convert to normalized space.
+    let glyph_offset_px = vec4f(
+        glyph_offset_x_px + glyph_width_px / 2.0,
+        glyph_offset_y_px + glyph_height_px / 2.0,
         0.0,
         1.0
     );
-    let rotated_glyph_offset_norm = (ROTATION_MAT * glyph_offset_norm).xy;
+    let rotated_glyph_offset_px = (ROTATION_MAT * glyph_offset_px).xy;
+    let rotated_glyph_offset_norm = vec2f(
+        rotated_glyph_offset_px.x / layer_width_px,
+        rotated_glyph_offset_px.y / layer_height_px
+    );
 
     // Compute the glyph position in normalized space.
     let glyph_pos_norm = vec2f(
@@ -294,11 +308,15 @@ fn vs_main(
     );
     let glyph_pos_ndc = NORM_TO_NDC_MAT * vec4f(glyph_pos_norm.xy, 0.0, 1.0);
 
-    // Rotate the corner around the glyph center.
-    let rotated_corner = (ROTATION_MAT * vec4f(
-        corner.x * glyph_size_ndc.x / 2.0,
-        corner.y * glyph_size_ndc.y / 2.0,
-        0.0, 1.0)).xy;
+    // Rotate the corner around the glyph center in pixel space, then convert to NDC.
+    let corner_px = vec4f(
+        corner.x * glyph_width_px / 2.0,
+        corner.y * glyph_height_px / 2.0,
+        0.0, 1.0);
+    let rotated_corner_px = (ROTATION_MAT * corner_px).xy;
+    let rotated_corner = vec2f(
+        rotated_corner_px.x / layer_width_px * 2.0,
+        rotated_corner_px.y / layer_height_px * 2.0);
 
     // The final point position in NDC space.
     let pos = vec4f(
