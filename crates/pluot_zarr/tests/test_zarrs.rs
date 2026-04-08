@@ -1,5 +1,5 @@
 // We only run this test on non-WASM targets.
-#![cfg(all(test, not(target_arch = "wasm32")))]
+#![cfg(all(test, not(target_arch = "wasm32"), not(feature = "lacks_gpu")))]
 
 use std::sync::Arc;
 use std::error::Error;
@@ -57,9 +57,9 @@ async fn test_async_read_array_subset() -> Result<(), Box<dyn Error>> {
 
     println!("Reading array subset3: {:?}", lowres_array.subset_all());
 
-    
 
-    
+
+
 
     Ok(())
 
@@ -113,7 +113,7 @@ fn test_read_array_subset() {
         vec![1, 100, img_h as u64, img_w as u64], // end, exclusive
     ).expect("Compatible dimensionality");
 */
-    
+
     /* ::new_with_start_shape(
         vec![0, 0, 0, 0], // start
         vec![1, 1, img_h as u64, img_w as u64], // shape

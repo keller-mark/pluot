@@ -21,6 +21,20 @@ jobs:
     - name: Run Rust unit tests
       # Rendering tests do not work on non-macos runners since they lack GPUs.
       run: cargo test --verbose --features lacks_gpu
+
+  plain_rust_build_example_cli:
+    runs-on: ubuntu-latest
+    needs: [plain_rust_unit_tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Compile CLI
+        run: cargo build --verbose
+        working-directory: ./examples/pluot_cli
+
   py_compile:
     runs-on: ubuntu-latest
     needs: [plain_rust_unit_tests]
@@ -55,6 +69,14 @@ jobs:
       with:
         toolchain: stable
         targets: wasm32-unknown-unknown
+    # Install clang/LLVM to fix errors with zstd crate compilation for wasm32-unknown-unknown target.
+    - name: Install clang via Brew
+      run: brew install cmake && brew install llvm
+    - name: Set clang path
+      run: echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+    - name: Set llvm-ar path
+      run: echo "AR=$(brew --prefix llvm)/bin/llvm-ar" >> $GITHUB_ENV
+    # End troubleshooting zfp-sys and zstd.
     - uses: Swatinem/rust-cache@v2
     # Python-specific stuff
     - name: Install dependencies
@@ -78,4 +100,4 @@ jobs:
     - name: Compile Rust code to WASM
       run: wasm-pack build crates/pluot --target web
     - name: Run unit tests
-      run: wasm-pack test crates/pluot --headless --chrome
+      run: wasm-pack test --headless --chrome crates/pluot

@@ -5,7 +5,6 @@ members = [
     "crates/pluot_core",
     "crates/pluot_zarr",
     "crates/pluot",
-    "examples/pluot_cli",
 ]
 resolver = "2"
 
@@ -14,8 +13,10 @@ exclude = [
     # To ensure that they get their own independent Cargo.lock files
     # to avoid subdependency conflicts, with the workspace packages or with each other,
     # we exclude them from the workspace and instead specify their dependencies with path = "../../crates/pluot".
+    "examples/pluot_cli",
     "examples/pluot_http",
     "examples/pluot_xilem",
+    "examples/pluot_egui",
 ]
 
 [workspace.package]
@@ -125,8 +126,8 @@ uuid = { version = "1", features = ["v4", "js"] }
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
 [workspace.dependencies.zarrs]
-#version = "0.23.0"
-path = "../zarrs/zarrs"
+version = "0.23.9"
+# path = "../zarrs/zarrs"
 default-features = false
 features = [
     "ndarray",

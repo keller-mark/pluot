@@ -1,4 +1,4 @@
-# pluot GUI example with Xilem
+# pluot GUI example with Egui
 
 ```sh
 # In this directory
