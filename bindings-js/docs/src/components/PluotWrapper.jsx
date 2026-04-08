@@ -1,6 +1,7 @@
 import React, { useState, useMemo, lazy, Suspense } from 'react';
 import { FetchStore } from 'zarrita';
 import { Pluot } from '@pluot/react';
+import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
 /*
 // We need to use a dynamic import here, because Pluot accesses `window`
@@ -23,12 +24,16 @@ export function PluotWrapper(props) {
         plotId = "example-plot",
     } = props;
 
+  const controlValues = usePlotControls();
+  console.log(controlValues);
+
     const store = useMemo(() => {
         return new FetchStore(storeUrl);
     }, [storeUrl]);
-    
-    return (
-        <Pluot
+
+  return (
+      <>
+          <Pluot
             store={store}
             width={width}
             height={height}
@@ -43,6 +48,8 @@ export function PluotWrapper(props) {
             marginRight={0}
             marginBottom={0}
             {...props}
-        />
+          />
+          <PlotControls />
+        </>
     );
 }
