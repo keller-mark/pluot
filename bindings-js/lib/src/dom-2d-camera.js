@@ -166,10 +166,10 @@ const dom2dCamera = (
     : dY => -dY;
 
   const transformScaleX = isNdc
-    ? x => (-1 + (x / width) * 2) // to normalized device coords
+    ? x => ((-1 + (x / width) * 2) - xAlignmentTranslation) * (1.0 / xAspectRatioModeFactor)
     : x => x;
   const transformScaleY = isNdc
-    ? y => 1 - (y / height) * 2 // to normalized device coords
+    ? y => ((1 - (y / height) * 2) - yAlignmentTranslation) * (1.0 / yAspectRatioModeFactor)
     : y => y;
 
   const tick = () => {
