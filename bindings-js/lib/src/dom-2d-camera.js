@@ -39,7 +39,8 @@ const dom2dCamera = (
     onMouseUp = () => {},
     onMouseMove = () => {},
     onWheel = () => {},
-    aspectRatioMode = "ignore",
+    aspectRatioMode = "Ignore",
+    aspectRatioAlignmentMode = "Center",
   } = {}
 ) => {
   let camera = createCamera(
@@ -93,6 +94,8 @@ const dom2dCamera = (
 
   let xAspectRatioModeFactor = 1.0;
   let yAspectRatioModeFactor = 1.0;
+  let xAlignmentTranslation = 0.0;
+  let yAlignmentTranslation = 0.0;
 
   /*
     // Logic for aspect ratio handling in point_layer.wgsl
@@ -141,6 +144,16 @@ const dom2dCamera = (
       } else if(aspectRatio < 1.0) {
         xAspectRatioModeFactor = 1.0 / aspectRatio;
       }
+    }
+
+    xAlignmentTranslation = 0.0;
+    yAlignmentTranslation = 0.0;
+    if(aspectRatioAlignmentMode === "Start") {
+      xAlignmentTranslation = xAspectRatioModeFactor - 1.0;
+      yAlignmentTranslation = yAspectRatioModeFactor - 1.0;
+    } else if(aspectRatioAlignmentMode === "End") {
+      xAlignmentTranslation = 1.0 - xAspectRatioModeFactor;
+      yAlignmentTranslation = 1.0 - yAspectRatioModeFactor;
     }
   };
   updateAspectRatioModeFactors();

@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -52,16 +52,34 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
         }
     }
 
-    // Only scaling will result in the (0, 1) region being centered.
-    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    // TODO: implement aspect_ratio_alignment_mode
-    return scale(
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
+    // Center (default): no translation needed.
+    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
+    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
+    // When the scaling is 1.0, both formulas yield 0.
+    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == 1u) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == 2u) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
+    return translate(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
     );
 }
-
 
 
 struct Channel {
@@ -172,7 +190,8 @@ fn vs_main(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        u.aspect_ratio_mode
+        u.aspect_ratio_mode,
+        u.aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.

@@ -125,7 +125,7 @@ export function Pluot(props) {
     marginTop = 100.0,
     marginRight =  100.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
-    aspectRatioAlignmentMode = "Center", // "Center", "Start", "End"
+    aspectRatioAlignmentMode = "Start", // "Center", "Start", "End"
     format = "Raster", // "Raster", "Vector"
     minTimeout = 32,
     maxTimeout = 32,
@@ -255,6 +255,7 @@ export function Pluot(props) {
           onCameraEvent(camera, event);
         },
         aspectRatioMode: aspectRatioMode,
+        aspectRatioAlignmentMode: aspectRatioAlignmentMode,
       });
       dispose = () => {
         camera.dispose();

@@ -472,7 +472,7 @@ pub fn base_draw_point_layer_svg(
             &camera_view,
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            view_params.aspect_ratio_alignment_mode,
             None,
         );
 

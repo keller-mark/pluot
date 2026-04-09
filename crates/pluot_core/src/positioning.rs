@@ -1,7 +1,7 @@
 // Simulated vertex shader logic for SVG point positioning.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 
-use crate::render_traits::{AspectRatioMode, UnitsMode};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode};
 
 
 pub fn get_scale_mat(x: f32, y: f32, z: f32) -> Mat4 {
@@ -22,7 +22,7 @@ pub fn get_translate_mat(x: f32, y: f32, z: f32) -> Mat4 {
   ]);
 }
 
-pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioMode) -> Mat4 {
+pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioMode, aspect_ratio_alignment_mode: AspectRatioAlignmentMode) -> Mat4 {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -58,9 +58,26 @@ pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRa
         }
     }
 
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    let mut x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    let mut y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == AspectRatioAlignmentMode::Start) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == AspectRatioAlignmentMode::End) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
     // Only scaling will result in the (0, 1) region being centered.
     // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    return get_scale_mat(
+    return get_translate_mat(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * get_scale_mat(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
@@ -86,7 +103,7 @@ pub fn get_point_position(
     camera_view_raw: &[f32],
     data_unit_mode: UnitsMode, // 0: pixel units, 1: data units. // TODO: keep the enums here?
     aspect_ratio_mode: AspectRatioMode, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
-    aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end.
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode, // 0: center, 1: start, 2: end.
     model_matrix_raw: Option<&[f32]>, // Column-major 4x4 model matrix (identity if None).
 ) -> (f32, f32) {
     // Simulate the vertex shader logic here.
@@ -118,7 +135,8 @@ pub fn get_point_position(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        aspect_ratio_mode
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.
@@ -188,7 +206,7 @@ pub fn get_point_size(
     camera_view_raw: &[f32],
     data_unit_mode: UnitsMode,
     aspect_ratio_mode: AspectRatioMode,
-    aspect_ratio_alignment_mode: u32,
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
     model_matrix_raw: Option<&[f32]>,
 ) -> (f32, f32) {
     let model_matrix = model_matrix_raw
@@ -212,7 +230,8 @@ pub fn get_point_size(
 
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        aspect_ratio_mode
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode
     );
 
     let NORM_TO_NDC_MAT = get_translate_mat(-1.0, -1.0, 0.0) * get_scale_mat(2.0, 2.0, 1.0);
@@ -255,7 +274,7 @@ mod tests {
         let layer_height_px = 100.0;
 
         let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -304,7 +323,7 @@ mod tests {
         // When using a wide aspect ratio with "ignore",
         // we expect streching in the X direction.
         let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -354,7 +373,7 @@ mod tests {
         // When using a wide aspect ratio with "contain",
         // we expect to be viewing more data in the X direction.
         let aspect_ratio_mode = AspectRatioMode::Contain;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -404,7 +423,7 @@ mod tests {
         // When using a tall aspect ratio with "contain",
         // we expect to be viewing more data in the Y direction.
         let aspect_ratio_mode = AspectRatioMode::Contain;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -455,7 +474,7 @@ mod tests {
         // When using a wide aspect ratio with "contain",
         // we expect to be viewing more data in the X direction.
         let aspect_ratio_mode = AspectRatioMode::Cover;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -505,7 +524,7 @@ mod tests {
         // When using a tall aspect ratio with "cover",
         // we expect to be viewing less data in the X direction.
         let aspect_ratio_mode = AspectRatioMode::Cover;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -569,7 +588,7 @@ mod tests {
         let layer_height_px = 100.0;
 
         let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -628,7 +647,7 @@ mod tests {
         let layer_height_px = 100.0;
 
         let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -687,7 +706,7 @@ mod tests {
         let layer_height_px = 100.0;
 
         let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.
@@ -746,7 +765,7 @@ mod tests {
         let layer_height_px = 100.0;
 
         let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
+        let aspect_ratio_alignment_mode = AspectRatioAlignmentMode::Center;
         let data_unit_mode = UnitsMode::Data;
 
         // These are in pixel space relative to the layer dimensions.

@@ -65,7 +65,7 @@ pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coo
         &camera_view,
         UnitsMode::Data,
         view_params.aspect_ratio_mode,
-        0,
+        view_params.aspect_ratio_alignment_mode,
         None,
     );
 
@@ -136,7 +136,8 @@ pub fn unproject(view_params: &ViewParams, layer_bounds: Option<MarginParams>, c
     // Get the same matrices used in get_point_position for the forward projection, so that we can invert them to unproject.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        view_params.aspect_ratio_mode
+        view_params.aspect_ratio_mode,
+        view_params.aspect_ratio_alignment_mode
     );
 
     let NORM_TO_NDC_MAT = get_translate_mat(-1.0, -1.0, 0.0) * get_scale_mat(2.0, 2.0, 1.0);
