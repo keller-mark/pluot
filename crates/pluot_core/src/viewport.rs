@@ -202,14 +202,14 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
             if layer_aspect_ratio > 1.0 {
                 x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
             } else if layer_aspect_ratio < 1.0 {
-                y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+                y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
             }
         }
         AspectRatioMode::Cover => {
             if layer_aspect_ratio > 1.0 {
                 y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
             } else if layer_aspect_ratio < 1.0 {
-                x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+                x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
             }
         }
     }
