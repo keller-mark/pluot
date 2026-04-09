@@ -547,8 +547,25 @@ impl DrawToRasterCpu for OmeZarrMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for OmeZarrMultiscaleLayer {
-    async fn draw(&self, _ctx: &mut SvgContext) {
-        // SVG rendering is not yet supported for bitmap-based layers.
+    async fn draw(&self, ctx: &mut SvgContext) {
+        let num_groups = self.level_sublayers.len();
+
+        for (group_i, level_group) in self.level_sublayers.iter().enumerate() {
+            let is_finest = group_i == num_groups - 1;
+
+            for (tile_i, sublayer) in level_group.sublayers.iter().enumerate() {
+                let should_draw = if is_finest {
+                    true
+                } else {
+                    let coarse_rect = &level_group.tile_rects[tile_i];
+                    !self.is_tile_occluded(coarse_rect, group_i + 1)
+                };
+
+                if should_draw {
+                    DrawToSvg::draw(sublayer, ctx).await;
+                }
+            }
+        }
     }
 }
 
