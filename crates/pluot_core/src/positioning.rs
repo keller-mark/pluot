@@ -156,8 +156,8 @@ pub fn get_point_position(
         // after all NDC-space operations are done. This keeps translations in the correct space.
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // The model_matrix transforms from model space (e.g., pixel coordinates)
-        // to data/world space before the camera chain is applied.
+        // The model_matrix transforms coordinates in model space before the camera is applied,
+        // to allow for applying user-provided affine transformations.
         * model_matrix * Vec4::new(pos_x, pos_y, 0.0, 1.0)
     );
 
