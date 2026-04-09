@@ -87,14 +87,28 @@ pub fn get_point_position(
     data_unit_mode: UnitsMode, // 0: pixel units, 1: data units. // TODO: keep the enums here?
     aspect_ratio_mode: AspectRatioMode, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end.
+    model_matrix_raw: Option<&[f32]>, // Column-major 4x4 model matrix (identity if None).
 ) -> (f32, f32) {
     // Simulate the vertex shader logic here.
     // Ideally, use the same variable names, and where possible, the same syntax.
     // However, we want to output to pixel coordinates within the layer area.
 
+    let model_matrix = model_matrix_raw
+        .map(|m| Mat4::from_column_slice(m))
+        .unwrap_or(Mat4::identity());
+
     if (data_unit_mode == UnitsMode::Pixels) {
-        // Pixel units mode: positions are already in pixel units.
-        return (pos_x, pos_y);
+        // Pixel units mode: model_matrix is applied in normalized (0,1) space.
+        // Matches the shader logic:
+        //   point_pos_norm = vertex_pos_px / layer_size
+        //   point_pos_ndc = NORM_TO_NDC_MAT * model_matrix * vec4(point_pos_norm, 0, 1)
+        let pos_norm = Vec4::new(
+            pos_x / layer_width_px,
+            pos_y / layer_height_px,
+            0.0, 1.0
+        );
+        let pos_transformed = model_matrix * pos_norm;
+        return (pos_transformed.x * layer_width_px, pos_transformed.y * layer_height_px);
     }
 
     let camera_view = Mat4::from_column_slice(camera_view_raw);
@@ -142,9 +156,9 @@ pub fn get_point_position(
         // after all NDC-space operations are done. This keeps translations in the correct space.
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
-        // before applying the camera (i.e., transforming the data coordinates).
-        * Vec4::new(pos_x, pos_y, 0.0, 1.0)
+        // The model_matrix transforms from model space (e.g., pixel coordinates)
+        // to data/world space before the camera chain is applied.
+        * model_matrix * Vec4::new(pos_x, pos_y, 0.0, 1.0)
     );
 
     // Matrix to convert from normalized (0 to 1) space to pixel space.
@@ -159,6 +173,65 @@ pub fn get_point_position(
 
     // Don't flip the Y coordinate here, and instead delegate to the caller if flipping is required.
     return (point_pos_px.x, point_pos_px.y);
+}
+
+// Compute how a size (width, height) transforms through the same pipeline as positions.
+// A size is the difference between two positions, so translations cancel out (w=0).
+// This is useful for determining, e.g., how large an image appears after camera/aspect-ratio transforms.
+pub fn get_point_size(
+    size_x: f32,
+    size_y: f32,
+
+    // "uniforms" below
+    layer_width_px: f32,
+    layer_height_px: f32,
+    camera_view_raw: &[f32],
+    data_unit_mode: UnitsMode,
+    aspect_ratio_mode: AspectRatioMode,
+    aspect_ratio_alignment_mode: u32,
+    model_matrix_raw: Option<&[f32]>,
+) -> (f32, f32) {
+    let model_matrix = model_matrix_raw
+        .map(|m| Mat4::from_column_slice(m))
+        .unwrap_or(Mat4::identity());
+
+    if (data_unit_mode == UnitsMode::Pixels) {
+        // Pixel mode: model_matrix applied in normalized space (w=0 for size).
+        let size_norm = Vec4::new(
+            size_x / layer_width_px,
+            size_y / layer_height_px,
+            0.0, 0.0
+        );
+        let size_transformed = model_matrix * size_norm;
+        return (size_transformed.x * layer_width_px, size_transformed.y * layer_height_px);
+    }
+
+    let camera_view = Mat4::from_column_slice(camera_view_raw);
+
+    let layer_aspect_ratio = layer_width_px / layer_height_px;
+
+    let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
+        layer_aspect_ratio,
+        aspect_ratio_mode
+    );
+
+    let NORM_TO_NDC_MAT = get_translate_mat(-1.0, -1.0, 0.0) * get_scale_mat(2.0, 2.0, 1.0);
+    let NDC_TO_NORM_MAT = get_translate_mat(0.5, 0.5, 0.0) * get_scale_mat(0.5, 0.5, 1.0);
+
+    let model_view_projection = ASPECT_RATIO_MAT * camera_view;
+
+    // Use w=0: translations cancel out for sizes (deltas between two positions).
+    let size_norm = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
+        * model_matrix * Vec4::new(size_x, size_y, 0.0, 0.0);
+
+    let NORM_TO_PX_MAT = get_scale_mat(
+        layer_width_px,
+        layer_height_px,
+        1.0
+    );
+    let size_px = NORM_TO_PX_MAT * Vec4::new(size_norm.x, size_norm.y, 0.0, 0.0);
+
+    (size_px.x, size_px.y)
 }
 
 #[cfg(test)]
@@ -204,6 +277,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -252,6 +326,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -303,6 +378,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -352,6 +428,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -402,6 +479,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -451,6 +529,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -512,6 +591,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -570,6 +650,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -628,6 +709,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();
@@ -686,6 +768,7 @@ mod tests {
                 data_unit_mode,
                 aspect_ratio_mode,
                 aspect_ratio_alignment_mode,
+                None,
             );
             return Vec2::new(out_x, out_y);
         }).collect();

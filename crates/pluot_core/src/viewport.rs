@@ -66,6 +66,7 @@ pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coo
         UnitsMode::Data,
         view_params.aspect_ratio_mode,
         0,
+        None,
     );
 
     // TODO: translate to account for margins/layer_bounds.

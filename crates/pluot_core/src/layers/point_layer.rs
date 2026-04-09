@@ -469,6 +469,7 @@ pub fn base_draw_point_layer_svg(
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
             0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            None,
         );
 
         let point_radius = layer_params.point_radius;

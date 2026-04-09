@@ -809,6 +809,7 @@ pub fn base_draw_text_layer_svg(
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
             0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            None,
         );
 
         // Create a circle or square element based on point_shape_mode.
