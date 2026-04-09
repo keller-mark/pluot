@@ -26,16 +26,25 @@ pub enum AspectRatioMode {
 pub enum AspectRatioAlignmentMode {
     /*
      - 0: center
-       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be aligned in the center, with excess space on both the left and right sides.
+       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be aligned in the center, with visible excess space on both the left and right sides.
        - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend both above and below the viewport.
+       - When using "contain" AspectRatioMode with a tall canvas, the unit square will be aligned in the center, with visible excess space on both the top and bottom sides.
+       - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend both to the left and right of the viewport.
+       - When using "ignore" AspectRatioMode, no action is needed.
 
      - 1: start
-       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be left-aligned, and there will be extra space on the right side.
-       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend only above the viewport.
+       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be left-aligned, and there will be visible extra space on the right side.
+       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend beyond the top of the viewport.
+       - When using "contain" AspectRatioMode with a tall canvas, the unit square will be bottom-aligned, and there will be visible extra space on the top side.
+       - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend beyond the right of the viewport.
+       - When using "ignore" AspectRatioMode, no action is needed.
 
      - 2: end
-       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be right-aligned, and there will be extra space on the left side.
-       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend only below the viewport.
+       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be right-aligned, and there will be visible extra space on the left side.
+       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend beyond the bottom of the viewport.
+       - When using "contain" AspectRatioMode with a tall canvas, the unit square will be top-aligned, and there will be visible extra space on the top side.
+       - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend beyond the left of the viewport.
+       - When using "ignore" AspectRatioMode, no action is needed.
      */
      Center,
      Start,
