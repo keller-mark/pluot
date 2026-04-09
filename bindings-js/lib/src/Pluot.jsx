@@ -379,6 +379,7 @@ export function Pluot(props) {
       margin_right: marginRight,
       device_pixel_ratio: window.devicePixelRatio,
       aspect_ratio_mode: aspectRatioMode,
+      aspect_ratio_alignment_mode: "Center",
       view_mode: viewMode,
       pickable: false,
       // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.

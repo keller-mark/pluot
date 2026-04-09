@@ -233,7 +233,7 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render_traits::{ViewParams, MarginParams, AspectRatioMode};
+    use crate::{AspectRatioAlignmentMode, render_traits::{AspectRatioMode, MarginParams, ViewParams}};
 
     fn make_view_params(
         width: u32,
@@ -246,6 +246,7 @@ mod tests {
             width,
             height,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
             device_pixel_ratio: 1.0,
             camera_view,
             timeout: None,
@@ -500,6 +501,7 @@ mod tests {
             width: 100,
             height: 100,
             aspect_ratio_mode: AspectRatioMode::Ignore,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
             device_pixel_ratio: 1.0,
             camera_view: identity_camera(),
             timeout: None,
