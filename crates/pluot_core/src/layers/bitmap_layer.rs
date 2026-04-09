@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -486,7 +486,11 @@ pub async fn base_draw_bitmap_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
-        aspect_ratio_alignment_mode: 0, // center. TODO
+        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        },
         img_size: Vec2::new(img_w as f32, img_h as f32),
         pixel_offset: Vec2::new(
             layer_params.pixel_offset.map_or(0.0, |(x, _)| x as f32),
