@@ -12,7 +12,7 @@ use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
 
-// TODO: make these configurable via AxisLayerParams
+// TODO: make these configurable via AxisLinearLayerParams
 const DEFAULT_TICK_COUNT: usize = 10;
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
@@ -200,7 +200,7 @@ impl AxisLinearLayer {
         let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
 
         // We use zero margins for the sublayers,
-        // as the AxisLayer itself is responsible for positioning,
+        // as the AxisLinearLayer itself is responsible for positioning,
         // and it will need to render things into the margins.
         let bounds = MarginParams {
             margin_top: Some(0.0_f32),
@@ -314,7 +314,7 @@ impl DrawToSvg for AxisLinearLayer {
 
 inventory::submit! {
     crate::registry::LayerRegistration {
-        layer_type_name: "AxisLayer",
+        layer_type_name: "AxisLinearLayer",
         create_layer: |value, view_params| {
             let params: AxisLinearLayerParams = serde_json::from_value(value).unwrap();
             Box::new(AxisLinearLayer::new(view_params.clone(), params))

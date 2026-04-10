@@ -61,7 +61,7 @@ async def _(camera_view, render_to_image):
                       )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="left_axis",
                         position="Left"
@@ -123,14 +123,14 @@ async def _(
                   )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="left_axis",
                         position="Left"
                     )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="bottom_axis",
                         position="Bottom"
