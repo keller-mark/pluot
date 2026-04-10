@@ -154,9 +154,10 @@ However, pixel-unit sizing can be combined with data-unit positioning.
 
 Pluot can render plots to SVG format.
 While SVG enables high-quality outputs, it has performance limitations when rendering large numbers of elements.
-This is because SVG is an XML-based format, and XML is a text-based format.
-Rendering millions of points to SVG can result in very large SVG strings, which can be slow to transfer (via the bindings) and slow to render in SVG viewers (e.g., web browsers).
-To mitigate this, Pluot can compress the SVG string on the Rust side and decompress on the other language side (currently using the LZ-string method), but this also has a performance cost and only partially mitigates the issue.
+This is because SVG is a text-based (XML) format.
+Rendering millions of points to SVG can result in very large SVG strings, which can increase memory usage, can be slow to transfer (via bindings), and can be slow to render in SVG viewers (due to bookkeeping of the many SVG nodes).
+To mitigate the transfer-related issues, Pluot can compress the SVG string on the Rust side and decompress on the non-Rust language side (currently using the LZ-string method), but this also has a performance cost and only partially mitigates the issue.
 In our experience:
 - without using string compression, plots with about 1,000 SVG nodes can be transferred and rendered in a web browser
 - with string compression, plots with about 10,000 SVG nodes can be transferred and rendered in a web browser
+In the future, we could explore alternative solutions, such as streaming.
