@@ -157,7 +157,7 @@ const DEMOS = {
             position_x0: [1],
             position_y0: [1],
             position_x1: [2],
-            position_y1: [2],
+            position_y1: [3],
             labels_vec: [4],
           }
         },

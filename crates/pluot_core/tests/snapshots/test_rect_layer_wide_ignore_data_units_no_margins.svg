@@ -1,0 +1,15 @@
+<svg height="100" width="200" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_rect_layer_clip_path">
+<rect height="100" width="200" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="200">
+<g clip-path="url(#my_rect_layer_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(0, 0, 0)" height="40" opacity="1" width="80" x="0" y="60"/>
+<rect fill="rgb(0, 0, 0)" height="50" opacity="1" width="100" x="100" y="0"/>
+</g>
+</g>
+</g>
+</svg>

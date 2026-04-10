@@ -2,7 +2,7 @@
 // We may also want to expose functions like project, unproject, and get_bounds via the public API and bindings.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 use serde::{Deserialize, Serialize};
-use crate::render_traits::{MarginParams, ViewParams, AspectRatioMode, UnitsMode};
+use crate::render_traits::{MarginParams, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode};
 use crate::positioning::{get_point_position, get_scale_mat, get_translate_mat, get_aspect_ratio_mat};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -65,7 +65,8 @@ pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coo
         &camera_view,
         UnitsMode::Data,
         view_params.aspect_ratio_mode,
-        0,
+        view_params.aspect_ratio_alignment_mode,
+        None,
     );
 
     // TODO: translate to account for margins/layer_bounds.
@@ -135,7 +136,8 @@ pub fn unproject(view_params: &ViewParams, layer_bounds: Option<MarginParams>, c
     // Get the same matrices used in get_point_position for the forward projection, so that we can invert them to unproject.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        view_params.aspect_ratio_mode
+        view_params.aspect_ratio_mode,
+        view_params.aspect_ratio_alignment_mode
     );
 
     let NORM_TO_NDC_MAT = get_translate_mat(-1.0, -1.0, 0.0) * get_scale_mat(2.0, 2.0, 1.0);
@@ -175,6 +177,7 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
     let (zoom, translate_x, translate_y) = camera_matrix_to_zoom_and_translation(view_params.camera_view);
 
     let aspect_ratio_mode = view_params.aspect_ratio_mode;
+    let aspect_ratio_alignment_mode = view_params.aspect_ratio_alignment_mode;
 
     let bounds = &view_params.margins;
 
@@ -199,27 +202,40 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
             if layer_aspect_ratio > 1.0 {
                 x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
             } else if layer_aspect_ratio < 1.0 {
-                y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+                y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
             }
         }
         AspectRatioMode::Cover => {
             if layer_aspect_ratio > 1.0 {
                 y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
             } else if layer_aspect_ratio < 1.0 {
-                x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+                x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
             }
         }
     }
 
-    // TODO: handle aspect ratio alignment mode
+    // Handle aspect ratio alignment mode
+    let mut x_translation_for_aspect_ratio_alignment_mode = 0.0_f32;
+    let mut y_translation_for_aspect_ratio_alignment_mode = 0.0_f32;
+    match aspect_ratio_alignment_mode {
+        AspectRatioAlignmentMode::Center => {}
+        AspectRatioAlignmentMode::Start => {
+            x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+            y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+        }
+        AspectRatioAlignmentMode::End => {
+            x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+            y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+        }
+    }
 
     let x_adjustment = x_scale_for_aspect_ratio_mode - 1.0;
     let y_adjustment = y_scale_for_aspect_ratio_mode - 1.0;
 
-    let min_x = (((-translate_x - 1.0 - x_adjustment) / zoom) + 1.0) / 2.0;
-    let max_x = (((-translate_x + 1.0 + x_adjustment) / zoom) + 1.0) / 2.0;
-    let min_y = (((-translate_y - 1.0 - y_adjustment) / zoom) + 1.0) / 2.0;
-    let max_y = (((-translate_y + 1.0 + y_adjustment) / zoom) + 1.0) / 2.0;
+    let min_x = (((-translate_x - 1.0 - x_adjustment + x_translation_for_aspect_ratio_alignment_mode) / zoom) + 1.0) / 2.0;
+    let max_x = (((-translate_x + 1.0 + x_adjustment + x_translation_for_aspect_ratio_alignment_mode) / zoom) + 1.0) / 2.0;
+    let min_y = (((-translate_y - 1.0 - y_adjustment + y_translation_for_aspect_ratio_alignment_mode) / zoom) + 1.0) / 2.0;
+    let max_y = (((-translate_y + 1.0 + y_adjustment + y_translation_for_aspect_ratio_alignment_mode) / zoom) + 1.0) / 2.0;
 
     DataBounds {
         x_min: min_x,
@@ -232,7 +248,7 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render_traits::{ViewParams, MarginParams, AspectRatioMode};
+    use crate::{AspectRatioAlignmentMode, render_traits::{AspectRatioMode, MarginParams, ViewParams}};
 
     fn make_view_params(
         width: u32,
@@ -245,6 +261,7 @@ mod tests {
             width,
             height,
             aspect_ratio_mode,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
             device_pixel_ratio: 1.0,
             camera_view,
             timeout: None,
@@ -480,7 +497,7 @@ mod tests {
     fn test_get_bounds_tall_contain_identity_camera() {
         let view_params = make_view_params(100, 200, AspectRatioMode::Contain, identity_camera());
         let b = get_bounds(&view_params);
-        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, 0.25, 0.75));
+        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, -0.5, 1.5));
     }
 
     // Wide cover: y bounds shrink to [0.25, 0.75] (less data visible); x stays [0, 1].
@@ -499,6 +516,7 @@ mod tests {
             width: 100,
             height: 100,
             aspect_ratio_mode: AspectRatioMode::Ignore,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
             device_pixel_ratio: 1.0,
             camera_view: identity_camera(),
             timeout: None,

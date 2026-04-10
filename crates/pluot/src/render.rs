@@ -25,6 +25,7 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
         device_pixel_ratio: render_params.device_pixel_ratio,
         camera_view: render_params.camera_view,
         aspect_ratio_mode: render_params.aspect_ratio_mode,
+        aspect_ratio_alignment_mode: render_params.aspect_ratio_alignment_mode,
         view_mode: render_params.view_mode,
         plot_id: render_params.plot_id,
         store_name: render_params.store_name,

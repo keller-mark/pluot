@@ -12,7 +12,7 @@ pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
 pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
 
-use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams};
+use pluot_core::{AspectRatioAlignmentMode, LayerParams as RawLayerParams, RenderParams as RawRenderParams};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
 pub use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend};
 pub use pluot_core::render_traits::AspectRatioMode;
@@ -53,6 +53,7 @@ pub struct RenderParams {
     pub device_pixel_ratio: f32,
     pub camera_view: Option<[f32; 16]>,
     pub aspect_ratio_mode: AspectRatioMode,
+    pub aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
     pub view_mode: ViewMode,
     pub plot_id: String,
     pub store_name: String,
@@ -81,6 +82,7 @@ impl Default for RenderParams {
             device_pixel_ratio: raw.device_pixel_ratio,
             camera_view: raw.camera_view,
             aspect_ratio_mode: raw.aspect_ratio_mode,
+            aspect_ratio_alignment_mode: raw.aspect_ratio_alignment_mode,
             view_mode: raw.view_mode,
             plot_id: raw.plot_id,
             store_name: raw.store_name,

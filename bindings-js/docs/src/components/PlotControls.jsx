@@ -90,6 +90,15 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       },
       label: 'Aspect Ratio Mode'
     },
+    aspectRatioAlignmentMode: {
+      value: 'Center',
+      options: {
+        'Center': 'Center',
+        'Start': 'Start',
+        'End': 'End',
+      },
+      label: 'Aspect Ratio Alignment Mode'
+    },
     debugMargins: {
       value: false,
       label: 'Show Margins',
@@ -113,6 +122,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
     ),
+    // TODO: download button
     */
     ...(plotSpecificOptions ? ({
       'Plot-Specific Options': folder(
@@ -123,7 +133,10 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
   });
 }
 
-export function PlotControls() {
+export function PlotControls(props) {
+  const {
+    showControls = true,
+  } = props;
   return (
     <div className="plot-controls-container" style={{ margin: '10px 0' }}>
       <style>{`
@@ -138,6 +151,7 @@ export function PlotControls() {
         titleBar={titleBar}
         hideCopyButton={true}
         theme={theme}
+        hidden={!showControls}
       />
     </div>
   );

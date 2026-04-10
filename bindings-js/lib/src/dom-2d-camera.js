@@ -39,7 +39,8 @@ const dom2dCamera = (
     onMouseUp = () => {},
     onMouseMove = () => {},
     onWheel = () => {},
-    aspectRatioMode = "ignore",
+    aspectRatioMode = "Ignore",
+    aspectRatioAlignmentMode = "Center",
   } = {}
 ) => {
   let camera = createCamera(
@@ -93,6 +94,8 @@ const dom2dCamera = (
 
   let xAspectRatioModeFactor = 1.0;
   let yAspectRatioModeFactor = 1.0;
+  let xAlignmentTranslation = 0.0;
+  let yAlignmentTranslation = 0.0;
 
   /*
     // Logic for aspect ratio handling in point_layer.wgsl
@@ -142,6 +145,16 @@ const dom2dCamera = (
         xAspectRatioModeFactor = 1.0 / aspectRatio;
       }
     }
+
+    xAlignmentTranslation = 0.0;
+    yAlignmentTranslation = 0.0;
+    if(aspectRatioAlignmentMode === "Start") {
+      xAlignmentTranslation = xAspectRatioModeFactor - 1.0;
+      yAlignmentTranslation = yAspectRatioModeFactor - 1.0;
+    } else if(aspectRatioAlignmentMode === "End") {
+      xAlignmentTranslation = 1.0 - xAspectRatioModeFactor;
+      yAlignmentTranslation = 1.0 - yAspectRatioModeFactor;
+    }
   };
   updateAspectRatioModeFactors();
 
@@ -153,10 +166,10 @@ const dom2dCamera = (
     : dY => -dY;
 
   const transformScaleX = isNdc
-    ? x => (-1 + (x / width) * 2) // to normalized device coords
+    ? x => ((-1 + (x / width) * 2) - xAlignmentTranslation) * (1.0 / xAspectRatioModeFactor)
     : x => x;
   const transformScaleY = isNdc
-    ? y => 1 - (y / height) * 2 // to normalized device coords
+    ? y => ((1 - (y / height) * 2) - yAlignmentTranslation) * (1.0 / yAspectRatioModeFactor)
     : y => y;
 
   const tick = () => {

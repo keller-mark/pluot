@@ -1,4 +1,4 @@
-use crate::wgpu;
+use crate::{render_traits::AspectRatioAlignmentMode, wgpu};
 use crate::zarr::AsyncZarritaStore;
 use crate::render_traits::AspectRatioMode;
 use serde::{Deserialize, Serialize};
@@ -111,6 +111,7 @@ pub struct RenderParams {
     pub camera_view: Option<[f32; 16]>,
 
     pub aspect_ratio_mode: AspectRatioMode,
+    pub aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
 
     pub view_mode: ViewMode,
 
@@ -179,6 +180,7 @@ impl Default for RenderParams {
 
             device_pixel_ratio: 1.0,
             aspect_ratio_mode: AspectRatioMode::Contain,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
             view_mode: ViewMode::TwoD,
             //zoom: None,
             //target_x: None,

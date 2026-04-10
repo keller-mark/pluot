@@ -23,6 +23,35 @@ pub enum AspectRatioMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum AspectRatioAlignmentMode {
+    /*
+     - 0: center
+       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be aligned in the center, with visible excess space on both the left and right sides.
+       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend both above and below the viewport.
+       - When using "contain" AspectRatioMode with a tall canvas, the unit square will be aligned in the center, with visible excess space on both the top and bottom sides.
+       - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend both to the left and right of the viewport.
+       - When using "ignore" AspectRatioMode, no action is needed.
+
+     - 1: start
+       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be left-aligned, and there will be visible extra space on the right side.
+       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend beyond the top of the viewport.
+       - When using "contain" AspectRatioMode with a tall canvas, the unit square will be bottom-aligned, and there will be visible extra space on the top side.
+       - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend beyond the right of the viewport.
+       - When using "ignore" AspectRatioMode, no action is needed.
+
+     - 2: end
+       - When using "contain" AspectRatioMode with a wide canvas, the unit square will be right-aligned, and there will be visible extra space on the left side.
+       - When using "cover" AspectRatioMode with a wide canvas, the unit square will extend beyond the bottom of the viewport.
+       - When using "contain" AspectRatioMode with a tall canvas, the unit square will be top-aligned, and there will be visible extra space on the top side.
+       - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend beyond the left of the viewport.
+       - When using "ignore" AspectRatioMode, no action is needed.
+     */
+     Center,
+     Start,
+     End,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UnitsMode {
     // 0: pixels (e.g., for fixed pixel-unit sizes).
     Pixels,
@@ -46,6 +75,7 @@ pub struct ViewParams {
     pub height: u32,
 
     pub aspect_ratio_mode: AspectRatioMode,
+    pub aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
 
     // Device pixel ratio to support retina displays.
     // Default to 1.0 for standard displays.
@@ -79,6 +109,7 @@ impl Default for ViewParams {
             width: 100,
             height: 100,
             aspect_ratio_mode: AspectRatioMode::Contain,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
             device_pixel_ratio: 1.0,
             camera_view: None,
             timeout: None,

@@ -1,7 +1,7 @@
 // Simulated vertex shader logic for SVG point positioning.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 
-use crate::render_traits::{AspectRatioMode, UnitsMode};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode};
 
 
 pub fn get_scale_mat(x: f32, y: f32, z: f32) -> Mat4 {
@@ -22,7 +22,7 @@ pub fn get_translate_mat(x: f32, y: f32, z: f32) -> Mat4 {
   ]);
 }
 
-pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioMode) -> Mat4 {
+pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRatioMode, aspect_ratio_alignment_mode: AspectRatioAlignmentMode) -> Mat4 {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -58,9 +58,26 @@ pub fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: AspectRa
         }
     }
 
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    let mut x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    let mut y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == AspectRatioAlignmentMode::Start) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == AspectRatioAlignmentMode::End) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
     // Only scaling will result in the (0, 1) region being centered.
     // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    return get_scale_mat(
+    return get_translate_mat(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * get_scale_mat(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
@@ -86,15 +103,29 @@ pub fn get_point_position(
     camera_view_raw: &[f32],
     data_unit_mode: UnitsMode, // 0: pixel units, 1: data units. // TODO: keep the enums here?
     aspect_ratio_mode: AspectRatioMode, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
-    aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end.
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode, // 0: center, 1: start, 2: end.
+    model_matrix_raw: Option<&[f32]>, // Column-major 4x4 model matrix (identity if None).
 ) -> (f32, f32) {
     // Simulate the vertex shader logic here.
     // Ideally, use the same variable names, and where possible, the same syntax.
     // However, we want to output to pixel coordinates within the layer area.
 
+    let model_matrix = model_matrix_raw
+        .map(|m| Mat4::from_column_slice(m))
+        .unwrap_or(Mat4::identity());
+
     if (data_unit_mode == UnitsMode::Pixels) {
-        // Pixel units mode: positions are already in pixel units.
-        return (pos_x, pos_y);
+        // Pixel units mode: model_matrix is applied in normalized (0,1) space.
+        // Matches the shader logic:
+        //   point_pos_norm = vertex_pos_px / layer_size
+        //   point_pos_ndc = NORM_TO_NDC_MAT * model_matrix * vec4(point_pos_norm, 0, 1)
+        let pos_norm = Vec4::new(
+            pos_x / layer_width_px,
+            pos_y / layer_height_px,
+            0.0, 1.0
+        );
+        let pos_transformed = model_matrix * pos_norm;
+        return (pos_transformed.x * layer_width_px, pos_transformed.y * layer_height_px);
     }
 
     let camera_view = Mat4::from_column_slice(camera_view_raw);
@@ -104,7 +135,8 @@ pub fn get_point_position(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        aspect_ratio_mode
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.
@@ -142,9 +174,9 @@ pub fn get_point_position(
         // after all NDC-space operations are done. This keeps translations in the correct space.
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
-        // before applying the camera (i.e., transforming the data coordinates).
-        * Vec4::new(pos_x, pos_y, 0.0, 1.0)
+        // The model_matrix transforms coordinates in model space before the camera is applied,
+        // to allow for applying user-provided affine transformations.
+        * model_matrix * Vec4::new(pos_x, pos_y, 0.0, 1.0)
     );
 
     // Matrix to convert from normalized (0 to 1) space to pixel space.
@@ -161,535 +193,62 @@ pub fn get_point_position(
     return (point_pos_px.x, point_pos_px.y);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// Compute how a size (width, height) transforms through the same pipeline as positions.
+// A size is the difference between two positions, so translations cancel out (w=0).
+// This is useful for determining, e.g., how large an image appears after camera/aspect-ratio transforms.
+pub fn get_point_size(
+    size_x: f32,
+    size_y: f32,
 
-    // The "base" / easiest case: square aspect ratio, ignore mode, identity camera, zero margins.
-    #[test]
-    fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
+    // "uniforms" below
+    layer_width_px: f32,
+    layer_height_px: f32,
+    camera_view_raw: &[f32],
+    data_unit_mode: UnitsMode,
+    aspect_ratio_mode: AspectRatioMode,
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
+    model_matrix_raw: Option<&[f32]>,
+) -> (f32, f32) {
+    let model_matrix = model_matrix_raw
+        .map(|m| Mat4::from_column_slice(m))
+        .unwrap_or(Mat4::identity());
 
-        let camera_view = Mat4::identity();
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 100.0;
-
-        let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 100.0),
-            Vec2::new(100.0, 0.0),
-            Vec2::new(100.0, 100.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
+    if (data_unit_mode == UnitsMode::Pixels) {
+        // Pixel mode: model_matrix applied in normalized space (w=0 for size).
+        let size_norm = Vec4::new(
+            size_x / layer_width_px,
+            size_y / layer_height_px,
+            0.0, 0.0
+        );
+        let size_transformed = model_matrix * size_norm;
+        return (size_transformed.x * layer_width_px, size_transformed.y * layer_height_px);
     }
 
-    // ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
-    #[test]
-    fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
+    let camera_view = Mat4::from_column_slice(camera_view_raw);
 
-        let camera_view = Mat4::identity();
+    let layer_aspect_ratio = layer_width_px / layer_height_px;
 
-        let layer_width_px = 200.0;
-        let layer_height_px = 100.0;
+    let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
+        layer_aspect_ratio,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode
+    );
 
-        // When using a wide aspect ratio with "ignore",
-        // we expect streching in the X direction.
-        let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
+    let NORM_TO_NDC_MAT = get_translate_mat(-1.0, -1.0, 0.0) * get_scale_mat(2.0, 2.0, 1.0);
+    let NDC_TO_NORM_MAT = get_translate_mat(0.5, 0.5, 0.0) * get_scale_mat(0.5, 0.5, 1.0);
 
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 100.0),
-            Vec2::new(200.0, 0.0),
-            Vec2::new(200.0, 100.0),
-        ];
+    let model_view_projection = ASPECT_RATIO_MAT * camera_view;
 
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
+    // Use w=0: translations cancel out for sizes (deltas between two positions).
+    let size_norm = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
+        * model_matrix * Vec4::new(size_x, size_y, 0.0, 0.0);
 
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
+    let NORM_TO_PX_MAT = get_scale_mat(
+        layer_width_px,
+        layer_height_px,
+        1.0
+    );
+    let size_px = NORM_TO_PX_MAT * Vec4::new(size_norm.x, size_norm.y, 0.0, 0.0);
 
-
-    // Testing "contain" mode.
-    #[test]
-    fn test_wide_aspect_ratio_with_contain_mode_and_identity_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        let camera_view = Mat4::identity();
-
-        let layer_width_px = 200.0;
-        let layer_height_px = 100.0;
-
-        // When using a wide aspect ratio with "contain",
-        // we expect to be viewing more data in the X direction.
-        let aspect_ratio_mode = AspectRatioMode::Contain;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            // Due to the "contain" aspect_ratio_mode,
-            // the X coordinates of the unit square will be compressed.
-            Vec2::new(50.0, 0.0),
-            Vec2::new(50.0, 100.0),
-            Vec2::new(150.0, 0.0),
-            Vec2::new(150.0, 100.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-    #[test]
-    fn test_tall_aspect_ratio_with_contain_mode_and_identity_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        let camera_view = Mat4::identity();
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 200.0;
-
-        // When using a tall aspect ratio with "contain",
-        // we expect to be viewing more data in the Y direction.
-        let aspect_ratio_mode = AspectRatioMode::Contain;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            // Due to the "contain" aspect_ratio_mode,
-            // the Y coordinates of the unit square will be compressed.
-            Vec2::new(0.0, 50.0),
-            Vec2::new(0.0, 150.0),
-            Vec2::new(100.0, 50.0),
-            Vec2::new(100.0, 150.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-    // Testing "cover" mode.
-    #[test]
-    fn test_wide_aspect_ratio_with_cover_mode_and_identity_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        let camera_view = Mat4::identity();
-
-        let layer_width_px = 200.0;
-        let layer_height_px = 100.0;
-
-        // When using a wide aspect ratio with "contain",
-        // we expect to be viewing more data in the X direction.
-        let aspect_ratio_mode = AspectRatioMode::Cover;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            // Due to the "cover" aspect_ratio_mode,
-            // the Y coordinates of the unit square will be outside of NDC.
-            Vec2::new(0.0, -50.0),
-            Vec2::new(0.0, 150.0),
-            Vec2::new(200.0, -50.0),
-            Vec2::new(200.0, 150.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-    #[test]
-    fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        let camera_view = Mat4::identity();
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 200.0;
-
-        // When using a tall aspect ratio with "cover",
-        // we expect to be viewing less data in the X direction.
-        let aspect_ratio_mode = AspectRatioMode::Cover;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            // Due to the "cover" aspect_ratio_mode,
-            // the Y coordinates of the unit square will be outside of NDC.
-            Vec2::new(-50.0, 0.0),
-            Vec2::new(-50.0, 200.0),
-            Vec2::new(150.0, 0.0),
-            Vec2::new(150.0, 200.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-
-    // ======== TESTING CAMERA ZOOM TRANSFORMS ========
-    // The "base" / easiest case: square aspect ratio, ignore mode, zero margins.
-    #[test]
-    fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        // When camera zoom factor is 2,
-        // we expect the points to be scaled by 2x,
-        // so that we only see data in the range [0.25, 0.75] in both X and Y,
-        // which maps to NDC coordinates [-1, 1].
-        let camera_zoom = 2.0;
-        let camera_target_x = 0.0;
-        let camera_target_y = 0.0;
-
-        let camera_view = Mat4::from_columns(&[
-            Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, camera_zoom, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 0.0),
-            Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
-        ]);
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 100.0;
-
-        let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            Vec2::new(-50.0, -50.0),
-            Vec2::new(-50.0, 150.0),
-            Vec2::new(150.0, -50.0),
-            Vec2::new(150.0, 150.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-    #[test]
-    fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_4x_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        // When camera zoom factor is 2,
-        // we expect the points to be scaled by 2x,
-        // so that we only see data in the range [0.25, 0.75] in both X and Y,
-        // which maps to NDC coordinates [-1, 1].
-        let camera_zoom = 4.0;
-        let camera_target_x = 0.0;
-        let camera_target_y = 0.0;
-
-        let camera_view = Mat4::from_columns(&[
-            Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, camera_zoom, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 0.0),
-            Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
-        ]);
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 100.0;
-
-        let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            Vec2::new(-150.0, -150.0),
-            Vec2::new(-150.0, 250.0),
-            Vec2::new(250.0, -150.0),
-            Vec2::new(250.0, 250.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-    #[test]
-    fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_2x_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        // When camera zoom factor is 2,
-        // we expect the points to be scaled by 2x,
-        // so that we only see data in the range [0.25, 0.75] in both X and Y,
-        // which maps to NDC coordinates [-1, 1].
-        let camera_zoom = 0.5;
-        let camera_target_x = 0.0;
-        let camera_target_y = 0.0;
-
-        let camera_view = Mat4::from_columns(&[
-            Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, camera_zoom, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 0.0),
-            Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
-        ]);
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 100.0;
-
-        let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            Vec2::new(25.0, 25.0),
-            Vec2::new(25.0, 75.0),
-            Vec2::new(75.0, 25.0),
-            Vec2::new(75.0, 75.0),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
-
-    #[test]
-    fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera() {
-        // Consider data points at the corners of a unit square.
-        let points = vec![
-            Vec2::new(0.0, 0.0),
-            Vec2::new(0.0, 1.0),
-            Vec2::new(1.0, 0.0),
-            Vec2::new(1.0, 1.0),
-        ];
-
-        // When camera zoom factor is 2,
-        // we expect the points to be scaled by 2x,
-        // so that we only see data in the range [0.25, 0.75] in both X and Y,
-        // which maps to NDC coordinates [-1, 1].
-        let camera_zoom = 0.25;
-        let camera_target_x = 0.0;
-        let camera_target_y = 0.0;
-
-        let camera_view = Mat4::from_columns(&[
-            Vec4::new(camera_zoom, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, camera_zoom, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 0.0),
-            Vec4::new(camera_target_x, camera_target_y, 0.0, 1.0)
-        ]);
-
-        let layer_width_px = 100.0;
-        let layer_height_px = 100.0;
-
-        let aspect_ratio_mode = AspectRatioMode::Ignore;
-        let aspect_ratio_alignment_mode = 0; // Center
-        let data_unit_mode = UnitsMode::Data;
-
-        // These are in pixel space relative to the layer dimensions.
-        let expected_points_ndc = vec![
-            Vec2::new(37.5, 37.5),
-            Vec2::new(37.5, 62.5),
-            Vec2::new(62.5, 37.5),
-            Vec2::new(62.5, 62.5),
-        ];
-
-        let resulting_points_ndc: Vec<Vec2> = points.iter().map(|point_pos_orig| {
-            let (out_x, out_y) = get_point_position(
-                point_pos_orig.x,
-                point_pos_orig.y,
-                // "uniforms"
-                layer_width_px,
-                layer_height_px,
-                camera_view.as_slice(), // column-major order
-                data_unit_mode,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-            );
-            return Vec2::new(out_x, out_y);
-        }).collect();
-
-        assert_eq!(expected_points_ndc, resulting_points_ndc);
-    }
+    (size_px.x, size_px.y)
 }

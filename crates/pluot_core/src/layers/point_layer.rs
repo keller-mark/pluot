@@ -8,7 +8,7 @@ use std::sync::{Arc};
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
@@ -208,7 +208,11 @@ pub async fn base_draw_point_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
-        aspect_ratio_alignment_mode: 0, // center. TODO
+        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        },
         color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
     };
 
@@ -468,7 +472,8 @@ pub fn base_draw_point_layer_svg(
             &camera_view,
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            view_params.aspect_ratio_alignment_mode,
+            None,
         );
 
         let point_radius = layer_params.point_radius;

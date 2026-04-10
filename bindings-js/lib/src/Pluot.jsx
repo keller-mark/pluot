@@ -125,6 +125,7 @@ export function Pluot(props) {
     marginTop = 100.0,
     marginRight =  100.0,
     aspectRatioMode = "Contain", // "Ignore", "Contain", "Cover"
+    aspectRatioAlignmentMode = "Start", // "Center", "Start", "End"
     format = "Raster", // "Raster", "Vector"
     minTimeout = 32,
     maxTimeout = 32,
@@ -254,6 +255,7 @@ export function Pluot(props) {
           onCameraEvent(camera, event);
         },
         aspectRatioMode: aspectRatioMode,
+        aspectRatioAlignmentMode: aspectRatioAlignmentMode,
       });
       dispose = () => {
         camera.dispose();
@@ -357,7 +359,7 @@ export function Pluot(props) {
     }
 
     return dispose;
-  }, [cameraRef, viewMode, aspectRatioMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
+  }, [cameraRef, viewMode, aspectRatioMode, aspectRatioAlignmentMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
 
 
@@ -379,6 +381,7 @@ export function Pluot(props) {
       margin_right: marginRight,
       device_pixel_ratio: window.devicePixelRatio,
       aspect_ratio_mode: aspectRatioMode,
+      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
       view_mode: viewMode,
       pickable: false,
       // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
@@ -492,7 +495,7 @@ export function Pluot(props) {
     // Render on the next animation frame.
     throttledRender();
   }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format,
-    width, height, aspectRatioMode, marginLeft, marginRight, marginTop, marginBottom]);
+    width, height, aspectRatioMode, aspectRatioAlignmentMode, marginLeft, marginRight, marginTop, marginBottom]);
 
   return (
     <>

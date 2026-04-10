@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use crate::render_traits::{
-    AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::positioning::get_point_position;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -209,7 +209,11 @@ pub async fn base_draw_rect_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
-        aspect_ratio_alignment_mode: 0, // center. TODO
+        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        },
         color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
     };
 
@@ -496,7 +500,8 @@ pub fn base_draw_rect_layer_svg(
             &camera_view,
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            view_params.aspect_ratio_alignment_mode,
+            None,
         );
         let (target_x_px, target_y_px) = get_point_position(
             target_x,
@@ -506,15 +511,18 @@ pub fn base_draw_rect_layer_svg(
             &camera_view,
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            view_params.aspect_ratio_alignment_mode,
+            None,
         );
+
+        let rect_height = (target_y_px - source_y_px).abs();
 
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Rectangle(TwoRectangle {
             x: source_x_px.min(target_x_px) as f64,
-            y: source_y_px.min(target_y_px) as f64,
+            y: ((layer_h - source_y_px.min(target_y_px)) - rect_height) as f64,
             width: (target_x_px - source_x_px).abs() as f64,
-            height: (target_y_px - source_y_px).abs() as f64,
+            height: rect_height as f64,
             linewidth: layer_params.stroke_width as f64,
             // TODO: more params
             ..Default::default()

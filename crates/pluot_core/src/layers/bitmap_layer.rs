@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
-use crate::two::shapes::{TwoElement, TwoImage, TwoImageRenderingStyle};
+use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 use crate::log;
 
 
@@ -486,7 +486,11 @@ pub async fn base_draw_bitmap_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
-        aspect_ratio_alignment_mode: 0, // center. TODO
+        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        },
         img_size: Vec2::new(img_w as f32, img_h as f32),
         pixel_offset: Vec2::new(
             layer_params.pixel_offset.map_or(0.0, |(x, _)| x as f32),
@@ -737,32 +741,102 @@ pub fn base_draw_bitmap_layer_svg(
     let bmp = encode_bmp_rgba(img_w, img_h, &rgba);
     let href = format!("data:image/bmp;base64,{}", base64_encode(&bmp));
 
-    let margin_top = layer_params.bounds.as_ref()
-        .or(view_params.margins.as_ref())
-        .and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
-    let margin_left = layer_params.bounds.as_ref()
-        .or(view_params.margins.as_ref())
-        .and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
-    let margin_right = layer_params.bounds.as_ref()
-        .or(view_params.margins.as_ref())
-        .and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
-    let margin_bottom = layer_params.bounds.as_ref()
-        .or(view_params.margins.as_ref())
-        .and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
+    // TODO: reduce code reuse here
+    let camera_view = view_params.camera_view.unwrap_or([
+        // Column 0
+        1.0, 0.0, 0.0, 0.0, // Column 1
+        0.0, 1.0, 0.0, 0.0, // Column 2
+        0.0, 0.0, 1.0, 0.0, // Column 3
+        0.0, 0.0, 0.0, 1.0,
+    ]);
 
-    let draw_w = view_params.width as f64 - margin_left - margin_right;
-    let draw_h = view_params.height as f64 - margin_top - margin_bottom;
+    // Use layer-specific bounds if not None, otherwise use the view's margins
+    // (which may also be None).
+    let bounds = if layer_params.bounds.is_none() {
+        &view_params.margins
+    } else {
+        &layer_params.bounds
+    };
 
-    vec![TwoElement::Image(TwoImage {
-        // TODO: fix the positioning so that it matches the logic in the shader.
-        // It will need to use position_utils, but will also be more complicated.
-        x: margin_left,
-        y: margin_top,
-        width: draw_w,
-        height: draw_h,
+    let margin_top = if let Some(margin_params) = &bounds {
+        margin_params.margin_top.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_right = if let Some(margin_params) = &bounds {
+        margin_params.margin_right.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_bottom = if let Some(margin_params) = &bounds {
+        margin_params.margin_bottom.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+    let margin_left = if let Some(margin_params) = &bounds {
+        margin_params.margin_left.unwrap_or(0.0)
+    } else { 0.0 } as f64;
+
+    let viewport_w = view_params.width as f32;
+    let viewport_h = view_params.height as f32;
+
+    let layer_w = viewport_w - (margin_left + margin_right) as f32;
+    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+    // End TODO
+
+    let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+
+    let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
+
+    // Compute the position of the bottom-left corner of the image quad,
+    // matching the shader's vertex_pos_px for QUAD[0] = (0, 0):
+    //   vertex_pos_px = (0 * img_w + offset_x, 0 * img_h + offset_y)
+    let (px, py) = get_point_position(
+        offset_x as f32,
+        offset_y as f32,
+        layer_w,
+        layer_h,
+        &camera_view,
+        layer_params.data_unit_mode,
+        view_params.aspect_ratio_mode,
+        view_params.aspect_ratio_alignment_mode,
+        Some(&model_matrix_raw),
+    );
+
+    // Compute the image size after transforms.
+    let (sw, sh) = get_point_size(
+        img_w as f32,
+        img_h as f32,
+        layer_w,
+        layer_h,
+        &camera_view,
+        layer_params.data_unit_mode,
+        view_params.aspect_ratio_mode,
+        view_params.aspect_ratio_alignment_mode,
+        Some(&model_matrix_raw),
+    );
+
+    // px, py are in layer-local pixel coords with Y increasing upward.
+    // SVG has Y increasing downward, so flip:
+    //   SVG y of the image top-left = layer_h - (py + sh)
+    let image_element = TwoElement::Image(TwoImage {
+        x: px as f64,
+        y: (layer_h - py - sh) as f64,
+        width: sw as f64,
+        height: sh as f64,
         href,
         opacity: layer_params.opacity as f64,
         image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
+    });
+
+    // Insert the image into an SVG group with a transform and clipping to handle margins,
+    // similar to the usage of scissor rect and viewport in the Canvas rendering.
+    vec![TwoElement::Group(TwoGroup {
+        elements: vec![image_element],
+        translate: Some((margin_left, margin_top)),
+        layer_id: Some(layer_params.layer_id.clone()),
+        // TODO: check how clip_rect interacts with the translate
+        clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+        ..Default::default()
     })]
 }
 

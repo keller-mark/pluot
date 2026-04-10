@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -543,7 +543,11 @@ pub async fn base_draw_text_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
-        aspect_ratio_alignment_mode: 0, // center. TODO
+        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        },
         text_rotation: layer_params.text_rotation.unwrap_or(0.0),
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
@@ -808,7 +812,8 @@ pub fn base_draw_text_layer_svg(
             &camera_view,
             layer_params.data_unit_mode,
             view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            view_params.aspect_ratio_alignment_mode,
+            None,
         );
 
         // Create a circle or square element based on point_shape_mode.

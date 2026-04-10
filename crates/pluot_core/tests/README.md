@@ -27,7 +27,7 @@ When you add a new test:
 4. Inspect the output to verify it looks correct.
 5. Bless it by copying to the snapshots directory:
    ```
-   cp crates/pluot/tests/current/<name> crates/pluot/tests/snapshots/<name>
+   cp crates/pluot_core/tests/current/<name> crates/pluot_core/tests/snapshots/<name>
    ```
 6. Commit the new snapshot file.
 
@@ -40,7 +40,9 @@ When rendering output changes intentionally (e.g., shader fix, new layer behavio
 3. Inspect the current output to verify the change is correct.
 4. Bless the updated snapshot:
    ```
-   cp crates/pluot/tests/current/<name> crates/pluot/tests/snapshots/<name>
+   cp crates/pluot_core/tests/current/<name> crates/pluot_core/tests/snapshots/<name>
+   # Or, if you need to copy multiple files with the same prefix:
+   cp crates/pluot_core/tests/current/<prefix>* crates/pluot_core/tests/snapshots/
    ```
 5. Commit the updated snapshot file.
 
@@ -55,5 +57,5 @@ When rendering output changes intentionally (e.g., shader fix, new layer behavio
 These tests require GPU access and are skipped in environments where the `lacks_gpu` feature is enabled:
 
 ```
-cargo test -p pluot
+cargo test -p pluot_core
 ```
