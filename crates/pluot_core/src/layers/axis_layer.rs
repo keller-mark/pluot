@@ -30,19 +30,19 @@ pub enum AxisPosition {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AxisLayerParams {
+pub struct AxisLinearLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
 }
 
-pub struct AxisLayer {
+pub struct AxisLinearLayer {
     view_params: ViewParams,
-    layer_params: AxisLayerParams,
+    layer_params: AxisLinearLayerParams,
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
 }
 
-impl AxisLayer {
-    pub fn new(view_params: ViewParams, layer_params: AxisLayerParams) -> Self {
+impl AxisLinearLayer {
+    pub fn new(view_params: ViewParams, layer_params: AxisLinearLayerParams) -> Self {
         Self {
             view_params,
             layer_params,
@@ -280,7 +280,7 @@ fn format_tick_value(value: f64) -> String {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for AxisLayer {
+impl PreparedLayer for AxisLinearLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Build sublayers based on current view params
         self.sub_layer_instances = self.build_sublayers();
@@ -292,7 +292,7 @@ impl PreparedLayer for AxisLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for AxisLayer {
+impl DrawToRasterGpu for AxisLinearLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
@@ -300,13 +300,13 @@ impl DrawToRasterGpu for AxisLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for AxisLayer {
+impl DrawToRasterCpu for AxisLinearLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for AxisLayer {
+impl DrawToSvg for AxisLinearLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
@@ -316,10 +316,10 @@ inventory::submit! {
     crate::registry::LayerRegistration {
         layer_type_name: "AxisLayer",
         create_layer: |value, view_params| {
-            let params: AxisLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(AxisLayer::new(view_params.clone(), params))
+            let params: AxisLinearLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AxisLinearLayer::new(view_params.clone(), params))
         },
     }
 }
 
-impl PickableLayer for AxisLayer {}
+impl PickableLayer for AxisLinearLayer {}
