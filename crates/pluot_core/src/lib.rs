@@ -5,7 +5,7 @@ pub mod render_types;
 pub mod cache;
 pub mod render_traits;
 mod render;
-mod positioning;
+pub mod positioning;
 pub mod viewport;
 mod picking;
 pub mod layers;

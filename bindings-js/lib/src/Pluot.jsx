@@ -120,7 +120,7 @@ export function Pluot(props) {
     storeName: storeNameProp,
     plotParams,
     viewMode = "2d",
-    marginBottom = 500.0,
+    marginBottom = 100.0,
     marginLeft = 100.0,
     marginTop = 100.0,
     marginRight =  100.0,

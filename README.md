@@ -202,6 +202,8 @@ cargo build
 cargo test
 # or
 cargo test --features lacks_gpu
+# or, run a specific test file
+cargo test -p pluot_core --test test_positioning
 ```
 
 ### Lint with clippy
