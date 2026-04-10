@@ -49,6 +49,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_aram_center() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 // ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
@@ -98,6 +111,19 @@ fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_aram_center() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 100.0_f32));
 }
 
 
@@ -150,6 +176,19 @@ fn test_wide_aspect_ratio_with_contain_mode_and_identity_camera_aram_center() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 #[test]
@@ -200,6 +239,19 @@ fn test_tall_aspect_ratio_with_contain_mode_and_identity_camera_aram_center() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 // Testing "cover" mode.
@@ -251,6 +303,19 @@ fn test_wide_aspect_ratio_with_cover_mode_and_identity_camera_aram_center() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 #[test]
@@ -301,6 +366,19 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_aram_center() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 
@@ -363,6 +441,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_aram_center
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 #[test]
@@ -422,6 +513,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_4x_camera_aram_center
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (400.0_f32, 400.0_f32));
 }
 
 #[test]
@@ -481,6 +585,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_2x_camera_aram_cente
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (50.0_f32, 50.0_f32));
 }
 
 #[test]
@@ -540,6 +657,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera_aram_cente
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (25.0_f32, 25.0_f32));
 }
 
 // ======== _aram_start variants ========
@@ -589,6 +719,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_aram_start() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 // ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
@@ -638,6 +781,19 @@ fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_aram_start() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 100.0_f32));
 }
 
 
@@ -690,6 +846,19 @@ fn test_wide_aspect_ratio_with_contain_mode_and_identity_camera_aram_start() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 #[test]
@@ -740,6 +909,19 @@ fn test_tall_aspect_ratio_with_contain_mode_and_identity_camera_aram_start() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 // Testing "cover" mode.
@@ -791,6 +973,19 @@ fn test_wide_aspect_ratio_with_cover_mode_and_identity_camera_aram_start() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 #[test]
@@ -841,6 +1036,19 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_aram_start() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 
@@ -903,6 +1111,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_aram_start(
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 #[test]
@@ -962,6 +1183,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_4x_camera_aram_start(
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (400.0_f32, 400.0_f32));
 }
 
 #[test]
@@ -1021,6 +1255,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_2x_camera_aram_start
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (50.0_f32, 50.0_f32));
 }
 
 #[test]
@@ -1080,6 +1327,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera_aram_start
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (25.0_f32, 25.0_f32));
 }
 
 // ======== _aram_end variants ========
@@ -1129,6 +1389,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_aram_end() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 // ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
@@ -1178,6 +1451,19 @@ fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_aram_end() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 100.0_f32));
 }
 
 
@@ -1230,6 +1516,19 @@ fn test_wide_aspect_ratio_with_contain_mode_and_identity_camera_aram_end() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 #[test]
@@ -1280,6 +1579,19 @@ fn test_tall_aspect_ratio_with_contain_mode_and_identity_camera_aram_end() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
 // Testing "cover" mode.
@@ -1331,6 +1643,19 @@ fn test_wide_aspect_ratio_with_cover_mode_and_identity_camera_aram_end() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 #[test]
@@ -1381,6 +1706,19 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_aram_end() {
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 
@@ -1443,6 +1781,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_aram_end() 
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (200.0_f32, 200.0_f32));
 }
 
 #[test]
@@ -1502,6 +1853,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_4x_camera_aram_end() 
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (400.0_f32, 400.0_f32));
 }
 
 #[test]
@@ -1561,6 +1925,19 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_2x_camera_aram_end()
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (50.0_f32, 50.0_f32));
 }
 
 #[test]
@@ -1620,4 +1997,17 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera_aram_end()
     }).collect();
 
     assert_eq!(expected_points_ndc, resulting_points_ndc);
+
+    let (size_out_x, size_out_y) = get_point_size(
+        1.0,
+        1.0,
+        layer_width_px,
+        layer_height_px,
+        camera_view.as_slice(),
+        data_unit_mode,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        None,
+    );
+    assert_eq!((size_out_x, size_out_y), (25.0_f32, 25.0_f32));
 }
