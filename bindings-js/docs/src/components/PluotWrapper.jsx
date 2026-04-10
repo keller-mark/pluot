@@ -20,6 +20,7 @@ export function PluotWrapper(props) {
   const {
     storeUrl,
     plotId = "example-plot",
+    showControls = true,
     // TODO: if defaults for margins, sizes, etc. are provided here, pass to usePlotControls.
   } = props;
 
@@ -30,7 +31,7 @@ export function PluotWrapper(props) {
     return new FetchStore(storeUrl);
   }, [storeUrl]);
 
-  const { aspectRatioMode, format, debugMargins } = controlValues;
+  const { aspectRatioMode, aspectRatioAlignmentMode, format, debugMargins } = controlValues;
   const width = controlValues.size.width;
   const height = controlValues.size.height;
   const marginLeft = controlValues.horizontalMargins.left;
@@ -56,11 +57,14 @@ export function PluotWrapper(props) {
         marginRight={marginRight}
         marginBottom={marginBottom}
         aspectRatioMode={aspectRatioMode}
+        aspectRatioAlignmentMode={aspectRatioAlignmentMode}
         format={format}
         debugMargins={debugMargins}
         {...props}
       />
-      <PlotControls />
+      <PlotControls
+        showControls={showControls}
+      />
     </>
   );
 }
