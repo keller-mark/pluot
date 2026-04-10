@@ -497,7 +497,7 @@ mod tests {
     fn test_get_bounds_tall_contain_identity_camera() {
         let view_params = make_view_params(100, 200, AspectRatioMode::Contain, identity_camera());
         let b = get_bounds(&view_params);
-        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, 0.25, 0.75));
+        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, -0.5, 1.5));
     }
 
     // Wide cover: y bounds shrink to [0.25, 0.75] (less data visible); x stays [0, 1].
