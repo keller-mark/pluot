@@ -78,8 +78,8 @@ Read more about the project's motivations in my [blog post](https://github.com/k
 - WebGL fallbacks via the `webgl` feature of WGPU. Why not: this both increases the WASM bundle size in order to include the shader translation code paths, and it requires providing the `compatible_surface` parameter when initializing the WGPU Instance (which conflicts with our first non-goal of avoiding canvas management).
   - As a workaround, environments that do not support WebGPU can either use the slower SVG-based rendering, or future CPU-based raster rendering ([#157](https://github.com/keller-mark/pluot/issues/157)).
   - Alternatively, tell the user to use a different browser/platform, or just be patient and wait for WebGPU support to become more widespread.
-    - WebGPU is available in all major browsers already ([implementation status](https://github.com/gpuweb/gpuweb/wiki/Implementation-Status)).
-      - Caveat: WebGPU is only available in Safari on macOS Tahoe 26. According to [one April 2026 estimate](https://telemetrydeck.com/survey/apple/macOS/versions/) of macOS version market share, approximately ~70% of macOS users are running Tahoe or later. Until certain [design issues](https://tonsky.me/blog/tahoe-icons/) are resolved by Apple, I suspect that a subset of users will resist upgrading to Tahoe for as long as possible.
+    - WebGPU is available in all major browsers already ([implementation status](https://github.com/gpuweb/gpuweb/wiki/Implementation-Status), [web.dev article](https://web.dev/blog/webgpu-supported-major-browsers)).
+      - Caveat: WebGPU is only available in Safari on macOS Tahoe 26 and above. According to [one April 2026 estimate](https://telemetrydeck.com/survey/apple/macOS/versions/) of macOS version market share, approximately ~70% of macOS users are running Tahoe or later. Until certain [design issues](https://tonsky.me/blog/tahoe-icons/) are resolved by Apple, I suspect that a subset of users will resist upgrading to Tahoe for as long as possible.
 
 ## Development
 
