@@ -24,9 +24,11 @@ pub struct ZarrPointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode,
+    pub data_unit_mode_x: UnitsMode,
+    pub data_unit_mode_y: UnitsMode,
     pub point_radius: f32,
-    pub point_radius_unit_mode: UnitsMode,
+    pub point_radius_unit_mode_x: UnitsMode,
+    pub point_radius_unit_mode_y: UnitsMode,
     pub point_shape_mode: PointShapeMode,
 
     // Data keys
@@ -62,7 +64,10 @@ impl ZarrPointLayer {
         layer_params: ZarrPointLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if layer_params.point_radius_unit_mode_x == UnitsMode::Data && layer_params.data_unit_mode_x == UnitsMode::Pixels {
+            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        }
+        if layer_params.point_radius_unit_mode_y == UnitsMode::Data && layer_params.data_unit_mode_y == UnitsMode::Pixels {
             panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         // If store_name is None, use the store name from view_params.
@@ -197,9 +202,11 @@ impl DrawToRasterGpu for ZarrPointLayer {
             &PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
                 bounds: self.layer_params.bounds.clone(),
-                data_unit_mode: self.layer_params.data_unit_mode,
+                data_unit_mode_x: self.layer_params.data_unit_mode_x,
+                data_unit_mode_y: self.layer_params.data_unit_mode_y,
                 point_radius: self.layer_params.point_radius,
-                point_radius_unit_mode: self.layer_params.point_radius_unit_mode,
+                point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
+                point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
                 position_x: data.x_arr.clone(),
                 position_y: data.y_arr.clone(),
@@ -231,9 +238,11 @@ impl DrawToSvg for ZarrPointLayer {
             &PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
                 bounds: self.layer_params.bounds.clone(),
-                data_unit_mode: self.layer_params.data_unit_mode,
+                data_unit_mode_x: self.layer_params.data_unit_mode_x,
+                data_unit_mode_y: self.layer_params.data_unit_mode_y,
                 point_radius: self.layer_params.point_radius,
-                point_radius_unit_mode: self.layer_params.point_radius_unit_mode,
+                point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
+                point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
                 position_x: data.x_arr.clone(),
                 position_y: data.y_arr.clone(),
@@ -263,9 +272,11 @@ impl PickableLayer for ZarrPointLayer {
             PointLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
                 bounds: self.layer_params.bounds.clone(),
-                data_unit_mode: self.layer_params.data_unit_mode,
+                data_unit_mode_x: self.layer_params.data_unit_mode_x,
+                data_unit_mode_y: self.layer_params.data_unit_mode_y,
                 point_radius: self.layer_params.point_radius,
-                point_radius_unit_mode: self.layer_params.point_radius_unit_mode,
+                point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
+                point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
                 position_x: data.x_arr.clone(),
                 position_y: data.y_arr.clone(),

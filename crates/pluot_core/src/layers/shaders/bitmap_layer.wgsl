@@ -90,7 +90,8 @@ struct Channel {
 struct Uniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
 
@@ -256,7 +257,6 @@ fn vs_main(
         * u.model_matrix * vec4(vertex_pos_px, 0.0, 1.0)
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
-
 
     var out: VSOut;
     out.position = point_pos_ndc;

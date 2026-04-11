@@ -22,7 +22,8 @@ fn corner_rects_data() -> RectLayerParams {
     RectLayerParams {
         layer_id: "my_rect_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         stroke_width: 2.0,
         stroke_width_unit_mode: UnitsMode::Pixels,
         position_x0: Arc::new(vec![0.0, 0.5]),
@@ -38,7 +39,8 @@ fn corner_rects_pixels() -> RectLayerParams {
     RectLayerParams {
         layer_id: "my_rect_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Pixels,
+        data_unit_mode_x: UnitsMode::Pixels,
+        data_unit_mode_y: UnitsMode::Pixels,
         stroke_width: 2.0,
         stroke_width_unit_mode: UnitsMode::Pixels,
         position_x0: Arc::new(vec![0.0, 50.0]),

@@ -31,9 +31,11 @@ pub struct PointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode,
+    pub data_unit_mode_x: UnitsMode,
+    pub data_unit_mode_y: UnitsMode,
     pub point_radius: f32,
-    pub point_radius_unit_mode: UnitsMode,
+    pub point_radius_unit_mode_x: UnitsMode,
+    pub point_radius_unit_mode_y: UnitsMode,
     pub point_shape_mode: PointShapeMode,
 
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
@@ -55,7 +57,10 @@ impl PointLayer {
         layer_params: PointLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.point_radius_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if layer_params.point_radius_unit_mode_x == UnitsMode::Data && layer_params.data_unit_mode_x == UnitsMode::Pixels {
+            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        }
+        if layer_params.point_radius_unit_mode_y == UnitsMode::Data && layer_params.data_unit_mode_y == UnitsMode::Pixels {
             panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         Self {
@@ -87,9 +92,11 @@ impl PreparedLayer for PointLayer {
 struct PointLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
     point_radius: f32,  // radius of each point
-    point_radius_unit_mode: u32, // 0 = pixels, 1 = data units
+    point_radius_unit_mode_x: u32, // 0 = pixels, 1 = data units
+    point_radius_unit_mode_y: u32, // 0 = pixels, 1 = data units
     point_shape_mode: u32, // 0 = square, 1 = circle
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
@@ -190,12 +197,20 @@ pub async fn base_draw_point_layer(
     let uniform_struct = PointLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode: match layer_params.data_unit_mode {
+        data_unit_mode_x: match layer_params.data_unit_mode_x {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
+        data_unit_mode_y: match layer_params.data_unit_mode_y {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
         point_radius: layer_params.point_radius,
-        point_radius_unit_mode: match layer_params.point_radius_unit_mode {
+        point_radius_unit_mode_x: match layer_params.point_radius_unit_mode_x {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
+        point_radius_unit_mode_y: match layer_params.point_radius_unit_mode_y {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -470,12 +485,14 @@ pub fn base_draw_point_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            layer_params.data_unit_mode,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
             view_params.aspect_ratio_alignment_mode,
             None,
         );
 
+        // TODO: handle point_radius_unit_mode
         let point_radius = layer_params.point_radius;
 
         // Create a circle or square element based on point_shape_mode.

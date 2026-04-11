@@ -145,7 +145,8 @@ pub struct TextLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode, // Units of x/y positions.
+    pub data_unit_mode_x: UnitsMode, // Units of x/y positions.
+    pub data_unit_mode_y: UnitsMode, // Units of x/y positions.
     pub text_size: f32,
     pub text_size_unit_mode: UnitsMode, // Units of the font size.
     pub text_align_mode: TextAlignMode,
@@ -177,7 +178,7 @@ impl TextLayer {
         layer_params: TextLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.text_size_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         Self {
@@ -405,7 +406,8 @@ impl PreparedLayer for TextLayer {
 struct TextLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
     text_size: f32,
     text_size_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
@@ -529,10 +531,14 @@ pub async fn base_draw_text_layer(
     let uniform_struct = TextLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h), // (layer_width, layer_height) in pixels
         camera_view: Mat4::from_cols_array(&camera_view),   // mat4x4<f32>,
-        data_unit_mode: match layer_params.data_unit_mode {
+        data_unit_mode_x: match layer_params.data_unit_mode_x {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
-        }, // 0 = pixels, 1 = data units
+        },
+        data_unit_mode_y: match layer_params.data_unit_mode_y {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
         text_size: layer_params.text_size,
         text_size_unit_mode: match layer_params.text_size_unit_mode {
             UnitsMode::Pixels => 0,
@@ -810,7 +816,8 @@ pub fn base_draw_text_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            layer_params.data_unit_mode,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
             view_params.aspect_ratio_alignment_mode,
             None,

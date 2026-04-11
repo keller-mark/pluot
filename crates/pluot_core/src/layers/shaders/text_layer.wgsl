@@ -96,7 +96,8 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_
 struct TextLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units
     text_size: f32,
     text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.

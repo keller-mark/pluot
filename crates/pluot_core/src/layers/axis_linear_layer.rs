@@ -221,7 +221,8 @@ impl AxisLinearLayer {
         let line_params = LineLayerParams {
             layer_id: format!("{}_axis_layer_line_sublayer", self.layer_params.layer_id),
             bounds: Some(bounds.clone()),
-            data_unit_mode: UnitsMode::Pixels,
+            data_unit_mode_x: UnitsMode::Pixels,
+            data_unit_mode_y: UnitsMode::Pixels,
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
             source_position_x: Arc::new(line_source_position_x),
@@ -243,7 +244,8 @@ impl AxisLinearLayer {
             let text_params = TextLayerParams {
                 layer_id: format!("{}_axis_layer_text_sublayer", self.layer_params.layer_id),
                 bounds: Some(bounds),
-                data_unit_mode: UnitsMode::Pixels,
+                data_unit_mode_x: UnitsMode::Pixels,
+                data_unit_mode_y: UnitsMode::Pixels,
                 text_size: DEFAULT_FONT_SIZE as f32,
                 text_size_unit_mode: UnitsMode::Pixels,
                 text_align_mode,

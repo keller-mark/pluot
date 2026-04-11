@@ -23,10 +23,11 @@ pub struct RectLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode,
+    pub data_unit_mode_x: UnitsMode,
+    pub data_unit_mode_y: UnitsMode,
 
     pub stroke_width: f32,
-    pub stroke_width_unit_mode: UnitsMode,
+    pub stroke_width_unit_mode: UnitsMode, // TODO: split into X and Y parts?
 
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
@@ -49,7 +50,7 @@ pub struct RectLayer {
 impl RectLayer {
     pub fn new(view_params: ViewParams, layer_params: RectLayerParams) -> Self {
         // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.stroke_width_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         Self {
@@ -82,7 +83,8 @@ impl PreparedLayer for RectLayer {
 struct RectLayerUniforms {
     layer_size: Vec2,                 // (layer_width, layer_height) in pixels
     camera_view: Mat4,                // mat4x4<f32>,
-    data_unit_mode: u32,              // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32,            // 0 = pixels, 1 = data units
+    data_unit_mode_y: u32,            // 0 = pixels, 1 = data units
     stroke_width: f32,                // width of each line
     stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
@@ -195,7 +197,11 @@ pub async fn base_draw_rect_layer(
     let uniform_struct = RectLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode: match layer_params.data_unit_mode {
+        data_unit_mode_x: match layer_params.data_unit_mode_x {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
+        data_unit_mode_y: match layer_params.data_unit_mode_y {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -498,7 +504,8 @@ pub fn base_draw_rect_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            layer_params.data_unit_mode,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
             view_params.aspect_ratio_alignment_mode,
             None,
@@ -509,7 +516,8 @@ pub fn base_draw_rect_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            layer_params.data_unit_mode,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
             view_params.aspect_ratio_alignment_mode,
             None,

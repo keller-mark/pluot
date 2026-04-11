@@ -23,7 +23,8 @@ fn corner_text_data() -> TextLayerParams {
     TextLayerParams {
         layer_id: "my_text_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         text_size: 12.0,
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,
@@ -46,7 +47,8 @@ fn corner_text_pixels() -> TextLayerParams {
     TextLayerParams {
         layer_id: "my_text_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Pixels,
+        data_unit_mode_x: UnitsMode::Pixels,
+        data_unit_mode_y: UnitsMode::Pixels,
         text_size: 12.0,
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,

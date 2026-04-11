@@ -148,7 +148,8 @@ pub struct BitmapLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode,
+    pub data_unit_mode_x: UnitsMode,
+    pub data_unit_mode_y: UnitsMode,
 
     // (x_offset, y_offset) in pixels, applied before model_matrix,
     // to enable this layer to be used to render an individual "tile" of a larger image layer,
@@ -288,7 +289,8 @@ struct ChannelUniforms {
 struct BitmapLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
 
@@ -477,7 +479,11 @@ pub async fn base_draw_bitmap_layer(
     let uniform_struct = BitmapLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h),
         camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode: match layer_params.data_unit_mode {
+        data_unit_mode_x: match layer_params.data_unit_mode_x {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
+        data_unit_mode_y: match layer_params.data_unit_mode_y {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
@@ -796,7 +802,8 @@ pub fn base_draw_bitmap_layer_svg(
         layer_w,
         layer_h,
         &camera_view,
-        layer_params.data_unit_mode,
+        layer_params.data_unit_mode_x,
+        layer_params.data_unit_mode_y,
         view_params.aspect_ratio_mode,
         view_params.aspect_ratio_alignment_mode,
         Some(&model_matrix_raw),
@@ -809,7 +816,8 @@ pub fn base_draw_bitmap_layer_svg(
         layer_w,
         layer_h,
         &camera_view,
-        layer_params.data_unit_mode,
+        layer_params.data_unit_mode_x,
+        layer_params.data_unit_mode_y,
         view_params.aspect_ratio_mode,
         view_params.aspect_ratio_alignment_mode,
         Some(&model_matrix_raw),

@@ -5,7 +5,7 @@ pub mod rect_layer;
 pub mod text_layer;
 pub mod bitmap_layer;
 pub mod composite_layer;
-pub mod axis_layer;
+pub mod axis_linear_layer;
 pub mod tile_layer;
 pub mod multiscale_utils;
 pub mod multiscale_layer;

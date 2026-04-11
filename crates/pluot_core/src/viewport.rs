@@ -64,6 +64,7 @@ pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coo
         view_params.height as f32,
         &camera_view,
         UnitsMode::Data,
+        UnitsMode::Data,
         view_params.aspect_ratio_mode,
         view_params.aspect_ratio_alignment_mode,
         None,

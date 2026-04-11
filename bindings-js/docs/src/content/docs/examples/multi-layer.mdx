@@ -27,8 +27,10 @@ The additional layers demonstrate pixel-based positioning of points, lines, and 
           layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
-            data_unit_mode: "Data",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Square",
             point_radius: 2.0,
             bounds: null,
@@ -56,8 +58,10 @@ The additional layers demonstrate pixel-based positioning of points, lines, and 
           layer_type: "PointLayer",
           layer_params: {
             layer_id: "layer_2",
-            data_unit_mode: "Pixels",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Square",
             point_radius: 10.0,
             bounds: {
@@ -75,7 +79,8 @@ The additional layers demonstrate pixel-based positioning of points, lines, and 
           layer_type: "LineLayer",
           layer_params: {
             layer_id: "layer_3",
-            data_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
             line_width_unit_mode: "Pixels",
             line_width: 5.0,
             bounds: {
@@ -95,7 +100,8 @@ The additional layers demonstrate pixel-based positioning of points, lines, and 
           layer_type: "TextLayer",
           layer_params: {
             layer_id: "layer_text",
-            data_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
             text_size_unit_mode: "Pixels",
             text_size: 25.0,
             text_align_mode: "Start",

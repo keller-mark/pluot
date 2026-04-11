@@ -11,8 +11,10 @@ const DEMOS = {
           layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
-            data_unit_mode: "Data",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Circle",
             point_radius: 5.0,
             store_name: "gaussian_quantiles_store",
@@ -55,8 +57,10 @@ const DEMOS = {
           layer_type: "PointLayer",
           layer_params: {
             layer_id: "layer_2",
-            data_unit_mode: "Pixels",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Square",
             point_radius: 15.0,
             store_name: "gaussian_quantiles_store",
@@ -75,7 +79,8 @@ const DEMOS = {
           layer_type: "LineLayer",
           layer_params: {
             layer_id: "layer_3",
-            data_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
             line_width_unit_mode: "Pixels",
             line_width: 5.0,
             store_name: "gaussian_quantiles_store",
@@ -96,7 +101,8 @@ const DEMOS = {
           layer_type: "TextLayer",
           layer_params: {
             layer_id: "layer_text",
-            data_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
             text_size_unit_mode: "Pixels",
             text_size: 25.0,
             text_align_mode: "Start",
@@ -118,7 +124,8 @@ const DEMOS = {
           layer_type: "BitmapLayer",
           layer_params: {
             layer_id: "layer_bitmap",
-            data_unit_mode: "Data",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
             pixel_offset: [1, 1],
 
             dimension_order: "CYX",
@@ -151,7 +158,8 @@ const DEMOS = {
           layer_type: "RectLayer",
           layer_params: {
             layer_id: "rect_layer",
-            data_unit_mode: "Data",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
             stroke_width_unit_mode: "Pixels",
             stroke_width: 5.0,
             position_x0: [1],
@@ -231,8 +239,10 @@ const DEMOS = {
           layer_type: "ZarrPoint3dLayer",
           layer_params: {
             layer_id: "layer_1",
-            data_unit_mode: "Data",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Circle",
             point_radius: 5.0,
             store_name: "gaussian_quantiles_store",

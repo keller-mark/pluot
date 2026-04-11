@@ -24,7 +24,8 @@ fn bitmap_cyx_data() -> BitmapLayerParams {
     BitmapLayerParams {
         layer_id: "my_bitmap_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         pixel_offset: None,
         model_matrix: None,
         dimension_order: DimensionOrder::CYX,
@@ -52,7 +53,8 @@ fn bitmap_cyx_data() -> BitmapLayerParams {
 // Helper: same image in Pixels unit mode (4×4 pixel image positioned in pixel space)
 fn bitmap_cyx_pixels() -> BitmapLayerParams {
     BitmapLayerParams {
-        data_unit_mode: UnitsMode::Pixels,
+        data_unit_mode_x: UnitsMode::Pixels,
+        data_unit_mode_y: UnitsMode::Pixels,
         ..bitmap_cyx_data()
     }
 }

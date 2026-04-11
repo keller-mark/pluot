@@ -22,7 +22,8 @@ fn cross_lines_data() -> LineLayerParams {
     LineLayerParams {
         layer_id: "my_line_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         source_position_x: Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70]),
@@ -38,7 +39,8 @@ fn cross_lines_pixels() -> LineLayerParams {
     LineLayerParams {
         layer_id: "my_line_layer".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Pixels,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
