@@ -175,9 +175,14 @@ fn vs_main(
     let stroke_width_norm = u.stroke_width / layer_height_px;
     let stroke_width_half_norm = stroke_width_norm / 2.0;
 
+    var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_size_px = vec2<f32>(0.0, 0.0);
+
+    var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_size_data = vec2<f32>(0.0, 0.0);
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Both source and target points are in pixel coordinates.
         // Convert them to normalized (0 to 1) coordinates within the layer.
         let source_point_pos_px = source_point_pos_orig;
@@ -218,15 +223,18 @@ fn vs_main(
         let rect_w_px = abs(target_point_pos_px.x - source_point_pos_px.x);
         let rect_h_px = abs(target_point_pos_px.y - source_point_pos_px.y);
 
-        let pos = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+        result_position_px = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+        result_size_px = vec2f(rect_w_px, rect_h_px);
 
-        var out: VSOut;
-        out.position = pos;
-        out.color = u.color;
-        out.quad_pos = (corner + 1.0) * 0.5;
-        out.instance_index = instance_index;
-        out.rect_size_px = vec2f(rect_w_px, rect_h_px);
-        return out;
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            var out: VSOut;
+            out.position = result_position_px;
+            out.color = u.color;
+            out.quad_pos = (corner + 1.0) * 0.5;
+            out.instance_index = instance_index;
+            out.rect_size_px = result_size_px;
+            return out;
+        }
     }
 
     // Model-view-projection matrix
@@ -268,14 +276,26 @@ fn vs_main(
     let rect_w_px = abs(target_pos_norm.x - source_pos_norm.x) * layer_width_px;
     let rect_h_px = abs(target_pos_norm.y - source_pos_norm.y) * layer_height_px;
 
-    let pos = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+    result_position_data = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+    result_size_data = vec2f(rect_w_px, rect_h_px);
+
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_position_data.x = result_position_px.x;
+        result_size_data.x = result_size_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_position_data.y = result_position_px.y;
+        result_size_data.y = result_size_px.y;
+    }
 
     var out: VSOut;
-    out.position = pos;
+    out.position = result_position_data;
     out.color = u.color;
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
-    out.rect_size_px = vec2f(rect_w_px, rect_h_px);
+    out.rect_size_px = result_size_data;
     return out;
 }
 
