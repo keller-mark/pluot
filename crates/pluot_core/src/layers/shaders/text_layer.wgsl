@@ -99,7 +99,7 @@ struct TextLayerUniforms {
     data_unit_mode_x: u32, // 0: pixel units, 1: data units
     data_unit_mode_y: u32, // 0: pixel units, 1: data units
     text_size: f32,
-    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     text_rotation: f32, // rotation angle in degrees
