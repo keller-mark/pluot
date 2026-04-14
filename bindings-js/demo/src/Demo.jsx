@@ -47,10 +47,11 @@ const DEMOS = {
           }
         },
         {
-          layer_type: "AxisLinearLayer",
+          layer_type: "AxisBandLayer",
           layer_params: {
             layer_id: "top_axis",
             position: "Top",
+            domain: ["One", "Two", "Three", "Four", "Five"]
           }
         },
         {

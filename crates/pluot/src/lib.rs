@@ -15,6 +15,7 @@ pub use pluot_core::layers::rect_layer::{RectLayerParams};
 pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
 pub use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
+pub use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
 pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
