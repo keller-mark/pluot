@@ -4,4 +4,33 @@ description: Bar plot example.
 sidebar:
     order: 30
 ---
-TODO
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"barplot-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/wheat.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "ZarrBarPlotLayer",
+          layer_params: {
+            layer_id: "barplot_layer",
+            bounds: null,
+
+            orientation: "Vertical",
+            identifier_key: "/year",
+            quantity_key: "/wheat",
+          }
+        }
+      ]
+    }}
+    mode={"2d"}
+    marginLeft={60}
+    marginBottom={60}
+    width={700}
+/>

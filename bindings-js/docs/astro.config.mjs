@@ -33,8 +33,9 @@ export default defineConfig({
 			],
 			components: {
 				// Override the default `ThemeSelect` component.
-				ThemeSelect: './src/components/ThemeSelect.astro',
-      		},
+        ThemeSelect: './src/components/ThemeSelect.astro',
+				Pagination: './src/components/Pagination.astro'
+      },
 		}),
 	],
 	markdown: {

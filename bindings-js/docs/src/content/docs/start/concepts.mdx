@@ -123,9 +123,9 @@ When the plotted region (within the margins) has a non-square aspect ratio, the 
 
 - `Ignore`: Squeeze/stretch the (0, 1) unit square so that no more and no less data is shown. The square aspect ratio of the (0, 1) unit square will NOT be preserved.
 
-- `Contain` (AKA fit): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
+- `Contain` (a.k.a. "fit"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
 
-- `Cover` (AKA fill): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
+- `Cover` (a.k.a. "fill"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
 
 For certain use cases, such as for imaging data, it is likely preferable to use `Contain` or `Cover` modes to avoid distortion of square pixels.
 In other cases, such as for scatterplots with different units on the X and Y axes, it may be preferable to use `Ignore` mode to avoid showing extra data that is outside the desired coordinate ranges.
@@ -134,9 +134,9 @@ In other cases, such as for scatterplots with different units on the X and Y axe
 
 The aspect ratio alignment mode affects what extra data is shown in `Contain` mode, and what data is hidden in `Cover` mode.
 
-- `Start`: TODO
-- `Middle`: TODO
-- `End`: TODO
+- `Center`: In Contain mode, the unit square will be centered vertically for tall aspect ratios (with extra space on top and bottom) and centered horizontally for wide aspect ratios (with extra space on left and right). In Cover mode, the unit square will extend beyond the left and right (for tall aspect ratios) or will extend beyond the top and bottom (for wide aspect ratios).
+- `Start`: In Contain mode, the unit square will be bottom-aligned for tall aspect ratios (with extra space on top) and left-aligned for wide aspect ratios (with extra space on right). In Cover mode, the unit square will extend beyond the right (for tall aspect ratios) or will extend beyond the top (for wide aspect ratios).
+- `End`: In Contain mode, the unit square will be top-aligned for tall aspect ratios (with extra space on bottom) and right-aligned for wide aspect ratios (with extra space on left). In Cover mode, the unit square will extend beyond the left (for tall aspect ratios) or will extend beyond the bottom (for wide aspect ratios).
 
 ### Pixel vs. Data Unit modes
 
