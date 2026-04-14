@@ -65,6 +65,28 @@ fn corner_text_pixels() -> TextLayerParams {
     }
 }
 
+// Helper: text labels with x in [0,1] data space, y in 100px pixel space
+fn corner_text_data_x_pixel_y() -> TextLayerParams {
+    TextLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Pixels,
+        position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5]),
+        position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0, 50.0]),
+        ..corner_text_data()
+    }
+}
+
+// Helper: text labels with x in 100px pixel space, y in [0,1] data space
+fn corner_text_pixel_x_data_y() -> TextLayerParams {
+    TextLayerParams {
+        data_unit_mode_x: UnitsMode::Pixels,
+        data_unit_mode_y: UnitsMode::Data,
+        position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0, 50.0]),
+        position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5]),
+        ..corner_text_data()
+    }
+}
+
 fn layer_params(text_params: TextLayerParams) -> Vec<LayerParams> {
     vec![LayerParams {
         layer_type: "TextLayer".to_string(),
@@ -499,4 +521,34 @@ async fn test_text_layer_wide_contain_data_units_rotated_90() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_text_layer_wide_contain_data_units_rotated_90").await;
+}
+
+// ── Mixed unit modes (data_unit_mode_x ≠ data_unit_mode_y) ───────────────────
+
+#[tokio::test]
+async fn test_text_layer_square_contain_data_x_pixel_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+            layers: layer_params(corner_text_data_x_pixel_y()),
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_x_pixel_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_text_layer_square_contain_pixel_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+            layers: layer_params(corner_text_pixel_x_data_y()),
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_x_data_y_no_margins").await;
 }

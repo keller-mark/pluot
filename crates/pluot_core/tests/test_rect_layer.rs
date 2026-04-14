@@ -51,6 +51,40 @@ fn corner_rects_pixels() -> RectLayerParams {
     }
 }
 
+// Helper: 2 rects — x in [0,1] data space, y in 100px pixel space
+fn corner_rects_data_x_pixel_y() -> RectLayerParams {
+    RectLayerParams {
+        layer_id: "my_rect_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Pixels,
+        stroke_width: 2.0,
+        stroke_width_unit_mode: UnitsMode::Pixels,
+        position_x0: Arc::new(vec![0.0, 0.5]),
+        position_y0: Arc::new(vec![0.0, 50.0]),
+        position_x1: Arc::new(vec![0.4, 1.0]),
+        position_y1: Arc::new(vec![40.0, 100.0]),
+        labels_vec: Arc::new(vec![0, 1]),
+    }
+}
+
+// Helper: 2 rects — x in 100px pixel space, y in [0,1] data space
+fn corner_rects_pixel_x_data_y() -> RectLayerParams {
+    RectLayerParams {
+        layer_id: "my_rect_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Pixels,
+        data_unit_mode_y: UnitsMode::Data,
+        stroke_width: 2.0,
+        stroke_width_unit_mode: UnitsMode::Pixels,
+        position_x0: Arc::new(vec![0.0, 50.0]),
+        position_y0: Arc::new(vec![0.0, 0.5]),
+        position_x1: Arc::new(vec![40.0, 100.0]),
+        position_y1: Arc::new(vec![0.4, 1.0]),
+        labels_vec: Arc::new(vec![0, 1]),
+    }
+}
+
 fn layer_params(rect_params: RectLayerParams) -> Vec<LayerParams> {
     vec![LayerParams {
         layer_type: "RectLayer".to_string(),
@@ -397,4 +431,34 @@ async fn test_rect_layer_tall_contain_data_units_layer_bounds() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_tall_contain_data_units_layer_bounds").await;
+}
+
+// ── Mixed unit modes (data_unit_mode_x ≠ data_unit_mode_y) ───────────────────
+
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_x_pixel_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+            layers: layer_params(corner_rects_data_x_pixel_y()),
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_x_pixel_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_rect_layer_square_contain_pixel_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+            layers: layer_params(corner_rects_pixel_x_data_y()),
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_pixel_x_data_y_no_margins").await;
 }

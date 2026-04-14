@@ -52,6 +52,28 @@ fn corner_points_pixels() -> PointLayerParams {
     }
 }
 
+// Helper: 4 points with x in [0,1] data space, y in 100px pixel space
+fn corner_points_data_x_pixel_y() -> PointLayerParams {
+    PointLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Pixels,
+        position_x: Arc::new(vec![0.0, 0.5, 0.5, 0.0]),
+        position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+        ..corner_points_data()
+    }
+}
+
+// Helper: 4 points with x in 100px pixel space, y in [0,1] data space
+fn corner_points_pixel_x_data_y() -> PointLayerParams {
+    PointLayerParams {
+        data_unit_mode_x: UnitsMode::Pixels,
+        data_unit_mode_y: UnitsMode::Data,
+        position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
+        position_y: Arc::new(vec![0.0, 0.0, 0.5, 0.5]),
+        ..corner_points_data()
+    }
+}
+
 fn layer_params(point_params: PointLayerParams) -> Vec<LayerParams> {
     vec![LayerParams {
         layer_type: "PointLayer".to_string(),
@@ -394,6 +416,36 @@ async fn test_point_layer_tall_contain_data_units_layer_bounds() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_tall_contain_data_units_layer_bounds").await;
+}
+
+// ── Mixed unit modes (data_unit_mode_x ≠ data_unit_mode_y) ───────────────────
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_x_pixel_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+            layers: layer_params(corner_points_data_x_pixel_y()),
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_x_pixel_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_pixel_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
+            layers: layer_params(corner_points_pixel_x_data_y()),
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
 // TODO: performance tests with many elements, both raster and svg formats
