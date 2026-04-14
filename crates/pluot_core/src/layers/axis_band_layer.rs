@@ -21,7 +21,9 @@ const DEFAULT_LINE_WIDTH: f32 = 1.0;
 pub struct AxisBandLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
-    pub domain: Vec<String>,
+    pub domain: Arc<Vec<String>>,
+
+    // TODO: support a data_unit_mode param?
 }
 
 pub struct AxisBandLayer {
@@ -56,7 +58,7 @@ impl AxisBandLayer {
         let mut text_strings: Vec<String> = Vec::new();
 
         let mut scale = ScaleBand::new();
-        scale.set_domain(self.layer_params.domain.clone());
+        scale.set_domain(self.layer_params.domain.to_vec());
 
         match self.layer_params.position {
             AxisPosition::Bottom => {

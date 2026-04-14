@@ -1,5 +1,4 @@
-// TODO: re-implement, wrapping MultiscaleLayer.
-// TileLayer should just internally convert its parameters into ResolutionLevels and pass to a MultiscaleLayer.
+// TODO: remove this layer definition?
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};

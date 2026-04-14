@@ -26,6 +26,8 @@ pub struct RectLayerParams {
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
 
+    // TODO: filled vs. stroked option
+
     pub stroke_width: f32,
     pub stroke_width_unit_mode: UnitsMode, // TODO: split into X and Y parts?
 

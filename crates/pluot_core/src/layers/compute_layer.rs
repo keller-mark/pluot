@@ -1,3 +1,4 @@
+// TODO: remove this once there are other compute shader examples.
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};

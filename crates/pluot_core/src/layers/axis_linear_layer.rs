@@ -33,6 +33,8 @@ pub enum AxisPosition {
 pub struct AxisLinearLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
+
+    // TODO: support a data_unit_mode param.
 }
 
 pub struct AxisLinearLayer {

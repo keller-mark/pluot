@@ -298,6 +298,27 @@ const DEMOS = {
         },
       ]
     }
+  },
+  bar_plot_2: {
+    plot_type: "LayeredPlot",
+    store_name: "wheat",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "BarPlotLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            bounds: null,
+            orientation: "Horizontal",
+            data_unit_mode_for_identifier_dim: "Pixels",
+            data_unit_mode_for_quantity_dim: "Data",
+
+            identifier: ["One", "Two", "Three"],
+            quantity: [10.0, 20.0, 30.0],
+          }
+        },
+      ]
+    }
   }
 };
 

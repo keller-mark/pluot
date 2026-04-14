@@ -1,0 +1,1 @@
+This directory is intended to define layers which render fully-fledged plots (with axes, etc.), which internally use the base/primitive [layers](../layers/) for the individual visual marks (lines, rects, points, text, etc.).
