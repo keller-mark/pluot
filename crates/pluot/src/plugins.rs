@@ -2,7 +2,7 @@
 use pluot_core::registry::LayerRegistration;
 use pluot_zarr::layers::zarr_point_layer::{ZarrPointLayer, ZarrPointLayerParams};
 use pluot_zarr::layers::zarr_point_3d_layer::{ZarrPoint3dLayer, ZarrPoint3dLayerParams};
-use pluot_zarr::layers::zarr_bar_layer::{ZarrBarLayer, ZarrBarLayerParams};
+use pluot_zarr::layers::zarr_bar_plot_layer::{ZarrBarPlotLayer, ZarrBarPlotLayerParams};
 use pluot_zarr::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
 use pluot_zarr::layers::ome_zarr_multiscale_layer::{OmeZarrMultiscaleLayer, OmeZarrMultiscaleLayerParams};
 
@@ -30,10 +30,10 @@ inventory::submit! {
 
 inventory::submit! {
     LayerRegistration {
-        layer_type_name: "ZarrBarLayer",
+        layer_type_name: "ZarrBarPlotLayer",
         create_layer: |value, view_params| {
-            let params: ZarrBarLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(ZarrBarLayer::new(view_params.clone(), params))
+            let params: ZarrBarPlotLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(ZarrBarPlotLayer::new(view_params.clone(), params))
         },
     }
 }
