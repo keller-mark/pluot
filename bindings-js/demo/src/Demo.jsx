@@ -262,6 +262,42 @@ const DEMOS = {
         }
       ]
     },
+  },
+  bar_plot: {
+    plot_type: "LayeredPlot",
+    store_name: "wheat",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "ZarrBarLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            store_name: "wheat",
+            bounds: null,
+            orientation: "Vertical",
+            stroke_width: 5.0,
+
+            categorical_key: "/year",
+            quantitative_key: "/wheat",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+        {
+          layer_type: "AxisBandLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+            domain: ["2000", "2001"]
+          }
+        },
+      ]
+    }
   }
 };
 

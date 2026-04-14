@@ -35,7 +35,7 @@ pub use crate::picking::{pick, PickingResult, LayerPickingResult};
 pub use crate::viewport::{project, unproject, get_bounds, camera_matrix_to_zoom_and_translation};
 
 // Export things needed by workspace packages that define other layers.
-pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
+pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_vec_string, use_memo_numeric_data};
 
 // Unified exports.
 #[cfg(target_arch = "wasm32")]

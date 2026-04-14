@@ -28,6 +28,7 @@ thread_local! {
     // Can entire Layer Data objects be cached? Maybe via Enums like our PlotParams enums?
     static USE_MEMO_CACHE_VEC_F32: RefCell<Option<HashMap<Vec<String>, Arc<Vec<f32>>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_VEC_I32: RefCell<Option<HashMap<Vec<String>, Arc<Vec<i32>>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_VEC_STRING: RefCell<Option<HashMap<Vec<String>, Arc<Vec<String>>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_INTERNAL_TEXT_LAYER_DATA: RefCell<Option<HashMap<Vec<String>, Arc<CachedInternalTextLayerData>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_NUMERIC_DATA: RefCell<Option<HashMap<Vec<String>, Arc<NumericData>>>> = const { RefCell::new(None) };
 }
@@ -173,6 +174,34 @@ pub async fn use_memo_vec_i32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<i
     let buffer = Arc::new(initializer().await?);
 
     USE_MEMO_CACHE_VEC_I32.with(|map| {
+        let mut map_ref = map.borrow_mut();
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
+    });
+
+    Ok(buffer)
+}
+
+pub async fn use_memo_vec_string<E>(initializer: impl AsyncFnOnce() -> Result<Vec<String>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<String>>, E> {
+    if !cache_enabled {
+        return Ok(Arc::new(initializer().await?));
+    }
+
+    let buffer_exists = USE_MEMO_CACHE_VEC_STRING.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(keys).cloned())
+    });
+
+    if let Some(buffer) = buffer_exists {
+        return Ok(buffer);
+    }
+
+    let buffer = Arc::new(initializer().await?);
+
+    USE_MEMO_CACHE_VEC_STRING.with(|map| {
         let mut map_ref = map.borrow_mut();
         if map_ref.is_none() {
             *map_ref = Some(HashMap::new());
