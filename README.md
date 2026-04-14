@@ -59,8 +59,8 @@ When the language bindings are used, you can think of this as a form of "remote 
 ### Why would I want to use this? Why not just use JS+WebGPU directly?
 
 The main reasons are:
-- Portability: render plots from multiple languages, without the overhead of an interpreted programming language runtime
-- Reproducibility: explore data using an interactive tool (e.g., web or desktop GUI) to identify plotting parameters of interest, and then use the same parameter values in a scripting language to reproduce the visualization as a static plot (e.g., a Python script in a Snakemake pipeline)
+- **Portability**: render plots from multiple languages, without the overhead of an interpreted programming language runtime
+- **Reproducibility**: explore data using an interactive tool (e.g., web or desktop GUI) to identify plotting parameters of interest, and then use the same parameter values in a scripting language to reproduce the visualization as a static plot (e.g., a Python script in a Snakemake pipeline)
 
 Using WebGPU via JavaScript would couple things to JavaScript, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
 Our approach enables our CPU-based operations to benefit from the performance characteristics of Rust (or, in web contexts, at least those of Rust-via-WASM).
@@ -68,7 +68,6 @@ Our approach enables our CPU-based operations to benefit from the performance ch
 You can likely achieve better performance by using WebGPU directly via JavaScript.
 The question is whether the performance of this Rust-based approach is good enough, and whether the benefits are worth the potential performance tradeoffs for your use case.
 
-Read more about the project's motivations in my [blog post](https://github.com/keller-mark/blog/blob/main/2026-01-12-pluot-motivations.md).
 
 ### Non-goals
 
