@@ -155,6 +155,8 @@ export function Pluot(props) {
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
 
+  const tempButtonRef = useRef(null);
+
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
   const currentTimeout = useRef(maxTimeout);
@@ -257,13 +259,25 @@ export function Pluot(props) {
         aspectRatioMode: aspectRatioMode,
         aspectRatioAlignmentMode: aspectRatioAlignmentMode,
       });
-      dispose = () => {
-        camera.dispose();
-      };
+
 
       // Set the initial view matrix.
       // We need to ensure we create a new copy of the array.
       camera.setView(new Float32Array(viewMatrix));
+
+      const tempHandler = e => {
+        // camera.setScaleBounds([[xScaleMin, xScaleMax], [yScaleMin, yScaleMax]])
+        camera.lookAt([2.0, 2.0], 2.0);
+        onCameraEvent(camera, null);
+        console.log("done")
+      };
+
+      tempButtonRef.current.addEventListener('click', tempHandler);
+
+      dispose = () => {
+        camera.dispose();
+        tempButtonRef.current.removeEventListener('click', tempHandler);
+      };
     } else if (viewMode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
@@ -536,6 +550,7 @@ export function Pluot(props) {
       {bailedEarly ? (
           <p>Loading...</p>
         ) : null}
+      <button ref={tempButtonRef}>Try lookAt</button>
     </>
   );
 }

@@ -21,7 +21,8 @@
     "declarationMap": true
   },
   "references": [
-    { "path": "bindings-js/lib" },
+    { "path": "bindings-js/core" },
+    { "path": "bindings-js/react" },
     { "path": "bindings-js/demo" },
     { "path": "bindings-js/docs" }
   ],

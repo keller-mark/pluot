@@ -1,5 +1,6 @@
 packages:
   - 'crates/pluot/pkg'
-  - 'bindings-js/lib'
+  - 'bindings-js/core'
+  - 'bindings-js/react'
   - 'bindings-js/demo'
   - 'bindings-js/docs'
