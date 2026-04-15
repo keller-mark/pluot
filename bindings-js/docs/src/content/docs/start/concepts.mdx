@@ -70,7 +70,11 @@ We provide a React component that supports these interactions, enabling interact
 
 To support similar interactions in a desktop application context, analogous interaction handlers must be implemented in (/ported to) whatever GUI framework is being used.
 
-<Aside type="tip" title="Another way to think about it">With its headless plotting architecture, interactive plotting can be considered similar to the React model of re-renders upon state changes, with memoization and caching strategies that check dependencies.</Aside>
+<Aside type="tip" title="Another way to think about it">
+    With a headless plotting architecture, interactive plotting can be considered similar to the React model of re-renders upon state changes, with memoization and caching strategies that check dependencies.
+
+    In other words: "static-first" interactive plotting.
+</Aside>
 
 
 ### Partial rendering (while awaiting data)
