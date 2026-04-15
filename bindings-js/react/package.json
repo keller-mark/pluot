@@ -28,7 +28,6 @@
     "test": "pnpm exec vitest --run -r ../../ --dir ."
   },
   "dependencies": {
-    "pluot": "workspace:*",
     "@pluot/core": "workspace:*",
     "lightua": "0.1.0",
     "zarrita": "^0.5.3",

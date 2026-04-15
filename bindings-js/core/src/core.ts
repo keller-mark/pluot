@@ -2,6 +2,8 @@ import * as wasm from "pluot";
 import { lru, type LruStore } from "./lru-store.js";
 import type { AsyncReadable } from "zarrita";
 
+export const { render_wasm, pick_wasm } = wasm;
+
 // Global stores singleton.
 const stores: Record<string, LruStore<AsyncReadable>> = {};
 

@@ -226,9 +226,6 @@ importers:
       mouse-wheel:
         specifier: ^1.0.2
         version: 1.2.0
-      pluot:
-        specifier: workspace:*
-        version: link:../../crates/pluot/pkg
       quick-lru:
         specifier: ^7.0.1
         version: 7.0.1

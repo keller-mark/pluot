@@ -1,14 +1,15 @@
 import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
-import * as wasm from "pluot";
-
 import { mat4, vec4 } from "gl-matrix";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
 import {
-  initialize, setStore, getStore, getIsWasmReady,
+  initialize, getIsWasmReady,
+  render_wasm, pick_wasm,
+  setStore, getStore,
   create2dCamera, create3dCamera,
   getBounds, getCameraMatrixFromBounds,
+  checkWebGpuFeatureDetection,
 } from '@pluot/core';
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -70,7 +71,7 @@ export function Pluot(props) {
     throw new Error("Either storeName or store must be provided.");
   }, [storeNameProp, store]);
 
-  const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
+  const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
@@ -350,9 +351,9 @@ export function Pluot(props) {
     // Wrap render_wasm in try/catch, to handle Rust panics.
     let arr;
     try {
-      arr = await wasm.render_wasm(renderParams);
+      arr = await render_wasm(renderParams);
 
-      console.log(await wasm.pick_wasm(renderParams, 400, 400));
+      console.log(await pick_wasm(renderParams, 400, 400));
       isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);

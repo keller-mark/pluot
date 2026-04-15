@@ -1,6 +1,8 @@
 export {
   initialize,
   getIsWasmReady,
+  render_wasm,
+  pick_wasm,
   setStore,
   setStoreByName,
   getStore,
