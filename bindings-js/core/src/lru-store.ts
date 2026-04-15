@@ -38,7 +38,7 @@ export function createGetRange<S extends AsyncReadable>(store: S) {
 
 // A class-based version of the proxy-based lru() function from vizarr.
 // Reference: https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/lru-store.ts
-class LruStore<S extends AsyncReadable> implements AsyncReadable {
+export class LruStore<S extends AsyncReadable> implements AsyncReadable {
   #inner_store: S;
 
   #cache: QuickLRU<string, [Promise<Uint8Array | undefined>, AbortController]>;
@@ -150,6 +150,6 @@ class LruStore<S extends AsyncReadable> implements AsyncReadable {
   }
 }
 
-export function lru(inner_store: AsyncReadable, maxSize = 100): AsyncReadable {
+export function lru(inner_store: AsyncReadable, maxSize = 100): LruStore<AsyncReadable> {
   return new LruStore(inner_store, maxSize);
 }

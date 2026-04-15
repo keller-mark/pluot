@@ -1,17 +1,14 @@
-// TODO: once things are working with react,
-// implement a plain/vanilla JS version.
 import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
 import * as wasm from "pluot";
-import { FetchStore } from "zarrita";
-// import createDom2dCamera from "dom-2d-camera";
-import createDom2dCamera from "./dom-2d-camera.js"; // Copy with minor modifications.
-// import createCamera from "3d-view-controls";
-import createCamera from "./3d-view-controls.js"; // Copy with minor modifications.
+
 import { mat4, vec4 } from "gl-matrix";
-import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
+import {
+  initialize, setStore, getStore, getIsWasmReady,
+  create2dCamera, create3dCamera,
+} from '@pluot/core';
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -33,82 +30,6 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
-//const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
-const baseUrl = "http://localhost:5173/@data/mnist.zarr";
-
-// TODO: remove these hard-coded stores once things are working, and only allow providing via props.
-// (We will still need the global `stores` object so that the stores are available to the window.zarr_ functions.)
-const stores = {
-  // Wrap store in a cache.
-  // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
-  mnist_store: lru(new FetchStore("http://localhost:5173/@data/mnist.zarr")),
-  // NOTE: no longer using the lru cache to reduce memory usage,
-  // since we now have the use_memo_ functions in cache.rs on the rust side.
-  // Note: when using a timeout parameter, we still may want to use a cache
-  // for in-progress promises (but not for their returned data).
-
-  // Usage of lru cache results in increased memory usage, since data is stored both in the lru cache and in the wasm cache (via use_memo_ functions in cache.rs).
-  // However, it is necessary especially when the network is slow, since it caches the promises that are re-requested from Rust on every re-render when bailing early due to the timeout parameter.
-  // TODO: consider eviction based on time (N*timeout) following promise resolution, or upon being notified by Rust that it has successfully cached a particular key.
-  // Or, evict following some N successful .get()s after promise resolution, to ensure that Rust has successfully accessed and cached the data while allowing for some timeouts-during-gets (though hopefully unlikely).
-  // Alternatively, have Rust allocate a fixed-size cache, and store data there when promises resolve, caching/returning to Rust only pointers/lengths into this shared memory.
-  gaussian_quantiles_store: lru(new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr")),
-  gaussian_quantiles_store_compressed: new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"),
-  ome_ngff: lru(
-    new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
-  ),
-  wheat: lru(
-    new FetchStore("http://localhost:5173/@data/wheat.zarr"),
-  ),
-  ome_ngff_2: lru(
-    new FetchStore('https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr')
-  )
-};
-
-// Only use window if it is defined (i.e., in the browser).
-// TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
-if (typeof window !== 'undefined') {
-  // Define the global zarr_get function.
-  window.zarr_get = async (store_name, key) => {
-    console.log(`zarr_get: store_name=${store_name}, key=${key}`);
-    return stores[store_name].get(`/${key}`);
-  };
-
-  window.zarr_get_status = (store_name, key) => {
-    return stores[store_name].getPeek(`/${key}`);
-  };
-
-  window.zarr_has = async (store_name, key) => {
-    // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
-    return stores[store_name].get(`/${key}`) !== undefined;
-  };
-
-  window.zarr_has_status = (store_name, key) => {
-    return stores[store_name].getPeek(`/${key}`);
-  };
-
-  window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
-    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
-    return stores[store_name].getRange(`/${key}`, { offset, length });
-  };
-
-  window.zarr_get_range_from_offset_status = (store_name, key, offset, length) => {
-    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
-    return stores[store_name].getRangePeek(`/${key}`, { offset, length })
-  };
-
-  window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
-    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
-    return stores[store_name].getRange(`/${key}`, { suffixLength: suffix_length });
-  };
-
-  window.zarr_get_range_from_end_status = (store_name, key, suffix_length) => {
-    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
-    return stores[store_name].getRangePeek(`/${key}`, { suffixLength: suffix_length });
-  };
-
-  window.isPluotInitialized = null;
-}
 
 export function Pluot(props) {
   const {
@@ -143,8 +64,7 @@ export function Pluot(props) {
       return storeNameProp;
     }
     if (store) {
-      stores[plotId + "_store"] = lru(store);
-      return plotId + "_store";
+      return setStore(store, plotId);
     }
     throw new Error("Either storeName or store must be provided.");
   }, [storeNameProp, store]);
@@ -182,15 +102,7 @@ export function Pluot(props) {
   );
 
   useLayoutEffect(() => {
-    const initWasm = async () => {
-      await wasm.default();
-      await wasm.set_panic_hook();
-    };
-    if(!window.isPluotInitialized) {
-      window.isPluotInitialized = initWasm().then(() => setIsWasmReady(true));
-    } else {
-      window.isPluotInitialized.then(() => setIsWasmReady(true));
-    }
+    initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
 
   useEffect(() => {
@@ -230,7 +142,7 @@ export function Pluot(props) {
         currentTimeout.current = minTimeout;
       }
 
-      const camera = createDom2dCamera(cameraEl, {
+      const camera = create2dCamera(cameraEl, {
         isFixed: false,
         distance: 0.0,
         //target: [0.0, 0.0],
@@ -292,7 +204,7 @@ export function Pluot(props) {
         });
       }
 
-      const camera = createCamera(cameraEl, {
+      const camera = create3dCamera(cameraEl, {
         mode: "orbit",
         zoomSpeed: -5,
       });
@@ -467,7 +379,7 @@ export function Pluot(props) {
         setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-        const storeUsed = stores[renderParams.store_name];
+        const storeUsed = getStore(renderParams.store_name);
         if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
           storeUsed.clearCache();
         }

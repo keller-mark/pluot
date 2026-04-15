@@ -18,7 +18,8 @@
     "isolatedModules": true,
     "incremental": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "types": ["@webgpu/types"]
   },
   "references": [
     { "path": "bindings-js/core" },

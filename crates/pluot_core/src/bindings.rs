@@ -24,6 +24,52 @@ pub mod wasm {
     extern "C" {
         #[wasm_bindgen(js_namespace = console)]
         pub fn log(s: &str);
+    }
+
+    // This is a hack that allows avoiding putting these functions on `window` or `globalThis`.
+    // It is a workaround for https://github.com/wasm-bindgen/wasm-bindgen/issues/3041
+    #[wasm_bindgen(inline_js = "
+let __zarr_impl = {};
+
+export function __js_set_zarr_imports(impl) {
+    __zarr_impl = impl;
+}
+
+export function zarr_has(store_name, key) {
+    return __zarr_impl.zarr_has(store_name, key);
+}
+
+export function zarr_has_status(store_name, key) {
+    return __zarr_impl.zarr_has_status(store_name, key);
+}
+
+export function zarr_get(store_name, key) {
+    return __zarr_impl.zarr_get(store_name, key);
+}
+
+export function zarr_get_status(store_name, key) {
+    return __zarr_impl.zarr_get_status(store_name, key);
+}
+
+export function zarr_get_range_from_offset(store_name, key, offset, length) {
+    return __zarr_impl.zarr_get_range_from_offset(store_name, key, offset, length);
+}
+
+export function zarr_get_range_from_offset_status(store_name, key, offset, length) {
+    return __zarr_impl.zarr_get_range_from_offset_status(store_name, key, offset, length);
+}
+
+export function zarr_get_range_from_end(store_name, key, suffix_length) {
+    return __zarr_impl.zarr_get_range_from_end(store_name, key, suffix_length);
+}
+
+export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
+    return __zarr_impl.zarr_get_range_from_end_status(store_name, key, suffix_length);
+}
+")]
+    extern "C" {
+        #[wasm_bindgen(js_name = __js_set_zarr_imports)]
+        fn set_zarr_imports_internal(impl_: JsValue);
 
         // We need to define a `has` function, since the zarr_get_js function
         // may return undefined, and wasm_bindgen does not allow
@@ -69,6 +115,16 @@ pub mod wasm {
             key: &str,
             suffix_length: u32,
         ) -> JsZarrPeekResult;
+    }
+
+    /// Set the zarr store implementations. Must be called after `wasm.default()`.
+    /// The `imports` object must contain the following functions:
+    /// `zarr_get`, `zarr_get_status`, `zarr_has`, `zarr_has_status`,
+    /// `zarr_get_range_from_offset`, `zarr_get_range_from_offset_status`,
+    /// `zarr_get_range_from_end`, `zarr_get_range_from_end_status`.
+    #[wasm_bindgen]
+    pub fn set_zarr_imports(imports: JsValue) {
+        set_zarr_imports_internal(imports);
     }
 
     fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
