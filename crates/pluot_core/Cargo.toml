@@ -52,7 +52,7 @@ once_cell.workspace = true
 serde.workspace = true
 # For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
-# We need to specify uuid with feature "js", which is used by zarrrs.
+# We need to specify uuid with feature "js", which is used by zarrs.
 uuid.workspace = true
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
@@ -69,10 +69,11 @@ zarrs = { workspace = true, default-features = false, features = [
 async-trait.workspace = true
 quick_cache.workspace = true
 svg.workspace = true
+
+# TODO: re-enable after https://github.com/yoshuawuyts/futures-time/issues/18
 futures-time.workspace = true
 
 # For OME-Zarr image metadata parsing.
-# We use this fork which relaxes things by not using serde(deny_unknown_fields).
 ome_zarr_metadata.workspace = true
 serde_json.workspace = true
 
@@ -84,12 +85,13 @@ encase.workspace = true
 # Matrix multiplication for SVG rendering
 nalgebra-glm.workspace = true
 
-
-fontdue.workspace = true # For font rasterization and text layout.
+# For font rasterization and text layout.
+fontdue.workspace = true
 image.workspace = true
 base64.workspace = true
 
-lz-str.workspace = true # To compress SVG strings before passing to JS.
+# To compress SVG strings before passing to JS.
+lz-str.workspace = true
 
 # WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -84,9 +84,11 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_
 struct PointLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units
     point_radius: f32,
-    point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    point_radius_unit_mode_x: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    point_radius_unit_mode_y: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
@@ -150,9 +152,11 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Convert point position from pixel space to normalized space (0 to 1)
         let point_pos_norm = vec2<f32>(
             point_pos_orig.x / layer_width_px,
@@ -170,19 +174,21 @@ fn vs_main(
         let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
         // The final point position in NDC space.
-        let pos = vec4f(
+        result_position_px = vec4f(
             point_pos_ndc.x + (corner.x * point_radius_ndc.x),
             point_pos_ndc.y + (corner.y * point_radius_ndc.y),
             0.0,
             1.0
         );
 
-        var out: VSOut;
-        out.position = pos;
-        out.color = u.color;
-        out.corner = corner;
-        out.instance_index = instance_index;
-        return out;
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            var out: VSOut;
+            out.position = result_position_px;
+            out.color = u.color;
+            out.corner = corner;
+            out.instance_index = instance_index;
+            return out;
+        }
     }
 
 
@@ -232,15 +238,24 @@ fn vs_main(
     let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
     // The final point position in NDC space.
-    let pos = vec4f(
+    result_position_data = vec4f(
         point_pos_ndc.x + (corner.x * point_radius_ndc.x),
         point_pos_ndc.y + (corner.y * point_radius_ndc.y),
         0.0,
         1.0
     );
 
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_position_data.x = result_position_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_position_data.y = result_position_px.y;
+    }
+
     var out: VSOut;
-    out.position = pos;
+    out.position = result_position_data;
     out.color = u.color;
     out.corner = corner;
     out.instance_index = instance_index;

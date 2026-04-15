@@ -1,5 +1,4 @@
-// TODO: re-implement, wrapping MultiscaleLayer.
-// TileLayer should just internally convert its parameters into ResolutionLevels and pass to a MultiscaleLayer.
+// TODO: remove this layer definition?
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -94,7 +93,8 @@ impl TileLayer {
             let rect_params = RectLayerParams {
                 layer_id: format!("{}_tiles", self.layer_params.layer_id),
                 bounds: self.view_params.margins.clone(),
-                data_unit_mode: UnitsMode::Data,
+                data_unit_mode_x: UnitsMode::Data,
+                data_unit_mode_y: UnitsMode::Data,
                 stroke_width: 1.0,
                 stroke_width_unit_mode: UnitsMode::Pixels,
                 position_x0: Arc::new(x0_vec),

@@ -1,3 +1,5 @@
+// TODO: can/should this be moved into pluot_zarr?
+
 use std::io;
 use crate::{
     zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,

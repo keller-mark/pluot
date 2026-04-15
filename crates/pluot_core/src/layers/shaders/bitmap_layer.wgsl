@@ -90,7 +90,8 @@ struct Channel {
 struct Uniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
 
@@ -200,9 +201,11 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Convert point position from pixel space to normalized space (0 to 1)
         let point_pos_norm = vec2<f32>(
             vertex_pos_px.x / layer_width_px,
@@ -210,12 +213,14 @@ fn vs_main(
         );
         let point_pos_ndc = NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
-        // TODO: handle the model_matrix
+        result_position_px = point_pos_ndc;
 
-        var out: VSOut;
-        out.position = point_pos_ndc;
-        out.tex_coord = uv;
-        return out;
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            var out: VSOut;
+            out.position = result_position_px;
+            out.tex_coord = uv;
+            return out;
+        }
     }
 
     // Handle data_unit_mode == "data"
@@ -249,17 +254,28 @@ fn vs_main(
         // 5. Convert final result to NDC for rendering
         // We apply camera AFTER converting to NDC, and DON'T convert back until
         // after all NDC-space operations are done. This keeps translations in the correct space.
+        //
+        // Apply a model matrix (arbitrarily passed by the user)
+        // before applying the camera (i.e., transforming the data coordinates).
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
-        // before applying the camera (i.e., transforming the data coordinates).
         * u.model_matrix * vec4(vertex_pos_px, 0.0, 1.0)
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
+    result_position_data = point_pos_ndc;
+
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_position_data.x = result_position_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_position_data.y = result_position_px.y;
+    }
 
     var out: VSOut;
-    out.position = point_pos_ndc;
+    out.position = result_position_data;
     out.tex_coord = uv;
     return out;
 }

@@ -44,8 +44,10 @@ async def _(camera_view, render_to_image):
                     layer_type="PointLayer",
                       layer_params=dict(
                         layer_id="layer_2",
-                        data_unit_mode="Pixels",
-                        point_radius_unit_mode="Pixels",
+                        data_unit_mode_x="Pixels",
+                        data_unit_mode_y="Pixels",
+                        point_radius_unit_mode_x="Pixels",
+                        point_radius_unit_mode_y="Pixels",
                         point_shape_mode="Square",
                         point_radius=15.0,
                         store_name="my_store",
@@ -61,7 +63,7 @@ async def _(camera_view, render_to_image):
                       )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="left_axis",
                         position="Left"
@@ -113,8 +115,10 @@ async def _(
                   layer_type="ZarrPointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
-                    data_unit_mode="Data",
-                    point_radius_unit_mode="Pixels",
+                    data_unit_mode_x="Data",
+                    data_unit_mode_y="Data",
+                    point_radius_unit_mode_x="Pixels",
+                    point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
                     x_arr=x_arr,
                     y_arr=y_arr,
@@ -123,14 +127,14 @@ async def _(
                   )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="left_axis",
                         position="Left"
                     )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="bottom_axis",
                         position="Bottom"

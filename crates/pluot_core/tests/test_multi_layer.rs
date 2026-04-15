@@ -23,9 +23,11 @@ fn corner_points() -> PointLayerParams {
     PointLayerParams {
         layer_id: "points".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         point_radius: 8.0,
-        point_radius_unit_mode: UnitsMode::Pixels,
+        point_radius_unit_mode_x: UnitsMode::Pixels,
+        point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
@@ -37,7 +39,8 @@ fn cross_lines() -> LineLayerParams {
     LineLayerParams {
         layer_id: "lines".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         source_position_x: Arc::new(vec![0.0, 1.0]),
@@ -52,7 +55,8 @@ fn corner_labels() -> TextLayerParams {
     TextLayerParams {
         layer_id: "labels".to_string(),
         bounds: None,
-        data_unit_mode: UnitsMode::Data,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
         text_size: 10.0,
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,

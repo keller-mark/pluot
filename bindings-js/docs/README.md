@@ -18,7 +18,7 @@ pnpm run astro-sync
 
 Deployment is performed automatically via GitHub Actions.
 
-For manual deployment, run:
+For manual deployment, run (from root of repo):
 
 ```sh
 pnpm run deploy

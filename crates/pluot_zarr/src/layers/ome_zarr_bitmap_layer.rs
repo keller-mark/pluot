@@ -303,7 +303,8 @@ impl PreparedLayer for OmeZarrBitmapLayer {
         let bitmap_params = BitmapLayerParams {
             layer_id: self.layer_params.layer_id.clone(),
             bounds: self.layer_params.bounds.clone(),
-            data_unit_mode: UnitsMode::Data,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
             pixel_offset: Some((pixel_offset_x, pixel_offset_y)),
             model_matrix: Some(self.layer_params.model_matrix),
             dimension_order: if y_dim_i < x_dim_i {

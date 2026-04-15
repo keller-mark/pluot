@@ -101,9 +101,10 @@ pub fn get_point_position(
     layer_width_px: f32,
     layer_height_px: f32,
     camera_view_raw: &[f32],
-    data_unit_mode: UnitsMode, // 0: pixel units, 1: data units. // TODO: keep the enums here?
-    aspect_ratio_mode: AspectRatioMode, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
-    aspect_ratio_alignment_mode: AspectRatioAlignmentMode, // 0: center, 1: start, 2: end.
+    data_unit_mode_x: UnitsMode,
+    data_unit_mode_y: UnitsMode,
+    aspect_ratio_mode: AspectRatioMode,
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
     model_matrix_raw: Option<&[f32]>, // Column-major 4x4 model matrix (identity if None).
 ) -> (f32, f32) {
     // Simulate the vertex shader logic here.
@@ -114,7 +115,10 @@ pub fn get_point_position(
         .map(|m| Mat4::from_column_slice(m))
         .unwrap_or(Mat4::identity());
 
-    if (data_unit_mode == UnitsMode::Pixels) {
+
+
+    let mut pixel_output: (f32, f32) = (0.0, 0.0);
+    if data_unit_mode_x == UnitsMode::Pixels || data_unit_mode_y == UnitsMode::Pixels {
         // Pixel units mode: model_matrix is applied in normalized (0,1) space.
         // Matches the shader logic:
         //   point_pos_norm = vertex_pos_px / layer_size
@@ -125,7 +129,10 @@ pub fn get_point_position(
             0.0, 1.0
         );
         let pos_transformed = model_matrix * pos_norm;
-        return (pos_transformed.x * layer_width_px, pos_transformed.y * layer_height_px);
+        pixel_output = (pos_transformed.x * layer_width_px, pos_transformed.y * layer_height_px);
+        if data_unit_mode_x == UnitsMode::Pixels && data_unit_mode_y == UnitsMode::Pixels {
+            return pixel_output;
+        }
     }
 
     let camera_view = Mat4::from_column_slice(camera_view_raw);
@@ -187,10 +194,13 @@ pub fn get_point_position(
         layer_height_px,
         1.0
     );
-    let point_pos_px  = NORM_TO_PX_MAT * Vec4::new(point_pos_norm.x, point_pos_norm.y, 0.0, 1.0);
+    let point_pos_px = NORM_TO_PX_MAT * Vec4::new(point_pos_norm.x, point_pos_norm.y, 0.0, 1.0);
+
+    let output_x = if data_unit_mode_x == UnitsMode::Pixels { pixel_output.0 } else { point_pos_px.x };
+    let output_y = if data_unit_mode_y == UnitsMode::Pixels { pixel_output.1 } else { point_pos_px.y };
 
     // Don't flip the Y coordinate here, and instead delegate to the caller if flipping is required.
-    return (point_pos_px.x, point_pos_px.y);
+    return (output_x, output_y);
 }
 
 // Compute how a size (width, height) transforms through the same pipeline as positions.
@@ -204,7 +214,8 @@ pub fn get_point_size(
     layer_width_px: f32,
     layer_height_px: f32,
     camera_view_raw: &[f32],
-    data_unit_mode: UnitsMode,
+    data_unit_mode_x: UnitsMode,
+    data_unit_mode_y: UnitsMode,
     aspect_ratio_mode: AspectRatioMode,
     aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
     model_matrix_raw: Option<&[f32]>,
@@ -213,7 +224,8 @@ pub fn get_point_size(
         .map(|m| Mat4::from_column_slice(m))
         .unwrap_or(Mat4::identity());
 
-    if (data_unit_mode == UnitsMode::Pixels) {
+    let mut pixel_output = (0.0_f32, 0.0_f32);
+    if data_unit_mode_x == UnitsMode::Pixels || data_unit_mode_y == UnitsMode::Pixels {
         // Pixel mode: model_matrix applied in normalized space (w=0 for size).
         let size_norm = Vec4::new(
             size_x / layer_width_px,
@@ -221,7 +233,10 @@ pub fn get_point_size(
             0.0, 0.0
         );
         let size_transformed = model_matrix * size_norm;
-        return (size_transformed.x * layer_width_px, size_transformed.y * layer_height_px);
+        pixel_output = (size_transformed.x * layer_width_px, size_transformed.y * layer_height_px);
+        if data_unit_mode_x == UnitsMode::Pixels && data_unit_mode_y == UnitsMode::Pixels {
+            return pixel_output;
+        }
     }
 
     let camera_view = Mat4::from_column_slice(camera_view_raw);
@@ -250,5 +265,8 @@ pub fn get_point_size(
     );
     let size_px = NORM_TO_PX_MAT * Vec4::new(size_norm.x, size_norm.y, 0.0, 0.0);
 
-    (size_px.x, size_px.y)
+    let output_x = if data_unit_mode_x == UnitsMode::Pixels { pixel_output.0 } else { size_px.x };
+    let output_y = if data_unit_mode_y == UnitsMode::Pixels { pixel_output.1 } else { size_px.y };
+
+    return (output_x, output_y);
 }

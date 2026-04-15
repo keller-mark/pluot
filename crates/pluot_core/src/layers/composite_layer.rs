@@ -1,3 +1,5 @@
+// TODO: remove the layer definition; only keep the utility functions.
+
 // Inspired by the DeckGL CompositeLayer
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 

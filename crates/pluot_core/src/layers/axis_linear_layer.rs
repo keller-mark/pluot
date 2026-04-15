@@ -12,7 +12,7 @@ use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
 
-// TODO: make these configurable via AxisLayerParams
+// TODO: make these configurable via AxisLinearLayerParams
 const DEFAULT_TICK_COUNT: usize = 10;
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
@@ -30,19 +30,21 @@ pub enum AxisPosition {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AxisLayerParams {
+pub struct AxisLinearLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
+
+    // TODO: support a data_unit_mode param.
 }
 
-pub struct AxisLayer {
+pub struct AxisLinearLayer {
     view_params: ViewParams,
-    layer_params: AxisLayerParams,
+    layer_params: AxisLinearLayerParams,
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
 }
 
-impl AxisLayer {
-    pub fn new(view_params: ViewParams, layer_params: AxisLayerParams) -> Self {
+impl AxisLinearLayer {
+    pub fn new(view_params: ViewParams, layer_params: AxisLinearLayerParams) -> Self {
         Self {
             view_params,
             layer_params,
@@ -200,7 +202,7 @@ impl AxisLayer {
         let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
 
         // We use zero margins for the sublayers,
-        // as the AxisLayer itself is responsible for positioning,
+        // as the AxisLinearLayer itself is responsible for positioning,
         // and it will need to render things into the margins.
         let bounds = MarginParams {
             margin_top: Some(0.0_f32),
@@ -221,7 +223,8 @@ impl AxisLayer {
         let line_params = LineLayerParams {
             layer_id: format!("{}_axis_layer_line_sublayer", self.layer_params.layer_id),
             bounds: Some(bounds.clone()),
-            data_unit_mode: UnitsMode::Pixels,
+            data_unit_mode_x: UnitsMode::Pixels,
+            data_unit_mode_y: UnitsMode::Pixels,
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
             source_position_x: Arc::new(line_source_position_x),
@@ -243,7 +246,8 @@ impl AxisLayer {
             let text_params = TextLayerParams {
                 layer_id: format!("{}_axis_layer_text_sublayer", self.layer_params.layer_id),
                 bounds: Some(bounds),
-                data_unit_mode: UnitsMode::Pixels,
+                data_unit_mode_x: UnitsMode::Pixels,
+                data_unit_mode_y: UnitsMode::Pixels,
                 text_size: DEFAULT_FONT_SIZE as f32,
                 text_size_unit_mode: UnitsMode::Pixels,
                 text_align_mode,
@@ -280,7 +284,7 @@ fn format_tick_value(value: f64) -> String {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for AxisLayer {
+impl PreparedLayer for AxisLinearLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Build sublayers based on current view params
         self.sub_layer_instances = self.build_sublayers();
@@ -292,7 +296,7 @@ impl PreparedLayer for AxisLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for AxisLayer {
+impl DrawToRasterGpu for AxisLinearLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
@@ -300,13 +304,13 @@ impl DrawToRasterGpu for AxisLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for AxisLayer {
+impl DrawToRasterCpu for AxisLinearLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for AxisLayer {
+impl DrawToSvg for AxisLinearLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
@@ -314,12 +318,12 @@ impl DrawToSvg for AxisLayer {
 
 inventory::submit! {
     crate::registry::LayerRegistration {
-        layer_type_name: "AxisLayer",
+        layer_type_name: "AxisLinearLayer",
         create_layer: |value, view_params| {
-            let params: AxisLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(AxisLayer::new(view_params.clone(), params))
+            let params: AxisLinearLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AxisLinearLayer::new(view_params.clone(), params))
         },
     }
 }
 
-impl PickableLayer for AxisLayer {}
+impl PickableLayer for AxisLinearLayer {}

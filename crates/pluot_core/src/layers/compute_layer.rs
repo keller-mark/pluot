@@ -1,3 +1,4 @@
+// TODO: remove this once there are other compute shader examples.
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
@@ -66,7 +67,8 @@ impl PreparedLayer for ComputeLayer {
         let text_params = TextLayerParams {
             layer_id: format!("{}_text", self.layer_params.layer_id),
             bounds: self.view_params.margins.clone(),
-            data_unit_mode: UnitsMode::Pixels,
+            data_unit_mode_x: UnitsMode::Pixels,
+            data_unit_mode_y: UnitsMode::Pixels,
             text_size: 24.0_f32,
             text_size_unit_mode: UnitsMode::Pixels,
             text_align_mode: TextAlignMode::Start,

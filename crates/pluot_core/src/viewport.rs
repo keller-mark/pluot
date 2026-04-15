@@ -64,6 +64,7 @@ pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coo
         view_params.height as f32,
         &camera_view,
         UnitsMode::Data,
+        UnitsMode::Data,
         view_params.aspect_ratio_mode,
         view_params.aspect_ratio_alignment_mode,
         None,
@@ -243,6 +244,86 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
         y_min: min_y,
         y_max: max_y,
     }
+}
+
+// Given x_min/x_max and y_min/y_max values, compute the corresponding camera matrix that would show data in this range.
+pub fn get_camera_matrix_from_bounds(view_params: &ViewParams, data_bounds: &DataBounds) -> [f32; 16] {
+    let aspect_ratio_mode = view_params.aspect_ratio_mode;
+    let aspect_ratio_alignment_mode = view_params.aspect_ratio_alignment_mode;
+
+    let bounds = &view_params.margins;
+
+    let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0);
+    let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0);
+    let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0);
+    let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0);
+
+    let viewport_w = view_params.width as f32;
+    let viewport_h = view_params.height as f32;
+
+    let layer_w = viewport_w - margin_left - margin_right;
+    let layer_h = viewport_h - margin_top - margin_bottom;
+
+    let layer_aspect_ratio = layer_w / layer_h;
+
+    let mut x_scale_for_aspect_ratio_mode = 1.0_f32;
+    let mut y_scale_for_aspect_ratio_mode = 1.0_f32;
+    match aspect_ratio_mode {
+        AspectRatioMode::Ignore => {}
+        AspectRatioMode::Contain => {
+            if layer_aspect_ratio > 1.0 {
+                x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+            } else if layer_aspect_ratio < 1.0 {
+                y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+            }
+        }
+        AspectRatioMode::Cover => {
+            if layer_aspect_ratio > 1.0 {
+                y_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
+            } else if layer_aspect_ratio < 1.0 {
+                x_scale_for_aspect_ratio_mode = layer_aspect_ratio;
+            }
+        }
+    }
+
+    let mut x_translation_for_aspect_ratio_alignment_mode = 0.0_f32;
+    let mut y_translation_for_aspect_ratio_alignment_mode = 0.0_f32;
+    match aspect_ratio_alignment_mode {
+        AspectRatioAlignmentMode::Center => {}
+        AspectRatioAlignmentMode::Start => {
+            x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+            y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+        }
+        AspectRatioAlignmentMode::End => {
+            x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+            y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+        }
+    }
+
+    let x_adjustment = x_scale_for_aspect_ratio_mode - 1.0;
+    let y_adjustment = y_scale_for_aspect_ratio_mode - 1.0;
+
+    let x_range = data_bounds.x_max - data_bounds.x_min;
+    let y_range = data_bounds.y_max - data_bounds.y_min;
+
+    // Derive zoom from both axes; take the minimum to ensure all requested data fits.
+    // For consistent bounds (i.e., produced by get_bounds), zoom_x == zoom_y.
+    let zoom_x = (1.0 + x_adjustment) / x_range;
+    let zoom_y = (1.0 + y_adjustment) / y_range;
+    let zoom = zoom_x.min(zoom_y);
+
+    // Invert the get_bounds translation equations:
+    //   min + max = (-translate + align) / zoom + 1.0
+    // So: translate = align - zoom * ((min + max) - 1.0)
+    let translate_x = x_translation_for_aspect_ratio_alignment_mode - zoom * ((data_bounds.x_min + data_bounds.x_max) - 1.0);
+    let translate_y = y_translation_for_aspect_ratio_alignment_mode - zoom * ((data_bounds.y_min + data_bounds.y_max) - 1.0);
+
+    [
+        zoom, 0.0,  0.0, 0.0,
+        0.0,  zoom, 0.0, 0.0,
+        0.0,  0.0,  1.0, 0.0,
+        translate_x, translate_y, 0.0, 1.0,
+    ]
 }
 
 #[cfg(test)]
@@ -532,5 +613,53 @@ mod tests {
         };
         let b = get_bounds(&view_params);
         assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, 0.0, 1.0));
+    }
+
+    // Tests for get_camera_matrix_from_bounds
+    #[test]
+    fn test_get_bounds_get_camera_matrix_from_bounds_roundtrip_1() {
+        // With margins: layer dimensions shrink but stay square → same [0, 1] data bounds.
+        let view_params = ViewParams {
+            view_id: "test".to_string(),
+            width: 100,
+            height: 100,
+            aspect_ratio_mode: AspectRatioMode::Ignore,
+            aspect_ratio_alignment_mode: AspectRatioAlignmentMode::Center,
+            device_pixel_ratio: 1.0,
+            camera_view: identity_camera(),
+            timeout: None,
+            wait_for_store_gets: true,
+            cache_enabled: false,
+            margins: Some(MarginParams {
+                margin_left: Some(20.0),
+                margin_right: None,
+                margin_top: None,
+                margin_bottom: Some(20.0),
+            }),
+            store_name: None,
+        };
+        let b = get_bounds(&view_params);
+        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, 0.0, 1.0));
+
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &b);
+
+        assert_eq!(camera_matrix, identity_camera().unwrap());
+    }
+
+    #[test]
+    fn test_get_camera_matrix_from_bounds_1() {
+        let view_params = make_view_params(
+            100, 100, AspectRatioMode::Ignore,
+            // Here, we can pass any camera matrix value when constructing ViewParams - it should not matter.
+            identity_camera()
+        );
+        let data_bounds = DataBounds {
+            x_min: 0.25,
+            x_max: 0.75,
+            y_min: 0.25,
+            y_max: 0.75
+        };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, zoom_camera(2.0).unwrap());
     }
 }

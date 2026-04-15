@@ -1,21 +1,25 @@
 use serde::{Deserialize, Serialize};
 
-pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
-pub use pluot_core::layers::line_layer::{LineLayerParams};
-pub use pluot_core::layers::rect_layer::{RectLayerParams};
-pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
-pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
-pub use pluot_core::layers::axis_layer::{AxisLayerParams, AxisPosition};
-pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;
-pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
-pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
-pub use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
-pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
+use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
+use pluot_core::layers::line_layer::{LineLayerParams};
+use pluot_core::layers::rect_layer::{RectLayerParams};
+use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
+use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
+use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
+use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
+use pluot_core::layers::point_3d_layer::Point3dLayerParams;
+use pluot_core::plot_layers::bar_plot_layer::BarPlotLayerParams;
+
+use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
+use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
+use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
+use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 
 use pluot_core::{AspectRatioAlignmentMode, LayerParams as RawLayerParams, RenderParams as RawRenderParams};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
-pub use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend};
-pub use pluot_core::render_traits::AspectRatioMode;
+use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend};
+use pluot_core::render_traits::AspectRatioMode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "layer_type", content = "layer_params")]
@@ -30,10 +34,15 @@ pub enum LayerParams {
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),
 
-    AxisLayer(AxisLayerParams),
+    AxisLinearLayer(AxisLinearLayerParams),
+    AxisBandLayer(AxisBandLayerParams),
+
+    // Plot-layers
+    BarPlotLayer(BarPlotLayerParams),
 
     // Zarr
     ZarrPointLayer(ZarrPointLayerParams),
+    ZarrBarPlotLayer(ZarrBarPlotLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
     OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
 
