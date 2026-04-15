@@ -302,6 +302,27 @@ const DEMOS = {
         },
       ]
     }
+  },
+  histogram: {
+    plot_type: "LayeredPlot",
+    store_name: "wheat",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "HistogramLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            bounds: null,
+            orientation: "Vertical",
+
+            data: [10.0, 20.0, 30.0, 40.0, 45.0, 50.0],
+            num_bins: 3,
+            data_min: null,
+            data_max: null,
+          }
+        },
+      ]
+    }
   }
 };
 

@@ -46,6 +46,7 @@ pub struct BarPlotLayerParams {
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin
+    // TODO: configurable axis layer positioning?
 
 }
 

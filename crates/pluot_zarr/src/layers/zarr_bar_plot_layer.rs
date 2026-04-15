@@ -79,11 +79,10 @@ impl PreparedLayer for ZarrBarPlotLayer {
             Ok(values)
         }, &cat_future_deps, self.view_params.cache_enabled);
 
-        let store2 = self.store.clone();
-        let quant_future_deps = vec!["quant_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
+        let quant_future_deps = vec!["quant_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.quantity_key.clone()];
         let quant_future = use_memo_vec_f32(async || {
             let array_path = &self.layer_params.quantity_key;
-            let array = zarrs::array::Array::async_open(store2.clone(), array_path).await.unwrap();
+            let array = zarrs::array::Array::async_open(store.clone(), array_path).await.unwrap();
             let subset = array.subset_all();
             let values = array.async_retrieve_array_subset::<Vec<i64>>(&subset).await?;
             let f32_values: Vec<f32> = values.iter().map(|&v| v as f32).collect();
