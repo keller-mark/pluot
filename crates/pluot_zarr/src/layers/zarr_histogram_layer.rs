@@ -40,6 +40,8 @@ pub struct ZarrHistogramLayer {
     layer_params: ZarrHistogramLayerParams,
     store: Arc<AsyncZarritaStore>,
     store_name: String,
+
+    // TODO: switch to `inner: Option<BarPlotLayer>`?
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
 }
 
@@ -95,66 +97,64 @@ impl PreparedLayer for ZarrHistogramLayer {
         let quant_future_deps = vec!["histogram_input_arr".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone()];
         let extent_future_deps = vec!["histogram_input_extent".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone()];
 
+        // Returns [data_min, data_max, bin_count_0, ..., bin_count_{num_bins-1}]
         let hist_future = use_memo_vec_f32(async || {
-            // Nested cacheing.
+            // Nested caching: cache the raw data array.
             let quant_arr = use_memo_vec_f32(async || {
                 let array_path = &self.layer_params.data_key;
                 let array = zarrs::array::Array::async_open(store.clone(), array_path).await.unwrap();
                 let subset = array.subset_all();
+                // TODO: generalize to support alternative dtypes
                 let arr_raw = array.async_retrieve_array_subset::<Vec<f64>>(&subset).await?;
                 let arr_inner: Vec<f32> = arr_raw.iter().map(|&x| x as f32).collect();
-                Ok(arr_inner)
-            }, &quant_future_deps, self.layer_params.cache_data).await;
+                Ok::<Vec<f32>, zarrs::array::ArrayError>(arr_inner)
 
-            if quant_arr.is_err() {
-                return quant_arr;
-            }
+            }, &quant_future_deps, self.view_params.cache_enabled && self.layer_params.cache_data)
+                .await?;
 
-            let quant_arr_inner = quant_arr.unwrap();
-
-            // Compute distribution of quant_arr.
+            // Nested caching: cache the extent.
+            let quant_arr_for_extent = quant_arr.clone();
             let extent = use_memo_vec_f32(async || {
-                let (lo, hi) = reduce_extent(gpu_context, quant_arr_inner).await;
-                Ok(vec![lo, hi])
-            }, &extent_future_deps, self.view_params.cache_enabled).await;
-
-            if extent.is_err() {
-                return extent;
-            }
-
-            let extent_inner = extent.unwrap();
+                let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent).await;
+                Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
+            }, &extent_future_deps, self.view_params.cache_enabled)
+                .await
+                .expect("Extent computation failed in ZarrHistogramLayer.prepare");
 
             let bin_counts = reduce_histogram_with_known_extent(
                 gpu_context,
-                quant_arr_inner,
+                quant_arr,
                 num_bins,
-                extent_inner[0],
-                extent_inner[1],
-            )
-            .await;
-            let bin_counts_inner: Vec<f32> = bin_counts.iter().map(|&c| c as f32).collect();
-            Ok::<Arc<Vec<f32>>, std::convert::Infallible>(Arc::new(bin_counts_inner))
+                extent[0],
+                extent[1],
+            ).await;
 
-            // TODO: need to return BOTH the bin_counts_inner AND the extent_inner arr values from the use_memo.
+            let mut result = vec![extent[0], extent[1]];
+            result.extend(bin_counts.iter().map(|&c| c as f32));
+            Ok(result)
         }, &hist_future_deps, self.view_params.cache_enabled);
 
         let future_result = maybe_timeout!(hist_future, self.view_params.timeout).await;
 
-        let (hist_arr) = match future_result {
-            Ok(hist_result) => hist_result,
-            Err(e) => {
+        let hist_data = match future_result {
+            Ok(Ok(hist_result)) => hist_result,
+            Ok(Err(e)) => {
+                // Zarrs error from async_retrieve_array_subset.
                 if is_timed_out_zarrs_error(&e) {
                     return PrepareResult { bailed_early: true };
                 } else {
-                    panic!("Zarrs error during ZarrBarLayer prepare: {:?}", e);
+                    panic!("Zarrs error during OmeZarrBitmapLayer prepare: {:?}", e);
                 }
+            }
+            Err(_) => {
+                // Wall-clock timeout from maybe_timeout!
+                return PrepareResult { bailed_early: true };
             }
         };
 
-        // TODO: somehow obtain both the hist_arr and extent_result here.
-
-        let data_min = extent_result[0];
-        let data_max = extent_result[1];
+        let data_min = hist_data[0];
+        let data_max = hist_data[1];
+        let hist_arr: Arc<Vec<f32>> = Arc::new(hist_data[2..].to_vec());
 
         let labels = Self::bin_labels(data_min, data_max, num_bins);
 

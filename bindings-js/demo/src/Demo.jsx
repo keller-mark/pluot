@@ -323,6 +323,26 @@ const DEMOS = {
         },
       ]
     }
+  },
+  zarr_histogram: {
+    plot_type: "LayeredPlot",
+    store_name: "gaussian_quantiles_store",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "ZarrHistogramLayer",
+          layer_params: {
+            layer_id: "test_zarr_hist_layer",
+            bounds: null,
+            orientation: "Vertical",
+
+            data_key: "/n_1000000/x_coords",
+            num_bins: 50,
+            cache_data: false,
+          }
+        },
+      ]
+    }
   }
 };
 
