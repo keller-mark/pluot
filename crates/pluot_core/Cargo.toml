@@ -71,7 +71,7 @@ quick_cache.workspace = true
 svg.workspace = true
 
 # TODO: re-enable after https://github.com/yoshuawuyts/futures-time/issues/18
-# futures-time.workspace = true
+futures-time.workspace = true
 
 # For OME-Zarr image metadata parsing.
 ome_zarr_metadata.workspace = true
