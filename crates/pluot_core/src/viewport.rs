@@ -371,6 +371,15 @@ mod tests {
         ])
     }
 
+    fn zoom_and_translate_camera(zoom: f32, tx: f32, ty: f32) -> Option<[f32; 16]> {
+        Some([
+            zoom, 0.0,  0.0, 0.0,
+            0.0,  zoom, 0.0, 0.0,
+            0.0,  0.0,  1.0, 0.0,
+            tx,   ty,   0.0, 1.0,
+        ])
+    }
+
     fn assert_data_2d(actual: Option<DataCoord>, expected_x: f32, expected_y: f32) {
         let coord = actual.expect("expected Some(DataCoord), got None");
         match coord {
@@ -661,5 +670,118 @@ mod tests {
         };
         let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
         assert_eq!(camera_matrix, zoom_camera(2.0).unwrap());
+    }
+
+    // Full [0, 1] range → identity camera (no zoom, no translation).
+    #[test]
+    fn test_get_camera_matrix_from_bounds_identity() {
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());
+        let data_bounds = DataBounds { x_min: 0.0, x_max: 1.0, y_min: 0.0, y_max: 1.0 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, identity_camera().unwrap());
+    }
+
+    // [-0.5, 1.5] range in both axes → 0.5× zoom (zoomed out 2×).
+    #[test]
+    fn test_get_camera_matrix_from_bounds_zoomed_out_2x() {
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());
+        let data_bounds = DataBounds { x_min: -0.5, x_max: 1.5, y_min: -0.5, y_max: 1.5 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, zoom_camera(0.5).unwrap());
+    }
+
+    // Offset bounds in x only → zoom=1, translate_x=0.5, translate_y=0.
+    #[test]
+    fn test_get_camera_matrix_from_bounds_x_translation_only() {
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());
+        // These are the bounds produced by get_bounds for translate_x=0.5, zoom=1.
+        let data_bounds = DataBounds { x_min: -0.25, x_max: 0.75, y_min: 0.0, y_max: 1.0 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, zoom_and_translate_camera(1.0, 0.5, 0.0).unwrap());
+    }
+
+    // Bounds from a zoom=2 + translated camera → camera_matrix recovers zoom and both translations.
+    // Uses power-of-2 fractions so f32 arithmetic is exact.
+    #[test]
+    fn test_get_camera_matrix_from_bounds_zoom_and_translation() {
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());
+        // Bounds produced by zoom=2.0, tx=0.5, ty=0.25 on a square/ignore viewport.
+        let data_bounds = DataBounds {
+            x_min: 0.125, x_max: 0.625,
+            y_min: 0.1875, y_max: 0.6875,
+        };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, zoom_and_translate_camera(2.0, 0.5, 0.25).unwrap());
+    }
+
+    // Wide contain (2:1 viewport): bounds [-0.5, 1.5] × [0, 1] → identity camera.
+    #[test]
+    fn test_get_camera_matrix_from_bounds_wide_contain() {
+        let view_params = make_view_params(200, 100, AspectRatioMode::Contain, identity_camera());
+        // These are the bounds returned by get_bounds for a 2:1 contain viewport with identity camera.
+        let data_bounds = DataBounds { x_min: -0.5, x_max: 1.5, y_min: 0.0, y_max: 1.0 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, identity_camera().unwrap());
+    }
+
+    // Tall contain (1:2 viewport): bounds [0, 1] × [-0.5, 1.5] → identity camera.
+    #[test]
+    fn test_get_camera_matrix_from_bounds_tall_contain() {
+        let view_params = make_view_params(100, 200, AspectRatioMode::Contain, identity_camera());
+        let data_bounds = DataBounds { x_min: 0.0, x_max: 1.0, y_min: -0.5, y_max: 1.5 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, identity_camera().unwrap());
+    }
+
+    // Wide cover (2:1 viewport): bounds [0, 1] × [0.25, 0.75] → identity camera.
+    #[test]
+    fn test_get_camera_matrix_from_bounds_wide_cover() {
+        let view_params = make_view_params(200, 100, AspectRatioMode::Cover, identity_camera());
+        // These are the bounds returned by get_bounds for a 2:1 cover viewport with identity camera.
+        let data_bounds = DataBounds { x_min: 0.0, x_max: 1.0, y_min: 0.25, y_max: 0.75 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, identity_camera().unwrap());
+    }
+
+    // When x_range < y_range the minimum zoom is chosen so all data fits; x is not over-zoomed.
+    #[test]
+    fn test_get_camera_matrix_from_bounds_asymmetric_ranges_takes_min_zoom() {
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());
+        // x spans [0, 0.5] (range=0.5, zoom_x=2.0) but y spans [0, 1.0] (range=1.0, zoom_y=1.0).
+        // min zoom = 1.0 (constrained by y), with translation to center x.
+        let data_bounds = DataBounds { x_min: 0.0, x_max: 0.5, y_min: 0.0, y_max: 1.0 };
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &data_bounds);
+        assert_eq!(camera_matrix, zoom_and_translate_camera(1.0, 0.5, 0.0).unwrap());
+    }
+
+    // Roundtrip: get_bounds(zoom_camera(2.0)) → get_camera_matrix_from_bounds → zoom_camera(2.0).
+    #[test]
+    fn test_get_bounds_get_camera_matrix_from_bounds_roundtrip_zoomed_in() {
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, zoom_camera(2.0));
+        let b = get_bounds(&view_params);
+        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.25, 0.75, 0.25, 0.75));
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &b);
+        assert_eq!(camera_matrix, zoom_camera(2.0).unwrap());
+    }
+
+    // Roundtrip: wide contain viewport, identity camera → get_bounds → get_camera_matrix_from_bounds → identity.
+    #[test]
+    fn test_get_bounds_get_camera_matrix_from_bounds_roundtrip_wide_contain() {
+        let view_params = make_view_params(200, 100, AspectRatioMode::Contain, identity_camera());
+        let b = get_bounds(&view_params);
+        assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (-0.5, 1.5, 0.0, 1.0));
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &b);
+        assert_eq!(camera_matrix, identity_camera().unwrap());
+    }
+
+    // Roundtrip: square ignore, zoom=2 + translation → get_bounds → get_camera_matrix_from_bounds → same camera.
+    // Uses power-of-2 fractions (tx=0.5, ty=0.25) so f32 arithmetic is exact throughout.
+    #[test]
+    fn test_get_bounds_get_camera_matrix_from_bounds_roundtrip_zoom_and_translation() {
+        let original_camera = zoom_and_translate_camera(2.0, 0.5, 0.25);
+        let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, original_camera);
+        let b = get_bounds(&view_params);
+        let camera_matrix = get_camera_matrix_from_bounds(&view_params, &b);
+        assert_eq!(camera_matrix, original_camera.unwrap());
     }
 }

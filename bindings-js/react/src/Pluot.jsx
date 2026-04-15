@@ -8,6 +8,7 @@ import { isEqual, throttle } from "lodash-es";
 import {
   initialize, setStore, getStore, getIsWasmReady,
   create2dCamera, create3dCamera,
+  getBounds, getCameraMatrixFromBounds,
 } from '@pluot/core';
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -179,9 +180,31 @@ export function Pluot(props) {
 
       const tempHandler = e => {
         // camera.setScaleBounds([[xScaleMin, xScaleMax], [yScaleMin, yScaleMax]])
-        camera.lookAt([2.0, 2.0], 2.0);
+        //camera.lookAt([2.0, 2.0], 2.0);
+        //onCameraEvent(camera, null);
+
+        // Only zoom/pan the X axis; keep Y unchanged
+        const nextCameraMatrix = getCameraMatrixFromBounds(
+          { yMin: 0.0, yMax: 100.0 },
+          new Float32Array(viewMatrix),
+          {
+            width,
+            height,
+            aspectRatioMode,
+            aspectRatioAlignmentMode,
+            margins: {
+              marginTop,
+              marginBottom,
+              marginLeft,
+              marginRight
+            },
+          },
+        );
+
+        console.log("done", nextCameraMatrix)
+
+        camera.setView(nextCameraMatrix);
         onCameraEvent(camera, null);
-        console.log("done")
       };
 
       tempButtonRef.current.addEventListener('click', tempHandler);
