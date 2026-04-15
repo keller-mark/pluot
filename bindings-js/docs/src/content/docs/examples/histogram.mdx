@@ -1,0 +1,41 @@
+---
+title: Histogram
+description: Histogram example.
+sidebar:
+    order: 40
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+This histogram displays the distribution of 1 million values (the same array used for the X-coordinates of the 1M-point scatterplot examples).
+
+The histogram values are computed via WebGPU compute shaders, and then passed to the BarPlotLayer for rendering.
+
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"histogram-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "ZarrHistogramLayer",
+          layer_params: {
+            layer_id: "histogram_layer",
+            bounds: null,
+            orientation: "Vertical",
+            data_key: "/n_1000000/x_coords",
+            num_bins: 50,
+            cache_data: false,
+          }
+        }
+      ]
+    }}
+    mode={"2d"}
+    marginLeft={60}
+    marginBottom={60}
+    width={700}
+/>
