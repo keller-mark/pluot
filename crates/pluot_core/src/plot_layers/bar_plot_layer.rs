@@ -6,7 +6,9 @@ use crate::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer,
     UnitsMode, ViewParams,
 };
-use crate::viewport::get_bounds;
+use std::collections::HashMap;
+use crate::picking::LayerPickingResult;
+use crate::viewport::{get_bounds, DataCoord, ScreenCoord};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
@@ -14,7 +16,7 @@ use crate::layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
 use crate::layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
-use crate::wgpu;
+use crate::{log, wgpu};
 use crate::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 
 
@@ -114,7 +116,7 @@ impl BarPlotLayer {
                             bounds: self.layer_params.bounds.clone(),
                             data_unit_mode_x: UnitsMode::Pixels,
                             data_unit_mode_y: UnitsMode::Data,
-                            stroke_width: 2.0,
+                            stroke_width: None,
                             stroke_width_unit_mode: UnitsMode::Pixels,
                             position_x0: Arc::new(position_x0),
                             position_y0: Arc::new(position_y0),
@@ -161,7 +163,7 @@ impl BarPlotLayer {
                             bounds: self.layer_params.bounds.clone(),
                             data_unit_mode_x: UnitsMode::Data,
                             data_unit_mode_y: UnitsMode::Pixels,
-                            stroke_width: 2.0,
+                            stroke_width: None,
                             stroke_width_unit_mode: UnitsMode::Pixels,
                             position_x0: Arc::new(position_x0),
                             position_y0: Arc::new(position_y0),
@@ -239,4 +241,81 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for BarPlotLayer {}
+impl PickableLayer for BarPlotLayer {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: data_coord_x, y: data_coord_y } = data_coord? else {
+            return None;
+        };
+
+        let n = self.layer_params.identifier.len();
+        if n == 0 {
+            return None;
+        }
+
+        // TODO: implement a ScaleBand.invert and ScaleLinear.invert method?
+
+        // Subtract margins from screen_coord.
+        // TODO: subtract margins in the upstream pick() function so it does not have to be done here?
+        let bounds = &self.view_params.margins;
+        let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
+        let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
+        let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
+        let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
+
+        let viewport_w = self.view_params.width as f64;
+        let viewport_h = self.view_params.height as f64;
+
+        let layer_w = viewport_w - margin_left - margin_right;
+        let layer_h = viewport_h - margin_bottom - margin_top;
+
+        let layer_x = screen_coord.x - margin_left as f32;
+        let layer_y = screen_coord.y - margin_bottom as f32;
+
+        // Use the bandwidth to identify the bar of interest.
+        // TODO: also account for the bar height/width and padding.
+
+        let mut bar_idx = 0usize;
+
+        match self.layer_params.orientation {
+            BarOrientation::Vertical => {
+                // Use X coord if orientation is Vertical.
+                match self.layer_params.data_unit_mode_for_identifier_dim {
+                    UnitsMode::Data => {
+                        // Use data_coord.x if data_unit_mode_for_identifier_dim is Data.
+                        todo!("Not yet implemented");
+                    }
+                    UnitsMode::Pixels => {
+                        // Use screen_coord.x (layer_x) if Pixels.
+                        let bandwidth = layer_w / n as f64;
+                        bar_idx = (layer_x / bandwidth as f32).floor() as usize;
+                    }
+                };
+            }
+            BarOrientation::Horizontal => {
+                // Use Y coord if orientation is Horizontal.
+                match self.layer_params.data_unit_mode_for_identifier_dim {
+                    UnitsMode::Data => {
+                        // Use data_coord.y if data_unit_mode_for_identifier_dim is Data.
+                        todo!("Not yet implemented");
+                    }
+                    UnitsMode::Pixels => {
+                        // Use screen_coord.y (layer_y) if Pixels.
+                        todo!("Not yet implemented");
+                    }
+                };
+            }
+        };
+
+        log(&format!("bar_idx is {}.", bar_idx));
+
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), bar_idx.to_string());
+        info.insert("identifier".to_string(), self.layer_params.identifier[bar_idx].to_string());
+        info.insert("quantity".to_string(), self.layer_params.quantity[bar_idx].to_string());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

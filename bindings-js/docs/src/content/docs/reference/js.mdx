@@ -7,14 +7,16 @@ sidebar:
 ---
 import { Aside } from '@astrojs/starlight/components';
 
-## Vanilla JavaScript
+## Without a framework
+
+The `@pluot/core` NPM package enables usage in vanilla JavaScript code (i.e., decoupled from any particular JavaScript framework).
 
 ```sh frame="none"
 npm install @pluot/core
 ```
 
 <Aside type="caution" title="Not yet published to NPM">
-   For now, the package is only available from GitHub; we have only reserved the package names on NPM.
+    Coming soon.
 </Aside>
 
 ## React component
@@ -38,8 +40,9 @@ npm install @pluot/react
 - marginLeft = 0.0
 - marginTop = 0.0
 - marginRight =  0.0
-- aspectRatioMode = "contain" // "ignore", "contain", "cover"
-- format = "vector" // "vector", "raster"
+- aspectRatioMode = "Contain" // "Ignore", "Contain", "Cover"
+- aspectRatioAlignmentMode = "Center" // "Center", "Start", "End"
+- format = "Vector" // "Vector", "Raster"
 
 
 

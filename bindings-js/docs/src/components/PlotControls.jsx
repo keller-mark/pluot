@@ -24,7 +24,8 @@ const theme = {
   }
 };
 
-export function usePlotControls(defaultOptions, plotSpecificOptions) {
+export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
+  const { onFullscreen } = callbacks ?? {};
   // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
@@ -50,8 +51,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     */
     size: {
       value: {
-        width: 500,
-        height: 500
+        width: defaultOptions.width ?? 500,
+        height: defaultOptions.height ?? 500
       },
       min: 0,
       step: 1,
@@ -61,8 +62,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     },
     verticalMargins: {
       value: {
-        bottom: 0,
-        top: 0,
+        bottom: defaultOptions.marginBottom ?? 0,
+        top: defaultOptions.marginTop ?? 0,
       },
       min: 0,
       step: 1,
@@ -72,8 +73,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     },
     horizontalMargins: {
       value: {
-        left: 0,
-        right: 0,
+        left: defaultOptions.marginLeft ?? 0,
+        right: defaultOptions.marginRight ?? 0,
       },
       min: 0,
       step: 1,
@@ -82,7 +83,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       label: 'Margins (Horizontal)'
     },
     aspectRatioMode: {
-      value: 'Contain',
+      value: defaultOptions.aspectRatioMode ?? 'Contain',
       options: {
         'Contain (fit)': 'Contain',
         'Cover (fill)': 'Cover',
@@ -91,7 +92,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       label: 'Aspect Ratio Mode'
     },
     aspectRatioAlignmentMode: {
-      value: 'Center',
+      value: defaultOptions.aspectRatioAlignmentMode ?? 'Center',
       options: {
         'Center': 'Center',
         'Start': 'Start',
@@ -118,12 +119,14 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
     ),
-    'Full Screen': button(
-      get => alert(`Interactive value is ${get('interactive')}`),
-      { disabled: false }
-    ),
     // TODO: download button
     */
+    ...(typeof onFullscreen === 'function' ? ({
+      'Full Screen': button(
+        onFullscreen,
+        { disabled: false }
+      ),
+    }) : {}),
     ...(plotSpecificOptions ? ({
       'Plot-Specific Options': folder(
         plotSpecificOptions,

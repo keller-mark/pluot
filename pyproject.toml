@@ -29,6 +29,7 @@ dev = [
   'pytest-asyncio>=1.1.0',
   'jupyterlab>=3.0.0',
   "marimo",
+  "pandas"
 ]
 
 

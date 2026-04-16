@@ -565,6 +565,8 @@ impl PickableLayer for PointLayer {
             return None;
         }
 
+        // TODO: fix this.
+
         let mut min_dist_sq = f32::MAX;
         let mut closest_idx = 0usize;
 

@@ -1,7 +1,4 @@
 use std::sync::Arc;
-use pluot_core::layers::point_layer::PointLayer;
-use pluot_core::viewport::DataCoord;
-use pluot_core::viewport::ScreenCoord;
 use serde::{Deserialize, Serialize};
 use futures_time::future::FutureExt;
 use futures_time::time::Duration;
@@ -18,6 +15,9 @@ use pluot_core::layers::point_layer::{PointShapeMode, PointLayerParams, base_dra
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
+use pluot_core::layers::point_layer::PointLayer;
+use pluot_core::viewport::DataCoord;
+use pluot_core::viewport::ScreenCoord;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrPointLayerParams {
@@ -52,9 +52,9 @@ pub struct ZarrPointLayer {
     // TODO: do we want the store or just the store_name here?
     store: Arc<AsyncZarritaStore>,
     store_name: String,
+
     // Data will be None prior to runninng prepare().
     data: Option<ZarrPointLayerData>,
-
     ready_to_draw: bool,
 }
 
@@ -196,6 +196,7 @@ impl DrawToRasterGpu for ZarrPointLayer {
         }
         let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
 
+        // TODO: just create the PointLayer instance here, then call DrawToRasterGpu::draw
         base_draw_point_layer(
             gpu_context, pass,
             &self.view_params,
@@ -255,7 +256,7 @@ impl DrawToSvg for ZarrPointLayer {
 }
 
 impl PickableLayer for ZarrPointLayer {
-    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         if !self.ready_to_draw {
             log("ZarrPointLayer was not ready to draw. Skipping picking.");
             return None;
@@ -284,6 +285,6 @@ impl PickableLayer for ZarrPointLayer {
             },
         );
 
-        layer.pick(_screen_coord, data_coord)
+        layer.pick(screen_coord, data_coord)
     }
 }

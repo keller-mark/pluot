@@ -6,7 +6,10 @@ from zarr.storage import MemoryStore
 from .zarr import GLOBAL_STORES
 from ._internal import render_py
 
+NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
+
 # Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
+# TODO: remove this now that it is no longer needed?
 # Reference: https://github.com/zarr-developers/zarr-python/issues/3389
 no_compression = dict(filters=None, compressors=None, serializer="auto")
 
@@ -62,7 +65,11 @@ async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
-    result = await render_py(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", format="Raster", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True, **new_kwargs)
+
+    merged_params = dict(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, format="Raster", aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True)
+    merged_params.update(new_kwargs)
+
+    result = await render_py(**merged_params)
     return result
 
 async def render_to_array(**kwargs):
@@ -70,7 +77,6 @@ async def render_to_array(**kwargs):
     width = kwargs["width"]
     height = kwargs["height"]
     result = await render(**kwargs)
-    NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
     arr = np.frombuffer(result[:-NUM_EXTRA_BYTES], dtype=np.dtype('uint8')).reshape((height, width, 4))
     return arr
 
@@ -78,3 +84,9 @@ async def render_to_image(**kwargs):
     arr = await render_to_array(**kwargs)
     img = Image.fromarray(arr)
     return img
+
+async def render_to_svg(**kwargs):
+    """Render to an SVG string."""
+    result = await render(**kwargs, format="Vector")
+    # TODO: account for bailed_early extra byte (once appended to SVG outputs on the Rust side)
+    return result.decode("utf-8")

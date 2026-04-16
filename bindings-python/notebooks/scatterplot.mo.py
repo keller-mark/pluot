@@ -6,11 +6,11 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image
+    from pluot import render_to_image, render_to_svg
     import numpy as np
     import marimo as mo
     import json
-    return mo, np, render_to_image
+    return mo, np, render_to_image, render_to_svg
 
 
 @app.cell
@@ -106,10 +106,6 @@ async def _(
         margin_left=100,
         margin_bottom=100,
         plot_params=dict(
-            #x_key="/n_100000/x_coords",
-            #y_key="/n_100000/y_coords",
-            #color_key="/n_1000000/class_labels",
-            #point_radius=5.0
             layers=[
                 dict(
                   layer_type="ZarrPointLayer",
@@ -147,7 +143,53 @@ async def _(
 
 
 @app.cell
-def _():
+async def _(
+    camera_view,
+    color_arr,
+    mo,
+    point_radius_slider,
+    render_to_svg,
+    x_arr,
+    y_arr,
+):
+    mo.Html(await render_to_svg(
+        camera_view=camera_view, width=600, height=600, plot_id="test", plot_type="LayeredPlot",
+        margin_left=100,
+        margin_bottom=100,
+        plot_params=dict(
+            layers=[
+                dict(
+                  layer_type="ZarrPointLayer",
+                  layer_params=dict(
+                    layer_id="zarr_layer",
+                    data_unit_mode_x="Data",
+                    data_unit_mode_y="Data",
+                    point_radius_unit_mode_x="Pixels",
+                    point_radius_unit_mode_y="Pixels",
+                    point_shape_mode="Circle",
+                    x_arr=x_arr,
+                    y_arr=y_arr,
+                    color_arr=color_arr,
+                    point_radius=point_radius_slider.value,
+                  )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params=dict(
+                        layer_id="left_axis",
+                        position="Left"
+                    )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params=dict(
+                        layer_id="bottom_axis",
+                        position="Bottom"
+                    )
+                )
+            ]
+        ),
+    ))
     return
 
 

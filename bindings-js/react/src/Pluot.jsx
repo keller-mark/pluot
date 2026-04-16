@@ -1,17 +1,16 @@
-// TODO: once things are working with react,
-// implement a plain/vanilla JS version.
 import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
-import * as wasm from "pluot";
-import { FetchStore } from "zarrita";
-// import createDom2dCamera from "dom-2d-camera";
-import createDom2dCamera from "./dom-2d-camera.js"; // Copy with minor modifications.
-// import createCamera from "3d-view-controls";
-import createCamera from "./3d-view-controls.js"; // Copy with minor modifications.
 import { mat4, vec4 } from "gl-matrix";
-import { lru } from "./lru-store.js";
 import { useWebGpuFeatureDetection } from "./feature-detection.js";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
+import {
+  initialize, getIsWasmReady,
+  render_wasm, pick_wasm,
+  setStore, getStore,
+  create2dCamera, create3dCamera,
+  getBounds, getCameraMatrixFromBounds,
+  checkWebGpuFeatureDetection,
+} from '@pluot/core';
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -33,82 +32,19 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
-//const baseUrl = 'https://storage.googleapis.com/vitessce-demo-data/use-coordination/mnist.zarr';
-const baseUrl = "http://localhost:5173/@data/mnist.zarr";
-
-// TODO: remove these hard-coded stores once things are working, and only allow providing via props.
-// (We will still need the global `stores` object so that the stores are available to the window.zarr_ functions.)
-const stores = {
-  // Wrap store in a cache.
-  // See https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/utils.ts#L47
-  mnist_store: lru(new FetchStore("http://localhost:5173/@data/mnist.zarr")),
-  // NOTE: no longer using the lru cache to reduce memory usage,
-  // since we now have the use_memo_ functions in cache.rs on the rust side.
-  // Note: when using a timeout parameter, we still may want to use a cache
-  // for in-progress promises (but not for their returned data).
-
-  // Usage of lru cache results in increased memory usage, since data is stored both in the lru cache and in the wasm cache (via use_memo_ functions in cache.rs).
-  // However, it is necessary especially when the network is slow, since it caches the promises that are re-requested from Rust on every re-render when bailing early due to the timeout parameter.
-  // TODO: consider eviction based on time (N*timeout) following promise resolution, or upon being notified by Rust that it has successfully cached a particular key.
-  // Or, evict following some N successful .get()s after promise resolution, to ensure that Rust has successfully accessed and cached the data while allowing for some timeouts-during-gets (though hopefully unlikely).
-  // Alternatively, have Rust allocate a fixed-size cache, and store data there when promises resolve, caching/returning to Rust only pointers/lengths into this shared memory.
-  gaussian_quantiles_store: lru(new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr")),
-  gaussian_quantiles_store_compressed: new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"),
-  ome_ngff: lru(
-    new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"),
-  ),
-  wheat: lru(
-    new FetchStore("http://localhost:5173/@data/wheat.zarr"),
-  ),
-  ome_ngff_2: lru(
-    new FetchStore('https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr')
-  )
-};
-
-// Only use window if it is defined (i.e., in the browser).
-// TODO: figure out how to pass into wasm.default as a parameter, rather than setting on window/globally.
-if (typeof window !== 'undefined') {
-  // Define the global zarr_get function.
-  window.zarr_get = async (store_name, key) => {
-    console.log(`zarr_get: store_name=${store_name}, key=${key}`);
-    return stores[store_name].get(`/${key}`);
-  };
-
-  window.zarr_get_status = (store_name, key) => {
-    return stores[store_name].getPeek(`/${key}`);
-  };
-
-  window.zarr_has = async (store_name, key) => {
-    // console.log(`zarr_has: store_name=${store_name}, key=${key}`);
-    return stores[store_name].get(`/${key}`) !== undefined;
-  };
-
-  window.zarr_has_status = (store_name, key) => {
-    return stores[store_name].getPeek(`/${key}`);
-  };
-
-  window.zarr_get_range_from_offset = async (store_name, key, offset, length) => {
-    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
-    return stores[store_name].getRange(`/${key}`, { offset, length });
-  };
-
-  window.zarr_get_range_from_offset_status = (store_name, key, offset, length) => {
-    // console.log(`zarr_get_range_from_offset: store_name=${store_name}, key=${key}, offset=${offset}, length=${length}`);
-    return stores[store_name].getRangePeek(`/${key}`, { offset, length })
-  };
-
-  window.zarr_get_range_from_end = async (store_name, key, suffix_length) => {
-    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
-    return stores[store_name].getRange(`/${key}`, { suffixLength: suffix_length });
-  };
-
-  window.zarr_get_range_from_end_status = (store_name, key, suffix_length) => {
-    // console.log(`zarr_get_range_from_end: store_name=${store_name}, key=${key}, suffix_length=${suffix_length}`);
-    return stores[store_name].getRangePeek(`/${key}`, { suffixLength: suffix_length });
-  };
-
-  window.isPluotInitialized = null;
+function normalizePickingResult(data) {
+  const result = data;
+  if (data && Array.isArray(result.layer_results)) {
+    result.layer_results = result.layer_results.map(obj => ({
+      layer_id: obj.layer_id,
+      // This is needed because serde-wasm-bindgen
+      // converts Rust HashMap to JS Map.
+      info: Object.fromEntries(Array.from(obj.info)),
+    }));
+  }
+  return result;
 }
+
 
 export function Pluot(props) {
   const {
@@ -143,17 +79,18 @@ export function Pluot(props) {
       return storeNameProp;
     }
     if (store) {
-      stores[plotId + "_store"] = lru(store);
-      return plotId + "_store";
+      return setStore(store, plotId);
     }
     throw new Error("Either storeName or store must be provided.");
   }, [storeNameProp, store]);
 
-  const { supportsWebGpu, supportsWebGpuMessage } = useWebGpuFeatureDetection();
+  const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
   const cameraRef = useRef(null);
+
+  const tempButtonRef = useRef(null);
 
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
@@ -169,6 +106,8 @@ export function Pluot(props) {
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
 
+  const [pickingResult, setPickingResult] = useState(null);
+
   // TODO: handle a viewMatrix that is provided and set via props,
   // to enable usage as a controlled component
   // (e.g., for linked views with shared cameras).
@@ -180,15 +119,7 @@ export function Pluot(props) {
   );
 
   useLayoutEffect(() => {
-    const initWasm = async () => {
-      await wasm.default();
-      await wasm.set_panic_hook();
-    };
-    if(!window.isPluotInitialized) {
-      window.isPluotInitialized = initWasm().then(() => setIsWasmReady(true));
-    } else {
-      window.isPluotInitialized.then(() => setIsWasmReady(true));
-    }
+    initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
 
   useEffect(() => {
@@ -228,7 +159,7 @@ export function Pluot(props) {
         currentTimeout.current = minTimeout;
       }
 
-      const camera = createDom2dCamera(cameraEl, {
+      const camera = create2dCamera(cameraEl, {
         isFixed: false,
         distance: 0.0,
         //target: [0.0, 0.0],
@@ -257,13 +188,56 @@ export function Pluot(props) {
         aspectRatioMode: aspectRatioMode,
         aspectRatioAlignmentMode: aspectRatioAlignmentMode,
       });
-      dispose = () => {
-        camera.dispose();
-      };
+
 
       // Set the initial view matrix.
       // We need to ensure we create a new copy of the array.
       camera.setView(new Float32Array(viewMatrix));
+
+      const tempHandler = e => {
+        // camera.setScaleBounds([[xScaleMin, xScaleMax], [yScaleMin, yScaleMax]])
+        //camera.lookAt([2.0, 2.0], 2.0);
+        //onCameraEvent(camera, null);
+
+        // Only zoom/pan the X axis; keep Y unchanged
+        const nextCameraMatrix = getCameraMatrixFromBounds(
+          { yMin: 0.0, yMax: 100.0 },
+          new Float32Array(viewMatrix),
+          {
+            width,
+            height,
+            aspectRatioMode,
+            aspectRatioAlignmentMode,
+            margins: {
+              marginTop,
+              marginBottom,
+              marginLeft,
+              marginRight
+            },
+          },
+        );
+
+        console.log("done", nextCameraMatrix)
+
+        camera.setView(nextCameraMatrix);
+        onCameraEvent(camera, null);
+      };
+
+      tempButtonRef.current.addEventListener('click', tempHandler);
+
+      // Set up an onClick handler.
+      //
+      const clickHandler = (event) => {
+        pickFrame(event.offsetX, event.offsetY);
+      };
+      cameraEl.addEventListener("click", clickHandler);
+
+      dispose = () => {
+        camera.dispose();
+        cameraEl.removeEventListener("click", clickHandler);
+
+        tempButtonRef.current.removeEventListener('click', tempHandler);
+      };
     } else if (viewMode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
@@ -278,7 +252,7 @@ export function Pluot(props) {
         });
       }
 
-      const camera = createCamera(cameraEl, {
+      const camera = create3dCamera(cameraEl, {
         mode: "orbit",
         zoomSpeed: -5,
       });
@@ -361,7 +335,41 @@ export function Pluot(props) {
     return dispose;
   }, [cameraRef, viewMode, aspectRatioMode, aspectRatioAlignmentMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
+  // The picking callback.
+  const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+    const renderParams = {
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+      view_mode: viewMode,
+      pickable: false,
+      // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
+      camera_view: viewMatrix,
+      plot_id: plotId,
+      plot_type: plotType,
+      store_name: storeName,
+      plot_params: plotParams,
+      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
+      timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
+      wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
+      cache_enabled: true,
+      svg_compression_enabled: true,
+      svg_include_document: false,
+    };
 
+    setPickingResult(normalizePickingResult(await pick_wasm(
+      renderParams,
+      screenCoordX + marginLeft,
+      height - (screenCoordY + marginBottom)
+    )));
+  });
 
 
   // The renderFrame callback.
@@ -401,9 +409,8 @@ export function Pluot(props) {
     // Wrap render_wasm in try/catch, to handle Rust panics.
     let arr;
     try {
-      arr = await wasm.render_wasm(renderParams);
+      arr = await render_wasm(renderParams);
 
-      console.log(await wasm.pick_wasm(renderParams, 400, 400));
       isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);
@@ -453,7 +460,7 @@ export function Pluot(props) {
         setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-        const storeUsed = stores[renderParams.store_name];
+        const storeUsed = getStore(renderParams.store_name);
         if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
           storeUsed.clearCache();
         }
@@ -536,6 +543,10 @@ export function Pluot(props) {
       {bailedEarly ? (
           <p>Loading...</p>
         ) : null}
+      <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
+      {pickingResult ? (
+        <pre>{JSON.stringify(pickingResult, null, 2)}</pre>
+      ) : null}
     </>
   );
 }

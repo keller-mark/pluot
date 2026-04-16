@@ -87,6 +87,7 @@ struct RectLayerUniforms {
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
+    filled: u32, // 0: false, 1: true
     stroke_width: f32,
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
@@ -345,10 +346,12 @@ fn fs_main(
     let inside_bottom = quad_pos.y > stroke_frac_y;
     let inside_top    = quad_pos.y < (1.0 - stroke_frac_y);
 
-    // TODO: do not completely discard if there is a fill color;
-    // render using the fill color as opposed to the stroke color.
     if (inside_left && inside_right && inside_bottom && inside_top) {
-        discard;
+        if(u.filled == 0u) {
+            // Completely discard if in "stroked" mode (i.e., not filled).
+            discard;
+        }
+        // TODO: render using the fill color as opposed to the stroke color.
     }
 
     var out: FSOut;

@@ -13,7 +13,7 @@ use crate::positioning::get_point_position;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::two::shapes::{
-    TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText,
+    TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText
 };
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -26,9 +26,8 @@ pub struct RectLayerParams {
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
 
-    // TODO: filled vs. stroked option
-
-    pub stroke_width: f32,
+    // If None, assume filled
+    pub stroke_width: Option<f32>,
     pub stroke_width_unit_mode: UnitsMode, // TODO: split into X and Y parts?
 
     // TODO(ref): pass in references instead of owned Vecs?
@@ -87,6 +86,7 @@ struct RectLayerUniforms {
     camera_view: Mat4,                // mat4x4<f32>,
     data_unit_mode_x: u32,            // 0 = pixels, 1 = data units
     data_unit_mode_y: u32,            // 0 = pixels, 1 = data units
+    filled: u32,                      // 0: false, 1: true
     stroke_width: f32,                // width of each line
     stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
@@ -207,7 +207,8 @@ pub async fn base_draw_rect_layer(
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         },
-        stroke_width: layer_params.stroke_width,
+        filled: if layer_params.stroke_width.is_none() { 1 } else { 0 },
+        stroke_width: layer_params.stroke_width.unwrap_or(0.0),
         stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
@@ -533,7 +534,10 @@ pub fn base_draw_rect_layer_svg(
             y: ((layer_h - source_y_px.min(target_y_px)) - rect_height) as f64,
             width: (target_x_px - source_x_px).abs() as f64,
             height: rect_height as f64,
-            linewidth: layer_params.stroke_width as f64,
+            fill: if layer_params.stroke_width.is_none() {
+                Some(TwoColor::Rgb((0_u8, 0_u8, 0_u8)))
+            } else { None },
+            linewidth: layer_params.stroke_width.unwrap_or(0.0) as f64,
             // TODO: more params
             ..Default::default()
         }));

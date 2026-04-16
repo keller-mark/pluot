@@ -1,5 +1,5 @@
 {
-  "name": "@pluot/react",
+  "name": "@pluot/core",
   "private": false,
   "version": "0.1.0",
   "description": "",
@@ -52,10 +52,7 @@
     "vitest": "^3.2.4",
     "vite": "^6.1.1",
     "jsdom": "^26.1.0",
-    "vitest-canvas-mock": "^0.3.3",
+    "vitest-canvas-mock": "~0.3.3",
     "typescript": "^5.9"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0"
   }
 }

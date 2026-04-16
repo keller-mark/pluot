@@ -246,6 +246,7 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 - Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
 - Learnxinyminutes: https://learnxinyminutes.com/rust/
 - A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
+- Guidelines: https://github.com/microsoft/rust-guidelines
 - Another list: https://github.com/microsoft/RustTraining
 
 ## License

@@ -1,30 +1,99 @@
-import React, { useState, useMemo, lazy, Suspense } from 'react';
+import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
 import { FetchStore } from 'zarrita';
 import { Pluot } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
-/*
-// We need to use a dynamic import here, because Pluot accesses `window`
-// at the top-level, which causes issues during server-side rendering.
-// Even though we pass `client:only` to the PluotWrapper component in Astro,
-// Astro still tries to import from its JS file during the build step,
-// which fails.
-const Pluot = lazy(async () => {
-    return {
-        default: (await import('@pluot/react')).Pluot,
-    };
-});
-*/
 
 export function PluotWrapper(props) {
   const {
-    storeUrl,
-    plotId = "example-plot",
     showControls = true,
-    // TODO: if defaults for margins, sizes, etc. are provided here, pass to usePlotControls.
+
+    plotId = "example-plot",
+    plotType = "LayeredPlot",
+    storeUrl,
+    plotParams,
+    viewMode = "2d",
+
+    // If defaults for margins, sizes, etc. are provided here,
+    // pass to usePlotControls so that the controls can use them for the initial values.
+    width: defaultWidth,
+    height: defaultHeight,
+    marginLeft: defaultMarginLeft,
+    marginRight: defaultMarginRight,
+    marginTop: defaultMarginTop,
+    marginBottom: defaultMarginBottom,
+    aspectRatioMode: defaultAspectRatioMode,
+    aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+
+    // TODO: define "plot-specific" options objects for plot types that need them
+    // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
+    plotSpecificOptions = null,
   } = props;
 
-  const controlValues = usePlotControls();
+  const defaultOptions = {
+    width: defaultWidth,
+    height: defaultHeight,
+    marginLeft: defaultMarginLeft,
+    marginRight: defaultMarginRight,
+    marginTop: defaultMarginTop,
+    marginBottom: defaultMarginBottom,
+    aspectRatioMode: defaultAspectRatioMode,
+    aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+  };
+
+
+  const [fsWidth, setFsWidth] = useState(null);
+  const [fsHeight, setFsHeight] = useState(null);
+
+  const divRef = useRef(null);
+
+  // Handling of fullscreenchange event.
+  useEffect(() => {
+    let discarded = false;
+    const onFSChange = (event) => {
+      console.log(event);
+
+      if (document.fullscreenElement) {
+        // Entering
+        setTimeout(() => {
+          // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
+          // returns a value that seems to correspond to the size of the Chrome window,
+          // rather than the full screen size.
+          const fullscreenSize = document.fullscreenElement.getBoundingClientRect();
+
+          if(!discarded) {
+            setFsHeight(fullscreenSize.height);
+            setFsWidth(fullscreenSize.width);
+          }
+        }, 100);
+      } else {
+        // Exiting
+        setFsHeight(null);
+        setFsWidth(null);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFSChange);
+
+    return () => {
+      discarded = true;
+      document.removeEventListener("fullscreenchange", onFSChange);
+    };
+  }, []);
+
+  const onFullscreen = useCallback(() => {
+    const divEl = divRef.current;
+
+    if (!document.fullscreenElement) {
+        // If the document is not in full screen mode
+        // make the video full screen
+        divEl.requestFullscreen();
+      } else {
+        // Otherwise exit the full screen mode.
+        document.exitFullscreen?.();
+      }
+  }, []);
+
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen });
   console.log(controlValues);
 
   const store = useMemo(() => {
@@ -39,32 +108,36 @@ export function PluotWrapper(props) {
   const marginTop = controlValues.verticalMargins.top;
   const marginBottom = controlValues.verticalMargins.bottom;
 
+  // TODO: render the PlotControls over the plot in Fullscreen mode
+  // TODO: render the Loading indicator over the plot in Fullscreen mode
 
   return (
     <>
-      <Pluot
-        store={store}
-        width={width}
-        height={height}
-        plotId={plotId}
-        plotType={"LayeredPlot"}
-        plotParams={{
-          layers: []
-        }}
-        mode={"2d"}
-        marginLeft={marginLeft}
-        marginTop={marginTop}
-        marginRight={marginRight}
-        marginBottom={marginBottom}
-        aspectRatioMode={aspectRatioMode}
-        aspectRatioAlignmentMode={aspectRatioAlignmentMode}
-        format={format}
-        debugMargins={debugMargins}
-        {...props}
-      />
+      <div ref={divRef}>
+        <Pluot
+          store={store}
+          width={fsWidth ?? width}
+          height={fsHeight ?? height}
+          plotId={plotId}
+          plotType={plotType}
+          plotParams={plotParams ?? ({
+            layers: []
+          })}
+          viewMode={viewMode}
+          marginLeft={marginLeft}
+          marginTop={marginTop}
+          marginRight={marginRight}
+          marginBottom={marginBottom}
+          aspectRatioMode={aspectRatioMode}
+          aspectRatioAlignmentMode={aspectRatioAlignmentMode}
+          format={format}
+          debugMargins={debugMargins}
+          />
+      </div>
       <PlotControls
         showControls={showControls}
       />
+
     </>
   );
 }
