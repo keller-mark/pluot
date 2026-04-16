@@ -10,6 +10,7 @@ import {
   create2dCamera, create3dCamera,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
+  onMouseMove as f2dcOnMouseMove, onWheel as f2dcOnWheel,
 } from '@pluot/core';
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -98,6 +99,7 @@ export function Pluot(props) {
   const cameraRef = useRef(null);
 
   const tempButtonRef = useRef(null);
+  const cameraInternalUpdateRef = useRef(false);
 
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
@@ -126,10 +128,40 @@ export function Pluot(props) {
     //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId, viewMode]);
 
+  const wheelHandler = useEffectEvent((event) => {
+    const nextCameraMatrix = f2dcOnWheel({
+        width,
+        height,
+        aspectRatioMode,
+        aspectRatioAlignmentMode,
+        margins: {
+          marginTop,
+          marginBottom,
+          marginLeft,
+          marginRight,
+        },
+      }, cameraMatrix, event);
+    setCameraMatrix(nextCameraMatrix);
+  });
 
-  // Set up the camera.
+  const mouseMoveHandler = useEffectEvent((event) => {
+    const nextCameraMatrix = f2dcOnMouseMove({
+        width,
+        height,
+        aspectRatioMode,
+        aspectRatioAlignmentMode,
+        margins: {
+          marginTop,
+          marginBottom,
+          marginLeft,
+          marginRight,
+        },
+      }, cameraMatrix, event);
+    setCameraMatrix(nextCameraMatrix);
+  });
+
+  // Set up FUNCTIONAL camera.
   useEffect(() => {
-    // Set up the camera.
     const cameraEl = cameraElementRef.current;
     if (!cameraEl) {
       return () => {};
@@ -137,208 +169,18 @@ export function Pluot(props) {
 
     let dispose = () => {};
 
-    // Create a 2D camera for handling zoom and pan.
     if (viewMode === "2d") {
-      function onCameraEvent(camera, event) {
-        camera.tick();
-        // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
-
-        setCameraMatrix(prev => {
-          // Since camera events happen even on mousemove events that do not change the matrix,
-          // we check for equality here to avoid unnecessary state updates and plot re-renders.
-          if (isEqual(prev, camera.view)) {
-            return prev;
-          }
-          return mat4.clone(camera.view)
-        });
-
-        //currentTimeout.current = minTimeout;
-      }
-
-      const camera = create2dCamera(cameraEl, {
-        isFixed: false,
-        distance: 0.0,
-        //target: [0.0, 0.0],
-        //viewCenter: [0.5, 0.5], // Should this be used when the coordinate system is (0 to 1) rather than (-1 to 1)?
-        viewCenter: [0.0, 0.0],
-        defaultMouseDownMoveAction: "pan",
-
-        onKeyDown: (event) => {
-          onCameraEvent(camera, event);
-        },
-        onKeyUp: (event) => {
-          onCameraEvent(camera, event);
-        },
-        onMouseDown: (event) => {
-          onCameraEvent(camera, event);
-        },
-        onMouseUp: (event) => {
-          onCameraEvent(camera, event);
-        },
-        onMouseMove: (event) => {
-          onCameraEvent(camera, event);
-        },
-        onWheel: (event) => {
-          onCameraEvent(camera, event);
-        },
-        aspectRatioMode: aspectRatioMode,
-        aspectRatioAlignmentMode: aspectRatioAlignmentMode,
-      });
-      cameraRef.current = camera;
-
-
-      // Set the initial view matrix.
-      // We need to ensure we create a new copy of the array.
-      //camera.setView(new Float32Array(cameraMatrix));
-
-      /*
-      const tempHandler = e => {
-        // camera.setScaleBounds([[xScaleMin, xScaleMax], [yScaleMin, yScaleMax]])
-        //camera.lookAt([2.0, 2.0], 2.0);
-        //onCameraEvent(camera, null);
-
-        // Only zoom/pan the X axis; keep Y unchanged
-        const nextCameraMatrix = getCameraMatrixFromBounds(
-          { yMin: 0.0, yMax: 100.0 },
-          new Float32Array(viewMatrix),
-          {
-            width,
-            height,
-            aspectRatioMode,
-            aspectRatioAlignmentMode,
-            margins: {
-              marginTop,
-              marginBottom,
-              marginLeft,
-              marginRight
-            },
-          },
-        );
-
-        console.log("done", nextCameraMatrix)
-
-        camera.setView(nextCameraMatrix);
-        onCameraEvent(camera, null);
-      };
-
-      tempButtonRef.current.addEventListener('click', tempHandler);
-      */
-
-      dispose = () => {
-        camera.dispose();
-        //tempButtonRef.current.removeEventListener('click', tempHandler);
-      };
-    } else if (viewMode === "3d") {
-      function onCameraEvent(camera, event) {
-        camera.tick();
-        // Note: the 3D camera stores the matrix in camera.matrix (not camera.view).
-        setCameraMatrix(prev => {
-          // Since camera events happen even on mousemove events that do not change the matrix,
-          // we check for equality here to avoid unnecessary state updates and plot re-renders.
-          if (isEqual(prev, camera.matrix)) {
-            return prev;
-          }
-          return mat4.clone(camera.matrix)
-        });
-      }
-
-
-      const camera = create3dCamera(cameraEl, {
-        mode: "orbit",
-        zoomSpeed: -5,
-      });
-      cameraRef.current = camera;
-
-      // TODO:
-      // - fork 3d-view-controls and remove usage of "global" - then clean up vite config.
-      // - define a camera.dispsose option.
-
-      // Reference: https://github.com/flekschas/dom-2d-camera/blob/cd59ea035a0ea72c2c0535fa3721f8127946576c/src/index.js#L237C3-L315C71
-      const keyUpHandler = (event) => {
-        // TODO
-      };
-
-      const keyDownHandler = (event) => {
-        // TODO
-      };
-
-      const mouseUpHandler = (event) => {
-        // TODO
-      };
-
-      const mouseDownHandler = (event) => {
-        // TODO
-      };
-
-      // TODO: use react state?
-      var lastX = 0;
-      var lastY = 0;
-
-      // Reference: https://github.com/mikolalysenko/3d-view/blob/8269e02337bba1923173a750aa7f3f0f76c91ba5/example/minimal.js#L67
-      const mouseMoveHandler = (event) => {
-        /*
-        var dx = (event.clientX - lastX) / width;
-        var dy = -(event.clientY - lastY) / height;
-        if (event.which === 1) {
-          if (event.shiftKey) {
-            //zoom
-            camera.rotate(now(), 0, 0, dx);
-          } else {
-            //rotate
-            camera.rotate(now(), dx, dy);
-          }
-        } else if (event.which === 3) {
-          //pan
-          camera.pan(now(), dx, dy);
-        }
-        lastX = event.clientX;
-        lastY = event.clientY;
-        */
-        onCameraEvent(camera, event);
-      };
-
-      const wheelHandler = (event) => {
-        //camera.pan(now(), 0, 0, event.deltaY);
-        onCameraEvent(camera, event);
-      };
-
-      cameraEl.addEventListener("keydown", keyDownHandler);
-      cameraEl.addEventListener("keyup", keyUpHandler);
-      cameraEl.addEventListener("mousedown", mouseDownHandler);
-      cameraEl.addEventListener("mouseup", mouseUpHandler);
-      cameraEl.addEventListener("mousemove", mouseMoveHandler);
       cameraEl.addEventListener("wheel", wheelHandler);
+      cameraEl.addEventListener("mousemove", mouseMoveHandler);
 
       dispose = () => {
-        cameraEl.removeEventListener("keydown", keyDownHandler);
-        cameraEl.removeEventListener("keyup", keyUpHandler);
-        cameraEl.removeEventListener("mousedown", mouseDownHandler);
-        cameraEl.removeEventListener("mouseup", mouseUpHandler);
-        cameraEl.removeEventListener("mousemove", mouseMoveHandler);
         cameraEl.removeEventListener("wheel", wheelHandler);
+        cameraEl.removeEventListener("mousemove", mouseMoveHandler);
       };
-
-      //camera.matrix = new Float32Array(viewMatrix);
-
-    } else {
-      throw new Error("Unknown mode found.");
     }
 
     return dispose;
-  }, [cameraElementRef, viewMode, aspectRatioMode, aspectRatioAlignmentMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
-
-  useEffect(() => {
-    if(viewMode === "2d" && typeof cameraRef.current?.setView === 'function') {
-      cameraRef.current.setView(new Float32Array(cameraMatrix));
-    } else {
-      if (!isEqual(cameraRef.current.matrix, cameraMatrix)) {
-        cameraRef.current.matrix = new Float32Array(cameraMatrix);
-      }
-    }
-    // TODO: add dependency for cameraIteration - increment each time a new camera is created.
-  }, [cameraMatrix, cameraRef]);
-
-
+  }, [viewMode]);
 
   // The renderFrame callback.
   // We use useEffectEvent because we want to "see"
