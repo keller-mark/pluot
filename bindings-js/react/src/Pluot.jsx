@@ -54,7 +54,26 @@ export function Pluot(props) {
     maxTimeout = 32,
     allowSimultaneousRenders = true,
     debugMargins = false,
+    cameraMatrix: controlledCameraMatrix = null,
+    setCameraMatrix: setControlledCameraMatrix = null,
   } = props;
+
+  // If cameraMatrix is not provided, then we manage the camera matrix internally.
+  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState(
+    // Note: We use an initializer function here to avoid
+    // sharing the same Float32Array among multiple Pluot
+    // component instances that may be rendered on the same page.
+    () => new Float32Array(DEFAULT_VIEW)
+  );
+
+  // Decide which camera matrix and setter to use.
+  const isControlledCamera = controlledCameraMatrix !== null;
+  const cameraMatrix = isControlledCamera
+    ? controlledCameraMatrix
+    : uncontrolledCameraMatrix;
+  const setCameraMatrix = isControlledCamera && typeof setControlledCameraMatrix === 'function'
+    ? setControlledCameraMatrix
+    : setUncontrolledCameraMatrix;
 
   const width = Math.floor(widthProp);
   const height = Math.floor(heightProp);
@@ -75,6 +94,7 @@ export function Pluot(props) {
 
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
+  const cameraElementRef = useRef(null);
   const cameraRef = useRef(null);
 
   const tempButtonRef = useRef(null);
@@ -93,25 +113,16 @@ export function Pluot(props) {
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
 
-  // TODO: handle a viewMatrix that is provided and set via props,
-  // to enable usage as a controlled component
-  // (e.g., for linked views with shared cameras).
-  const [viewMatrix, setViewMatrix] = useState(
-    // Note: We use an initializer function here to avoid
-    // sharing the same Float32Array among multiple Pluot
-    // component instances that may be rendered on the same page.
-    () => new Float32Array(DEFAULT_VIEW)
-  );
-
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
+
 
   useEffect(() => {
     // Reset view matrix on plot change.
     // Create a new Float32Array to avoid sharing a mutable array
     // among multiple Pluot component instances.
-    setViewMatrix(new Float32Array(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW));
+    setCameraMatrix(new Float32Array(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW));
     //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId, viewMode]);
 
@@ -119,7 +130,7 @@ export function Pluot(props) {
   // Set up the camera.
   useEffect(() => {
     // Set up the camera.
-    const cameraEl = cameraRef.current;
+    const cameraEl = cameraElementRef.current;
     if (!cameraEl) {
       return () => {};
     }
@@ -132,7 +143,7 @@ export function Pluot(props) {
         camera.tick();
         // Reference: https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1648
 
-        setViewMatrix(prev => {
+        setCameraMatrix(prev => {
           // Since camera events happen even on mousemove events that do not change the matrix,
           // we check for equality here to avoid unnecessary state updates and plot re-renders.
           if (isEqual(prev, camera.view)) {
@@ -141,7 +152,7 @@ export function Pluot(props) {
           return mat4.clone(camera.view)
         });
 
-        currentTimeout.current = minTimeout;
+        //currentTimeout.current = minTimeout;
       }
 
       const camera = create2dCamera(cameraEl, {
@@ -173,12 +184,14 @@ export function Pluot(props) {
         aspectRatioMode: aspectRatioMode,
         aspectRatioAlignmentMode: aspectRatioAlignmentMode,
       });
+      cameraRef.current = camera;
 
 
       // Set the initial view matrix.
       // We need to ensure we create a new copy of the array.
-      camera.setView(new Float32Array(viewMatrix));
+      //camera.setView(new Float32Array(cameraMatrix));
 
+      /*
       const tempHandler = e => {
         // camera.setScaleBounds([[xScaleMin, xScaleMax], [yScaleMin, yScaleMax]])
         //camera.lookAt([2.0, 2.0], 2.0);
@@ -209,16 +222,17 @@ export function Pluot(props) {
       };
 
       tempButtonRef.current.addEventListener('click', tempHandler);
+      */
 
       dispose = () => {
         camera.dispose();
-        tempButtonRef.current.removeEventListener('click', tempHandler);
+        //tempButtonRef.current.removeEventListener('click', tempHandler);
       };
     } else if (viewMode === "3d") {
       function onCameraEvent(camera, event) {
         camera.tick();
         // Note: the 3D camera stores the matrix in camera.matrix (not camera.view).
-        setViewMatrix(prev => {
+        setCameraMatrix(prev => {
           // Since camera events happen even on mousemove events that do not change the matrix,
           // we check for equality here to avoid unnecessary state updates and plot re-renders.
           if (isEqual(prev, camera.matrix)) {
@@ -228,10 +242,12 @@ export function Pluot(props) {
         });
       }
 
+
       const camera = create3dCamera(cameraEl, {
         mode: "orbit",
         zoomSpeed: -5,
       });
+      cameraRef.current = camera;
 
       // TODO:
       // - fork 3d-view-controls and remove usage of "global" - then clean up vite config.
@@ -309,8 +325,18 @@ export function Pluot(props) {
     }
 
     return dispose;
-  }, [cameraRef, viewMode, aspectRatioMode, aspectRatioAlignmentMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
+  }, [cameraElementRef, viewMode, aspectRatioMode, aspectRatioAlignmentMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
+  useEffect(() => {
+    if(viewMode === "2d" && typeof cameraRef.current?.setView === 'function') {
+      cameraRef.current.setView(new Float32Array(cameraMatrix));
+    } else {
+      if (!isEqual(cameraRef.current.matrix, cameraMatrix)) {
+        cameraRef.current.matrix = new Float32Array(cameraMatrix);
+      }
+    }
+    // TODO: add dependency for cameraIteration - increment each time a new camera is created.
+  }, [cameraMatrix, cameraRef]);
 
 
 
@@ -335,7 +361,7 @@ export function Pluot(props) {
       view_mode: viewMode,
       pickable: false,
       // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
-      camera_view: viewMatrix,
+      camera_view: cameraMatrix,
       plot_id: plotId,
       plot_type: plotType,
       store_name: storeName,
@@ -444,7 +470,7 @@ export function Pluot(props) {
 
     // Render on the next animation frame.
     throttledRender();
-  }, [isWasmReady, didFirstRender, viewMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format,
+  }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode, marginLeft, marginRight, marginTop, marginBottom]);
 
   return (
@@ -454,7 +480,7 @@ export function Pluot(props) {
           <p>{supportsWebGpuMessage}</p>
         ) : null}
         <div
-          ref={cameraRef}
+          ref={cameraElementRef}
           style={{
             position: "absolute",
             top: marginTop,
