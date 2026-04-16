@@ -32,6 +32,19 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
+function normalizePickingResult(data) {
+  const result = data;
+  if (data && Array.isArray(result.layer_results)) {
+    result.layer_results = result.layer_results.map(obj => ({
+      layer_id: obj.layer_id,
+      // This is needed because serde-wasm-bindgen
+      // converts Rust HashMap to JS Map.
+      info: Object.fromEntries(Array.from(obj.info)),
+    }));
+  }
+  return result;
+}
+
 
 export function Pluot(props) {
   const {
@@ -92,6 +105,8 @@ export function Pluot(props) {
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
+
+  const [pickingResult, setPickingResult] = useState(null);
 
   // TODO: handle a viewMatrix that is provided and set via props,
   // to enable usage as a controlled component
@@ -210,8 +225,17 @@ export function Pluot(props) {
 
       tempButtonRef.current.addEventListener('click', tempHandler);
 
+      // Set up an onClick handler.
+      //
+      const clickHandler = (event) => {
+        pickFrame(event.offsetX, event.offsetY);
+      };
+      cameraEl.addEventListener("click", clickHandler);
+
       dispose = () => {
         camera.dispose();
+        cameraEl.removeEventListener("click", clickHandler);
+
         tempButtonRef.current.removeEventListener('click', tempHandler);
       };
     } else if (viewMode === "3d") {
@@ -311,7 +335,41 @@ export function Pluot(props) {
     return dispose;
   }, [cameraRef, viewMode, aspectRatioMode, aspectRatioAlignmentMode, width, height, marginLeft, marginRight, marginTop, marginBottom]);
 
+  // The picking callback.
+  const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+    const renderParams = {
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+      view_mode: viewMode,
+      pickable: false,
+      // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
+      camera_view: viewMatrix,
+      plot_id: plotId,
+      plot_type: plotType,
+      store_name: storeName,
+      plot_params: plotParams,
+      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
+      timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
+      wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
+      cache_enabled: true,
+      svg_compression_enabled: true,
+      svg_include_document: false,
+    };
 
+    setPickingResult(normalizePickingResult(await pick_wasm(
+      renderParams,
+      screenCoordX + marginLeft,
+      height - (screenCoordY + marginBottom)
+    )));
+  });
 
 
   // The renderFrame callback.
@@ -353,7 +411,6 @@ export function Pluot(props) {
     try {
       arr = await render_wasm(renderParams);
 
-      console.log(await pick_wasm(renderParams, 400, 400));
       isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);
@@ -487,6 +544,9 @@ export function Pluot(props) {
           <p>Loading...</p>
         ) : null}
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
+      {pickingResult ? (
+        <pre>{JSON.stringify(pickingResult, null, 2)}</pre>
+      ) : null}
     </>
   );
 }

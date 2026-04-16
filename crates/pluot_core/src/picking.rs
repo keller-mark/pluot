@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
@@ -12,13 +12,13 @@ use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::viewport::{DataCoord, ScreenCoord, unproject};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct LayerPickingResult {
     pub layer_id: String,
     pub info: HashMap<String, String>, // Additional info about the picked element (e.g., index in data array, value, etc.)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct PickingResult {
     pub data_coord: Option<DataCoord>,
     pub screen_coord: ScreenCoord,

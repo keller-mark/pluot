@@ -16,6 +16,9 @@ use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
 use pluot_core::plot_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
+use pluot_core::LayerPickingResult;
+use pluot_core::viewport::DataCoord;
+use pluot_core::viewport::ScreenCoord;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrBarPlotLayerParams {
@@ -159,4 +162,15 @@ impl DrawToSvg for ZarrBarPlotLayer {
     }
 }
 
-impl PickableLayer for ZarrBarPlotLayer {}
+impl PickableLayer for ZarrBarPlotLayer {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+
+        if let Some(inner) = &self.inner {
+            return PickableLayer::pick(inner, screen_coord, data_coord);
+        }
+        return None;
+    }
+}
