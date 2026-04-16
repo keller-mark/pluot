@@ -24,7 +24,8 @@ const theme = {
   }
 };
 
-export function usePlotControls(defaultOptions, plotSpecificOptions) {
+export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
+  const { onFullscreen } = callbacks ?? {};
   // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
@@ -118,12 +119,14 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
     ),
-    'Full Screen': button(
-      get => alert(`Interactive value is ${get('interactive')}`),
-      { disabled: false }
-    ),
     // TODO: download button
     */
+    ...(typeof onFullscreen === 'function' ? ({
+      'Full Screen': button(
+        onFullscreen,
+        { disabled: false }
+      ),
+    }) : {}),
     ...(plotSpecificOptions ? ({
       'Plot-Specific Options': folder(
         plotSpecificOptions,

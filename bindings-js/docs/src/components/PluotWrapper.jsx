@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
 import { FetchStore } from 'zarrita';
 import { Pluot } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
@@ -41,7 +41,59 @@ export function PluotWrapper(props) {
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
   };
 
-  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions);
+
+  const [fsWidth, setFsWidth] = useState(null);
+  const [fsHeight, setFsHeight] = useState(null);
+
+  const divRef = useRef(null);
+
+  // Handling of fullscreenchange event.
+  useEffect(() => {
+    let discarded = false;
+    const onFSChange = (event) => {
+      console.log(event);
+
+      if (document.fullscreenElement) {
+        // Entering
+        setTimeout(() => {
+          // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
+          // returns a value that seems to correspond to the size of the Chrome window,
+          // rather than the full screen size.
+          const fullscreenSize = document.fullscreenElement.getBoundingClientRect();
+
+          if(!discarded) {
+            setFsHeight(fullscreenSize.height);
+            setFsWidth(fullscreenSize.width);
+          }
+        }, 100);
+      } else {
+        // Exiting
+        setFsHeight(null);
+        setFsWidth(null);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFSChange);
+
+    return () => {
+      discarded = true;
+      document.removeEventListener("fullscreenchange", onFSChange);
+    };
+  }, []);
+
+  const onFullscreen = useCallback(() => {
+    const divEl = divRef.current;
+
+    if (!document.fullscreenElement) {
+        // If the document is not in full screen mode
+        // make the video full screen
+        divEl.requestFullscreen();
+      } else {
+        // Otherwise exit the full screen mode.
+        document.exitFullscreen?.();
+      }
+  }, []);
+
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen });
   console.log(controlValues);
 
   const store = useMemo(() => {
@@ -56,30 +108,36 @@ export function PluotWrapper(props) {
   const marginTop = controlValues.verticalMargins.top;
   const marginBottom = controlValues.verticalMargins.bottom;
 
+  // TODO: render the PlotControls over the plot in Fullscreen mode
+  // TODO: render the Loading indicator over the plot in Fullscreen mode
+
   return (
     <>
-      <Pluot
-        store={store}
-        width={width}
-        height={height}
-        plotId={plotId}
-        plotType={plotType}
-        plotParams={plotParams ?? ({
-          layers: []
-        })}
-        viewMode={viewMode}
-        marginLeft={marginLeft}
-        marginTop={marginTop}
-        marginRight={marginRight}
-        marginBottom={marginBottom}
-        aspectRatioMode={aspectRatioMode}
-        aspectRatioAlignmentMode={aspectRatioAlignmentMode}
-        format={format}
-        debugMargins={debugMargins}
-      />
+      <div ref={divRef}>
+        <Pluot
+          store={store}
+          width={fsWidth ?? width}
+          height={fsHeight ?? height}
+          plotId={plotId}
+          plotType={plotType}
+          plotParams={plotParams ?? ({
+            layers: []
+          })}
+          viewMode={viewMode}
+          marginLeft={marginLeft}
+          marginTop={marginTop}
+          marginRight={marginRight}
+          marginBottom={marginBottom}
+          aspectRatioMode={aspectRatioMode}
+          aspectRatioAlignmentMode={aspectRatioAlignmentMode}
+          format={format}
+          debugMargins={debugMargins}
+          />
+      </div>
       <PlotControls
         showControls={showControls}
       />
+
     </>
   );
 }
