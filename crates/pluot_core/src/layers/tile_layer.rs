@@ -95,7 +95,7 @@ impl TileLayer {
                 bounds: self.view_params.margins.clone(),
                 data_unit_mode_x: UnitsMode::Data,
                 data_unit_mode_y: UnitsMode::Data,
-                stroke_width: 1.0,
+                stroke_width: Some(1.0),
                 stroke_width_unit_mode: UnitsMode::Pixels,
                 position_x0: Arc::new(x0_vec),
                 position_y0: Arc::new(y0_vec),
