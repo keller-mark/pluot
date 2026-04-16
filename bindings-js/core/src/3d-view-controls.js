@@ -60,6 +60,8 @@ export default function createCamera(element, options) {
     limits[1] = options.zoomMax
   }
 
+  var onChange = options.onChange || null
+
   var view = createView({
     center: options.center || [0,0,0],
     up:     options.up     || [0,1,0],
@@ -194,6 +196,12 @@ export default function createCamera(element, options) {
     }
   })
 
+  function tickAndEmit() {
+    if(camera.tick() && onChange) {
+      onChange(camera)
+    }
+  }
+
   element.addEventListener('contextmenu', function(ev) {
     //ev.preventDefault()
     //return false
@@ -253,6 +261,8 @@ export default function createCamera(element, options) {
     lastX = x
     lastY = y
     lastMods = mods
+
+    tickAndEmit()
   }
 
   mouseWheel(element, function(dx, dy, dz) {
@@ -265,6 +275,8 @@ export default function createCamera(element, options) {
       var kzoom = camera.zoomSpeed * flipY * dy / window.innerHeight * (t - view.lastT()) / 100.0
       view.pan(t, 0, 0, distance * (Math.exp(kzoom) - 1))
     }
+
+    tickAndEmit()
   }, true)
 
   return camera
