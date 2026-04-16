@@ -8,7 +8,7 @@ setStoreByName('mnist_store', new FetchStore("http://localhost:5173/@data/mnist.
 setStoreByName('gaussian_quantiles_store', new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"));
 setStoreByName('gaussian_quantiles_store_compressed', new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"));
 setStoreByName('ome_ngff', new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"));
-setStoreByName('ome_ngff_2', new FetchStore("https://uk1s3.embassy.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr"));
+setStoreByName('ome_ngff_2', new FetchStore("https://livingobjects.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr"));
 setStoreByName('wheat', new FetchStore("http://localhost:5173/@data/wheat.zarr"));
 
 const DEMOS = {

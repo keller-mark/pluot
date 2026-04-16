@@ -90,7 +90,7 @@ export function CmvExample() {
                         }
                     ]
                 }}
-                mode={"2d"}
+                viewMode={"2d"}
                 marginLeft={0}
                 marginTop={0}
                 marginRight={0}

@@ -486,7 +486,7 @@ export function Pluot(props) {
       {bailedEarly ? (
           <p>Loading...</p>
         ) : null}
-      <button ref={tempButtonRef}>Try lookAt</button>
+      <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
     </>
   );
 }

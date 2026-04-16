@@ -50,8 +50,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     */
     size: {
       value: {
-        width: 500,
-        height: 500
+        width: defaultOptions.width ?? 500,
+        height: defaultOptions.height ?? 500
       },
       min: 0,
       step: 1,
@@ -61,8 +61,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     },
     verticalMargins: {
       value: {
-        bottom: 0,
-        top: 0,
+        bottom: defaultOptions.marginBottom ?? 0,
+        top: defaultOptions.marginTop ?? 0,
       },
       min: 0,
       step: 1,
@@ -72,8 +72,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
     },
     horizontalMargins: {
       value: {
-        left: 0,
-        right: 0,
+        left: defaultOptions.marginLeft ?? 0,
+        right: defaultOptions.marginRight ?? 0,
       },
       min: 0,
       step: 1,
@@ -82,7 +82,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       label: 'Margins (Horizontal)'
     },
     aspectRatioMode: {
-      value: 'Contain',
+      value: defaultOptions.aspectRatioMode ?? 'Contain',
       options: {
         'Contain (fit)': 'Contain',
         'Cover (fill)': 'Cover',
@@ -91,7 +91,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions) {
       label: 'Aspect Ratio Mode'
     },
     aspectRatioAlignmentMode: {
-      value: 'Center',
+      value: defaultOptions.aspectRatioAlignmentMode ?? 'Center',
       options: {
         'Center': 'Center',
         'Start': 'Start',

@@ -1,30 +1,47 @@
-import React, { useState, useMemo, lazy, Suspense } from 'react';
+import React, { useMemo } from 'react';
 import { FetchStore } from 'zarrita';
 import { Pluot } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
-/*
-// We need to use a dynamic import here, because Pluot accesses `window`
-// at the top-level, which causes issues during server-side rendering.
-// Even though we pass `client:only` to the PluotWrapper component in Astro,
-// Astro still tries to import from its JS file during the build step,
-// which fails.
-const Pluot = lazy(async () => {
-    return {
-        default: (await import('@pluot/react')).Pluot,
-    };
-});
-*/
 
 export function PluotWrapper(props) {
   const {
-    storeUrl,
-    plotId = "example-plot",
     showControls = true,
-    // TODO: if defaults for margins, sizes, etc. are provided here, pass to usePlotControls.
+
+    plotId = "example-plot",
+    plotType = "LayeredPlot",
+    storeUrl,
+    plotParams,
+    viewMode = "2d",
+
+    // If defaults for margins, sizes, etc. are provided here,
+    // pass to usePlotControls so that the controls can use them for the initial values.
+    width: defaultWidth,
+    height: defaultHeight,
+    marginLeft: defaultMarginLeft,
+    marginRight: defaultMarginRight,
+    marginTop: defaultMarginTop,
+    marginBottom: defaultMarginBottom,
+    aspectRatioMode: defaultAspectRatioMode,
+    aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+
+    // TODO: define "plot-specific" options objects for plot types that need them
+    // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
+    plotSpecificOptions = null,
   } = props;
 
-  const controlValues = usePlotControls();
+  const defaultOptions = {
+    width: defaultWidth,
+    height: defaultHeight,
+    marginLeft: defaultMarginLeft,
+    marginRight: defaultMarginRight,
+    marginTop: defaultMarginTop,
+    marginBottom: defaultMarginBottom,
+    aspectRatioMode: defaultAspectRatioMode,
+    aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+  };
+
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions);
   console.log(controlValues);
 
   const store = useMemo(() => {
@@ -39,7 +56,6 @@ export function PluotWrapper(props) {
   const marginTop = controlValues.verticalMargins.top;
   const marginBottom = controlValues.verticalMargins.bottom;
 
-
   return (
     <>
       <Pluot
@@ -47,11 +63,11 @@ export function PluotWrapper(props) {
         width={width}
         height={height}
         plotId={plotId}
-        plotType={"LayeredPlot"}
-        plotParams={{
+        plotType={plotType}
+        plotParams={plotParams ?? ({
           layers: []
-        }}
-        mode={"2d"}
+        })}
+        viewMode={viewMode}
         marginLeft={marginLeft}
         marginTop={marginTop}
         marginRight={marginRight}
@@ -60,7 +76,6 @@ export function PluotWrapper(props) {
         aspectRatioAlignmentMode={aspectRatioAlignmentMode}
         format={format}
         debugMargins={debugMargins}
-        {...props}
       />
       <PlotControls
         showControls={showControls}

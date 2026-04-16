@@ -38,29 +38,29 @@ This scatterplot renders 1 million points.
         }
       ]
     }}
-    mode={"2d"}
+    viewMode={"2d"}
 />
 
 <Tabs>
-  <TabItem label="JS">
+  <TabItem label="JS (React)">
 ```jsx
 <Pluot
     width={500}
     height={500}
-    plotId={"scatterplot-example"}
-    plotType={"LayeredPlot"}
-    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotId="scatterplot-example"
+    plotType="LayeredPlot"
+    storeUrl="https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"
     plotParams={{
       layers: [
         {
           layer_type: "ZarrPointLayer",
           layer_params: {
-            layer_id: "layer_1",
+            layer_id: "my_point_layer",
             data_unit_mode_x: "Data",
             data_unit_mode_y: "Data",
             point_radius_unit_mode_x: "Pixels",
             point_radius_unit_mode_y: "Pixels",
-            point_shape_mode: "Square",
+            point_shape_mode: "Circle",
             point_radius: 5.0,
             bounds: null,
 
@@ -71,11 +71,11 @@ This scatterplot renders 1 million points.
         }
       ]
     }}
-    mode={"2d"}
-    marginLeft={50}
+    viewMode="2d"
+    marginLeft={0}
     marginTop={0}
     marginRight={0}
-    marginBottom={50}
+    marginBottom={0}
 />
 ```
   </TabItem>

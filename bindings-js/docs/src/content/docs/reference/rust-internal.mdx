@@ -37,11 +37,15 @@ The non-Rust environment *provides* these (for Rust to call).
 
 Call the platform-specific logging function (e.g., `console.log` on WASM, `logger.info` on Python, etc.).
 
+{/*
+
 #### `get_font`
 
 WASM-specific.
 
 Get a font from the system environment. (This avoids the need to bundle a bunch of fonts, which would both impact the bundle size and run into font licensing challenges).
+
+*/}
 
 #### `zarr_get`
 #### `zarr_get_range_from_end`
