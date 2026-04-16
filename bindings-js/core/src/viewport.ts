@@ -31,7 +31,8 @@ export type Bounds = {
 
 // Calculate the visible data range based on camera view and viewport parameters.
 export function getBounds(cameraMatrix: Float32Array, viewportParams: ViewportParams): Required<Bounds> {
-  const zoom = cameraMatrix[0];
+  const zoomX = cameraMatrix[0];
+  const zoomY = cameraMatrix[5];
   const translateX = cameraMatrix[12];
   const translateY = cameraMatrix[13];
 
@@ -67,10 +68,10 @@ export function getBounds(cameraMatrix: Float32Array, viewportParams: ViewportPa
   const xAdj = xScale - 1.0;
   const yAdj = yScale - 1.0;
 
-  const xMin = ((-translateX - 1.0 - xAdj + xAlignTranslation) / zoom + 1.0) / 2.0;
-  const xMax = ((-translateX + 1.0 + xAdj + xAlignTranslation) / zoom + 1.0) / 2.0;
-  const yMin = ((-translateY - 1.0 - yAdj + yAlignTranslation) / zoom + 1.0) / 2.0;
-  const yMax = ((-translateY + 1.0 + yAdj + yAlignTranslation) / zoom + 1.0) / 2.0;
+  const xMin = ((-translateX - 1.0 - xAdj + xAlignTranslation) / zoomX + 1.0) / 2.0;
+  const xMax = ((-translateX + 1.0 + xAdj + xAlignTranslation) / zoomX + 1.0) / 2.0;
+  const yMin = ((-translateY - 1.0 - yAdj + yAlignTranslation) / zoomY + 1.0) / 2.0;
+  const yMax = ((-translateY + 1.0 + yAdj + yAlignTranslation) / zoomY + 1.0) / 2.0;
 
   return { xMin, xMax, yMin, yMax };
 }
@@ -120,21 +121,25 @@ export function getCameraMatrixFromBounds(bounds: Bounds, prevCameraMatrix: Floa
   const xRange = xMax - xMin;
   const yRange = yMax - yMin;
 
-  // Derive zoom from both axes; take the minimum to ensure all requested data fits.
-  const zoomX = (1.0 + xAdj) / xRange;
-  const zoomY = (1.0 + yAdj) / yRange;
-  const zoom = Math.min(zoomX, zoomY);
+  let zoomX = (1.0 + xAdj) / xRange;
+  let zoomY = (1.0 + yAdj) / yRange;
+
+  // When aspect ratio is ignored, zoom each axis independently.
+  // Otherwise take the minimum so all requested data fits within the viewport.
+  if (viewportParams.aspectRatioMode !== "Ignore") {
+    zoomX = zoomY = Math.min(zoomX, zoomY);
+  }
 
   // Invert the getBounds translation equations:
   //   min + max = (-translate + align) / zoom + 1.0
   // So: translate = align - zoom * ((min + max) - 1.0)
-  const translateX = xAlignTranslation - zoom * ((xMin + xMax) - 1.0);
-  const translateY = yAlignTranslation - zoom * ((yMin + yMax) - 1.0);
+  const translateX = xAlignTranslation - zoomX * ((xMin + xMax) - 1.0);
+  const translateY = yAlignTranslation - zoomY * ((yMin + yMax) - 1.0);
 
   return new Float32Array([
-    zoom, 0.0,  0.0, 0.0,
-    0.0,  zoom, 0.0, 0.0,
-    0.0,  0.0,  1.0, 0.0,
+    zoomX, 0.0,   0.0, 0.0,
+    0.0,   zoomY, 0.0, 0.0,
+    0.0,   0.0,   1.0, 0.0,
     translateX, translateY, 0.0, 1.0,
   ]);
 }
