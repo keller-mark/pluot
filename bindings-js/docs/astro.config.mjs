@@ -10,8 +10,14 @@ export default defineConfig({
 	integrations: [
 		react(),
 		starlight({
-			title: 'Pluot',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/keller-mark/pluot' }],
+      title: 'Pluot',
+      editLink: {
+        baseUrl: 'https://github.com/keller-mark/pluot/edit/main/bindings-js/docs/',
+      },
+      social: [
+        { icon: 'document', label: 'Docs.rs', href: 'https://docs.rs/pluot/' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/keller-mark/pluot' }
+      ],
 			sidebar: [
 				{
 					label: 'Overview',

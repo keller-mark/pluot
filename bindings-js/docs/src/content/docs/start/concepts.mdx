@@ -22,6 +22,38 @@ These make it possible to do both of the following:
   - Within this called Rust function, call a non-Rust function defined by `lang` and use its return value in the Rust function
 
 
+In other words, when using Pluot across programming language boundaries, we need to consider bindings in both directions (to/from).
+
+### Bindings _to_ (the Rust program)
+
+The non-Rust environment *calls* these.
+
+- `render`: Or its bound variant (e.g., `render_py`, `render_wasm`, etc.) which handles serialization/deserialization or other platform-specific things.
+
+- `pick`: Perform "picking" to look-up the value at a specific (relative) screen coordinate. Used during hover and click event handling (e.g., to show tooltips).
+
+### Bindings _from_ (the non-Rust program)
+
+The non-Rust environment *provides* these (for Rust to call).
+
+- `log`: Call the platform-specific logging function (e.g., `console.log` on WASM, `logger.info` on Python, etc.).
+- `zarr_get`
+- `zarr_get_range_from_end`
+- `zarr_get_range_from_offset`
+- `zarr_has`
+- `zarr_get_status`
+- `zarr_get_range_from_end_status`
+- `zarr_get_range_from_offset_status`
+- `zarr_has_status`
+
+
+{/*
+
+- `get_font`: Get a font from the system environment. (This avoids the need to bundle a bunch of fonts, which would both impact the bundle size and run into font licensing challenges).
+
+*/}
+
+
 ## Lazy (async) data loading
 
 A naive way to implement a plotting function is to pass arrays of data as parameters to the function (e.g., `scatterplot(x_arr, y_arr)` which renders every XY coordinate that is passed).
@@ -105,7 +137,7 @@ For example, when using Pluot as a React component in a web application, you cou
 We provide a layer-based API that enables developers to implement custom plotting functions.
 Several core layers are implemented, including PointLayer and LineLayer.
 
-For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust-internal/) documentation.
+For more details on how to compose the existing layers or implement custom layers, see the [Rust](/reference/rust/) documentation.
 
 
 ## Plot margins
@@ -149,8 +181,10 @@ Layers can accept parameters to specify whether positions/sizes are specified in
 - `Pixels`: positions/sizes are specified in pixel units. These values will not be affected by the camera matrix or aspect ratio mode.
 - `Data`: positions/sizes are specified in data units. These values will be affected by the camera matrix and aspect ratio mode.
 
+{/*
 Layers currently throw errors if pixel-unit positioning is combined with data-unit sizing.
 However, pixel-unit sizing can be combined with data-unit positioning.
+*/}
 
 ## Scalability
 
@@ -165,3 +199,8 @@ In our experience:
 - without using string compression, plots with about 1,000 SVG nodes can be transferred and rendered in a web browser
 - with string compression, plots with about 10,000 SVG nodes can be transferred and rendered in a web browser
 In the future, we could explore alternative solutions, such as streaming.
+
+### Raster output format
+
+Pluot leverages GPU acceleration (with WebGPU via `wgpu`) when generating raster (i.e., bitmap) graphics.
+Unlike in the SVG case, the size of the resulting raster graphics outputs are not affected by the number of plotted elements.

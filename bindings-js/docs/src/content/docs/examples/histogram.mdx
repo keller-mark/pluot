@@ -5,14 +5,15 @@ sidebar:
     order: 40
 ---
 import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+import { Aside } from '@astrojs/starlight/components';
 
 This histogram displays the distribution of 1 million values (the same array used for the X-coordinates of the 1M-point scatterplot examples).
 
 The histogram values are computed via WebGPU compute shaders, and then passed to the BarPlotLayer for rendering.
 
-
-Note: This example is not working in Firefox. Please try in Chrome if the plot does not render.
-
+<Aside type="caution">
+    This example is not working in Firefox. Please try in Chrome if the plot does not render.
+</Aside>
 
 <PluotWrapper
     client:load
