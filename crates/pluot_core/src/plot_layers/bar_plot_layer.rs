@@ -20,7 +20,7 @@ use crate::{log, wgpu};
 use crate::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 
 
-const DEFAULT_BAR_MARGIN: f64 = 8.0;
+const DEFAULT_BAR_MARGIN: f64 = 4.0;
 
 // TODO: should this be a more general/common "PlotOrientation" enum?
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
