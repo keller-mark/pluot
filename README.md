@@ -251,6 +251,4 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 
 ## License
 
-&copy; 2026 Mark Keller.
-
 See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
