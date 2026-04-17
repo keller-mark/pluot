@@ -151,6 +151,13 @@ impl OmeZarrBitmapLayer {
             keys.push(format!("c_{}", cs.c_index));
         }
 
+        // TODO: Request and cache the data for each channel independently, rather than together.
+        // (Currently, this caches all channel data together, so it all must be reloaded if any channel settings change.)
+        // (Also see the above keys.push which is related:
+        // it causes the cache key to depend on all selected channel indices;
+        // this is correct under the current implementation,
+        // but would not be in the improved implementation).
+
         let cached = use_memo_numeric_data(async || {
             let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
