@@ -46,16 +46,21 @@ async function queryFn(ctx) {
           },
           label: 'Color',
         },
+        [`channel_${i}___window`]: {
+          value: [0.0, 90000.0],
+          min: 0.0,
+          max: 100000.0,
+          label: 'Window',
+        },
       }, { order: i });
     });
 
     const numChannels = channels.length;
 
     const getPlotParams = (currControls) => {
-
       const channelSettings = range(numChannels).map(cIndex => ({
         c_index: cIndex,
-        window: [0.0, 90000.0],
+        window: currControls[`channel_${cIndex}___window`],
         color: [
           currControls[`channel_${cIndex}___color`].r / 255.0,
           currControls[`channel_${cIndex}___color`].g / 255.0,
