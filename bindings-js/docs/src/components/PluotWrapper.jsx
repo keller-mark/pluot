@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
-import { FetchStore } from 'zarrita';
 import { Pluot } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
@@ -25,7 +24,7 @@ export function PluotWrapper(props) {
     aspectRatioMode: defaultAspectRatioMode,
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
 
-    // TODO: define "plot-specific" options objects for plot types that need them
+    // Option to provide "plot-specific" options objects for plot types that need them
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
   } = props;
@@ -40,7 +39,6 @@ export function PluotWrapper(props) {
     aspectRatioMode: defaultAspectRatioMode,
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
   };
-
 
   const [fsWidth, setFsWidth] = useState(null);
   const [fsHeight, setFsHeight] = useState(null);
@@ -96,9 +94,15 @@ export function PluotWrapper(props) {
   const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen });
   console.log(controlValues);
 
-  const store = useMemo(() => {
-    return new FetchStore(storeUrl);
-  }, [storeUrl]);
+  const derivedPlotParams = useMemo(() => {
+    if (!plotParams) {
+      throw new Error("PlotWrapper could not find plotParams.");
+    }
+    if (typeof plotParams === 'function') {
+      return plotParams(controlValues);
+    }
+    return plotParams;
+  }, [plotParams, controlValues]);
 
   const { aspectRatioMode, aspectRatioAlignmentMode, format, debugMargins } = controlValues;
   const width = controlValues.size.width;
@@ -115,14 +119,12 @@ export function PluotWrapper(props) {
     <>
       <div ref={divRef}>
         <Pluot
-          store={store}
+          store={storeUrl}
           width={fsWidth ?? width}
           height={fsHeight ?? height}
           plotId={plotId}
           plotType={plotType}
-          plotParams={plotParams ?? ({
-            layers: []
-          })}
+          plotParams={derivedPlotParams}
           viewMode={viewMode}
           marginLeft={marginLeft}
           marginTop={marginTop}

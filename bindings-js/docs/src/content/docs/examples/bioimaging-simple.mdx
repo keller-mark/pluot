@@ -1,0 +1,68 @@
+---
+title: Bioimaging simple
+description: Bioimaging without controls.
+draft: true
+sidebar:
+    order: 20
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+Bioimaging example that lacks channel controls.
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"bioimaging-simple"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://livingobjects.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+        {
+          layer_type: "OmeZarrMultiscaleLayer",
+          layer_params: {
+            layer_id: "ome_zarr_multiscale_layer",
+            target_z: 40,
+            target_t: 0,
+            channel_settings: [
+              {
+                c_index: 0,
+                window: [0.0, 90000.0],
+                color: [1.0, 0.0, 0.0],
+              },
+              {
+                c_index: 1,
+                window: [0.0, 90000.0],
+                color: [0.0, 1.0, 0.0],
+              },
+              {
+                c_index: 2,
+                window: [0.0, 90000.0],
+                color: [0.0, 0.0, 1.0],
+              }
+            ],
+            opacity: 1.0,
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={100}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={100}
+/>
