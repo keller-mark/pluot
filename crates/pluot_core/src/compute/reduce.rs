@@ -2,6 +2,7 @@ use crate::{render_types::GpuContext, wgpu};
 use crate::wgpu::util::DeviceExt;
 use std::num::NonZeroU64;
 use std::sync::Arc;
+use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use encase::{ShaderType, UniformBuffer};
