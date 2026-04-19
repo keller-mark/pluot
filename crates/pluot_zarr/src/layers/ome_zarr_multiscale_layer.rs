@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use futures_time::future::FutureExt;
-use futures_time::time::Duration;
-use pluot_core::maybe_timeout;
+use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
 use pluot_core::wgpu;

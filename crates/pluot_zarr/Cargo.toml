@@ -38,7 +38,6 @@ serde_json.workspace = true
 async-trait.workspace = true
 svg.workspace = true
 futures.workspace = true
-futures-time.workspace = true
 
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.

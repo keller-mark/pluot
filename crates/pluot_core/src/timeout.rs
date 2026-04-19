@@ -1,4 +1,3 @@
-// TODO: re-enable after https://github.com/yoshuawuyts/futures-time/issues/18
 #[macro_export]
 macro_rules! maybe_timeout {
     ($v1:expr, $v2:expr) => {

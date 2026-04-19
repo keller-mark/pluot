@@ -70,8 +70,7 @@ async-trait.workspace = true
 quick_cache.workspace = true
 svg.workspace = true
 
-# TODO: re-enable after https://github.com/yoshuawuyts/futures-time/issues/18
-futures-time.workspace = true
+
 
 # For OME-Zarr image metadata parsing.
 ome_zarr_metadata.workspace = true
@@ -94,6 +93,11 @@ base64.workspace = true
 lz-str.workspace = true
 
 # WASM-specific dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pluot-futures-time = { workspace = true, default-features = false }
+
+
+# WASM-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
@@ -106,6 +110,9 @@ serde-wasm-bindgen = { workspace = true }
 # all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
 # code size when deploying.
 console_error_panic_hook = { workspace = true }
+
+pluot-futures-time = { workspace = true, default-features = false, features = ["web"] }
+
 
 
 [dev-dependencies]
