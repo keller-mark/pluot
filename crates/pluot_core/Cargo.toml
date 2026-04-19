@@ -94,7 +94,7 @@ lz-str.workspace = true
 
 # WASM-specific dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-pluot-futures-time = { workspace = true, default-features = false }
+pluot-futures-time = { workspace = true, default-features = true }
 
 
 # WASM-specific dependencies
