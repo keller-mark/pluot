@@ -1,4 +1,4 @@
-//! `pluot` is a Rust crate that supports static and interactive visualization.
+//! This crate provides features for rendering visualizations.
 
 mod plugins;
 
@@ -6,7 +6,7 @@ mod plugins;
 pub use pluot_core::params::{GraphicsFormat, ViewMode};
 pub use pluot_core::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, ViewParams, MarginParams};
 pub use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams};
-
+pub use pluot_core::{project, unproject, get_bounds};
 
 // Re-export layer param types for convenience.
 pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
@@ -29,6 +29,9 @@ pub use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 mod render_params;
 
 pub use crate::render_params::{RenderParams, LayerParams};
+
+
+// TODO: picking exports.
 
 // Unified exports.
 mod render;

@@ -151,12 +151,18 @@ importers:
       '@pluot/react':
         specifier: workspace:*
         version: link:../react
+      '@tanstack/react-query':
+        specifier: ^5.99.0
+        version: 5.99.0(react@19.2.4)
       astro:
         specifier: ^5.6.1
         version: 5.16.11(rollup@4.46.3)(typescript@5.9.2)
       leva:
         specifier: 0.10.1
         version: 0.10.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      lodash-es:
+        specifier: ^4.18.1
+        version: 4.18.1
       react:
         specifier: ^19.2.0
         version: 19.2.4
@@ -172,6 +178,9 @@ importers:
       zarrita:
         specifier: ^0.5.3
         version: 0.5.3
+      zod-ome-ngff:
+        specifier: 0.3.0
+        version: 0.3.0(zod@3.25.76)
 
   bindings-js/react:
     dependencies:
@@ -1203,6 +1212,14 @@ packages:
     resolution: {integrity: sha512-9g9dWI4gsSVe8bNLlb+lMkBYsnIKCZTmvqvDG+Avnn69XfmHZKiaMrx7cgTaddq7aTPPmXiTsbFcUy0xgI4+wA==}
     peerDependencies:
       react: '>= 16.3.0'
+
+  '@tanstack/query-core@5.99.0':
+    resolution: {integrity: sha512-3Jv3WQG0BCcH7G+7lf/bP8QyBfJOXeY+T08Rin3GZ1bshvwlbPt7NrDHMEzGdKIOmOzvIQmxjk28YEQX60k7pQ==}
+
+  '@tanstack/react-query@5.99.0':
+    resolution: {integrity: sha512-OY2bCqPemT1LlqJ8Y2CUau4KELnIhhG9Ol3ZndPbdnB095pRbPo1cHuXTndg8iIwtoHTgwZjyaDnQ0xD0mYwAw==}
+    peerDependencies:
+      react: ^18 || ^19
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -2238,6 +2255,9 @@ packages:
 
   lodash-es@4.17.23:
     resolution: {integrity: sha512-kVI48u3PZr38HdYz98UmfPnXl2DXrpdctLrFLCd3kOx1xUkOmpFPx7gCWWM5MPkL/fD8zb+Ph0QzjGFs4+hHWg==}
+
+  lodash-es@4.18.1:
+    resolution: {integrity: sha512-J8xewKD/Gk22OZbhpOVSwcs60zhd95ESDwezOFuA3/099925PdHJ7OFHNTGtajL3AlZkykD32HykiMo+BIBI8A==}
 
   longest-streak@3.1.0:
     resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
@@ -3419,6 +3439,12 @@ packages:
   zarrita@0.5.3:
     resolution: {integrity: sha512-to2JRq9nHwYdhWEwJwytHYdMYC6I0f2vKUAQfYkgrwwy8OjShhwmv4sH9drzyV3sLzdy7XS9N1ipdMA/Qjspow==}
 
+  zod-ome-ngff@0.3.0:
+    resolution: {integrity: sha512-dMTnodetLuZ6WRHgJzsZivODS5D7orc22NwyxEKhedXafr0Bu8briSW9TmcWa15kHysSLpP+6PaRfuJVBR3nMQ==}
+    engines: {pnpm: ^9.0.0}
+    peerDependencies:
+      zod: ^3.0.0
+
   zod-to-json-schema@3.25.1:
     resolution: {integrity: sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA==}
     peerDependencies:
@@ -4371,6 +4397,13 @@ snapshots:
     dependencies:
       react: 19.2.4
 
+  '@tanstack/query-core@5.99.0': {}
+
+  '@tanstack/react-query@5.99.0(react@19.2.4)':
+    dependencies:
+      '@tanstack/query-core': 5.99.0
+      react: 19.2.4
+
   '@types/babel__core@7.20.5':
     dependencies:
       '@babel/parser': 7.28.6
@@ -4478,7 +4511,7 @@ snapshots:
       '@use-coordination/constants-internal': 1.0.1
       '@use-coordination/schemas': 1.0.1
       '@use-coordination/utils': 1.0.1
-      lodash-es: 4.17.23
+      lodash-es: 4.18.1
       react: 19.2.4
       zod: 3.25.76
       zustand: 5.0.7(@types/react@19.2.14)(react@19.2.4)
@@ -4493,7 +4526,7 @@ snapshots:
       '@types/lodash-es': 4.17.12
       '@use-coordination/constants-internal': 1.0.1
       '@use-coordination/utils': 1.0.1
-      lodash-es: 4.17.23
+      lodash-es: 4.18.1
       zod: 3.25.76
 
   '@use-coordination/utils@1.0.1': {}
@@ -5647,6 +5680,8 @@ snapshots:
       p-locate: 4.1.0
 
   lodash-es@4.17.23: {}
+
+  lodash-es@4.18.1: {}
 
   longest-streak@3.1.0: {}
 
@@ -7155,6 +7190,10 @@ snapshots:
     dependencies:
       '@zarrita/storage': 0.1.2
       numcodecs: 0.3.2
+
+  zod-ome-ngff@0.3.0(zod@3.25.76):
+    dependencies:
+      zod: 3.25.76
 
   zod-to-json-schema@3.25.1(zod@3.25.76):
     dependencies:

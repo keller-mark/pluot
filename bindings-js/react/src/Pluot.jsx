@@ -1,8 +1,8 @@
 import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
 import { mat4, vec4 } from "gl-matrix";
-import { useWebGpuFeatureDetection } from "./feature-detection.js";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
+import { FetchStore } from 'zarrita';
 import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
@@ -78,7 +78,11 @@ export function Pluot(props) {
     if (storeNameProp) {
       return storeNameProp;
     }
+    // If store is a string, assume it is a URL and initialize a FetchStore here.
     if (store) {
+      if (typeof store === 'string') {
+        return setStore(new FetchStore(store), plotId);
+      }
       return setStore(store, plotId);
     }
     throw new Error("Either storeName or store must be provided.");
@@ -364,10 +368,14 @@ export function Pluot(props) {
       svg_include_document: false,
     };
 
+    const layerHeight = height - marginTop - marginBottom;
+
     setPickingResult(normalizePickingResult(await pick_wasm(
       renderParams,
+      // The coordinates are relative to the "layer" (the camera region), not the full width/height.
+      // We also need to flip the Y coordinate so that positive is up.
       screenCoordX + marginLeft,
-      height - (screenCoordY + marginBottom)
+      marginBottom + (layerHeight - screenCoordY)
     )));
   });
 

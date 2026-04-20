@@ -133,7 +133,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
         { collapsed: false }
       ),
     }) : {}),
-  });
+  }, [plotSpecificOptions]);
 }
 
 export function PlotControls(props) {

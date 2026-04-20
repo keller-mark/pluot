@@ -49,6 +49,8 @@ pub enum LayerParams {
     // 3D
     Point3dLayer(Point3dLayerParams),
     ZarrPoint3dLayer(ZarrPoint3dLayerParams),
+
+    // TODO: ensure registered layers here match inventory registration
 }
 
 /// Strongly-typed render params. Mirrors [`RawRenderParams`] but accepts
