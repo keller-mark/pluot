@@ -4,7 +4,7 @@
 
 <a href="https://commons.wikimedia.org/wiki/File:Red_pluots.JPG"><img src="bindings-js/docs/src/assets/red-pluots.jpg" align="right" height="250" alt="pluots" /></a>
 
-Goal: Implement a data visualization once, then render it in multiple contexts (across languages, static or interactive, raster or vector).
+Goal: Implement a data visualization once, then render it in multiple contexts (across languages, static or interactive, bitmap or vector).
 
 Rust, Python, and JavaScript (including in a web browser) are currently supported. Additional bindings are future work.
 
