@@ -30,7 +30,7 @@ If you found this useful, please cite:
 - __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr via [zarrs](https://github.com/zarrs/zarrs) to achieve this).
 - __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
-- __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
+- __Bitmap or Vector Outputs__: Plotting functions can implement bitmap and vector equivalent drawing logic, to support publication-quality graphics export.
 - __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported.
 <!-- - __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types. -->
 
