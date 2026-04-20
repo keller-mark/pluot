@@ -239,7 +239,7 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 
 ## About the name
 
-[Plum-apricot hybrid](https://en.wikipedia.org/wiki/Pluot). The fruit's pit is to its flesh as the Rust core of this project is to its other programming language bindings.
+[Plum-apricot hybrid](https://en.wikipedia.org/wiki/Pluot). The fruit's pit is to its flesh as the Rust core of this project is to its non-Rust bindings.
 
 ## Rust learning resources
 - Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
