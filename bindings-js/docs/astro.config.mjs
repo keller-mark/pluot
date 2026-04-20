@@ -11,6 +11,7 @@ export default defineConfig({
 		react(),
 		starlight({
       title: 'Pluot',
+      favicon: '/favicon.png',
       editLink: {
         baseUrl: 'https://github.com/keller-mark/pluot/edit/main/bindings-js/docs/',
       },
