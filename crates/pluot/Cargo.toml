@@ -66,6 +66,9 @@ wasm-bindgen.workspace = true
 wasm-bindgen-test.workspace = true
 serde-wasm-bindgen.workspace = true
 
+# Used for test that compares LayerParams enum and inventory layer registrations.
+strum = { version = "0.27", features = ["derive"] }
+
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # We depend on tokio for the non-wasm unit tests that call async functions.

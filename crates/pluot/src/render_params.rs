@@ -22,6 +22,7 @@ use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend
 use pluot_core::render_traits::AspectRatioMode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(test, derive(strum::VariantNames))]
 #[serde(tag = "layer_type", content = "layer_params")]
 pub enum LayerParams {
     // Using adjacently tagged enum representation.
@@ -49,8 +50,6 @@ pub enum LayerParams {
     // 3D
     Point3dLayer(Point3dLayerParams),
     ZarrPoint3dLayer(ZarrPoint3dLayerParams),
-
-    // TODO: ensure registered layers here match inventory registration
 }
 
 /// Strongly-typed render params. Mirrors [`RawRenderParams`] but accepts
@@ -110,5 +109,34 @@ impl Default for RenderParams {
             render_backend: raw.render_backend,
             compute_backend: raw.compute_backend,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LayerParams;
+    use pluot_core::registry::LayerRegistration;
+    use std::collections::BTreeSet;
+    use strum::VariantNames;
+
+    /// Verifies that every layer registered via `inventory::submit!`
+    /// has a matching variant in [`LayerParams`], and vice versa.
+    #[test]
+    fn layer_params_matches_inventory() {
+        let in_enum: BTreeSet<&str> = LayerParams::VARIANTS.iter().copied().collect();
+        let registered: BTreeSet<&str> = inventory::iter::<LayerRegistration>
+            .into_iter()
+            .map(|r| r.layer_type_name)
+            .collect();
+
+        let missing_from_enum: Vec<&&str> = registered.difference(&in_enum).collect();
+        let extra_in_enum: Vec<&&str> = in_enum.difference(&registered).collect();
+
+        assert!(
+            missing_from_enum.is_empty() && extra_in_enum.is_empty(),
+            "LayerParams enum and inventory registrations are out of sync.\n  \
+             Registered via inventory but missing from LayerParams: {missing_from_enum:?}\n  \
+             Present in LayerParams but not registered via inventory: {extra_in_enum:?}",
+        );
     }
 }
