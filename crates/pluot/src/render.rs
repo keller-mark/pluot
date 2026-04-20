@@ -16,6 +16,8 @@ fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
     }).collect()
 }
 
+// TODO: nicer return type. wrap with raster/vector variants?
+
 pub async fn render(render_params: RenderParams) -> Vec<u8> {
     let raw_layers = to_raw_layer_params(&render_params.layers);
     let raw_params = RawRenderParams {
