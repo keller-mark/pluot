@@ -14,7 +14,7 @@ use std::future::Future;
 /// Basic usage:
 ///
 /// ```no_run
-/// use futures_time::future::IntoFuture;
+/// use pluot_futures_time::future::IntoFuture;
 ///
 /// # async fn foo() {
 /// let v = async { "meow" };
@@ -28,7 +28,7 @@ use std::future::Future;
 /// Additional bounds can be specified by restricting on `Output`:
 ///
 /// ```rust
-/// use futures_time::future::IntoFuture;
+/// use pluot_futures_time::future::IntoFuture;
 /// async fn fut_to_string<Fut>(fut: Fut) -> String
 /// where
 ///     Fut: IntoFuture,
@@ -51,7 +51,7 @@ pub trait IntoFuture {
     /// Basic usage:
     ///
     /// ```no_run
-    /// use futures_time::future::IntoFuture;
+    /// use pluot_futures_time::future::IntoFuture;
     ///
     /// # async fn foo() {
     /// let v = async { "meow" };

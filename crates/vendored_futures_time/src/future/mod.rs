@@ -21,9 +21,9 @@
 //!
 //! ```
 //! use futures_lite::prelude::*;
-//! use futures_time::prelude::*;
-//! use futures_time::channel;
-//! use futures_time::time::Duration;
+//! use pluot_futures_time::prelude::*;
+//! use pluot_futures_time::channel;
+//! use pluot_futures_time::time::Duration;
 //!
 //! async_io::block_on(async {
 //!     let (send, mut recv) = channel::bounded::<()>(1); // create a new send/receive pair

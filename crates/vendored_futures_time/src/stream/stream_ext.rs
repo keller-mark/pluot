@@ -33,9 +33,9 @@ pub trait StreamExt: Stream {
     ///
     /// ```
     /// use futures_lite::prelude::*;
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
-    /// use futures_time::stream;
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::stream;
     ///
     /// async_io::block_on(async {
     ///     let mut counter = 0;
@@ -72,9 +72,9 @@ pub trait StreamExt: Stream {
     ///
     /// ```
     /// use futures_lite::prelude::*;
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
-    /// use futures_time::stream;
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::stream;
     ///
     /// async_io::block_on(async {
     ///     let mut counter = 0;
@@ -116,9 +116,9 @@ pub trait StreamExt: Stream {
     ///
     /// ```
     /// use futures_lite::prelude::*;
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
-    /// use futures_time::stream;
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::stream;
     ///
     /// async_io::block_on(async {
     ///     let mut counter = 0;
@@ -151,8 +151,8 @@ pub trait StreamExt: Stream {
     ///
     /// ```
     /// use futures_lite::prelude::*;
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
     /// use futures_lite::stream;
     ///
     /// async_io::block_on(async {
@@ -209,9 +209,9 @@ pub trait StreamExt: Stream {
     ///
     /// ```
     /// use futures_lite::prelude::*;
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::Duration;
-    /// use futures_time::stream;
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::Duration;
+    /// use pluot_futures_time::stream;
     ///
     /// async_io::block_on(async {
     ///     let mut counter = 0;
@@ -247,8 +247,8 @@ pub trait StreamExt: Stream {
     ///
     /// ```
     /// use futures_lite::prelude::*;
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
     /// use futures_lite::stream;
     /// use std::io;
     ///

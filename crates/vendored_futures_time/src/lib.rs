@@ -15,8 +15,8 @@
 //! __Delay a future's execution by 100ms__
 //!
 //! ```
-//! use futures_time::prelude::*;
-//! use futures_time::time::Duration;
+//! use pluot_futures_time::prelude::*;
+//! use pluot_futures_time::time::Duration;
 //!
 //! async_io::block_on(async {
 //!     let res = async { "meow" }
@@ -29,8 +29,8 @@
 //! __Error if a future takes longer than 200ms__
 //!
 //! ```
-//! use futures_time::prelude::*;
-//! use futures_time::time::Duration;
+//! use pluot_futures_time::prelude::*;
+//! use pluot_futures_time::time::Duration;
 //!
 //! async_io::block_on(async {
 //!     let res = async { "meow" }
@@ -48,9 +48,9 @@
 //!
 //! ```
 //! use futures_lite::prelude::*;
-//! use futures_time::prelude::*;
-//! use futures_time::time::Duration;
-//! use futures_time::stream;
+//! use pluot_futures_time::prelude::*;
+//! use pluot_futures_time::time::Duration;
+//! use pluot_futures_time::stream;
 //!
 //! async_io::block_on(async {
 //!     let mut counter = 0;
@@ -89,9 +89,9 @@
 //!
 //! ```
 //! use futures_lite::prelude::*;
-//! use futures_time::prelude::*;
-//! use futures_time::channel;
-//! use futures_time::time::Duration;
+//! use pluot_futures_time::prelude::*;
+//! use pluot_futures_time::channel;
+//! use pluot_futures_time::time::Duration;
 //!
 //! async_io::block_on(async {
 //!     let (send, mut recv) = channel::bounded::<()>(1); // create a new send/receive pair

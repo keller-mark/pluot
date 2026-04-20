@@ -25,7 +25,7 @@ impl Instant {
     /// # Examples
     ///
     /// ```
-    /// use futures_time::time::Instant;
+    /// use pluot_futures_time::time::Instant;
     ///
     /// let now = Instant::now();
     /// ```

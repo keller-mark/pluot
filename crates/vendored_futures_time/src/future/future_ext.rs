@@ -20,8 +20,8 @@ pub trait FutureExt: Future {
     /// # Example
     ///
     /// ```
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
     /// use std::io;
     ///
     /// async_io::block_on(async {
@@ -56,8 +56,8 @@ pub trait FutureExt: Future {
     /// # Example
     ///
     /// ```
-    /// use futures_time::prelude::*;
-    /// use futures_time::time::{Instant, Duration};
+    /// use pluot_futures_time::prelude::*;
+    /// use pluot_futures_time::time::{Instant, Duration};
     ///
     /// async_io::block_on(async {
     ///     let now = Instant::now();
