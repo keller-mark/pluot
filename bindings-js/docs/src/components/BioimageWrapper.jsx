@@ -35,10 +35,13 @@ async function queryFn(ctx) {
       const channelName = c.label ?? `Channel ${i}`;
       controls[channelName] = folder({
         [`channel_${i}___visible`]: {
+          // TODO: use c.active if provided
           value: true,
           label: 'Visible',
         },
         [`channel_${i}___color`]: {
+          // TODO: use c.color if provided.
+          // If not, check omero.rdefs.model.
           value: {
             r: 255,
             g: 255,
@@ -47,7 +50,11 @@ async function queryFn(ctx) {
           label: 'Color',
         },
         [`channel_${i}___window`]: {
+          // TODO: use c.window.start, c.window.end if provided
+          // OR use array dtype if not.
           value: [0.0, 90000.0],
+          // TODO: use c.window.min, c.window.max if provided
+          // OR use array dtype if not.
           min: 0.0,
           max: 100000.0,
           label: 'Window',
@@ -91,7 +98,11 @@ async function queryFn(ctx) {
             layer_type: "OmeZarrMultiscaleLayer",
             layer_params: {
               layer_id: "ome_zarr_multiscale_layer",
+              // TODO: use omero.rdefs.defaultZ if provided,
+              // OR derive based on num Z slices if not.
               target_z: 40,
+              // TODO: use omero.rdefs.defaultT if provided,
+              // OR derive based on num T slices if not.
               target_t: 0,
               channel_settings: channelSettings,
               opacity: 1.0,
