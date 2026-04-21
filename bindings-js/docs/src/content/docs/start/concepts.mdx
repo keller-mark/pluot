@@ -14,19 +14,12 @@ We use the `wgpu` Rust crate for efficient raster-based plotting via WebGPU.
 
 ## Programming language bindings
 
-Many programming languages offer ways to call Rust code despite being a different language.
-Such functions are referred to as bindings.
-Important tools for implementing bindings to Rust code are PyO3 and Maturin in Python, `wasm-pack` and `wasm-bindgen` in JavaScript, and `extendr` in R.
-These make it possible to do both of the following:
-- Call a Rust function from a different language `lang`, and return some bytes from Rust to this non-Rust language
-  - Within this called Rust function, call a non-Rust function defined by `lang` and use its return value in the Rust function
-
-
-In other words, when using Pluot across programming language boundaries, we need to consider bindings in both directions (to/from).
+Bindings allow calling functions across programming language boundaries.
+When using Pluot across programming language boundaries, we need to consider bindings in both directions (to/from).
 
 ### Bindings _to_ (the Rust program)
 
-The non-Rust environment *calls* these.
+The non-Rust language *calls* these.
 
 - `render`: Or its bound variant (e.g., `render_py`, `render_wasm`, etc.) which handles serialization/deserialization or other platform-specific things.
 
@@ -34,7 +27,7 @@ The non-Rust environment *calls* these.
 
 ### Bindings _from_ (the non-Rust program)
 
-The non-Rust environment *provides* these (for Rust to call).
+The non-Rust language *provides* these (for Rust to call during rendering).
 
 - `log`: Call the platform-specific logging function (e.g., `console.log` on WASM, `logger.info` on Python, etc.).
 - `zarr_get`
