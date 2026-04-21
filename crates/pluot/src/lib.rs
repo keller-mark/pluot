@@ -18,6 +18,7 @@ pub use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosit
 pub use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
 pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 pub use pluot_core::plot_layers::bar_plot_layer::{BarPlotLayerParams, BarOrientation};
+pub use pluot_core::plot_layers::histogram_layer::HistogramLayerParams;
 
 // Zarr layers
 pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
@@ -25,6 +26,7 @@ pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
 pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
 pub use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
+pub use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
 mod render_params;
 

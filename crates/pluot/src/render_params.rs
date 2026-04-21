@@ -8,13 +8,18 @@ use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
 use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
+use pluot_core::layers::compute_layer::ComputeLayerParams;
+use pluot_core::layers::tile_layer::TileLayerParams;
+use pluot_core::layers::multiscale_layer::MultiscaleLayerParams;
 use pluot_core::plot_layers::bar_plot_layer::BarPlotLayerParams;
+use pluot_core::plot_layers::histogram_layer::HistogramLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
 use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
+use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
 use pluot_core::{AspectRatioAlignmentMode, LayerParams as RawLayerParams, RenderParams as RawRenderParams};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
@@ -40,10 +45,17 @@ pub enum LayerParams {
 
     // Plot-layers
     BarPlotLayer(BarPlotLayerParams),
+    HistogramLayer(HistogramLayerParams),
+
+    // Temporary/for development purposes only
+    ComputeLayer(ComputeLayerParams),
+    TileLayer(TileLayerParams),
+    MultiscaleLayer(MultiscaleLayerParams),
 
     // Zarr
     ZarrPointLayer(ZarrPointLayerParams),
     ZarrBarPlotLayer(ZarrBarPlotLayerParams),
+    ZarrHistogramLayer(ZarrHistogramLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
     OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
 
