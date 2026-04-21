@@ -3,9 +3,11 @@ use std::sync::Arc;
 mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
-use pluot_core::params::{RenderParams, PlotParams, LayerParams, LayeredPlotRenderParams};
-use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams};
-use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
+use pluot::{
+    RenderParams, LayerParams,
+    AspectRatioMode, UnitsMode, MarginParams,
+    TextLayerParams, TextAlignMode, TextBaselineMode,
+};
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
 // - Square and non-square (wide and tall) aspect ratios
@@ -88,10 +90,7 @@ fn corner_text_pixel_x_data_y() -> TextLayerParams {
 }
 
 fn layer_params(text_params: TextLayerParams) -> Vec<LayerParams> {
-    vec![LayerParams {
-        layer_type: "TextLayer".to_string(),
-        layer_params: serde_json::to_value(text_params).unwrap(),
-    }]
+    vec![LayerParams::TextLayer(text_params)]
 }
 
 // ── Square canvas (100×100) ───────────────────────────────────────────────────
@@ -101,16 +100,14 @@ async fn test_text_layer_square_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(0.0),
-                    margin_right: Some(0.0),
-                    margin_top: Some(0.0),
-                    margin_bottom: Some(0.0),
-                }),
-                ..corner_text_data()
+        layers: layer_params(TextLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(0.0),
+                margin_right: Some(0.0),
+                margin_top: Some(0.0),
+                margin_bottom: Some(0.0),
             }),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -123,9 +120,7 @@ async fn test_text_layer_square_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -137,9 +132,7 @@ async fn test_text_layer_square_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -151,9 +144,7 @@ async fn test_text_layer_square_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_pixels()),
-        }),
+        layers: layer_params(corner_text_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -165,9 +156,7 @@ async fn test_text_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -183,16 +172,14 @@ async fn test_text_layer_square_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_text_data()
+        layers: layer_params(TextLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -206,16 +193,14 @@ async fn test_text_layer_square_contain_data_units_layer_bounds_overrides_view_m
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_text_data()
+        layers: layer_params(TextLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(20.0),
@@ -233,11 +218,9 @@ async fn test_text_layer_square_contain_data_units_rotated() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                text_rotation: Some(45.0),
-                ..corner_text_data()
-            }),
+        layers: layer_params(TextLayerParams {
+            text_rotation: Some(45.0),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -251,12 +234,10 @@ async fn test_text_layer_square_contain_data_units_align_start_baseline_top() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                text_align_mode: TextAlignMode::Start,
-                text_baseline_mode: TextBaselineMode::Top,
-                ..corner_text_data()
-            }),
+        layers: layer_params(TextLayerParams {
+            text_align_mode: TextAlignMode::Start,
+            text_baseline_mode: TextBaselineMode::Top,
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -270,12 +251,10 @@ async fn test_text_layer_square_contain_data_units_align_end_baseline_bottom() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                text_align_mode: TextAlignMode::End,
-                text_baseline_mode: TextBaselineMode::Bottom,
-                ..corner_text_data()
-            }),
+        layers: layer_params(TextLayerParams {
+            text_align_mode: TextAlignMode::End,
+            text_baseline_mode: TextBaselineMode::Bottom,
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -290,9 +269,7 @@ async fn test_text_layer_wide_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -304,9 +281,7 @@ async fn test_text_layer_wide_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -318,9 +293,7 @@ async fn test_text_layer_wide_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -332,12 +305,10 @@ async fn test_text_layer_wide_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                position_x: Arc::new(vec![0.0, 200.0, 200.0, 0.0]),
-                position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
-                ..corner_text_pixels()
-            }),
+        layers: layer_params(TextLayerParams {
+            position_x: Arc::new(vec![0.0, 200.0, 200.0, 0.0]),
+            position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+            ..corner_text_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -350,9 +321,7 @@ async fn test_text_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -368,16 +337,14 @@ async fn test_text_layer_wide_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_text_data()
+        layers: layer_params(TextLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -392,9 +359,7 @@ async fn test_text_layer_tall_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -406,9 +371,7 @@ async fn test_text_layer_tall_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -420,9 +383,7 @@ async fn test_text_layer_tall_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -434,12 +395,10 @@ async fn test_text_layer_tall_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-                position_y: Arc::new(vec![0.0, 0.0, 200.0, 200.0]),
-                ..corner_text_pixels()
-            }),
+        layers: layer_params(TextLayerParams {
+            position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
+            position_y: Arc::new(vec![0.0, 0.0, 200.0, 200.0]),
+            ..corner_text_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -452,9 +411,7 @@ async fn test_text_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data()),
-        }),
+        layers: layer_params(corner_text_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -470,16 +427,14 @@ async fn test_text_layer_tall_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_text_data()
+        layers: layer_params(TextLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -494,11 +449,9 @@ async fn test_text_layer_wide_contain_data_units_rotated_45() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                text_rotation: Some(45.0),
-                ..corner_text_data()
-            }),
+        layers: layer_params(TextLayerParams {
+            text_rotation: Some(45.0),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -511,11 +464,9 @@ async fn test_text_layer_wide_contain_data_units_rotated_90() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(TextLayerParams {
-                text_rotation: Some(90.0),
-                ..corner_text_data()
-            }),
+        layers: layer_params(TextLayerParams {
+            text_rotation: Some(90.0),
+            ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -530,9 +481,7 @@ async fn test_text_layer_square_contain_data_x_pixel_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_data_x_pixel_y()),
-        }),
+        layers: layer_params(corner_text_data_x_pixel_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -544,9 +493,7 @@ async fn test_text_layer_square_contain_pixel_x_data_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_text_pixel_x_data_y()),
-        }),
+        layers: layer_params(corner_text_pixel_x_data_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
