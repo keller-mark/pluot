@@ -8,13 +8,18 @@ use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
 use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
+use pluot_core::layers::compute_layer::ComputeLayerParams;
+use pluot_core::layers::tile_layer::TileLayerParams;
+use pluot_core::layers::multiscale_layer::MultiscaleLayerParams;
 use pluot_core::plot_layers::bar_plot_layer::BarPlotLayerParams;
+use pluot_core::plot_layers::histogram_layer::HistogramLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
 use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
+use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
 use pluot_core::{AspectRatioAlignmentMode, LayerParams as RawLayerParams, RenderParams as RawRenderParams};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
@@ -22,6 +27,7 @@ use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend
 use pluot_core::render_traits::AspectRatioMode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(test, derive(strum::VariantNames))]
 #[serde(tag = "layer_type", content = "layer_params")]
 pub enum LayerParams {
     // Using adjacently tagged enum representation.
@@ -39,24 +45,32 @@ pub enum LayerParams {
 
     // Plot-layers
     BarPlotLayer(BarPlotLayerParams),
+    HistogramLayer(HistogramLayerParams),
+
+    // Temporary/for development purposes only
+    ComputeLayer(ComputeLayerParams),
+    TileLayer(TileLayerParams),
+    MultiscaleLayer(MultiscaleLayerParams),
 
     // Zarr
     ZarrPointLayer(ZarrPointLayerParams),
     ZarrBarPlotLayer(ZarrBarPlotLayerParams),
+    ZarrHistogramLayer(ZarrHistogramLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
     OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),
     ZarrPoint3dLayer(ZarrPoint3dLayerParams),
-
-    // TODO: ensure registered layers here match inventory registration
 }
 
 /// Strongly-typed render params. Mirrors [`RawRenderParams`] but accepts
 /// `layers` as a typed [`LayerParams`] enum instead of raw JSON values.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParams {
+    // TODO: nest `layers` within a plot_params enum,
+    // to match RawRenderParams.plot_params.layers?
+    // This would allow for an alternative to layer-based plotting.
     pub layers: Vec<LayerParams>,
     pub width: u32,
     pub height: u32,
@@ -110,5 +124,34 @@ impl Default for RenderParams {
             render_backend: raw.render_backend,
             compute_backend: raw.compute_backend,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LayerParams;
+    use pluot_core::registry::LayerRegistration;
+    use std::collections::BTreeSet;
+    use strum::VariantNames;
+
+    /// Verifies that every layer registered via `inventory::submit!`
+    /// has a matching variant in [`LayerParams`], and vice versa.
+    #[test]
+    fn layer_params_matches_inventory() {
+        let in_enum: BTreeSet<&str> = LayerParams::VARIANTS.iter().copied().collect();
+        let registered: BTreeSet<&str> = inventory::iter::<LayerRegistration>
+            .into_iter()
+            .map(|r| r.layer_type_name)
+            .collect();
+
+        let missing_from_enum: Vec<&&str> = registered.difference(&in_enum).collect();
+        let extra_in_enum: Vec<&&str> = in_enum.difference(&registered).collect();
+
+        assert!(
+            missing_from_enum.is_empty() && extra_in_enum.is_empty(),
+            "LayerParams enum and inventory registrations are out of sync.\n  \
+             Registered via inventory but missing from LayerParams: {missing_from_enum:?}\n  \
+             Present in LayerParams but not registered via inventory: {extra_in_enum:?}",
+        );
     }
 }

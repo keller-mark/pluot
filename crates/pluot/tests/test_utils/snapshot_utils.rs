@@ -3,19 +3,18 @@ use std::path::{Path, PathBuf};
 use kompari::color::Rgba8;
 use kompari::{compare_images, load_image, ImageDifference, MinImage};
 
-use pluot_core::params::{RenderParams, GraphicsFormat};
-use pluot_core::bindings::plain_rust::{render};
+use pluot::{render, RenderParams, GraphicsFormat};
 
 fn snapshots_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
-        .join("snapshots")
+        .join("snaps-blessed")
 }
 
 fn current_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
-        .join("current")
+        .join("snaps-dirty")
 }
 
 /// The render function appends one trailing byte (`bailed_early` flag) to raster output.

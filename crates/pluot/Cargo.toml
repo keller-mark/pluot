@@ -66,6 +66,16 @@ wasm-bindgen.workspace = true
 wasm-bindgen-test.workspace = true
 serde-wasm-bindgen.workspace = true
 
+# Used for test that compares LayerParams enum and inventory layer registrations.
+strum = { version = "0.27", features = ["derive"] }
+
+
+# Packages for image diffing unit tests.
+image.workspace = true # For read/write to image formats like PNG in unit tests.
+kompari.workspace = true # For pixel-diff snapshot testing.
+# resvg.workspace = true # For SVG rendering during unit tests to compare with raster-format outputs.
+# tiny-skia.workspace = true # Used when rendering with resvg (Pixmap target for rendering).
+
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # We depend on tokio for the non-wasm unit tests that call async functions.

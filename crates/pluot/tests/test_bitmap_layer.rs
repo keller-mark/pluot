@@ -3,9 +3,11 @@ use std::sync::Arc;
 mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
-use pluot_core::params::{RenderParams, PlotParams, LayerParams, LayeredPlotRenderParams};
-use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams};
-use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData};
+use pluot::{
+    RenderParams, LayerParams,
+    AspectRatioMode, UnitsMode, MarginParams,
+    BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
+};
 
 // For bitmap layer tests, we always want to test the following cases (and combinations of them):
 // - Square and non-square (wide and tall) aspect ratios
@@ -76,10 +78,7 @@ fn bitmap_cyx_pixel_x_data_y() -> BitmapLayerParams {
 }
 
 fn layer_params(bitmap_params: BitmapLayerParams) -> Vec<LayerParams> {
-    vec![LayerParams {
-        layer_type: "BitmapLayer".to_string(),
-        layer_params: serde_json::to_value(bitmap_params).unwrap(),
-    }]
+    vec![LayerParams::BitmapLayer(bitmap_params)]
 }
 
 // Column-major 4×4 scale matrix: zoom of 1/8 (zoomed out 8×), centered at origin.
@@ -98,16 +97,14 @@ async fn test_bitmap_layer_square_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(0.0),
-                    margin_right: Some(0.0),
-                    margin_top: Some(0.0),
-                    margin_bottom: Some(0.0),
-                }),
-                ..bitmap_cyx_data()
+        layers: layer_params(BitmapLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(0.0),
+                margin_right: Some(0.0),
+                margin_top: Some(0.0),
+                margin_bottom: Some(0.0),
             }),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -121,9 +118,7 @@ async fn test_bitmap_layer_square_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -136,9 +131,7 @@ async fn test_bitmap_layer_square_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -151,9 +144,7 @@ async fn test_bitmap_layer_square_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_pixels()),
-        }),
+        layers: layer_params(bitmap_cyx_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -166,9 +157,7 @@ async fn test_bitmap_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         margin_left: Some(10.0),
@@ -185,16 +174,14 @@ async fn test_bitmap_layer_square_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..bitmap_cyx_data()
+        layers: layer_params(BitmapLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -209,16 +196,14 @@ async fn test_bitmap_layer_square_contain_data_units_layer_bounds_overrides_view
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..bitmap_cyx_data()
+        layers: layer_params(BitmapLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -238,9 +223,7 @@ async fn test_bitmap_layer_wide_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -253,9 +236,7 @@ async fn test_bitmap_layer_wide_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -268,9 +249,7 @@ async fn test_bitmap_layer_wide_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -283,9 +262,7 @@ async fn test_bitmap_layer_wide_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_pixels()),
-        }),
+        layers: layer_params(bitmap_cyx_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -298,9 +275,7 @@ async fn test_bitmap_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         margin_left: Some(10.0),
@@ -317,16 +292,14 @@ async fn test_bitmap_layer_wide_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..bitmap_cyx_data()
+        layers: layer_params(BitmapLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -342,9 +315,7 @@ async fn test_bitmap_layer_tall_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -357,9 +328,7 @@ async fn test_bitmap_layer_tall_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -372,9 +341,7 @@ async fn test_bitmap_layer_tall_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -387,9 +354,7 @@ async fn test_bitmap_layer_tall_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_pixels()),
-        }),
+        layers: layer_params(bitmap_cyx_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
@@ -402,9 +367,7 @@ async fn test_bitmap_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data()),
-        }),
+        layers: layer_params(bitmap_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         margin_left: Some(10.0),
@@ -421,16 +384,14 @@ async fn test_bitmap_layer_tall_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..bitmap_cyx_data()
+        layers: layer_params(BitmapLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -447,11 +408,9 @@ async fn test_bitmap_layer_square_contain_data_units_half_opacity() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                opacity: 0.5,
-                ..bitmap_cyx_data()
-            }),
+        layers: layer_params(BitmapLayerParams {
+            opacity: 0.5,
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -466,11 +425,9 @@ async fn test_bitmap_layer_square_contain_data_units_pixel_offset() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                pixel_offset: Some((1, 1)),
-                ..bitmap_cyx_data()
-            }),
+        layers: layer_params(BitmapLayerParams {
+            pixel_offset: Some((1, 1)),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -511,13 +468,11 @@ async fn test_bitmap_layer_square_contain_data_units_xyc_order() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                dimension_order: DimensionOrder::XYC,
-                shape: vec![4, 4, 2],
-                data: NumericData::Uint16(Arc::new(data_xyc)),
-                ..bitmap_cyx_data()
-            }),
+        layers: layer_params(BitmapLayerParams {
+            dimension_order: DimensionOrder::XYC,
+            shape: vec![4, 4, 2],
+            data: NumericData::Uint16(Arc::new(data_xyc)),
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -532,14 +487,12 @@ async fn test_bitmap_layer_square_contain_data_units_narrow_window() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(BitmapLayerParams {
-                channel_settings: vec![
-                    ChannelSettings { window: (100.0, 200.0), color: (1.0, 0.0, 0.0) },
-                    ChannelSettings { window: (100.0, 200.0), color: (0.0, 0.0, 1.0) },
-                ],
-                ..bitmap_cyx_data()
-            }),
+        layers: layer_params(BitmapLayerParams {
+            channel_settings: vec![
+                ChannelSettings { window: (100.0, 200.0), color: (1.0, 0.0, 0.0) },
+                ChannelSettings { window: (100.0, 200.0), color: (0.0, 0.0, 1.0) },
+            ],
+            ..bitmap_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
@@ -555,9 +508,7 @@ async fn test_bitmap_layer_square_contain_data_x_pixel_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_data_x_pixel_y()),
-        }),
+        layers: layer_params(bitmap_cyx_data_x_pixel_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -569,9 +520,7 @@ async fn test_bitmap_layer_square_contain_pixel_x_data_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(bitmap_cyx_pixel_x_data_y()),
-        }),
+        layers: layer_params(bitmap_cyx_pixel_x_data_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };

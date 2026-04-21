@@ -67,281 +67,270 @@ struct Point3dLayerUniforms {
     color: Vec4,         // rgba color for points
 }
 
-pub async fn base_draw_point_3d_layer(
-    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
-    view_params: &ViewParams,
-    layer_params: &Point3dLayerParams,
-) {
-    let GpuContext { device, queue } = gpu_context;
-
-    let x_bytes = bytemuck::cast_slice(&layer_params.position_x);
-    let y_bytes = bytemuck::cast_slice(&layer_params.position_y);
-    let z_bytes = bytemuck::cast_slice(&layer_params.position_z);
-
-    let n = layer_params.labels_vec.len();
-
-    let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-    // Create separate buffers for X, Y, and Z coordinates
-    let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("X Coordinates Storage Buffer"),
-        size: x_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&x_buffer, 0, x_bytes);
-
-    let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Y Coordinates Storage Buffer"),
-        size: y_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&y_buffer, 0, y_bytes);
-
-    let z_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Z Coordinates Storage Buffer"),
-        size: z_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&z_buffer, 0, z_bytes);
-
-    let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Class labels Storage Buffer"),
-        size: labels_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&labels_buffer, 0, labels_bytes);
-
-    // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
-    let camera_view = view_params.camera_view.unwrap_or([
-        // Column 0
-        1.0, 0.0, 0.0, 0.0, // Column 1
-        0.0, 1.0, 0.0, 0.0, // Column 2
-        0.0, 0.0, 1.0, 0.0, // Column 3
-        0.0, 0.0, 0.0, 1.0,
-    ]);
-
-    // Use layer-specific bounds if not None, otherwise use the view's margins.
-    let bounds = if layer_params.bounds.is_none() {
-        &view_params.margins
-    } else {
-        &layer_params.bounds
-    };
-
-    let margin_top = if let Some(margin_params) = &bounds {
-        margin_params.margin_top.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_right = if let Some(margin_params) = &bounds {
-        margin_params.margin_right.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_bottom = if let Some(margin_params) = &bounds {
-        margin_params.margin_bottom.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_left = if let Some(margin_params) = &bounds {
-        margin_params.margin_left.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-
-    let viewport_w = view_params.width as f32;
-    let viewport_h = view_params.height as f32;
-
-    let layer_w = viewport_w - (margin_left + margin_right) as f32;
-    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-
-    // Construct the uniform struct using Encase.
-    let uniform_struct = Point3dLayerUniforms {
-        layer_size: Vec2::new(layer_w, layer_h),
-        camera_view: Mat4::from_cols_array(&camera_view),
-        point_radius: layer_params.point_radius,
-        point_shape_mode: match layer_params.point_shape_mode {
-            PointShapeMode::Square => 0,
-            PointShapeMode::Circle => 1,
-        },
-        color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
-    };
-
-    let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-    buffer.write(&uniform_struct).unwrap();
-    let uniform_bytes = buffer.into_inner();
-
-    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Uniform Buffer"),
-        size: uniform_bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-    // Create bind group layout and bind group for positions + uniforms
-    let bind_group_layout = device
-        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Point3dLayer BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-    let bind_group = device
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Point3dLayer BG"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: x_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: y_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: z_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: labels_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-    let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/point_3d_layer.wgsl"));
-
-    let render_pipeline_layout = device
-        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-
-    let render_pipeline = device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
-        });
-
-    // Handle margins by adjusting viewport and scissor rect.
-    pass.set_viewport(
-        margin_left as f32,
-        margin_top as f32,
-        viewport_w - (margin_left + margin_right) as f32,
-        viewport_h - (margin_top + margin_bottom) as f32,
-        0.0,
-        1.0,
-    );
-
-    pass.set_scissor_rect(
-        margin_left as u32,
-        margin_top as u32,
-        (viewport_w - (margin_left + margin_right) as f32) as u32,
-        (viewport_h - (margin_top + margin_bottom) as f32) as u32,
-    );
-
-    pass.set_pipeline(&render_pipeline);
-    pass.set_bind_group(0, &bind_group, &[]);
-
-    pass.draw(0..4, 0..(n as u32));
-}
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for Point3dLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        base_draw_point_3d_layer(
-            gpu_context, pass,
-            &self.view_params,
-            &self.layer_params,
-        ).await;
+        let GpuContext { device, queue } = gpu_context;
+        let Self { layer_params, view_params } = self;
+
+        let x_bytes = bytemuck::cast_slice(&layer_params.position_x);
+        let y_bytes = bytemuck::cast_slice(&layer_params.position_y);
+        let z_bytes = bytemuck::cast_slice(&layer_params.position_z);
+
+        let n = layer_params.labels_vec.len();
+
+        let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
+
+        // Create separate buffers for X, Y, and Z coordinates
+        let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("X Coordinates Storage Buffer"),
+            size: x_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&x_buffer, 0, x_bytes);
+
+        let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Y Coordinates Storage Buffer"),
+            size: y_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&y_buffer, 0, y_bytes);
+
+        let z_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Z Coordinates Storage Buffer"),
+            size: z_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&z_buffer, 0, z_bytes);
+
+        let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Class labels Storage Buffer"),
+            size: labels_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&labels_buffer, 0, labels_bytes);
+
+        // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
+        let camera_view = view_params.camera_view.unwrap_or([
+            // Column 0
+            1.0, 0.0, 0.0, 0.0, // Column 1
+            0.0, 1.0, 0.0, 0.0, // Column 2
+            0.0, 0.0, 1.0, 0.0, // Column 3
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        // Use layer-specific bounds if not None, otherwise use the view's margins.
+        let bounds = if layer_params.bounds.is_none() {
+            &view_params.margins
+        } else {
+            &layer_params.bounds
+        };
+
+        let margin_top = if let Some(margin_params) = &bounds {
+            margin_params.margin_top.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_right = if let Some(margin_params) = &bounds {
+            margin_params.margin_right.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_bottom = if let Some(margin_params) = &bounds {
+            margin_params.margin_bottom.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_left = if let Some(margin_params) = &bounds {
+            margin_params.margin_left.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+
+        let viewport_w = view_params.width as f32;
+        let viewport_h = view_params.height as f32;
+
+        let layer_w = viewport_w - (margin_left + margin_right) as f32;
+        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+        // Construct the uniform struct using Encase.
+        let uniform_struct = Point3dLayerUniforms {
+            layer_size: Vec2::new(layer_w, layer_h),
+            camera_view: Mat4::from_cols_array(&camera_view),
+            point_radius: layer_params.point_radius,
+            point_shape_mode: match layer_params.point_shape_mode {
+                PointShapeMode::Square => 0,
+                PointShapeMode::Circle => 1,
+            },
+            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+        };
+
+        let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+        buffer.write(&uniform_struct).unwrap();
+        let uniform_bytes = buffer.into_inner();
+
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Uniform Buffer"),
+            size: uniform_bytes.len() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+
+        // Create bind group layout and bind group for positions + uniforms
+        let bind_group_layout = device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Point3dLayer BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let bind_group = device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Point3dLayer BG"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: x_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: y_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: z_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: labels_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+        let shader = device
+            .create_shader_module(wgpu::include_wgsl!("shaders/point_3d_layer.wgsl"));
+
+        let render_pipeline_layout = device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[Some(&bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        let render_pipeline = device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                cache: None,
+                multiview_mask: None,
+            });
+
+        // Handle margins by adjusting viewport and scissor rect.
+        pass.set_viewport(
+            margin_left as f32,
+            margin_top as f32,
+            viewport_w - (margin_left + margin_right) as f32,
+            viewport_h - (margin_top + margin_bottom) as f32,
+            0.0,
+            1.0,
+        );
+
+        pass.set_scissor_rect(
+            margin_left as u32,
+            margin_top as u32,
+            (viewport_w - (margin_left + margin_right) as f32) as u32,
+            (viewport_h - (margin_top + margin_bottom) as f32) as u32,
+        );
+
+        pass.set_pipeline(&render_pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+
+        pass.draw(0..4, 0..(n as u32));
     }
 }
 

@@ -9,7 +9,6 @@ use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_string
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, PreparedAndDraw, ViewParams, UnitsMode, MarginParams};
-use pluot_core::layers::rect_layer::{RectLayerParams, base_draw_rect_layer, base_draw_rect_layer_svg};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};

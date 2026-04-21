@@ -116,10 +116,7 @@ pluot-futures-time = { workspace = true, default-features = false, features = ["
 
 
 [dev-dependencies]
-image.workspace = true # For read/write to image formats like PNG in unit tests.
-kompari.workspace = true # For pixel-diff snapshot testing.
-resvg.workspace = true # For SVG rendering during unit tests to compare with raster-format outputs.
-tiny-skia.workspace = true # Used when rendering with resvg (Pixmap target for rendering).
+
 
 
 

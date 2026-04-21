@@ -1,9 +1,8 @@
 use std::sync::Arc;
-use pluot_core::layers::point_3d_layer::Point3dLayer;
-use pluot_core::viewport::DataCoord;
-use pluot_core::viewport::ScreenCoord;
 use serde::{Deserialize, Serialize};
+
 use pluot_core::{maybe_timeout, FutureExt, Duration};
+use pluot_core::viewport::{DataCoord, ScreenCoord};
 
 use pluot_core::log;
 use pluot_core::wgpu;
@@ -13,7 +12,7 @@ use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::SvgContext;
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams};
 use pluot_core::layers::point_layer::PointShapeMode;
-use pluot_core::layers::point_3d_layer::{Point3dLayerParams, base_draw_point_3d_layer};
+use pluot_core::layers::point_3d_layer::{Point3dLayer, Point3dLayerParams};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
@@ -45,8 +44,8 @@ pub struct ZarrPoint3dLayer {
     layer_params: ZarrPoint3dLayerParams,
     store: Arc<AsyncZarritaStore>,
     store_name: String,
-    data: Option<ZarrPoint3dLayerData>,
-    ready_to_draw: bool,
+
+    inner: Option<Point3dLayer>,
 }
 
 impl ZarrPoint3dLayer {
@@ -70,8 +69,7 @@ impl ZarrPoint3dLayer {
             layer_params,
             store,
             store_name,
-            data: None,
-            ready_to_draw: false,
+            inner: None,
         }
     }
 }
@@ -79,7 +77,7 @@ impl ZarrPoint3dLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for ZarrPoint3dLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
 
         let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
@@ -151,14 +149,22 @@ impl PreparedLayer for ZarrPoint3dLayer {
             }
         };
 
-        self.data = Some(ZarrPoint3dLayerData {
-            x_arr: x_f32,
-            y_arr: y_f32,
-            z_arr: z_f32,
-            labels_arr: l_i32,
-        });
+        let mut sublayer = Point3dLayer::new(
+            self.view_params.clone(),
+            Point3dLayerParams {
+                layer_id: self.layer_params.layer_id.clone(),
+                bounds: self.layer_params.bounds.clone(),
+                point_radius: self.layer_params.point_radius,
+                point_shape_mode: self.layer_params.point_shape_mode,
+                position_x: x_f32.clone(),
+                position_y: y_f32.clone(),
+                position_z: z_f32.clone(),
+                labels_vec: l_i32.clone(),
+            }
+        );
+        sublayer.prepare(gpu_context).await;
+        self.inner = Some(sublayer);
 
-        self.ready_to_draw = true;
         return PrepareResult {
             bailed_early: false,
         };
@@ -169,26 +175,9 @@ impl PreparedLayer for ZarrPoint3dLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for ZarrPoint3dLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        if !self.ready_to_draw {
-            log("ZarrPoint3dLayer was not ready to draw. Skipping draw call.");
-            return;
+        if let Some(inner) = &self.inner {
+            DrawToRasterGpu::draw(inner, gpu_context, pass).await;
         }
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-
-        base_draw_point_3d_layer(
-            gpu_context, pass,
-            &self.view_params,
-            &Point3dLayerParams {
-                layer_id: self.layer_params.layer_id.clone(),
-                bounds: self.layer_params.bounds.clone(),
-                point_radius: self.layer_params.point_radius,
-                point_shape_mode: self.layer_params.point_shape_mode,
-                position_x: data.x_arr.clone(),
-                position_y: data.y_arr.clone(),
-                position_z: data.z_arr.clone(),
-                labels_vec: data.labels_arr.clone(),
-            },
-        ).await;
     }
 }
 
@@ -207,32 +196,15 @@ impl DrawToSvg for ZarrPoint3dLayer {
 }
 
 impl PickableLayer for ZarrPoint3dLayer {
-    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
-        if !self.ready_to_draw {
-            log("ZarrPoint3dLayer was not ready to draw. Skipping picking.");
-            return None;
-        }
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
 
         let DataCoord::ThreeD { x: _, y: _, z: _ } = data_coord? else {
             return None;
         };
 
-        let data = self.data.as_ref().expect("Data was not prepared. Call prepare() first.");
-
-        let layer = Point3dLayer::new(
-            self.view_params.clone(),
-            Point3dLayerParams {
-                layer_id: self.layer_params.layer_id.clone(),
-                bounds: self.layer_params.bounds.clone(),
-                point_radius: self.layer_params.point_radius,
-                point_shape_mode: self.layer_params.point_shape_mode,
-                position_x: data.x_arr.clone(),
-                position_y: data.y_arr.clone(),
-                position_z: data.z_arr.clone(),
-                labels_vec: data.labels_arr.clone(),
-            },
-        );
-
-        layer.pick(_screen_coord, data_coord)
+        if let Some(inner) = &self.inner {
+            return PickableLayer::pick(inner, screen_coord, data_coord);
+        }
+        return None;
     }
 }

@@ -3,9 +3,11 @@ use std::sync::Arc;
 mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
-use pluot_core::params::{RenderParams, PlotParams, LayerParams, LayeredPlotRenderParams};
-use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams};
-use pluot_core::layers::line_layer::LineLayerParams;
+use pluot::{
+    RenderParams, LayerParams,
+    AspectRatioMode, UnitsMode, MarginParams,
+    LineLayerParams,
+};
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
 // - Square and non-square (wide and tall) aspect ratios
@@ -78,10 +80,7 @@ fn cross_lines_pixel_x_data_y() -> LineLayerParams {
 }
 
 fn layer_params(line_params: LineLayerParams) -> Vec<LayerParams> {
-    vec![LayerParams {
-        layer_type: "LineLayer".to_string(),
-        layer_params: serde_json::to_value(line_params).unwrap(),
-    }]
+    vec![LayerParams::LineLayer(line_params)]
 }
 
 // ── Square canvas (100×100) ───────────────────────────────────────────────────
@@ -91,16 +90,14 @@ async fn test_line_layer_square_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(0.0),
-                    margin_right: Some(0.0),
-                    margin_top: Some(0.0),
-                    margin_bottom: Some(0.0),
-                }),
-                ..cross_lines_data()
+        layers: layer_params(LineLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(0.0),
+                margin_right: Some(0.0),
+                margin_top: Some(0.0),
+                margin_bottom: Some(0.0),
             }),
+            ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -113,9 +110,7 @@ async fn test_line_layer_square_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -127,9 +122,7 @@ async fn test_line_layer_square_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -141,9 +134,7 @@ async fn test_line_layer_square_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_pixels()),
-        }),
+        layers: layer_params(cross_lines_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -155,9 +146,7 @@ async fn test_line_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -173,16 +162,14 @@ async fn test_line_layer_square_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..cross_lines_data()
+        layers: layer_params(LineLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -196,16 +183,14 @@ async fn test_line_layer_square_contain_data_units_layer_bounds_overrides_view_m
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..cross_lines_data()
+        layers: layer_params(LineLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(20.0),
@@ -224,9 +209,7 @@ async fn test_line_layer_wide_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -238,9 +221,7 @@ async fn test_line_layer_wide_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -252,9 +233,7 @@ async fn test_line_layer_wide_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -266,14 +245,12 @@ async fn test_line_layer_wide_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                source_position_x: Arc::new(vec![  0.0,  0.0, 200.0,   0.0, 200.0, 140.0, 200.0, 140.0]),
-                source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,  50.0,  50.0,  75.0,  75.0, 100.0]),
-                target_position_x: Arc::new(vec![200.0,  0.0, 200.0, 100.0, 100.0, 140.0, 200.0, 200.0]),
-                target_position_y: Arc::new(vec![  0.0, 50.0,  50.0, 100.0, 100.0, 100.0, 100.0, 100.0]),
-                ..cross_lines_pixels()
-            }),
+        layers: layer_params(LineLayerParams {
+            source_position_x: Arc::new(vec![  0.0,  0.0, 200.0,   0.0, 200.0, 140.0, 200.0, 140.0]),
+            source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,  50.0,  50.0,  75.0,  75.0, 100.0]),
+            target_position_x: Arc::new(vec![200.0,  0.0, 200.0, 100.0, 100.0, 140.0, 200.0, 200.0]),
+            target_position_y: Arc::new(vec![  0.0, 50.0,  50.0, 100.0, 100.0, 100.0, 100.0, 100.0]),
+            ..cross_lines_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -286,9 +263,7 @@ async fn test_line_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -304,16 +279,14 @@ async fn test_line_layer_wide_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..cross_lines_data()
+        layers: layer_params(LineLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -328,9 +301,7 @@ async fn test_line_layer_tall_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -342,9 +313,7 @@ async fn test_line_layer_tall_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -356,9 +325,7 @@ async fn test_line_layer_tall_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -370,14 +337,12 @@ async fn test_line_layer_tall_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
-                source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,100.0, 100.0, 150.0, 150.0, 200.0]),
-                target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
-                target_position_y: Arc::new(vec![  0.0,100.0, 100.0,200.0, 200.0, 200.0, 200.0, 200.0]),
-                ..cross_lines_pixels()
-            }),
+        layers: layer_params(LineLayerParams {
+            source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
+            source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,100.0, 100.0, 150.0, 150.0, 200.0]),
+            target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
+            target_position_y: Arc::new(vec![  0.0,100.0, 100.0,200.0, 200.0, 200.0, 200.0, 200.0]),
+            ..cross_lines_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -390,9 +355,7 @@ async fn test_line_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data()),
-        }),
+        layers: layer_params(cross_lines_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -408,16 +371,14 @@ async fn test_line_layer_tall_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..cross_lines_data()
+        layers: layer_params(LineLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -432,11 +393,9 @@ async fn test_line_layer_wide_contain_data_units_thick_line_width() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(LineLayerParams {
-                line_width: 10.0,
-                ..cross_lines_data()
-            }),
+        layers: layer_params(LineLayerParams {
+            line_width: 10.0,
+            ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -451,9 +410,7 @@ async fn test_line_layer_square_contain_data_x_pixel_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_data_x_pixel_y()),
-        }),
+        layers: layer_params(cross_lines_data_x_pixel_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -465,9 +422,7 @@ async fn test_line_layer_square_contain_pixel_x_data_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(cross_lines_pixel_x_data_y()),
-        }),
+        layers: layer_params(cross_lines_pixel_x_data_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
