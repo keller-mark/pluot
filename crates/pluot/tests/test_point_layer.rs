@@ -3,9 +3,11 @@ use std::sync::Arc;
 mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
-use pluot_core::params::{RenderParams, PlotParams, LayerParams, LayeredPlotRenderParams};
-use pluot_core::render_traits::{AspectRatioMode, UnitsMode, MarginParams};
-use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
+use pluot::{
+    RenderParams, LayerParams,
+    AspectRatioMode, UnitsMode, MarginParams,
+    PointLayerParams, PointShapeMode,
+};
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
 // - Square and non-square (wide and tall) aspect ratios
@@ -75,10 +77,7 @@ fn corner_points_pixel_x_data_y() -> PointLayerParams {
 }
 
 fn layer_params(point_params: PointLayerParams) -> Vec<LayerParams> {
-    vec![LayerParams {
-        layer_type: "PointLayer".to_string(),
-        layer_params: serde_json::to_value(point_params).unwrap(),
-    }]
+    vec![LayerParams::PointLayer(point_params)]
 }
 
 // ── Square canvas (100×100) ───────────────────────────────────────────────────
@@ -88,16 +87,14 @@ async fn test_point_layer_square_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(0.0),
-                    margin_right: Some(0.0),
-                    margin_top: Some(0.0),
-                    margin_bottom: Some(0.0),
-                }),
-                ..corner_points_data()
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(0.0),
+                margin_right: Some(0.0),
+                margin_top: Some(0.0),
+                margin_bottom: Some(0.0),
             }),
+            ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -110,9 +107,7 @@ async fn test_point_layer_square_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -124,9 +119,7 @@ async fn test_point_layer_square_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -138,9 +131,7 @@ async fn test_point_layer_square_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_pixels()),
-        }),
+        layers: layer_params(corner_points_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -152,9 +143,7 @@ async fn test_point_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -170,16 +159,14 @@ async fn test_point_layer_square_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_points_data()
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -193,16 +180,14 @@ async fn test_point_layer_square_contain_data_units_layer_bounds_overrides_view_
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_points_data()
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(20.0),
@@ -221,9 +206,7 @@ async fn test_point_layer_wide_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -235,9 +218,7 @@ async fn test_point_layer_wide_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -249,9 +230,7 @@ async fn test_point_layer_wide_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -263,12 +242,10 @@ async fn test_point_layer_wide_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                position_x: Arc::new(vec![0.0, 200.0, 200.0, 0.0]),
-                position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
-                ..corner_points_pixels()
-            }),
+        layers: layer_params(PointLayerParams {
+            position_x: Arc::new(vec![0.0, 200.0, 200.0, 0.0]),
+            position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+            ..corner_points_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -281,9 +258,7 @@ async fn test_point_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -299,16 +274,14 @@ async fn test_point_layer_wide_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 200,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_points_data()
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -323,9 +296,7 @@ async fn test_point_layer_tall_ignore_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
         ..Default::default()
     };
@@ -337,9 +308,7 @@ async fn test_point_layer_tall_contain_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -351,9 +320,7 @@ async fn test_point_layer_tall_cover_data_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
         ..Default::default()
     };
@@ -365,12 +332,10 @@ async fn test_point_layer_tall_contain_pixel_units_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-                position_y: Arc::new(vec![0.0, 0.0, 200.0, 200.0]),
-                ..corner_points_pixels()
-            }),
+        layers: layer_params(PointLayerParams {
+            position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
+            position_y: Arc::new(vec![0.0, 0.0, 200.0, 200.0]),
+            ..corner_points_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -383,9 +348,7 @@ async fn test_point_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data()),
-        }),
+        layers: layer_params(corner_points_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         margin_left: Some(10.0),
         margin_right: Some(10.0),
@@ -401,16 +364,14 @@ async fn test_point_layer_tall_contain_data_units_layer_bounds() {
     let params = RenderParams {
         width: 100,
         height: 200,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(PointLayerParams {
-                bounds: Some(MarginParams {
-                    margin_left: Some(10.0),
-                    margin_right: Some(10.0),
-                    margin_top: Some(10.0),
-                    margin_bottom: Some(10.0),
-                }),
-                ..corner_points_data()
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
             }),
+            ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
@@ -425,9 +386,7 @@ async fn test_point_layer_square_contain_data_x_pixel_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_data_x_pixel_y()),
-        }),
+        layers: layer_params(corner_points_data_x_pixel_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
@@ -439,9 +398,7 @@ async fn test_point_layer_square_contain_pixel_x_data_y_no_margins() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
-            layers: layer_params(corner_points_pixel_x_data_y()),
-        }),
+        layers: layer_params(corner_points_pixel_x_data_y()),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
