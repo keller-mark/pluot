@@ -69,6 +69,7 @@ inventory::submit! {
     }
 }
 
-// Note: Moving to the inventory-based registration system may have impacted performance a tiny bit.
-// Consider just using crate features here to conditionally compile in the layers we want, instead of using inventory.
+// Consider just using crate features here to conditionally compile in the layers we want,
+// instead of using inventory.
 // But that would require moving more stuff to this crate, like the layered plot rendering code.
+// Also see https://github.com/keller-mark/pluot/issues/178
