@@ -13,7 +13,7 @@ pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 pub use pluot_core::layers::line_layer::{LineLayerParams};
 pub use pluot_core::layers::rect_layer::{RectLayerParams};
 pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
-pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
+pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData};
 pub use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 pub use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
 pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;

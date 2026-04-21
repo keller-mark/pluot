@@ -6,10 +6,10 @@ Rendering tests use snapshot comparison: pixel-exact for raster (via [kompari](h
 
 ```
 tests/
-  snapshots/   # Reference snapshots (committed to git)
-  current/     # Test-generated outputs (gitignored)
+  snaps-blessed/   # Reference snapshots (committed to git)
+  snaps-dirty/     # Test-generated outputs (gitignored)
   snapshot_utils.rs  # Helpers functions
-  render_squares.rs  # Raster + vector rendering tests
+  test_rect_layer.rs  # Raster + vector rendering tests
 ```
 
 ## Taking Initial Snapshots
@@ -23,11 +23,11 @@ When you add a new test:
    ```
    cargo test -p pluot test_name
    ```
-3. The test writes the output to `tests/current/`.
+3. The test writes the output to `tests/snaps-dirty/`.
 4. Inspect the output to verify it looks correct.
-5. Bless it by copying to the snapshots directory:
+5. Bless it by copying to the `snaps-blessed` directory:
    ```
-   cp crates/pluot_core/tests/current/<name> crates/pluot_core/tests/snapshots/<name>
+   cp crates/pluot_core/tests/snaps-dirty/<name> crates/pluot_core/tests/snaps-blessed/<name>
    ```
 6. Commit the new snapshot file.
 
@@ -36,13 +36,13 @@ When you add a new test:
 When rendering output changes intentionally (e.g., shader fix, new layer behavior):
 
 1. Run the tests — the affected snapshot test(s) will fail with a mismatch message.
-2. The test writes the new output to `tests/current/`.
+2. The test writes the new output to `tests/snaps-dirty/`.
 3. Inspect the current output to verify the change is correct.
 4. Bless the updated snapshot:
    ```
-   cp crates/pluot_core/tests/current/<name> crates/pluot_core/tests/snapshots/<name>
+   cp crates/pluot/tests/snaps-dirty/<name> crates/pluot/tests/snaps-blessed/<name>
    # Or, if you need to copy multiple files with the same prefix:
-   cp crates/pluot_core/tests/current/<prefix>* crates/pluot_core/tests/snapshots/
+   cp crates/pluot/tests/snaps-dirty/<prefix>* crates/pluot/tests/snaps-blessed/
    ```
 5. Commit the updated snapshot file.
 
@@ -50,12 +50,12 @@ When rendering output changes intentionally (e.g., shader fix, new layer behavio
 
 - **Raster tests** render an image and call `check_snapshot(image, name)`. The comparison uses `kompari::compare_images` for pixel-exact diffing.
 - **SVG tests** render an SVG string and call `check_svg_snapshot(svg, name)`. The comparison normalizes whitespace (trims lines, drops blanks) before diffing.
-- Both helpers always write the current output to `tests/current/` and panic with `cp` instructions on mismatch or missing snapshot.
+- Both helpers always write the current output to `tests/snaps-dirty/` and panic with `cp` instructions on mismatch or missing snapshot.
 
 ## Running Tests
 
 These tests require GPU access and are skipped in environments where the `lacks_gpu` feature is enabled:
 
 ```
-cargo test -p pluot_core
+cargo test -p pluot
 ```

@@ -79,6 +79,8 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
         self
     }
 
+    // TODO: remove this function (and its tests)
+    // as it is no longer used. Or refactor it so it is more useful.
     pub fn generate_elements(
         &self,
         scale: &(impl Tickable<D> + Scaleable<D, f64> + LinearRangeable<f64>),
