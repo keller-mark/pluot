@@ -68,6 +68,9 @@ pub enum LayerParams {
 /// `layers` as a typed [`LayerParams`] enum instead of raw JSON values.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParams {
+    // TODO: nest `layers` within a plot_params enum,
+    // to match RawRenderParams.plot_params.layers?
+    // This would allow for an alternative to layer-based plotting.
     pub layers: Vec<LayerParams>,
     pub width: u32,
     pub height: u32,
