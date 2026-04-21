@@ -1,3 +1,5 @@
+//! A module containing a web-compatible Timer.
+
 use crate::time::{Duration, Instant};
 use std::future::Future;
 use std::pin::Pin;
@@ -16,6 +18,8 @@ struct TimerState {
     waker: Option<std::task::Waker>,
 }
 
+/// A Timer for usage in web environments,
+/// as an alternative to async_io::Timer.
 #[derive(Debug)]
 pub struct Timer {
     /// The underlying timer.
