@@ -348,331 +348,319 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
 }
 
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterGpu for BitmapLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        let GpuContext { device, queue } = gpu_context;
+        let Self { layer_params, view_params } = self;
 
+        let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
+        let (x_dim_idx, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
+        let (y_dim_idx, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
+        let (c_dim_idx, _) = dims.get(&'C').expect("dimension_order must contain 'C'");
+        let img_w = *img_w;
+        let img_h = *img_h;
 
-pub async fn base_draw_bitmap_layer(
-    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
-    view_params: &ViewParams,
-    layer_params: &BitmapLayerParams,
-) {
-    let GpuContext { device, queue } = gpu_context;
-    let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
-    let (x_dim_idx, img_w) = dims.get(&'X').expect("dimension_order must contain 'X'");
-    let (y_dim_idx, img_h) = dims.get(&'Y').expect("dimension_order must contain 'Y'");
-    let (c_dim_idx, _) = dims.get(&'C').expect("dimension_order must contain 'C'");
-    let img_w = *img_w;
-    let img_h = *img_h;
+        let num_channels = layer_params.channel_settings.len() as u32;
 
-    let num_channels = layer_params.channel_settings.len() as u32;
+        // Compute strides so the shader can index into the flat data buffer
+        // regardless of the dimension ordering (e.g., CYX vs YXC).
+        let strides = compute_strides(&layer_params.shape);
+        let x_stride = strides[*x_dim_idx] as u32;
+        let y_stride = strides[*y_dim_idx] as u32;
+        let c_stride = strides[*c_dim_idx] as u32;
 
-    // Compute strides so the shader can index into the flat data buffer
-    // regardless of the dimension ordering (e.g., CYX vs YXC).
-    let strides = compute_strides(&layer_params.shape);
-    let x_stride = strides[*x_dim_idx] as u32;
-    let y_stride = strides[*y_dim_idx] as u32;
-    let c_stride = strides[*c_dim_idx] as u32;
+        // Convert the entire data array to f32 in one go using bytemuck (zero-copy for Float32).
+        // The flat memory layout is preserved; the shader uses strides to handle dimension ordering.
+        let data_f32 = layer_params.data.as_f32();
+        let data_bytes: &[u8] = bytemuck::cast_slice(&data_f32);
 
-    // Convert the entire data array to f32 in one go using bytemuck (zero-copy for Float32).
-    // The flat memory layout is preserved; the shader uses strides to handle dimension ordering.
-    let data_f32 = layer_params.data.as_f32();
-    let data_bytes: &[u8] = bytemuck::cast_slice(&data_f32);
+        // Upload the flat f32 data as a storage buffer (not a texture),
+        // so the shader can index into it using strides.
+        // TODO: switch back to using a texture if performance becomes an issue;
+        // textures supposedly have optimizations for 2D spatial access patterns,
+        // but we may need to do more CPU transposing for that to be effective.
+        let image_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Image Data Storage Buffer"),
+            size: data_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&image_data_buffer, 0, data_bytes);
 
-    // Upload the flat f32 data as a storage buffer (not a texture),
-    // so the shader can index into it using strides.
-    // TODO: switch back to using a texture if performance becomes an issue;
-    // textures supposedly have optimizations for 2D spatial access patterns,
-    // but we may need to do more CPU transposing for that to be effective.
-    let image_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Image Data Storage Buffer"),
-        size: data_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&image_data_buffer, 0, data_bytes);
-
-    // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
-    let camera_view = view_params.camera_view.unwrap_or([
-        // Column 0
-        1.0, 0.0, 0.0, 0.0, // Column 1
-        0.0, 1.0, 0.0, 0.0, // Column 2
-        0.0, 0.0, 1.0, 0.0, // Column 3
-        0.0, 0.0, 0.0, 1.0,
-    ]);
-
-    let zoom = camera_view[0]; // Assuming uniform scaling in x/y, take the first element (x scaling).
-    let translate_x = camera_view[12];
-    let translate_y = camera_view[13];
-
-    // Convert zoom level to scale factor
-    // scale_factor of 0 means zoom = 1.0 (no zoom)
-    // scale_factor of 1 means zoom = 0.5 (zoomed out to half)
-    // scale_factor of 2 means zoom = 0.25 (zoomed out to a quarter)
-    // scale_factor of 3 means zoom = 0.125 (zoomed out to an eighth)
-
-    // scale_factor of -1 means zoom = 2.0 (zoomed in to double)
-    // scale_factor of -2 means zoom = 4.0 (zoomed in to quadruple)
-    // scale_factor of -3 means zoom = 8.0 (zoomed in to octuple)
-    let scale_factor = (1.0 / zoom).log2();
-
-    // log(&format!("scale factor: {}", scale_factor));
-
-    // X translation interpretation:
-    // A translate_x value of 1.0 means a point at x=-1.0 (left edge of viewport/screen-quad) is now at the center of the viewport.
-    // A translate_x value of 2.0 means a point at x=-1.0 is now at the right edge of the viewport.
-    // A translate_x value of -1.0 means a point at x=1.0 (right edge of viewport/screen-quad) is now at the center of the viewport.
-
-    // Zoom interpretation:
-    // A zoom value of 0.5 means that points are scaled down by half, so a point at x=-1.0 is now at x=-0.5, and a point at x=1.0 is now at x=0.5.
-    // A zoom value of 0.25 means that points are scaled down by a quarter, so a point at x=-1.0 is now at x=-0.25, and a point at x=1.0 is now at x=0.25.
-
-    // Zoom and translation combined interpretation:
-    // A translate_x value of 0.5 when zoom = 0.5 means a point at x=-1.0 is now at the center of the viewport, and a point at x=1.0 is now at the right of the viewport.
-    // When zoom = 0.5 AND translate_x = 0.5 AND translate_y = 0.5, all four screen-quad [-1 to 1] corner points are in the top right quadrant of the viewport.
-    // When zoom = 0.5 AND translate_x = -0.5 AND translate_y = -0.5, all four screen-quad [-1 to 1] corner points are in the bottom left quadrant of the viewport.
-
-    let x_range = 2.0 / zoom; // The range of x values visible in the viewport
-    let y_range = 2.0 / zoom; // The range of y values visible in the viewport
-
-    let min_x = (-translate_x - 1.0) / zoom; // translation of (x=-1)
-    let max_x = (-translate_x + 1.0) / zoom; // translation of (x=1)
-    let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
-    let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
-
-    // Use layer-specific bounds if not None, otherwise use the view's margins
-    // (which may also be None).
-    let bounds = if layer_params.bounds.is_none() {
-        &view_params.margins
-    } else {
-        &layer_params.bounds
-    };
-
-    let margin_top = if let Some(margin_params) = &bounds {
-        margin_params.margin_top.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_right = if let Some(margin_params) = &bounds {
-        margin_params.margin_right.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_bottom = if let Some(margin_params) = &bounds {
-        margin_params.margin_bottom.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_left = if let Some(margin_params) = &bounds {
-        margin_params.margin_left.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-
-    let viewport_w = view_params.width as f32;
-    let viewport_h = view_params.height as f32;
-
-    let layer_w = viewport_w - (margin_left + margin_right) as f32;
-    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-
-    // Define the uniforms, matching the WGSL layout (handled by using encase).
-    let channel_uniforms: Vec<ChannelUniforms> = layer_params.channel_settings
-        .iter()
-        .map(|channel_setting| {
-            ChannelUniforms {
-                window: Vec2::new(channel_setting.window.0, channel_setting.window.1),
-                color: Vec3::new(channel_setting.color.0, channel_setting.color.1, channel_setting.color.2),
-            }
-        }).collect();
-
-    // Construct the uniform struct using Encase.
-    let uniform_struct = BitmapLayerUniforms {
-        layer_size: Vec2::new(layer_w, layer_h),
-        camera_view: Mat4::from_cols_array(&camera_view),
-        data_unit_mode_x: match layer_params.data_unit_mode_x {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        },
-        data_unit_mode_y: match layer_params.data_unit_mode_y {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        },
-        aspect_ratio_mode: match view_params.aspect_ratio_mode {
-            AspectRatioMode::Ignore => 0,
-            AspectRatioMode::Contain => 1,
-            AspectRatioMode::Cover => 2,
-        },
-        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
-            AspectRatioAlignmentMode::Center => 0,
-            AspectRatioAlignmentMode::Start => 1,
-            AspectRatioAlignmentMode::End => 2,
-        },
-        img_size: Vec2::new(img_w as f32, img_h as f32),
-        pixel_offset: Vec2::new(
-            layer_params.pixel_offset.map_or(0.0, |(x, _)| x as f32),
-            layer_params.pixel_offset.map_or(0.0, |(_, y)| y as f32),
-        ),
-        model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+        // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
+        let camera_view = view_params.camera_view.unwrap_or([
             // Column 0
             1.0, 0.0, 0.0, 0.0, // Column 1
             0.0, 1.0, 0.0, 0.0, // Column 2
             0.0, 0.0, 1.0, 0.0, // Column 3
             0.0, 0.0, 0.0, 1.0,
-        ])),
-        opacity: layer_params.opacity,
-        x_stride,
-        y_stride,
-        c_stride,
-        num_channels: Default::default(),
-        channels: channel_uniforms,
-    };
+        ]);
 
-    // Runtime-sized arrays cannot be used with the encase UniformBuffer,
-    // and require using StorageBuffer instead.
-    let mut buffer = StorageBuffer::new(Vec::<u8>::new());
-    buffer.write(&uniform_struct).unwrap();
-    let uniform_bytes = buffer.into_inner();
+        let zoom = camera_view[0]; // Assuming uniform scaling in x/y, take the first element (x scaling).
+        let translate_x = camera_view[12];
+        let translate_y = camera_view[13];
 
-    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Storage Buffer for Uniforms"),
-        size: uniform_bytes.len() as u64,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+        // Convert zoom level to scale factor
+        // scale_factor of 0 means zoom = 1.0 (no zoom)
+        // scale_factor of 1 means zoom = 0.5 (zoomed out to half)
+        // scale_factor of 2 means zoom = 0.25 (zoomed out to a quarter)
+        // scale_factor of 3 means zoom = 0.125 (zoomed out to an eighth)
 
+        // scale_factor of -1 means zoom = 2.0 (zoomed in to double)
+        // scale_factor of -2 means zoom = 4.0 (zoomed in to quadruple)
+        // scale_factor of -3 means zoom = 8.0 (zoomed in to octuple)
+        let scale_factor = (1.0 / zoom).log2();
 
-    // Create bind group layout and bind group for positions + uniforms
-    let bind_group_layout = device
-        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Bioimage BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    // The uniforms buffer.
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The image pixel data storage buffer.
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        // log(&format!("scale factor: {}", scale_factor));
 
-    let bind_group = device
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Bioimage BG"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: image_data_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        // X translation interpretation:
+        // A translate_x value of 1.0 means a point at x=-1.0 (left edge of viewport/screen-quad) is now at the center of the viewport.
+        // A translate_x value of 2.0 means a point at x=-1.0 is now at the right edge of the viewport.
+        // A translate_x value of -1.0 means a point at x=1.0 (right edge of viewport/screen-quad) is now at the center of the viewport.
 
-    let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
+        // Zoom interpretation:
+        // A zoom value of 0.5 means that points are scaled down by half, so a point at x=-1.0 is now at x=-0.5, and a point at x=1.0 is now at x=0.5.
+        // A zoom value of 0.25 means that points are scaled down by a quarter, so a point at x=-1.0 is now at x=-0.25, and a point at x=1.0 is now at x=0.25.
 
-    let render_pipeline_layout = device
-        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
+        // Zoom and translation combined interpretation:
+        // A translate_x value of 0.5 when zoom = 0.5 means a point at x=-1.0 is now at the center of the viewport, and a point at x=1.0 is now at the right of the viewport.
+        // When zoom = 0.5 AND translate_x = 0.5 AND translate_y = 0.5, all four screen-quad [-1 to 1] corner points are in the top right quadrant of the viewport.
+        // When zoom = 0.5 AND translate_x = -0.5 AND translate_y = -0.5, all four screen-quad [-1 to 1] corner points are in the bottom left quadrant of the viewport.
 
-    // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
-    let render_pipeline = device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
+        let x_range = 2.0 / zoom; // The range of x values visible in the viewport
+        let y_range = 2.0 / zoom; // The range of y values visible in the viewport
+
+        let min_x = (-translate_x - 1.0) / zoom; // translation of (x=-1)
+        let max_x = (-translate_x + 1.0) / zoom; // translation of (x=1)
+        let min_y = (-translate_y - 1.0) / zoom; // translation of (y=-1)
+        let max_y = (-translate_y + 1.0) / zoom; // translation of (y=1)
+
+        // Use layer-specific bounds if not None, otherwise use the view's margins
+        // (which may also be None).
+        let bounds = if layer_params.bounds.is_none() {
+            &view_params.margins
+        } else {
+            &layer_params.bounds
+        };
+
+        let margin_top = if let Some(margin_params) = &bounds {
+            margin_params.margin_top.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_right = if let Some(margin_params) = &bounds {
+            margin_params.margin_right.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_bottom = if let Some(margin_params) = &bounds {
+            margin_params.margin_bottom.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_left = if let Some(margin_params) = &bounds {
+            margin_params.margin_left.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+
+        let viewport_w = view_params.width as f32;
+        let viewport_h = view_params.height as f32;
+
+        let layer_w = viewport_w - (margin_left + margin_right) as f32;
+        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+        // Define the uniforms, matching the WGSL layout (handled by using encase).
+        let channel_uniforms: Vec<ChannelUniforms> = layer_params.channel_settings
+            .iter()
+            .map(|channel_setting| {
+                ChannelUniforms {
+                    window: Vec2::new(channel_setting.window.0, channel_setting.window.1),
+                    color: Vec3::new(channel_setting.color.0, channel_setting.color.1, channel_setting.color.2),
+                }
+            }).collect();
+
+        // Construct the uniform struct using Encase.
+        let uniform_struct = BitmapLayerUniforms {
+            layer_size: Vec2::new(layer_w, layer_h),
+            camera_view: Mat4::from_cols_array(&camera_view),
+            data_unit_mode_x: match layer_params.data_unit_mode_x {
+                UnitsMode::Pixels => 0,
+                UnitsMode::Data => 1,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
+            data_unit_mode_y: match layer_params.data_unit_mode_y {
+                UnitsMode::Pixels => 0,
+                UnitsMode::Data => 1,
             },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
+            aspect_ratio_mode: match view_params.aspect_ratio_mode {
+                AspectRatioMode::Ignore => 0,
+                AspectRatioMode::Contain => 1,
+                AspectRatioMode::Cover => 2,
+            },
+            aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+                AspectRatioAlignmentMode::Center => 0,
+                AspectRatioAlignmentMode::Start => 1,
+                AspectRatioAlignmentMode::End => 2,
+            },
+            img_size: Vec2::new(img_w as f32, img_h as f32),
+            pixel_offset: Vec2::new(
+                layer_params.pixel_offset.map_or(0.0, |(x, _)| x as f32),
+                layer_params.pixel_offset.map_or(0.0, |(_, y)| y as f32),
+            ),
+            model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+                // Column 0
+                1.0, 0.0, 0.0, 0.0, // Column 1
+                0.0, 1.0, 0.0, 0.0, // Column 2
+                0.0, 0.0, 1.0, 0.0, // Column 3
+                0.0, 0.0, 0.0, 1.0,
+            ])),
+            opacity: layer_params.opacity,
+            x_stride,
+            y_stride,
+            c_stride,
+            num_channels: Default::default(),
+            channels: channel_uniforms,
+        };
+
+        // Runtime-sized arrays cannot be used with the encase UniformBuffer,
+        // and require using StorageBuffer instead.
+        let mut buffer = StorageBuffer::new(Vec::<u8>::new());
+        buffer.write(&uniform_struct).unwrap();
+        let uniform_bytes = buffer.into_inner();
+
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Storage Buffer for Uniforms"),
+            size: uniform_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
+        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
-    // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
 
-    // Handle margins by adjusting viewport and scissor rect.
-    // This allows us to avoid accounting for margins in the shaders, simplifying them.
-    // (Shaders can simply assume the full viewport size is the plot area.)
-    // Note: these settings will affect all subsequent draw calls in this render pass,
-    // so ensure that other layers are setting their own viewport/scissor_rect appropriately.
+        // Create bind group layout and bind group for positions + uniforms
+        let bind_group_layout = device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Bioimage BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        // The uniforms buffer.
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        // The image pixel data storage buffer.
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
 
-    // Set viewport so that the (-1 to 1) NDC coordinates map to the desired plot area within the canvas.
-    pass.set_viewport(
-        margin_left as f32,
-        margin_top as f32,
-        viewport_w - (margin_left + margin_right) as f32,
-        viewport_h - (margin_top + margin_bottom) as f32,
-        0.0, // min_depth
-        1.0, // max_depth
-    );
+        let bind_group = device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Bioimage BG"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: image_data_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-    // Set scissor rect so that fragments rendered into the margins are clipped.
-    // "Sets the scissor rectangle used during the rasterization stage. After transformation into viewport coordinates."
-    // "The function of the scissor rectangle resembles set_viewport(), but it does not affect the coordinate system, only which fragments are discarded."
-    pass.set_scissor_rect(
-        margin_left as u32,
-        margin_top as u32,
-        (viewport_w - (margin_left + margin_right) as f32) as u32,
-        (viewport_h - (margin_top + margin_bottom) as f32) as u32,
-    );
+        let shader = device
+            .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
 
-    pass.set_pipeline(&render_pipeline);
-    pass.set_bind_group(0, &bind_group, &[]);
-    pass.draw(0..4, 0..1);
-}
+        let render_pipeline_layout = device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[Some(&bind_group_layout)],
+                immediate_size: 0,
+            });
 
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for BitmapLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        base_draw_bitmap_layer(
-            gpu_context, pass,
-            &self.view_params,
-            &self.layer_params,
-        ).await;
+        // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
+        let render_pipeline = device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                cache: None,
+                multiview_mask: None,
+            });
+
+        // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
+
+        // Handle margins by adjusting viewport and scissor rect.
+        // This allows us to avoid accounting for margins in the shaders, simplifying them.
+        // (Shaders can simply assume the full viewport size is the plot area.)
+        // Note: these settings will affect all subsequent draw calls in this render pass,
+        // so ensure that other layers are setting their own viewport/scissor_rect appropriately.
+
+        // Set viewport so that the (-1 to 1) NDC coordinates map to the desired plot area within the canvas.
+        pass.set_viewport(
+            margin_left as f32,
+            margin_top as f32,
+            viewport_w - (margin_left + margin_right) as f32,
+            viewport_h - (margin_top + margin_bottom) as f32,
+            0.0, // min_depth
+            1.0, // max_depth
+        );
+
+        // Set scissor rect so that fragments rendered into the margins are clipped.
+        // "Sets the scissor rectangle used during the rasterization stage. After transformation into viewport coordinates."
+        // "The function of the scissor rectangle resembles set_viewport(), but it does not affect the coordinate system, only which fragments are discarded."
+        pass.set_scissor_rect(
+            margin_left as u32,
+            margin_top as u32,
+            (viewport_w - (margin_left + margin_right) as f32) as u32,
+            (viewport_h - (margin_top + margin_bottom) as f32) as u32,
+        );
+
+        pass.set_pipeline(&render_pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..4, 0..1);
     }
 }
 
@@ -700,167 +688,159 @@ fn base64_encode(data: &[u8]) -> String {
     BASE64_STANDARD.encode(data)
 }
 
-pub fn base_draw_bitmap_layer_svg(
-    view_params: &ViewParams,
-    layer_params: &BitmapLayerParams,
-) -> Vec<TwoElement> {
-    let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
-    let (x_dim_idx, img_w) = dims[&'X'];
-    let (y_dim_idx, img_h) = dims[&'Y'];
-    let (c_dim_idx, _)     = dims[&'C'];
-
-    let strides = compute_strides(&layer_params.shape);
-    let x_stride = strides[x_dim_idx];
-    let y_stride = strides[y_dim_idx];
-    let c_stride = strides[c_dim_idx];
-
-    let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
-
-    for y in 0..img_h as usize {
-        for x in 0..img_w as usize {
-            // Accumulate blended RGB across channels (additive).
-            let mut r = 0.0f32;
-            let mut g = 0.0f32;
-            let mut b = 0.0f32;
-
-            for (c, ch) in layer_params.channel_settings.iter().enumerate() {
-                let idx = y * y_stride + x * x_stride + c * c_stride;
-                let raw = layer_params.data.get_f32(idx);
-
-                // Apply window [lo, hi] → normalize to [0, 1], clamp.
-                let (lo, hi) = ch.window;
-                let t = ((raw - lo) / (hi - lo)).clamp(0.0, 1.0);
-
-                r += t * ch.color.0;
-                g += t * ch.color.1;
-                b += t * ch.color.2;
-            }
-
-            let pixel_idx = (y * img_w as usize + x) * 4;
-            rgba[pixel_idx]     = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
-            rgba[pixel_idx + 1] = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
-            rgba[pixel_idx + 2] = (b.clamp(0.0, 1.0) * 255.0).round() as u8;
-            rgba[pixel_idx + 3] = 255_u8;
-        }
-    }
-
-    let bmp = encode_bmp_rgba(img_w, img_h, &rgba);
-    let href = format!("data:image/bmp;base64,{}", base64_encode(&bmp));
-
-    // TODO: reduce code reuse here
-    let camera_view = view_params.camera_view.unwrap_or([
-        // Column 0
-        1.0, 0.0, 0.0, 0.0, // Column 1
-        0.0, 1.0, 0.0, 0.0, // Column 2
-        0.0, 0.0, 1.0, 0.0, // Column 3
-        0.0, 0.0, 0.0, 1.0,
-    ]);
-
-    // Use layer-specific bounds if not None, otherwise use the view's margins
-    // (which may also be None).
-    let bounds = if layer_params.bounds.is_none() {
-        &view_params.margins
-    } else {
-        &layer_params.bounds
-    };
-
-    let margin_top = if let Some(margin_params) = &bounds {
-        margin_params.margin_top.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_right = if let Some(margin_params) = &bounds {
-        margin_params.margin_right.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_bottom = if let Some(margin_params) = &bounds {
-        margin_params.margin_bottom.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-    let margin_left = if let Some(margin_params) = &bounds {
-        margin_params.margin_left.unwrap_or(0.0)
-    } else { 0.0 } as f64;
-
-    let viewport_w = view_params.width as f32;
-    let viewport_h = view_params.height as f32;
-
-    let layer_w = viewport_w - (margin_left + margin_right) as f32;
-    let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-    // End TODO
-
-    let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0,
-    ]);
-
-    let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
-
-    // Compute the position of the bottom-left corner of the image quad,
-    // matching the shader's vertex_pos_px for QUAD[0] = (0, 0):
-    //   vertex_pos_px = (0 * img_w + offset_x, 0 * img_h + offset_y)
-    let (px, py) = get_point_position(
-        offset_x as f32,
-        offset_y as f32,
-        layer_w,
-        layer_h,
-        &camera_view,
-        layer_params.data_unit_mode_x,
-        layer_params.data_unit_mode_y,
-        view_params.aspect_ratio_mode,
-        view_params.aspect_ratio_alignment_mode,
-        Some(&model_matrix_raw),
-    );
-
-    // Compute the image size after transforms.
-    let (sw, sh) = get_point_size(
-        img_w as f32,
-        img_h as f32,
-        layer_w,
-        layer_h,
-        &camera_view,
-        layer_params.data_unit_mode_x,
-        layer_params.data_unit_mode_y,
-        view_params.aspect_ratio_mode,
-        view_params.aspect_ratio_alignment_mode,
-        Some(&model_matrix_raw),
-    );
-
-    // px, py are in layer-local pixel coords with Y increasing upward.
-    // SVG has Y increasing downward, so flip:
-    //   SVG y of the image top-left = layer_h - (py + sh)
-    let image_element = TwoElement::Image(TwoImage {
-        x: px as f64,
-        y: (layer_h - py - sh) as f64,
-        width: sw as f64,
-        height: sh as f64,
-        href,
-        opacity: layer_params.opacity as f64,
-        image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
-    });
-
-    // Insert the image into an SVG group with a transform and clipping to handle margins,
-    // similar to the usage of scissor rect and viewport in the Canvas rendering.
-    vec![TwoElement::Group(TwoGroup {
-        elements: vec![image_element],
-        translate: Some((margin_left, margin_top)),
-        layer_id: Some(layer_params.layer_id.clone()),
-        // TODO: check how clip_rect interacts with the translate
-        clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
-        ..Default::default()
-    })]
-}
-
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for BitmapLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
+        let Self { layer_params, view_params } = self;
+
         // Draw to an SVG <image/> element.
         // Do this as naively as possible; for example with a nested for loop over the pixels, computing the color and position of each,
         // and finally converting to an image HREF.
+        let dims = parse_dimensions(&layer_params.dimension_order, &layer_params.shape);
+        let (x_dim_idx, img_w) = dims[&'X'];
+        let (y_dim_idx, img_h) = dims[&'Y'];
+        let (c_dim_idx, _)     = dims[&'C'];
 
-        let svg_elements = base_draw_bitmap_layer_svg(
-            &self.view_params,
-            &self.layer_params,
+        let strides = compute_strides(&layer_params.shape);
+        let x_stride = strides[x_dim_idx];
+        let y_stride = strides[y_dim_idx];
+        let c_stride = strides[c_dim_idx];
+
+        let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
+
+        for y in 0..img_h as usize {
+            for x in 0..img_w as usize {
+                // Accumulate blended RGB across channels (additive).
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+
+                for (c, ch) in layer_params.channel_settings.iter().enumerate() {
+                    let idx = y * y_stride + x * x_stride + c * c_stride;
+                    let raw = layer_params.data.get_f32(idx);
+
+                    // Apply window [lo, hi] → normalize to [0, 1], clamp.
+                    let (lo, hi) = ch.window;
+                    let t = ((raw - lo) / (hi - lo)).clamp(0.0, 1.0);
+
+                    r += t * ch.color.0;
+                    g += t * ch.color.1;
+                    b += t * ch.color.2;
+                }
+
+                let pixel_idx = (y * img_w as usize + x) * 4;
+                rgba[pixel_idx]     = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
+                rgba[pixel_idx + 1] = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
+                rgba[pixel_idx + 2] = (b.clamp(0.0, 1.0) * 255.0).round() as u8;
+                rgba[pixel_idx + 3] = 255_u8;
+            }
+        }
+
+        let bmp = encode_bmp_rgba(img_w, img_h, &rgba);
+        let href = format!("data:image/bmp;base64,{}", base64_encode(&bmp));
+
+        // TODO: reduce code reuse here
+        let camera_view = view_params.camera_view.unwrap_or([
+            // Column 0
+            1.0, 0.0, 0.0, 0.0, // Column 1
+            0.0, 1.0, 0.0, 0.0, // Column 2
+            0.0, 0.0, 1.0, 0.0, // Column 3
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        // Use layer-specific bounds if not None, otherwise use the view's margins
+        // (which may also be None).
+        let bounds = if layer_params.bounds.is_none() {
+            &view_params.margins
+        } else {
+            &layer_params.bounds
+        };
+
+        let margin_top = if let Some(margin_params) = &bounds {
+            margin_params.margin_top.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_right = if let Some(margin_params) = &bounds {
+            margin_params.margin_right.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_bottom = if let Some(margin_params) = &bounds {
+            margin_params.margin_bottom.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_left = if let Some(margin_params) = &bounds {
+            margin_params.margin_left.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+
+        let viewport_w = view_params.width as f32;
+        let viewport_h = view_params.height as f32;
+
+        let layer_w = viewport_w - (margin_left + margin_right) as f32;
+        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+        // End TODO
+
+        let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
+
+        // Compute the position of the bottom-left corner of the image quad,
+        // matching the shader's vertex_pos_px for QUAD[0] = (0, 0):
+        //   vertex_pos_px = (0 * img_w + offset_x, 0 * img_h + offset_y)
+        let (px, py) = get_point_position(
+            offset_x as f32,
+            offset_y as f32,
+            layer_w,
+            layer_h,
+            &camera_view,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
+            view_params.aspect_ratio_mode,
+            view_params.aspect_ratio_alignment_mode,
+            Some(&model_matrix_raw),
         );
+
+        // Compute the image size after transforms.
+        let (sw, sh) = get_point_size(
+            img_w as f32,
+            img_h as f32,
+            layer_w,
+            layer_h,
+            &camera_view,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
+            view_params.aspect_ratio_mode,
+            view_params.aspect_ratio_alignment_mode,
+            Some(&model_matrix_raw),
+        );
+
+        // px, py are in layer-local pixel coords with Y increasing upward.
+        // SVG has Y increasing downward, so flip:
+        //   SVG y of the image top-left = layer_h - (py + sh)
+        let image_element = TwoElement::Image(TwoImage {
+            x: px as f64,
+            y: (layer_h - py - sh) as f64,
+            width: sw as f64,
+            height: sh as f64,
+            href,
+            opacity: layer_params.opacity as f64,
+            image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
+        });
+
+        // Insert the image into an SVG group with a transform and clipping to handle margins,
+        // similar to the usage of scissor rect and viewport in the Canvas rendering.
+        let svg_elements = vec![TwoElement::Group(TwoGroup {
+            elements: vec![image_element],
+            translate: Some((margin_left, margin_top)),
+            layer_id: Some(layer_params.layer_id.clone()),
+            // TODO: check how clip_rect interacts with the translate
+            clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
+            ..Default::default()
+        })];
+
         update_svg(ctx, &svg_elements);
     }
 }
