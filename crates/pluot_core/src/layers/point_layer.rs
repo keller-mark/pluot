@@ -13,7 +13,7 @@ use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
-use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::get_point_position;
 
@@ -411,6 +411,25 @@ impl DrawToRasterCpu for PointLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
+// Matches get_categorical_color in point_layer.wgsl (Tableau 10 palette).
+// Reference: https://github.com/pyapp-kit/cmap/blob/954b1ca093d14b6c3214524c69974986a6446d1c/src/cmap/data/tableau/__init__.py#L15
+const CATEGORICAL_COLORS: [(u8, u8, u8); 10] = [
+    (31, 119, 180),
+    (255, 127, 14),
+    (44, 160, 44),
+    (214, 39, 40),
+    (148, 103, 189),
+    (227, 119, 194),
+    (127, 127, 127),
+    (188, 189, 34),
+    (23, 190, 207),
+    (219, 219, 219),
+];
+
+fn get_categorical_color(index: i32) -> (u8, u8, u8) {
+    CATEGORICAL_COLORS[index.rem_euclid(10) as usize]
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for PointLayer {
@@ -479,13 +498,17 @@ impl DrawToSvg for PointLayer {
             // TODO: handle point_radius_unit_mode
             let point_radius = layer_params.point_radius;
 
+            let label = layer_params.labels_vec[i];
+            let (r, g, b) = get_categorical_color(label);
+            let fill = Some(TwoColor::Rgb((r, g, b)));
+
             // Create a circle or square element based on point_shape_mode.
             svg_elements.push(match layer_params.point_shape_mode {
                 PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
                     x: px as f64,
                     y: (layer_h - py) as f64,
                     radius: point_radius as f64,
-                    // TODO: more params
+                    fill,
                     ..Default::default()
                 }),
                 PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
@@ -493,7 +516,7 @@ impl DrawToSvg for PointLayer {
                     y: ((layer_h - py) - point_radius) as f64,
                     width: (point_radius * 2.0) as f64,
                     height: (point_radius * 2.0) as f64,
-                    // TODO: more params
+                    fill,
                     ..Default::default()
                 })
             });

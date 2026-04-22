@@ -263,6 +263,17 @@ fn vs_main(
 }
 
 
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the Tableau 10 values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: f32) -> f32 {
+    return pow(c, 2.2);
+}
+
 fn get_categorical_color(index: i32) -> vec4<f32> {
     // Simple categorical colormap (Tableau 10)
     const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
@@ -277,7 +288,8 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
         vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
         vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
     );
-    return colors[index % 10];
+    let c = colors[index % 10];
+    return vec4<f32>(srgb_to_linear(c.r), srgb_to_linear(c.g), srgb_to_linear(c.b), c.a);
 }
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {

@@ -136,8 +136,8 @@ async def _(camera_view, render_to_image, umap_df):
 
 
 @app.cell
-async def _(camera_view, mo, render_to_svg, umap_df):
-    mo.Html(await render_to_svg(
+async def _(camera_view, render_to_svg, umap_df):
+    svg_string = await render_to_svg(
         camera_view=camera_view, width=600, height=600, plot_id="test_store_instance", plot_type="LayeredPlot",
         margin_left=100,
         margin_bottom=100,
@@ -210,7 +210,19 @@ async def _(camera_view, mo, render_to_svg, umap_df):
             ]
         ),
     )
-    )
+    return (svg_string,)
+
+
+@app.cell
+def _(mo, svg_string):
+    mo.Html(svg_string)
+    return
+
+
+@app.cell
+def _(svg_string):
+    with open("scatterplot_mnist.svg", "w") as f:
+        f.write(svg_string)
     return
 
 

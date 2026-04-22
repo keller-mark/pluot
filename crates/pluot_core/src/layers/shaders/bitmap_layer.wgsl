@@ -303,6 +303,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         let idx = texel_coords.y * u.y_stride + texel_coords.x * u.x_stride + channel_index * u.c_stride;
         let intensity = img_data[idx];
         let ch_color = u.channels[channel_index].color;
+        // Ensure that additive blending happens in SRGB space.
+        let ch_color_linear = pow(ch_color, vec3<f32>(2.2));
         let ch_window = u.channels[channel_index].window;
 
         // Apply windowing to adjust contrast limits.
@@ -314,7 +316,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         // References:
         // - https://github.com/hms-dbmi/viv/blob/main/packages/extensions/src/color-palette-extension/color-palette-module.js
         // - https://github.com/hms-dbmi/viv/blob/08a74203b99f54bc62307c741944ed61e33e810c/packages/layers/src/xr-layer/xr-layer-fragment.glsl.js#L39
-        final_color += ch_color * windowed;
+        final_color += ch_color_linear * windowed;
     }
 
     // Output the blended color.
