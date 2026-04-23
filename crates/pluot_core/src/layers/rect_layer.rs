@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use crate::render_traits::{
-    AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::positioning::get_point_position;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -29,6 +29,10 @@ pub struct RectLayerParams {
     // If None, assume filled
     pub stroke_width: Option<f32>,
     pub stroke_width_unit_mode: UnitsMode, // TODO: split into X and Y parts?
+
+    // TODO: combine these params so that only sensible states are representable.
+    pub fill_color_mode: ColorMode,
+    pub fill_color: Option<(u8, u8, u8)>,
 
     // TODO(ref): pass in references instead of owned Vecs?
     // Would this cause issues when using serde to create layers based on JSON params?
@@ -91,7 +95,8 @@ struct RectLayerUniforms {
     stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
-    color: Vec4,                      // rgba color for points
+    fill_color_mode: u32,
+    fill_color: Vec4,                      // rgba color for points
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -220,7 +225,21 @@ impl DrawToRasterGpu for RectLayer {
                 AspectRatioAlignmentMode::Start => 1,
                 AspectRatioAlignmentMode::End => 2,
             },
-            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            fill_color_mode: match layer_params.fill_color_mode {
+                ColorMode::Static => 0,
+                ColorMode::Explicit => 1,
+                ColorMode::Categorical => 2,
+                ColorMode::Quantitative => 3,
+            },
+            fill_color: match layer_params.fill_color {
+                Some(color) => Vec4::from_array([
+                    color.0 as f32 / 255.0,
+                    color.1 as f32 / 255.0,
+                    color.2 as f32 / 255.0,
+                    1.0
+                ]),
+                None => Vec4::from_array([1.0, 0.0, 0.0, 1.0])
+            },
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());

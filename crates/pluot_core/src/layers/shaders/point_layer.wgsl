@@ -92,14 +92,14 @@ struct PointLayerUniforms {
     point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // 0: static color for all points; 1: categorical // TODO: expand this, remove hard-coded categorical logic
+    fill_color: vec4<f32>, // rgba color
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -184,7 +184,6 @@ fn vs_main(
         if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
             var out: VSOut;
             out.position = result_position_px;
-            out.color = u.color;
             out.corner = corner;
             out.instance_index = instance_index;
             return out;
@@ -256,7 +255,6 @@ fn vs_main(
 
     var out: VSOut;
     out.position = result_position_data;
-    out.color = u.color;
     out.corner = corner;
     out.instance_index = instance_index;
     return out;
@@ -299,9 +297,8 @@ fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
     // Handling of circle point shape mode

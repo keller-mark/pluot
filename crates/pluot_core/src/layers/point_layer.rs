@@ -100,7 +100,8 @@ struct PointLayerUniforms {
     point_shape_mode: u32, // 0 = square, 1 = circle
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
-    color: Vec4,         // rgba color for points
+    fill_color_mode: u32,
+    fill_color: Vec4,         // rgba color for points. TODO: split into separate RGB + opacity?
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -221,7 +222,8 @@ impl DrawToRasterGpu for PointLayer {
                 AspectRatioAlignmentMode::Start => 1,
                 AspectRatioAlignmentMode::End => 2,
             },
-            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            fill_color_mode: 2, // TODO: use ColorMode here.
+            fill_color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());

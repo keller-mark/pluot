@@ -59,6 +59,19 @@ pub enum UnitsMode {
     Data,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ColorMode {
+    // TODO: expand this enum type so that it also represents the required values in each case.
+    // 0: static color (e.g., same RGB color for all elements)
+    Static,
+    // 1: explicit colors (e.g., for N elements, N individual RGB colors, either 3 N-length vecs or N 3-length vecs (interleaved))
+    Explicit,
+    // 2: categorical color based on N integer class labels. either known named colormap or custom user-defined color array.
+    Categorical,
+    // 3: quantitative color based on N float values. plus a known named quantiative colormap function.
+    Quantitative,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,

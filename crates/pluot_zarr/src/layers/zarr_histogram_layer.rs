@@ -7,7 +7,7 @@ use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams};
+use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
@@ -31,6 +31,8 @@ pub struct ZarrHistogramLayerParams {
     // If false, will only cache the histogram result, throwing away the full array.
     // (E.g., will need to re-load the full array if num_bins changes).
     pub cache_data: bool,
+
+    pub fill_color: Option<(u8, u8, u8)>,
 }
 
 pub struct ZarrHistogramLayer {
@@ -166,6 +168,11 @@ impl PreparedLayer for ZarrHistogramLayer {
                 orientation: self.layer_params.orientation.clone(),
                 identifier: Arc::new(labels),
                 quantity: hist_arr,
+                fill_color_mode: ColorMode::Static,
+                fill_color: match self.layer_params.fill_color {
+                    Some(color) => Some(color),
+                    None => Some((76, 120, 168)),
+                },
             },
         );
 

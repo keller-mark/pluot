@@ -92,17 +92,17 @@ struct RectLayerUniforms {
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32,
+    fill_color: vec4<f32>,     // rgba color for points
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
+    @location(0) quad_pos: vec2<f32>,
     // interpolate(flat) means no interpolation
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-inter-stage-variables.html#a-interpolate
-    @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
+    @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
 };
 
 struct FSOut {
@@ -230,7 +230,6 @@ fn vs_main(
         if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
             var out: VSOut;
             out.position = result_position_px;
-            out.color = u.color;
             out.quad_pos = (corner + 1.0) * 0.5;
             out.instance_index = instance_index;
             out.rect_size_px = result_size_px;
@@ -293,11 +292,21 @@ fn vs_main(
 
     var out: VSOut;
     out.position = result_position_data;
-    out.color = u.color;
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     out.rect_size_px = result_size_data;
     return out;
+}
+
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the Tableau 10 values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: f32) -> f32 {
+    return pow(c, 2.2);
 }
 
 
@@ -322,13 +331,10 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(0) quad_pos: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
+    @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
 ) -> FSOut {
-
-    let category_color = get_categorical_color(labels_coords[instance_index]);
 
     // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
     // The stroke band is stroke_width thick from the outer edge inward
@@ -354,8 +360,12 @@ fn fs_main(
         // TODO: render using the fill color as opposed to the stroke color.
     }
 
+    var out_color = u.fill_color.rgb;
+    if(u.fill_color_mode == 2u) {
+        out_color = get_categorical_color(labels_coords[instance_index]).rgb;
+    }
+
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, 1.0);
+    out.color = vec4<f32>(srgb_to_linear(out_color.r), srgb_to_linear(out_color.g), srgb_to_linear(out_color.b), 1.0);
     return out;
 }

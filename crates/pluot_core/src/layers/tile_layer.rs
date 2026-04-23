@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer,
-    UnitsMode, ViewParams,
+    UnitsMode, ViewParams, ColorMode,
 };
 use crate::viewport::get_bounds;
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
@@ -97,6 +97,8 @@ impl TileLayer {
                 data_unit_mode_y: UnitsMode::Data,
                 stroke_width: Some(1.0),
                 stroke_width_unit_mode: UnitsMode::Pixels,
+                fill_color: None,
+                fill_color_mode: ColorMode::Categorical,
                 position_x0: Arc::new(x0_vec),
                 position_y0: Arc::new(y0_vec),
                 position_x1: Arc::new(x1_vec),

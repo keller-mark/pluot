@@ -173,6 +173,7 @@ const DEMOS = {
             data_unit_mode_y: "Data",
             stroke_width_unit_mode: "Pixels",
             stroke_width: 5.0,
+            fill_color_mode: "Categorical",
             position_x0: [1],
             position_y0: [1],
             position_x1: [2],
@@ -287,6 +288,8 @@ const DEMOS = {
             orientation: "Vertical",
             identifier_key: "/year",
             quantity_key: "/wheat",
+            fill_color_mode: "Static",
+            fill_color: [0, 255, 0],
           }
         },
       ]
@@ -308,6 +311,8 @@ const DEMOS = {
 
             identifier: ["One", "Two", "Three"],
             quantity: [10.0, 20.0, 30.0],
+
+            fill_color_mode: "Categorical",
           }
         },
       ]
@@ -329,6 +334,8 @@ const DEMOS = {
             num_bins: 3,
             data_min: null,
             data_max: null,
+
+            fill_color: null,
           }
         },
       ]

@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer,
-    UnitsMode, ViewParams,
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
@@ -45,6 +44,8 @@ pub struct BarPlotLayerParams {
     pub quantity: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
 
     // TODO: color of bars
+    pub fill_color: Option<(u8, u8, u8)>,
+    pub fill_color_mode: ColorMode,
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin
@@ -118,6 +119,8 @@ impl BarPlotLayer {
                             data_unit_mode_y: UnitsMode::Data,
                             stroke_width: None,
                             stroke_width_unit_mode: UnitsMode::Pixels,
+                            fill_color: self.layer_params.fill_color,
+                            fill_color_mode: self.layer_params.fill_color_mode,
                             position_x0: Arc::new(position_x0),
                             position_y0: Arc::new(position_y0),
                             position_x1: Arc::new(position_x1),
@@ -165,6 +168,8 @@ impl BarPlotLayer {
                             data_unit_mode_y: UnitsMode::Pixels,
                             stroke_width: None,
                             stroke_width_unit_mode: UnitsMode::Pixels,
+                            fill_color: self.layer_params.fill_color,
+                            fill_color_mode: self.layer_params.fill_color_mode,
                             position_x0: Arc::new(position_x0),
                             position_y0: Arc::new(position_y0),
                             position_x1: Arc::new(position_x1),
