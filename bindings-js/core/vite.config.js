@@ -1,11 +1,10 @@
-import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { resolve } from "path";
 import { existsSync } from "fs";
 
 const cwd = process.cwd();
 
-const mainFiles = ["index.tsx", "index.ts", "index.jsx", "index.js"];
+const mainFiles = ["index.ts", "index.js"];
 
 const indexFile = mainFiles.find((d) => existsSync(resolve(cwd, `src/${d}`)));
 
@@ -23,27 +22,10 @@ export default defineConfig({
       fileName: "index",
       formats: ["es"],
     },
-    rollupOptions: {
-      external: ["react", "react-dom"],
-      output: {
-        globals: {
-          react: "React",
-          "react-dom": "ReactDOM",
-        },
-      },
-    },
   },
   define: {
     "process.env.NODE_ENV": `"${process.env.APP_ENV}"`,
     // For 3d-view-controls.
     global: "window",
-  },
-  plugins: [react()],
-  // To enable .js files that contain JSX to be imported.
-  // Reference: https://github.com/vitest-dev/vitest/issues/1564
-  esbuild: {
-    loader: "tsx",
-    include: /src\/.*\.[tj]sx?$/,
-    exclude: [],
   },
 });
