@@ -238,7 +238,7 @@ impl DrawToRasterGpu for RectLayer {
                     color.2 as f32 / 255.0,
                     1.0
                 ]),
-                None => Vec4::from_array([1.0, 0.0, 0.0, 1.0])
+                None => Vec4::from_array([0.0, 0.0, 0.0, 1.0])
             },
         };
 
@@ -453,6 +453,25 @@ impl DrawToRasterCpu for RectLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
+// Matches get_categorical_color in rect_layer.wgsl (Tableau 10 palette).
+// TODO: remove once more color encoding modes are implemented.
+const CATEGORICAL_COLORS: [(u8, u8, u8); 10] = [
+    (31, 119, 180),
+    (255, 127, 14),
+    (44, 160, 44),
+    (214, 39, 40),
+    (148, 103, 189),
+    (227, 119, 194),
+    (127, 127, 127),
+    (188, 189, 34),
+    (23, 190, 207),
+    (219, 219, 219),
+];
+
+fn get_categorical_color(index: i32) -> (u8, u8, u8) {
+    CATEGORICAL_COLORS[index.rem_euclid(10) as usize]
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for RectLayer {
@@ -505,6 +524,7 @@ impl DrawToSvg for RectLayer {
             let source_y = layer_params.position_y0[i];
             let target_x = layer_params.position_x1[i];
             let target_y = layer_params.position_y1[i];
+            let label = layer_params.labels_vec[i];
 
             // Convert data coordinates to pixel coordinates within the layer area.
             let (source_x_px, source_y_px) = get_point_position(
@@ -534,17 +554,23 @@ impl DrawToSvg for RectLayer {
 
             let rect_height = (target_y_px - source_y_px).abs();
 
-            // Create a circle or square element based on point_shape_mode.
+            let color = TwoColor::Rgb(match layer_params.fill_color_mode {
+                ColorMode::Categorical => get_categorical_color(label),
+                _ => layer_params.fill_color.unwrap_or((0, 0, 0)),
+            });
+
             svg_elements.push(TwoElement::Rectangle(TwoRectangle {
                 x: source_x_px.min(target_x_px) as f64,
                 y: ((layer_h - source_y_px.min(target_y_px)) - rect_height) as f64,
                 width: (target_x_px - source_x_px).abs() as f64,
                 height: rect_height as f64,
                 fill: if layer_params.stroke_width.is_none() {
-                    Some(TwoColor::Rgb((0_u8, 0_u8, 0_u8)))
+                    Some(color.clone())
+                } else { None },
+                stroke: if layer_params.stroke_width.is_some() {
+                    Some(color)
                 } else { None },
                 linewidth: layer_params.stroke_width.unwrap_or(0.0) as f64,
-                // TODO: more params
                 ..Default::default()
             }));
         }
