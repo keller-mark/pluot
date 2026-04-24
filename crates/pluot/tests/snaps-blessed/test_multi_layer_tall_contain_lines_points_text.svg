@@ -11,10 +11,10 @@
 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="100" x2="0" y1="150" y2="50"/>
 </g>
 <g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
-<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="-8" y="142"/>
-<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="92" y="142"/>
-<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="92" y="42"/>
-<rect fill="rgb(0, 0, 0)" height="16" opacity="1" width="16" x="-8" y="42"/>
+<rect fill="rgb(31, 119, 180)" height="16" opacity="1" width="16" x="-8" y="142"/>
+<rect fill="rgb(255, 127, 14)" height="16" opacity="1" width="16" x="92" y="142"/>
+<rect fill="rgb(44, 160, 44)" height="16" opacity="1" width="16" x="92" y="42"/>
+<rect fill="rgb(214, 39, 40)" height="16" opacity="1" width="16" x="-8" y="42"/>
 </g>
 <g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
 <text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 150)" x="0" y="150">

@@ -2,8 +2,14 @@
   "name": "@pluot/react",
   "private": false,
   "version": "0.1.0",
-  "description": "",
+  "description": "React component for visualization with Pluot",
   "license": "Apache-2.0",
+  "author": "Mark Keller",
+  "homepage": "https://pluot.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keller-mark/pluot.git"
+  },
   "type": "module",
   "main": "dist-tsc/index.js",
   "publishConfig": {
@@ -51,6 +57,7 @@
   "devDependencies": {
     "vitest": "^3.2.4",
     "vite": "^6.1.1",
+    "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^26.1.0",
     "vitest-canvas-mock": "^0.3.3",
     "typescript": "^5.9"

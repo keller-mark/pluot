@@ -7,8 +7,8 @@
 </defs>
 <g height="200" width="100">
 <g clip-path="url(#my_rect_layer_clip_path)" transform="translate(0,0)">
-<rect height="80" opacity="1" width="80" x="-50" y="120"/>
-<rect height="100" opacity="1" width="100" x="50" y="0"/>
+<rect height="80" opacity="1" stroke="rgb(31, 119, 180)" stroke-width="2" width="80" x="-50" y="120"/>
+<rect height="100" opacity="1" stroke="rgb(255, 127, 14)" stroke-width="2" width="100" x="50" y="0"/>
 </g>
 </g>
 </g>

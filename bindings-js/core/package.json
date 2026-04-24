@@ -2,8 +2,14 @@
   "name": "@pluot/core",
   "private": false,
   "version": "0.1.0",
-  "description": "",
+  "description": "Bindings to the Pluot Rust crate for data visualization",
   "license": "Apache-2.0",
+  "author": "Mark Keller",
+  "homepage": "https://pluot.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keller-mark/pluot.git"
+  },
   "type": "module",
   "main": "dist-tsc/index.js",
   "publishConfig": {

@@ -4,9 +4,8 @@ mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
 use pluot::{
-    RenderParams, LayerParams,
-    AspectRatioMode, UnitsMode, MarginParams,
-    RectLayerParams,
+    AspectRatioMode, ColorMode, LayerParams, MarginParams,
+    RectLayerParams, RenderParams, UnitsMode
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -33,6 +32,8 @@ fn corner_rects_data() -> RectLayerParams {
         position_x1: Arc::new(vec![0.4, 1.0]),
         position_y1: Arc::new(vec![0.4, 1.0]),
         labels_vec: Arc::new(vec![0, 1]),
+        fill_color: None,
+        fill_color_mode: ColorMode::Categorical,
     }
 }
 
@@ -50,6 +51,8 @@ fn corner_rects_pixels() -> RectLayerParams {
         position_x1: Arc::new(vec![40.0, 100.0]),
         position_y1: Arc::new(vec![40.0, 100.0]),
         labels_vec: Arc::new(vec![0, 1]),
+        fill_color: None,
+        fill_color_mode: ColorMode::Categorical,
     }
 }
 
@@ -67,6 +70,8 @@ fn corner_rects_data_x_pixel_y() -> RectLayerParams {
         position_x1: Arc::new(vec![0.4, 1.0]),
         position_y1: Arc::new(vec![40.0, 100.0]),
         labels_vec: Arc::new(vec![0, 1]),
+        fill_color: None,
+        fill_color_mode: ColorMode::Categorical,
     }
 }
 
@@ -84,6 +89,8 @@ fn corner_rects_pixel_x_data_y() -> RectLayerParams {
         position_x1: Arc::new(vec![40.0, 100.0]),
         position_y1: Arc::new(vec![0.4, 1.0]),
         labels_vec: Arc::new(vec![0, 1]),
+        fill_color: None,
+        fill_color_mode: ColorMode::Categorical,
     }
 }
 

@@ -103,3 +103,21 @@ export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
 export CC=/opt/homebrew/opt/llvm/bin/clang
 export AR=/opt/homebrew/opt/llvm/bin/llvm-ar
 ```
+
+## Publishing to crates io
+
+```sh
+cargo login
+cargo publish --dry-run
+cargo publish
+
+# JS
+pnpm run build
+pnpm run bundle
+npm login
+pnpm publish --filter='./bindings-js/**' --no-git-checks --provenance --access public
+
+# Python
+uv run maturin build --release
+uv run twine upload target/wheels/*
+```

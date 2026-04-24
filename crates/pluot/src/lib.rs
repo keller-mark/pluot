@@ -1,4 +1,4 @@
-//! This crate provides features for rendering visualizations.
+//! This crate provides functionality for rendering visualizations.
 
 mod plugins;
 

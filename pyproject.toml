@@ -10,6 +10,7 @@ authors = [
   {name = "Mark Keller"}
 ]
 readme = "README.md"
+description = "This package provides functionality for rendering visualizations using Pluot"
 classifiers = [
   "Programming Language :: Rust",
   "Programming Language :: Python :: Implementation :: CPython",
@@ -32,6 +33,9 @@ dev = [
   "pandas",
   "obstore"
 ]
+
+[project.urls]
+repository = "https://github.com/keller-mark/pluot"
 
 
 [tool.maturin]
