@@ -13,6 +13,7 @@ How it works: "headless" plotting. Pluot uses Rust :crab: and WebGPU to quickly 
 
 :test_tube: Pluot is new and experimental.
 
+
 ## Citation
 
 If you found this useful, please cite:
@@ -68,6 +69,7 @@ Our approach enables our CPU-based operations to benefit from the performance ch
 
 You can likely achieve better performance by using WebGPU directly via JavaScript.
 The question is whether the performance of this Rust-based approach is good enough, and whether the benefits are worth the potential performance tradeoffs for your use case.
+See my [blog post](https://markk.co/blog/2026-04-24-pluot-motivations) for more on the motivations.
 
 
 ### Non-goals
