@@ -115,8 +115,9 @@ cargo publish
 pnpm run build
 pnpm run bundle
 npm login
-pnpm publish
+pnpm publish --filter='./bindings-js/**' --no-git-checks --provenance --access public
 
 # Python
-
+uv run maturin build --release
+uv run twine upload target/wheels/*
 ```
