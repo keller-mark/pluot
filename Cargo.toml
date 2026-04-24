@@ -34,7 +34,7 @@ repository = "https://github.com/keller-mark/pluot"
 homepage = "https://pluot.dev"
 authors = ["Mark Keller"]
 
-categories = ["visualization", "graphics", "rendering", "science", "wasm"]
+categories = ["visualization", "graphics", "rendering", "science"]
 keywords = []
 
 # During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
