@@ -73,7 +73,7 @@ svg = "0.18.0"
 
 # TODO: update once new version of futures-time has been published to crates.io
 # futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "506d7bf" }
-pluot-futures-time = { path = "crates/vendored_futures_time", default-features = false }
+pluot-futures-time = { version = "3.0.1", path = "crates/vendored_futures_time", default-features = false }
 
 # For OME-Zarr image metadata parsing.
 # We use this fork which relaxes things by not using serde(deny_unknown_fields).
@@ -82,9 +82,9 @@ serde_json = "1.0.143"
 
 # Local crates
 # We register these here so that they can be used via .workspace = true by sibling crates.
-pluot_core = { path = "crates/pluot_core" }
-pluot_zarr = { path = "crates/pluot_zarr" }
-pluot = { path = "crates/pluot" }
+pluot_core = { version = "0.1.0", path = "crates/pluot_core" }
+pluot_zarr = { version = "0.1.0", path = "crates/pluot_zarr" }
+pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU
 wgpu = { version = "29.0.1" }
