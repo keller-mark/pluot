@@ -82,9 +82,16 @@ def _(mo):
 
 
 @app.cell
-async def _(camera_view, num_bins_slider, render_to_svg, store):
+def _():
+    width = 1200
+    height = 600
+    return height, width
+
+
+@app.cell
+async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
     svg_string = await render_to_svg(
-        camera_view=camera_view, width=900, height=600, plot_id="test_histogram_layer", plot_type="LayeredPlot",
+        camera_view=camera_view, width=width, height=height, plot_id="test_histogram_layer", plot_type="LayeredPlot",
         margin_left=100,
         margin_bottom=100,
         margin_top=10,
@@ -115,7 +122,7 @@ async def _(camera_view, num_bins_slider, render_to_svg, store):
                         text_align_mode="Middle",
                         text_baseline_mode="Middle",
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
-                        position_x=[100 + (900-100-10)/2],
+                        position_x=[100 + (width-100-10)/2],
                         position_y=[15],
                         text_vec=["Bin"]
                     )
@@ -132,7 +139,7 @@ async def _(camera_view, num_bins_slider, render_to_svg, store):
                         text_baseline_mode="Middle",
                         text_rotation=-90.0,
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
-                        position_y=[100 + (600-100-10)/2],
+                        position_y=[100 + (height-100-10)/2],
                         position_x=[25],
                         text_vec=["Count"]
                     )

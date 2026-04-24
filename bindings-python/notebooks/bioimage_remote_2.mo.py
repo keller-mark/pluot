@@ -11,7 +11,7 @@ def _():
     import marimo as mo
     import json
     import zarr
-    return mo, np, render_to_image, zarr
+    return mo, np, render_to_image, render_to_svg, zarr
 
 
 @app.cell
@@ -128,7 +128,7 @@ async def _(
     width,
     z_slider,
 ):
-    await render_to_image(
+    img = await render_to_image(
         camera_view=camera_view,
         width=width,
         height=height,
@@ -179,6 +179,95 @@ async def _(
             ]
         ),
     )
+    img
+    return (img,)
+
+
+@app.cell
+def _(img):
+    img.save("../pluot-figures/bioimage.png")
+    return
+
+
+@app.cell
+async def _(
+    camera_view,
+    ch0_slider,
+    ch1_slider,
+    height,
+    margin_bottom,
+    margin_left,
+    margin_right,
+    margin_top,
+    render_to_svg,
+    store,
+    width,
+    z_slider,
+):
+    svg_string = await render_to_svg(
+        camera_view=camera_view,
+        width=width,
+        height=height,
+        plot_id="bioimaging",
+        plot_type="LayeredPlot",
+        margin_left=margin_left,
+        margin_bottom=margin_bottom,
+        margin_top=margin_top,
+        margin_right=margin_right,
+        store=store,
+        plot_params=dict(
+            layers=[
+                dict(
+                  layer_type = "OmeZarrMultiscaleLayer",
+                  layer_params = dict(
+                      layer_id= "ome_zarr_multiscale_layer",
+                        target_z= int(z_slider.value),
+                        target_t= 0,
+                        channel_settings= [
+                          dict(
+                            c_index= 0,
+                            window= ch0_slider.value,
+                            color= [1.0, 0.0, 0.0],
+                          ),
+                          dict(
+                            c_index= 1,
+                            window= ch1_slider.value,
+                            color= [0.0, 1.0, 0.0],
+                          )
+                        ],
+                        opacity= 1.0,
+                  )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params = dict(
+                        layer_id="bottom_axis",
+                        position="Bottom"
+                    )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params = dict(
+                        layer_id="left_axis",
+                        position="Left"
+                    )
+                )
+            ]
+        ),
+    )
+    return (svg_string,)
+
+
+@app.cell
+def _(mo, svg_string):
+    mo.Html(svg_string)
+    return
+
+
+@app.cell
+def _(svg_string):
+    with open("../pluot-figures/bioimage.svg", "w") as f:
+        f.write(svg_string)
     return
 
 
