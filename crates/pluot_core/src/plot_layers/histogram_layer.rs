@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw,
-    PreparedLayer, UnitsMode, ViewParams,
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
@@ -30,6 +29,8 @@ pub struct HistogramLayerParams {
     /// Optional pre-computed extent. When None, extent is derived from the data.
     pub data_min: Option<f32>,
     pub data_max: Option<f32>,
+
+    pub fill_color: Option<(u8, u8, u8)>,
 }
 
 pub struct HistogramLayer {
@@ -123,6 +124,11 @@ impl PreparedLayer for HistogramLayer {
                 orientation: self.layer_params.orientation.clone(),
                 identifier: Arc::new(labels),
                 quantity,
+                fill_color_mode: ColorMode::Static,
+                fill_color: match self.layer_params.fill_color {
+                    Some(color) => Some(color),
+                    None => Some((76, 120, 168)),
+                }
             },
         );
 

@@ -8,7 +8,7 @@ setStoreByName('mnist_store', new FetchStore("http://localhost:5173/@data/mnist.
 setStoreByName('gaussian_quantiles_store', new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"));
 setStoreByName('gaussian_quantiles_store_compressed', new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"));
 setStoreByName('ome_ngff', new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"));
-setStoreByName('ome_ngff_2', new FetchStore("https://livingobjects.ebi.ac.uk/idr/zarr/v0.5/idr0157/Asterella%20gracilis%20SWE/IMG_1033-1112%20Asterella%20gracilis%20(Mannia%20gracilis)%20stature.ome.zarr"));
+setStoreByName('ome_ngff_2', new FetchStore("https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/IMG_1033-1112_asterella_gracilis.ome.zarr"));
 setStoreByName('wheat', new FetchStore("http://localhost:5173/@data/wheat.zarr"));
 
 const DEMOS = {
@@ -173,6 +173,7 @@ const DEMOS = {
             data_unit_mode_y: "Data",
             stroke_width_unit_mode: "Pixels",
             stroke_width: 5.0,
+            fill_color_mode: "Categorical",
             position_x0: [1],
             position_y0: [1],
             position_x1: [2],
@@ -287,6 +288,8 @@ const DEMOS = {
             orientation: "Vertical",
             identifier_key: "/year",
             quantity_key: "/wheat",
+            fill_color_mode: "Static",
+            fill_color: [0, 255, 0],
           }
         },
       ]
@@ -308,6 +311,8 @@ const DEMOS = {
 
             identifier: ["One", "Two", "Three"],
             quantity: [10.0, 20.0, 30.0],
+
+            fill_color_mode: "Categorical",
           }
         },
       ]
@@ -329,6 +334,8 @@ const DEMOS = {
             num_bins: 3,
             data_min: null,
             data_max: null,
+
+            fill_color: null,
           }
         },
       ]

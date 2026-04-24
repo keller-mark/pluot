@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer,
-    UnitsMode, ViewParams,
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::layers::multiscale_utils::{
@@ -88,6 +87,8 @@ impl MultiscaleLayer {
                 data_unit_mode_y: UnitsMode::Data,
                 stroke_width: Some(1.0),
                 stroke_width_unit_mode: UnitsMode::Pixels,
+                fill_color: None,
+                fill_color_mode: ColorMode::Categorical,
                 position_x0: Arc::new(x0_vec),
                 position_y0: Arc::new(y0_vec),
                 position_x1: Arc::new(x1_vec),

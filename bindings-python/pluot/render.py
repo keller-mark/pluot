@@ -3,6 +3,7 @@ from PIL import Image
 import numpy as np
 import zarr
 from zarr.storage import MemoryStore
+from zarr.abc.store import Store
 from .zarr import GLOBAL_STORES
 from ._internal import render_py
 
@@ -46,19 +47,35 @@ def replace_arr_with_key(d, store):
 # inserting NumPy array data into an in-memory Zarr store.
 def parse_kwargs(kwargs):
     """Parse kwargs for render functions."""
-    kwargs_has_store = "store_name" in kwargs
+    kwargs_has_store = "store" in kwargs
     kwargs_has_plot_params = "plot_params" in kwargs
     new_kwargs = kwargs
-    if (not kwargs_has_store) and kwargs_has_plot_params:
+
+    if kwargs_has_store:
+        # The user provided a Store instance directly.
+        # We assign this a UUID name and register to GLOBAL_STORES.
         store_name = str(uuid.uuid4())
         new_kwargs = {
             "store_name": store_name,
             **kwargs,
+        }
+        if not isinstance(kwargs["store"], Store):
+            raise ValueError("Expected store value to be an instance of zarr.abc.store.Store")
+        GLOBAL_STORES[store_name] = kwargs["store"]
+        # Do not pass the actual Store instance to rust.
+        del new_kwargs["store"]
+    elif kwargs_has_plot_params:
+        # Always check whether a user has provided Numpy arrays directly that should be inserted into a Zarr store.
+        # TODO: remove this code path - force users to use one of the non-Zarr layers in this case?
+        memory_store_name = str(uuid.uuid4())
+        new_kwargs = {
+            "store_name": memory_store_name,
+            **kwargs,
             "plot_params": {},
         }
-        GLOBAL_STORES[store_name] = MemoryStore()
+        GLOBAL_STORES[memory_store_name] = MemoryStore()
         # recursively traverse to find _keys
-        new_kwargs["plot_params"] = replace_arr_with_key(kwargs["plot_params"], GLOBAL_STORES[store_name])
+        new_kwargs["plot_params"] = replace_arr_with_key(kwargs["plot_params"], GLOBAL_STORES[memory_store_name])
     return new_kwargs
 
 async def render(**kwargs):

@@ -8,8 +8,8 @@ from enum import IntEnum
 # Global mapping from store_name to Zarr store objects.
 
 GLOBAL_STORES = {
-    "my_store": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "gaussian_quantiles.zarr")),
-    "ome_ngff": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "6001240_labels.ome.zarr")),
+    # "my_store": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "gaussian_quantiles.zarr")),
+    # "ome_ngff": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "6001240_labels.ome.zarr")),
 }
 
 class ZarrPeekResult(IntEnum):
@@ -19,6 +19,8 @@ class ZarrPeekResult(IntEnum):
 
 # Cache for tracking completed async results.
 # Maps a string cache key to either the result value or an Exception.
+# TODO: replace with zarr-python's CacheStore
+# Reference: https://github.com/zarr-developers/zarr-python/blob/82170464470197bcd816993aa059ee00dafee214/src/zarr/experimental/cache_store.py#L37
 _RESULT_CACHE: dict = {}
 
 def _has_cache_key(store_name: str, key: str) -> str:

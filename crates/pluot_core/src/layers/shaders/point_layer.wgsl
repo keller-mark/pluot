@@ -92,14 +92,14 @@ struct PointLayerUniforms {
     point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // 0: static color for all points; 1: categorical // TODO: expand this, remove hard-coded categorical logic
+    fill_color: vec4<f32>, // rgba color
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -184,7 +184,6 @@ fn vs_main(
         if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
             var out: VSOut;
             out.position = result_position_px;
-            out.color = u.color;
             out.corner = corner;
             out.instance_index = instance_index;
             return out;
@@ -256,12 +255,22 @@ fn vs_main(
 
     var out: VSOut;
     out.position = result_position_data;
-    out.color = u.color;
     out.corner = corner;
     out.instance_index = instance_index;
     return out;
 }
 
+
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the Tableau 10 values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: f32) -> f32 {
+    return pow(c, 2.2);
+}
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
     // Simple categorical colormap (Tableau 10)
@@ -277,7 +286,8 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
         vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
         vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
     );
-    return colors[index % 10];
+    let c = colors[index % 10];
+    return vec4<f32>(srgb_to_linear(c.r), srgb_to_linear(c.g), srgb_to_linear(c.b), c.a);
 }
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -287,9 +297,8 @@ fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
     // Handling of circle point shape mode
