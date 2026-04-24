@@ -6,6 +6,7 @@ sidebar:
     order: 20
 ---
 import { Aside } from '@astrojs/starlight/components';
+import { LinkButton } from '@astrojs/starlight/components';
 
 ## Without a framework
 
@@ -15,9 +16,6 @@ The `@pluot/core` [NPM package](https://www.npmjs.com/package/@pluot/core) enabl
 npm install @pluot/core
 ```
 
-<Aside type="caution" title="Not yet published to NPM">
-    Coming soon.
-</Aside>
 
 ## React component
 
@@ -29,20 +27,20 @@ npm install @pluot/react
 
 ### Props
 
-- width
-- height
-- plotId
-- plotType
-- storeName
-- plotParams
-- viewMode = "2d"
-- marginBottom = 0.0
-- marginLeft = 0.0
-- marginTop = 0.0
-- marginRight =  0.0
-- aspectRatioMode = "Contain" // "Ignore", "Contain", "Cover"
-- aspectRatioAlignmentMode = "Center" // "Center", "Start", "End"
-- format = "Vector" // "Vector", "Raster"
+- `width`
+- `height`
+- `plotId`
+- `plotType`
+- `storeName`
+- `plotParams`
+- `viewMode`
+- `marginBottom`
+- `marginLeft`
+- `marginTop`
+- `marginRight`
+- `aspectRatioMode`
+- `aspectRatioAlignmentMode`
+- `format`
 
 
 
@@ -74,3 +72,5 @@ export function MyPlot(props) {
     );
 }
 ```
+
+<LinkButton href="https://github.com/keller-mark/pluot/tree/main/bindings-js/docs/src/content/docs/examples">View more examples</LinkButton>
