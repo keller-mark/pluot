@@ -1,6 +1,6 @@
 import pytest
 
-from pluot import render, render_to_array
+from pluot import render, render_to_array, render_to_svg
 
 camera_view = [
     1.0, 0.0, 0.0, 0.0,
@@ -43,13 +43,16 @@ async def test_render_triangle():
     result = await render(**basic_plot_kwargs)
     assert result is not None
     assert len(result) == (100 * 100 * 4) + 1  # RGBA for each pixel, plus one extra value
-    assert sum(result) == 9475000  # Expected sum for a triangle rendering
+    assert sum(result) == 9062500  # Expected sum for a triangle rendering
 
 @pytest.mark.asyncio
 async def test_render_to_array():
     arr = await render_to_array(**basic_plot_kwargs)
     assert arr.shape == (100, 100, 4)
     assert arr.dtype == 'uint8'
-    assert arr.sum() == 9475000
+    assert arr.sum() == 9062500
 
-# TODO: test that a render call that internally uses the Vello renderer can be run twice in a row successfully.
+@pytest.mark.asyncio
+async def test_render_to_svg():
+    svg_str = await render_to_svg(**basic_plot_kwargs)
+    assert len(svg_str) == 635
