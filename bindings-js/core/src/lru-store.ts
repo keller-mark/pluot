@@ -45,6 +45,9 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
 
   // We need a way to synchronously peek at the promise state (a-la Bun's peek or Effect's Deferred.poll).
   // We can probably do something more sophisticated but will try this first.
+  // TODO: should this map be stored on the Rust side instead, so that the peeking can be performed without
+  // the JS function call? Instead, JS would "push" the promise states by calling a Rust function upon any
+  // promise state change, via a new function exposed from Rust such as `wasm.push_promise_state(key, 'fulfilled')`
   #promise_states: Map<string, 'pending' | 'fulfilled' | 'rejected'>;
 
   constructor(store: S, maxSize = 100) {
