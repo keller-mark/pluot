@@ -27,8 +27,8 @@ pub mod maybe;
 // Switch to use the following when not using Vello:
 pub use wgpu;
 
-pub use pluot_futures_time::future::FutureExt;
-pub use pluot_futures_time::time::Duration;
+pub use futures_time::future::FutureExt;
+pub use futures_time::time::Duration;
 
 // Export things needed for layer-based plotting via Rust.
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};

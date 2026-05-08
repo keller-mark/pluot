@@ -95,7 +95,7 @@ lz-str.workspace = true
 
 # WASM-specific dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-pluot-futures-time = { workspace = true, default-features = true }
+futures-time = { workspace = true, default-features = true }
 
 
 # WASM-specific dependencies
@@ -112,7 +112,7 @@ serde-wasm-bindgen = { workspace = true }
 # code size when deploying.
 console_error_panic_hook = { workspace = true }
 
-pluot-futures-time = { workspace = true, default-features = false, features = ["web"] }
+futures-time = { workspace = true, default-features = false, features = ["web"] }
 
 
 

@@ -2,7 +2,6 @@
 
 [workspace]
 members = [
-    "crates/vendored_futures_time", # TODO: remove once new version published.
     "crates/pluot_core",
     "crates/pluot_zarr",
     "crates/pluot",
@@ -71,9 +70,7 @@ async-trait = "0.1.74"
 quick_cache = "0.6.16"
 svg = "0.18.0"
 
-# TODO: update once new version of futures-time has been published to crates.io
-# futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "506d7bf" }
-pluot-futures-time = { version = "3.0.1", path = "crates/vendored_futures_time", default-features = false }
+futures-time = { version = "3.1.0", default-features = false }
 
 # For OME-Zarr image metadata parsing.
 # We use this fork which relaxes things by not using serde(deny_unknown_fields).
