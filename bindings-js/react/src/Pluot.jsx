@@ -10,7 +10,8 @@ import {
   create2dCamera, create3dCamera,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
-  onMouseMove as f2dcOnMouseMove, onWheel as f2dcOnWheel,
+  onMouseMove2d, onWheel2d,
+  onMouseMove3d, onWheel3d,
 } from '@pluot/core';
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -149,7 +150,8 @@ export function Pluot(props) {
 
 
   const wheelHandler = useEffectEvent((event) => {
-    const nextCameraMatrix = f2dcOnWheel({
+    const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
+    const nextCameraMatrix = onWheel({
         width,
         height,
         aspectRatioMode,
@@ -165,7 +167,8 @@ export function Pluot(props) {
   });
 
   const mouseMoveHandler = useEffectEvent((event) => {
-    const nextCameraMatrix = f2dcOnMouseMove({
+    const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
+    const nextCameraMatrix = onMouseMove({
         width,
         height,
         aspectRatioMode,
@@ -189,26 +192,14 @@ export function Pluot(props) {
       return () => {};
     }
 
-    let dispose = () => {};
-
     // Create a 2D camera for handling zoom and pan.
-    if (viewMode === "2d") {
+    cameraEl.addEventListener("mousemove", mouseMoveHandler);
+    cameraEl.addEventListener("wheel", wheelHandler);
 
-      cameraEl.addEventListener("mousemove", mouseMoveHandler);
-      cameraEl.addEventListener("wheel", wheelHandler);
-
-      dispose = () => {
-        cameraEl.removeEventListener("mousemove", mouseMoveHandler);
-        cameraEl.removeEventListener("wheel", wheelHandler);
-      };
-
-      //camera.matrix = new Float32Array(viewMatrix);
-
-    } else {
-      throw new Error("Unknown mode found.");
-    }
-
-    return dispose;
+    return () => {
+      cameraEl.removeEventListener("mousemove", mouseMoveHandler);
+      cameraEl.removeEventListener("wheel", wheelHandler);
+    };
   }, [viewMode]);
 
   // The picking callback.
