@@ -74,7 +74,9 @@ function computeAspectRatioFactors(vp: ViewportParams) {
 export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
   if ((!isZoomX && !isZoomY) || isFixed) return prevCameraMatrix;
 
-  const { width, height } = viewportParams;
+  const { width: plotWidth, height: plotHeight, margins } = viewportParams;
+  const width = plotWidth - ((margins?.marginLeft ?? 0) + (margins?.marginRight ?? 0));
+  const height = plotHeight - ((margins?.marginBottom ?? 0) + (margins?.marginTop ?? 0));
   const { xFactor, yFactor, xAlignTranslation, yAlignTranslation } = computeAspectRatioFactors(viewportParams);
 
   const deltaModeScale = event.deltaMode === 1 ? 12 : 1;
@@ -110,7 +112,9 @@ export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: Camera
 }
 
 export function onMouseMove(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: MouseEvent): CameraMatrix {
-  const { width, height } = viewportParams;
+  const { width: plotWidth, height: plotHeight, margins } = viewportParams;
+  const width = plotWidth - ((margins?.marginLeft ?? 0) + (margins?.marginRight ?? 0));
+  const height = plotHeight - ((margins?.marginBottom ?? 0) + (margins?.marginTop ?? 0));
   const { xFactor, yFactor } = computeAspectRatioFactors(viewportParams);
 
   const isLeftMousePressed = (event.buttons & 1) !== 0;
