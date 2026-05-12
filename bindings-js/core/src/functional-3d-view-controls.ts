@@ -415,7 +415,7 @@ export function onWheel3dTurntable(viewportParams: ViewportParams, prevCameraMat
   if (Math.abs(dx) > Math.abs(dy)) {
     return turntableRotate(prevCameraMatrix, 0, 0, -dx * flipX * Math.PI * ROTATE_SPEED / viewportParams.width);
   } else {
-    const kzoom = ZOOM_SPEED * flipY * dy / viewportParams.height * 0.16;
+    const kzoom = ZOOM_SPEED * dy / viewportParams.height * 0.16;
     return turntablePan(prevCameraMatrix, 0, 0, distance * (Math.exp(kzoom) - 1));
   }
 }
@@ -436,12 +436,12 @@ export function onMouseMove3dTurntable(viewportParams: ViewportParams, prevCamer
     if (event.shiftKey) {
       return turntableRotate(prevCameraMatrix, 0, 0, -dx * drot);
     } else {
-      return turntableRotate(prevCameraMatrix, flipX * drot * dx, -flipY * drot * dy, 0);
+      return turntableRotate(prevCameraMatrix, -flipX * drot * dx, flipY * drot * dy, 0);
     }
   } else if (buttons & 2) {
     const { logRadius } = turntableStateFrom(prevCameraMatrix);
     const distance = Math.exp(logRadius);
-    return turntablePan(prevCameraMatrix, -TRANSLATE_SPEED * dx * distance, TRANSLATE_SPEED * dy * distance, 0);
+    return turntablePan(prevCameraMatrix, TRANSLATE_SPEED * dx * distance, -TRANSLATE_SPEED * dy * distance, 0);
   } else if (buttons & 4) {
     const { logRadius } = turntableStateFrom(prevCameraMatrix);
     const distance = Math.exp(logRadius);
@@ -469,7 +469,7 @@ export function onWheel3dOrbit(viewportParams: ViewportParams, prevCameraMatrix:
   if (Math.abs(dx) > Math.abs(dy)) {
     return orbitRotate(prevCameraMatrix, 0, 0, -dx * flipX * Math.PI * ROTATE_SPEED / viewportParams.width);
   } else {
-    const kzoom = ZOOM_SPEED * flipY * dy / viewportParams.height * 0.16;
+    const kzoom = ZOOM_SPEED * dy / viewportParams.height * 0.16;
     return orbitPan(prevCameraMatrix, 0, 0, distance * (Math.exp(kzoom) - 1));
   }
 }
@@ -490,12 +490,12 @@ export function onMouseMove3dOrbit(viewportParams: ViewportParams, prevCameraMat
     if (event.shiftKey) {
       return orbitRotate(prevCameraMatrix, 0, 0, -dx * drot);
     } else {
-      return orbitRotate(prevCameraMatrix, flipX * drot * dx, -flipY * drot * dy, 0);
+      return orbitRotate(prevCameraMatrix, -flipX * drot * dx, flipY * drot * dy, 0);
     }
   } else if (buttons & 2) {
     const [, , logRadius] = orbitStateFrom(prevCameraMatrix);
     const distance = Math.exp(logRadius);
-    return orbitPan(prevCameraMatrix, -TRANSLATE_SPEED * dx * distance, TRANSLATE_SPEED * dy * distance, 0);
+    return orbitPan(prevCameraMatrix, TRANSLATE_SPEED * dx * distance, -TRANSLATE_SPEED * dy * distance, 0);
   } else if (buttons & 4) {
     const [, , logRadius] = orbitStateFrom(prevCameraMatrix);
     const distance = Math.exp(logRadius);
@@ -523,7 +523,7 @@ export function onWheel3dMatrix(viewportParams: ViewportParams, prevCameraMatrix
   if (Math.abs(dx) > Math.abs(dy)) {
     return matrixRotate(prevCameraMatrix, 0, 0, -dx * flipX * Math.PI * ROTATE_SPEED / viewportParams.width);
   } else {
-    const kzoom = ZOOM_SPEED * flipY * dy / viewportParams.height * 0.16;
+    const kzoom = ZOOM_SPEED * dy / viewportParams.height * 0.16;
     return matrixPan(prevCameraMatrix, 0, 0, distance * (Math.exp(kzoom) - 1));
   }
 }
@@ -546,10 +546,10 @@ export function onMouseMove3dMatrix(viewportParams: ViewportParams, prevCameraMa
     if (event.shiftKey) {
       return matrixRotate(prevCameraMatrix, 0, 0, -dx * drot);
     } else {
-      return matrixRotate(prevCameraMatrix, flipX * drot * dx, -flipY * drot * dy, 0);
+      return matrixRotate(prevCameraMatrix, -flipX * drot * dx, flipY * drot * dy, 0);
     }
   } else if (buttons & 2) {
-    return matrixPan(prevCameraMatrix, -TRANSLATE_SPEED * dx * distance, TRANSLATE_SPEED * dy * distance, 0);
+    return matrixPan(prevCameraMatrix, TRANSLATE_SPEED * dx * distance, -TRANSLATE_SPEED * dy * distance, 0);
   } else if (buttons & 4) {
     const kzoom = ZOOM_SPEED * dy / height * 0.32;
     return matrixPan(prevCameraMatrix, 0, 0, distance * (Math.exp(kzoom) - 1));
