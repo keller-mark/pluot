@@ -7,7 +7,6 @@ import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
   setStore, getStore,
-  create2dCamera, create3dCamera,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
