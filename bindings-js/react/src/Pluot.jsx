@@ -113,11 +113,9 @@ export function Pluot(props) {
 
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
-  const cameraRef = useRef(null);
   const cameraElementRef = useRef(null);
 
   const tempButtonRef = useRef(null);
-  const cameraInternalUpdateRef = useRef(false);
 
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
@@ -144,7 +142,7 @@ export function Pluot(props) {
     // Reset view matrix on plot change.
     // Create a new Float32Array to avoid sharing a mutable array
     // among multiple Pluot component instances.
-    setCameraMatrix(new Float32Array(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW));
+    setCameraMatrix(Float32Array.from(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW));
     //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
   }, [plotId, viewMode]);
 

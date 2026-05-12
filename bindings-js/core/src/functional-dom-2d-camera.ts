@@ -72,6 +72,7 @@ function computeAspectRatioFactors(vp: ViewportParams) {
 // --- Event handlers ---
 
 export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
+  event.preventDefault();
   if ((!isZoomX && !isZoomY) || isFixed) return prevCameraMatrix;
 
   const { width: plotWidth, height: plotHeight, margins } = viewportParams;

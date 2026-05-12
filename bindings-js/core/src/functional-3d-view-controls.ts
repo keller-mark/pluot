@@ -9,7 +9,7 @@ const TRANSLATE_SPEED = 1.0;
 const FLIP_X = false;
 const FLIP_Y = false;
 
-// ---- Low-level helpers ----
+// Low-level helpers
 
 function len3(x: number, y: number, z: number): number {
   return Math.sqrt(x * x + y * y + z * z);
@@ -360,10 +360,8 @@ function turntablePan(cam: CameraMatrix, dx: number, dy: number, dz: number): Ca
   return packTurntable(newMat, newCenter, newLogRadius, theta, phi, newUp, newRight);
 }
 
-// ============================================================
 // Matrix controller
 // State: just the 16-element view matrix
-// ============================================================
 
 function matrixRotate(cam: CameraMatrix, yaw: number, pitch: number, roll: number): CameraMatrix {
   const imat = mat4.create();
@@ -385,9 +383,7 @@ function matrixPan(cam: CameraMatrix, dx: number, dy: number, dz: number): Camer
   return result as CameraMatrix;
 }
 
-// ============================================================
 // Event handler helpers
-// ============================================================
 
 function getWheelDeltas(event: WheelEvent, viewportParams: ViewportParams): { dx: number; dy: number } {
   let dx = event.deltaX || 0;
@@ -398,9 +394,7 @@ function getWheelDeltas(event: WheelEvent, viewportParams: ViewportParams): { dx
   return { dx: dx * wheelScale, dy: dy * wheelScale };
 }
 
-// ============================================================
 // Turntable event handlers
-// ============================================================
 
 export function onWheel3dTurntable(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
   event.preventDefault();
@@ -452,9 +446,7 @@ export function onMouseMove3dTurntable(viewportParams: ViewportParams, prevCamer
   return prevCameraMatrix;
 }
 
-// ============================================================
 // Orbit event handlers
-// ============================================================
 
 export function onWheel3dOrbit(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
   event.preventDefault();
@@ -506,9 +498,7 @@ export function onMouseMove3dOrbit(viewportParams: ViewportParams, prevCameraMat
   return prevCameraMatrix;
 }
 
-// ============================================================
 // Matrix event handlers
-// ============================================================
 
 export function onWheel3dMatrix(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
   event.preventDefault();
@@ -558,9 +548,7 @@ export function onMouseMove3dMatrix(viewportParams: ViewportParams, prevCameraMa
   return prevCameraMatrix;
 }
 
-// ============================================================
-// Default 3D handlers (orbit controller) — consumed by index.ts
-// ============================================================
+// Default 3D handlers (orbit controller)
 
 export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
   return onWheel3dOrbit(viewportParams, prevCameraMatrix, event);
