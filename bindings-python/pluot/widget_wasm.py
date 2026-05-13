@@ -3,6 +3,10 @@
 # It should leverage the camera implementation from @pluot/core for interactivity.
 # Zarr data should be transmitted via buffers sent via custom widget message type.
 
+# The ESM string for the widget JS should be inlined into python.
+# For NPM import, use `import * as pluot from 'https://unpkg.com/@pluot/core@0.1.0/dist/index.js';`
+
+
 """
 # Zarr data should be requested via a custom widget message type:
 # Partial Python snippet:

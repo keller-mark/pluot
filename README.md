@@ -159,7 +159,7 @@ wasm-pack publish
 ### Build for Python
 
 ```sh
-uv sync --extra dev
+uv sync --extra dev --extra widget
 ```
 
 Build:
