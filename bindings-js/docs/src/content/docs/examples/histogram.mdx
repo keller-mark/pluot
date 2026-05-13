@@ -41,5 +41,13 @@ The histogram values are computed via WebGPU compute shaders, and then passed to
     viewMode={"2d"}
     marginLeft={60}
     marginBottom={60}
+    marginTop={10}
+    marginRight={10}
     width={700}
+    cameraMatrix={[
+      0.15, 0.0, 0.0, 0.0,
+      0.0, 0.00001, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, -1.0, 0.0, 1.0,
+    ]}
 />

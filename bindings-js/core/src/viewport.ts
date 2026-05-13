@@ -29,7 +29,44 @@ export type Bounds = {
   yMax?: number;
 };
 
-// Calculate the visible data range based on camera view and viewport parameters.
+/**
+ * Calculate the visible data range based on camera view and viewport parameters.
+ *
+ * Bounds are expressed in normalized data coordinates where 0.0 is the
+ * left/top edge of the data and 1.0 is the right/bottom edge.
+ *
+ * @param cameraMatrix - The current camera matrix, typically from the renderer's
+ *   current state.
+ * @param viewportParams - Describes the canvas size, aspect-ratio handling, and
+ *   margins.
+ * @returns The visible data range as `{ xMin, xMax, yMin, yMax }` in normalized
+ *   data coordinates.
+ *
+ * @example
+ * ```ts
+ * import { getBounds } from "@pluot/core";
+ *
+ * const viewport = {
+ *   width: 800,
+ *   height: 600,
+ *   aspectRatioMode: "Contain",
+ *   aspectRatioAlignmentMode: "Center",
+ *   margins: { marginTop: 10, marginRight: 10, marginBottom: 10, marginLeft: 10 },
+ * };
+ *
+ * // Identity camera matrix (full data range visible).
+ * const identity = new Float32Array([
+ *   1, 0, 0, 0,
+ *   0, 1, 0, 0,
+ *   0, 0, 1, 0,
+ *   0, 0, 0, 1,
+ * ]);
+ *
+ * const bounds = getBounds(identity, viewport);
+ * // bounds.xMin, bounds.xMax, bounds.yMin, bounds.yMax are all in [0, 1]
+ * // for the identity matrix with "Contain" mode.
+ * ```
+ */
 export function getBounds(cameraMatrix: Float32Array, viewportParams: ViewportParams): Required<Bounds> {
   const zoomX = cameraMatrix[0];
   const zoomY = cameraMatrix[5];
@@ -76,8 +113,59 @@ export function getBounds(cameraMatrix: Float32Array, viewportParams: ViewportPa
   return { xMin, xMax, yMin, yMax };
 }
 
-// Given data bounds, compute the corresponding camera matrix.
-// Missing bound values are filled in from prevCameraMatrix.
+/**
+ * Given data bounds, compute the corresponding camera matrix.
+ * Missing bound values are filled in from `prevCameraMatrix` so partial updates
+ * (e.g. panning only the X axis) work without resetting the other axis.
+ *
+ * Bounds are expressed in normalized data coordinates where 0.0 is the
+ * left/top edge of the data and 1.0 is the right/bottom edge.
+ *
+ * @param bounds - The desired visible data range. Any omitted fields are
+ *   preserved from `prevCameraMatrix`.
+ * @param prevCameraMatrix - The current camera matrix, used to fill in any
+ *   omitted bound values. Typically the matrix returned by a previous call or
+ *   the renderer's current state.
+ * @param viewportParams - Describes the canvas size, aspect-ratio handling, and
+ *   margins so the zoom level can be computed correctly.
+ * @returns A column-major 4×4 `Float32Array` suitable for passing directly to
+ *   the renderer as the camera matrix.
+ *
+ * @example
+ * ```ts
+ * import { getCameraMatrixFromBounds } from "@pluot/core";
+ *
+ * const viewport = {
+ *   width: 800,
+ *   height: 600,
+ *   aspectRatioMode: "Contain",
+ *   aspectRatioAlignmentMode: "Center",
+ *   margins: { marginTop: 10, marginRight: 10, marginBottom: 10, marginLeft: 10 },
+ * };
+ *
+ * // Identity camera matrix (full data range visible).
+ * const identity = new Float32Array([
+ *   1, 0, 0, 0,
+ *   0, 1, 0, 0,
+ *   0, 0, 1, 0,
+ *   0, 0, 0, 1,
+ * ]);
+ *
+ * // Zoom into the top-left quadrant of the data.
+ * const cameraMatrix = getCameraMatrixFromBounds(
+ *   { xMin: 0.0, xMax: 0.5, yMin: 0.0, yMax: 0.5 },
+ *   identity,
+ *   viewport,
+ * );
+ *
+ * // Pan to shift only the X axis, keeping Y unchanged.
+ * const pannedMatrix = getCameraMatrixFromBounds(
+ *   { xMin: 0.1, xMax: 0.6 },
+ *   cameraMatrix,
+ *   viewport,
+ * );
+ * ```
+ */
 export function getCameraMatrixFromBounds(bounds: Bounds, prevCameraMatrix: Float32Array, viewportParams: ViewportParams): Float32Array {
   // Fill in missing bounds from the previous camera matrix.
   const currentBounds = getBounds(prevCameraMatrix, viewportParams);

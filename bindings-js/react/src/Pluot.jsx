@@ -77,7 +77,7 @@ export function Pluot(props) {
     // Note: We use an initializer function here to avoid
     // sharing the same Float32Array among multiple Pluot
     // component instances that may be rendered on the same page.
-    () => new Float32Array(
+    () => Float32Array.from(
       // If the cameraMatrix prop was provided, use that for the initial camera matrix;
       // otherwise use the default matrix.
       controlledCameraMatrix === null
@@ -90,7 +90,10 @@ export function Pluot(props) {
   // If the user provides the cameraMatrix prop but NOT the setCameraMatrix setter,
   // then interpret the prop as the "initial" camera settings, but still treat as uncontrolled.
   const isControlledCamera = typeof setControlledCameraMatrix === "function";
-  const cameraMatrix = isControlledCamera
+  // Alternatively, if the user provides the setCameraMatrix setter, but NOT
+  // the cameraMatrix, interpret this as they want to use the default camera
+  // value initially, but they still want a controlled camera matrix.
+  const cameraMatrix = isControlledCamera && controlledCameraMatrix !== null
     ? controlledCameraMatrix
     : uncontrolledCameraMatrix;
   const setCameraMatrix = isControlledCamera
@@ -144,14 +147,6 @@ export function Pluot(props) {
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
-
-  useEffect(() => {
-    // Reset view matrix on plot change.
-    // Create a new Float32Array to avoid sharing a mutable array
-    // among multiple Pluot component instances.
-    setCameraMatrix(Float32Array.from(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW));
-    //viewMatrixRef.current = new Float32Array(DEFAULT_VIEW);
-  }, [plotId, viewMode]);
 
 
   const wheelHandler = useEffectEvent((event) => {
