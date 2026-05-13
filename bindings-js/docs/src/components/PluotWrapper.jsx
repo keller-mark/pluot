@@ -27,6 +27,7 @@ export function PluotWrapper(props) {
     // Option to provide "plot-specific" options objects for plot types that need them
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
+    cameraMatrix = null,
   } = props;
 
   const defaultOptions = {
@@ -115,6 +116,8 @@ export function PluotWrapper(props) {
   // TODO: render the PlotControls over the plot in Fullscreen mode
   // TODO: render the Loading indicator over the plot in Fullscreen mode
 
+  console.log(cameraMatrix)
+
   return (
     <>
       <div ref={divRef}>
@@ -134,7 +137,8 @@ export function PluotWrapper(props) {
           aspectRatioAlignmentMode={aspectRatioAlignmentMode}
           format={format}
           debugMargins={debugMargins}
-          />
+          cameraMatrix={cameraMatrix}
+        />
       </div>
       <PlotControls
         showControls={showControls}

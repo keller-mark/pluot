@@ -7,8 +7,9 @@ sidebar:
 import { CmvExample } from '../../../components/CmvExample.jsx';
 
 This example demonstrates coordinated multiple views (CMV) using two scatterplots.
+The top scatterplot renders square points, while the bottom scatterplot renders circular points.
 
-Their point radius values are linked, but their camera matrices (zoom/pan states) are independent.
+Their point radius values are linked to the slider value, and their camera matrices (zoom/pan states) can be linked (or not, depending on the checkbox value).
 
 <CmvExample
     client:load
