@@ -73,21 +73,29 @@ export function Pluot(props) {
   } = props;
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
-    const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState(
-      // Note: We use an initializer function here to avoid
-      // sharing the same Float32Array among multiple Pluot
-      // component instances that may be rendered on the same page.
-      () => new Float32Array(DEFAULT_VIEW)
-    );
+  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState(
+    // Note: We use an initializer function here to avoid
+    // sharing the same Float32Array among multiple Pluot
+    // component instances that may be rendered on the same page.
+    () => new Float32Array(
+      // If the cameraMatrix prop was provided, use that for the initial camera matrix;
+      // otherwise use the default matrix.
+      controlledCameraMatrix === null
+        ? (viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW)
+        : controlledCameraMatrix
+    )
+  );
 
-    // Decide which camera matrix and setter to use.
-    const isControlledCamera = controlledCameraMatrix !== null;
-    const cameraMatrix = isControlledCamera
-      ? controlledCameraMatrix
-      : uncontrolledCameraMatrix;
-    const setCameraMatrix = isControlledCamera && typeof setControlledCameraMatrix === 'function'
-      ? setControlledCameraMatrix
-      : setUncontrolledCameraMatrix;
+  // Decide which camera matrix and setter to use.
+  // If the user provides the cameraMatrix prop but NOT the setCameraMatrix setter,
+  // then interpret the prop as the "initial" camera settings, but still treat as uncontrolled.
+  const isControlledCamera = typeof setControlledCameraMatrix === "function";
+  const cameraMatrix = isControlledCamera
+    ? controlledCameraMatrix
+    : uncontrolledCameraMatrix;
+  const setCameraMatrix = isControlledCamera
+    ? setControlledCameraMatrix
+    : setUncontrolledCameraMatrix;
 
   const width = Math.floor(widthProp);
   const height = Math.floor(heightProp);
