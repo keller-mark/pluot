@@ -119,6 +119,7 @@ export function BioimageWrapperInner(props) {
   const {
     plotId,
     storeUrl,
+    cameraMatrix = null,
   } = props;
 
   // Create the FetchStore based on the url.
@@ -157,6 +158,7 @@ export function BioimageWrapperInner(props) {
       marginRight={0}
       marginBottom={100}
       plotSpecificOptions={controls}
+      cameraMatrix={cameraMatrix}
     />
   );
 }
