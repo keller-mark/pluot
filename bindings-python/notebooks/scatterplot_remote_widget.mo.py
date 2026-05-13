@@ -16,14 +16,14 @@ def _():
 
 @app.cell
 def _():
-    from pluot import PluotWidget
-    return (PluotWidget,)
+    from pluot import PluotWasmWidget
+    return (PluotWasmWidget,)
 
 
 @app.cell
-def _(PluotWidget):
-    widget = PluotWidget(
-        width=600,
+def _(PluotWasmWidget):
+    widget = PluotWasmWidget(
+        width=400,
         height=400,
         plot_id="my_plot",
         plot_type="LayeredPlot",

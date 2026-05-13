@@ -37,7 +37,7 @@ DEFAULT_CAMERA_MATRIX_3D: list[float] = [
 
 
 _ESM = r"""
-import * as pluot from 'https://unpkg.com/@pluot/core@0.1.0/dist/index.js';
+import * as pluot from 'https://unpkg.com/@pluot/core@0.1.1/dist/index.js';
 
 function getViewportParams(model) {
     return {
@@ -60,6 +60,16 @@ function toUint8(buf) {
         return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     }
     return new Uint8Array(buf);
+}
+
+function matricesEqual(a, b) {
+    for (let i = 0; i < 16; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+function initialize({ model }) {
 }
 
 function render({ model, el }) {
@@ -107,22 +117,39 @@ function render({ model, el }) {
         return model.get("view_mode") === "3d" ? pluot.onMouseMove3d : pluot.onMouseMove2d;
     }
 
+    // Coalesce rapid camera updates (mousemove fires faster than rAF rate) into
+    // one model.set per animation frame.  _pendingMatrix also serves as the base
+    // for the next computation so transforms accumulate correctly even when the
+    // previous update hasn't been flushed to the model yet.
+    let _rafId = null;
+    let _pendingMatrix = null;
+
+    function scheduleMatrixUpdate(next) {
+        _pendingMatrix = next;
+        if (_rafId === null) {
+            _rafId = requestAnimationFrame(() => {
+                _rafId = null;
+                if (_pendingMatrix !== null) {
+                    model.set("camera_matrix", Array.from(_pendingMatrix));
+                    model.save_changes();
+                    _pendingMatrix = null;
+                }
+            });
+        }
+    }
+
     function onWheel(event) {
-        const cur = new Float32Array(model.get("camera_matrix"));
+        const cur = new Float32Array(_pendingMatrix || model.get("camera_matrix"));
         const next = pickWheelHandler()(getViewportParams(model), cur, event);
-        if (next === cur) return;
-        model.set("camera_matrix", Array.from(next));
-        model.save_changes();
+        if (matricesEqual(cur, next)) return;
+        scheduleMatrixUpdate(next);
     }
 
     function onMouseMove(event) {
-        const cur = new Float32Array(model.get("camera_matrix"));
+        const cur = new Float32Array(_pendingMatrix || model.get("camera_matrix"));
         const next = pickMouseMoveHandler()(getViewportParams(model), cur, event);
-        // The functional helpers return the same reference when the matrix is
-        // unchanged, so a reference check is sufficient to skip no-op events.
-        if (next === cur) return;
-        model.set("camera_matrix", Array.from(next));
-        model.save_changes();
+        if (matricesEqual(cur, next)) return;
+        scheduleMatrixUpdate(next);
     }
 
     cameraEl.addEventListener("wheel", onWheel, { passive: false });
@@ -158,6 +185,7 @@ function render({ model, el }) {
     model.send({ kind: "ready" });
 
     return () => {
+        if (_rafId !== null) cancelAnimationFrame(_rafId);
         cameraEl.removeEventListener("wheel", onWheel);
         cameraEl.removeEventListener("mousemove", onMouseMove);
         model.off("msg:custom", onCustomMsg);
@@ -167,7 +195,7 @@ function render({ model, el }) {
     };
 }
 
-export default { render };
+export default { initialize, render };
 """
 
 
@@ -190,7 +218,7 @@ _RENDER_TRIGGER_TRAITS = (
 )
 
 
-class PluotWidget(anywidget.AnyWidget):
+class PluotPyWidget(anywidget.AnyWidget):
     """AnyWidget that renders a Pluot plot in the kernel and paints to a canvas."""
 
     _esm = _ESM
@@ -218,9 +246,9 @@ class PluotWidget(anywidget.AnyWidget):
     format = traitlets.Unicode("Raster")
 
     def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
         self._render_inflight = False
         self._render_pending = False
+        super().__init__(**kwargs)
         self.on_msg(self._handle_msg)
 
     def _handle_msg(self, _widget: Any, content: Any, _buffers: list[bytes]) -> None:
@@ -232,6 +260,9 @@ class PluotWidget(anywidget.AnyWidget):
         self._schedule_render()
 
     def _schedule_render(self) -> None:
+        if self._render_inflight:
+            self._render_pending = True
+            return
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
