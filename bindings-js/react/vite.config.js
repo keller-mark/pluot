@@ -35,10 +35,27 @@ export default defineConfig({
   },
   define: {
     "process.env.NODE_ENV": `"${process.env.APP_ENV}"`,
-    // For 3d-view-controls.
-    global: "window",
   },
-  plugins: [react()],
+  plugins: [
+    {
+      // This custom plugin is needed so that the source
+      // files stay ESM-compatible (only ".js" extensions in imports)
+      // and also Astro compatible, and also satisfy
+      // the following Vite/Rollup error:
+      // `Could not resolve "./Pluot.js" from "src/index.js"`.
+      name: "resolve-js-to-jsx",
+      resolveId(source, importer) {
+        if (source.endsWith(".js") && importer) {
+          const jsxPath = resolve(
+            resolve(importer, ".."),
+            source.replace(/\.js$/, ".jsx")
+          );
+          if (existsSync(jsxPath)) return jsxPath;
+        }
+      },
+    },
+    react()
+  ],
   // To enable .js files that contain JSX to be imported.
   // Reference: https://github.com/vitest-dev/vitest/issues/1564
   esbuild: {
