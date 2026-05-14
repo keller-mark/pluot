@@ -183,25 +183,6 @@ export function Pluot(props) {
     setCameraMatrix(nextCameraMatrix);
   });
 
-  // Set up FUNCTIONAL camera.
-  useEffect(() => {
-    // Set up the camera.
-    const cameraEl = cameraElementRef.current;
-
-    if (!cameraEl) {
-      return () => {};
-    }
-
-    // Create a 2D camera for handling zoom and pan.
-    cameraEl.addEventListener("mousemove", mouseMoveHandler);
-    cameraEl.addEventListener("wheel", wheelHandler);
-
-    return () => {
-      cameraEl.removeEventListener("mousemove", mouseMoveHandler);
-      cameraEl.removeEventListener("wheel", wheelHandler);
-    };
-  }, [viewMode]);
-
   // The picking callback.
   const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
     const renderParams = {
@@ -241,6 +222,33 @@ export function Pluot(props) {
       marginBottom + (layerHeight - screenCoordY)
     )));
   });
+
+  // Set up the camera and picking handlers.
+  useEffect(() => {
+    const cameraEl = cameraElementRef.current;
+
+    if (!cameraEl) {
+      return () => {};
+    }
+
+    // Create a 2D camera for handling zoom and pan.
+    cameraEl.addEventListener("mousemove", mouseMoveHandler);
+    cameraEl.addEventListener("wheel", wheelHandler);
+
+    // Set up an onClick handler for picking.
+    const clickHandler = (event) => {
+      pickFrame(event.offsetX, event.offsetY);
+    };
+    cameraEl.addEventListener("click", clickHandler);
+
+    return () => {
+      cameraEl.removeEventListener("mousemove", mouseMoveHandler);
+      cameraEl.removeEventListener("wheel", wheelHandler);
+      cameraEl.removeEventListener("click", clickHandler);
+    };
+  }, [viewMode]);
+
+
 
 
   // The renderFrame callback.
