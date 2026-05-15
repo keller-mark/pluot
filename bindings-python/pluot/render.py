@@ -78,16 +78,26 @@ def parse_kwargs(kwargs):
         new_kwargs["plot_params"] = replace_arr_with_key(kwargs["plot_params"], GLOBAL_STORES[memory_store_name])
     return new_kwargs
 
+_RENDER_DEFAULTS = dict(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, format="Raster", aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True)
+
 async def render(**kwargs):
     """Render to raw bytes."""
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
 
-    merged_params = dict(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, format="Raster", aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True)
-    merged_params.update(new_kwargs)
+    merged_params = {**_RENDER_DEFAULTS, **new_kwargs}
 
     result = await render_py(**merged_params)
     return result
+
+async def render_raw(**kwargs):
+    """Render to raw bytes, bypassing parse_kwargs.
+
+    The caller is responsible for ensuring ``store_name`` is already registered
+    in ``GLOBAL_STORES`` before calling this function.
+    """
+    merged_params = {**_RENDER_DEFAULTS, **kwargs}
+    return await render_py(**merged_params)
 
 async def render_to_array(**kwargs):
     """Render to a NumPy array, with shape (height, width, RGBA)."""

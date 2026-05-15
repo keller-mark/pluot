@@ -11,12 +11,15 @@ protocol), triggering the next render.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any
 
 import anywidget
 import traitlets
+from zarr.abc.store import Store
 
-from .render import render
+from .render import render_raw
+from .zarr import GLOBAL_STORES
 
 
 # Identity-with-z-scale matrix, matching the default used by the @pluot/react
@@ -240,7 +243,11 @@ class PluotPyWidget(anywidget.AnyWidget):
     plot_params = traitlets.Dict(default_value={})
     format = traitlets.Unicode("Raster")
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, store: Store | None = None, **kwargs: Any) -> None:
+        if store is not None:
+            store_name = str(uuid.uuid4())
+            GLOBAL_STORES[store_name] = store
+            kwargs["store_name"] = store_name
         super().__init__(**kwargs)
         self.on_msg(self._handle_msg)
 
@@ -284,7 +291,7 @@ class PluotPyWidget(anywidget.AnyWidget):
 
     async def _render_once(self) -> None:
         try:
-            result = await render(
+            result = await render_raw(
                 width=self.width,
                 height=self.height,
                 plot_id=self.plot_id,

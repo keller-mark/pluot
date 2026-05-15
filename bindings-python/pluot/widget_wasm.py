@@ -10,11 +10,12 @@ requested bytes from the registered zarr stores, and replies with
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any
 
 import anywidget
 import traitlets
-from zarr.abc.store import RangeByteRequest, SuffixByteRequest
+from zarr.abc.store import RangeByteRequest, Store, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
 
 
@@ -118,7 +119,16 @@ function render({ model, el }) {
     }
     applyLayout();
 
-    // --- Batched zarr request queue ---
+    // --- Zarr request helpers ---
+
+    function bufferFromResponse(bufferData) {
+        if (ArrayBuffer.isView(bufferData)) {
+            return new Uint8Array(bufferData.buffer, bufferData.byteOffset, bufferData.byteLength);
+        }
+        return new Uint8Array(bufferData.buffer);
+    }
+
+    // --- Batched zarr request queue (opt-in via batch_zarr_gets traitlet) ---
 
     let pending = [];
     let batchId = 0;
@@ -132,16 +142,8 @@ function render({ model, el }) {
             );
             prevPendingArr.forEach((item, i) => {
                 const data = dataArr[i];
-                const bufferData = buffersArr[i];
-                if (!data.success) {
-                    item.resolve(undefined);
-                    return;
-                }
-                if (ArrayBuffer.isView(bufferData)) {
-                    item.resolve(new Uint8Array(bufferData.buffer, bufferData.byteOffset, bufferData.byteLength));
-                } else {
-                    item.resolve(new Uint8Array(bufferData.buffer));
-                }
+                if (!data.success) { item.resolve(undefined); return; }
+                item.resolve(bufferFromResponse(buffersArr[i]));
             });
         } catch (err) {
             prevPendingArr.forEach(item => item.reject(err));
@@ -163,13 +165,26 @@ function render({ model, el }) {
     }
 
     // AsyncReadable store that proxies all reads back to the Python kernel.
+    // When batch_zarr_gets is true, reads are coalesced into _zarr_get_multi
+    // calls via requestAnimationFrame.  Otherwise each read is sent immediately
+    // as an individual _zarr_get / _zarr_get_range message.
     function makeStore(storeName) {
         return {
             async get(key) {
-                return enqueue([storeName, key]);
+                if (model.get("batch_zarr_gets")) {
+                    return enqueue([storeName, key]);
+                }
+                const [data, buffers] = await invoke(model, "_zarr_get", [storeName, key]);
+                if (!data.success) return undefined;
+                return bufferFromResponse(buffers[0]);
             },
             async getRange(key, rangeQuery) {
-                return enqueue([storeName, key, rangeQuery]);
+                if (model.get("batch_zarr_gets")) {
+                    return enqueue([storeName, key, rangeQuery]);
+                }
+                const [data, buffers] = await invoke(model, "_zarr_get_range", [storeName, key, rangeQuery]);
+                if (!data.success) return undefined;
+                return bufferFromResponse(buffers[0]);
             },
         };
     }
@@ -231,6 +246,7 @@ function render({ model, el }) {
     // --- Camera event handlers ---
 
     function onWheel(event) {
+        event.preventDefault();
         const cur = new Float32Array(model.get("camera_matrix"));
         const handler = model.get("view_mode") === "3d" ? pluot.onWheel3d : pluot.onWheel2d;
         const next = handler(getViewportParams(model), cur, event);
@@ -337,10 +353,15 @@ class PluotWasmWidget(anywidget.AnyWidget):
     store_name = traitlets.Unicode("").tag(sync=True)
     plot_params = traitlets.Dict(default_value={}).tag(sync=True)
     format = traitlets.Unicode("Raster").tag(sync=True)
+    batch_zarr_gets = traitlets.Bool(False).tag(sync=True)
 
-    def __init__(self, stores: dict | None = None, **kwargs: Any) -> None:
+    def __init__(self, stores: dict | None = None, store: Store | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._stores: dict = dict(stores or {})
+        if store is not None:
+            store_name = str(uuid.uuid4())
+            self._stores[store_name] = store
+            self.store_name = store_name
         self.on_msg(self._handle_msg)
 
     def add_store(self, name: str, store: Any) -> None:
