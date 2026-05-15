@@ -89,7 +89,7 @@ glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 
 # Matrix multiplication for SVG rendering
-nalgebra-glm = "0.3"
+nalgebra-glm = "0.20"
 
 fontdue = "0.9.x" # For font rasterization and text layout.
 
