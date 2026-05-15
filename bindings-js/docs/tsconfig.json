@@ -1,9 +1,8 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "astro/tsconfigs/base",
+  // Reference: https://docs.astro.build/en/guides/content-collections/#typescript-configuration-for-collections
   "compilerOptions": {
-    "composite": true,
-    "outDir": "dist-tsc",
-    "rootDir": "src"
-  },
-  "include": [".astro/types.d.ts", "src/**/*"]
+    "strictNullChecks": true,
+    "allowJs": true
+  }
 }

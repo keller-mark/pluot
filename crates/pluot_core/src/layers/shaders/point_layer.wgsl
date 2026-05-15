@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -52,10 +52,29 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
         }
     }
 
-    // Only scaling will result in the (0, 1) region being centered.
-    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    // TODO: implement aspect_ratio_alignment_mode
-    return scale(
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
+    // Center (default): no translation needed.
+    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
+    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
+    // When the scaling is 1.0, both formulas yield 0.
+    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == 1u) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == 2u) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
+    return translate(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
@@ -65,20 +84,22 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
 struct PointLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units
     point_radius: f32,
-    point_radius_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    point_radius_unit_mode_x: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    point_radius_unit_mode_y: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // 0: static color for all points; 1: categorical // TODO: expand this, remove hard-coded categorical logic
+    fill_color: vec4<f32>, // rgba color
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -121,7 +142,8 @@ fn vs_main(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        u.aspect_ratio_mode
+        u.aspect_ratio_mode,
+        u.aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.
@@ -130,9 +152,11 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Convert point position from pixel space to normalized space (0 to 1)
         let point_pos_norm = vec2<f32>(
             point_pos_orig.x / layer_width_px,
@@ -150,19 +174,20 @@ fn vs_main(
         let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
         // The final point position in NDC space.
-        let pos = vec4f(
+        result_position_px = vec4f(
             point_pos_ndc.x + (corner.x * point_radius_ndc.x),
             point_pos_ndc.y + (corner.y * point_radius_ndc.y),
             0.0,
             1.0
         );
 
-        var out: VSOut;
-        out.position = pos;
-        out.color = u.color;
-        out.corner = corner;
-        out.instance_index = instance_index;
-        return out;
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            var out: VSOut;
+            out.position = result_position_px;
+            out.corner = corner;
+            out.instance_index = instance_index;
+            return out;
+        }
     }
 
 
@@ -212,21 +237,40 @@ fn vs_main(
     let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
 
     // The final point position in NDC space.
-    let pos = vec4f(
+    result_position_data = vec4f(
         point_pos_ndc.x + (corner.x * point_radius_ndc.x),
         point_pos_ndc.y + (corner.y * point_radius_ndc.y),
         0.0,
         1.0
     );
 
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_position_data.x = result_position_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_position_data.y = result_position_px.y;
+    }
+
     var out: VSOut;
-    out.position = pos;
-    out.color = u.color;
+    out.position = result_position_data;
     out.corner = corner;
     out.instance_index = instance_index;
     return out;
 }
 
+
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the Tableau 10 values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: f32) -> f32 {
+    return pow(c, 2.2);
+}
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
     // Simple categorical colormap (Tableau 10)
@@ -242,7 +286,8 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
         vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
         vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
     );
-    return colors[index % 10];
+    let c = colors[index % 10];
+    return vec4<f32>(srgb_to_linear(c.r), srgb_to_linear(c.g), srgb_to_linear(c.b), c.a);
 }
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -252,9 +297,8 @@ fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
     // Handling of circle point shape mode

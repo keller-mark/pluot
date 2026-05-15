@@ -1,4 +1,4 @@
-use crate::layers::core::{PreparedAndDraw, ViewParams};
+use crate::render_traits::{PreparedAndDraw, ViewParams};
 
 pub struct LayerRegistration {
     pub layer_type_name: &'static str,

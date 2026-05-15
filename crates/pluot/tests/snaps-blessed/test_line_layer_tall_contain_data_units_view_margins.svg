@@ -1,0 +1,21 @@
+<svg height="200" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_line_layer_clip_path">
+<rect height="180" width="80" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="200" width="100">
+<g clip-path="url(#my_line_layer_clip_path)" transform="translate(10,10)">
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="80" y1="130" y2="130"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="0" y1="130" y2="90"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="80" x2="80" y1="130" y2="90"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="0" x2="40" y1="90" y2="50"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="80" x2="40" y1="90" y2="50"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="56" x2="56" y1="69.99999237060547" y2="50"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="80" x2="80" y1="90" y2="50"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="56" x2="80" y1="50" y2="50"/>
+</g>
+</g>
+</g>
+</svg>

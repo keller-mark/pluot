@@ -1,30 +1,52 @@
 # pluot
 
+[![Crates.io Link and Latest Version Info](https://img.shields.io/crates/v/pluot.svg)](https://crates.io/crates/pluot)
+
 <a href="https://commons.wikimedia.org/wiki/File:Red_pluots.JPG"><img src="bindings-js/docs/src/assets/red-pluots.jpg" align="right" height="250" alt="pluots" /></a>
 
-Goal: Implement a data visualization once, then render it in multiple contexts\* (across languages, static or interactive, raster or vector).
+Goal: Implement a data visualization once, then render it in multiple contexts (across languages, static or interactive, bitmap or vector).
 
-\* currently Rust, Python, and JavaScript (including in a web browser) are supported. Further bindings are future work.
+Rust, Python, and JavaScript (including in a web browser) are currently supported. Additional bindings are future work.
 
 
-How it works: "headless" plotting. Pluot uses Rust and WebGPU to quickly render plots to an array of pixels (or an SVG string), decoupled from any windowing system or other language runtime. On each "frame" of an interaction or animation, we re-render with updated plotting parameters.
+How it works: "headless" plotting. Pluot uses Rust :crab: and WebGPU to quickly render plots to an array of pixels (or an SVG string), decoupled from any windowing system or other language runtime. On each "frame" of an interaction or animation, we re-render with updated plotting parameters, and we hope rendering will be fast enough.
 
-<!--_In other words: "rewrite it in rust," but for plotting._-->
+:test_tube: Pluot is new and experimental.
 
+
+## Citation
+
+If you found this useful, please cite:
+
+```bibtex
+@article{keller2026pluot,
+  title = {{Pluot: Towards 'write once, run everywhere' visualization software}},
+  author = {Keller, Mark S. and Gehlenborg, Nils},
+  journal = {arXiv},
+  year = {2026}
+}
+```
 
 ## Features
-- __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).
+<!-- - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
 - __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr via [zarrs](https://github.com/zarrs/zarrs) to achieve this).
 - __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM) and Python (via PyO3/maturin bindings).
-- __Raster or Vector Outputs__: Plotting functions can implement both raster and vector equivalents, to support publication-quality graphics export.
-- __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
-- __Developer Experience Considerations__: Provides D3-like utilities (scales, axes, etc.) and a declarative layer-based API to enable the development of customized plot types.
+- __Bitmap or Vector Outputs__: Plotting functions can implement bitmap and vector equivalent drawing logic, to support publication-quality graphics export.
+- __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported (regardless of whether bitmap or vector output format).
+
+⚠️ Pluot does not yet implement very many "chart types". Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, you will be able to **render the plot whereever Pluot rendering works**: from Rust, Python, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future.
+
+
+
+
 
 ## How it works
 
-Plotting functions are implemented in Rust using the [wgpu](github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser).
+Plotting functions are implemented in Rust using the [wgpu](https://github.com/gfx-rs/wgpu) implementation of WebGPU (Note: wgpu can be used as a standalone WebGPU renderer, decoupled from any web browser), when plotting to raster-based outputs or performing GPGPU compute operations.
 These Rust plotting functions are only concerned with producing a "static" plot output, given their input parameters and data.
+
+When the language bindings are used, you can think of this as a form of "remote rendering", which is actually happening locally; rather than the "remote" being a far-away server, it is just across the language binding boundary.
 
 <!--
 - To render plots in the web browser, the Rust code is compiled to WebAssembly (WASM).
@@ -38,20 +60,27 @@ These Rust plotting functions are only concerned with producing a "static" plot 
 ### Why would I want to use this? Why not just use JS+WebGPU directly?
 
 The main reasons are:
-- Portability: render plots from multiple languages, without the overhead of an interpreted programming language runtime
-- Reproducibility: explore data using an interactive tool (e.g., web or desktop GUI) to identify plotting parameters of interest, and then use the same parameter values in a scripting language to reproduce the visualization as a static plot (e.g., a Python script in a Snakemake pipeline)
+- **Portability**: render plots from multiple languages, without the overhead of an interpreted programming language runtime
+- **Reproducibility**: explore data using an interactive tool (e.g., web or desktop GUI) to identify plotting parameters of interest, and then use the same parameter values in a scripting language to reproduce the visualization as a static plot (e.g., a Python script in a Snakemake pipeline)
 
 Using WebGPU via JavaScript would couple things to JavaScript, which we do not want for a library that should be usable in multiple languages, including without a JS runtime.
 Our approach enables our CPU-based operations to benefit from the performance characteristics of Rust (or, in web contexts, at least those of Rust-via-WASM).
 
-Read more about the project's motivations in my [blog post](https://github.com/keller-mark/blog/blob/main/2026-01-12-pluot-motivations.md).
+You can likely achieve better performance by using WebGPU directly via JavaScript.
+The question is whether the performance of this Rust-based approach is good enough, and whether the benefits are worth the potential performance tradeoffs for your use case.
+See my [blog post](https://markk.co/blog/2026-04-24-pluot-motivations) for more on the motivations.
+
 
 ### Non-goals
 
 <!-- - Heavy customization of plots via the client/JS API. For example, defining shader fragments from JS. -->
-<!-- - WebGL fallbacks. Instead, we can be patient and wait until WebGPU availability improves. -->
-- Window/Canvas management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library. This both reduces the scope and decouples the plotting from any particular GUI framework.
+- Window/Canvas/Eventloop management via Rust. This should be handled by the parent/calling code. The Rust code should be concerned with returning the rendered bytes, which can be written to HTML Canvas or saved to a file by the calling library. This both reduces the scope and decouples the plotting from any particular GUI framework. However, it does complicate certain things, like rendering while asynchronously loading data.
 - Coordinated multiple views. This can be achieved via the parent/calling library, for example, by wrapping with [use-coordination](https://github.com/keller-mark/use-coordination) or your favorite state management library.
+- WebGL fallbacks via the `webgl` feature of WGPU. Why not: this both increases the WASM bundle size in order to include the shader translation code paths, and it requires providing the `compatible_surface` parameter when initializing the WGPU Instance (which conflicts with our first non-goal of avoiding canvas management).
+  - As a workaround, environments that do not support WebGPU can either use the slower SVG-based rendering, or future CPU-based raster rendering ([#157](https://github.com/keller-mark/pluot/issues/157)).
+  - Alternatively, tell the user to use a different browser/platform, or just be patient and wait for WebGPU support to become more widespread.
+    - WebGPU is available in all major browsers already ([implementation status](https://github.com/gpuweb/gpuweb/wiki/Implementation-Status), [web.dev article](https://web.dev/blog/webgpu-supported-major-browsers)).
+      - Caveat: WebGPU is only available in Safari on macOS Tahoe 26 and above. According to [one April 2026 estimate](https://telemetrydeck.com/survey/apple/macOS/versions/) of macOS version market share, approximately ~70% of macOS users are running Tahoe or later. Until certain [design issues](https://tonsky.me/blog/tahoe-icons/) are resolved by Apple, I suspect that a subset of users will resist upgrading to Tahoe for as long as possible.
 
 ## Development
 
@@ -108,7 +137,13 @@ Open to http://localhost:3005/www/
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh
-wasm-pack test crates/pluot --headless --chrome
+wasm-pack test --headless --chrome crates/pluot
+# or
+wasm-pack test --headless --chrome crates/pluot -- --nocapture
+# or
+wasm-pack test --chrome crates/pluot
+# or
+wasm-pack test --firefox crates/pluot
 ```
 
 <!-- TODO: update and un-comment once publishing details are established
@@ -166,37 +201,38 @@ uv run jupyter lab --notebook-dir bindings-python/notebooks
 cargo build
 ```
 
-Run tests:
+### Run tests
 
 ```sh
 cargo test
 # or
 cargo test --features lacks_gpu
+# or, run a specific test file
+cargo test -p pluot_core --test test_positioning
 ```
+
+### Lint with clippy
+
+```sh
+cargo clippy
+cargo clippy --fix
+```
+
+### Generate crate docs locally
+
+```sh
+cargo doc --no-deps
+open target/doc/pluot/index.html
+```
+
+
 
 ## Inspired by
 
-This work has been informed by my experiences in contributing to the following projects:
+This work has been informed by my experiences in contributing to projects including [vitessce](https://github.com/vitessce/vitessce), [use-coordination](https://github.com/keller-mark/use-coordination), [viv](https://github.com/hms-dbmi/viv), [cistrome-explorer](https://github.com/hms-dbmi/cistrome-explorer), [deck-to-svg](https://github.com/keller-mark/deck-to-svg), [higlass](https://github.com/higlass/higlass), [vueplotlib](https://github.com/keller-mark/vueplotlib), and [easy_vitessce](https://github.com/vitessce/easy_vitessce).
 
-- https://github.com/vitessce/vitessce
-- https://github.com/keller-mark/use-coordination
-- https://github.com/hms-dbmi/viv
-- https://github.com/hms-dbmi/cistrome-explorer
-- https://github.com/keller-mark/deck-to-svg
-- https://github.com/higlass/higlass
-- https://github.com/keller-mark/vueplotlib
-- https://github.com/vitessce/easy_vitessce
 
-and has also been inspired by the following projects:
-
-- https://github.com/visgl/deck.gl
-- https://github.com/UnfoldedInc/deck.gl-native
-- https://github.com/observablehq/plot
-- https://github.com/flekschas/jupyter-scatter
-- https://github.com/gosling-lang/gosling.js
-- https://github.com/scverse/napari-spatialdata
-- https://github.com/scverse/spatialdata-plot
-- https://github.com/scverse/scanpy
+It is also inspired by many other projects such as [deck.gl](https://github.com/visgl/deck.gl), [deck.gl-native](https://github.com/UnfoldedInc/deck.gl-native), [jupyter-scatter](https://github.com/flekschas/jupyter-scatter), [gosling](https://github.com/gosling-lang/gosling.js), [napari-spatialdata](https://github.com/scverse/napari-spatialdata), [spatialdata-plot](https://github.com/scverse/spatialdata-plot), and [scanpy](https://github.com/scverse/scanpy).
 
 ## Related work
 
@@ -204,5 +240,16 @@ See [awesome-rust-vis](https://github.com/keller-mark/awesome-rust-vis) for a li
 
 ## About the name
 
-- A [pluot](https://en.wikipedia.org/wiki/Pluot) is a fruit that is a hybrid of a plum and an apricot. The fruit's pit is to its flesh as the Rust core of this project is to its other programming language bindings.
-- "Plot" with an extra "u" (from R<strong>u</strong>st and/or from <strong>u</strong>nified)
+A pluot is a [plum-apricot hybrid](https://en.wikipedia.org/wiki/Pluot). The fruit's pit is to its flesh as the Rust core of this project is to its non-Rust bindings.
+
+## Rust learning resources
+- Rust for Everyone: https://www.youtube.com/watch?v=R0dP-QR5wQo
+- Fork of rust book: https://rust-book.cs.brown.edu/ch04-01-what-is-ownership.html
+- Learnxinyminutes: https://learnxinyminutes.com/rust/
+- A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
+- Guidelines: https://github.com/microsoft/rust-guidelines
+- Another list: https://github.com/microsoft/RustTraining
+
+## License
+
+See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

@@ -210,6 +210,7 @@ impl Default for TwoText {
 }
 
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct TwoGroup {
     pub elements: Vec<TwoElement>,
     // Strings to add optional data attributes for debugging.
@@ -223,15 +224,44 @@ pub struct TwoGroup {
     // TODO: add data- or aria- attributes for accessibility or hooking up event handlers?
 }
 
-impl Default for TwoGroup {
+
+#[derive(Clone, Debug)]
+pub enum TwoImageRenderingStyle {
+    Pixelated,
+}
+
+
+impl ToString for TwoImageRenderingStyle {
+    fn to_string(&self) -> String {
+        match self {
+            TwoImageRenderingStyle::Pixelated => "pixelated".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TwoImage {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// The image URL or data URI for the `href` attribute.
+    pub href: String,
+    pub opacity: f64,
+
+    pub image_rendering_style: Option<TwoImageRenderingStyle>,
+}
+
+impl Default for TwoImage {
     fn default() -> Self {
         Self {
-            elements: Vec::new(),
-            layer_type: None,
-            layer_id: None,
-            rotation: None,
-            translate: None,
-            clip_rect: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            href: String::new(),
+            opacity: 1.0,
+            image_rendering_style: None,
         }
     }
 }
@@ -244,4 +274,5 @@ pub enum TwoElement {
     Path(TwoPath),
     Text(TwoText),
     Group(TwoGroup),
+    Image(TwoImage),
 }

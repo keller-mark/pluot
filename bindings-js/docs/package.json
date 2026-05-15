@@ -1,7 +1,10 @@
 {
   "name": "docs",
+  "private": true,
   "type": "module",
   "version": "0.0.1",
+  "author": "Mark Keller",
+  "license": "Apache-2.0",
   "scripts": {
     "start": "astro dev",
     "astro-sync": "pnpm astro sync",
@@ -10,14 +13,19 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.37.3",
-    "astro": "^5.6.1",
-    "sharp": "^0.34.2",
-    "@astrojs/react": "^4.4.2",
+    "@astrojs/react": "^5.0.5",
+    "@astrojs/starlight": "^0.39.2",
     "@pluot/react": "workspace:*",
+    "@tanstack/react-query": "^5.99.0",
+    "astro": "^6.3.3",
+    "tslib": "^2.8.1",
+    "leva": "0.10.1",
+    "lodash-es": "^4.18.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "sharp": "^0.34.2",
     "use-coordination": "^1.0.1",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
-    "zarrita": "^0.5.3"
+    "zarrita": "^0.5.3",
+    "zod-ome-ngff": "0.3.0"
   }
 }

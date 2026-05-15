@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -52,10 +52,29 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
         }
     }
 
-    // Only scaling will result in the (0, 1) region being centered.
-    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    // TODO: implement aspect_ratio_alignment_mode
-    return scale(
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
+    // Center (default): no translation needed.
+    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
+    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
+    // When the scaling is 1.0, both formulas yield 0.
+    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == 1u) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == 2u) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
+    return translate(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
@@ -99,9 +118,10 @@ fn extrude_line(
 struct LineLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
+    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
     line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     color: vec4<f32>,     // rgba color for points
@@ -159,7 +179,8 @@ fn vs_main(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        u.aspect_ratio_mode
+        u.aspect_ratio_mode,
+        u.aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.
@@ -169,8 +190,14 @@ fn vs_main(
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
 
+    var result_source_position_px = vec2<f32>(0.0, 0.0);
+    var result_target_position_px = vec2<f32>(0.0, 0.0);
+
+    var result_source_position_data = vec2<f32>(0.0, 0.0);
+    var result_target_position_data = vec2<f32>(0.0, 0.0);
+
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Both source and target points are in pixel coordinates.
         // Convert them to normalized (0 to 1) coordinates within the layer.
         let source_point_pos_px = source_point_pos_orig;
@@ -189,30 +216,35 @@ fn vs_main(
         let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
         let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
 
+        result_source_position_px = source_pos_ndc;
+        result_target_position_px = target_pos_ndc;
+
         let line_width_ndc = u.line_width / layer_height_px * 2.0;
 
-        // Extrude the line to form a quad
-        let point_pos_ndc = extrude_line(
-            source_pos_ndc,
-            target_pos_ndc,
-            corner,
-            line_width_ndc,
-            layer_aspect_ratio
-        );
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            // Extrude the line to form a quad
+            let point_pos_ndc = extrude_line(
+                result_source_position_px,
+                result_target_position_px,
+                corner,
+                line_width_ndc,
+                layer_aspect_ratio
+            );
 
-        // The final point position in NDC space.
-        let pos = vec4f(
-            point_pos_ndc.x,
-            point_pos_ndc.y,
-            0.0,
-            1.0
-        );
+            // The final point position in NDC space.
+            let pos = vec4f(
+                point_pos_ndc.x,
+                point_pos_ndc.y,
+                0.0,
+                1.0
+            );
 
-        var out: VSOut;
-        out.position = pos;
-        out.color = u.color;
-        out.instance_index = instance_index;
-        return out;
+            var out: VSOut;
+            out.position = pos;
+            out.color = u.color;
+            out.instance_index = instance_index;
+            return out;
+        }
     }
 
     // Model-view-projection matrix
@@ -234,10 +266,24 @@ fn vs_main(
     // TODO: Handle line_width_unit_mode == 1 (data coordinates)
     let line_width_ndc = u.line_width / layer_height_px * 2.0;
 
+    result_source_position_data = source_pos_ndc;
+    result_target_position_data = target_pos_ndc;
+
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_source_position_data.x = result_source_position_px.x;
+        result_target_position_data.x = result_target_position_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_source_position_data.y = result_source_position_px.y;
+        result_target_position_data.y = result_target_position_px.y;
+    }
+
     // Extrude the line to form a quad
     let point_pos_ndc = extrude_line(
-        source_pos_ndc,
-        target_pos_ndc,
+        result_source_position_data,
+        result_target_position_data,
         corner,
         line_width_ndc,
         layer_aspect_ratio

@@ -1,3 +1,4 @@
+# Note: no longer needed.
 import zarr
 from os.path import join
 

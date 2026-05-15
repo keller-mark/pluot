@@ -5,7 +5,6 @@ members = [
     "crates/pluot_core",
     "crates/pluot_zarr",
     "crates/pluot",
-    "examples/pluot_cli",
 ]
 resolver = "2"
 
@@ -14,13 +13,15 @@ exclude = [
     # To ensure that they get their own independent Cargo.lock files
     # to avoid subdependency conflicts, with the workspace packages or with each other,
     # we exclude them from the workspace and instead specify their dependencies with path = "../../crates/pluot".
+    "examples/pluot_cli",
     "examples/pluot_http",
     "examples/pluot_xilem",
+    "examples/pluot_egui",
 ]
 
 [workspace.package]
 version = "0.1.0"
-# TODO: license
+license-file = "LICENSE"
 
 # We use the 2021 edition which defaults to Resolver version 2
 # (could alternatively specify resolver = "2" with edition = "2018").
@@ -29,12 +30,23 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.92"
 repository = "https://github.com/keller-mark/pluot"
-authors = ["mkeller <7525285+keller-mark@users.noreply.github.com>"]
+homepage = "https://pluot.dev"
+authors = ["Mark Keller"]
+
+categories = ["visualization", "graphics", "rendering", "science"]
+keywords = []
 
 # During development, we do not care about unused variable or unused import warnings. TODO: remove this eventually.
 [workspace.lints.rust]
 unused = "allow"
 non_snake_case = "allow"
+
+[workspace.lints.clippy]
+needless_return = "allow"
+to_string_trait_impl = "allow"
+neg_multiply = "allow"
+let_and_return = "allow"
+type_complexity = "allow"
 
 
 [workspace.dependencies]
@@ -57,21 +69,22 @@ serde = { version = "1.0.x", features = ["derive", "rc"] }
 async-trait = "0.1.74"
 quick_cache = "0.6.16"
 svg = "0.18.0"
-futures-time = { git = "https://github.com/keller-mark/futures-time.git", rev = "c61a0dd" }
+
+futures-time = { version = "3.1.0", default-features = false }
 
 # For OME-Zarr image metadata parsing.
 # We use this fork which relaxes things by not using serde(deny_unknown_fields).
-ome_zarr_metadata = { git = "https://github.com/keller-mark/ome_zarr_metadata.git", branch = "keller-mark/relaxed-ome-fields" }
+ome_zarr_metadata = "0.3.0"
 serde_json = "1.0.143"
 
 # Local crates
 # We register these here so that they can be used via .workspace = true by sibling crates.
-pluot_core = { path = "crates/pluot_core" }
-pluot_zarr = { path = "crates/pluot_zarr" }
-pluot = { path = "crates/pluot" }
+pluot_core = { version = "0.1.0", path = "crates/pluot_core" }
+pluot_zarr = { version = "0.1.0", path = "crates/pluot_zarr" }
+pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU
-wgpu = { version = "28.0.0" }
+wgpu = { version = "29.0.1" }
 glam = { version = "0.30.8", features = ["encase"] }
 encase = { version = "0.12.0" }
 
@@ -86,7 +99,9 @@ lz-str = "0.2.1" # To compress SVG strings before passing to JS.
 resvg = "0.46.0" # For SVG rendering during unit tests to compare with raster-format outputs.
 tiny-skia = "0.11.4" # Used when rendering with resvg (Pixmap target for rendering).
 dify = "0.8.0" # For pixel diffing in unit tests.
-image = "0.25.9" # For read/write to image formats like PNG in unit tests.
+image = { version = "0.25.9", default-features = false, features = ["bmp", "png"] } # For read/write to image formats like PNG in unit tests.
+base64 = "0.22.1"
+kompari = { git = "https://github.com/linebender/kompari", rev = "63476ab", default-features = false }
 
 
 # We depend on tokio for the non-wasm unit tests that call async functions.
@@ -112,7 +127,7 @@ uuid = { version = "1", features = ["v4", "js"] }
 # Note: zarrs is also specified in dev-dependencies,
 # since its "filesystem" feature is used for unit tests.
 [workspace.dependencies.zarrs]
-version = "0.23.0"
+version = "0.23.9"
 # path = "../zarrs/zarrs"
 default-features = false
 features = [
@@ -122,7 +137,26 @@ features = [
     "sharding",
     "transpose",
     "async",
-    # "zstd",       # Using the "zstd" and "blosc" features adds ~0.3MB to the .wasm size in --release mode.
-    # "blosc",      # Possible to enable when using a zarrs branch that uses Blusc for blosc.
+    "zstd",       # Using the "zstd" and "blosc" features adds ~0.3MB to the .wasm size in --release mode.
+    "blosc",      # Possible to enable when using a zarrs branch that uses Blusc for blosc.
     # "filesystem", # Was working under zarrs_filesystem v0.3.8, stopped working in zarrs_filesystem v0.3.9
 ]
+
+
+# Cargo **ignores** profile settings in non-root (workspace member) `Cargo.toml` files.
+# Profile settings (`[profile.release]`, `[profile.dev]`, etc.) can only be specified in the **workspace root** `Cargo.toml`.
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+
+# Enable link-time optimization.
+# This gives LLVM many more opportunities to inline and prune functions.
+# Not only will it make the .wasm smaller, but it will also make it faster at runtime!
+# The downside is that compilation will take longer.
+# Reference: https://rustwasm.github.io/book/reference/code-size.html
+lto = true
+
+# Enable "codegen-units = 1" to tell `rustc` to optimize the whole crate at once.
+# This also gives LLVM more opportunities to inline and prune functions.
+# This will make the .wasm smaller and faster, but will also make compilation even longer
+codegen-units = 1

@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -52,10 +52,29 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
         }
     }
 
-    // Only scaling will result in the (0, 1) region being centered.
-    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    // TODO: implement aspect_ratio_alignment_mode
-    return scale(
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
+    // Center (default): no translation needed.
+    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
+    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
+    // When the scaling is 1.0, both formulas yield 0.
+    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == 1u) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == 2u) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
+    return translate(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
@@ -66,22 +85,24 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
 struct RectLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
+    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
+    filled: u32, // 0: false, 1: true
     stroke_width: f32,
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32,
+    fill_color: vec4<f32>,     // rgba color for points
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
+    @location(0) quad_pos: vec2<f32>,
     // interpolate(flat) means no interpolation
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-inter-stage-variables.html#a-interpolate
-    @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
+    @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
 };
 
 struct FSOut {
@@ -130,7 +151,8 @@ fn vs_main(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        u.aspect_ratio_mode
+        u.aspect_ratio_mode,
+        u.aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.
@@ -154,9 +176,14 @@ fn vs_main(
     let stroke_width_norm = u.stroke_width / layer_height_px;
     let stroke_width_half_norm = stroke_width_norm / 2.0;
 
+    var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_size_px = vec2<f32>(0.0, 0.0);
+
+    var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_size_data = vec2<f32>(0.0, 0.0);
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Both source and target points are in pixel coordinates.
         // Convert them to normalized (0 to 1) coordinates within the layer.
         let source_point_pos_px = source_point_pos_orig;
@@ -197,15 +224,17 @@ fn vs_main(
         let rect_w_px = abs(target_point_pos_px.x - source_point_pos_px.x);
         let rect_h_px = abs(target_point_pos_px.y - source_point_pos_px.y);
 
-        let pos = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+        result_position_px = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+        result_size_px = vec2f(rect_w_px, rect_h_px);
 
-        var out: VSOut;
-        out.position = pos;
-        out.color = u.color;
-        out.quad_pos = (corner + 1.0) * 0.5;
-        out.instance_index = instance_index;
-        out.rect_size_px = vec2f(rect_w_px, rect_h_px);
-        return out;
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            var out: VSOut;
+            out.position = result_position_px;
+            out.quad_pos = (corner + 1.0) * 0.5;
+            out.instance_index = instance_index;
+            out.rect_size_px = result_size_px;
+            return out;
+        }
     }
 
     // Model-view-projection matrix
@@ -247,15 +276,37 @@ fn vs_main(
     let rect_w_px = abs(target_pos_norm.x - source_pos_norm.x) * layer_width_px;
     let rect_h_px = abs(target_pos_norm.y - source_pos_norm.y) * layer_height_px;
 
-    let pos = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+    result_position_data = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
+    result_size_data = vec2f(rect_w_px, rect_h_px);
+
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_position_data.x = result_position_px.x;
+        result_size_data.x = result_size_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_position_data.y = result_position_px.y;
+        result_size_data.y = result_size_px.y;
+    }
 
     var out: VSOut;
-    out.position = pos;
-    out.color = u.color;
+    out.position = result_position_data;
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
-    out.rect_size_px = vec2f(rect_w_px, rect_h_px);
+    out.rect_size_px = result_size_data;
     return out;
+}
+
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the Tableau 10 values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: f32) -> f32 {
+    return pow(c, 2.2);
 }
 
 
@@ -280,13 +331,10 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) quad_pos: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
-    @location(3) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(0) quad_pos: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
+    @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
 ) -> FSOut {
-
-    let category_color = get_categorical_color(labels_coords[instance_index]);
 
     // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
     // The stroke band is stroke_width thick from the outer edge inward
@@ -304,14 +352,20 @@ fn fs_main(
     let inside_bottom = quad_pos.y > stroke_frac_y;
     let inside_top    = quad_pos.y < (1.0 - stroke_frac_y);
 
-    // TODO: do not completely discard if there is a fill color;
-    // render using the fill color as opposed to the stroke color.
     if (inside_left && inside_right && inside_bottom && inside_top) {
-        discard;
+        if(u.filled == 0u) {
+            // Completely discard if in "stroked" mode (i.e., not filled).
+            discard;
+        }
+        // TODO: render using the fill color as opposed to the stroke color.
+    }
+
+    var out_color = u.fill_color.rgb;
+    if(u.fill_color_mode == 2u) {
+        out_color = get_categorical_color(labels_coords[instance_index]).rgb;
     }
 
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, 1.0);
+    out.color = vec4<f32>(srgb_to_linear(out_color.r), srgb_to_linear(out_color.g), srgb_to_linear(out_color.b), 1.0);
     return out;
 }

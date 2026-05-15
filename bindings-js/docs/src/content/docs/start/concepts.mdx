@@ -1,5 +1,5 @@
 ---
-title: Key Concepts
+title: Key concepts
 description: Learn the key concepts used in Pluot.
 sidebar:
     # Set a custom order for the link (lower numbers are displayed higher up)
@@ -14,12 +14,37 @@ We use the `wgpu` Rust crate for efficient raster-based plotting via WebGPU.
 
 ## Programming language bindings
 
-Many programming languages offer ways to call Rust code despite being a different language.
-Such functions are referred to as bindings.
-Important tools for implementing bindings to Rust code are PyO3 and Maturin in Python, `wasm-pack` and `wasm-bindgen` in JavaScript, and `extendr` in R.
-These make it possible to do both of the following:
-- Call a Rust function from a different language `lang`, and return some bytes from Rust to this non-Rust language
-  - Within this called Rust function, call a non-Rust function defined by `lang` and use its return value in the Rust function
+Bindings allow calling functions across programming language boundaries.
+In Pluot, we need to consider bindings in both directions (to/from).
+
+### Bindings _to_ (the Rust program)
+
+The non-Rust language *calls* these.
+
+- `render`: Or its bound variant (e.g., `render_py`, `render_wasm`, etc.) which handles serialization/deserialization or other platform-specific things.
+
+- `pick`: Perform "picking" to look-up the value at a specific (relative) screen coordinate. Used during hover and click event handling (e.g., to show tooltips).
+
+### Bindings _from_ (the non-Rust program)
+
+The non-Rust language *provides* these (for Rust to call during rendering).
+
+- `log`: Call the platform-specific logging function (e.g., `console.log` on WASM, `logger.info` on Python, etc.).
+- `zarr_get`
+- `zarr_get_range_from_end`
+- `zarr_get_range_from_offset`
+- `zarr_has`
+- `zarr_get_status`
+- `zarr_get_range_from_end_status`
+- `zarr_get_range_from_offset_status`
+- `zarr_has_status`
+
+
+{/*
+
+- `get_font`: Get a font from the system environment. (This avoids the need to bundle a bunch of fonts, which would both impact the bundle size and run into font licensing challenges).
+
+*/}
 
 
 ## Lazy (async) data loading
@@ -70,21 +95,25 @@ We provide a React component that supports these interactions, enabling interact
 
 To support similar interactions in a desktop application context, analogous interaction handlers must be implemented in (/ported to) whatever GUI framework is being used.
 
-<Aside type="tip" title="Another way to think about it">With its headless plotting architecture, interactive plotting can be considered similar to the React model of re-renders upon state changes, with memoization and caching strategies that check dependencies.</Aside>
+<Aside type="tip" title="Another way to think about it">
+    With a headless plotting architecture, interactive plotting can be considered similar to the React model of re-renders upon state changes, with memoization and caching strategies that check dependencies.
+
+    In other words: "static-first" interactive plotting.
+</Aside>
 
 
-### Timeouts
+### Partial rendering (while awaiting data)
 
 As previously noted, we are often plotting data that is stored remotely, requiring network requests to retreive the data prior to rendering it in a visualization.
 We must account for slow network connections and request failures.
-Pluot handles this with a `timeout` parameter that is passed to the plot rendering function.
+Pluot has two mechanisms to handle this:  `wait_for_data` (boolean) and `timeout` (optional integer) parameters that are passed to the plot rendering function.
 
 
-Recall that Pluot is designed to work in both static and interactive plotting scenarios.
 When creating static plots, we often want to wait for all data to be received prior to plot rendering.
 This differs from interactive scenarios, in which we often want to render visualizations incrementally, so that the user begins to see a subset of data while the rest is still loading.
 In interactive scenarios, we can set `timeout` to a small value such as `100ms`, after which Pluot will return some pixels regardless of whether all data has been received.
-These returned pixels will be accompanied by a flag to indicate to the caller whether the visualization is complete or not.
+Alternatively, if `wait_for_data` is `true`, the timeout will be ignored: instead, Pluot will treat async data-loading operations as synchronous (if the Promise/Future has not already resolved, then we proceed to rendering without waiting at all).
+In both cases, the returned pixels will be accompanied by a flag to indicate to the caller whether the visualization is complete or not.
 (How to use this flag value is up to the caller, for instance, to show a loading indicator.)
 In the latter case, the caller can wait an animation frame and call the plot rendering function again.
 
@@ -101,7 +130,7 @@ For example, when using Pluot as a React component in a web application, you cou
 We provide a layer-based API that enables developers to implement custom plotting functions.
 Several core layers are implemented, including PointLayer and LineLayer.
 
-For more details on how to compose the existing layers or implement custom layers, see the [Rust API](/reference/rust-internal/) documentation.
+For more details on how to compose the existing layers or implement custom layers, see the [Rust](/reference/rust/) documentation.
 
 
 ## Plot margins
@@ -123,9 +152,9 @@ When the plotted region (within the margins) has a non-square aspect ratio, the 
 
 - `Ignore`: Squeeze/stretch the (0, 1) unit square so that no more and no less data is shown. The square aspect ratio of the (0, 1) unit square will NOT be preserved.
 
-- `Contain` (AKA fit): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
+- `Contain` (a.k.a. "fit"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
 
-- `Cover` (AKA fill): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
+- `Cover` (a.k.a. "fill"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
 
 For certain use cases, such as for imaging data, it is likely preferable to use `Contain` or `Cover` modes to avoid distortion of square pixels.
 In other cases, such as for scatterplots with different units on the X and Y axes, it may be preferable to use `Ignore` mode to avoid showing extra data that is outside the desired coordinate ranges.
@@ -134,9 +163,9 @@ In other cases, such as for scatterplots with different units on the X and Y axe
 
 The aspect ratio alignment mode affects what extra data is shown in `Contain` mode, and what data is hidden in `Cover` mode.
 
-- `Start`: TODO
-- `Middle`: TODO
-- `End`: TODO
+- `Center`: In Contain mode, the unit square will be centered vertically for tall aspect ratios (with extra space on top and bottom) and centered horizontally for wide aspect ratios (with extra space on left and right). In Cover mode, the unit square will extend beyond the left and right (for tall aspect ratios) or will extend beyond the top and bottom (for wide aspect ratios).
+- `Start`: In Contain mode, the unit square will be bottom-aligned for tall aspect ratios (with extra space on top) and left-aligned for wide aspect ratios (with extra space on right). In Cover mode, the unit square will extend beyond the right (for tall aspect ratios) or will extend beyond the top (for wide aspect ratios).
+- `End`: In Contain mode, the unit square will be top-aligned for tall aspect ratios (with extra space on bottom) and right-aligned for wide aspect ratios (with extra space on left). In Cover mode, the unit square will extend beyond the left (for tall aspect ratios) or will extend beyond the bottom (for wide aspect ratios).
 
 ### Pixel vs. Data Unit modes
 
@@ -145,8 +174,10 @@ Layers can accept parameters to specify whether positions/sizes are specified in
 - `Pixels`: positions/sizes are specified in pixel units. These values will not be affected by the camera matrix or aspect ratio mode.
 - `Data`: positions/sizes are specified in data units. These values will be affected by the camera matrix and aspect ratio mode.
 
+{/*
 Layers currently throw errors if pixel-unit positioning is combined with data-unit sizing.
 However, pixel-unit sizing can be combined with data-unit positioning.
+*/}
 
 ## Scalability
 
@@ -154,9 +185,17 @@ However, pixel-unit sizing can be combined with data-unit positioning.
 
 Pluot can render plots to SVG format.
 While SVG enables high-quality outputs, it has performance limitations when rendering large numbers of elements.
-This is because SVG is an XML-based format, and XML is a text-based format.
-Rendering millions of points to SVG can result in very large SVG strings, which can be slow to transfer (via the bindings) and slow to render in SVG viewers (e.g., web browsers).
-To mitigate this, Pluot can compress the SVG string on the Rust side and decompress on the other language side (currently using the LZ-string method), but this also has a performance cost and only partially mitigates the issue.
+This is because SVG is a text-based (XML) format.
+Rendering millions of points to SVG can result in very large SVG strings, which can increase memory usage, can be slow to transfer (via bindings), and can be slow to render in SVG viewers (due to bookkeeping of the many SVG nodes).
+To mitigate the transfer-related issues, Pluot can compress the SVG string on the Rust side and decompress on the non-Rust language side (currently using the LZ-string method), but this also has a performance cost and only partially mitigates the issue.
 In our experience:
 - without using string compression, plots with about 1,000 SVG nodes can be transferred and rendered in a web browser
 - with string compression, plots with about 10,000 SVG nodes can be transferred and rendered in a web browser
+
+
+In the future, we could explore alternative solutions, such as streaming.
+
+### Bitmap output format
+
+Pluot leverages GPU acceleration (with WebGPU via `wgpu`) when generating raster (i.e., bitmap) graphics.
+Unlike in the SVG case, the size of the resulting raster graphics outputs are not affected by the number of plotted elements.

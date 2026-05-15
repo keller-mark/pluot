@@ -1,3 +1,5 @@
+// TODO: remove the layer definition; only keep the utility functions.
+
 // Inspired by the DeckGL CompositeLayer
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
@@ -5,15 +7,15 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
-use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
+use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw};
 use crate::wgpu;
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32};
-use svg::node::element::Group;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
-use crate::two::svg::update_svg;
-use crate::layers::position_utils::get_point_position;
-use crate::params::LayerParams;
-use crate::plots::layered_plot::get_layer;
+use crate::two::svg::SvgContext;
+use crate::positioning::get_point_position;
+use crate::params::{LayerParams};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
+use crate::render_traits::get_layer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompositeLayerParams {
@@ -52,59 +54,72 @@ impl CompositeLayer {
     }
 }
 
+
+pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn PreparedAndDraw>], gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+    // TODO: use futures::join, the same as in the layer_traits::render functions.
+    let mut bailed_early = false;
+    for sub_layer in sub_layer_instances.iter_mut() {
+        let sub_layer_result = sub_layer.prepare(gpu_context).await;
+        if sub_layer_result.bailed_early {
+            bailed_early = true;
+        }
+    }
+    return PrepareResult {
+        bailed_early,
+    };
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CompositeLayer {
-    async fn prepare(&mut self) {
-
-        // TODO: use futures::join, the same as in the core::render functions.
-        for sub_layer in self.sub_layer_instances.iter_mut() {
-            sub_layer.prepare().await;
-        }
-        
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        return base_prepare_composite_layer(&mut self.sub_layer_instances, gpu_context).await;
     }
 }
 
 // Reusable function that can be used by other composite layers: raster variant.
 pub async fn base_draw_composite_layer(
     sub_layer_instances: &[Box<dyn PreparedAndDraw>],
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    gpu_context: &GpuContext<'_>,
     pass: &mut wgpu::RenderPass<'_>,
 ) {
     for sub_layer in sub_layer_instances.iter() {
-        DrawToCanvas::draw(sub_layer.as_ref(), device.clone(), queue.clone(), pass).await;
+        DrawToRasterGpu::draw(sub_layer.as_ref(), gpu_context, pass).await;
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for CompositeLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
-        // TODO: ensure this works with pyO3. If needed, change trait to take &mut self,
-        // and then use the same pattern as in the core::render_ functions.
-        base_draw_composite_layer(&self.sub_layer_instances, device, queue, pass).await;
+impl DrawToRasterGpu for CompositeLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for CompositeLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 
 // Reusable function that can be used by other composite layers: SVG variant.
 pub async fn base_draw_composite_layer_svg(
     sub_layer_instances: &[Box<dyn PreparedAndDraw>],
-    group: &Group,
-) -> Group {
-    let mut updated_group = group.clone();
+    ctx: &mut SvgContext,
+) {
     for sub_layer in sub_layer_instances.iter() {
-        updated_group = DrawToSvg::draw(sub_layer.as_ref(), &updated_group).await;
+        DrawToSvg::draw(sub_layer.as_ref(), ctx).await;
     }
-    updated_group
 }
 
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for CompositeLayer {
-    async fn draw(&self, group: &Group) -> Group {
-        base_draw_composite_layer_svg(&self.sub_layer_instances, group).await
+    async fn draw(&self, ctx: &mut SvgContext) {
+        base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
+
+impl PickableLayer for CompositeLayer {}

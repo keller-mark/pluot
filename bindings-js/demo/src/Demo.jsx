@@ -1,5 +1,15 @@
 import React, { useState } from "react";
-import { Pluot } from "@pluot/react";
+import { FetchStore } from "zarrita";
+import { Pluot, setStoreByName } from "@pluot/react";
+
+// Initialize stores needed for demos
+
+setStoreByName('mnist_store', new FetchStore("http://localhost:5173/@data/mnist.zarr"));
+setStoreByName('gaussian_quantiles_store', new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"));
+setStoreByName('gaussian_quantiles_store_compressed', new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"));
+setStoreByName('ome_ngff', new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"));
+setStoreByName('ome_ngff_2', new FetchStore("https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/IMG_1033-1112_asterella_gracilis.ome.zarr"));
+setStoreByName('wheat', new FetchStore("http://localhost:5173/@data/wheat.zarr"));
 
 const DEMOS = {
   layered_plot: {
@@ -11,52 +21,57 @@ const DEMOS = {
           layer_type: "ZarrPointLayer",
           layer_params: {
             layer_id: "layer_1",
-            data_unit_mode: "Data",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Circle",
             point_radius: 5.0,
             store_name: "gaussian_quantiles_store",
             bounds: null,
 
-            x_key: "/n_1000000/x_coords",
-            y_key: "/n_1000000/y_coords",
-            color_key: "/n_1000000/class_labels",
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
           }
         },
         {
-          layer_type: "AxisLayer",
+          layer_type: "AxisLinearLayer",
           layer_params: {
             layer_id: "bottom_axis",
             position: "Bottom",
           }
         },
         {
-          layer_type: "AxisLayer",
+          layer_type: "AxisLinearLayer",
           layer_params: {
             layer_id: "left_axis",
             position: "Left",
           }
         },
         {
-          layer_type: "AxisLayer",
+          layer_type: "AxisLinearLayer",
           layer_params: {
             layer_id: "right_axis",
             position: "Right",
           }
         },
         {
-          layer_type: "AxisLayer",
+          layer_type: "AxisBandLayer",
           layer_params: {
             layer_id: "top_axis",
             position: "Top",
+            domain: ["One", "Two", "Three", "Four", "Five"]
           }
         },
         {
           layer_type: "PointLayer",
           layer_params: {
             layer_id: "layer_2",
-            data_unit_mode: "Pixels",
-            point_radius_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Square",
             point_radius: 15.0,
             store_name: "gaussian_quantiles_store",
@@ -66,8 +81,8 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-            x_vec: [100, 100],
-            y_vec: [100, 200],
+            position_x: [100, 100],
+            position_y: [100, 200],
             labels_vec: [0, 1],
           }
         },
@@ -75,7 +90,8 @@ const DEMOS = {
           layer_type: "LineLayer",
           layer_params: {
             layer_id: "layer_3",
-            data_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
             line_width_unit_mode: "Pixels",
             line_width: 5.0,
             store_name: "gaussian_quantiles_store",
@@ -96,7 +112,8 @@ const DEMOS = {
           layer_type: "TextLayer",
           layer_params: {
             layer_id: "layer_text",
-            data_unit_mode: "Pixels",
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
             text_size_unit_mode: "Pixels",
             text_size: 25.0,
             text_align_mode: "Start",
@@ -109,8 +126,8 @@ const DEMOS = {
               margin_left: 0,
             },*/
 
-            x_vec: [10, 110],
-            y_vec: [10, 110],
+            position_x: [10, 110],
+            position_y: [10, 110],
             text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },
@@ -118,56 +135,232 @@ const DEMOS = {
           layer_type: "BitmapLayer",
           layer_params: {
             layer_id: "layer_bitmap",
-            data_unit_mode: "Data",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            pixel_offset: [1, 1],
 
-            img_size_w: 4,
-            img_size_h: 4,
-            img_size_c: null,
-            img_size_z: null,
-            img_size_t: null,
-            z_index: null,
-            t_index: null,
+            dimension_order: "CYX",
+            shape: [2, 4, 4],
             opacity: 0.5,
             channel_settings: [
               {
-                c_index: 0,
-                window: [0.0, 10.0],
-                color: [255.0, 0.0, 0.0],
+                window: [0.0, 500.0],
+                color: [1.0, 0.0, 0.0],
+              },
+              {
+                window: [0.0, 500.0],
+                color: [0.0, 0.0, 1.0],
               }
             ],
 
-            ch0_vec: [
-              300, 110, 210, 310,
+            data: { Uint16: [
+              0, 110, 210, 310,
               20, 120, 220, 320,
               30, 130, 230, 330,
               40, 140, 240, 340,
-            ],
+              300, 110, 210, 310,
+              20, 120, 220, 320,
+              30, 130, 230, 330,
+              40, 140, 240, 0,
+            ]},
           }
         },
         {
           layer_type: "RectLayer",
           layer_params: {
             layer_id: "rect_layer",
-            data_unit_mode: "Data",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
             stroke_width_unit_mode: "Pixels",
             stroke_width: 5.0,
+            fill_color_mode: "Categorical",
             position_x0: [1],
             position_y0: [1],
             position_x1: [2],
-            position_y1: [2],
+            position_y1: [3],
             labels_vec: [4],
           }
         },
-        {
+        /*{
           layer_type: "TileLayer",
           layer_params: {
             layer_id: "tile_layer",
             tile_size: 4,
           }
+        },*/
+        {
+          layer_type: "MultiscaleLayer",
+          layer_params: {
+            layer_id: "multiscale_layer",
+            resolution_levels: [
+              {
+                shape: [200, 200],
+                chunk_shape: [50, 50],
+                scale: [1.0, 1.0],
+              },
+              {
+                shape: [100, 100],
+                chunk_shape: [50, 50],
+                scale: [2.0, 2.0],
+              }
+            ]
+          }
         },
+        {
+          layer_type: "OmeZarrMultiscaleLayer",
+          layer_params: {
+            layer_id: "ome_zarr_multiscale_layer",
+            store_name: "ome_ngff_2",
+            target_z: 40,
+            target_t: 0,
+            channel_settings: [
+              {
+                c_index: 0,
+                window: [0.0, 90000.0],
+                color: [1.0, 0.0, 0.0],
+              },
+              {
+                c_index: 1,
+                window: [0.0, 90000.0],
+                color: [0.0, 1.0, 0.0],
+              },
+              {
+                c_index: 2,
+                window: [0.0, 90000.0],
+                color: [0.0, 0.0, 1.0],
+              }
+            ],
+            opacity: 1.0,
+          },
+        },
+        {
+          layer_type: "ComputeLayer",
+          layer_params: {
+            layer_id: "compute_layer",
+          }
+        }
       ]
     },
   },
+  three_d_plot: {
+    plot_type: "LayeredPlot",
+    store_name: "gaussian_quantiles_store",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "ZarrPoint3dLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
+            point_shape_mode: "Circle",
+            point_radius: 5.0,
+            store_name: "gaussian_quantiles_store",
+            bounds: {
+              margin_top: 0,
+              margin_right: 0,
+              margin_bottom: 0,
+              margin_left: 0,
+            },
+
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            z_key: "/n_1000/z_coords",
+            color_key: "/n_1000/class_labels",
+          }
+        }
+      ]
+    },
+  },
+  bar_plot: {
+    plot_type: "LayeredPlot",
+    store_name: "wheat",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "ZarrBarPlotLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            store_name: "wheat",
+            bounds: null,
+            orientation: "Vertical",
+            identifier_key: "/year",
+            quantity_key: "/wheat",
+            fill_color_mode: "Static",
+            fill_color: [0, 255, 0],
+          }
+        },
+      ]
+    }
+  },
+  bar_plot_2: {
+    plot_type: "LayeredPlot",
+    store_name: "wheat",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "BarPlotLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            bounds: null,
+            orientation: "Horizontal",
+            data_unit_mode_for_identifier_dim: "Pixels",
+            data_unit_mode_for_quantity_dim: "Data",
+
+            identifier: ["One", "Two", "Three"],
+            quantity: [10.0, 20.0, 30.0],
+
+            fill_color_mode: "Categorical",
+          }
+        },
+      ]
+    }
+  },
+  histogram: {
+    plot_type: "LayeredPlot",
+    store_name: "wheat",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "HistogramLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            bounds: null,
+            orientation: "Vertical",
+
+            data: [10.0, 20.0, 30.0, 40.0, 45.0, 50.0],
+            num_bins: 3,
+            data_min: null,
+            data_max: null,
+
+            fill_color: null,
+          }
+        },
+      ]
+    }
+  },
+  zarr_histogram: {
+    plot_type: "LayeredPlot",
+    store_name: "gaussian_quantiles_store",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "ZarrHistogramLayer",
+          layer_params: {
+            layer_id: "test_zarr_hist_layer",
+            bounds: null,
+            orientation: "Vertical",
+
+            data_key: "/n_1000000/x_coords",
+            num_bins: 50,
+            cache_data: false,
+          }
+        },
+      ]
+    }
+  }
 };
 
 export function Demo() {
@@ -228,7 +421,7 @@ export function Demo() {
                   : {}),
               }
         }
-        mode={plotType === "Scatterplot3d" ? "3d" : "2d"}
+        viewMode={currPlotId === "three_d_plot" ? "3d" : "2d"}
       />
       {plotType === "Scatterplot" ? (
         <div>
@@ -246,7 +439,7 @@ export function Demo() {
           />
         </div>
       ) : null}
-      {plotType === "LayeredPlot" ? (
+      {false && plotType === "LayeredPlot" ? (
         <div>
           <label>Point Radius (for LayeredPlot):</label>
           <input

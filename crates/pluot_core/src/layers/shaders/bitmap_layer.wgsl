@@ -16,7 +16,7 @@ fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   );
 }
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4x4<f32> {
+fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
     // Determine the x and y extents to use,
     // based on the aspect ratio mode and layer aspect ratio.
     // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
@@ -52,16 +52,34 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32) -> mat4
         }
     }
 
-    // Only scaling will result in the (0, 1) region being centered.
-    // If we want to align 0 to the left or bottom, we need to add a translation step as well.
-    // TODO: implement aspect_ratio_alignment_mode
-    return scale(
+    // To handle aspect_ratio_alignment_mode, we compute the required translation.
+    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
+    // Center (default): no translation needed.
+    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
+    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
+    // When the scaling is 1.0, both formulas yield 0.
+    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
+    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
+    if (aspect_ratio_alignment_mode == 1u) {
+        // start
+        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
+        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
+    } else if (aspect_ratio_alignment_mode == 2u) {
+        // end
+        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
+        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
+    }
+
+    return translate(
+        x_translation_for_aspect_ratio_alignment_mode,
+        y_translation_for_aspect_ratio_alignment_mode,
+        0.0
+    ) * scale(
         x_scale_for_aspect_ratio_mode,
         y_scale_for_aspect_ratio_mode,
         1.0
     );
 }
-
 
 
 struct Channel {
@@ -72,13 +90,25 @@ struct Channel {
 struct Uniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
-    
+
     img_size: vec2<f32>, // (img_w, img_h) in pixels // TODO: use u32?
-    
+    pixel_offset: vec2<f32>, // (x_offset, y_offset) in pixels, for tiling support
+
+    model_matrix: mat4x4<f32>,
+
     opacity: f32, // Layer opacity
+
+    // Strides for each dimension (in units of f32 elements),
+    // allowing the shader to index into the flat data buffer
+    // regardless of the dimension ordering (e.g., CYX vs YXC).
+    x_stride: u32,
+    y_stride: u32,
+    c_stride: u32,
+
     num_channels: u32,
 
     // See "runtime sized arrays" info
@@ -91,11 +121,11 @@ struct VSOut {
     @location(0) tex_coord: vec2<f32>, // Pass texture coordinates to fragment shader
 };
 
-// The texture is bound as a read-only storage texture.
-// Even though the data is 16-bit, WGSL promotes integer texture formats to 32-bit integers
-// (u32 for unsigned, i32 for signed) when they are read in the shader.
+// The data is converted to f32 on the CPU side (regardless of original dtype)
+// and uploaded as a flat storage buffer. The shader uses strides to index
+// into the buffer, handling any dimension ordering (e.g., CYX vs YXC).
 @group(0) @binding(0) var<storage, read> u: Uniforms;
-@group(0) @binding(1) var img_tex: texture_2d_array<u32>;
+@group(0) @binding(1) var<storage, read> img_data: array<f32>;
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
 // The corresponding texture coordinates (UVs) for each vertex.
@@ -112,6 +142,14 @@ const TEX_COORDS: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(1.0, 1.0), // bottom-right
     vec2<f32>(0.0, 0.0), // top-left
     vec2<f32>(1.0, 0.0)  // top-right
+
+    // To flip in Y direction:
+    /*
+    vec2<f32>(0.0, 0.0), // bottom-left
+    vec2<f32>(1.0, 0.0), // bottom-right
+    vec2<f32>(0.0, 1.0), // top-left
+    vec2<f32>(1.0, 1.0)  // top-right
+    */
 );
 
 @vertex
@@ -123,8 +161,8 @@ fn vs_main(
     // Obtain a position for this vertex in (0 to 1) normalized space.
     let vertex_pos_norm = QUAD[vertex_index];
     let vertex_pos_px = vec2<f32>(
-        vertex_pos_norm.x * u.img_size.x,
-        vertex_pos_norm.y * u.img_size.y
+        vertex_pos_norm.x * u.img_size.x + u.pixel_offset.x,
+        vertex_pos_norm.y * u.img_size.y + u.pixel_offset.y
     );
 
     // How positioning works for the bitmap layer:
@@ -140,7 +178,7 @@ fn vs_main(
     // or to adjust the pixel size.
     // (e.g., most bioimaging formats store images with 1 pixel = 1 micrometer,
     // but without a model_matrix specified we assume that 1 pixel = 1 meter).
-    
+
 
     // Layer aspect ratio
     // By "layer", we mean the inner plotting area, excluding margins.
@@ -153,7 +191,8 @@ fn vs_main(
     // Get the scale() matrix to handle the aspect ratio mode.
     let ASPECT_RATIO_MAT = get_aspect_ratio_mat(
         layer_aspect_ratio,
-        u.aspect_ratio_mode
+        u.aspect_ratio_mode,
+        u.aspect_ratio_alignment_mode
     );
 
     // We operate in (0 to 1) space, since it is more intuitive.
@@ -162,22 +201,26 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
     // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode == 0u) {
+    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
         // Convert point position from pixel space to normalized space (0 to 1)
         let point_pos_norm = vec2<f32>(
             vertex_pos_px.x / layer_width_px,
             vertex_pos_px.y / layer_height_px
         );
-        let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
+        let point_pos_ndc = NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
-        // TODO: handle the model_matrix
+        result_position_px = point_pos_ndc;
 
-        var out: VSOut;
-        out.position = point_pos_ndc;
-        out.tex_coord = uv;
-        return out;
+        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            var out: VSOut;
+            out.position = result_position_px;
+            out.tex_coord = uv;
+            return out;
+        }
     }
 
     // Handle data_unit_mode == "data"
@@ -211,29 +254,40 @@ fn vs_main(
         // 5. Convert final result to NDC for rendering
         // We apply camera AFTER converting to NDC, and DON'T convert back until
         // after all NDC-space operations are done. This keeps translations in the correct space.
+        //
+        // Apply a model matrix (arbitrarily passed by the user)
+        // before applying the camera (i.e., transforming the data coordinates).
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
-        // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(vertex_pos_px, 0.0, 1.0)
+        * u.model_matrix * vec4(vertex_pos_px, 0.0, 1.0)
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
+    result_position_data = point_pos_ndc;
+
+    if(u.data_unit_mode_x == 0u) {
+        // Want to use pixel-based positioning, but only along X direction.
+        result_position_data.x = result_position_px.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        // Want to use pixel-based positioning, but only along Y direction.
+        result_position_data.y = result_position_px.y;
+    }
 
     var out: VSOut;
-    out.position = point_pos_ndc;
+    out.position = result_position_data;
     out.tex_coord = uv;
     return out;
 }
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    // Get texture dimensions to convert normalized coordinates to pixel coordinates.
-    let tex_dims = vec2<f32>(textureDimensions(img_tex));
+    // Use image dimensions from uniforms to convert normalized coordinates to pixel coordinates.
+    let tex_dims = u.img_size;
 
     // Calculate integer pixel coordinates from normalized texture coordinates.
     // We need to clamp to avoid reading out of bounds if tex_coord is exactly 1.0.
-    let texel_coords = vec2<i32>(
+    let texel_coords = vec2<u32>(
         min(
             floor(in.tex_coord * tex_dims),
             tex_dims - vec2<f32>(1.0, 1.0)
@@ -244,27 +298,25 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
     // Loop over num_channels
     for (var channel_index: u32 = 0u; channel_index < u.num_channels; channel_index++) {
-        // Load the texel value. Since it's a u32 texture, we use textureLoad.
-        // We assume the data is in the first channel (.r).
-        // The fourth argument to textureLoad is the mip level, which is 0 for us.
-        let ch0_intensity_u32 = textureLoad(img_tex, texel_coords, channel_index, 0).r;
-        let ch0_color = u.channels[channel_index].color; // Color for channel 0
-        let ch0_window = u.channels[channel_index].window; // Window for channel 0
-
-        // Normalize the intensity to a 0.0-1.0 float.
-        // This assumes the input data is 16-bit (max value 65535).
-        // Adjust the normalization factor if your data has a different bit depth.
-        let ch0_intensity_f32 = f32(ch0_intensity_u32) / 65535.0;
+        // Compute the flat index into the storage buffer using per-dimension strides.
+        // This handles any dimension ordering (e.g., CYX, YXC, XYC, etc.).
+        let idx = texel_coords.y * u.y_stride + texel_coords.x * u.x_stride + channel_index * u.c_stride;
+        let intensity = img_data[idx];
+        let ch_color = u.channels[channel_index].color;
+        // Ensure that additive blending happens in SRGB space.
+        let ch_color_linear = pow(ch_color, vec3<f32>(2.2));
+        let ch_window = u.channels[channel_index].window;
 
         // Apply windowing to adjust contrast limits.
+        // The window (min, max) values should be in the same units as the original data values.
         // Reference: https://github.com/hms-dbmi/viv/blob/08a74203b99f54bc62307c741944ed61e33e810c/packages/layers/src/xr-layer/shader-modules/channel-intensity.js#L2
-        let ch0_windowed = clamp((ch0_intensity_f32 - ch0_window.x) / max(0.0005, (ch0_window.y - ch0_window.x)), 0.0, 1.0);
+        let windowed = clamp((intensity - ch_window.x) / max(0.0005, (ch_window.y - ch_window.x)), 0.0, 1.0);
 
         // Additively blend the colors based on their intensity.
         // References:
         // - https://github.com/hms-dbmi/viv/blob/main/packages/extensions/src/color-palette-extension/color-palette-module.js
         // - https://github.com/hms-dbmi/viv/blob/08a74203b99f54bc62307c741944ed61e33e810c/packages/layers/src/xr-layer/xr-layer-fragment.glsl.js#L39
-        final_color += ch0_color * ch0_windowed;
+        final_color += ch_color_linear * windowed;
     }
 
     // Output the blended color.

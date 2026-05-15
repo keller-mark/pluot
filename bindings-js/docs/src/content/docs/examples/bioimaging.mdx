@@ -1,8 +1,26 @@
 ---
-title: Bioimaging
+title: Bioimaging 1
 description: Bioimaging example.
 sidebar:
     order: 20
 ---
+import { BioimageWrapper } from '../../../components/BioimageWrapper.jsx';
 
-TODO
+An example of rendering an OME-Zarr multi-scale image from the [IDR catalog](https://idr.github.io/ome-ngff-samples/).
+
+Adjust the channel colors and intensity ranges in the Plot Controls dropdown (Hint: move the upper Window slider handles to the left).
+
+
+<BioimageWrapper
+    client:load
+    client:only="react"
+
+    plotId={"bioimaging-2-with-controls"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/6001240_labels.v2.ome.zarr"}
+    cameraMatrix={[
+      10000.0, 0.0, 0.0, 0.0,
+      0.0, 10000.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      9999.0, 9999.0, 0.0, 1.0
+    ]}
+/>

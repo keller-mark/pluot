@@ -6,11 +6,11 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image
+    from pluot import render_to_image, render_to_svg
     import numpy as np
     import marimo as mo
     import json
-    return mo, np, render_to_image
+    return mo, np, render_to_image, render_to_svg
 
 
 @app.cell
@@ -44,8 +44,10 @@ async def _(camera_view, render_to_image):
                     layer_type="PointLayer",
                       layer_params=dict(
                         layer_id="layer_2",
-                        data_unit_mode="Pixels",
-                        point_radius_unit_mode="Pixels",
+                        data_unit_mode_x="Pixels",
+                        data_unit_mode_y="Pixels",
+                        point_radius_unit_mode_x="Pixels",
+                        point_radius_unit_mode_y="Pixels",
                         point_shape_mode="Square",
                         point_radius=15.0,
                         store_name="my_store",
@@ -55,13 +57,13 @@ async def _(camera_view, render_to_image):
                           margin_bottom=0,
                           margin_left=0,
                         ),
-                        x_vec=[100, 100, 400, 400],
-                        y_vec=[100, 400, 100, 400],
+                        position_x=[100, 100, 400, 400],
+                        position_y=[100, 400, 100, 400],
                         labels_vec=[0, 1, 2, 3],
                       )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="left_axis",
                         position="Left"
@@ -78,7 +80,7 @@ def _(np):
     x_arr = ((np.random.rand(500) - 0.5) * 10.0).astype('<f8')
     y_arr = ((np.random.rand(500) - 0.5) * 10.0).astype('<f8')
     color_arr = np.array(
-      [0, 1, 2, 3, 4] * 100
+      [5, 6, 7, 6, 8] * 100
     ).astype('<i8')
     return color_arr, x_arr, y_arr
 
@@ -104,17 +106,15 @@ async def _(
         margin_left=100,
         margin_bottom=100,
         plot_params=dict(
-            #x_key="/n_100000/x_coords",
-            #y_key="/n_100000/y_coords",
-            #color_key="/n_1000000/class_labels",
-            #point_radius=5.0
             layers=[
                 dict(
                   layer_type="ZarrPointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
-                    data_unit_mode="Data",
-                    point_radius_unit_mode="Pixels",
+                    data_unit_mode_x="Data",
+                    data_unit_mode_y="Data",
+                    point_radius_unit_mode_x="Pixels",
+                    point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
                     x_arr=x_arr,
                     y_arr=y_arr,
@@ -123,14 +123,14 @@ async def _(
                   )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="left_axis",
                         position="Left"
                     )
                 ),
                 dict(
-                    layer_type="AxisLayer",
+                    layer_type="AxisLinearLayer",
                     layer_params=dict(
                         layer_id="bottom_axis",
                         position="Bottom"
@@ -143,7 +143,53 @@ async def _(
 
 
 @app.cell
-def _():
+async def _(
+    camera_view,
+    color_arr,
+    mo,
+    point_radius_slider,
+    render_to_svg,
+    x_arr,
+    y_arr,
+):
+    mo.Html(await render_to_svg(
+        camera_view=camera_view, width=600, height=600, plot_id="test", plot_type="LayeredPlot",
+        margin_left=100,
+        margin_bottom=100,
+        plot_params=dict(
+            layers=[
+                dict(
+                  layer_type="ZarrPointLayer",
+                  layer_params=dict(
+                    layer_id="zarr_layer",
+                    data_unit_mode_x="Data",
+                    data_unit_mode_y="Data",
+                    point_radius_unit_mode_x="Pixels",
+                    point_radius_unit_mode_y="Pixels",
+                    point_shape_mode="Circle",
+                    x_arr=x_arr,
+                    y_arr=y_arr,
+                    color_arr=color_arr,
+                    point_radius=point_radius_slider.value,
+                  )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params=dict(
+                        layer_id="left_axis",
+                        position="Left"
+                    )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params=dict(
+                        layer_id="bottom_axis",
+                        position="Bottom"
+                    )
+                )
+            ]
+        ),
+    ))
     return
 
 

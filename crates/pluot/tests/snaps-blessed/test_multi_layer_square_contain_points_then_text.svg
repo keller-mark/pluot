@@ -1,0 +1,31 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="points_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#points_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(31, 119, 180)" height="16" opacity="1" width="16" x="-8" y="92"/>
+<rect fill="rgb(255, 127, 14)" height="16" opacity="1" width="16" x="92" y="92"/>
+<rect fill="rgb(44, 160, 44)" height="16" opacity="1" width="16" x="92" y="-8"/>
+<rect fill="rgb(214, 39, 40)" height="16" opacity="1" width="16" x="-8" y="-8"/>
+</g>
+<g clip-path="url(#points_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 100)" x="0" y="100">
+A
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 100 100)" x="100" y="100">
+B
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 100 0)" x="100" y="0">
+C
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 0)" x="0" y="0">
+D
+</text>
+</g>
+</g>
+</g>
+</svg>

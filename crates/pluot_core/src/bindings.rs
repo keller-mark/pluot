@@ -1,16 +1,75 @@
 pub use crate::params::RenderParams;
 pub use crate::render::render;
+pub use crate::picking::{pick, PickingResult};
+pub use crate::viewport::ScreenCoord;
+pub use crate::zarr_types::ZarrPeekResult;
+
 
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, RenderParams};
+    use super::{render, pick, RenderParams, ScreenCoord, ZarrPeekResult};
     use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen]
+    #[derive(Copy, Clone, Debug)]
+    pub enum JsZarrPeekResult {
+        // Reference: https://wasm-bindgen.github.io/wasm-bindgen/reference/types/imported-js-types.html
+        Pending = "pending",
+        Fulfilled = "fulfilled",
+        Rejected = "rejected",
+    }
 
     #[wasm_bindgen]
     extern "C" {
         #[wasm_bindgen(js_namespace = console)]
         pub fn log(s: &str);
+    }
+
+    // This is a hack that allows avoiding putting these functions on `window` or `globalThis`.
+    // It is a workaround for https://github.com/wasm-bindgen/wasm-bindgen/issues/3041
+    #[wasm_bindgen(inline_js = "
+let __zarr_impl = {};
+
+export function __js_set_zarr_imports(impl) {
+    __zarr_impl = impl;
+}
+
+export function zarr_has(store_name, key) {
+    return __zarr_impl.zarr_has(store_name, key);
+}
+
+export function zarr_has_status(store_name, key) {
+    return __zarr_impl.zarr_has_status(store_name, key);
+}
+
+export function zarr_get(store_name, key) {
+    return __zarr_impl.zarr_get(store_name, key);
+}
+
+export function zarr_get_status(store_name, key) {
+    return __zarr_impl.zarr_get_status(store_name, key);
+}
+
+export function zarr_get_range_from_offset(store_name, key, offset, length) {
+    return __zarr_impl.zarr_get_range_from_offset(store_name, key, offset, length);
+}
+
+export function zarr_get_range_from_offset_status(store_name, key, offset, length) {
+    return __zarr_impl.zarr_get_range_from_offset_status(store_name, key, offset, length);
+}
+
+export function zarr_get_range_from_end(store_name, key, suffix_length) {
+    return __zarr_impl.zarr_get_range_from_end(store_name, key, suffix_length);
+}
+
+export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
+    return __zarr_impl.zarr_get_range_from_end_status(store_name, key, suffix_length);
+}
+")]
+    extern "C" {
+        #[wasm_bindgen(js_name = __js_set_zarr_imports)]
+        fn set_zarr_imports_internal(impl_: JsValue);
 
         // We need to define a `has` function, since the zarr_get_js function
         // may return undefined, and wasm_bindgen does not allow
@@ -18,8 +77,14 @@ pub mod wasm {
         #[wasm_bindgen(js_name = zarr_has)]
         async fn zarr_has_js(store_name: &str, key: &str) -> js_sys::Boolean;
 
+        #[wasm_bindgen(js_name = zarr_has_status)]
+        fn zarr_has_status_js(store_name: &str, key: &str) -> JsZarrPeekResult;
+
         #[wasm_bindgen(js_name = zarr_get)]
         async fn zarr_get_js(store_name: &str, key: &str) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_status)]
+        fn zarr_get_status_js(store_name: &str, key: &str) -> JsZarrPeekResult;
 
         #[wasm_bindgen(js_name = zarr_get_range_from_offset)]
         async fn zarr_get_range_from_offset_js(
@@ -29,12 +94,37 @@ pub mod wasm {
             length: u32,
         ) -> js_sys::Uint8Array;
 
+        #[wasm_bindgen(js_name = zarr_get_range_from_offset_status)]
+        fn zarr_get_range_from_offset_status_js(
+            store_name: &str,
+            key: &str,
+            offset: u32,
+            length: u32,
+        ) -> JsZarrPeekResult;
+
         #[wasm_bindgen(js_name = zarr_get_range_from_end)]
         async fn zarr_get_range_from_end_js(
             store_name: &str,
             key: &str,
             suffix_length: u32,
         ) -> js_sys::Uint8Array;
+
+        #[wasm_bindgen(js_name = zarr_get_range_from_end_status)]
+        fn zarr_get_range_from_end_status_js(
+            store_name: &str,
+            key: &str,
+            suffix_length: u32,
+        ) -> JsZarrPeekResult;
+    }
+
+    /// Set the zarr store implementations. Must be called after `wasm.default()`.
+    /// The `imports` object must contain the following functions:
+    /// `zarr_get`, `zarr_get_status`, `zarr_has`, `zarr_has_status`,
+    /// `zarr_get_range_from_offset`, `zarr_get_range_from_offset_status`,
+    /// `zarr_get_range_from_end`, `zarr_get_range_from_end_status`.
+    #[wasm_bindgen]
+    pub fn set_zarr_imports(imports: JsValue) {
+        set_zarr_imports_internal(imports);
     }
 
     fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
@@ -55,9 +145,29 @@ pub mod wasm {
         has.is_truthy()
     }
 
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let status_js = zarr_has_status_js(store_name, key);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_js(store_name, key).await;
         convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let status_js = zarr_get_status_js(store_name, key);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
     }
 
     pub async fn zarr_get_range_from_offset(
@@ -70,6 +180,21 @@ pub mod wasm {
         convert_to_bytes(js_bytes)
     }
 
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        let status_js = zarr_get_range_from_offset_status_js(store_name, key, offset, length);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
     pub async fn zarr_get_range_from_end(
         store_name: &str,
         key: &str,
@@ -77,6 +202,20 @@ pub mod wasm {
     ) -> zarrs::storage::Bytes {
         let js_bytes = zarr_get_range_from_end_js(store_name, key, suffix_length).await;
         convert_to_bytes(js_bytes)
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        let status_js = zarr_get_range_from_end_status_js(store_name, key, suffix_length);
+        match status_js {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
     }
 
     #[wasm_bindgen]
@@ -102,6 +241,17 @@ pub mod wasm {
         // Return a Uint8Array of RGBA bytes
         js_sys::Uint8Array::from(pixels.as_slice())
     }
+
+    #[wasm_bindgen]
+    pub async fn pick_wasm(params: JsValue, screen_x: f32, screen_y: f32) -> JsValue {
+        let params: RenderParams =
+            serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
+
+        let screen_coord = ScreenCoord { x: screen_x, y: screen_y };
+        let result = pick(params, screen_coord).await;
+
+        serde_wasm_bindgen::to_value(&result).expect("Failed to serialize PickingResult")
+    }
 }
 
 // === Python Bindings ===
@@ -115,11 +265,80 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, RenderParams};
+    use super::{render, pick, RenderParams, ScreenCoord, ZarrPeekResult};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
         info!("{}", s);
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module.call_method1("zarr_has_status", (store_name, key)).unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module.call_method1("zarr_get_status", (store_name, key)).unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module
+                .call_method1("zarr_get_range_from_offset_status", (store_name, key, offset, length))
+                .unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
+        Python::attach(|py| {
+            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let result = zarr_module
+                .call_method1("zarr_get_range_from_end_status", (store_name, key, suffix_length))
+                .unwrap();
+            let value: u8 = result.extract().unwrap();
+            match value {
+                0 => ZarrPeekResult::Pending,
+                1 => ZarrPeekResult::Fulfilled,
+                2 => ZarrPeekResult::Rejected,
+                _ => panic!("Invalid ZarrPeekResult value from Python"),
+            }
+        })
     }
 
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
@@ -207,6 +426,27 @@ pub mod python {
     }
 
     #[pyfunction]
+    #[pyo3(signature = (screen_x, screen_y, **kwds))]
+    pub fn pick_py(py: Python, screen_x: f32, screen_y: f32, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
+        let params: RenderParams = if let Some(dict) = kwds {
+            depythonize::<RenderParams>(&dict.into_bound(py)).unwrap()
+        } else {
+            RenderParams::default()
+        };
+
+        let screen_coord = ScreenCoord { x: screen_x, y: screen_y };
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = pick(params, screen_coord).await;
+            Python::attach(|py| {
+                pythonize::pythonize(py, &result)
+                    .map(|v| v.unbind())
+                    .map_err(|e| PyErr::from(e))
+            })
+        })
+    }
+
+    #[pyfunction]
     #[pyo3(signature = (**kwds))]
     pub fn render_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
         // Use the py parameter directly instead of Python::with_gil
@@ -230,6 +470,7 @@ pub mod python {
 
         m.add_function(wrap_pyfunction!(log_info, m)?)?;
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
+        m.add_function(wrap_pyfunction!(pick_py, m)?)?;
         Ok(())
     }
 }
@@ -238,8 +479,7 @@ pub mod python {
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
 pub mod plain_rust {
     use core::panic;
-
-    pub use super::render;
+    pub use super::{render, ZarrPeekResult};
 
     pub fn log(s: &str) {
         println!("{}", s);
@@ -249,8 +489,16 @@ pub mod plain_rust {
         panic!("zarr_has is not implemented in plain Rust mode.");
     }
 
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        panic!("zarr_has_status is not implemented in plain Rust mode.");
+    }
+
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         panic!("zarr_get is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        panic!("zarr_has_status is not implemented in plain Rust mode.");
     }
 
     pub async fn zarr_get_range_from_offset(
@@ -262,11 +510,28 @@ pub mod plain_rust {
         panic!("zarr_get_range_from_offset is not implemented in plain Rust mode.");
     }
 
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str,
+        key: &str,
+        offset: u32,
+        length: u32,
+    ) -> ZarrPeekResult {
+        panic!("zarr_get_range_from_offset_status is not implemented in plain Rust mode.");
+    }
+
     pub async fn zarr_get_range_from_end(
         store_name: &str,
         key: &str,
         suffix_length: u32,
     ) -> zarrs::storage::Bytes {
+        panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str,
+        key: &str,
+        suffix_length: u32,
+    ) -> ZarrPeekResult {
         panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
     }
 }

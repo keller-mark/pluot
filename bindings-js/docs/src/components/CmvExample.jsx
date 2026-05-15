@@ -23,7 +23,10 @@ export function CmvExample() {
         return new FetchStore(storeUrl);
     }, [storeUrl]);
 
-    const [pointRadius, setPointRadius] = useState(5.0);
+  const [pointRadius, setPointRadius] = useState(5.0);
+
+  const [isCameraCoordinated, setIsCameraCoordinated] = useState(true);
+  const [cameraMatrix, setCameraMatrix] = useState(null);
 
     return (
         <div>
@@ -40,15 +43,17 @@ export function CmvExample() {
                             layer_type: "ZarrPointLayer",
                             layer_params: {
                                 layer_id: "layer_1",
-                                data_unit_mode: "Data",
-                                point_radius_unit_mode: "Pixels",
-                                point_shape_mode: "Circle",
+                                data_unit_mode_x: "Data",
+                                data_unit_mode_y: "Data",
+                                point_radius_unit_mode_x: "Pixels",
+                                point_radius_unit_mode_y: "Pixels",
+                                point_shape_mode: "Square",
                                 point_radius: pointRadius,
                                 bounds: null,
 
-                                x_key: "/n_1000000/x_coords",
-                                y_key: "/n_1000000/y_coords",
-                                color_key: "/n_1000000/class_labels",
+                                x_key: "/n_10000/x_coords",
+                                y_key: "/n_10000/y_coords",
+                                color_key: "/n_10000/class_labels",
                             }
                         }
                     ]
@@ -58,7 +63,9 @@ export function CmvExample() {
                 marginTop={0}
                 marginRight={0}
                 marginBottom={0}
-
+                cameraMatrix={cameraMatrix}
+                setCameraMatrix={isCameraCoordinated ? setCameraMatrix : null}
+                enablePicking={false}
             />
             <Pluot
                 key="right"
@@ -73,8 +80,10 @@ export function CmvExample() {
                             layer_type: "ZarrPointLayer",
                             layer_params: {
                                 layer_id: "layer_2",
-                                data_unit_mode: "Data",
-                                point_radius_unit_mode: "Pixels",
+                                data_unit_mode_x: "Data",
+                                data_unit_mode_y: "Data",
+                                point_radius_unit_mode_x: "Pixels",
+                                point_radius_unit_mode_y: "Pixels",
                                 point_shape_mode: "Circle",
                                 point_radius: pointRadius,
                                 bounds: null,
@@ -86,26 +95,38 @@ export function CmvExample() {
                         }
                     ]
                 }}
-                mode={"2d"}
+                viewMode={"2d"}
                 marginLeft={0}
                 marginTop={0}
                 marginRight={0}
                 marginBottom={0}
+                cameraMatrix={cameraMatrix}
+                setCameraMatrix={isCameraCoordinated ? setCameraMatrix : null}
+                enablePicking={false}
             />
-            <div>
-                <label>Point Radius:</label>
-                <input
-                    type="range"
-                    min={1.0}
-                    max={100.0}
-                    step={1.0}
-                    value={pointRadius}
-                    onChange={(e) => {
-                        const newValue = parseFloat(e.target.value);
-                        setPointRadius(newValue);
-                    }}
-                />
-            </div>
+      <div>
+          <label>Point Radius:</label>
+          <input
+            type="range"
+            min={1.0}
+            max={100.0}
+            step={1.0}
+            value={pointRadius}
+            onChange={(e) => {
+                const newValue = parseFloat(e.target.value);
+                setPointRadius(newValue);
+            }}
+          />
+          <br />
+          <label>
+            Coordinate camera (pan/zoom) state:&nbsp;
+            <input
+              type="checkbox"
+              checked={isCameraCoordinated}
+              onChange={(e) => setIsCameraCoordinated(e.target.checked)}
+            />
+          </label>
         </div>
-    );
+    </div>
+  );
 }

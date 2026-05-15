@@ -3,9 +3,9 @@ title: Implement once, visualize everywhere.
 description: Reuse the same plot rendering implementation across web, desktop, and notebook environments.
 template: splash # Remove or comment out this line to display the site sidebar on this page.
 hero:
-  tagline: Static. Interactive. Raster. Vector. Web. Desktop. 
+  tagline: Static. Interactive. Bitmap. Vector. Web. Desktop. 
   image:
-    file: ../../assets/pluot-logo.png
+    file: ../../assets/pluot-logo-sq.png
   actions:
     - text: View an example
       link: /examples/scatterplot/
@@ -32,8 +32,8 @@ import Footer from '../../components/Footer.astro';
 		Made possible via WebAssembly bindings in browsers that support WebGPU.
 	</Card>
 	<Card title="Python" icon="seti:python">
-		Render static plots in Python environments via PyO3 bindings to the Rust library.
-		Or, render interactive plots in notebook environments via AnyWidget.
+		Render static plots in Python environments via PyO3 bindings to the Rust code.
+		{/*Or, render interactive plots in notebook environments via AnyWidget.*/}
 	</Card>
 	<Card title="More coming soon" icon="seti:json">
 		If you don't see your favorite programming language here, reach out on GitHub.
@@ -52,8 +52,8 @@ import Footer from '../../components/Footer.astro';
 	<Card title="Scalable" icon="magnifier">
 		Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies.
 	</Card>
-	<Card title="Raster or vector output" icon="seti:svg">
-		The same plot implementation can support both raster and vector outputs.
+	<Card title="Bitmap or vector output" icon="seti:svg">
+		The same plot implementation can support both bitmap and vector outputs.
 		Use vector outputs for publication-quality graphics exporting.
 		Use raster outputs for high-performance interactive visualization powered by WebGPU.
 	</Card>
@@ -61,7 +61,7 @@ import Footer from '../../components/Footer.astro';
 		Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, render pipeline, and draw calls.
 	</Card>
 	<Card title="Leave the browser behind" icon="information">
-		Plotting functions are implemented in Rust using `wgpu`, and do not rely on a web browser or JavaScript runtime when plotting in non-web environments.
+		Browser-based tools are great, but it is best if our tools can be used outside the browser as well. Pluot uses the standalone `wgpu` implementation of WebGPU, and does not rely on a web browser or JavaScript runtime when plotting in non-web environments.
 	</Card>
 </CardGrid>
 

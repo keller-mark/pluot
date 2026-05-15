@@ -10,21 +10,28 @@ export default defineConfig({
 	integrations: [
 		react(),
 		starlight({
-			title: 'Pluot',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/keller-mark/pluot' }],
+      title: 'Pluot',
+      favicon: '/favicon.png',
+      editLink: {
+        baseUrl: 'https://github.com/keller-mark/pluot/edit/main/bindings-js/docs/',
+      },
+      social: [
+        { icon: 'document', label: 'Docs.rs', href: 'https://docs.rs/pluot/' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/keller-mark/pluot' }
+      ],
 			sidebar: [
 				{
-					label: 'Start Here',
+					label: 'Overview',
 					// Autogenerate a group of links for the 'constellations' directory.
-					autogenerate: { directory: 'start' },
+          items: [{ autogenerate: { directory: 'start' } }],
 				},
 				{
 					label: 'Reference',
-					autogenerate: { directory: 'reference' },
+					items: [{autogenerate: { directory: 'reference' } }],
 				},
 				{
 					label: 'Examples',
-					autogenerate: { directory: 'examples' },
+					items: [{autogenerate: { directory: 'examples' } }],
 				},
 			],
 			customCss: [
@@ -33,8 +40,9 @@ export default defineConfig({
 			],
 			components: {
 				// Override the default `ThemeSelect` component.
-				ThemeSelect: './src/components/ThemeSelect.astro',
-      		},
+        ThemeSelect: './src/components/ThemeSelect.astro',
+				Pagination: './src/components/Pagination.astro'
+      },
 		}),
 	],
 	markdown: {

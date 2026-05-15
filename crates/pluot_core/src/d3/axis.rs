@@ -79,6 +79,8 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
         self
     }
 
+    // TODO: remove this function (and its tests)
+    // as it is no longer used. Or refactor it so it is more useful.
     pub fn generate_elements(
         &self,
         scale: &(impl Tickable<D> + Scaleable<D, f64> + LinearRangeable<f64>),
@@ -146,7 +148,7 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
 
         // Ticks
         for value in values {
-            let position = scale.scale(&value) as f64 + self.offset;
+            let position = scale.scale(&value) + self.offset;
 
             // Tick line
             let (x1, y1, x2, y2) = match self.orient {
@@ -245,8 +247,8 @@ mod tests {
         let axis = Axis::new(AxisOrientation::Bottom).ticks(Some(5), None);
         let elements = axis.generate_elements(&scale);
 
-        let (_, group) = init_svg(500.0, 30.0);
-        let updated_group = update_svg(group, &elements);
+        let mut ctx = init_svg(500.0, 30.0);
+        update_svg(&mut ctx, &elements);
 
         let expected_svg_str = r#"
             <g height="30" width="500">
@@ -277,7 +279,7 @@ mod tests {
                 </text>
             </g>
         "#;
-        assert_strings_equal_ignore_whitespace(&updated_group.to_string(), expected_svg_str);
+        assert_strings_equal_ignore_whitespace(&ctx.group.to_string(), expected_svg_str);
     }
 
     #[test]
@@ -289,8 +291,8 @@ mod tests {
         let axis = Axis::new(AxisOrientation::Left).ticks(Some(5), None);
         let elements = axis.generate_elements(&scale);
 
-        let (_, group) = init_svg(30.0, 500.0);
-        let updated_group = update_svg(group, &elements);
+        let mut ctx = init_svg(30.0, 500.0);
+        update_svg(&mut ctx, &elements);
 
         let expected_svg_str = r#"
             <g height="500" width="30">
@@ -321,6 +323,6 @@ mod tests {
                 </text>
             </g>
         "#;
-        assert_strings_equal_ignore_whitespace(&updated_group.to_string(), expected_svg_str);
+        assert_strings_equal_ignore_whitespace(&ctx.group.to_string(), expected_svg_str);
     }
 }

@@ -6,8 +6,10 @@
         "layer_type": "PointLayer",
         "layer_params": {
           "layer_id": "layer_2",
-          "data_unit_mode": "Pixels",
-          "point_radius_unit_mode": "Pixels",
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "point_radius_unit_mode_x": "Pixels",
+          "point_radius_unit_mode_y": "Pixels",
           "point_shape_mode": "Square",
           "point_radius": 15.0,
           "store_name": "gaussian_quantiles_store",
@@ -17,8 +19,8 @@
             "margin_bottom": 0,
             "margin_left": 0
           },
-          "x_vec": [100, 100],
-          "y_vec": [100, 200],
+          "position_x": [100, 100],
+          "position_y": [100, 200],
           "labels_vec": [0, 1]
         }
       },
@@ -53,8 +55,8 @@
           "text_align_mode": "Start",
           "text_baseline_mode": "Bottom",
           "bounds": null,
-          "x_vec": [10, 110],
-          "y_vec": [10, 110],
+          "position_x": [10, 110],
+          "position_y": [10, 110],
           "text_vec": ["Hello", "The quick brown fox jumps over the lazy dog"]
         }
       }

@@ -27,6 +27,7 @@ RANDOM_SEED = 1111
 
 
 # Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
+# Note: no longer needed.
 # Reference: https://github.com/zarr-developers/zarr-python/issues/3389
 no_compression = dict(filters=None, compressors=None, serializer="auto")
 
@@ -106,4 +107,3 @@ for size in sizes:
     z.create_array(name=f"/n_{size}/z_coords", data=z_coords.astype(float), compressors=compressors)
     z.create_array(name=f"/n_{size}/class_labels", data=class_labels.astype(int), compressors=compressors)
     z.create_array(name=f"/n_{size}/class_labels_str", data=class_labels.astype(np.dtypes.StringDType), compressors=compressors)
-

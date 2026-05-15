@@ -36,6 +36,9 @@ jobs:
     #- uses: Swatinem/rust-cache@v2
     - name: Compile Rust code to WASM
       run: wasm-pack build crates/pluot --release --target web
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24.x'
     - uses: pnpm/action-setup@v4
       name: Install pnpm
       id: pnpm-install

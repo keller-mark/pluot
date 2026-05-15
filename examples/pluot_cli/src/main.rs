@@ -1,6 +1,7 @@
 use clap::Parser;
+use serde::{Deserialize, Serialize};
 use image::{save_buffer_with_format, ColorType, ImageFormat};
-use pluot::{render, AspectRatioMode, GraphicsFormat, PlotParams, RenderParams, ViewMode};
+use pluot::{render, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams, ViewMode};
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -77,6 +78,32 @@ struct Args {
     margin_bottom: Option<f32>,
 }
 
+
+// For the JSON representation, we want to pass an object like
+// { plot_type: "LayeredPlot", plot_params: { layers: [] } }
+// Which would allow alternative plot_type values in the future.
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct JsonLayeredPlotRenderParams {
+    pub layers: Vec<LayerParams>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "plot_type", content = "plot_params")]
+pub enum JsonPlotParams {
+    // Using adjacently tagged enum representation.
+    // { "plot_type": "Scatterplot" }
+    // Reference: https://serde.rs/enum-representations.html
+
+    LayeredPlot(JsonLayeredPlotRenderParams),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct JsonRenderParams {
+    #[serde(flatten)]
+    pub plot_params: JsonPlotParams,
+}
+
 /// Infer the graphics format from the output file extension.
 fn infer_format(path: &PathBuf) -> GraphicsFormat {
     path.extension()
@@ -144,6 +171,8 @@ fn read_json(input: &Option<PathBuf>) -> Result<String, io::Error> {
     }
 }
 
+
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -179,7 +208,7 @@ async fn main() {
         None => None,
     };
 
-    // --- Read and parse JSON plot params ---
+    // --- Read and parse JSON layers ---
 
     let json_str = match read_json(&args.input) {
         Ok(s) => s,
@@ -189,17 +218,22 @@ async fn main() {
         }
     };
 
-    let plot_params: PlotParams = match serde_json::from_str(&json_str) {
+    let render_params: JsonRenderParams = match serde_json::from_str(&json_str) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Error parsing JSON into PlotParams: {}", e);
+            eprintln!("Error parsing JSON into layers: {}", e);
             process::exit(1);
         }
+    };
+
+    let layers = match render_params.plot_params {
+        JsonPlotParams::LayeredPlot(layer_params) => layer_params.layers,
     };
 
     // --- Build RenderParams ---
 
     let params = RenderParams {
+        layers,
         width: args.width,
         height: args.height,
         format,
@@ -207,7 +241,6 @@ async fn main() {
         camera_view,
         aspect_ratio_mode,
         view_mode,
-        plot_params,
         plot_id: args.plot_id,
         store_name: args.store_name,
         margin_left: args.margin_left,
@@ -218,7 +251,9 @@ async fn main() {
         timeout: None,
         cache_enabled: false,
         svg_compression_enabled: false,
+        svg_include_document: true,
         pickable: false,
+        ..Default::default()
     };
 
     let width = params.width;
@@ -230,18 +265,12 @@ async fn main() {
 
     // Write the output.
     if is_vector {
-        // Vector: the render function returns an SVG <g/> element as UTF-8 bytes.
-        // Wrap it in a root <svg> element so it can be displayed as a standalone file.
-        let svg_inner = String::from_utf8_lossy(&result);
-        let svg_document = format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">\n{}\n</svg>\n",
-            width, height, width, height, svg_inner
-        );
-        match fs::write(&args.output, &svg_document.as_bytes()) {
+        // Vector: the render function returns a complete SVG document as UTF-8 bytes.
+        match fs::write(&args.output, &result) {
             Ok(_) => {
                 eprintln!(
-                    "Wrote SVG 2 output ({} bytes) to {}",
-                    svg_document.len(),
+                    "Wrote SVG output ({} bytes) to {}",
+                    result.len(),
                     args.output.display()
                 );
             }

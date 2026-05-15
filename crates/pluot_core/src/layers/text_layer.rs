@@ -11,17 +11,18 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::layers::core::{AspectRatioMode, DrawToCanvas, DrawToSvg, MarginParams, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
-use crate::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_internal_text_layer_data, CachedInternalTextLayerData};
-use svg::node::element::Group;
+use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
 use crate::two::shapes::{
     TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle,
     TwoColor, TwoText, TwoTextAlign, TwoTextBaseline
 };
-use crate::two::svg::update_svg;
-use crate::layers::position_utils::get_point_position;
+use crate::two::svg::{update_svg, SvgContext};
+use crate::positioning::get_point_position;
 use crate::log;
 
 const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();
@@ -35,7 +36,7 @@ struct FontAtlasCache {
 }
 
 thread_local! {
-    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = RefCell::new(None);
+    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = const { RefCell::new(None) };
 }
 
 fn get_or_init_font_atlas() -> FontAtlasCache {
@@ -144,18 +145,16 @@ pub struct TextLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
     pub bounds: Option<MarginParams>,
-    pub data_unit_mode: UnitsMode, // Units of x/y positions.
+    pub data_unit_mode_x: UnitsMode, // Units of x/y positions.
+    pub data_unit_mode_y: UnitsMode, // Units of x/y positions.
     pub text_size: f32,
     pub text_size_unit_mode: UnitsMode, // Units of the font size.
     pub text_align_mode: TextAlignMode,
     pub text_baseline_mode: TextBaselineMode,
     pub text_rotation: Option<f32>, // Rotation in degrees
 
-    // TODO(ref): pass in references instead of owned Vecs?
-    // Would this cause issues when using serde to create layers based on JSON params?
-    // TODO: improve naming here - should these be "x", "y", etc?
-    pub x_vec: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub y_vec: Arc<Vec<f32>>,
+    pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
+    pub position_y: Arc<Vec<f32>>,
     pub text_vec: Arc<Vec<String>>,
 }
 
@@ -179,7 +178,7 @@ impl TextLayer {
         layer_params: TextLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if (layer_params.text_size_unit_mode == UnitsMode::Data && layer_params.data_unit_mode == UnitsMode::Pixels) {
+        if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         Self {
@@ -194,7 +193,7 @@ impl TextLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TextLayer {
-    async fn prepare(&mut self) {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
 
         // TODO: include the layer type in the memoization dependencies?
         // But what if we want multiple layers to be able to reuse the same cached data?
@@ -219,8 +218,8 @@ impl PreparedLayer for TextLayer {
         let cache_keys: Vec<String> = vec![
             self.layer_params.layer_id.clone(),
             format!("{:?}", self.layer_params.text_vec), // TODO: use a better key
-            format!("{:?}", self.layer_params.x_vec), // TODO: use a better key
-            format!("{:?}", self.layer_params.y_vec), // TODO: use a better key
+            format!("{:?}", self.layer_params.position_x), // TODO: use a better key
+            format!("{:?}", self.layer_params.position_y), // TODO: use a better key
             format!("{}", font_size),
             format!("{:?}", text_align_mode),
             format!("{:?}", text_baseline_mode),
@@ -243,7 +242,7 @@ impl PreparedLayer for TextLayer {
             for text_str in self.layer_params.text_vec.iter() {
                 layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(&text_str, font_size as f32, 0),
+                    &TextStyle::new(text_str, font_size, 0),
                 );
             }
 
@@ -293,21 +292,21 @@ impl PreparedLayer for TextLayer {
             // Iterate over each string
             for elem_i in 0..n {
                 let text_str = &self.layer_params.text_vec[elem_i];
-                let text_x_pos = self.layer_params.x_vec[elem_i];
-                let text_y_pos = self.layer_params.y_vec[elem_i];
+                let text_x_pos = self.layer_params.position_x[elem_i];
+                let text_y_pos = self.layer_params.position_y[elem_i];
 
                 // Measure text width for alignment.
                 // Text width is in pixel units.
                 let text_width = measure_text_width(
                     &font_atlas.font,
-                    &text_str,
-                    font_size as f32,
+                    text_str,
+                    font_size,
                 );
 
                 // Calculate offset based on alignment and baseline.
                 // These offsets are in pixel units.
                 let (offset_x, offset_y) = calculate_text_position(
-                    font_size as f32,
+                    font_size,
                     text_align_mode,
                     text_baseline_mode,
                     text_width
@@ -322,7 +321,7 @@ impl PreparedLayer for TextLayer {
                 });
                 element_layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(&text_str, font_size as f32, 0),
+                    &TextStyle::new(text_str, font_size, 0),
                 );
 
                 let element_glyphs = element_layout.glyphs();
@@ -335,8 +334,8 @@ impl PreparedLayer for TextLayer {
                     let (m, bmp) = &rasters[total_instances as usize + i];
 
                     // Actual bitmap dimensions
-                    let gw = m.width.max(0) as usize;
-                    let gh = m.height.max(0) as usize;
+                    let gw = m.width.max(0);
+                    let gh = m.height.max(0);
 
                     // Copy bitmap into atlas with padding offset
                     if gw > 0 && gh > 0 {
@@ -354,8 +353,8 @@ impl PreparedLayer for TextLayer {
                     // Compute screen-space rect for this glyph
                     // TODO: update this logic so that the rect is in whatever data_units_mode is?
                     // (ensure the text measurement is happening in the correct units too).
-                    let x_px = offset_x + g.x as f32;
-                    let y_px = offset_y + g.y as f32;
+                    let x_px = offset_x + g.x;
+                    let y_px = offset_y + g.y;
                     let w_px = g.width as f32;
                     let h_px: f32 = g.height as f32;
 
@@ -395,6 +394,10 @@ impl PreparedLayer for TextLayer {
         }, &cache_keys, self.view_params.cache_enabled).await;
 
         self.internal_data = Some(internal_data);
+
+        return PrepareResult {
+            bailed_early: false,
+        }
     }
 }
 
@@ -403,7 +406,8 @@ impl PreparedLayer for TextLayer {
 struct TextLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
     text_size: f32,
     text_size_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
@@ -420,11 +424,12 @@ struct TextLayerUniforms {
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
 pub async fn base_draw_text_layer(
-    device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &TextLayerParams,
     internal_data: &InternalTextLayerData,
 ) {
+    let GpuContext { device, queue } = gpu_context;
     // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
     let camera_view = view_params.camera_view.unwrap_or([
         // Column 0
@@ -489,7 +494,7 @@ pub async fn base_draw_text_layer(
 
     queue.write_texture(
         atlas_tex.as_image_copy(),
-        &atlas,
+        atlas,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(atlas_width as u32),
@@ -518,7 +523,7 @@ pub async fn base_draw_text_layer(
     let instance_buffer = device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Text Instances"),
-            contents: bytemuck::cast_slice(&all_instance_data),
+            contents: bytemuck::cast_slice(all_instance_data),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -526,10 +531,14 @@ pub async fn base_draw_text_layer(
     let uniform_struct = TextLayerUniforms {
         layer_size: Vec2::new(layer_w, layer_h), // (layer_width, layer_height) in pixels
         camera_view: Mat4::from_cols_array(&camera_view),   // mat4x4<f32>,
-        data_unit_mode: match layer_params.data_unit_mode {
+        data_unit_mode_x: match layer_params.data_unit_mode_x {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
-        }, // 0 = pixels, 1 = data units
+        },
+        data_unit_mode_y: match layer_params.data_unit_mode_y {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        },
         text_size: layer_params.text_size,
         text_size_unit_mode: match layer_params.text_size_unit_mode {
             UnitsMode::Pixels => 0,
@@ -540,7 +549,11 @@ pub async fn base_draw_text_layer(
             AspectRatioMode::Contain => 1,
             AspectRatioMode::Cover => 2,
         },
-        aspect_ratio_alignment_mode: 0, // center. TODO
+        aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        },
         text_rotation: layer_params.text_rotation.unwrap_or(0.0),
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
@@ -619,7 +632,7 @@ pub async fn base_draw_text_layer(
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -728,16 +741,22 @@ pub async fn base_draw_text_layer(
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToCanvas for TextLayer {
-    async fn draw(&self, device: wgpu::Device, queue: wgpu::Queue, pass: &mut wgpu::RenderPass) {
+impl DrawToRasterGpu for TextLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         let internal_data = self.internal_data.as_ref().expect("Internal data was not prepared. Call prepare() first.");
         base_draw_text_layer(
-            device, queue, pass,
+            gpu_context, pass,
             &self.view_params,
             &self.layer_params,
-            &internal_data,
+            internal_data,
         ).await;
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for TextLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 pub fn base_draw_text_layer_svg(
@@ -787,8 +806,8 @@ pub fn base_draw_text_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let x = layer_params.x_vec[i];
-        let y = layer_params.y_vec[i];
+        let x = layer_params.position_x[i];
+        let y = layer_params.position_y[i];
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (px, py) = get_point_position(
@@ -797,15 +816,17 @@ pub fn base_draw_text_layer_svg(
             layer_w,
             layer_h,
             &camera_view,
-            layer_params.data_unit_mode,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
-            0, // TODO: pass enum value for aspect_ratio_alignment_mode
+            view_params.aspect_ratio_alignment_mode,
+            None,
         );
 
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
-            y: py as f64,
+            y: (layer_h - py) as f64,
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
@@ -849,17 +870,12 @@ pub fn base_draw_text_layer_svg(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for TextLayer {
-    async fn draw(&self, group: &Group) -> Group {
+    async fn draw(&self, ctx: &mut SvgContext) {
         let svg_elements = base_draw_text_layer_svg(
             &self.view_params,
             &self.layer_params,
         );
-
-        // TODO: refactor to avoid the cloning here?
-        let updated_group = update_svg(group.clone(), &svg_elements);
-
-        return updated_group.clone();
-
+        update_svg(ctx, &svg_elements);
     }
 }
 
@@ -872,3 +888,5 @@ inventory::submit! {
         },
     }
 }
+
+impl PickableLayer for TextLayer {}
