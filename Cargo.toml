@@ -52,7 +52,7 @@ type_complexity = "allow"
 [workspace.dependencies]
 inventory = "0.3.21"
 
-pyo3 = { version = "0.27", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 pythonize = { version = "0.27" }
 pyo3-log = { version = "0.13.2" }
