@@ -4,8 +4,8 @@ The Python kernel performs the GPU/CPU rendering via :func:`pluot.render` and se
 the resulting raw RGBA bytes back to the browser through the widget protocol's
 binary buffer channel. The JS side paints those bytes onto an HTML ``<canvas>``
 and uses the camera helpers from ``@pluot/core`` to translate mouse/wheel events
-into camera matrix updates that are synced back to the kernel, triggering the
-next render.
+into camera matrix updates sent to the kernel via custom messages (anywidget-command
+protocol), triggering the next render.
 """
 
 from __future__ import annotations
@@ -110,46 +110,38 @@ function render({ model, el }) {
     }
     applyLayout();
 
-    function pickWheelHandler() {
-        return model.get("view_mode") === "3d" ? pluot.onWheel3d : pluot.onWheel2d;
-    }
-    function pickMouseMoveHandler() {
-        return model.get("view_mode") === "3d" ? pluot.onMouseMove3d : pluot.onMouseMove2d;
-    }
+    // Local camera state for delta computations: updated immediately on interaction
+    // so subsequent events accumulate correctly without waiting for the round-trip.
+    // Also kept in sync when Python pushes a new camera_matrix via traitlet.
+    let _localCameraMatrix = new Float32Array(model.get("camera_matrix"));
 
-    // Coalesce rapid camera updates (mousemove fires faster than rAF rate) into
-    // one model.set per animation frame.  _pendingMatrix also serves as the base
-    // for the next computation so transforms accumulate correctly even when the
-    // previous update hasn't been flushed to the model yet.
-    let _rafId = null;
-    let _pendingMatrix = null;
-
-    function scheduleMatrixUpdate(next) {
-        _pendingMatrix = next;
-        if (_rafId === null) {
-            _rafId = requestAnimationFrame(() => {
-                _rafId = null;
-                if (_pendingMatrix !== null) {
-                    model.set("camera_matrix", Array.from(_pendingMatrix));
-                    model.save_changes();
-                    _pendingMatrix = null;
-                }
-            });
-        }
+    function onCameraChange() {
+        _localCameraMatrix = new Float32Array(model.get("camera_matrix"));
     }
+    model.on("change:camera_matrix", onCameraChange);
 
     function onWheel(event) {
-        const cur = new Float32Array(_pendingMatrix || model.get("camera_matrix"));
-        const next = pickWheelHandler()(getViewportParams(model), cur, event);
-        if (matricesEqual(cur, next)) return;
-        scheduleMatrixUpdate(next);
+        const handler = model.get("view_mode") === "3d" ? pluot.onWheel3d : pluot.onWheel2d;
+        const next = handler(getViewportParams(model), _localCameraMatrix, event);
+        if (matricesEqual(_localCameraMatrix, next)) return;
+        _localCameraMatrix = next;
+        model.send(
+            { kind: "anywidget-command", name: "camera_update", msg: Array.from(next) },
+            undefined,
+            [],
+        );
     }
 
     function onMouseMove(event) {
-        const cur = new Float32Array(_pendingMatrix || model.get("camera_matrix"));
-        const next = pickMouseMoveHandler()(getViewportParams(model), cur, event);
-        if (matricesEqual(cur, next)) return;
-        scheduleMatrixUpdate(next);
+        const handler = model.get("view_mode") === "3d" ? pluot.onMouseMove3d : pluot.onMouseMove2d;
+        const next = handler(getViewportParams(model), _localCameraMatrix, event);
+        if (matricesEqual(_localCameraMatrix, next)) return;
+        _localCameraMatrix = next;
+        model.send(
+            { kind: "anywidget-command", name: "camera_update", msg: Array.from(next) },
+            undefined,
+            [],
+        );
     }
 
     cameraEl.addEventListener("wheel", onWheel, { passive: false });
@@ -185,9 +177,9 @@ function render({ model, el }) {
     model.send({ kind: "ready" });
 
     return () => {
-        if (_rafId !== null) cancelAnimationFrame(_rafId);
         cameraEl.removeEventListener("wheel", onWheel);
         cameraEl.removeEventListener("mousemove", onMouseMove);
+        model.off("change:camera_matrix", onCameraChange);
         model.off("msg:custom", onCustomMsg);
         for (const key of layoutKeys) {
             model.off(`change:${key}`, applyLayout);
@@ -200,7 +192,8 @@ export default { initialize, render };
 
 
 _RENDER_TRIGGER_TRAITS = (
-    "camera_matrix",
+    # camera_matrix excluded: JS->Python updates arrive via anywidget-command,
+    # not traitlet sync.  Python-side changes must call _schedule_render() explicitly.
     "width",
     "height",
     "margin_top",
@@ -223,7 +216,9 @@ class PluotPyWidget(anywidget.AnyWidget):
 
     _esm = _ESM
 
-    # Synced traits: JS needs these to compute camera updates and lay out the canvas.
+    # Synced traits: JS reads these for layout and receives camera_matrix updates
+    # pushed from Python.  Camera updates in the JS->Python direction use custom
+    # messages (anywidget-command) instead of traitlet sync.
     width = traitlets.Int(800).tag(sync=True)
     height = traitlets.Int(800).tag(sync=True)
     camera_matrix = traitlets.List(
@@ -246,47 +241,46 @@ class PluotPyWidget(anywidget.AnyWidget):
     format = traitlets.Unicode("Raster")
 
     def __init__(self, **kwargs: Any) -> None:
-        self._render_inflight = False
-        self._render_pending = False
         super().__init__(**kwargs)
         self.on_msg(self._handle_msg)
 
-    def _handle_msg(self, _widget: Any, content: Any, _buffers: list[bytes]) -> None:
-        if isinstance(content, dict) and content.get("kind") == "ready":
+    def _handle_msg(self, _widget: Any, content: Any, buffers: list[bytes]) -> None:
+        if not isinstance(content, dict):
+            return
+        kind = content.get("kind")
+        if kind == "ready":
             self._schedule_render()
+        elif kind == "anywidget-command":
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                return
+            if loop.is_running():
+                loop.create_task(self._dispatch_command(content, buffers))
+            else:
+                loop.run_until_complete(self._dispatch_command(content, buffers))
+
+    async def _dispatch_command(self, msg: dict, buffers: list[bytes]) -> None:
+        name = msg.get("name")
+        params = msg.get("msg")
+        if name == "camera_update":
+            if isinstance(params, list) and len(params) == 16:
+                self.camera_matrix = params
+                self._schedule_render()
 
     @traitlets.observe(*_RENDER_TRIGGER_TRAITS)
     def _on_trait_change(self, _change: dict) -> None:
         self._schedule_render()
 
     def _schedule_render(self) -> None:
-        if self._render_inflight:
-            self._render_pending = True
-            return
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             return
         if loop.is_running():
-            loop.create_task(self._render_loop())
+            loop.create_task(self._render_once())
         else:
-            loop.run_until_complete(self._render_loop())
-
-    async def _render_loop(self) -> None:
-        # Coalesce concurrent triggers: while a render is in flight, set a pending
-        # flag and let the running task pick up the latest state when it finishes.
-        if self._render_inflight:
-            self._render_pending = True
-            return
-        self._render_inflight = True
-        try:
-            while True:
-                self._render_pending = False
-                await self._render_once()
-                if not self._render_pending:
-                    return
-        finally:
-            self._render_inflight = False
+            loop.run_until_complete(self._render_once())
 
     async def _render_once(self) -> None:
         try:
