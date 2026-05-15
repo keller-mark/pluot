@@ -85,7 +85,7 @@ pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU
 wgpu = { version = "29.0.1" }
-glam = { version = "0.30.8", features = ["encase"] }
+glam = { version = "0.32.1", features = ["encase"] }
 encase = { version = "0.12.0" }
 
 # Matrix multiplication for SVG rendering
