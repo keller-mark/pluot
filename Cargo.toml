@@ -54,7 +54,7 @@ inventory = "0.3.21"
 
 pyo3 = { version = "0.27", features = ["extension-module"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
-pythonize = { version = "0.27" }
+pythonize = { version = "0.28" }
 pyo3-log = { version = "0.13.2" }
 
 log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings?
