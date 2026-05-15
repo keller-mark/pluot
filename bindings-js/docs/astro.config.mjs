@@ -23,15 +23,15 @@ export default defineConfig({
 				{
 					label: 'Overview',
 					// Autogenerate a group of links for the 'constellations' directory.
-					autogenerate: { directory: 'start' },
+          items: [{ autogenerate: { directory: 'start' } }],
 				},
 				{
 					label: 'Reference',
-					autogenerate: { directory: 'reference' },
+					items: [{autogenerate: { directory: 'reference' } }],
 				},
 				{
 					label: 'Examples',
-					autogenerate: { directory: 'examples' },
+					items: [{autogenerate: { directory: 'examples' } }],
 				},
 			],
 			customCss: [
