@@ -70,6 +70,7 @@ export function Pluot(props) {
     debugMargins = false,
     cameraMatrix: controlledCameraMatrix = null,
     setCameraMatrix: setControlledCameraMatrix = null,
+    enablePicking = true,
   } = props;
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
@@ -237,7 +238,9 @@ export function Pluot(props) {
 
     // Set up an onClick handler for picking.
     const clickHandler = (event) => {
-      pickFrame(event.offsetX, event.offsetY);
+      if (enablePicking) {
+        pickFrame(event.offsetX, event.offsetY);
+      }
     };
     cameraEl.addEventListener("click", clickHandler);
 
@@ -246,7 +249,7 @@ export function Pluot(props) {
       cameraEl.removeEventListener("wheel", wheelHandler);
       cameraEl.removeEventListener("click", clickHandler);
     };
-  }, [viewMode]);
+  }, [viewMode, enablePicking]);
 
 
 

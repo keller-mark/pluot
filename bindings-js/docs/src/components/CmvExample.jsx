@@ -65,7 +65,7 @@ export function CmvExample() {
                 marginBottom={0}
                 cameraMatrix={cameraMatrix}
                 setCameraMatrix={isCameraCoordinated ? setCameraMatrix : null}
-
+                enablePicking={false}
             />
             <Pluot
                 key="right"
@@ -102,20 +102,21 @@ export function CmvExample() {
                 marginBottom={0}
                 cameraMatrix={cameraMatrix}
                 setCameraMatrix={isCameraCoordinated ? setCameraMatrix : null}
+                enablePicking={false}
             />
-            <div>
-                <label>Point Radius:</label>
-                <input
-                          type="range"
-                          min={1.0}
-                          max={100.0}
-                          step={1.0}
-                          value={pointRadius}
-                          onChange={(e) => {
-                              const newValue = parseFloat(e.target.value);
-                              setPointRadius(newValue);
-                          }}
-                />
+      <div>
+          <label>Point Radius:</label>
+          <input
+            type="range"
+            min={1.0}
+            max={100.0}
+            step={1.0}
+            value={pointRadius}
+            onChange={(e) => {
+                const newValue = parseFloat(e.target.value);
+                setPointRadius(newValue);
+            }}
+          />
           <br />
           <label>
             Coordinate camera (pan/zoom) state:&nbsp;
@@ -125,8 +126,7 @@ export function CmvExample() {
               onChange={(e) => setIsCameraCoordinated(e.target.checked)}
             />
           </label>
-
-            </div>
         </div>
-    );
+    </div>
+  );
 }

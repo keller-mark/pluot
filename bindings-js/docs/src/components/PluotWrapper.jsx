@@ -28,6 +28,7 @@ export function PluotWrapper(props) {
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
     cameraMatrix = null,
+    enablePicking = true,
   } = props;
 
   const defaultOptions = {
@@ -138,6 +139,7 @@ export function PluotWrapper(props) {
           format={format}
           debugMargins={debugMargins}
           cameraMatrix={cameraMatrix}
+          enablePicking={enablePicking}
         />
       </div>
       <PlotControls

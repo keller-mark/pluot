@@ -159,6 +159,7 @@ export function BioimageWrapperInner(props) {
       marginBottom={100}
       plotSpecificOptions={controls}
       cameraMatrix={cameraMatrix}
+      enablePicking={false}
     />
   );
 }
