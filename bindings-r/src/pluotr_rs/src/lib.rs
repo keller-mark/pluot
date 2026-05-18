@@ -1,11 +1,16 @@
-// Import dependencies
-extern crate libc;
+use extendr_api::prelude::*;
 
-// Modules are other .rs source files
-mod hello;
 mod render;
 
-// Export functions called by R
-pub use hello::rust_roundtrip;
-pub use render::{rust_render, free_bytes_from_rust};
+#[extendr]
+fn render_r(json_params: &str) -> Raw {
+    match render::do_render(json_params) {
+        Ok(bytes) => Raw::from_bytes(&bytes),
+        Err(e) => panic!("{e}"),
+    }
+}
 
+extendr_module! {
+    mod pluotr;
+    fn render_r;
+}

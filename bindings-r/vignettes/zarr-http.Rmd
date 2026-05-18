@@ -1,0 +1,151 @@
+---
+title: "Remote Zarr Stores over HTTP"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Remote Zarr Stores over HTTP}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r helpers, include=FALSE}
+library(pluotr)
+
+pluot_raster <- function(raw_bytes, width, height) {
+  pixel_bytes <- raw_bytes[-length(raw_bytes)]
+  vals <- as.double(as.integer(pixel_bytes)) / 255.0
+  arr  <- array(vals, dim = c(4L, width, height))
+  as.raster(aperm(arr, c(3L, 2L, 1L)))
+}
+```
+
+pluotr can render data from any Zarr store that pizzarr supports, including
+stores served over HTTP. This vignette demonstrates `ZarrBarPlotLayer` using a
+publicly available dataset — historical UK wheat prices — fetched directly from
+a remote Zarr store.
+
+> **Note:** this vignette requires an internet connection and the
+> [`crul`](https://docs.ropensci.org/crul/) package:
+> ```r
+> install.packages("crul")
+> ```
+
+## Opening a remote Zarr store
+
+pizzarr's `HttpStore` fetches chunks on demand over HTTP. Pass the root URL of
+the Zarr store to the constructor.
+
+```{r open-store}
+library(pizzarr)
+
+store <- HttpStore$new(
+  "https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/wheat.zarr"
+)
+store
+```
+
+## Registering the store with pluotr
+
+Give the store a name and hand it to `pluot_register_store()`. Use the same
+name as `store_name` in `pluot_render()`.
+
+```{r register-store}
+library(pluotr)
+
+pluot_register_store("wheat_store", store)
+```
+
+## Rendering a bar plot
+
+`ZarrBarPlotLayer` reads two arrays from the store:
+
+| parameter | array | description |
+|---|---|---|
+| `identifier_key` | `/year` | category axis (bar labels) |
+| `quantity_key` | `/wheat` | value axis (bar heights) |
+
+The camera view matrix controls which part of the data space is visible. Here
+the x-scale (`0.15`) spreads out the bars and the y-scale (`0.01`) compresses
+the tall price axis into the canvas height. The y-translation (`-1.0` in the
+last column) shifts the origin to the bottom of the plot.
+
+```{r render-raster, fig.width=8, fig.height=6}
+w <- 800L
+h <- 600L
+
+camera_view <- c(
+  0.15, 0.0,  0.0, 0.0,
+  0.0,  0.01, 0.0, 0.0,
+  0.0,  0.0,  1.0, 0.0,
+  0.0,  -1.0, 0.0, 1.0
+)
+
+result <- pluot_render(
+  layers = list(
+    list(
+      layer_type   = "ZarrBarPlotLayer",
+      layer_params = list(
+        layer_id        = "barplot_layer",
+        bounds          = NULL,
+        orientation     = "Vertical",
+        identifier_key  = "/year",
+        quantity_key    = "/wheat",
+        fill_color_mode = "Categorical"
+      )
+    )
+  ),
+  width               = w,
+  height              = h,
+  camera_view         = camera_view,
+  margin_left         = 100L,
+  margin_bottom       = 100L,
+  margin_top          = 10L,
+  margin_right        = 10L,
+  plot_id             = "wheat_barplot",
+  store_name          = "wheat_store",
+  wait_for_store_gets = TRUE,
+  cache_enabled       = FALSE
+)
+
+plot(pluot_raster(result, w, h), interpolate = FALSE)
+```
+
+## SVG output
+
+The same layer definition produces publication-quality SVG by passing
+`format = "Vector"`.
+
+```{r render-svg}
+svg_result <- pluot_render(
+  layers = list(
+    list(
+      layer_type   = "ZarrBarPlotLayer",
+      layer_params = list(
+        layer_id        = "barplot_layer",
+        bounds          = NULL,
+        orientation     = "Vertical",
+        identifier_key  = "/year",
+        quantity_key    = "/wheat",
+        fill_color_mode = "Categorical"
+      )
+    )
+  ),
+  width               = w,
+  height              = h,
+  format              = "Vector",
+  camera_view         = camera_view,
+  margin_left         = 100L,
+  margin_bottom       = 100L,
+  margin_top          = 10L,
+  margin_right        = 10L,
+  plot_id             = "wheat_barplot_svg",
+  store_name          = "wheat_store",
+  wait_for_store_gets = TRUE,
+  cache_enabled       = FALSE
+)
+
+htmltools::HTML(rawToChar(svg_result))
+```

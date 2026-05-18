@@ -17,10 +17,13 @@ CARGOTMP=$(PWD)/.cargo
 export CARGO_HOME=$(CARGOTMP)
 
 LLVM_PREFIX = $(shell test -d /opt/homebrew/opt/llvm/bin && echo /opt/homebrew/opt/llvm/bin:)
+# cc-rs falls back to the bare name "c++" which resolves to Apple clang, not LLVM.
+# Explicitly set CXX to LLVM clang++ when available so C++ deps (snappy/blosc) build.
+LLVM_CXX = $(shell test -f /opt/homebrew/opt/llvm/bin/clang++ && echo CXX=/opt/homebrew/opt/llvm/bin/clang++)
 
 $(STATLIB):
 	if [ -f pluotr_rs/vendor.tar.xz ]; then tar xf pluotr_rs/vendor.tar.xz && mkdir -p $(CARGOTMP) && cp pluotr_rs/vendor-config.toml $(CARGOTMP)/config.toml; fi
-	env -u MACOSX_DEPLOYMENT_TARGET -u CXXFLAGS PATH="$(LLVM_PREFIX)${PATH}:${HOME}/.cargo/bin" cargo build ${CRANFLAGS} --release --manifest-path=pluotr_rs/Cargo.toml
+	env -u MACOSX_DEPLOYMENT_TARGET -u CXXFLAGS $(LLVM_CXX) PATH="$(LLVM_PREFIX)${PATH}:${HOME}/.cargo/bin" cargo build ${CRANFLAGS} --release --manifest-path=pluotr_rs/Cargo.toml
 	@rm -Rf $(CARGOTMP) vendor || true # CRAN wants us to remove "detritus"
 	@rm -Rf $(LIBDIR)/build || true
 
