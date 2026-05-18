@@ -1,15 +1,11 @@
 Package: pluotr
 Type: Package
-Title: Minimal Examples of Using Rust Code in R
+Title: Visualize data in R using Pluot.
 Version: 1.2.3
 Authors@R: c(person("Mark", "Keller", role = c("aut", "cre"), email = "mark_keller@hms.harvard.edu",
     comment = c(ORCID = "TODO")),
       person("Authors of the dependency Rust crates", role = "aut", comment = "see AUTHORS file"))
-Description: Template R package with minimal setup to use Rust code in R without
-    hacks or frameworks. Includes basic examples of importing cargo dependencies,
-    spawning threads and passing numbers or strings from Rust to R. Cargo crates
-    are automatically 'vendored' in the R source package to support offline
-    installation.
+Description: R bindings to the Pluot Rust code.
 License: MIT + file LICENSE
 URL: https://github.com/keller-mark/pluot
 BugReports: https://github.com/keller-mark/pluot/issues

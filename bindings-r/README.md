@@ -3,7 +3,7 @@
 ## Naming
 
 - `pluot`: The Rust rendering library (`crates/pluot` in this repo)
-- `pluotr`: The R package
+- `pluotr`: The R package in `bindings-r`
 - `pluotr_rs`: The Rust staticlib crate embedded inside the R package; depends on `pluot` and `extendr-api`, and registers the package entry points with R via extendr's `extendr_module!` macro
 
 ## Architecture
