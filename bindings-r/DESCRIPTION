@@ -14,7 +14,9 @@ License: MIT + file LICENSE
 URL: https://github.com/keller-mark/pluot
 BugReports: https://github.com/keller-mark/pluot/issues
 SystemRequirements: Cargo (Rust's package manager), rustc
-Imports: jsonlite
+Imports:
+    jsonlite,
+    pizzarr
 Suggests:
     testthat (>= 3.0.0),
     knitr,

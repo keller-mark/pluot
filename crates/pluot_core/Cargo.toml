@@ -25,6 +25,8 @@ workspace = true
 default = []
 # Define features to toggle which dependency is active
 python = ["pyo3", "pyo3-async-runtimes", "pythonize", "pyo3-log", "tokio"]
+# R bindings feature — enables extern "C" zarr callbacks that call back into R
+r = []
 # Define a feature for running unit tests in GPU-less environments
 lacks_gpu = []
 

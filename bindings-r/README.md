@@ -14,9 +14,6 @@ Usage in RStudio:
 devtools::install()
 library(pluotr)
 
-# Sanity-check the Rust/R bridge
-pluotr::roundtrip()
-
 # Render a plot — returns a raw vector of RGBA bytes (width × height × 4)
 raw_bytes <- pluotr::pluot_render(
   layers = list(
@@ -113,7 +110,6 @@ bindings-r/
 │  │  ├─ Cargo.toml         ← own [workspace] root; pluot dep: path = "../crates/pluot"
 │  │  ├─ src/
 │  │  │  ├─ lib.rs
-│  │  │  ├─ hello.rs        ← roundtrip example (R ↔ Rust string)
 │  │  │  └─ render.rs       ← rust_render / free_bytes_from_rust
 │  │  ├─ api.h              ← C declarations for all exported Rust symbols
 │  │  ├─ vendor-update.sh   ← creates vendor.tar.xz for CRAN
@@ -122,7 +118,6 @@ bindings-r/
 │  ├─ Makevars.win          ← Windows variant (cross-compile targets)
 │  └─ wrapper.c             ← C glue: R ↔ Rust (roundtrip_wrapper, render_wrapper)
 ├─ R/
-│  ├─ hello.R               ← hello_from_r(), roundtrip()
 │  └─ render.R              ← pluot_render()
 ├─ tests/
 │  ├─ testthat.R

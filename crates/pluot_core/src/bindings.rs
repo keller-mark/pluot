@@ -475,8 +475,152 @@ pub mod python {
     }
 }
 
+// === R Bindings ===
+#[cfg(all(not(target_arch = "wasm32"), feature = "r"))]
+pub mod r {
+    use std::ffi::{c_char, CString};
+    use std::sync::OnceLock;
+    use super::ZarrPeekResult;
+
+    // Function pointer table populated at DLL load time by pluot_init_r_zarr.
+    // Using function pointers avoids undefined-symbol errors when Cargo builds
+    // the staticlib on macOS (the linker checks for unresolved symbols in .a files).
+    #[repr(C)]
+    #[derive(Copy, Clone)]
+    pub struct RZarrCallbacks {
+        pub has_status: unsafe extern "C" fn(*const c_char, *const c_char) -> i32,
+        pub get_status: unsafe extern "C" fn(*const c_char, *const c_char) -> i32,
+        pub get_range_from_offset_status: unsafe extern "C" fn(
+            *const c_char, *const c_char, u32, u32,
+        ) -> i32,
+        pub get_range_from_end_status: unsafe extern "C" fn(
+            *const c_char, *const c_char, u32,
+        ) -> i32,
+        pub has: unsafe extern "C" fn(*const c_char, *const c_char) -> i32,
+        pub get: unsafe extern "C" fn(*const c_char, *const c_char, *mut usize) -> *mut u8,
+        pub get_range_from_offset: unsafe extern "C" fn(
+            *const c_char, *const c_char, u32, u32, *mut usize,
+        ) -> *mut u8,
+        pub get_range_from_end: unsafe extern "C" fn(
+            *const c_char, *const c_char, u32, *mut usize,
+        ) -> *mut u8,
+        pub free_bytes: unsafe extern "C" fn(*mut u8),
+    }
+
+    // SAFETY: RZarrCallbacks holds C function pointers which are Send+Sync.
+    unsafe impl Send for RZarrCallbacks {}
+    unsafe impl Sync for RZarrCallbacks {}
+
+    static CALLBACKS: OnceLock<RZarrCallbacks> = OnceLock::new();
+
+    #[no_mangle]
+    pub extern "C" fn pluot_init_r_zarr(cb: *const RZarrCallbacks) {
+        let callbacks = unsafe { *cb };
+        let _ = CALLBACKS.set(callbacks);
+    }
+
+    fn cbs() -> &'static RZarrCallbacks {
+        CALLBACKS.get().expect("pluot_init_r_zarr not called before zarr functions")
+    }
+
+    pub fn log(s: &str) {
+        println!("{}", s);
+    }
+
+    fn to_cstring(s: &str) -> CString {
+        CString::new(s).expect("store/key contains null byte")
+    }
+
+    fn i32_to_peek(val: i32) -> ZarrPeekResult {
+        match val {
+            1 => ZarrPeekResult::Fulfilled,
+            2 => ZarrPeekResult::Rejected,
+            _ => ZarrPeekResult::Pending,
+        }
+    }
+
+    fn bytes_from_c(ptr: *mut u8, len: usize) -> zarrs::storage::Bytes {
+        if ptr.is_null() {
+            return zarrs::storage::Bytes::from(vec![]);
+        }
+        let vec = unsafe { std::slice::from_raw_parts(ptr, len).to_vec() };
+        unsafe { (cbs().free_bytes)(ptr) };
+        zarrs::storage::Bytes::from(vec)
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        i32_to_peek(unsafe { (cbs().has_status)(sn.as_ptr(), k.as_ptr()) })
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        i32_to_peek(unsafe { (cbs().get_status)(sn.as_ptr(), k.as_ptr()) })
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str, key: &str, offset: u32, length: u32,
+    ) -> ZarrPeekResult {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        i32_to_peek(unsafe {
+            (cbs().get_range_from_offset_status)(sn.as_ptr(), k.as_ptr(), offset, length)
+        })
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str, key: &str, suffix_length: u32,
+    ) -> ZarrPeekResult {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        i32_to_peek(unsafe {
+            (cbs().get_range_from_end_status)(sn.as_ptr(), k.as_ptr(), suffix_length)
+        })
+    }
+
+    pub async fn zarr_has(store_name: &str, key: &str) -> bool {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        unsafe { (cbs().has)(sn.as_ptr(), k.as_ptr()) != 0 }
+    }
+
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        let mut len: usize = 0;
+        let ptr = unsafe { (cbs().get)(sn.as_ptr(), k.as_ptr(), &mut len) };
+        bytes_from_c(ptr, len)
+    }
+
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str, key: &str, offset: u32, length: u32,
+    ) -> zarrs::storage::Bytes {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        let mut len: usize = 0;
+        let ptr = unsafe {
+            (cbs().get_range_from_offset)(sn.as_ptr(), k.as_ptr(), offset, length, &mut len)
+        };
+        bytes_from_c(ptr, len)
+    }
+
+    pub async fn zarr_get_range_from_end(
+        store_name: &str, key: &str, suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
+        let sn = to_cstring(store_name);
+        let k = to_cstring(key);
+        let mut len: usize = 0;
+        let ptr = unsafe {
+            (cbs().get_range_from_end)(sn.as_ptr(), k.as_ptr(), suffix_length, &mut len)
+        };
+        bytes_from_c(ptr, len)
+    }
+}
+
 // === Rust-only Bindings ===
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python"), not(feature = "r")))]
 pub mod plain_rust {
     use core::panic;
     pub use super::{render, ZarrPeekResult};
