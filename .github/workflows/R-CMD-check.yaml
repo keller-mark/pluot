@@ -48,7 +48,6 @@ jobs:
           curl -fL "https://zarr-developers.r-universe.dev/src/contrib/pizzarr_0.2.0.tar.gz" \
             -o "$tmp"
           Rscript -e "install.packages('$tmp', repos = NULL, type = 'source')"
-          Rscript -e "install.packages('crul', repos = 'https://dev.ropensci.org')"
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:

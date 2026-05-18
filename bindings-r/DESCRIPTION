@@ -17,7 +17,8 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
-    htmltools
+    htmltools,
+    crul
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Encoding: UTF-8
