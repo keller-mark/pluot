@@ -66,6 +66,20 @@ arr <- array(as.integer(raw_bytes[-length(raw_bytes)]),
 
 ## Testing
 
+The zarr tests require **pizzarr >= 0.2.0** for `zarr_format = 3L` support. The CRAN source package fails to compile on macOS (same C++ stdlib issue as pluot itself). Install the pure-R build from r-universe instead:
+
+```r
+# Download the pure-R tarball from r-universe (no Rust compilation needed)
+tmp <- tempfile(fileext = ".tar.gz")
+download.file(
+  "https://zarr-developers.r-universe.dev/src/contrib/pizzarr_0.2.0.tar.gz",
+  tmp
+)
+install.packages(tmp, repos = NULL, type = "source")
+```
+
+The r-universe package has no `src/` directory — it is a pure-R implementation that installs without a Rust toolchain.
+
 ```r
 # Run all tests
 devtools::test(pkg = "/path/to/pluot/bindings-r")
@@ -179,6 +193,21 @@ bash vendor-update.sh
 ```
 
 ## Troubleshooting
+
+### `pizzarr` fails to install on macOS (`'string' file not found` in Rust build)
+
+The CRAN source package for pizzarr 0.2.0 includes a Rust backend and hits the same `-mmacosx-version-min=26.1` C++ stdlib issue as pluot itself. Installing via `install.packages("pizzarr", repos = c("https://zarr-developers.r-universe.dev", "https://cloud.r-project.org"))` falls through to the CRAN source build and fails.
+
+**Fix:** install the pure-R tarball from r-universe directly (it has no `src/` directory and requires no compilation):
+
+```r
+tmp <- tempfile(fileext = ".tar.gz")
+download.file(
+  "https://zarr-developers.r-universe.dev/src/contrib/pizzarr_0.2.0.tar.gz",
+  tmp
+)
+install.packages(tmp, repos = NULL, type = "source")
+```
 
 ### `error: no matching package named 'extendr-api' found`
 
