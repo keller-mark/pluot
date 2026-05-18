@@ -1,0 +1,122 @@
+---
+title: "Getting Started with pluotr"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with pluotr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+pluotr is an R interface to [pluot](https://pluot.dev), a GPU-accelerated
+rendering library written in Rust. You describe a plot as a list of layers and
+pluot produces either raster (RGBA pixel bytes) or vector (SVG) output.
+
+## Installation
+
+```{r, eval=FALSE}
+# From the pluot workspace root (requires Rust/Cargo)
+# On macOS also install LLVM: brew install llvm
+devtools::install("bindings-r")
+```
+
+## A helper for displaying raster output
+
+`pluot_render()` returns a raw vector of `width * height * 4` RGBA bytes plus
+one trailing status byte. The helper below converts it into a base-R raster
+object that `plot()` can display directly.
+
+```{r raster-helper}
+library(pluotr)
+
+pluot_raster <- function(raw_bytes, width, height) {
+  pixel_bytes <- raw_bytes[-length(raw_bytes)]          # drop status byte
+  vals <- as.double(as.integer(pixel_bytes)) / 255.0
+  arr  <- array(vals, dim = c(4L, width, height))       # [channel, x, y]
+  as.raster(aperm(arr, c(3L, 2L, 1L)))                  # → [y, x, channel]
+}
+```
+
+## Raster output
+
+The `camera_view` is a column-major 4×4 view matrix. An identity matrix maps
+pixel coordinates directly to the canvas without any scaling or translation.
+
+Layers are named lists with `layer_type` (a string matching a registered layer)
+and `layer_params` (layer-specific settings). `PointLayer` accepts inline
+coordinate vectors in either pixel or data space.
+
+```{r raster, fig.width=3, fig.height=3}
+camera_identity <- c(
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+)
+
+result <- pluot_render(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "four_points",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 20.0,
+        bounds                   = NULL,
+        position_x               = c(60,  60, 140, 140),
+        position_y               = c(60, 140,  60, 140),
+        labels_vec               = c(0L, 1L, 2L, 3L)
+      )
+    )
+  ),
+  width       = 200L,
+  height      = 200L,
+  camera_view = camera_identity,
+  plot_id     = "intro_raster"
+)
+
+plot(pluot_raster(result, 200L, 200L), interpolate = FALSE)
+```
+
+## SVG output
+
+Pass `format = "Vector"` to receive a UTF-8 SVG string instead of pixel bytes.
+This is useful for publication figures or when you want to embed the chart in an
+HTML document.
+
+```{r svg}
+svg_result <- pluot_render(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "four_points",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 20.0,
+        bounds                   = NULL,
+        position_x               = c(60,  60, 140, 140),
+        position_y               = c(60, 140,  60, 140),
+        labels_vec               = c(0L, 1L, 2L, 3L)
+      )
+    )
+  ),
+  width       = 200L,
+  height      = 200L,
+  format      = "Vector",
+  camera_view = camera_identity,
+  plot_id     = "intro_svg"
+)
+
+htmltools::HTML(rawToChar(svg_result))
+```

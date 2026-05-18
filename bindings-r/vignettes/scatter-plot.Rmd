@@ -1,0 +1,183 @@
+---
+title: "Scatter Plots"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Scatter Plots}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r helpers, include=FALSE}
+library(pluotr)
+
+pluot_raster <- function(raw_bytes, width, height) {
+  pixel_bytes <- raw_bytes[-length(raw_bytes)]
+  vals <- as.double(as.integer(pixel_bytes)) / 255.0
+  arr  <- array(vals, dim = c(4L, width, height))
+  as.raster(aperm(arr, c(3L, 2L, 1L)))
+}
+```
+
+This vignette shows how to build scatter plots with axes, margins, and a
+calibrated camera view.
+
+## Data in pixel space
+
+The simplest approach is to scale your data to pixel coordinates directly and
+use the identity camera. Here 500 random points are placed within the inner
+area of a 500×500 canvas, leaving room for axis labels on the left and bottom.
+
+```{r scatter-pixels, fig.width=5, fig.height=5}
+set.seed(42)
+n      <- 500L
+margin <- 80L          # pixels reserved for axis labels
+w      <- 500L
+h      <- 500L
+
+# Scale data to the drawable area [margin, w-20] × [20, h-margin]
+x_px <- margin + runif(n) * (w - margin - 20L)
+y_px <- 20L    + runif(n) * (h - 20L - margin)
+
+# Assign 5 categorical groups (0-based integer labels drive colour)
+groups <- as.integer(rep_len(0L:4L, n))
+
+camera_identity <- c(
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+)
+
+result <- pluot_render(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "scatter",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 5.0,
+        bounds                   = NULL,
+        position_x               = x_px,
+        position_y               = y_px,
+        labels_vec               = groups
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left_axis",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom_axis", position = "Bottom")
+    )
+  ),
+  width         = w,
+  height        = h,
+  camera_view   = camera_identity,
+  margin_left   = margin,
+  margin_bottom = margin,
+  margin_top    = 20L,
+  margin_right  = 20L,
+  plot_id       = "scatter_pixels"
+)
+
+plot(pluot_raster(result, w, h), interpolate = FALSE)
+```
+
+## SVG output for publication
+
+Replace `format = "Raster"` with `format = "Vector"` to get SVG. The same
+layer definition works for both output modes.
+
+```{r scatter-svg}
+svg_result <- pluot_render(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "scatter",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 5.0,
+        bounds                   = NULL,
+        position_x               = x_px,
+        position_y               = y_px,
+        labels_vec               = groups
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left_axis",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom_axis", position = "Bottom")
+    )
+  ),
+  width         = w,
+  height        = h,
+  format        = "Vector",
+  camera_view   = camera_identity,
+  margin_left   = margin,
+  margin_bottom = margin,
+  margin_top    = 20L,
+  margin_right  = 20L,
+  plot_id       = "scatter_svg"
+)
+
+htmltools::HTML(rawToChar(svg_result))
+```
+
+## Adjusting point size and shape
+
+`point_radius` and `point_shape_mode` control the appearance of each point.
+Supported shapes include `"Circle"` and `"Square"`.
+
+```{r scatter-shapes, fig.width=5, fig.height=2.5}
+make_row <- function(shape, n_pts = 8L, radius = 12.0, width = 400L, height = 60L) {
+  pluot_render(
+    layers = list(
+      list(
+        layer_type   = "PointLayer",
+        layer_params = list(
+          layer_id                 = "pts",
+          data_unit_mode_x         = "Pixels",
+          data_unit_mode_y         = "Pixels",
+          point_radius_unit_mode_x = "Pixels",
+          point_radius_unit_mode_y = "Pixels",
+          point_shape_mode         = shape,
+          point_radius             = radius,
+          bounds                   = NULL,
+          position_x               = seq(30, width - 30, length.out = n_pts),
+          position_y               = rep(height / 2, n_pts),
+          labels_vec               = 0L:(n_pts - 1L)
+        )
+      )
+    ),
+    width       = width,
+    height      = height,
+    camera_view = c(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1),
+    plot_id     = paste0("shapes_", shape)
+  )
+}
+
+par(mfrow = c(2, 1), mar = c(0.2, 2, 0.2, 0.2))
+plot(pluot_raster(make_row("Circle"), 400L, 60L),
+     interpolate = FALSE)
+mtext("Circle", side = 2, las = 1, line = 0.5, cex = 0.8)
+
+plot(pluot_raster(make_row("Square"), 400L, 60L),
+     interpolate = FALSE)
+mtext("Square", side = 2, las = 1, line = 0.5, cex = 0.8)
+```

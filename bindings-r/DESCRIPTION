@@ -15,7 +15,12 @@ URL: https://github.com/keller-mark/pluot
 BugReports: https://github.com/keller-mark/pluot/issues
 SystemRequirements: Cargo (Rust's package manager), rustc
 Imports: jsonlite
-Suggests: testthat (>= 3.0.0)
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    htmltools
 Config/testthat/edition: 3
+VignetteBuilder: knitr
 Encoding: UTF-8
 RoxygenNote: 7.2.1
