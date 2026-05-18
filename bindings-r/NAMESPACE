@@ -2,4 +2,4 @@
 
 export(pluot_render)
 export(pluot_register_store)
-useDynLib(pluotr, render_wrapper)
+useDynLib(pluotr, wrap__render_r)

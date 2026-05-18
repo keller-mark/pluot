@@ -4,7 +4,36 @@
 
 - `pluot`: The Rust rendering library (`crates/pluot` in this repo)
 - `pluotr`: The R package
-- `pluotr_rs`: The Rust staticlib crate embedded inside the R package; depends on `pluot` and contains the C FFI entry points used by R
+- `pluotr_rs`: The Rust staticlib crate embedded inside the R package; depends on `pluot` and `extendr-api`, and registers the package entry points with R via extendr's `extendr_module!` macro
+
+## Architecture
+
+`pluotr_rs` uses [extendr](https://extendr.github.io/) (v0.9) instead of hand-written C glue:
+
+| Concern | Before | After |
+|---|---|---|
+| Exposing `render_r` to R | `render_wrapper` in `wrapper.c` (manual SEXP alloc, `R_CallMethodDef`, `R_init_pluotr`) | `#[extendr] fn render_r(...)` + `extendr_module!` in Rust |
+| Calling R zarr callbacks from Rust | `RZarrCallbacks` function-pointer struct + `OnceLock` + C intermediates | `R!("pluotr:::fn({{arg}})")` via extendr's `R!` macro |
+| C source in `src/` | `wrapper.c` (231 lines) + `api.h` | `wrapper.c` (2 lines: forwards `R_init_pluotr` → `R_init_pluotr_extendr`) |
+
+### How the call chain works
+
+**Rendering:**
+```
+R: pluot_render(...)
+  → .Call("wrap__render_r", json_str)          # extendr-registered symbol
+  → Rust: render_r(json_params: &str) -> Raw   # #[extendr] fn in lib.rs
+  → render::do_render(json_str)                # calls pluot::render via futures::block_on
+```
+
+**Zarr store callbacks (e.g. when the layer fetches a chunk):**
+```
+Rust: zarr_get(store_name, key)                # in pluot_core::bindings::r
+  → R!("pluotr:::pluot_zarr_get({{store_name}}, {{key}})")
+  → R: pluot_zarr_get(store_name, key)         # in zarr.R — reads from pizzarr store cache
+```
+
+The `R!` macro is evaluated synchronously (R is single-threaded); extendr handles the lock internally.
 
 ## Development
 
@@ -35,13 +64,14 @@ arr <- array(as.integer(raw_bytes[-length(raw_bytes)]),
              dim = c(4L, 800L, 600L))
 ```
 
-Reference: https://github.com/r-rust/pluotr
-
 ## Testing
 
 ```r
 # Run all tests
 devtools::test(pkg = "/path/to/pluot/bindings-r")
+
+# Run only the zarr integration tests
+devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "zarr")
 
 # Run only the render tests
 devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "render")
@@ -56,6 +86,7 @@ Tests live in `tests/testthat/` and use the [testthat](https://testthat.r-lib.or
 |---|---|
 | `test-render.R` | Byte count, pixel sum, and SVG output for a 4-point PointLayer at 100×100 |
 | `test-fps.R` | PointLayer renders complete at positive FPS across a range of point counts and resolutions |
+| `test-zarr.R` | Zarr store callbacks (register, has, get, range), and a full ZarrPointLayer render from a pizzarr MemoryStore |
 
 ## Importing `pluot` from `pluotr_rs`
 
@@ -70,7 +101,7 @@ src/crates -> ../../crates   (symlink)
 and referenced by path in `pluotr_rs/Cargo.toml`:
 
 ```toml
-pluot = { path = "../crates/pluot" }
+pluot = { path = "../crates/pluot", features = ["r"] }
 ```
 
 `R CMD build` follows the symlink and copies the real crate source into the build tarball, so the package builds correctly when installed from a temporary directory (as `devtools::install()` does).
@@ -95,7 +126,7 @@ env -u MACOSX_DEPLOYMENT_TARGET -u CXXFLAGS \
 
 ## Package Structure
 
-[src/Makevars](src/Makevars) compiles `pluotr_rs` as a static library and links it into the R shared object.
+[src/Makevars](src/Makevars) compiles `pluotr_rs` as a static library and links it into the R shared object alongside the thin `wrapper.c` entrypoint.
 
 ```
 bindings-r/
@@ -106,24 +137,25 @@ bindings-r/
 │  │                           provides [workspace.package] and [workspace.dependencies]
 │  │                           so their *.workspace = true fields resolve correctly
 │  ├─ crates -> ../../crates  ← symlink; R CMD build follows it to include crate source
-│  ├─ pluotr_rs/            ← standalone staticlib crate: C FFI wrappers over pluot
-│  │  ├─ Cargo.toml         ← own [workspace] root; pluot dep: path = "../crates/pluot"
+│  ├─ pluotr_rs/            ← standalone staticlib crate: extendr-based wrappers over pluot
+│  │  ├─ Cargo.toml         ← own [workspace] root; deps: pluot (path), extendr-api
 │  │  ├─ src/
-│  │  │  ├─ lib.rs
-│  │  │  └─ render.rs       ← rust_render / free_bytes_from_rust
-│  │  ├─ api.h              ← C declarations for all exported Rust symbols
+│  │  │  ├─ lib.rs          ← #[extendr] fn render_r + extendr_module! { mod pluotr; }
+│  │  │  └─ render.rs       ← do_render(): calls pluot::render via block_on
 │  │  ├─ vendor-update.sh   ← creates vendor.tar.xz for CRAN
 │  │  └─ vendor-authors.R   ← generates inst/AUTHORS from cargo metadata
 │  ├─ Makevars              ← builds pluotr_rs, links libpluotr_rs.a
 │  ├─ Makevars.win          ← Windows variant (cross-compile targets)
-│  └─ wrapper.c             ← C glue: R ↔ Rust (roundtrip_wrapper, render_wrapper)
+│  └─ wrapper.c             ← 2-line entrypoint: R_init_pluotr → R_init_pluotr_extendr
 ├─ R/
-│  └─ render.R              ← pluot_render()
+│  ├─ render.R              ← pluot_render()
+│  └─ zarr.R                ← pluot_register_store(), pluot_zarr_*() callbacks
 ├─ tests/
 │  ├─ testthat.R
 │  └─ testthat/
 │     ├─ test-render.R
-│     └─ test-fps.R
+│     ├─ test-fps.R
+│     └─ test-zarr.R
 ├─ DESCRIPTION
 └─ NAMESPACE
 ```
@@ -138,6 +170,54 @@ Per the [2023 CRAN guidelines](https://cran.r-project.org/web/packages/using_rus
  2. (by the user) At install time, [Makevars](src/Makevars) extracts `vendor.tar.xz` (when present) and writes a `.cargo/config.toml` pointing at the vendored sources.
 
 Without a `vendor.tar.xz`, `cargo build` downloads crates from crates.io as normal.
+
+**After adding or updating a dependency** (including the move to extendr-api 0.9), regenerate the vendor archive before any CRAN submission:
+
+```sh
+cd src/pluotr_rs
+bash vendor-update.sh
+```
+
+## Troubleshooting
+
+### `error: no matching package named 'extendr-api' found`
+
+Cargo is trying to fetch from crates.io but is restricted to a stale vendor directory. This happens when a previous build left a `src/.cargo/config.toml` that points at a vendor directory which no longer exists or is out of date.
+
+**Fix:** delete the stale config and the outdated archive, then rebuild:
+
+```sh
+rm -f src/.cargo/config.toml src/pluotr_rs/vendor.tar.xz
+R CMD INSTALL .
+```
+
+If you need offline/CRAN builds, regenerate `vendor.tar.xz` afterwards (see [Vendoring](#vendoring) above).
+
+### `'pluot_zarr_get' is not an exported object from 'namespace:pluotr'`
+
+The Rust zarr callbacks call internal R functions using `pluotr:::fn_name` (triple-colon). If you see this error it means the call is using `::` (double-colon) which only resolves exported symbols. Check `crates/pluot_core/src/bindings.rs` and ensure all `R!(...)` calls use `pluotr:::`.
+
+### `'string' file not found` during C++ compilation (snappy/blosc)
+
+The cc-rs crate used to build C++ compression libraries picked up Apple clang (`c++`) instead of LLVM's `clang++`. Install LLVM via Homebrew and ensure it is found:
+
+```sh
+brew install llvm
+```
+
+Then rebuild. The Makevars automatically detects LLVM at `/opt/homebrew/opt/llvm/bin` and sets `CXX` accordingly.
+
+### `Undefined symbols for architecture arm64: _pluot_zarr_*`
+
+This would occur if the `bindings.rs` `r` module were reverted to the old `extern "C"` declaration style. macOS's staticlib linker checks for unresolved symbols at archive-link time. The current design avoids this by calling back into R exclusively through extendr's `R!` macro — there are no external C symbol references from the staticlib.
+
+### Tests panic with `EOF while parsing a value at line 1 column 0`
+
+The zarr layer received empty bytes for a metadata key. This means the R zarr callback returned nothing — likely because the `pluot_zarr_get_status` call failed silently. Check that:
+
+1. The store was registered with `pluot_register_store(name, store)` before calling `pluot_render`.
+2. The key paths in `layer_params` match the keys used in `pluot_register_store`.
+3. `wait_for_store_gets = TRUE` is set so Rust waits for synchronous R callbacks.
 
 ## Installing this package
 
@@ -204,11 +284,11 @@ To use GitHub actions, you can use the [standard r workflow](https://github.com/
 
 ## In the real world
 
-The [gifski](https://cran.r-project.org/web/packages/gifski/index.html) package has been on CRAN since 2018, and uses this same structure. 
+The [gifski](https://cran.r-project.org/web/packages/gifski/index.html) package has been on CRAN since 2018, and uses this same structure.
 
 ## More Resources
  - [r-rust FAQ](https://github.com/r-rust/faq)
  - Erum2018 [slides](https://jeroen.github.io/erum2018/) about this project presented by Jeroen
  - [Rust Inside Other Languages](https://doc.rust-lang.org/1.6.0/book/rust-inside-other-languages.html) chapter from official rust documentation
- - [extendr](https://github.com/extendr): a more advanced R extension interface using Rust
+ - [extendr](https://github.com/extendr): the R extension interface used by this package
  - Duncan's proof of concept: [RCallRust](https://github.com/duncantl/RCallRust)

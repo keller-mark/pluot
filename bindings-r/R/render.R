@@ -42,7 +42,7 @@
 #'
 #' @return A raw vector of bytes.
 #' @export
-#' @useDynLib pluotr render_wrapper
+#' @useDynLib pluotr wrap__render_r
 pluot_render <- function(
   layers,
   width,
@@ -94,5 +94,5 @@ pluot_render <- function(
     compute_backend = compute_backend
   )
   json_str <- jsonlite::toJSON(params, auto_unbox = TRUE, null = "null")
-  .Call(render_wrapper, as.character(json_str))
+  .Call("wrap__render_r", as.character(json_str))
 }
