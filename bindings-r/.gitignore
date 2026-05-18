@@ -8,4 +8,5 @@ src/*.a
 src/pluotr_rs/target/*
 src/pluotr_rs/vendor.tar.xz
 src/pluotr_rs/vendor/*
+src/vendor
 inst/AUTHORS

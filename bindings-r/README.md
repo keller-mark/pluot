@@ -2,61 +2,147 @@
 
 ## Naming
 
-- `pluot`: The plain Rust crate (at the root of the repo)
+- `pluot`: The Rust rendering library (`crates/pluot` in this repo)
 - `pluotr`: The R package
-- `pluotr_rs`: The Rust crate inside the R package, which depends on `pluot`, and contains the R bindings.
+- `pluotr_rs`: The Rust staticlib crate embedded inside the R package; depends on `pluot` and contains the C FFI entry points used by R
 
 ## Development
 
-Usage in RStudio
+Usage in RStudio:
 
 ```r
 devtools::install()
 library(pluotr)
+
+# Sanity-check the Rust/R bridge
 pluotr::roundtrip()
+
+# Render a plot — returns a raw vector of RGBA bytes (width × height × 4)
+raw_bytes <- pluotr::pluot_render(
+  layers = list(
+    list(
+      layer_type = "PointLayer",
+      layer_params = list(
+        x = list(1, 2, 3),
+        y = list(4, 5, 6)
+      )
+    )
+  ),
+  width  = 800L,
+  height = 600L
+)
+
+# Reconstruct an image with e.g. the 'png' or 'magick' package
+# (drop the trailing status byte emitted by pluot)
+arr <- array(as.integer(raw_bytes[-length(raw_bytes)]),
+             dim = c(4L, 800L, 600L))
 ```
 
 Reference: https://github.com/r-rust/pluotr
 
-# Hello Rust
+## Testing
 
-[![R build status](https://github.com/r-rust/pluotr/workflows/R-CMD-check/badge.svg)](https://github.com/r-rust/pluotr/actions?workflow=R-CMD-check)
+```r
+# Run all tests
+devtools::test(pkg = "/path/to/pluot/bindings-r")
 
-> Minimal Examples of Using Rust Code in R
+# Run only the render tests
+devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "render")
 
-Rust is a modern alternative to C and compiled rust code is ABI compatible with C. Many Rust libraries include C API headers so that the compiled rust code can be called from R/C/C++ as if it were C code. This package shows how to do this. The [r-rust](https://github.com/r-rust) organization contains several more simple R packages interfacing with cargo crates. 
+# Run only the FPS benchmark tests
+devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "fps")
+```
 
-To learn more about using Rust code in R packages, also have a look at the [r-rust FAQ](https://github.com/r-rust/faq) and the [slides](https://jeroen.github.io/erum2018/) about this project presented at eRum2018!
+Tests live in `tests/testthat/` and use the [testthat](https://testthat.r-lib.org/) framework:
+
+| File | What it tests |
+|---|---|
+| `test-render.R` | Byte count, pixel sum, and SVG output for a 4-point PointLayer at 100×100 |
+| `test-fps.R` | PointLayer renders complete at positive FPS across a range of point counts and resolutions |
+
+## Importing `pluot` from `pluotr_rs`
+
+`pluotr_rs` is a standalone Cargo project — it declares `[workspace]` in its own `Cargo.toml` so that Cargo does not traverse up into the pluot workspace. This keeps `cargo vendor` scoped to only `pluotr_rs`'s transitive dependencies (not the entire workspace).
+
+The `pluot` crate is made available via a symlink:
+
+```
+src/crates -> ../../crates   (symlink)
+```
+
+and referenced by path in `pluotr_rs/Cargo.toml`:
+
+```toml
+pluot = { path = "../crates/pluot" }
+```
+
+`R CMD build` follows the symlink and copies the real crate source into the build tarball, so the package builds correctly when installed from a temporary directory (as `devtools::install()` does).
+
+Because `pluot`, `pluot_core`, and `pluot_zarr` use `*.workspace = true` for many of their fields and dependencies, a dedicated [src/Cargo.toml](src/Cargo.toml) workspace root is provided alongside the symlink. When Cargo walks up from `src/crates/pluot/` to resolve workspace-inherited values, it finds this file. `pluotr_rs` still declares its own `[workspace]` and is not a member of the `src/` workspace.
+
+## macOS build note
+
+R's build system exports `MACOSX_DEPLOYMENT_TARGET` based on its SDK (e.g. `26.1`), which cc-rs passes as `-mmacosx-version-min=26.1` when compiling C++ dependencies (snappy/blosc via zarrs). This breaks the C++ stdlib header search on current Xcode toolchains.
+
+The [Makevars](src/Makevars) works around both issues:
+
+```makefile
+LLVM_PREFIX = $(shell test -d /opt/homebrew/opt/llvm/bin && echo /opt/homebrew/opt/llvm/bin:)
+
+env -u MACOSX_DEPLOYMENT_TARGET -u CXXFLAGS \
+    PATH="$(LLVM_PREFIX)${PATH}:${HOME}/.cargo/bin" \
+    cargo build ...
+```
+
+`MACOSX_DEPLOYMENT_TARGET` is unset so cc-rs does not pass a bad `-mmacosx-version-min` flag. If the Homebrew LLVM toolchain is present at `/opt/homebrew/opt/llvm/bin`, it is prepended to `PATH` so that cc-rs picks up `clang`/`clang++` from LLVM rather than Apple's toolchain (Apple clang fails to locate C++ stdlib headers at macOS SDK 26.1). LLVM can be installed via `brew install llvm`.
 
 ## Package Structure
 
-Bundle your rust code in a the embedded cargo package (see the `Cargo.toml` file) and then the [src/Makevars](src/Makevars) file is written such that R will automatically build the rust modules when the R package is installed.
+[src/Makevars](src/Makevars) compiles `pluotr_rs` as a static library and links it into the R shared object.
 
 ```
-pluotr
-├─ configure            ← checks if 'cargo' is installed
-├─ src
-│  ├─ pluotr_rs            ← bundled cargo package with your code
-│  |  ├─ Cargo.toml          ← cargo dependencies and metadata
-│  |  ├─ src                 ← rust source code
-│  |  └─ api.h               ← C headers for exported rust API
-|  |
-│  ├─ Makevars          ← Ties everything together
-│  └─ wrapper.c         ← C code for R package
+bindings-r/
+├─ configure                ← checks if 'cargo' is installed on PATH
+├─ cleanup                  ← stub; re-enable for CRAN (runs vendor-update.sh)
+├─ src/
+│  ├─ Cargo.toml            ← workspace root for pluot/pluot_core/pluot_zarr;
+│  │                           provides [workspace.package] and [workspace.dependencies]
+│  │                           so their *.workspace = true fields resolve correctly
+│  ├─ crates -> ../../crates  ← symlink; R CMD build follows it to include crate source
+│  ├─ pluotr_rs/            ← standalone staticlib crate: C FFI wrappers over pluot
+│  │  ├─ Cargo.toml         ← own [workspace] root; pluot dep: path = "../crates/pluot"
+│  │  ├─ src/
+│  │  │  ├─ lib.rs
+│  │  │  ├─ hello.rs        ← roundtrip example (R ↔ Rust string)
+│  │  │  └─ render.rs       ← rust_render / free_bytes_from_rust
+│  │  ├─ api.h              ← C declarations for all exported Rust symbols
+│  │  ├─ vendor-update.sh   ← creates vendor.tar.xz for CRAN
+│  │  └─ vendor-authors.R   ← generates inst/AUTHORS from cargo metadata
+│  ├─ Makevars              ← builds pluotr_rs, links libpluotr_rs.a
+│  ├─ Makevars.win          ← Windows variant (cross-compile targets)
+│  └─ wrapper.c             ← C glue: R ↔ Rust (roundtrip_wrapper, render_wrapper)
+├─ R/
+│  ├─ hello.R               ← hello_from_r(), roundtrip()
+│  └─ render.R              ← pluot_render()
+├─ tests/
+│  ├─ testthat.R
+│  └─ testthat/
+│     ├─ test-render.R
+│     └─ test-fps.R
 ├─ DESCRIPTION
-└─ R                    ← Standard R+C stuff
+└─ NAMESPACE
 ```
 
 ## Vendoring
 
-As per the new [2023 cran guidelines](https://cran.r-project.org/web/packages/using_rust.html) we now vendor the cargo crates in the R source packages in order to support offline installation. This is done in a two step process:
+> **Vendoring is currently disabled** — the [cleanup](cleanup) script is a stub. Re-enable it for CRAN submission by uncommenting the body of that file.
 
- 1. (by package author) The [vendor-update.sh](src/pluotr_rs/vendor-update.sh) script creates the `vendor.tar.xz` bundle that contains all the cargo sources. In addition, the [vendor-authors.R](src/pluotr_rs/vendor-authors.R) script generates an `inst/AUTHORS` file that lists the authors of the dependencies, as required by CRAN. Both of these scripts are called in the package [cleanup](cleanup) file and therefore run automatically during `R CMD build` when the source package is created.
- 2. (by the user) At install time, the [Makevars](src/Makevars) extracts the `vendor.tar.xz` bundle (when available) and generates a `.cargo/config.toml` file to instruct `cargo build` to use the vendored (offline) sources.
- 
-If you run `R CMD INSTALL` directly from a checkout (without building a source package), then no `vendor.tar.xz` is created and cargo falls back to downloading crates on-the-fly.
+Per the [2023 CRAN guidelines](https://cran.r-project.org/web/packages/using_rust.html), cargo crates should be vendored in the source package to support offline installation. The two-step process when re-enabled:
 
-You can test or force the use of vendored sources by passing `--offline` to `cargo build`.
+ 1. (by package author) The [vendor-update.sh](src/pluotr_rs/vendor-update.sh) script creates the `vendor.tar.xz` bundle. The [vendor-authors.R](src/pluotr_rs/vendor-authors.R) script generates `inst/AUTHORS`. Both are called from [cleanup](cleanup) and run automatically during `R CMD build`.
+ 2. (by the user) At install time, [Makevars](src/Makevars) extracts `vendor.tar.xz` (when present) and writes a `.cargo/config.toml` pointing at the vendored sources.
+
+Without a `vendor.tar.xz`, `cargo build` downloads crates from crates.io as normal.
 
 ## Installing this package
 

@@ -1,7 +1,6 @@
 #!/bin/sh
-export PATH="$HOME/.cargo/bin:$PATH"
-cd src/pluotr_rs
-./vendor-update.sh
-
-# Update ../inst/AUTHORS
-${R_HOME}/bin/Rscript vendor-authors.R
+# Vendoring is disabled for now. To re-enable for CRAN submission, uncomment:
+# export PATH="$HOME/.cargo/bin:$PATH"
+# cd src/pluotr_rs
+# ./vendor-update.sh
+# ${R_HOME}/bin/Rscript vendor-authors.R
