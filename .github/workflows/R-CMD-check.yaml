@@ -59,5 +59,6 @@ jobs:
         with:
           upload-snapshots: true
           working-directory: bindings-r
+          error-on: '"error"'
         env:
           MAKEFLAGS: -j4
