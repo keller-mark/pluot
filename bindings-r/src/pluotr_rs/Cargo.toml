@@ -1,0 +1,20 @@
+[package]
+name = "pluotr_rs"
+version = "0.1.0"
+authors = ["TODO"]
+edition = "2021"
+
+# Declare this crate as its own workspace root so that cargo does not traverse
+# up into the pluot workspace.  pluot itself (a path dep below) remains in its
+# own workspace, so its { workspace = true } deps resolve correctly via its
+# workspace root.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+extendr-api = "0.9"
+futures = "0.3"
+serde_json = "1"
+pluot = { path = "../crates/pluot", features = ["r"] }

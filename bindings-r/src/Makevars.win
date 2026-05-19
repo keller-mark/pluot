@@ -1,0 +1,16 @@
+TARGET = $(shell "$(R_HOME)/bin$(R_ARCH_BIN)/Rscript.exe" "../tools/rustarch.R")
+LIBDIR = pluotr_rs/target/$(TARGET)/release
+STATLIB = $(LIBDIR)/libpluotr_rs.a
+PKG_CPPFLAGS = -DSTRICT_R_HEADERS -DR_NO_REMAP
+PKG_LIBS = -L$(LIBDIR) -lpluotr_rs -lws2_32 -ladvapi32 -lgdi32 -lbcrypt -lcrypt32 -luserenv -lntdll
+
+all: cleanup
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	if [ -f pluotr_rs/vendor.tar.xz ]; then tar xf pluotr_rs/vendor.tar.xz && mkdir -p .cargo && cp pluotr_rs/vendor-config.toml .cargo/config.toml; fi
+	PATH="$(USERPROFILE)\.cargo\bin:$(PATH)" cargo build --target=$(TARGET) --release --manifest-path=pluotr_rs/Cargo.toml
+
+cleanup: $(SHLIB)
+	@rm -Rf $(STATLIB) pluotr_rs/target

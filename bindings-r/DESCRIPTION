@@ -1,0 +1,25 @@
+Package: pluotr
+Type: Package
+Title: Visualize data in R using Pluot.
+Version: 1.2.3
+Authors@R: c(person("Mark", "Keller", role = c("aut", "cre"), email = "mark_keller@hms.harvard.edu",
+    comment = c(ORCID = "TODO")),
+      person("Authors of the dependency Rust crates", role = "aut", comment = "see AUTHORS file"))
+Description: R bindings to the Pluot Rust code.
+License: MIT + file LICENSE
+URL: https://github.com/keller-mark/pluot
+BugReports: https://github.com/keller-mark/pluot/issues
+SystemRequirements: Cargo (Rust's package manager), rustc
+Imports:
+    jsonlite,
+    pizzarr
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    htmltools,
+    crul
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+Encoding: UTF-8
+RoxygenNote: 7.3.2

@@ -475,8 +475,99 @@ pub mod python {
     }
 }
 
+// === R Bindings ===
+#[cfg(all(not(target_arch = "wasm32"), feature = "r"))]
+pub mod r {
+    use extendr_api::prelude::*;
+    use super::ZarrPeekResult;
+
+    pub fn log(s: &str) {
+        println!("{}", s);
+    }
+
+    fn i32_to_peek(val: i32) -> ZarrPeekResult {
+        match val {
+            1 => ZarrPeekResult::Fulfilled,
+            2 => ZarrPeekResult::Rejected,
+            _ => ZarrPeekResult::Pending,
+        }
+    }
+
+    fn robj_to_bytes(r: Robj) -> Vec<u8> {
+        Raw::try_from(r).map(|raw| raw.as_slice().to_vec()).unwrap_or_default()
+    }
+
+    pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        i32_to_peek(
+            R!("pluotr:::pluot_zarr_has_status({{store_name}}, {{key}})")
+                .ok().and_then(|r| i32::try_from(r).ok()).unwrap_or(2)
+        )
+    }
+
+    pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
+        i32_to_peek(
+            R!("pluotr:::pluot_zarr_get_status({{store_name}}, {{key}})")
+                .ok().and_then(|r| i32::try_from(r).ok()).unwrap_or(2)
+        )
+    }
+
+    pub fn zarr_get_range_from_offset_status(
+        store_name: &str, key: &str, offset: u32, length: u32,
+    ) -> ZarrPeekResult {
+        let offset = offset as i32;
+        let length = length as i32;
+        i32_to_peek(
+            R!("pluotr:::pluot_zarr_get_range_from_offset_status({{store_name}}, {{key}}, {{offset}}, {{length}})")
+                .ok().and_then(|r| i32::try_from(r).ok()).unwrap_or(2)
+        )
+    }
+
+    pub fn zarr_get_range_from_end_status(
+        store_name: &str, key: &str, suffix_length: u32,
+    ) -> ZarrPeekResult {
+        let suffix_length = suffix_length as i32;
+        i32_to_peek(
+            R!("pluotr:::pluot_zarr_get_range_from_end_status({{store_name}}, {{key}}, {{suffix_length}})")
+                .ok().and_then(|r| i32::try_from(r).ok()).unwrap_or(2)
+        )
+    }
+
+    pub async fn zarr_has(store_name: &str, key: &str) -> bool {
+        R!("pluotr:::pluot_zarr_has({{store_name}}, {{key}})")
+            .ok().and_then(|r| i32::try_from(r).ok()).map(|v| v != 0).unwrap_or(false)
+    }
+
+    pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
+        zarrs::storage::Bytes::from(
+            R!("pluotr:::pluot_zarr_get({{store_name}}, {{key}})")
+                .ok().map(robj_to_bytes).unwrap_or_default()
+        )
+    }
+
+    pub async fn zarr_get_range_from_offset(
+        store_name: &str, key: &str, offset: u32, length: u32,
+    ) -> zarrs::storage::Bytes {
+        let offset = offset as i32;
+        let length = length as i32;
+        zarrs::storage::Bytes::from(
+            R!("pluotr:::pluot_zarr_get_range_from_offset({{store_name}}, {{key}}, {{offset}}, {{length}})")
+                .ok().map(robj_to_bytes).unwrap_or_default()
+        )
+    }
+
+    pub async fn zarr_get_range_from_end(
+        store_name: &str, key: &str, suffix_length: u32,
+    ) -> zarrs::storage::Bytes {
+        let suffix_length = suffix_length as i32;
+        zarrs::storage::Bytes::from(
+            R!("pluotr:::pluot_zarr_get_range_from_end({{store_name}}, {{key}}, {{suffix_length}})")
+                .ok().map(robj_to_bytes).unwrap_or_default()
+        )
+    }
+}
+
 // === Rust-only Bindings ===
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "python")))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python"), not(feature = "r")))]
 pub mod plain_rust {
     use core::panic;
     pub use super::{render, ZarrPeekResult};
