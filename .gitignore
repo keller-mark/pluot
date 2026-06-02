@@ -35,3 +35,14 @@ pnpm-debug.log*
 # Snapshot test outputs (reference snapshots are in tests/snapshots/)
 current/
 snaps-dirty/
+
+skills-lock.json
+.claude/
+.agents/
+
+# R stuff
+.Rhistory
+.Rproj.user
+*.o
+AUTHORS
+circle_diffs/

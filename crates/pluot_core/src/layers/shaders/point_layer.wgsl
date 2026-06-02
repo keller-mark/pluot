@@ -269,7 +269,11 @@ fn vs_main(
 // to happen in the sRGB space, which is perceptually non-linear,
 // and can cause darkening artifacts during the circle anti-aliasing step.
 fn srgb_to_linear(c: f32) -> f32 {
-    return pow(c, 2.2);
+    if (c <= 0.04045) {
+        return c / 12.92;
+    } else {
+        return pow((c + 0.055) / 1.055, 2.4);
+    }
 }
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
@@ -305,11 +309,9 @@ fn fs_main(
     // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
     var alpha = 1.0;
     if(u.point_shape_mode == 1u) {
-        // TODO: improve this somehow?
-        let dist = length(corner);
-        // fwidth gives the rate of change across fragments
-        let edge_width = fwidth(dist);
-        alpha = 1.0 - smoothstep(1.0 - edge_width, 1.0 + edge_width, dist);
+        // Signed-distance anti-aliasing: linear 1-pixel fade centered on the circle edge.
+        let dist_px = length(corner) * u.point_radius;
+        alpha = clamp(u.point_radius - dist_px + 0.475, 0.0, 1.0);
         if (alpha < 0.001) {
             discard;
         }

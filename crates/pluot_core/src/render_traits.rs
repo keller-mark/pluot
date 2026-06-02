@@ -252,7 +252,7 @@ pub async fn draw_layers_to_raster(
                 resolve_target: None,
                 ops: wgpu::Operations {
                     // TODO: make background color configurable.
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: wgpu::StoreOp::Store,
                 },
             })],

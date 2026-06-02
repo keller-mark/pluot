@@ -341,15 +341,17 @@ impl DrawToRasterGpu for PointLayer {
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                        //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        // Use ONE/ZERO blending so the framebuffer stores straight-alpha
+                        // values (matching SVG/resvg output). Layer ordering handles
+                        // compositing: later layers overwrite earlier ones where alpha=1.
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                src_factor: wgpu::BlendFactor::One,
                                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                                 operation: wgpu::BlendOperation::Add,
                             },
                             alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                src_factor: wgpu::BlendFactor::One,
                                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                                 operation: wgpu::BlendOperation::Add,
                             },
