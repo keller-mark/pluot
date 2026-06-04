@@ -1,0 +1,130 @@
+import {
+    VerticalBox,
+    HorizontalBox,
+    Slider,
+    LineEdit,
+} from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+
+    in-out property <float> frequency: 2.0;
+    in-out property <float> num_points_exp: 2.3;
+    in-out property <float> point_size: 6.0;
+    in property <image> figure;
+
+    pure callback frequency_changed(float);
+    pure callback num_points_exp_changed(float);
+    pure callback point_size_changed(float);
+
+    // Configs for the plot - define at beginning.
+    property <float> min_frequency: 0.5;
+    property <float> max_frequency: 8.0;
+    property <float> step_frequency: 0.1;
+    property <float> min_num_points_exp: 1.0;
+    property <float> max_num_points_exp: 5.0;
+    property <float> step_num_points_exp: 0.01;
+    property <float> min_point_size: 1.0;
+    property <float> max_point_size: 20.0;
+    property <float> step_point_size: 0.5;
+
+    // A generalized rounding function for enforcing step size.
+    function round_value(val: float, step_size: float) -> float {
+        (val / step_size).round() * step_size
+    }
+
+    VerticalBox {
+        Text {
+            text: "SineWave - Pluot raster render with Slint";
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        GridLayout {
+            spacing: 10px;
+
+            Row {
+                Slider {
+                    value: root.frequency;
+                    step: root.step_frequency;
+                    minimum: root.min_frequency;
+                    maximum: root.max_frequency;
+                    changed(val) => {
+                        if abs(val - root.frequency) >= root.step_frequency {
+                            root.frequency = round_value(val, root.step_frequency);
+                            frequency_changed(root.frequency);
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.frequency.to-fixed(1);
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "Frequency (periods)";
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            Row {
+                Slider {
+                    value: root.num_points_exp;
+                    step: root.step_num_points_exp;
+                    minimum: root.min_num_points_exp;
+                    maximum: root.max_num_points_exp;
+                    changed(val) => {
+                        if abs(val - root.num_points_exp) >= root.step_num_points_exp {
+                            root.num_points_exp = round_value(val, root.step_num_points_exp);
+                            num_points_exp_changed(root.num_points_exp);
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.num_points_exp.to-fixed(2);
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "Points (10^exp = " + pow(10.0, root.num_points_exp).round() + ")";
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            Row {
+                Slider {
+                    value: root.point_size;
+                    step: root.step_point_size;
+                    minimum: root.min_point_size;
+                    maximum: root.max_point_size;
+                    changed(val) => {
+                        if abs(val - root.point_size) >= root.step_point_size {
+                            root.point_size = round_value(val, root.step_point_size);
+                            point_size_changed(root.point_size);
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.point_size.to-fixed(1);
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "Point size (px)";
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Image {
+            width: 800px;
+            height: 600px;
+            source: root.figure;
+        }
+    }
+}
