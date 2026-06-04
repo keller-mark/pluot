@@ -12,3 +12,7 @@ cargo run
 # Or, from the repo root
 cargo run --manifest-path examples/pluot_slint/Cargo.toml
 ```
+
+## Screenshot
+
+<img src="../../.github/img/pluot_slint.png" width="600" alt="Screenshot of the GUI">

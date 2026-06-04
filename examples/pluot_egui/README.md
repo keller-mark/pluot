@@ -10,3 +10,7 @@ cargo run
 # Or, from the repo root
 cargo run --manifest-path examples/pluot_egui/Cargo.toml
 ```
+
+## Screenshot
+
+<img src="../../.github/img/pluot_egui.png" width="600" alt="Screenshot of the GUI">
