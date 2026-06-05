@@ -867,7 +867,7 @@ pub fn base_draw_text_layer_svg(
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
-            font: layer_params.font_name.clone().unwrap_or_else(|| "Helvetica".to_string()),
+            font: layer_params.font_name.clone().unwrap_or_else(|| "Nimbus Sans".to_string()),
             fontsize: layer_params.text_size as f64,
             // TODO: unify these enums.
             align: match layer_params.text_align_mode {

@@ -79,6 +79,11 @@ struct Args {
     /// Bottom margin in pixels.
     #[arg(long)]
     margin_bottom: Option<f32>,
+
+    /// Font file(s) to register for SVG→PNG rendering via resvg.
+    /// Can be specified multiple times. Has no effect on GPU raster output.
+    #[arg(long = "font_path")]
+    font_path: Vec<PathBuf>,
 }
 
 
@@ -290,7 +295,12 @@ async fn main() {
                 process::exit(1);
             }
         };
-        let opt = usvg::Options::default();
+        let mut opt = usvg::Options::default();
+        for path in &args.font_path {
+            if let Err(e) = opt.fontdb_mut().load_font_file(path) {
+                eprintln!("Warning: failed to load font {:?}: {}", path, e);
+            }
+        }
         let tree = match usvg::Tree::from_str(&svg_string, &opt) {
             Ok(t) => t,
             Err(e) => {
