@@ -24,6 +24,8 @@ use crate::two::shapes::{
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::get_point_position;
 use crate::log;
+use crate::{zarr_get, zarr_get_status, FutureExt, Duration};
+use crate::zarr_types::ZarrPeekResult;
 
 const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();
 
@@ -35,23 +37,26 @@ struct FontAtlasCache {
     glyph_cache: HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>, // char + font_size -> metrics + bitmap
 }
 
+// Cache key for the bundled default font.
+const DEFAULT_FONT_CACHE_KEY: &str = "_default";
+
 thread_local! {
-    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = const { RefCell::new(None) };
+    static FONT_ATLAS: RefCell<HashMap<String, FontAtlasCache>> = RefCell::new(HashMap::new());
 }
 
-fn get_or_init_font_atlas() -> FontAtlasCache {
+fn get_or_init_font_atlas(font_bytes: &[u8], cache_key: &str) -> FontAtlasCache {
     FONT_ATLAS.with(|atlas| {
         let mut atlas_ref = atlas.borrow_mut();
-        if let Some(ref cached_atlas) = *atlas_ref {
+        if let Some(cached_atlas) = atlas_ref.get(cache_key) {
             cached_atlas.clone()
         } else {
-            let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("load font");
+            let font = Font::from_bytes(font_bytes, FontSettings::default()).expect("load font");
             let cache = FontAtlasCache {
                 font,
                 atlas_texture: None,
                 glyph_cache: HashMap::new(),
             };
-            *atlas_ref = Some(cache.clone());
+            atlas_ref.insert(cache_key.to_string(), cache.clone());
             cache
         }
     })
@@ -152,6 +157,9 @@ pub struct TextLayerParams {
     pub text_align_mode: TextAlignMode,
     pub text_baseline_mode: TextBaselineMode,
     pub text_rotation: Option<f32>, // Rotation in degrees
+    // Optional font name to request from the client environment.
+    // If None or if the request fails, the bundled default font is used.
+    pub font_name: Option<String>,
 
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub position_y: Arc<Vec<f32>>,
@@ -213,8 +221,31 @@ impl PreparedLayer for TextLayer {
         let text_align_mode = self.layer_params.text_align_mode;
         let text_baseline_mode = self.layer_params.text_baseline_mode;
 
+        // Check font availability via the __fonts__ zarr store, bailing early while fetching.
+        let custom_font_bytes: Option<Vec<u8>> = if let Some(ref font_name) = self.layer_params.font_name {
+            let font_key = format!("{}.ttf", font_name);
+            match zarr_get_status("__fonts__", &font_key) {
+                ZarrPeekResult::Pending => {
+                    return PrepareResult { bailed_early: true };
+                }
+                ZarrPeekResult::Fulfilled => {
+                    let font_future = zarr_get("__fonts__", &font_key);
+                    match crate::maybe_timeout!(font_future, self.view_params.timeout).await {
+                        Ok(bytes) => Some(bytes.to_vec()),
+                        Err(_) => None, // Timeout — fall back to the bundled default font.
+                    }
+                }
+                ZarrPeekResult::Rejected => None, // Fall back to the bundled default font.
+            }
+        } else {
+            None
+        };
+
+        let font_cache_key = self.layer_params.font_name.clone()
+            .unwrap_or_else(|| DEFAULT_FONT_CACHE_KEY.to_string());
+
         // Build cache keys based on the data that affects the internal representation.
-        // This includes: text strings, positions, font size, alignment, and baseline.
+        // This includes: text strings, positions, font size, alignment, baseline, and font name.
         let cache_keys: Vec<String> = vec![
             self.layer_params.layer_id.clone(),
             format!("{:?}", self.layer_params.text_vec), // TODO: use a better key
@@ -223,12 +254,18 @@ impl PreparedLayer for TextLayer {
             format!("{}", font_size),
             format!("{:?}", text_align_mode),
             format!("{:?}", text_baseline_mode),
+            font_cache_key.clone(),
         ];
 
         // Use memoization to cache the internal data
         let internal_data = use_memo_internal_text_layer_data(async || {
-            // Get cached font
-            let font_atlas = get_or_init_font_atlas();
+            // Get cached font — use custom bytes if available, otherwise use the bundled default.
+            let font_bytes: &[u8] = if let Some(ref bytes) = custom_font_bytes {
+                bytes.as_slice()
+            } else {
+                FONT_BYTES
+            };
+            let font_atlas = get_or_init_font_atlas(font_bytes, &font_cache_key);
 
             // Build a comprehensive layout with all text elements to create the atlas
             let mut layout = Layout::new(CoordinateSystem::PositiveYUp);

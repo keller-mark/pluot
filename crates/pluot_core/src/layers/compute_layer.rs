@@ -74,6 +74,7 @@ impl PreparedLayer for ComputeLayer {
             text_align_mode: TextAlignMode::Start,
             text_baseline_mode: TextBaselineMode::Middle,
             text_rotation: Some(0.0_f32),
+            font_name: None,
 
             position_x: Arc::new(text_position_x),
             position_y: Arc::new(text_position_y),
