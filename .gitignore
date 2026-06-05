@@ -45,5 +45,8 @@ skills-lock.json
 .Rproj.user
 *.o
 AUTHORS
+
+
+autoresearch/
 circle_diffs/
 text_diffs/
