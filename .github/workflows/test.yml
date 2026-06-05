@@ -32,6 +32,8 @@ jobs:
         # or auto-detect subdirectories of examples/
     steps:
       - uses: actions/checkout@v4
+      - run: apt-get install -y libfontconfig1-dev
+        if: ${{ matrix.example_dir == 'pluot_slint' }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
