@@ -46,3 +46,4 @@ skills-lock.json
 *.o
 AUTHORS
 circle_diffs/
+text_diffs/

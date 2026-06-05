@@ -78,7 +78,8 @@ fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
         return 0.0;
     }
 
-    // Calculate the total width by finding the rightmost point
+    // Use visual (bounding-box) right edge of the last glyph to match SVG text-anchor centering.
+    // SVG text-anchor uses the visual extent of text, not the full typographic advance.
     let mut max_x = 0.0f32;
     for glyph in glyphs {
         let right_edge = glyph.x + glyph.width as f32;
@@ -98,8 +99,8 @@ fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_basel
         // For some reason, GlyphPosition.y is always a big negative number -(font_size plus some extra pixels)
         // So we adjust accordingly here.
         TextBaselineMode::Top => font_size - font_size,
-        TextBaselineMode::Middle => font_size - font_size / 2.0,
-        TextBaselineMode::Alphabetic => font_size - font_size / 2.0, // TODO
+        TextBaselineMode::Middle => font_size * 0.54,
+        TextBaselineMode::Alphabetic => font_size * 0.80,
         TextBaselineMode::Bottom => font_size,
     };
 
@@ -299,9 +300,57 @@ impl PreparedLayer for TextLayer {
             let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
 
             for g in glyphs {
-                // Rasterize the glyph to get its bitmap representation.
-                let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-                // Add padding around each glyph: PADDING + glyph_width + PADDING
+                let w1 = g.width;
+                let h1 = g.height;
+                let (metrics, bitmap) = if w1 > 0 && h1 > 0 {
+                    // 4x supersampling: rasterize at 4x scale and downsample for better AA
+                    const SS: usize = 4;
+                    let key_ss = fontdue::layout::GlyphRasterConfig {
+                        glyph_index: g.key.glyph_index,
+                        px: g.key.px * SS as f32,
+                        font_hash: g.key.font_hash,
+                    };
+                    let (m_ss, bmp_ss) = font_atlas.font.rasterize_config(key_ss);
+                    let w_ss = m_ss.width;
+                    let h_ss = m_ss.height;
+                    let mut bmp1x = vec![0u8; w1 * h1];
+                    for j in 0..h1 {
+                        for i in 0..w1 {
+                            let mut sum = 0u32;
+                            let mut count = 0u32;
+                            for dy in 0..SS {
+                                for dx in 0..SS {
+                                    let si = i * SS + dx;
+                                    let sj = j * SS + dy;
+                                    if si < w_ss && sj < h_ss {
+                                        sum += bmp_ss[sj * w_ss + si] as u32;
+                                        count += 1;
+                                    }
+                                }
+                            }
+                            bmp1x[j * w1 + i] = (sum / count.max(1)).min(255) as u8;
+                        }
+                    }
+                    let ss_f = SS as f32;
+                    let ss_i = SS as i32;
+                    let m1x = fontdue::Metrics {
+                        xmin: m_ss.xmin / ss_i,
+                        ymin: m_ss.ymin / ss_i,
+                        width: w1,
+                        height: h1,
+                        advance_width: m_ss.advance_width / ss_f,
+                        advance_height: m_ss.advance_height / ss_f,
+                        bounds: fontdue::OutlineBounds {
+                            xmin: m_ss.bounds.xmin / ss_f,
+                            ymin: m_ss.bounds.ymin / ss_f,
+                            width: m_ss.bounds.width / ss_f,
+                            height: m_ss.bounds.height / ss_f,
+                        },
+                    };
+                    (m1x, bmp1x)
+                } else {
+                    font_atlas.font.rasterize_config(g.key)
+                };
                 atlas_width += 2 * PADDING + metrics.width.max(1);
                 atlas_height = atlas_height.max(2 * PADDING + metrics.height.max(1));
                 rasters.push((metrics, bitmap));
@@ -366,6 +415,23 @@ impl PreparedLayer for TextLayer {
                 // Track our position in the atlas for this text element
                 let mut element_cursor = x_cursor;
 
+                // Precompute exact x-positions for all glyphs in this element.
+                // fontdue's layout uses ceil(advance_width) for cursor advancement,
+                // which causes character spacing to be slightly wider than SVG's.
+                // We recompute using exact (fractional) advance widths to match SVG.
+                let exact_glyph_x: Vec<f32> = {
+                    let mut ceil_cursor = 0.0f32;
+                    let mut exact_cursor = 0.0f32;
+                    element_glyphs.iter().enumerate().map(|(i, g)| {
+                        let m = &rasters[total_instances as usize + i].0;
+                        let xmin = g.x - ceil_cursor;
+                        let ex = exact_cursor + xmin;
+                        ceil_cursor += m.advance_width.ceil();
+                        exact_cursor += m.advance_width;
+                        ex
+                    }).collect()
+                };
+
                 // Iterate over each glyph in the string.
                 for (i, g) in element_glyphs.iter().enumerate() {
                     let (m, bmp) = &rasters[total_instances as usize + i];
@@ -387,17 +453,11 @@ impl PreparedLayer for TextLayer {
                         }
                     }
 
-                    // Compute screen-space rect for this glyph
-                    // TODO: update this logic so that the rect is in whatever data_units_mode is?
-                    // (ensure the text measurement is happening in the correct units too).
-                    let x_px = offset_x + g.x;
+                    // Compute screen-space rect for this glyph using exact advance-based x.
+                    let x_px = offset_x + exact_glyph_x[i];
                     let y_px = offset_y + g.y;
                     let w_px = g.width as f32;
                     let h_px: f32 = g.height as f32;
-
-                    /*log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
-                        elem_i, x_px, y_px, w_px, h_px, g.x, g.y, text_x_pos, text_y_pos, offset_x, offset_y
-                    ));*/
 
                     // UV rectangle (normalized) - exclude padding from sampled area
                     let u0 = (element_cursor as f32) / (atlas_width as f32);
@@ -867,6 +927,7 @@ pub fn base_draw_text_layer_svg(
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
+            // TODO: revert "Nimbus Sans" to "Helvetica" after comparison tests
             font: layer_params.font_name.clone().unwrap_or_else(|| "Nimbus Sans".to_string()),
             fontsize: layer_params.text_size as f64,
             // TODO: unify these enums.
