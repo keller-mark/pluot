@@ -1,6 +1,8 @@
 import type { AsyncReadable } from "zarrita";
+import { URW_FONT_MAP, loadUrwFont } from "./urw-fonts.js";
 
 // Optional explicit overrides: font_name -> bytes or Promise<bytes|null>.
+// These take priority over URW bundled fonts, stylesheets, and local fonts.
 const fontOverrides: Record<string, Uint8Array | Promise<Uint8Array | null>> = {};
 
 /**
@@ -66,13 +68,20 @@ function _keyToFontName(key: string): string {
  * and key = "{font_name}.ttf". Status tracking and promise deduplication are handled by
  * the LruStore wrapper in core.ts, reusing the same infrastructure as zarr data stores.
  *
- * Throws if the font cannot be found (so LruStore marks the key as "rejected").
+ * Lookup order:
+ *   1. Explicit override registered via setFont()
+ *   2. URW Core 35 bundled fonts (by direct name or PDF Base-14 alias)
+ *   3. @font-face rules in page stylesheets
+ *   4. Local Font Access API (Chrome 103+)
+ *
+ * Throws if the font cannot be found (so LruStore marks the key as "rejected",
+ * causing Rust to fall back to the bundled Inter-Bold default).
  */
 export class FontStore implements AsyncReadable {
   async get(key: string): Promise<Uint8Array | undefined> {
     const fontName = _keyToFontName(key);
 
-    // 1. Explicit override via setFont.
+    // 1. Explicit override via setFont().
     if (fontName in fontOverrides) {
       const entry = fontOverrides[fontName];
       const result = entry instanceof Uint8Array ? entry : await entry;
@@ -80,11 +89,17 @@ export class FontStore implements AsyncReadable {
       return result;
     }
 
-    // 2. @font-face rules in page stylesheets.
+    // 2. URW Core 35 bundled fonts.
+    const urwFilename = URW_FONT_MAP[fontName];
+    if (urwFilename !== undefined) {
+      return loadUrwFont(urwFilename);
+    }
+
+    // 3. @font-face rules in page stylesheets.
     const fromStylesheets = await _tryFontInStylesheets(fontName);
     if (fromStylesheets) return fromStylesheets;
 
-    // 3. Local Font Access API (Chrome 103+, requires permission).
+    // 4. Local Font Access API (Chrome 103+, requires permission).
     const fromLocal = await _tryQueryLocalFonts(fontName);
     if (fromLocal) return fromLocal;
 
@@ -94,14 +109,30 @@ export class FontStore implements AsyncReadable {
 }
 
 /**
- * Override the bytes used for a named font in TextLayer.
- * This takes priority over auto-detection from stylesheets or local fonts.
- * Pass null to clear any override and fall back to auto-detection.
+ * Explicitly register font bytes or a source URL for a named font in TextLayer.
+ * This takes priority over URW bundled fonts, stylesheet detection, and local fonts.
+ * - Pass a Uint8Array or Promise<Uint8Array|null> to supply bytes directly.
+ * - Pass a URL string to fetch the font from that location at render time.
+ * - Pass null to clear any override and fall back to automatic detection.
  */
-export function setFont(fontName: string, data: Uint8Array | Promise<Uint8Array | null> | null) {
+export function setFont(
+  fontName: string,
+  data: string | Uint8Array | Promise<Uint8Array | null> | null,
+) {
   if (data === null) {
     delete fontOverrides[fontName];
+  } else if (typeof data === "string") {
+    // URL string: fetch lazily and cache the promise.
+    fontOverrides[fontName] = fetch(data)
+      .then(r => {
+        if (!r.ok) throw new Error(`Failed to fetch font: ${data} (${r.status})`);
+        return r.arrayBuffer();
+      })
+      .then(buf => new Uint8Array(buf))
+      .catch((_err): null => null);
   } else {
     fontOverrides[fontName] = data;
   }
 }
+
+export { setUrwFontBaseUrl } from "./urw-fonts.js";

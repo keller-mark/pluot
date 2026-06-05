@@ -867,7 +867,10 @@ pub fn base_draw_text_layer_svg(
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
-            font: "Arial".to_string(), // TODO: font should match the one used for raster rendering.
+            // TODO: use the same font as the raster case.
+            // TODO: switch the bundled font to one of the URW 35-based PDF 14 equivalents,
+            // and then use the corresponding PDF 14 font name here. e.g., NimbusSans/Helvetica.
+            font: layer_params.font_name.clone().unwrap_or_else(|| "Arial".to_string()),
             fontsize: layer_params.text_size as f64,
             // TODO: unify these enums.
             align: match layer_params.text_align_mode {
