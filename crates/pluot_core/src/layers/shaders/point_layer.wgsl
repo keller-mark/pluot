@@ -269,11 +269,7 @@ fn vs_main(
 // to happen in the sRGB space, which is perceptually non-linear,
 // and can cause darkening artifacts during the circle anti-aliasing step.
 fn srgb_to_linear(c: f32) -> f32 {
-    if (c <= 0.04045) {
-        return c / 12.92;
-    } else {
-        return pow((c + 0.055) / 1.055, 2.4);
-    }
+    return pow(c, 2.2);
 }
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
