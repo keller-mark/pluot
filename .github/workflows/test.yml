@@ -25,19 +25,20 @@ jobs:
   plain_rust_check_examples:
     runs-on: ubuntu-latest
     needs: [plain_rust_unit_tests]
+    strategy:
+      matrix:
+        example_dir: [pluot_cli, pluot_http, pluot_egui, pluot_slint]
+        # TODO: include more examples here as they are developed
+        # or auto-detect subdirectories of examples/
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
-      - name: Compile Example CLI
+      - name: Compile Example
         run: cargo check --verbose
-        working-directory: ./examples/pluot_cli
-      - name: Compile Example GUI
-        run: cargo check --verbose
-        working-directory: ./examples/pluot_egui
-      # TODO: include more examples here as they are developed
+        working-directory: ./examples/${{ matrix.example_dir }}
 
   py_compile:
     runs-on: ubuntu-latest
