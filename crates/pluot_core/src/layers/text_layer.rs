@@ -99,7 +99,7 @@ fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_basel
     };
 
     let y = match text_baseline {
-        TextBaselineMode::Top => font_size * 0.007,
+        TextBaselineMode::Top => font_size * 0.013,
         TextBaselineMode::Middle => font_size * 0.525,
         TextBaselineMode::Alphabetic => font_size * 0.785,
         TextBaselineMode::Bottom => font_size,
@@ -126,8 +126,10 @@ fn parse_color(color: &TwoColor) -> [f32; 4] {
     }
 }
 
-// Configurable padding around each glyph to prevent texture bleeding
+// Horizontal padding between glyphs to prevent left/right texture bleeding.
+// No vertical padding: v=0 with ClampToEdge correctly samples the first row.
 const PADDING: usize = 1;
+const V_PADDING: usize = 0;
 
 
 
@@ -353,7 +355,7 @@ impl PreparedLayer for TextLayer {
                     font_atlas.font.rasterize_config(g.key)
                 };
                 atlas_width += 2 * PADDING + metrics.width.max(1);
-                atlas_height = atlas_height.max(2 * PADDING + metrics.height.max(1));
+                atlas_height = atlas_height.max(2 * V_PADDING + metrics.height.max(1));
                 rasters.push((metrics, bitmap));
             }
 
@@ -441,16 +443,12 @@ impl PreparedLayer for TextLayer {
                     let gw = m.width.max(0);
                     let gh = m.height.max(0);
 
-                    // Copy bitmap into atlas with padding offset
+                    // Copy bitmap into atlas (no vertical padding — v=0/ClampToEdge handles top edge)
                     if gw > 0 && gh > 0 {
                         for row in 0..gh {
                             let src = &bmp[row * gw..row * gw + gw];
-                            // Offset destination by PADDING pixels vertically and horizontally
-                            let dst_row = PADDING + row;
-                            let dst_start = dst_row * atlas_width + element_cursor;
-                            let dst_end = dst_start + gw;
-                            let dst = &mut atlas[dst_start..dst_end];
-                            dst.copy_from_slice(src);
+                            let dst_start = (V_PADDING + row) * atlas_width + element_cursor;
+                            atlas[dst_start..dst_start + gw].copy_from_slice(src);
                         }
                     }
 
@@ -460,11 +458,11 @@ impl PreparedLayer for TextLayer {
                     let w_px = g.width as f32;
                     let h_px: f32 = g.height as f32;
 
-                    // UV rectangle (normalized) - exclude padding from sampled area
+                    // UV: no vertical padding, relies on ClampToEdge at v=0 for correct top-edge sampling
                     let u0 = (element_cursor as f32) / (atlas_width as f32);
-                    let v0 = (PADDING as f32) / (atlas_height as f32);
+                    let v0 = (V_PADDING as f32) / (atlas_height as f32);
                     let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
-                    let v1 = ((PADDING + gh) as f32) / (atlas_height as f32);
+                    let v1 = ((V_PADDING + gh) as f32) / (atlas_height as f32);
 
                     if gw > 0 && gh > 0 {
                         all_instance_data.extend_from_slice(&[
@@ -780,12 +778,12 @@ pub async fn base_draw_text_layer(
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
-                        // Use One/Zero for alpha so output alpha = a_src directly.
-                        // SrcAlpha/OneMinusSrcAlpha would square the alpha (a_src^2),
-                        // causing GPU alpha to be much lower than the SVG reference.
+                        // Composite alpha correctly: a_out = a_src + (1 - a_src) * a_dst.
+                        // One/Zero would replace dst alpha with src alpha, erasing
+                        // alpha from layers rendered below the text layer.
                         alpha: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::Zero,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
                     }),

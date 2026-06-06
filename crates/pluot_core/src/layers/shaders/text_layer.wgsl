@@ -315,11 +315,7 @@ fn vs_main(
 @fragment
 fn fs_main(@location(0) uv: vec2<f32>) -> FSOut {
     let a = textureSample(glyph_tex, glyph_sampler, uv).r;
-    // Premultiply for blending
-    let rgb = u.color.rgb * a;
-
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(rgb, a);
+    out.color = vec4<f32>(u.color.rgb, a);
     return out;
 }
