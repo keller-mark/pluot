@@ -306,6 +306,363 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "position_y": [480.0],
           "text_vec": ["Bot"]
         }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t15",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [50.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny a"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t16",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [150.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny b"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t17",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [250.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny c"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t18",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [350.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny d"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t19",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [450.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny e"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t20",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [550.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny f"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t21",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [650.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny g"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t22",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 8.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [750.0],
+          "position_y": [15.0],
+          "text_vec": ["tiny h"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t23",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [50.0],
+          "position_y": [36.0],
+          "text_vec": ["sm a"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t24",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [150.0],
+          "position_y": [36.0],
+          "text_vec": ["sm b"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t25",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [250.0],
+          "position_y": [36.0],
+          "text_vec": ["sm c"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t26",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [350.0],
+          "position_y": [36.0],
+          "text_vec": ["sm d"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t27",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [450.0],
+          "position_y": [36.0],
+          "text_vec": ["sm e"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t28",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [550.0],
+          "position_y": [36.0],
+          "text_vec": ["sm f"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t29",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [650.0],
+          "position_y": [36.0],
+          "text_vec": ["sm g"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t30",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 10.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [750.0],
+          "position_y": [36.0],
+          "text_vec": ["sm h"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t31",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 64.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [160.0],
+          "position_y": [585.0],
+          "text_vec": ["Large A"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t32",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 64.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [400.0],
+          "position_y": [585.0],
+          "text_vec": ["Large B"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t33",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 64.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [640.0],
+          "position_y": [585.0],
+          "text_vec": ["Large C"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t34",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 80.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [250.0],
+          "position_y": [720.0],
+          "text_vec": ["HUGE"]
+        }
+      },
+      {
+        "layer_type": "TextLayer",
+        "layer_params": {
+          "layer_id": "t35",
+          "bounds": null,
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "text_size": 80.0,
+          "text_size_unit_mode": "Pixels",
+          "text_align_mode": "Middle",
+          "text_baseline_mode": "Alphabetic",
+          "text_rotation": null,
+          "position_x": [570.0],
+          "position_y": [720.0],
+          "text_vec": ["FONT"]
+        }
       }
     ]
   }
@@ -319,12 +676,14 @@ echo "Rendering via_svg.png (SVG → PNG via resvg, font: NimbusSans-Regular)...
 "$PLUOT" \
   --input "$WORK_DIR/params.json" \
   --output "$WORK_DIR/out.via_svg.png" \
+  --width 800 --height 800 \
   --font_path "$FONT_PATH" >&2
 
 echo "Rendering out.png (GPU raster)..." >&2
 "$PLUOT" \
   --input "$WORK_DIR/params.json" \
-  --output "$WORK_DIR/out.png" >&2
+  --output "$WORK_DIR/out.png" \
+  --width 800 --height 800 >&2
 
 # ---------------------------------------------------------------------------
 # Pixel diff

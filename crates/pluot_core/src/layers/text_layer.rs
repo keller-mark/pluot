@@ -130,6 +130,7 @@ fn parse_color(color: &TwoColor) -> [f32; 4] {
 // No vertical padding: v=0 with ClampToEdge correctly samples the first row.
 const PADDING: usize = 1;
 const V_PADDING: usize = 0;
+const RASTER_SCALE: f32 = 2.0; // Rasterize at 2x to improve quality at small sizes
 
 
 
@@ -222,6 +223,7 @@ impl PreparedLayer for TextLayer {
 
         let n = self.layer_params.text_vec.len();
         let font_size = self.layer_params.text_size;
+        let raster_font_size = font_size * RASTER_SCALE;
         let text_align_mode = self.layer_params.text_align_mode;
         let text_baseline_mode = self.layer_params.text_baseline_mode;
 
@@ -283,7 +285,7 @@ impl PreparedLayer for TextLayer {
             for text_str in self.layer_params.text_vec.iter() {
                 layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(text_str, font_size, 0),
+                    &TextStyle::new(text_str, raster_font_size, 0),
                 );
             }
 
@@ -305,55 +307,7 @@ impl PreparedLayer for TextLayer {
             for g in glyphs {
                 let w1 = g.width;
                 let h1 = g.height;
-                let (metrics, bitmap) = if w1 > 0 && h1 > 0 {
-                    // 4x supersampling: rasterize at 4x scale and downsample for better AA
-                    const SS: usize = 4;
-                    let key_ss = fontdue::layout::GlyphRasterConfig {
-                        glyph_index: g.key.glyph_index,
-                        px: g.key.px * SS as f32,
-                        font_hash: g.key.font_hash,
-                    };
-                    let (m_ss, bmp_ss) = font_atlas.font.rasterize_config(key_ss);
-                    let w_ss = m_ss.width;
-                    let h_ss = m_ss.height;
-                    let mut bmp1x = vec![0u8; w1 * h1];
-                    for j in 0..h1 {
-                        for i in 0..w1 {
-                            let mut sum = 0u32;
-                            let mut count = 0u32;
-                            for dy in 0..SS {
-                                for dx in 0..SS {
-                                    let si = i * SS + dx;
-                                    let sj = j * SS + dy;
-                                    if si < w_ss && sj < h_ss {
-                                        sum += bmp_ss[sj * w_ss + si] as u32;
-                                        count += 1;
-                                    }
-                                }
-                            }
-                            bmp1x[j * w1 + i] = (sum / count.max(1)).min(255) as u8;
-                        }
-                    }
-                    let ss_f = SS as f32;
-                    let ss_i = SS as i32;
-                    let m1x = fontdue::Metrics {
-                        xmin: m_ss.xmin / ss_i,
-                        ymin: m_ss.ymin / ss_i,
-                        width: w1,
-                        height: h1,
-                        advance_width: m_ss.advance_width / ss_f,
-                        advance_height: m_ss.advance_height / ss_f,
-                        bounds: fontdue::OutlineBounds {
-                            xmin: m_ss.bounds.xmin / ss_f,
-                            ymin: m_ss.bounds.ymin / ss_f,
-                            width: m_ss.bounds.width / ss_f,
-                            height: m_ss.bounds.height / ss_f,
-                        },
-                    };
-                    (m1x, bmp1x)
-                } else {
-                    font_atlas.font.rasterize_config(g.key)
-                };
+                let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
                 atlas_width += 2 * PADDING + metrics.width.max(1);
                 atlas_height = atlas_height.max(2 * V_PADDING + metrics.height.max(1));
                 rasters.push((metrics, bitmap));
@@ -370,7 +324,7 @@ impl PreparedLayer for TextLayer {
 
             // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
             let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
-            let mut x_cursor: usize = PADDING; // Start with padding offset
+            let mut x_cursor: usize = 0; // First glyph starts at 0; ClampToEdge handles the left boundary
 
             // Now process each text element individually to generate instance data
             let mut all_instance_data: Vec<f32> = Vec::new();
@@ -389,8 +343,8 @@ impl PreparedLayer for TextLayer {
                 let text_width = measure_text_width(
                     &font_atlas.font,
                     text_str,
-                    font_size,
-                );
+                    raster_font_size,
+                ) / RASTER_SCALE;
 
                 // Calculate offset based on alignment and baseline.
                 // These offsets are in pixel units.
@@ -410,7 +364,7 @@ impl PreparedLayer for TextLayer {
                 });
                 element_layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(text_str, font_size, 0),
+                    &TextStyle::new(text_str, raster_font_size, 0),
                 );
 
                 let element_glyphs = element_layout.glyphs();
@@ -453,10 +407,11 @@ impl PreparedLayer for TextLayer {
                     }
 
                     // Compute screen-space rect for this glyph using exact advance-based x.
-                    let x_px = offset_x + exact_glyph_x[i];
-                    let y_px = offset_y + g.y;
-                    let w_px = g.width as f32;
-                    let h_px: f32 = g.height as f32;
+                    // Divide by RASTER_SCALE to convert from 2x raster space back to 1x screen pixels.
+                    let x_px = offset_x + exact_glyph_x[i] / RASTER_SCALE;
+                    let y_px = offset_y + g.y / RASTER_SCALE;
+                    let w_px = g.width as f32 / RASTER_SCALE;
+                    let h_px: f32 = g.height as f32 / RASTER_SCALE;
 
                     // UV: no vertical padding, relies on ClampToEdge at v=0 for correct top-edge sampling
                     let u0 = (element_cursor as f32) / (atlas_width as f32);
@@ -929,8 +884,7 @@ pub fn base_draw_text_layer_svg(
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
-            // TODO: revert "Nimbus Sans" to "Helvetica" after comparison tests
-            font: layer_params.font_name.clone().unwrap_or_else(|| "Nimbus Sans".to_string()),
+            font: layer_params.font_name.clone().unwrap_or_else(|| "Helvetica".to_string()),
             fontsize: layer_params.text_size as f64,
             // TODO: unify these enums.
             align: match layer_params.text_align_mode {
