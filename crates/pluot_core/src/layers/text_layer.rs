@@ -78,14 +78,17 @@ fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
         return 0.0;
     }
 
-    // Use visual (bounding-box) right edge of the last glyph to match SVG text-anchor centering.
-    // SVG text-anchor uses the visual extent of text, not the full typographic advance.
-    let mut max_x = 0.0f32;
+    // Use exact (non-ceil'd) advance widths to match SVG text width measurement.
+    // fontdue internally uses ceil(advance_width) for cursor, causing slightly wider text.
+    let mut exact_cursor = 0.0f32;
+    let mut ceil_cursor = 0.0f32;
     for glyph in glyphs {
-        let right_edge = glyph.x + glyph.width as f32;
-        max_x = max_x.max(right_edge);
+        let (metrics, _) = font.rasterize_config(glyph.key);
+        let _ = glyph.x - ceil_cursor;
+        ceil_cursor += metrics.advance_width.ceil();
+        exact_cursor += metrics.advance_width;
     }
-    max_x
+    exact_cursor
 }
 
 fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_baseline: TextBaselineMode, text_width: f32) -> (f32, f32) {
@@ -96,11 +99,9 @@ fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_basel
     };
 
     let y = match text_baseline {
-        // For some reason, GlyphPosition.y is always a big negative number -(font_size plus some extra pixels)
-        // So we adjust accordingly here.
-        TextBaselineMode::Top => font_size - font_size,
-        TextBaselineMode::Middle => font_size * 0.54,
-        TextBaselineMode::Alphabetic => font_size * 0.80,
+        TextBaselineMode::Top => font_size * 0.007,
+        TextBaselineMode::Middle => font_size * 0.525,
+        TextBaselineMode::Alphabetic => font_size * 0.785,
         TextBaselineMode::Bottom => font_size,
     };
 
@@ -779,9 +780,12 @@ pub async fn base_draw_text_layer(
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
+                        // Use One/Zero for alpha so output alpha = a_src directly.
+                        // SrcAlpha/OneMinusSrcAlpha would square the alpha (a_src^2),
+                        // causing GPU alpha to be much lower than the SVG reference.
                         alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::Zero,
                             operation: wgpu::BlendOperation::Add,
                         },
                     }),
