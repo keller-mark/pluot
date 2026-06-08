@@ -4,12 +4,14 @@ from zarr.abc.store import RangeByteRequest, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
 from os.path import join, dirname
 from enum import IntEnum
+from pluot.font import FontStore
 
 # Global mapping from store_name to Zarr store objects.
 
-GLOBAL_STORES = {
+GLOBAL_STORES: dict = {
     # "my_store": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "gaussian_quantiles.zarr")),
     # "ome_ngff": LocalStore(join(dirname(__file__), "..", "..", "data", "out", "6001240_labels.ome.zarr")),
+    "__fonts__": FontStore(),
 }
 
 class ZarrPeekResult(IntEnum):
@@ -48,7 +50,17 @@ def zarr_has_status(store_name: str, key: str) -> ZarrPeekResult:
 
 def zarr_get_status(store_name: str, key: str) -> ZarrPeekResult:
     """Synchronously check the status of a zarr_get call without awaiting."""
-    return _peek_status(_get_cache_key(store_name, key))
+    cache_key = _get_cache_key(store_name, key)
+    if cache_key not in _RESULT_CACHE:
+        store = GLOBAL_STORES.get(store_name)
+        if store is not None and hasattr(store, 'get_sync'):
+            # Store supports synchronous resolution; populate the cache eagerly so the
+            # status can be returned immediately without an async round-trip.
+            try:
+                _RESULT_CACHE[cache_key] = store.get_sync(key)
+            except Exception as e:
+                _RESULT_CACHE[cache_key] = e
+    return _peek_status(cache_key)
 
 def zarr_get_range_from_offset_status(store_name: str, key: str, offset: int, length: int) -> ZarrPeekResult:
     """Synchronously check the status of a zarr_get_range_from_offset call without awaiting."""

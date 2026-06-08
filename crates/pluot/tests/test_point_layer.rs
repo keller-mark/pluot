@@ -407,6 +407,143 @@ async fn test_point_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
+// ── Circle shape ─────────────────────────────────────────────────────────────
+
+fn corner_points_circle() -> PointLayerParams {
+    PointLayerParams {
+        point_shape_mode: PointShapeMode::Circle,
+        ..corner_points_data()
+    }
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_circle_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(0.0),
+                margin_right: Some(0.0),
+                margin_top: Some(0.0),
+                margin_bottom: Some(0.0),
+            }),
+            ..corner_points_circle()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_circle_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_ignore_circle_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Ignore,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_ignore_circle_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_cover_circle_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Cover,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_cover_circle_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_circle_view_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        margin_left: Some(10.0),
+        margin_right: Some(10.0),
+        margin_top: Some(10.0),
+        margin_bottom: Some(10.0),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_circle_view_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_circle_layer_bounds() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
+            }),
+            ..corner_points_circle()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_circle_layer_bounds").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_wide_contain_circle_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_wide_contain_circle_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_wide_ignore_circle_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Ignore,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_wide_ignore_circle_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_tall_contain_circle_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_tall_contain_circle_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_tall_ignore_circle_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_points_circle()),
+        aspect_ratio_mode: AspectRatioMode::Ignore,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_tall_ignore_circle_no_margins").await;
+}
+
 // TODO: performance tests with many elements, both raster and svg formats
 
 // To compare svg to raster, render svg using resvg

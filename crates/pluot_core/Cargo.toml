@@ -27,6 +27,9 @@ default = []
 python = ["pyo3", "pyo3-async-runtimes", "pythonize", "pyo3-log", "tokio"]
 # Define a feature for running unit tests in GPU-less environments
 lacks_gpu = []
+# Embed URW Core 35 fonts (permissive PDF Base-14 alternatives) via include_bytes!.
+# Only relevant for the plain-Rust binding; JS/Python bindings load fonts at runtime.
+embed_fonts = []
 
 
 [dependencies]

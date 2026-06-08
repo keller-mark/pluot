@@ -45,4 +45,10 @@ skills-lock.json
 .Rproj.user
 *.o
 AUTHORS
+
+
+autoresearch/
 circle_diffs/
+text_diffs/
+
+bindings-js/core/src/vendored-fonts/*.ttf.js

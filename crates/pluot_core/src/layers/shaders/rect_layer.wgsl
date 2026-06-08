@@ -305,8 +305,8 @@ fn vs_main(
 // but this will affect the alpha blending step, causing alpha-blending
 // to happen in the sRGB space, which is perceptually non-linear,
 // and can cause darkening artifacts during the circle anti-aliasing step.
-fn srgb_to_linear(c: f32) -> f32 {
-    return pow(c, 2.2);
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return pow(c, vec3<f32>(2.2));
 }
 
 
@@ -366,6 +366,6 @@ fn fs_main(
     }
 
     var out: FSOut;
-    out.color = vec4<f32>(srgb_to_linear(out_color.r), srgb_to_linear(out_color.g), srgb_to_linear(out_color.b), 1.0);
+    out.color = vec4<f32>(srgb_to_linear(out_color), 1.0);
     return out;
 }

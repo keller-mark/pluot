@@ -17,16 +17,16 @@
 <rect fill="rgb(214, 39, 40)" height="16" opacity="1" width="16" x="-8" y="-8"/>
 </g>
 <g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 100)" x="0" y="100">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 100)" x="0" y="100">
 A
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 100 100)" x="100" y="100">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 100 100)" x="100" y="100">
 B
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 100 0)" x="100" y="0">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 100 0)" x="100" y="0">
 C
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 0)" x="0" y="0">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="10" opacity="1" text-anchor="middle" transform="rotate(0 0 0)" x="0" y="0">
 D
 </text>
 </g>

@@ -118,6 +118,7 @@ const DEMOS = {
             text_size: 25.0,
             text_align_mode: "Start",
             text_baseline_mode: "Bottom",
+            font_name: "Courier",
             bounds: null,
             /*bounds: {
               margin_top: 0,
@@ -127,7 +128,7 @@ const DEMOS = {
             },*/
 
             position_x: [10, 110],
-            position_y: [10, 110],
+            position_y: [60, 110],
             text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },

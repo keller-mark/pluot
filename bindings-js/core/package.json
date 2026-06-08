@@ -31,7 +31,8 @@
     "start": "pnpm -C ../../ run start-tsc",
     "build": "pnpm -C ../../ run build-tsc",
     "bundle": "pnpm exec vite build -c ./vite.config.js",
-    "test": "pnpm exec vitest --run -r ../../ --dir ."
+    "test": "pnpm exec vitest --run -r ../../ --dir .",
+    "copy-fonts": "node scripts/copy-fonts.mjs ../../vendor/urw-core35-fonts ./src/vendored-fonts"
   },
   "dependencies": {
     "pluot": "workspace:*",

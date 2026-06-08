@@ -22,6 +22,12 @@ use pluot::{
 //   - For TextLayer, this includes testing different text sizes, alignment modes,
 //     baseline modes, and optional rotation
 
+// Absolute path to a vendored TTF used by the custom-font filesystem test.
+const NIMBUS_ROMAN_TTF: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf",
+);
+
 // Helper: 4 text labels at the corners of [0,1]x[0,1] in data space
 fn corner_text_data() -> TextLayerParams {
     TextLayerParams {
@@ -34,6 +40,7 @@ fn corner_text_data() -> TextLayerParams {
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
         text_rotation: None,
+        font_name: None,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5]),
         text_vec: Arc::new(vec![
@@ -58,6 +65,7 @@ fn corner_text_pixels() -> TextLayerParams {
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
         text_rotation: None,
+        font_name: None,
         position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
         text_vec: Arc::new(vec![
@@ -501,3 +509,48 @@ async fn test_text_layer_square_contain_pixel_x_data_y_no_margins() {
     };
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
+
+// ── Font loading ──────────────────────────────────────────────────────────────
+
+// PDF Base-14 font name resolved via the embedded URW font map.
+// Requires the `embed_fonts` feature so that the plain-Rust binding can resolve
+// "Helvetica" to the embedded NimbusSans-Regular bytes without a filesystem hit.
+#[cfg(feature = "embed_fonts")]
+#[tokio::test]
+async fn test_text_layer_pdf_base14_font_helvetica() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            font_name: Some("Helvetica".to_string()),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_pdf_base14_font_helvetica").await;
+}
+
+/*
+// TODO: re-enable after #207 is complete
+// Custom TTF supplied as a filesystem path.
+// The font_name is the absolute path to a .ttf file; the plain-Rust binding
+// strips the double ".ttf" suffix that the store key appends and reads the file.
+#[tokio::test]
+async fn test_text_layer_custom_ttf_font_file() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            // TODO: do not pass the full path via font_name;
+            // Only pass the name, and ensure the font is
+            // available via the special __fonts__ Zarr store.
+            font_name: Some(NIMBUS_ROMAN_TTF.to_string()),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_custom_ttf_font_file").await;
+}
+*/

@@ -253,6 +253,7 @@ impl AxisLinearLayer {
                 text_align_mode,
                 text_baseline_mode,
                 text_rotation: Some(text_rotation as f32),
+                font_name: None,
 
                 position_x: Arc::new(text_position_x),
                 position_y: Arc::new(text_position_y),

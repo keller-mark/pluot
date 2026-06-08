@@ -7,19 +7,19 @@
 </defs>
 <g height="100" width="200">
 <g clip-path="url(#my_text_layer_clip_path)" transform="translate(10,10)">
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 50.000003814697266 80)" x="50.000003814697266" y="80">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 50.000003814697266 80)" x="50.000003814697266" y="80">
 A
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 130 80)" x="130" y="80">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 130 80)" x="130" y="80">
 B
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 130 0)" x="130" y="0">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 130 0)" x="130" y="0">
 C
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 50.000003814697266 0)" x="50.000003814697266" y="0">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 50.000003814697266 0)" x="50.000003814697266" y="0">
 D
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 90 40)" x="90" y="40">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 90 40)" x="90" y="40">
 Hello world
 </text>
 </g>
