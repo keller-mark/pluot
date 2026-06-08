@@ -127,7 +127,7 @@ const DEMOS = {
             },*/
 
             position_x: [10, 110],
-            position_y: [10, 110],
+            position_y: [60, 110],
             text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },

@@ -1,0 +1,28 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_text_layer_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#my_text_layer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="/Users/mkeller/research/dbmi/vitessce/pluot/crates/pluot/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 0 100)" x="0" y="100">
+A
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="/Users/mkeller/research/dbmi/vitessce/pluot/crates/pluot/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 100 100)" x="100" y="100">
+B
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="/Users/mkeller/research/dbmi/vitessce/pluot/crates/pluot/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 100 0)" x="100" y="0">
+C
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="/Users/mkeller/research/dbmi/vitessce/pluot/crates/pluot/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 0 0)" x="0" y="0">
+D
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="/Users/mkeller/research/dbmi/vitessce/pluot/crates/pluot/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 50 50)" x="50" y="50">
+Hello world
+</text>
+</g>
+</g>
+</g>
+</svg>

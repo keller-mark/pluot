@@ -128,8 +128,8 @@ fn parse_color(color: &TwoColor) -> [f32; 4] {
 
 // Horizontal padding between glyphs to prevent left/right texture bleeding.
 // No vertical padding: v=0 with ClampToEdge correctly samples the first row.
-const PADDING: usize = 1;
-const V_PADDING: usize = 0;
+const H_PADDING: usize = 1;
+const V_PADDING: usize = 1;
 const RASTER_SCALE: f32 = 2.0; // Rasterize at 2x to improve quality at small sizes
 
 
@@ -308,7 +308,7 @@ impl PreparedLayer for TextLayer {
                 let w1 = g.width;
                 let h1 = g.height;
                 let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-                atlas_width += 2 * PADDING + metrics.width.max(1);
+                atlas_width += 2 * H_PADDING + metrics.width.max(1);
                 atlas_height = atlas_height.max(2 * V_PADDING + metrics.height.max(1));
                 rasters.push((metrics, bitmap));
             }
@@ -428,7 +428,7 @@ impl PreparedLayer for TextLayer {
                     }
 
                     // Advance cursor by glyph width + padding for next glyph
-                    element_cursor += gw + 2 * PADDING;
+                    element_cursor += gw + 2 * H_PADDING;
                 }
 
                 x_cursor = element_cursor;
