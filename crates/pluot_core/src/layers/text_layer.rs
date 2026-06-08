@@ -273,6 +273,12 @@ impl PreparedLayer for TextLayer {
             };
             let font_atlas = get_or_init_font_atlas(font_bytes, &font_cache_key);
 
+            // Baseline position in raster space: -ceil(ascent). Matches fontdue's internal
+            // baseline_y so we can use exact m.bounds.ymin instead of floor'd g.y.
+            let baseline_y_raster: f32 = font_atlas.font
+                .horizontal_line_metrics(raster_font_size)
+                .map_or(-raster_font_size, |lm| -lm.ascent.ceil());
+
             // Build a comprehensive layout with all text elements to create the atlas
             let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
             layout.reset(&LayoutSettings {
@@ -408,8 +414,11 @@ impl PreparedLayer for TextLayer {
 
                     // Compute screen-space rect for this glyph using exact advance-based x.
                     // Divide by RASTER_SCALE to convert from 2x raster space back to 1x screen pixels.
+                    // Use m.bounds.ymin (exact, non-floor'd) instead of g.y (which bakes in
+                    // fontdue's floor(ymin) rounding) so all baseline-sitting glyphs share the
+                    // same y_px regardless of sub-pixel ymin variation.
                     let x_px = offset_x + exact_glyph_x[i] / RASTER_SCALE;
-                    let y_px = offset_y + g.y / RASTER_SCALE;
+                    let y_px = offset_y + (m.bounds.ymin + baseline_y_raster) / RASTER_SCALE;
                     let w_px = g.width as f32 / RASTER_SCALE;
                     let h_px: f32 = g.height as f32 / RASTER_SCALE;
 
