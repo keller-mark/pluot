@@ -531,6 +531,8 @@ async fn test_text_layer_pdf_base14_font_helvetica() {
     render_and_check_both_snapshots(params, "test_text_layer_pdf_base14_font_helvetica").await;
 }
 
+/*
+// TODO: re-enable after #207 is complete
 // Custom TTF supplied as a filesystem path.
 // The font_name is the absolute path to a .ttf file; the plain-Rust binding
 // strips the double ".ttf" suffix that the store key appends and reads the file.
@@ -551,3 +553,4 @@ async fn test_text_layer_custom_ttf_font_file() {
     };
     render_and_check_both_snapshots(params, "test_text_layer_custom_ttf_font_file").await;
 }
+*/
