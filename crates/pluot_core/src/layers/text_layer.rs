@@ -227,12 +227,17 @@ impl PreparedLayer for TextLayer {
         let text_align_mode = self.layer_params.text_align_mode;
         let text_baseline_mode = self.layer_params.text_baseline_mode;
 
-        // Check font availability via the __fonts__ zarr store, bailing early while fetching.
+        // Check font availability via the __fonts__ zarr store.
+        // If the font is still loading, fall back to the bundled default so internal_data
+        // is always populated; bailed_early signals the caller to re-prepare once the
+        // custom font arrives.
+        let mut font_pending = false;
         let custom_font_bytes: Option<Vec<u8>> = if let Some(ref font_name) = self.layer_params.font_name {
             let font_key = format!("{}.ttf", font_name);
             match zarr_get_status("__fonts__", &font_key) {
                 ZarrPeekResult::Pending => {
-                    return PrepareResult { bailed_early: true };
+                    font_pending = true;
+                    None // Fall back to the bundled default font while loading.
                 }
                 ZarrPeekResult::Fulfilled => {
                     let font_future = zarr_get("__fonts__", &font_key);
@@ -247,8 +252,14 @@ impl PreparedLayer for TextLayer {
             None
         };
 
-        let font_cache_key = self.layer_params.font_name.clone()
-            .unwrap_or_else(|| DEFAULT_FONT_CACHE_KEY.to_string());
+        // While the custom font is pending, cache the fallback render under the default key
+        // so that the cache miss fires correctly once the real font bytes arrive.
+        let font_cache_key = if font_pending {
+            DEFAULT_FONT_CACHE_KEY.to_string()
+        } else {
+            self.layer_params.font_name.clone()
+                .unwrap_or_else(|| DEFAULT_FONT_CACHE_KEY.to_string())
+        };
 
         // Build cache keys based on the data that affects the internal representation.
         // This includes: text strings, positions, font size, alignment, baseline, and font name.
@@ -456,7 +467,7 @@ impl PreparedLayer for TextLayer {
         self.internal_data = Some(internal_data);
 
         return PrepareResult {
-            bailed_early: false,
+            bailed_early: font_pending,
         }
     }
 }

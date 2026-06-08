@@ -34,11 +34,16 @@ export function setUrwFontBaseUrl(url: string): void {
   _urwFontBaseUrl = url.endsWith("/") ? url : url + "/";
 }
 
+function base64Decode(encoded: string) {
+  // We do not want to use Buffer.from(encoded, 'base64') because
+  // Buffer is not available in the browser and we do not want
+  // to add a dependency on a polyfill if we dont have to.
+  // Reference: https://stackoverflow.com/a/41106346
+  return Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+}
+
+
 export async function loadUrwFont(filename: string): Promise<Uint8Array> {
-  const base = _urwFontBaseUrl
-    ?? new URL("../../../vendor/urw-core35-fonts/", import.meta.url).href;
-  const url = `${base}${filename}.ttf`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Failed to fetch URW font: ${url} (${resp.status})`);
-  return new Uint8Array(await resp.arrayBuffer());
+  const module = await import(`./vendored-fonts/${filename}.ttf.js`)
+  return base64Decode(module.ttfBytes);
 }

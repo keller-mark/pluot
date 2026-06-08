@@ -118,6 +118,7 @@ const DEMOS = {
             text_size: 25.0,
             text_align_mode: "Start",
             text_baseline_mode: "Bottom",
+            font_name: "Courier",
             bounds: null,
             /*bounds: {
               margin_top: 0,
