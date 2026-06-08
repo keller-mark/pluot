@@ -66,6 +66,7 @@ fn corner_labels() -> TextLayerParams {
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
         text_rotation: None,
+        font_name: None,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
         text_vec: Arc::new(vec![

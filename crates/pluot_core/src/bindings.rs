@@ -496,7 +496,7 @@ pub mod plain_rust {
     /// Return embedded URW font bytes for the 14 PDF Base font names.
     /// Only these names are recognised; all others must be supplied via the
     /// filesystem fallback or an explicit override.
-    #[cfg(feature = "urw_fonts")]
+    #[cfg(feature = "embed_fonts")]
     fn get_urw_font_bytes(font_name: &str) -> Option<&'static [u8]> {
         match font_name {
             "Courier"               => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
@@ -520,7 +520,7 @@ pub mod plain_rust {
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         if store_name == "__fonts__" {
             let font_name = key.trim_end_matches(".ttf").trim_end_matches(".otf");
-            #[cfg(feature = "urw_fonts")]
+            #[cfg(feature = "embed_fonts")]
             if let Some(bytes) = get_urw_font_bytes(font_name) {
                 return zarrs::storage::Bytes::from_static(bytes);
             }
@@ -533,7 +533,7 @@ pub mod plain_rust {
     pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
         if store_name == "__fonts__" {
             let font_name = key.trim_end_matches(".ttf").trim_end_matches(".otf");
-            #[cfg(feature = "urw_fonts")]
+            #[cfg(feature = "embed_fonts")]
             if get_urw_font_bytes(font_name).is_some() {
                 return ZarrPeekResult::Fulfilled;
             }
