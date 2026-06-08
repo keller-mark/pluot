@@ -140,6 +140,7 @@ export function PluotWrapper(props) {
           debugMargins={debugMargins}
           cameraMatrix={cameraMatrix}
           enablePicking={enablePicking}
+          backgroundColor={"#fff"}
         />
       </div>
       <PlotControls
