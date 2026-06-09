@@ -493,37 +493,9 @@ pub mod plain_rust {
         panic!("zarr_has_status is not implemented in plain Rust mode.");
     }
 
-    /// Return embedded URW font bytes for the 14 PDF Base font names.
-    /// Only these names are recognised; all others must be supplied via the
-    /// filesystem fallback or an explicit override.
-    #[cfg(feature = "embed_fonts")]
-    fn get_urw_font_bytes(font_name: &str) -> Option<&'static [u8]> {
-        match font_name {
-            "Courier"               => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
-            "Courier-Bold"          => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusMonoPS-Bold.ttf")),
-            "Courier-Oblique"       => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusMonoPS-Italic.ttf")),
-            "Courier-BoldOblique"   => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusMonoPS-BoldItalic.ttf")),
-            "Helvetica"             => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf")),
-            "Helvetica-Bold"        => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusSans-Bold.ttf")),
-            "Helvetica-Oblique"     => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusSans-Oblique.ttf")),
-            "Helvetica-BoldOblique" => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusSans-BoldOblique.ttf")),
-            "Times-Roman"           => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf")),
-            "Times-Bold"            => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusRoman-Bold.ttf")),
-            "Times-Italic"          => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusRoman-Italic.ttf")),
-            "Times-BoldItalic"      => Some(include_bytes!("../../../vendor/urw-core35-fonts/NimbusRoman-BoldItalic.ttf")),
-            "Symbol"                => Some(include_bytes!("../../../vendor/urw-core35-fonts/StandardSymbolsPS.ttf")),
-            "ZapfDingbats"          => Some(include_bytes!("../../../vendor/urw-core35-fonts/D050000L.ttf")),
-            _                       => None,
-        }
-    }
-
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         if store_name == "__fonts__" {
             let font_name = key.trim_end_matches(".ttf").trim_end_matches(".otf");
-            #[cfg(feature = "embed_fonts")]
-            if let Some(bytes) = get_urw_font_bytes(font_name) {
-                return zarrs::storage::Bytes::from_static(bytes);
-            }
             let data = std::fs::read(font_name).unwrap_or_default();
             return zarrs::storage::Bytes::from(data);
         }
@@ -533,10 +505,6 @@ pub mod plain_rust {
     pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
         if store_name == "__fonts__" {
             let font_name = key.trim_end_matches(".ttf").trim_end_matches(".otf");
-            #[cfg(feature = "embed_fonts")]
-            if get_urw_font_bytes(font_name).is_some() {
-                return ZarrPeekResult::Fulfilled;
-            }
             return if std::path::Path::new(font_name).exists() {
                 ZarrPeekResult::Fulfilled
             } else {

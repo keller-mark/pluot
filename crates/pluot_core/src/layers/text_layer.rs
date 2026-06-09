@@ -29,6 +29,32 @@ use crate::zarr_types::ZarrPeekResult;
 
 const FONT_BYTES: &[u8] = include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf").as_slice();
 
+#[cfg(feature = "embed_fonts")]
+pub(crate) fn get_urw_font_bytes(font_name: &str) -> Option<&'static [u8]> {
+    match font_name {
+        "Courier"               => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
+        "Courier-Bold"          => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Bold.ttf")),
+        "Courier-Oblique"       => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Italic.ttf")),
+        "Courier-BoldOblique"   => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-BoldItalic.ttf")),
+        "Helvetica"             => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf")),
+        "Helvetica-Bold"        => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Bold.ttf")),
+        "Helvetica-Oblique"     => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Oblique.ttf")),
+        "Helvetica-BoldOblique" => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-BoldOblique.ttf")),
+        "Times-Roman"           => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf")),
+        "Times-Bold"            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Bold.ttf")),
+        "Times-Italic"          => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Italic.ttf")),
+        "Times-BoldItalic"      => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-BoldItalic.ttf")),
+        "Symbol"                => Some(include_bytes!("../../../../vendor/urw-core35-fonts/StandardSymbolsPS.ttf")),
+        "ZapfDingbats"          => Some(include_bytes!("../../../../vendor/urw-core35-fonts/D050000L.ttf")),
+        _                       => None,
+    }
+}
+
+#[cfg(not(feature = "embed_fonts"))]
+pub(crate) fn get_urw_font_bytes(_font_name: &str) -> Option<&'static [u8]> {
+    None
+}
+
 // Cached font atlas data
 #[derive(Clone)]
 struct FontAtlasCache {
@@ -233,20 +259,24 @@ impl PreparedLayer for TextLayer {
         // custom font arrives.
         let mut font_pending = false;
         let custom_font_bytes: Option<Vec<u8>> = if let Some(ref font_name) = self.layer_params.font_name {
-            let font_key = format!("{}.ttf", font_name);
-            match zarr_get_status("__fonts__", &font_key) {
-                ZarrPeekResult::Pending => {
-                    font_pending = true;
-                    None // Fall back to the bundled default font while loading.
-                }
-                ZarrPeekResult::Fulfilled => {
-                    let font_future = zarr_get("__fonts__", &font_key);
-                    match crate::maybe_timeout!(font_future, self.view_params.timeout).await {
-                        Ok(bytes) => Some(bytes.to_vec()),
-                        Err(_) => None, // Timeout — fall back to the bundled default font.
+            if let Some(bytes) = get_urw_font_bytes(font_name) {
+                Some(bytes.to_vec())
+            } else {
+                let font_key = format!("{}.ttf", font_name);
+                match zarr_get_status("__fonts__", &font_key) {
+                    ZarrPeekResult::Pending => {
+                        font_pending = true;
+                        None // Fall back to the bundled default font while loading.
                     }
+                    ZarrPeekResult::Fulfilled => {
+                        let font_future = zarr_get("__fonts__", &font_key);
+                        match crate::maybe_timeout!(font_future, self.view_params.timeout).await {
+                            Ok(bytes) => Some(bytes.to_vec()),
+                            Err(_) => None, // Timeout — fall back to the bundled default font.
+                        }
+                    }
+                    ZarrPeekResult::Rejected => None, // Fall back to the bundled default font.
                 }
-                ZarrPeekResult::Rejected => None, // Fall back to the bundled default font.
             }
         } else {
             None

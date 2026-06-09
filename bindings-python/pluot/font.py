@@ -59,37 +59,6 @@ OSXFontDirectories = [
     str(_HOME / "Library/Fonts"),
 ]
 
-# ---------------------------------------------------------------------------
-# URW Core 35 fonts (permissive alternatives to the PDF Base-14 fonts).
-#
-# The TTF files live in the vendor/urw-core35-fonts git submodule.
-# For proper PyPI distribution the fonts should be copied into the package
-# (e.g. bindings-python/pluot/fonts/) and _URW_FONTS_DIR updated accordingly.
-# ---------------------------------------------------------------------------
-
-_URW_FONTS_DIR = Path(__file__).parent.parent.parent / 'vendor' / 'urw-core35-fonts'
-
-# Maps the 14 PDF Base font names → TTF filename stems in _URW_FONTS_DIR.
-# Only these names are recognised automatically. Any other font name (including
-# direct URW names like "NimbusSans-Regular") must be registered explicitly via
-# register_font() to be usable.
-URW_FONT_MAP: dict[str, str] = {
-    "Courier":               "NimbusMonoPS-Regular",
-    "Courier-Bold":          "NimbusMonoPS-Bold",
-    "Courier-Oblique":       "NimbusMonoPS-Italic",
-    "Courier-BoldOblique":   "NimbusMonoPS-BoldItalic",
-    "Helvetica":             "NimbusSans-Regular",
-    "Helvetica-Bold":        "NimbusSans-Bold",
-    "Helvetica-Oblique":     "NimbusSans-Oblique",
-    "Helvetica-BoldOblique": "NimbusSans-BoldOblique",
-    "Times-Roman":           "NimbusRoman-Regular",
-    "Times-Bold":            "NimbusRoman-Bold",
-    "Times-Italic":          "NimbusRoman-Italic",
-    "Times-BoldItalic":      "NimbusRoman-BoldItalic",
-    "Symbol":                "StandardSymbolsPS",
-    "ZapfDingbats":          "D050000L",
-}
-
 def _system_font_dirs() -> list[Path]:
     if sys.platform == 'darwin':
         return [Path(d) for d in OSXFontDirectories]
@@ -118,16 +87,10 @@ def _resolve_font_path(font_name: str) -> str | None:
 
     Lookup order:
     1. Explicit override registered via register_font().
-    2. URW Core 35 bundled fonts (by direct name or PDF Base-14 alias).
-    3. System font detection.
+    2. System font detection.
     """
     if font_name in _FONT_OVERRIDES:
         return _FONT_OVERRIDES[font_name]
-    urw_filename = URW_FONT_MAP.get(font_name)
-    if urw_filename is not None:
-        urw_path = _URW_FONTS_DIR / f'{urw_filename}.ttf'
-        if urw_path.exists():
-            return str(urw_path)
     if font_name not in _FONT_PATH_CACHE:
         _FONT_PATH_CACHE[font_name] = _find_system_font(font_name)
     return _FONT_PATH_CACHE[font_name]
