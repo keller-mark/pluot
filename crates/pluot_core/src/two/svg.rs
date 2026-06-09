@@ -275,8 +275,8 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                     .set("fill", d.fill.to_string())
                     .set("font-size", d.fontsize)
                     .set("font-family", d.font_family.as_str())
-                    .set("font-weight", d.font_weight.as_str())
-                    .set("font-style", d.font_style.as_str());
+                    .set("font-weight", d.font_weight.as_str()) // TODO: omit when "normal" to minimize SVG size
+                    .set("font-style", d.font_style.as_str());  // TODO: omit when "normal" to minimize SVG size
 
                 if let Some(rotation) = d.rotation {
                     text = text.set("transform", format!("rotate({} {} {})", rotation, d.x, d.y));
