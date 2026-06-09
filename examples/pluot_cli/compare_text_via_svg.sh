@@ -64,6 +64,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [80.0],
           "position_y": [100.0],
           "text_vec": ["Hello"]
@@ -81,6 +84,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [230.0],
           "position_y": [100.0],
           "text_vec": ["World"]
@@ -98,6 +104,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [400.0],
           "position_y": [100.0],
           "text_vec": ["Cluster 1"]
@@ -115,6 +124,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [570.0],
           "position_y": [100.0],
           "text_vec": ["Cluster 2"]
@@ -132,6 +144,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [720.0],
           "position_y": [100.0],
           "text_vec": ["Label"]
@@ -149,6 +164,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Start",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [60.0],
           "position_y": [220.0],
           "text_vec": ["Start"]
@@ -166,6 +184,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [280.0],
           "position_y": [220.0],
           "text_vec": ["Middle"]
@@ -183,6 +204,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "End",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [530.0],
           "position_y": [220.0],
           "text_vec": ["End"]
@@ -200,6 +224,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Middle",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [720.0],
           "position_y": [220.0],
           "text_vec": ["Mid-B"]
@@ -217,6 +244,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Middle",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [160.0],
           "position_y": [360.0],
           "text_vec": ["Abc"]
@@ -234,6 +264,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Middle",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [400.0],
           "position_y": [360.0],
           "text_vec": ["XyZ 123"]
@@ -251,6 +284,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Middle",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [660.0],
           "position_y": [360.0],
           "text_vec": ["glyph"]
@@ -268,6 +304,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Top",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [160.0],
           "position_y": [480.0],
           "text_vec": ["Top"]
@@ -285,6 +324,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Middle",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [400.0],
           "position_y": [480.0],
           "text_vec": ["Mid"]
@@ -302,6 +344,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Bottom",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [640.0],
           "position_y": [480.0],
           "text_vec": ["Bot"]
@@ -319,6 +364,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [50.0],
           "position_y": [15.0],
           "text_vec": ["tiny a"]
@@ -336,6 +384,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [150.0],
           "position_y": [15.0],
           "text_vec": ["tiny b"]
@@ -353,6 +404,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [250.0],
           "position_y": [15.0],
           "text_vec": ["tiny c"]
@@ -370,6 +424,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [350.0],
           "position_y": [15.0],
           "text_vec": ["tiny d"]
@@ -387,6 +444,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [450.0],
           "position_y": [15.0],
           "text_vec": ["tiny e"]
@@ -404,6 +464,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [550.0],
           "position_y": [15.0],
           "text_vec": ["tiny f"]
@@ -421,6 +484,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [650.0],
           "position_y": [15.0],
           "text_vec": ["tiny g"]
@@ -438,6 +504,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [750.0],
           "position_y": [15.0],
           "text_vec": ["tiny h"]
@@ -455,6 +524,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [50.0],
           "position_y": [36.0],
           "text_vec": ["sm a"]
@@ -472,6 +544,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [150.0],
           "position_y": [36.0],
           "text_vec": ["sm b"]
@@ -489,6 +564,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [250.0],
           "position_y": [36.0],
           "text_vec": ["sm c"]
@@ -506,6 +584,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [350.0],
           "position_y": [36.0],
           "text_vec": ["sm d"]
@@ -523,6 +604,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [450.0],
           "position_y": [36.0],
           "text_vec": ["sm e"]
@@ -540,6 +624,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [550.0],
           "position_y": [36.0],
           "text_vec": ["sm f"]
@@ -557,6 +644,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [650.0],
           "position_y": [36.0],
           "text_vec": ["sm g"]
@@ -574,6 +664,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [750.0],
           "position_y": [36.0],
           "text_vec": ["sm h"]
@@ -591,6 +684,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [160.0],
           "position_y": [585.0],
           "text_vec": ["Large A"]
@@ -608,6 +704,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [400.0],
           "position_y": [585.0],
           "text_vec": ["Large B"]
@@ -625,6 +724,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [640.0],
           "position_y": [585.0],
           "text_vec": ["Large C"]
@@ -642,6 +744,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [250.0],
           "position_y": [720.0],
           "text_vec": ["HUGE"]
@@ -659,6 +764,9 @@ cat > "$WORK_DIR/params.json" << 'EOF'
           "text_align_mode": "Middle",
           "text_baseline_mode": "Alphabetic",
           "text_rotation": null,
+          "font_family": null,
+          "font_weight": "Normal",
+          "font_style": "Normal",
           "position_x": [570.0],
           "position_y": [720.0],
           "text_vec": ["FONT"]

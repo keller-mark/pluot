@@ -1,28 +1,33 @@
 /**
- * Maps the 14 PDF Base font names to their URW Core 35 TTF filename stems.
- * Only these names are recognised automatically. Any other font name (including
- * direct URW names like "NimbusSans-Regular") must be registered explicitly via
- * setFont() to be usable.
+ * Maps "family/style/weight" keys to their URW Core 35 TTF filename stems.
+ * Keys use capitalized weight ("Normal"|"Bold") and style ("Normal"|"Italic"|"Oblique").
+ * Helvetica uses oblique variants; Courier and Times use italic variants.
  *
  * The TTF files are shipped alongside this package (vendor/urw-core35-fonts/).
  * For production deployments, call setUrwFontBaseUrl() to point to wherever
  * the font files are hosted (CDN, self-hosted, etc.).
  */
 export const URW_FONT_MAP: Record<string, string> = {
-  "Courier":               "NimbusMonoPS-Regular",
-  "Courier-Bold":          "NimbusMonoPS-Bold",
-  "Courier-Oblique":       "NimbusMonoPS-Italic",
-  "Courier-BoldOblique":   "NimbusMonoPS-BoldItalic",
-  "Helvetica":             "NimbusSans-Regular",
-  "Helvetica-Bold":        "NimbusSans-Bold",
-  "Helvetica-Oblique":     "NimbusSans-Oblique",
-  "Helvetica-BoldOblique": "NimbusSans-BoldOblique",
-  "Times-Roman":           "NimbusRoman-Regular",
-  "Times-Bold":            "NimbusRoman-Bold",
-  "Times-Italic":          "NimbusRoman-Italic",
-  "Times-BoldItalic":      "NimbusRoman-BoldItalic",
-  "Symbol":                "StandardSymbolsPS",
-  "ZapfDingbats":          "D050000L",
+  "Courier/Normal/Normal":         "NimbusMonoPS-Regular",
+  "Courier/Normal/Bold":           "NimbusMonoPS-Bold",
+  "Courier/Italic/Normal":         "NimbusMonoPS-Italic",
+  "Courier/Oblique/Normal":        "NimbusMonoPS-Italic",
+  "Courier/Italic/Bold":           "NimbusMonoPS-BoldItalic",
+  "Courier/Oblique/Bold":          "NimbusMonoPS-BoldItalic",
+  "Helvetica/Normal/Normal":       "NimbusSans-Regular",
+  "Helvetica/Normal/Bold":         "NimbusSans-Bold",
+  "Helvetica/Oblique/Normal":      "NimbusSans-Oblique",
+  "Helvetica/Italic/Normal":       "NimbusSans-Oblique",
+  "Helvetica/Oblique/Bold":        "NimbusSans-BoldOblique",
+  "Helvetica/Italic/Bold":         "NimbusSans-BoldOblique",
+  "Times-Roman/Normal/Normal":     "NimbusRoman-Regular",
+  "Times-Roman/Normal/Bold":       "NimbusRoman-Bold",
+  "Times-Roman/Italic/Normal":     "NimbusRoman-Italic",
+  "Times-Roman/Oblique/Normal":    "NimbusRoman-Italic",
+  "Times-Roman/Italic/Bold":       "NimbusRoman-BoldItalic",
+  "Times-Roman/Oblique/Bold":      "NimbusRoman-BoldItalic",
+  "Symbol/Normal/Normal":          "StandardSymbolsPS",
+  "ZapfDingbats/Normal/Normal":    "D050000L",
 };
 
 // Base URL for URW font files. By default resolved relative to this module's location,
