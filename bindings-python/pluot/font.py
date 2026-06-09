@@ -8,7 +8,7 @@ from pathlib import Path
 # But this would introduce a matplotlib dependency.
 # Is there a more lightweight alternative?
 
-# Optional path overrides: font_name -> file path.
+# Optional path overrides: font_family -> file path.
 # Takes priority over system font detection.
 _FONT_OVERRIDES: dict[str, str] = {}
 
@@ -95,12 +95,18 @@ def _resolve_font_path(font_name: str) -> str | None:
         _FONT_PATH_CACHE[font_name] = _find_system_font(font_name)
     return _FONT_PATH_CACHE[font_name]
 
-def _key_to_font_name(key: str) -> str:
-    """Extract the font name from a zarr-style key like 'Arial.ttf'."""
+def _key_to_font_family(key: str) -> str:
+    """Extract the font family from a zarr-style key.
+
+    Keys use the format "{family}/{style}/{weight}.ttf". The family is the
+    first path segment. A leading "/" is stripped defensively if present.
+    """
+    # Strip any accidental leading slash then drop trailing .ttf/.otf.
     name = key.lstrip('/')
     if name.lower().endswith('.ttf') or name.lower().endswith('.otf'):
         name = name[:-4]
-    return name
+    # First segment is the family; remaining segments are style and weight.
+    return name.split('/')[0]
 
 class _BytesBuffer:
     """Minimal buffer wrapper compatible with zarr.py's `.to_bytes()` protocol."""
@@ -113,16 +119,17 @@ class FontStore:
     """
     Store for fonts, registered as '__fonts__' in GLOBAL_STORES.
     Rust requests fonts via zarr_get_status / zarr_get with store_name='__fonts__'
-    and key='{font_name}.ttf'. The get_sync method is called by zarr_get_status to
-    eagerly resolve synchronous results without waiting for an async call.
+    and key='{family}/{weight}/{style}.ttf'. The get_sync method is called by
+    zarr_get_status to eagerly resolve synchronous results without waiting for
+    an async call.
     """
 
     def get_sync(self, key: str) -> bytes:
         """Synchronously return font bytes, or raise if unavailable."""
-        font_name = _key_to_font_name(key)
-        path = _resolve_font_path(font_name)
+        font_family = _key_to_font_family(key)
+        path = _resolve_font_path(font_family)
         if path is None:
-            raise FileNotFoundError(f"Font not found: {font_name}")
+            raise FileNotFoundError(f"Font not found: {font_family}")
         with open(path, 'rb') as f:
             return f.read()
 

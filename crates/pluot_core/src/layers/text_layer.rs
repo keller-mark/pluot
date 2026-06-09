@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -30,28 +30,42 @@ use crate::zarr_types::ZarrPeekResult;
 const FONT_BYTES: &[u8] = include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf").as_slice();
 
 #[cfg(feature = "embed_fonts")]
-pub(crate) fn get_urw_font_bytes(font_name: &str) -> Option<&'static [u8]> {
-    match font_name {
-        "Courier"               => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
-        "Courier-Bold"          => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Bold.ttf")),
-        "Courier-Oblique"       => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Italic.ttf")),
-        "Courier-BoldOblique"   => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-BoldItalic.ttf")),
-        "Helvetica"             => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf")),
-        "Helvetica-Bold"        => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Bold.ttf")),
-        "Helvetica-Oblique"     => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Oblique.ttf")),
-        "Helvetica-BoldOblique" => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-BoldOblique.ttf")),
-        "Times-Roman"           => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf")),
-        "Times-Bold"            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Bold.ttf")),
-        "Times-Italic"          => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Italic.ttf")),
-        "Times-BoldItalic"      => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-BoldItalic.ttf")),
-        "Symbol"                => Some(include_bytes!("../../../../vendor/urw-core35-fonts/StandardSymbolsPS.ttf")),
-        "ZapfDingbats"          => Some(include_bytes!("../../../../vendor/urw-core35-fonts/D050000L.ttf")),
-        _                       => None,
+pub(crate) fn get_urw_font_bytes(font_family: &str, font_weight: FontWeight, font_style: FontStyle) -> Option<&'static [u8]> {
+    match (font_family, font_weight, font_style) {
+        ("Courier", FontWeight::Normal, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
+        ("Courier", FontWeight::Bold, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Bold.ttf")),
+        ("Courier", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Italic.ttf")),
+        ("Courier", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-BoldItalic.ttf")),
+        ("Helvetica", FontWeight::Normal, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf")),
+        ("Helvetica", FontWeight::Bold, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Bold.ttf")),
+        ("Helvetica", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Oblique.ttf")),
+        ("Helvetica", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-BoldOblique.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Normal, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Bold, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Bold.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Italic.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-BoldItalic.ttf")),
+        ("Symbol", _, _)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/StandardSymbolsPS.ttf")),
+        ("ZapfDingbats", _, _)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/D050000L.ttf")),
+        _ => None,
     }
 }
 
 #[cfg(not(feature = "embed_fonts"))]
-pub(crate) fn get_urw_font_bytes(_font_name: &str) -> Option<&'static [u8]> {
+pub(crate) fn get_urw_font_bytes(_font_family: &str, _font_weight: FontWeight, _font_style: FontStyle) -> Option<&'static [u8]> {
     None
 }
 
@@ -190,7 +204,9 @@ pub struct TextLayerParams {
     pub text_rotation: Option<f32>, // Rotation in degrees
     // Optional font name to request from the client environment.
     // If None or if the request fails, the bundled default font is used.
-    pub font_name: Option<String>,
+    pub font_family: Option<String>,
+    pub font_weight: FontWeight,
+    pub font_style: FontStyle,
 
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub position_y: Arc<Vec<f32>>,
@@ -253,16 +269,26 @@ impl PreparedLayer for TextLayer {
         let text_align_mode = self.layer_params.text_align_mode;
         let text_baseline_mode = self.layer_params.text_baseline_mode;
 
+        let weight_str = match self.layer_params.font_weight {
+            FontWeight::Normal => "Normal",
+            FontWeight::Bold => "Bold",
+        };
+        let style_str = match self.layer_params.font_style {
+            FontStyle::Normal => "Normal",
+            FontStyle::Italic => "Italic",
+            FontStyle::Oblique => "Oblique",
+        };
+
         // Check font availability via the __fonts__ zarr store.
         // If the font is still loading, fall back to the bundled default so internal_data
         // is always populated; bailed_early signals the caller to re-prepare once the
         // custom font arrives.
         let mut font_pending = false;
-        let custom_font_bytes: Option<Vec<u8>> = if let Some(ref font_name) = self.layer_params.font_name {
-            if let Some(bytes) = get_urw_font_bytes(font_name) {
+        let custom_font_bytes: Option<Vec<u8>> = if let Some(ref font_family) = self.layer_params.font_family {
+            if let Some(bytes) = get_urw_font_bytes(font_family, self.layer_params.font_weight, self.layer_params.font_style) {
                 Some(bytes.to_vec())
             } else {
-                let font_key = format!("{}.ttf", font_name);
+                let font_key = format!("{}/{}/{}.ttf", font_family, style_str, weight_str);
                 match zarr_get_status("__fonts__", &font_key) {
                     ZarrPeekResult::Pending => {
                         font_pending = true;
@@ -287,7 +313,8 @@ impl PreparedLayer for TextLayer {
         let font_cache_key = if font_pending {
             DEFAULT_FONT_CACHE_KEY.to_string()
         } else {
-            self.layer_params.font_name.clone()
+            self.layer_params.font_family.as_deref()
+                .map(|f| format!("{}/{}/{}", f, style_str, weight_str))
                 .unwrap_or_else(|| DEFAULT_FONT_CACHE_KEY.to_string())
         };
 
@@ -934,7 +961,16 @@ pub fn base_draw_text_layer_svg(
             width: 100.0, // TODO?
             height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
-            font: layer_params.font_name.clone().unwrap_or_else(|| "Helvetica".to_string()),
+            font_family: layer_params.font_family.clone().unwrap_or_else(|| "Helvetica".to_string()),
+            font_weight: match layer_params.font_weight {
+                FontWeight::Normal => "normal".to_string(),
+                FontWeight::Bold => "bold".to_string(),
+            },
+            font_style: match layer_params.font_style {
+                FontStyle::Normal => "normal".to_string(),
+                FontStyle::Italic => "italic".to_string(),
+                FontStyle::Oblique => "oblique".to_string(),
+            },
             fontsize: layer_params.text_size as f64,
             // TODO: unify these enums.
             align: match layer_params.text_align_mode {

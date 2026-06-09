@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode};
+use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, FontWeight, FontStyle};
 use crate::viewport::get_bounds;
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::two::svg::SvgContext;
@@ -253,7 +253,9 @@ impl AxisLinearLayer {
                 text_align_mode,
                 text_baseline_mode,
                 text_rotation: Some(text_rotation as f32),
-                font_name: None,
+                font_family: None,
+                font_weight: FontWeight::Normal,
+                font_style: FontStyle::Normal,
 
                 position_x: Arc::new(text_position_x),
                 position_y: Arc::new(text_position_y),

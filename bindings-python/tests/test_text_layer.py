@@ -17,7 +17,7 @@ camera_view = [
     0.0, 0.0, 0.0, 1.0,
 ]
 
-def _text_layer_kwargs(font_name: str | None = None) -> dict:
+def _text_layer_kwargs(font_family: str | None = None) -> dict:
     layer_params = dict(
         layer_id="font_test_layer",
         bounds=None,
@@ -28,7 +28,9 @@ def _text_layer_kwargs(font_name: str | None = None) -> dict:
         text_align_mode="Middle",
         text_baseline_mode="Middle",
         text_rotation=None,
-        font_name=font_name,
+        font_family=font_family,
+        font_weight="Normal",
+        font_style="Normal",
         position_x=[0.0, 1.0, 1.0, 0.0, 0.5],
         position_y=[0.0, 0.0, 1.0, 1.0, 0.5],
         text_vec=["A", "B", "C", "D", "Hello"],
@@ -57,7 +59,7 @@ def clear_font_cache():
 @pytest.mark.asyncio
 async def test_text_layer_pdf_base14_font_helvetica():
     """PDF Base-14 name 'Helvetica' resolves to the bundled URW NimbusSans-Regular TTF."""
-    arr = await render_to_array(**_text_layer_kwargs(font_name="Helvetica"))
+    arr = await render_to_array(**_text_layer_kwargs(font_family="Helvetica"))
     assert arr.shape == (100, 100, 4)
     assert arr.dtype == "uint8"
     assert arr.sum() > 0, "Rendered image should not be all black"
@@ -66,7 +68,7 @@ async def test_text_layer_pdf_base14_font_helvetica():
 @pytest.mark.asyncio
 async def test_text_layer_pdf_base14_font_courier():
     """PDF Base-14 name 'Courier' resolves to the bundled URW NimbusMonoPS-Regular TTF."""
-    arr = await render_to_array(**_text_layer_kwargs(font_name="Courier"))
+    arr = await render_to_array(**_text_layer_kwargs(font_family="Courier"))
     assert arr.shape == (100, 100, 4)
     assert arr.dtype == "uint8"
     assert arr.sum() > 0
@@ -81,7 +83,7 @@ async def test_text_layer_custom_ttf_font_file():
     # Simulate a user pointing at a TTF inside node_modules (or any local path).
     register_font("CustomTestFont", ttf_path)
     try:
-        arr = await render_to_array(**_text_layer_kwargs(font_name="CustomTestFont"))
+        arr = await render_to_array(**_text_layer_kwargs(font_family="CustomTestFont"))
         assert arr.shape == (100, 100, 4)
         assert arr.dtype == "uint8"
         assert arr.sum() > 0

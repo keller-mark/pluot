@@ -72,6 +72,20 @@ pub enum ColorMode {
     Quantitative,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum FontStyle {
+    Normal,
+    Italic,
+    Oblique,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum FontWeight {
+    Normal,
+    Bold,
+}
+
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,

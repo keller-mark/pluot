@@ -11,6 +11,7 @@ use pluot::{
     PointLayerParams, PointShapeMode,
     LineLayerParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
+    FontWeight, FontStyle,
 };
 
 // Multi-layer tests exercise rendering of multiple layers stacked together.
@@ -66,7 +67,9 @@ fn corner_labels() -> TextLayerParams {
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
         text_rotation: None,
-        font_name: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
         text_vec: Arc::new(vec![

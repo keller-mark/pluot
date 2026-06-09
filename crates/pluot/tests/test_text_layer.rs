@@ -9,6 +9,7 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
+    FontWeight, FontStyle,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -40,7 +41,9 @@ fn corner_text_data() -> TextLayerParams {
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
         text_rotation: None,
-        font_name: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5]),
         text_vec: Arc::new(vec![
@@ -65,7 +68,9 @@ fn corner_text_pixels() -> TextLayerParams {
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
         text_rotation: None,
-        font_name: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
         position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
         text_vec: Arc::new(vec![
@@ -522,7 +527,9 @@ async fn test_text_layer_pdf_base14_font_helvetica() {
         width: 100,
         height: 100,
         layers: layer_params(TextLayerParams {
-            font_name: Some("Helvetica".to_string()),
+            font_family: Some("Helvetica".to_string()),
+            font_weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
             ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -534,18 +541,15 @@ async fn test_text_layer_pdf_base14_font_helvetica() {
 /*
 // TODO: re-enable after #207 is complete
 // Custom TTF supplied as a filesystem path.
-// The font_name is the absolute path to a .ttf file; the plain-Rust binding
-// strips the double ".ttf" suffix that the store key appends and reads the file.
 #[tokio::test]
 async fn test_text_layer_custom_ttf_font_file() {
     let params = RenderParams {
         width: 100,
         height: 100,
         layers: layer_params(TextLayerParams {
-            // TODO: do not pass the full path via font_name;
-            // Only pass the name, and ensure the font is
-            // available via the special __fonts__ Zarr store.
-            font_name: Some(NIMBUS_ROMAN_TTF.to_string()),
+            font_family: Some(NIMBUS_ROMAN_TTF.to_string()),
+            font_weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
             ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
