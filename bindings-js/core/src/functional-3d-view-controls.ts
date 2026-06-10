@@ -59,13 +59,11 @@ function buildLookAt(eye: vec3, center: vec3, up: vec3): Float32Array {
   return m as Float32Array;
 }
 
-// ============================================================
 // Orbit controller
 // State layout: Float32Array of 20 elements
 //   [0-15]: view matrix (column-major)
 //   [16-18]: center x, y, z
 //   [19]: log(radius)
-// ============================================================
 
 function orbitStateFrom(cam: CameraMatrix): [Float32Array, vec3, number] {
   const m = new Float32Array(cam.subarray ? cam.subarray(0, 16) : cam.slice(0, 16));
@@ -100,14 +98,14 @@ function orbitRotate(cam: CameraMatrix, dx: number, dy: number, dz: number): Cam
   // Camera frame from view matrix rows (column-major: row i = mat[i], mat[4+i], mat[8+i])
   const rx = m[0], ry = m[4], rz = m[8];    // right
   const ux = m[1], uy = m[5], uz = m[9];    // up
-  const fx = m[2], fy = m[6], fz = m[10];   // forward (center → eye direction)
+  const fx = m[2], fy = m[6], fz = m[10];   // forward (center --> eye direction)
 
   // World-space direction from screen deltas
   const qx = dx * rx + dy * ux;
   const qy = dx * ry + dy * uy;
   const qz = dx * rz + dy * uz;
 
-  // Rotation axis b_axis = -(forward × q)
+  // Rotation axis b_axis = -(forward x q)
   let bx = -(fy * qz - fz * qy);
   let by = -(fz * qx - fx * qz);
   let bz = -(fx * qy - fy * qx);
@@ -176,7 +174,6 @@ function orbitPan(cam: CameraMatrix, dx: number, dy: number, dz: number): Camera
   return packOrbit(newMat, newCenter, newLogRadius);
 }
 
-// ============================================================
 // Turntable controller
 // State layout: Float32Array of 28 elements
 //   [0-15]: view matrix
@@ -186,7 +183,6 @@ function orbitPan(cam: CameraMatrix, dx: number, dy: number, dz: number): Camera
 //   [21]: phi (elevation)
 //   [22-24]: up_base
 //   [25-27]: right_base
-// ============================================================
 
 // Default turntable base frame: Y-up, X-right, -Z-toward
 const TT_UP_DEFAULT: [number, number, number] = [0, 1, 0];
@@ -194,13 +190,13 @@ const TT_RIGHT_DEFAULT: [number, number, number] = [1, 0, 0];
 
 // Derive initial (theta, phi) from a view matrix assuming standard base frame.
 function anglesFromMat(m: Float32Array): { theta: number; phi: number } {
-  // forward row (row 2): mat[2], mat[6], mat[10] = outward direction (center→eye)
+  // forward row (row 2): mat[2], mat[6], mat[10] = outward direction (center-->eye)
   // With right_base=(1,0,0), toward_base=(0,0,-1), up_base=(0,1,0):
   //   wx = dot(fw, right_base) = fw.x
   //   wy = dot(fw, toward_base) = -fw.z
   //   wz = dot(fw, up_base) = fw.y
-  //   wz = sin(phi)  →  phi = asin(fw.y)
-  //   wx = cos(phi)*cos(theta), wy = cos(phi)*sin(theta) → theta = atan2(wy, wx) = atan2(-fw.z, fw.x)
+  //   wz = sin(phi)  -->  phi = asin(fw.y)
+  //   wx = cos(phi)*cos(theta), wy = cos(phi)*sin(theta) --> theta = atan2(wy, wx) = atan2(-fw.z, fw.x)
   const fy = m[6];
   const phi = Math.asin(Math.max(-1, Math.min(1, fy)));
   const theta = Math.atan2(-m[10], m[2]);
@@ -265,7 +261,7 @@ function turntableRecalc(
   vec3.scaleAndAdd(right, right, up, -ur / uu);
   vec3.normalize(right, right);
 
-  // toward = up × right
+  // toward = up x right
   const toward = vec3.create();
   vec3.cross(toward, up, right);
   vec3.normalize(toward, toward);
@@ -274,7 +270,7 @@ function turntableRecalc(
   const ctheta = Math.cos(theta), stheta = Math.sin(theta);
   const cphi = Math.cos(phi), sphi = Math.sin(phi);
 
-  // Outward direction (center → eye) in (right, toward, up) frame
+  // Outward direction (center --> eye) in (right, toward, up) frame
   const wx = ctheta * cphi, wy = stheta * cphi, wz = sphi;
   // Screen-up direction in same frame
   const sx = -ctheta * sphi, sy = -stheta * sphi, sz = cphi;

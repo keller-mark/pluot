@@ -110,7 +110,7 @@ fn layer_params(text_params: TextLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::TextLayer(text_params)]
 }
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_text_layer_square_contain_data_units_no_margins() {
@@ -279,7 +279,7 @@ async fn test_text_layer_square_contain_data_units_align_end_baseline_bottom() {
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_align_end_baseline_bottom").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_text_layer_wide_ignore_data_units_no_margins() {
@@ -369,7 +369,7 @@ async fn test_text_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_text_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_text_layer_tall_ignore_data_units_no_margins() {
@@ -517,7 +517,7 @@ async fn test_text_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
-// ── Font loading ──────────────────────────────────────────────────────────────
+// Font loading
 
 // PDF Base-14 font name resolved via the embedded URW font map.
 // Requires the `embed_fonts` feature so that the plain-Rust binding can resolve
@@ -540,9 +540,9 @@ async fn test_text_layer_pdf_base14_font_helvetica() {
     render_and_check_both_snapshots(params, "test_text_layer_pdf_base14_font_helvetica").await;
 }
 
-// ── model_matrix ─────────────────────────────────────────────────────────────
+// model_matrix
 
-// Scale 0.5 in data mode: text labels shrink to lower-left quadrant of [0,1]².
+// Scale 0.5 in data mode: text labels shrink to lower-left quadrant of the unit square.
 #[tokio::test]
 async fn test_text_layer_square_contain_data_units_model_matrix_scale() {
     let params = RenderParams {

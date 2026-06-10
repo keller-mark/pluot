@@ -45,7 +45,7 @@ struct PluotApp {
     plot_width: u32,
     plot_height: u32,
     frequency: f32,
-    /// Exponent for the number of points: actual count = 10^num_points_exp (1.0–7.0 → 10–10M).
+    /// Exponent for the number of points: actual count = 10^num_points_exp (1.0–7.0 --> 10–10M).
     num_points_exp: f32,
     point_radius: f32,
 }

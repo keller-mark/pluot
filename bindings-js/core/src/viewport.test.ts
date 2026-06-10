@@ -45,10 +45,8 @@ function expectArrayCloseTo(actual: Float32Array, expected: Float32Array, numDig
   }
 }
 
-// =================== getBounds ===================
-
 describe('getBounds', () => {
-  it('identity camera, square, Ignore → full [0, 1] range', () => {
+  it('identity camera, square, Ignore --> full [0, 1] range', () => {
     const b = getBounds(identityCamera(), makeViewport(100, 100, 'Ignore'));
     expect(b.xMin).toBeCloseTo(0);
     expect(b.xMax).toBeCloseTo(1);
@@ -56,7 +54,7 @@ describe('getBounds', () => {
     expect(b.yMax).toBeCloseTo(1);
   });
 
-  it('2x zoom, square, Ignore → [0.25, 0.75]', () => {
+  it('2x zoom, square, Ignore --> [0.25, 0.75]', () => {
     const b = getBounds(zoomCamera(2), makeViewport(100, 100, 'Ignore'));
     expect(b.xMin).toBeCloseTo(0.25);
     expect(b.xMax).toBeCloseTo(0.75);
@@ -64,7 +62,7 @@ describe('getBounds', () => {
     expect(b.yMax).toBeCloseTo(0.75);
   });
 
-  it('0.5x zoom (zoomed out 2x), square, Ignore → [-0.5, 1.5]', () => {
+  it('0.5x zoom (zoomed out 2x), square, Ignore --> [-0.5, 1.5]', () => {
     const b = getBounds(zoomCamera(0.5), makeViewport(100, 100, 'Ignore'));
     expect(b.xMin).toBeCloseTo(-0.5);
     expect(b.xMax).toBeCloseTo(1.5);
@@ -72,7 +70,7 @@ describe('getBounds', () => {
     expect(b.yMax).toBeCloseTo(1.5);
   });
 
-  it('wide (200×100), Contain → x extends to [-0.5, 1.5], y stays [0, 1]', () => {
+  it('wide (200x100), Contain --> x extends to [-0.5, 1.5], y stays [0, 1]', () => {
     const b = getBounds(identityCamera(), makeViewport(200, 100, 'Contain'));
     expect(b.xMin).toBeCloseTo(-0.5);
     expect(b.xMax).toBeCloseTo(1.5);
@@ -80,7 +78,7 @@ describe('getBounds', () => {
     expect(b.yMax).toBeCloseTo(1);
   });
 
-  it('tall (100×200), Contain → x stays [0, 1], y extends to [-0.5, 1.5]', () => {
+  it('tall (100x200), Contain --> x stays [0, 1], y extends to [-0.5, 1.5]', () => {
     const b = getBounds(identityCamera(), makeViewport(100, 200, 'Contain'));
     expect(b.xMin).toBeCloseTo(0);
     expect(b.xMax).toBeCloseTo(1);
@@ -88,7 +86,7 @@ describe('getBounds', () => {
     expect(b.yMax).toBeCloseTo(1.5);
   });
 
-  it('wide (200×100), Cover → x stays [0, 1], y shrinks to [0.25, 0.75]', () => {
+  it('wide (200x100), Cover --> x stays [0, 1], y shrinks to [0.25, 0.75]', () => {
     const b = getBounds(identityCamera(), makeViewport(200, 100, 'Cover'));
     expect(b.xMin).toBeCloseTo(0);
     expect(b.xMax).toBeCloseTo(1);
@@ -96,7 +94,7 @@ describe('getBounds', () => {
     expect(b.yMax).toBeCloseTo(0.75);
   });
 
-  it('with margins, square (100×100), Ignore → [0, 1] × [0, 1]', () => {
+  it('with margins, square (100x100), Ignore --> [0, 1] x [0, 1]', () => {
     const viewport: ViewportParams = {
       ...makeViewport(100, 100, 'Ignore'),
       margins: { marginLeft: 20, marginBottom: 20 },
@@ -109,10 +107,8 @@ describe('getBounds', () => {
   });
 });
 
-// =================== getCameraMatrixFromBounds ===================
-
 describe('getCameraMatrixFromBounds', () => {
-  it('full [0, 1] range → identity camera', () => {
+  it('full [0, 1] range --> identity camera', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: 0, xMax: 1, yMin: 0, yMax: 1 },
       identityCamera(),
@@ -121,7 +117,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, identityCamera());
   });
 
-  it('[0.25, 0.75] × [0.25, 0.75] → 2x zoom camera', () => {
+  it('[0.25, 0.75] x [0.25, 0.75] --> 2x zoom camera', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: 0.25, xMax: 0.75, yMin: 0.25, yMax: 0.75 },
       identityCamera(),
@@ -130,7 +126,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, zoomCamera(2));
   });
 
-  it('[-0.5, 1.5] × [-0.5, 1.5] → 0.5x zoom (zoomed out 2x)', () => {
+  it('[-0.5, 1.5] x [-0.5, 1.5] --> 0.5x zoom (zoomed out 2x)', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: -0.5, xMax: 1.5, yMin: -0.5, yMax: 1.5 },
       identityCamera(),
@@ -139,7 +135,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, zoomCamera(0.5));
   });
 
-  it('x-offset bounds → zoom=1, translateX=0.5, translateY=0', () => {
+  it('x-offset bounds --> zoom=1, translateX=0.5, translateY=0', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: -0.25, xMax: 0.75, yMin: 0, yMax: 1 },
       identityCamera(),
@@ -148,7 +144,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, zoomAndTranslateCamera(1, 0.5, 0));
   });
 
-  it('zoom + translation bounds → zoom=2, translateX=0.5, translateY=0.25', () => {
+  it('zoom + translation bounds --> zoom=2, translateX=0.5, translateY=0.25', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: 0.125, xMax: 0.625, yMin: 0.1875, yMax: 0.6875 },
       identityCamera(),
@@ -157,7 +153,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, zoomAndTranslateCamera(2, 0.5, 0.25));
   });
 
-  it('wide Contain bounds [-0.5, 1.5] × [0, 1] → identity camera', () => {
+  it('wide Contain bounds [-0.5, 1.5] x [0, 1] --> identity camera', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: -0.5, xMax: 1.5, yMin: 0, yMax: 1 },
       identityCamera(),
@@ -166,7 +162,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, identityCamera());
   });
 
-  it('tall Contain bounds [0, 1] × [-0.5, 1.5] → identity camera', () => {
+  it('tall Contain bounds [0, 1] x [-0.5, 1.5] --> identity camera', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: 0, xMax: 1, yMin: -0.5, yMax: 1.5 },
       identityCamera(),
@@ -175,7 +171,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, identityCamera());
   });
 
-  it('wide Cover bounds [0, 1] × [0.25, 0.75] → identity camera', () => {
+  it('wide Cover bounds [0, 1] x [0.25, 0.75] --> identity camera', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: 0, xMax: 1, yMin: 0.25, yMax: 0.75 },
       identityCamera(),
@@ -184,7 +180,7 @@ describe('getCameraMatrixFromBounds', () => {
     expectArrayCloseTo(camera, identityCamera());
   });
 
-  it('asymmetric ranges, Ignore → independent x/y zoom', () => {
+  it('asymmetric ranges, Ignore --> independent x/y zoom', () => {
     const camera = getCameraMatrixFromBounds(
       { xMin: 0, xMax: 0.5, yMin: 0, yMax: 1 },
       identityCamera(),
@@ -217,17 +213,15 @@ describe('getCameraMatrixFromBounds', () => {
   });
 });
 
-// =================== getBounds / getCameraMatrixFromBounds roundtrip ===================
-
 describe('getBounds / getCameraMatrixFromBounds roundtrip', () => {
-  it('identity camera → bounds → identity camera', () => {
+  it('identity camera --> bounds --> identity camera', () => {
     const viewport = makeViewport(100, 100, 'Ignore');
     const bounds = getBounds(identityCamera(), viewport);
     const camera = getCameraMatrixFromBounds(bounds, identityCamera(), viewport);
     expectArrayCloseTo(camera, identityCamera());
   });
 
-  it('2x zoom camera → bounds → 2x zoom camera', () => {
+  it('2x zoom camera --> bounds --> 2x zoom camera', () => {
     const viewport = makeViewport(100, 100, 'Ignore');
     const camera0 = zoomCamera(2);
     const bounds = getBounds(camera0, viewport);
@@ -235,14 +229,14 @@ describe('getBounds / getCameraMatrixFromBounds roundtrip', () => {
     expectArrayCloseTo(camera1, camera0);
   });
 
-  it('wide Contain viewport, identity camera → bounds → identity camera', () => {
+  it('wide Contain viewport, identity camera --> bounds --> identity camera', () => {
     const viewport = makeViewport(200, 100, 'Contain');
     const bounds = getBounds(identityCamera(), viewport);
     const camera = getCameraMatrixFromBounds(bounds, identityCamera(), viewport);
     expectArrayCloseTo(camera, identityCamera());
   });
 
-  it('zoom + translation → bounds → same camera', () => {
+  it('zoom + translation --> bounds --> same camera', () => {
     const viewport = makeViewport(100, 100, 'Ignore');
     const camera0 = zoomAndTranslateCamera(2, 0.5, 0.25);
     const bounds = getBounds(camera0, viewport);
@@ -250,7 +244,7 @@ describe('getBounds / getCameraMatrixFromBounds roundtrip', () => {
     expectArrayCloseTo(camera1, camera0);
   });
 
-  it('with margins, identity camera → bounds → identity camera', () => {
+  it('with margins, identity camera --> bounds --> identity camera', () => {
     const viewport: ViewportParams = {
       ...makeViewport(100, 100, 'Ignore'),
       margins: { marginLeft: 20, marginBottom: 20 },

@@ -104,7 +104,7 @@ fn layer_params(rect_params: RectLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::RectLayer(rect_params)]
 }
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_rect_layer_square_contain_data_units_no_margins() {
@@ -223,7 +223,7 @@ async fn test_rect_layer_square_contain_data_units_layer_bounds_overrides_view_m
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_layer_bounds_overrides_view_margins").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_rect_layer_wide_ignore_data_units_no_margins() {
@@ -315,7 +315,7 @@ async fn test_rect_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_rect_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_rect_layer_tall_ignore_data_units_no_margins() {
@@ -433,9 +433,9 @@ async fn test_rect_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
-// ── model_matrix ─────────────────────────────────────────────────────────────
+// model_matrix
 
-// Scale 0.5 in data mode: rects shrink to lower-left quadrant of [0,1]².
+// Scale 0.5 in data mode: rects shrink to lower-left quadrant of the unit square.
 #[tokio::test]
 async fn test_rect_layer_square_contain_data_units_model_matrix_scale() {
     let params = RenderParams {

@@ -10,10 +10,6 @@ vi.mock('./urw-fonts.js', async (importOriginal) => {
 
 const VENDOR_DIR = resolve(import.meta.dirname, '../../../vendor/urw-core35-fonts');
 
-// ---------------------------------------------------------------------------
-// PDF Base-14 font names via URW map
-// ---------------------------------------------------------------------------
-
 describe('FontStore – PDF Base-14 fonts resolved via URW map', () => {
   let store: FontStore;
 
@@ -49,10 +45,6 @@ describe('FontStore – PDF Base-14 fonts resolved via URW map', () => {
     );
   });
 });
-
-// ---------------------------------------------------------------------------
-// Custom TTF font file supplied via setFont()
-// ---------------------------------------------------------------------------
 
 describe('FontStore – setFont() with custom TTF bytes', () => {
   let store: FontStore;

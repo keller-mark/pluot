@@ -21,7 +21,7 @@ use pluot::{
 // - Layer-specific stuff
 //   - For LineLayer, this includes testing different line widths and line width unit modes
 
-// Helper: 8 lines forming a toy house with a chimney in a 1×1 data space
+// Helper: 8 lines forming a toy house with a chimney in a 1x1 data space
 fn cross_lines_data() -> LineLayerParams {
     LineLayerParams {
         layer_id: "my_line_layer".to_string(),
@@ -87,7 +87,7 @@ fn layer_params(line_params: LineLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::LineLayer(line_params)]
 }
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_line_layer_square_contain_data_units_no_margins() {
@@ -206,7 +206,7 @@ async fn test_line_layer_square_contain_data_units_layer_bounds_overrides_view_m
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_layer_bounds_overrides_view_margins").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_line_layer_wide_ignore_data_units_no_margins() {
@@ -298,7 +298,7 @@ async fn test_line_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_line_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_line_layer_tall_ignore_data_units_no_margins() {
@@ -390,7 +390,7 @@ async fn test_line_layer_tall_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_line_layer_tall_contain_data_units_layer_bounds").await;
 }
 
-// ── Line width tests ──────────────────────────────────────────────────────────
+// Line width tests
 
 #[tokio::test]
 async fn test_line_layer_wide_contain_data_units_thick_line_width() {
@@ -433,9 +433,9 @@ async fn test_line_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
-// ── model_matrix ─────────────────────────────────────────────────────────────
+// model_matrix
 
-// Scale 0.5 in data mode: lines shrink to lower-left quadrant of [0,1]².
+// Scale 0.5 in data mode: lines shrink to lower-left quadrant of the unit square.
 #[tokio::test]
 async fn test_line_layer_square_contain_data_units_model_matrix_scale() {
     let params = RenderParams {

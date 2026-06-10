@@ -22,7 +22,7 @@ pub struct SvgContext {
     /// The `<svg>` document wrapper (used when serializing with `include_document = true`).
     pub document: Document,
     pub group: Group,
-    /// Map from the bit-patterns of `(x, y, width, height)` → clip-path id.
+    /// Map from the bit-patterns of `(x, y, width, height)` --> clip-path id.
     /// Keyed on bit-patterns so that identical `f64` values map to the same id
     /// without any floating-point tolerance concerns.
     clip_path_ids: HashMap<(u64, u64, u64, u64), String>,
@@ -471,7 +471,7 @@ mod tests {
         update_svg(&mut ctx, &elements);
 
         let svg_str = ctx.to_svg_string(false);
-        // Two distinct rects → two distinct <clipPath> elements, inside <defs>.
+        // Two distinct rects --> two distinct <clipPath> elements, inside <defs>.
         assert_eq!(svg_str.matches("<clipPath").count(), 2);
         assert!(svg_str.contains("<defs>"));
         assert!(svg_str.contains("clipPath1"));

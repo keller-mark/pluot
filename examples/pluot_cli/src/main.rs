@@ -80,7 +80,7 @@ struct Args {
     #[arg(long)]
     margin_bottom: Option<f32>,
 
-    /// Font file(s) to register for SVG→PNG rendering via resvg.
+    /// Font file(s) to register for SVG-->PNG rendering via resvg.
     /// Can be specified multiple times. Has no effect on GPU raster output.
     #[arg(long = "font_path")]
     font_path: Vec<PathBuf>,
@@ -287,7 +287,7 @@ async fn main() {
 
     // Write the output.
     if via_svg_png {
-        // SVG → PNG via resvg: render with the vector backend, then rasterize.
+        // SVG --> PNG via resvg: render with the vector backend, then rasterize.
         let svg_string = match String::from_utf8(result) {
             Ok(s) => s,
             Err(e) => {

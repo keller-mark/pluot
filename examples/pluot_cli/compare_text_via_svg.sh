@@ -2,7 +2,7 @@
 # compare_text_via_svg.sh
 #
 # Renders TextLayers (varying position, size, alignment, and baseline) to both
-# a .via_svg.png (SVG→PNG via resvg) and a .png (GPU raster), then reports
+# a .via_svg.png (SVG-->PNG via resvg) and a .png (GPU raster), then reports
 # the kompari pixel-diff score between them. A score of 0 means identical pixels.
 #
 # The same TTF font (NimbusSans-Regular from vendor/) is registered in both
@@ -25,9 +25,7 @@ fi
 WORK_DIR="$1"
 mkdir -p "$WORK_DIR"
 
-# ---------------------------------------------------------------------------
 # Build
-# ---------------------------------------------------------------------------
 echo "Building binaries..." >&2
 cd "$SCRIPT_DIR"
 cargo build --bin pluot_cli --bin img_diff 2>&1 | grep -E '(Compiling|Finished|error)' >&2
@@ -35,8 +33,7 @@ cargo build --bin pluot_cli --bin img_diff 2>&1 | grep -E '(Compiling|Finished|e
 PLUOT="$SCRIPT_DIR/target/debug/pluot_cli"
 DIFF="$SCRIPT_DIR/target/debug/img_diff"
 
-# ---------------------------------------------------------------------------
-# Plot JSON: TextLayers on an 800×600 canvas (pixel coordinates).
+# Plot JSON: TextLayers on an 800x600 canvas (pixel coordinates).
 #
 # Layout:
 #   Row 1 (y=100): 5 labels at 12 px, middle-aligned, alphabetic baseline
@@ -46,7 +43,6 @@ DIFF="$SCRIPT_DIR/target/debug/img_diff"
 #
 # All layers use Pixels data_unit_mode and no explicit font_name so that
 # both code paths use the bundled NimbusSans-Regular.ttf.
-# ---------------------------------------------------------------------------
 cat > "$WORK_DIR/params.json" << 'EOF'
 {
   "plot_type": "LayeredPlot",
@@ -777,10 +773,8 @@ cat > "$WORK_DIR/params.json" << 'EOF'
 }
 EOF
 
-# ---------------------------------------------------------------------------
 # Render
-# ---------------------------------------------------------------------------
-echo "Rendering via_svg.png (SVG → PNG via resvg, font: NimbusSans-Regular)..." >&2
+echo "Rendering via_svg.png (SVG --> PNG via resvg, font: NimbusSans-Regular)..." >&2
 "$PLUOT" \
   --input "$WORK_DIR/params.json" \
   --output "$WORK_DIR/out.via_svg.png" \
@@ -793,9 +787,7 @@ echo "Rendering out.png (GPU raster)..." >&2
   --output "$WORK_DIR/out.png" \
   --width 800 --height 800 >&2
 
-# ---------------------------------------------------------------------------
 # Pixel diff
-# ---------------------------------------------------------------------------
 echo "Comparing images..." >&2
 SCORE="$("$DIFF" "$WORK_DIR/out.via_svg.png" "$WORK_DIR/out.png")"
 echo "Pixel diff score (distance_sum; 0 = identical): $SCORE"

@@ -2,7 +2,7 @@
 # compare_via_svg.sh
 #
 # Renders 10 PointLayers (one circle each, varying position and size) to both
-# a .via_svg.png (SVG→PNG via resvg) and a .png (GPU raster), then reports
+# a .via_svg.png (SVG-->PNG via resvg) and a .png (GPU raster), then reports
 # the kompari pixel-diff score between them. A score of 0 means identical pixels.
 #
 # Requirements: a GPU must be available for the raster (.png) render.
@@ -20,9 +20,7 @@ fi
 WORK_DIR="$1"
 mkdir -p "$WORK_DIR"
 
-# ---------------------------------------------------------------------------
 # Build
-# ---------------------------------------------------------------------------
 echo "Building binaries..." >&2
 cd "$SCRIPT_DIR"
 cargo build --bin pluot_cli --bin img_diff 2>&1 | grep -E '(Compiling|Finished|error)' >&2
@@ -30,8 +28,7 @@ cargo build --bin pluot_cli --bin img_diff 2>&1 | grep -E '(Compiling|Finished|e
 PLUOT="$SCRIPT_DIR/target/debug/pluot_cli"
 DIFF="$SCRIPT_DIR/target/debug/img_diff"
 
-# ---------------------------------------------------------------------------
-# Plot JSON: 10 PointLayers on an 800×600 canvas (pixel coordinates).
+# Plot JSON: 10 PointLayers on an 800x600 canvas (pixel coordinates).
 # Each layer has one circle at a different (x, y) with a different radius.
 # Labels 0-9 select colours from the Tableau-10 palette.
 #
@@ -40,7 +37,6 @@ DIFF="$SCRIPT_DIR/target/debug/img_diff"
 #   Row 2 (y=420): x=100,250,400,550,700  radii=40,46,52,58,64
 # Plus a cluster of five overlapping circles near the centre (y≈295):
 #   p10(340,290,r35) p11(395,270,r30) p12(435,305,r38) p13(370,335,r32) p14(415,325,r28)
-# ---------------------------------------------------------------------------
 cat > "$WORK_DIR/params.json" << 'EOF'
 {
   "plot_type": "LayeredPlot",
@@ -216,18 +212,14 @@ cat > "$WORK_DIR/params.json" << 'EOF'
 }
 EOF
 
-# ---------------------------------------------------------------------------
 # Render
-# ---------------------------------------------------------------------------
-echo "Rendering via_svg.png (SVG → PNG via resvg)..." >&2
+echo "Rendering via_svg.png (SVG --> PNG via resvg)..." >&2
 "$PLUOT" --input "$WORK_DIR/params.json" --output "$WORK_DIR/out.via_svg.png" >&2
 
 echo "Rendering out.png (GPU raster)..." >&2
 "$PLUOT" --input "$WORK_DIR/params.json" --output "$WORK_DIR/out.png" >&2
 
-# ---------------------------------------------------------------------------
 # Pixel diff
-# ---------------------------------------------------------------------------
 echo "Comparing images..." >&2
 SCORE="$("$DIFF" "$WORK_DIR/out.via_svg.png" "$WORK_DIR/out.png")"
 echo "Pixel diff score (distance_sum; 0 = identical): $SCORE"

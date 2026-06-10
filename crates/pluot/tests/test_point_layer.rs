@@ -84,7 +84,7 @@ fn layer_params(point_params: PointLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::PointLayer(point_params)]
 }
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_point_layer_square_contain_data_units_no_margins() {
@@ -203,7 +203,7 @@ async fn test_point_layer_square_contain_data_units_layer_bounds_overrides_view_
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_layer_bounds_overrides_view_margins").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_point_layer_wide_ignore_data_units_no_margins() {
@@ -293,7 +293,7 @@ async fn test_point_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_point_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_point_layer_tall_ignore_data_units_no_margins() {
@@ -409,7 +409,7 @@ async fn test_point_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
-// ── Circle shape ─────────────────────────────────────────────────────────────
+// Circle shape
 
 fn corner_points_circle() -> PointLayerParams {
     PointLayerParams {
@@ -546,9 +546,9 @@ async fn test_point_layer_tall_ignore_circle_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_tall_ignore_circle_no_margins").await;
 }
 
-// ── model_matrix ─────────────────────────────────────────────────────────────
+// model_matrix
 
-// Scale 0.5 in data mode: corner points at [0,1]² → [0,0.5]², lower-left quadrant.
+// Scale 0.5 in data mode: corner points at (0,1) become (0,0.5), lower-left quadrant.
 #[tokio::test]
 async fn test_point_layer_square_contain_data_units_model_matrix_scale() {
     let params = RenderParams {
@@ -591,7 +591,7 @@ async fn test_point_layer_square_contain_data_units_model_matrix_translate() {
 }
 
 // Scale 0.5 in pixel mode: model_matrix operates in normalized [0,1] space.
-// Points at pixel corners → normalized [0,1]² → scaled to [0,0.5]², lower-left quadrant.
+// Points at pixel corners --> normalized (0,1) --> scaled to (0,0.5), lower-left quadrant.
 #[tokio::test]
 async fn test_point_layer_square_contain_pixel_units_model_matrix_scale() {
     let params = RenderParams {
