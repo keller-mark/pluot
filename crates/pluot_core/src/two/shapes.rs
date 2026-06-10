@@ -168,8 +168,6 @@ pub enum TwoTextOverflow {
 pub struct TwoText {
     pub x: f64,
     pub y: f64,
-    pub width: f64,
-    pub height: f64,
     pub text: String,
 
     pub fill: TwoColor,
@@ -196,8 +194,6 @@ impl Default for TwoText {
         Self {
             x: 0.0,
             y: 0.0,
-            width: 0.0,
-            height: 0.0,
             text: String::new(),
             fill: TwoColor::Rgb((0, 0, 0)),
             fontsize: 14.0,

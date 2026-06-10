@@ -241,7 +241,7 @@ fn vs_main(
             // after all NDC-space operations are done. This keeps translations in the correct space.
 
             (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-            // TODO: support applying a model matrix (arbitrarily passed by the user)
+            // Support applying a model matrix (arbitrarily passed by the user)
             // before applying the camera (i.e., transforming the data coordinates).
             * u.model_matrix * vec4(elem_pos_orig, 0.0, 1.0)
         );
@@ -267,7 +267,8 @@ fn vs_main(
     // Now, use a shared code path downstream of elem_pos_norm.
     let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
 
-    // TODO: support a data-units size mode?
+    // TODO: support a data-units size mode.
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
 
     // Compute the glyph position in normalized space.
     let glyph_size_norm = vec4f(

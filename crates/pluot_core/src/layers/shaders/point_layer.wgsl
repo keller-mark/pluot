@@ -221,7 +221,7 @@ fn vs_main(
         // after all NDC-space operations are done. This keeps translations in the correct space.
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
+        // Support applying a model matrix (arbitrarily passed by the user)
         // before applying the camera (i.e., transforming the data coordinates).
         * u.model_matrix * vec4(point_pos_orig, 0.0, 1.0)
     );
@@ -229,6 +229,7 @@ fn vs_main(
 
     // Compute the vertex position by accounting for point position and point size.
     // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
     let point_radius_norm = vec4f(
         u.point_radius / layer_width_px,
         u.point_radius / layer_height_px,

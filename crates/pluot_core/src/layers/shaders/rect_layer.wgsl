@@ -259,6 +259,7 @@ fn vs_main(
     // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
     // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
     // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
     let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
     let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
 

@@ -391,8 +391,6 @@ mod tests {
                 text: "Hello".to_string(),
                 x: 150.0,
                 y: 160.0,
-                width: 100.0,
-                height: 100.0,
                 opacity: 1.0,
                 fill: TwoColor::Rgb((0, 128, 255)),
                 fontsize: 12.0,

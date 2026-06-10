@@ -265,6 +265,7 @@ fn vs_main(
     let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
     // TODO: Handle line_width_unit_mode == 1 (data coordinates)
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
     let line_width_ndc = u.line_width / layer_height_px * 2.0;
 
     result_source_position_data = source_pos_ndc;

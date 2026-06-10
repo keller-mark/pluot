@@ -974,8 +974,6 @@ pub fn base_draw_text_layer_svg(
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
             y: (layer_h - py) as f64,
-            width: 100.0, // TODO?
-            height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
             font_family: layer_params.font_family.clone().unwrap_or_else(|| "Helvetica".to_string()),
             font_weight: match layer_params.font_weight {
