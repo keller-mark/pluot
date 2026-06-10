@@ -12,7 +12,7 @@ pub struct PluotApp {
     plot_height: u32,
     rt: tokio::runtime::Runtime,
     frequency: f32,
-    /// Exponent for the number of points: actual count = 10^num_points_exp (1.0–7.0 → 10–10M).
+    /// Exponent for the number of points: actual count = 10^num_points_exp (1.0–7.0 --> 10–10M).
     num_points_exp: f32,
     point_radius: f32,
 }
@@ -133,6 +133,7 @@ fn build_params(
             point_radius_unit_mode_x: UnitsMode::Pixels,
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,
+            model_matrix: None,
             position_x: Arc::new(position_x),
             position_y: Arc::new(position_y),
             labels_vec: Arc::new(vec![0; num_points]),

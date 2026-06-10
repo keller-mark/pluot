@@ -9,6 +9,7 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
+    FontWeight, FontStyle,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -22,6 +23,12 @@ use pluot::{
 //   - For TextLayer, this includes testing different text sizes, alignment modes,
 //     baseline modes, and optional rotation
 
+// Absolute path to a vendored TTF used by the custom-font filesystem test.
+const NIMBUS_ROMAN_TTF: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf",
+);
+
 // Helper: 4 text labels at the corners of [0,1]x[0,1] in data space
 fn corner_text_data() -> TextLayerParams {
     TextLayerParams {
@@ -33,7 +40,11 @@ fn corner_text_data() -> TextLayerParams {
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
+        model_matrix: None,
         text_rotation: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5]),
         text_vec: Arc::new(vec![
@@ -57,7 +68,11 @@ fn corner_text_pixels() -> TextLayerParams {
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
+        model_matrix: None,
         text_rotation: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
         position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
         text_vec: Arc::new(vec![
@@ -95,7 +110,7 @@ fn layer_params(text_params: TextLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::TextLayer(text_params)]
 }
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_text_layer_square_contain_data_units_no_margins() {
@@ -264,7 +279,7 @@ async fn test_text_layer_square_contain_data_units_align_end_baseline_bottom() {
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_align_end_baseline_bottom").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_text_layer_wide_ignore_data_units_no_margins() {
@@ -354,7 +369,7 @@ async fn test_text_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_text_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_text_layer_tall_ignore_data_units_no_margins() {
@@ -501,3 +516,112 @@ async fn test_text_layer_square_contain_pixel_x_data_y_no_margins() {
     };
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
+
+// Font loading
+
+// PDF Base-14 font name resolved via the embedded URW font map.
+// Requires the `embed_fonts` feature so that the plain-Rust binding can resolve
+// "Helvetica" to the embedded NimbusSans-Regular bytes without a filesystem hit.
+#[cfg(feature = "embed_fonts")]
+#[tokio::test]
+async fn test_text_layer_pdf_base14_font_helvetica() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            font_family: Some("Helvetica".to_string()),
+            font_weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_pdf_base14_font_helvetica").await;
+}
+
+// model_matrix
+
+// Scale 0.5 in data mode: text labels shrink to lower-left quadrant of the unit square.
+#[tokio::test]
+async fn test_text_layer_square_contain_data_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_model_matrix_scale").await;
+}
+
+// Translate +0.25 in data mode: text labels shift toward upper-right.
+#[tokio::test]
+async fn test_text_layer_square_contain_data_units_model_matrix_translate() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                1.0,  0.0,  0.0, 0.0,
+                0.0,  1.0,  0.0, 0.0,
+                0.0,  0.0,  1.0, 0.0,
+                0.25, 0.25, 0.0, 1.0,
+            ]),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_model_matrix_translate").await;
+}
+
+// Scale 0.5 in pixel mode: model_matrix operates in normalized [0,1] space.
+#[tokio::test]
+async fn test_text_layer_square_contain_pixel_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_text_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+/*
+// TODO: re-enable after #207 is complete
+// Custom TTF supplied as a filesystem path.
+#[tokio::test]
+async fn test_text_layer_custom_ttf_font_file() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            font_family: Some(NIMBUS_ROMAN_TTF.to_string()),
+            font_weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_custom_ttf_font_file").await;
+}
+*/

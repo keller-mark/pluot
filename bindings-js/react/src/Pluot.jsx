@@ -71,6 +71,7 @@ export function Pluot(props) {
     cameraMatrix: controlledCameraMatrix = null,
     setCameraMatrix: setControlledCameraMatrix = null,
     enablePicking = true,
+    backgroundColor = undefined,
   } = props;
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
@@ -388,7 +389,7 @@ export function Pluot(props) {
 
   return (
     <>
-      <div style={{ width, height, position: "relative" }}>
+      <div style={{ width, height, position: "relative", backgroundColor }}>
         {!supportsWebGpu ? (
           <p>{supportsWebGpuMessage}</p>
         ) : null}

@@ -18,7 +18,7 @@ async fn gpu_ctx() -> (pluot_core::wgpu::Device, pluot_core::wgpu::Queue) {
         .expect("No suitable GPU adapter found — run with --features lacks_gpu to skip GPU tests")
 }
 
-// ── reduce_min (GPU) ─────────────────────────────────────────────────────────
+// reduce_min (GPU)
 
 #[tokio::test]
 async fn test_gpu_reduce_min_basic() {
@@ -47,7 +47,7 @@ async fn test_gpu_reduce_min_large() {
     assert_eq!(reduce_min(Some(&ctx), input).await, -42.0);
 }
 
-// ── reduce_max (GPU) ─────────────────────────────────────────────────────────
+// reduce_max (GPU)
 
 #[tokio::test]
 async fn test_gpu_reduce_max_basic() {
@@ -75,7 +75,7 @@ async fn test_gpu_reduce_max_large() {
     assert_eq!(reduce_max(Some(&ctx), input).await, 999.0);
 }
 
-// ── reduce_sum (GPU) ─────────────────────────────────────────────────────────
+// reduce_sum (GPU)
 
 #[tokio::test]
 async fn test_gpu_reduce_sum_basic() {
@@ -89,12 +89,12 @@ async fn test_gpu_reduce_sum_basic() {
 async fn test_gpu_reduce_sum_large() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    // 256 ones → sum should be 256.
+    // 256 ones --> sum should be 256.
     let input = Arc::new(vec![1.0; 256]);
     assert_eq!(reduce_sum(Some(&ctx), input).await, 256.0);
 }
 
-// ── reduce_extent (GPU) ──────────────────────────────────────────────────────
+// reduce_extent (GPU)
 
 #[tokio::test]
 async fn test_gpu_reduce_extent_basic() {
@@ -165,7 +165,7 @@ async fn test_gpu_histogram_known_extent_zero_range() {
 async fn test_gpu_histogram_known_extent_large() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    // 1000 values in [0, 1000), 10 bins → 100 per bin.
+    // 1000 values in [0, 1000), 10 bins --> 100 per bin.
     let input = Arc::new((0..1000).map(|i| i as f32).collect());
     let bins = reduce_histogram_with_known_extent(Some(&ctx), input, 10, 0.0, 1000.0).await;
     assert_eq!(bins.iter().sum::<u32>(), 1000);

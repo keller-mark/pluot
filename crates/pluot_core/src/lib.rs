@@ -32,7 +32,7 @@ pub use futures_time::time::Duration;
 
 // Export things needed for layer-based plotting via Rust.
 pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
-pub use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, ViewParams, MarginParams};
+pub use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, ViewParams, MarginParams, FontStyle, FontWeight};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 pub use crate::render::{render};
 pub use crate::picking::{pick, PickingResult, LayerPickingResult};

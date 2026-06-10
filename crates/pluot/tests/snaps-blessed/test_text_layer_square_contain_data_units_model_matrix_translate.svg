@@ -1,0 +1,28 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_text_layer_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#my_text_layer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 25 75)" x="25" y="75">
+A
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 125 75)" x="125" y="75">
+B
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 125 -25)" x="125" y="-25">
+C
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 25 -25)" x="25" y="-25">
+D
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 75 25)" x="75" y="25">
+Hello world
+</text>
+</g>
+</g>
+</g>
+</svg>

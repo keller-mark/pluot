@@ -128,7 +128,7 @@ export function getBounds(cameraMatrix: Float32Array, viewportParams: ViewportPa
  *   the renderer's current state.
  * @param viewportParams - Describes the canvas size, aspect-ratio handling, and
  *   margins so the zoom level can be computed correctly.
- * @returns A column-major 4×4 `Float32Array` suitable for passing directly to
+ * @returns A column-major 4x4 `Float32Array` suitable for passing directly to
  *   the renderer as the camera matrix.
  *
  * @example

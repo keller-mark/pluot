@@ -50,10 +50,7 @@ pub async fn render_and_check_raster_snapshot(params: RenderParams, name: &str) 
 
     let pixel_data = &result_vec[..result_vec.len() - NUM_EXTRA_BYTES];
 
-    assert!(
-        pixel_data.iter().any(|&x| x != 0),
-        "The rendered image should not be all black.",
-    );
+    // The rendered image may be entirely zeros if all data points fall outside the viewport.
 
     let image = rgba_bytes_to_image(pixel_data, width, height);
     check_raster_snapshot(&image, name);

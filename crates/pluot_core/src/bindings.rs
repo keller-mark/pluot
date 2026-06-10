@@ -494,11 +494,24 @@ pub mod plain_rust {
     }
 
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
+        if store_name == "__fonts__" {
+            let font_name = key.trim_end_matches(".ttf").trim_end_matches(".otf");
+            let data = std::fs::read(font_name).unwrap_or_default();
+            return zarrs::storage::Bytes::from(data);
+        }
         panic!("zarr_get is not implemented in plain Rust mode.");
     }
 
     pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
-        panic!("zarr_has_status is not implemented in plain Rust mode.");
+        if store_name == "__fonts__" {
+            let font_name = key.trim_end_matches(".ttf").trim_end_matches(".otf");
+            return if std::path::Path::new(font_name).exists() {
+                ZarrPeekResult::Fulfilled
+            } else {
+                ZarrPeekResult::Rejected
+            };
+        }
+        panic!("zarr_get_status is not implemented in plain Rust mode.");
     }
 
     pub async fn zarr_get_range_from_offset(
@@ -534,4 +547,5 @@ pub mod plain_rust {
     ) -> ZarrPeekResult {
         panic!("zarr_get_range_from_end is not implemented in plain Rust mode.");
     }
+
 }

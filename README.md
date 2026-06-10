@@ -89,6 +89,12 @@ Further developer documentation can be found in [dev-docs](./dev-docs/README.md)
 
 ## Set up environment
 
+After cloning the repository, pull down the submodule containing font files.
+
+```sh
+git submodule update --init --recursive
+```
+
 Install Rust tools with [Rustup](https://rustup.rs/).
 
 ```sh

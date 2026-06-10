@@ -18,7 +18,9 @@ jobs:
   prepare_docs_site:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
+      with:
+        submodules: true
     - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
