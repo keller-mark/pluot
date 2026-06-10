@@ -162,8 +162,8 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Source and target points of this line
-    let source_point_pos_orig = vec2<f32>(source_x_coords[instance_index], source_y_coords[instance_index]);
-    let target_point_pos_orig = vec2<f32>(target_x_coords[instance_index], target_y_coords[instance_index]);
+    let source_point_pos_orig = u.model_matrix * vec4f(source_x_coords[instance_index], source_y_coords[instance_index], 0.0, 1.0);
+    let target_point_pos_orig = u.model_matrix * vec4f(target_x_coords[instance_index], target_y_coords[instance_index], 0.0, 1.0);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -214,8 +214,8 @@ fn vs_main(
         );
 
         // Convert to NDC for extrusion calculation
-        let source_pos_ndc = (NORM_TO_NDC_MAT * u.model_matrix * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
-        let target_pos_ndc = (NORM_TO_NDC_MAT * u.model_matrix * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
+        let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
+        let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
 
         result_source_position_px = source_pos_ndc;
         result_target_position_px = target_pos_ndc;
@@ -257,8 +257,8 @@ fn vs_main(
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
-    let source_pos_norm = transform_mat * u.model_matrix * vec4(source_point_pos_orig, 0.0, 1.0);
-    let target_pos_norm = transform_mat * u.model_matrix * vec4(target_point_pos_orig, 0.0, 1.0);
+    let source_pos_norm = transform_mat * source_point_pos_orig;
+    let target_pos_norm = transform_mat * target_point_pos_orig;
 
     // Convert to NDC for extrusion calculation
     let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;

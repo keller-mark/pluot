@@ -142,8 +142,8 @@ fn vs_main(
     @location(2) uv_rect: vec4<f32>,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    let elem_pos_x_orig = elem_pos.x; // Note: elem_pos is the position for the whole text element, not the individual glyph.
-    let elem_pos_y_orig = elem_pos.y; // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    let elem_pos_orig = u.model_matrix * vec4f(elem_pos.x, elem_pos.y, 0.0, 1.0);
 
     let glyph_offset_x_px = glyph_px.x;
     let glyph_offset_y_px = glyph_px.y;
@@ -199,18 +199,14 @@ fn vs_main(
     // Initially compute elem_pos_norm for data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
     // Convert text element position from pixel space to normalized space (0 to 1)
     var elem_pos_norm = vec2<f32>(
-        elem_pos_x_orig / layer_width_px,
-        elem_pos_y_orig / layer_height_px
+        elem_pos_orig.x / layer_width_px,
+        elem_pos_orig.y / layer_height_px
     );
 
     // Now check if we actually need to compute elem_pos_norm (x or y coords) for data_unit_mode == "data".
     if(u.data_unit_mode_x == 1u || u.data_unit_mode_y == 1u) {
         // Handle data_unit_mode == "data" (i.e., the elem_pos_orig is in data coordinate system units, not pixels).
         // Convert elem_pos from data coordinate system units to normalized space (0 to 1).
-        let elem_pos_orig = vec2<f32>(
-            elem_pos_x_orig,
-            elem_pos_y_orig
-        );
 
         /// Model-view-projection matrix
         // References:
@@ -243,7 +239,7 @@ fn vs_main(
             (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
             // Support applying a model matrix (arbitrarily passed by the user)
             // before applying the camera (i.e., transforming the data coordinates).
-            * u.model_matrix * vec4(elem_pos_orig, 0.0, 1.0)
+            * elem_pos_orig
         );
 
         if(u.data_unit_mode_x == 1u) {
@@ -252,16 +248,6 @@ fn vs_main(
         if(u.data_unit_mode_y == 1u) {
             elem_pos_norm.y = elem_pos_norm_for_data.y;
         }
-    }
-
-    // Apply model_matrix in normalized space for pixel-mode axes.
-    // Data-mode axes already had model_matrix applied to data coords above.
-    let elem_pos_norm_pixel = u.model_matrix * vec4f(elem_pos_norm.x, elem_pos_norm.y, 0.0, 1.0);
-    if(u.data_unit_mode_x == 0u) {
-        elem_pos_norm.x = elem_pos_norm_pixel.x;
-    }
-    if(u.data_unit_mode_y == 0u) {
-        elem_pos_norm.y = elem_pos_norm_pixel.y;
     }
 
     // Now, use a shared code path downstream of elem_pos_norm.

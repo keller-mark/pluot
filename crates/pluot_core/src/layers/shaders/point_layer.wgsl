@@ -128,7 +128,7 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Center of this point in data space
-    let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+    let point_pos_orig = u.model_matrix * vec4f(x_coords[instance_index], y_coords[instance_index], 0.0, 1.0);
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
@@ -163,7 +163,7 @@ fn vs_main(
             point_pos_orig.x / layer_width_px,
             point_pos_orig.y / layer_height_px
         );
-        let point_pos_ndc = NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0);
+        let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
         // Compute the vertex position by accounting for point position and point size.
         let point_radius_norm = vec4f(
@@ -223,7 +223,7 @@ fn vs_main(
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
         // Support applying a model matrix (arbitrarily passed by the user)
         // before applying the camera (i.e., transforming the data coordinates).
-        * u.model_matrix * vec4(point_pos_orig, 0.0, 1.0)
+        * point_pos_orig
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 

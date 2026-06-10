@@ -160,9 +160,11 @@ fn vs_main(
     let uv = TEX_COORDS[vertex_index];
     // Obtain a position for this vertex in (0 to 1) normalized space.
     let vertex_pos_norm = QUAD[vertex_index];
-    let vertex_pos_px = vec2<f32>(
+    let vertex_pos_px = u.model_matrix * vec4f(
         vertex_pos_norm.x * u.img_size.x + u.pixel_offset.x,
-        vertex_pos_norm.y * u.img_size.y + u.pixel_offset.y
+        vertex_pos_norm.y * u.img_size.y + u.pixel_offset.y,
+        0.0,
+        1.0
     );
 
     // How positioning works for the bitmap layer:
@@ -211,7 +213,7 @@ fn vs_main(
             vertex_pos_px.x / layer_width_px,
             vertex_pos_px.y / layer_height_px
         );
-        let point_pos_ndc = NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0);
+        let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
         result_position_px = point_pos_ndc;
 
@@ -224,8 +226,6 @@ fn vs_main(
     }
 
     // Handle data_unit_mode == "data"
-
-    // TODO: handle the model_matrix
 
     // Model-view-projection matrix
     // References:
@@ -259,7 +259,7 @@ fn vs_main(
         // before applying the camera (i.e., transforming the data coordinates).
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        * u.model_matrix * vec4(vertex_pos_px, 0.0, 1.0)
+        * vertex_pos_px
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 

@@ -134,8 +134,8 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Corner points of this rect
-    let source_point_pos_orig = vec2<f32>(position_x0_coords[instance_index], position_y0_coords[instance_index]);
-    let target_point_pos_orig = vec2<f32>(position_x1_coords[instance_index], position_y1_coords[instance_index]);
+    let source_point_pos_orig = u.model_matrix * vec4f(position_x0_coords[instance_index], position_y0_coords[instance_index], 0.0, 1.0);
+    let target_point_pos_orig = u.model_matrix * vec4f(position_x1_coords[instance_index], position_y1_coords[instance_index], 0.0, 1.0);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -219,7 +219,7 @@ fn vs_main(
         );
 
         // TODO: handle rotation.
-        let point_pos_ndc = (NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
+        let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
         // Original rect size in pixels (before stroke expansion), for the fragment shader.
         let rect_w_px = abs(target_point_pos_px.x - source_point_pos_px.x);
@@ -247,8 +247,8 @@ fn vs_main(
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
-    let source_pos_norm = transform_mat * u.model_matrix * vec4(source_point_pos_orig, 0.0, 1.0);
-    let target_pos_norm = transform_mat * u.model_matrix * vec4(target_point_pos_orig, 0.0, 1.0);
+    let source_pos_norm = transform_mat * source_point_pos_orig;
+    let target_pos_norm = transform_mat * target_point_pos_orig;
 
     // Compute the center point in normalized coordinates, to use as the origin for rotation and scaling.
     let center_point_pos_norm = (source_pos_norm + target_pos_norm) / 2.0;
