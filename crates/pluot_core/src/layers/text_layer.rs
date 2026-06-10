@@ -202,6 +202,7 @@ pub struct TextLayerParams {
     pub text_align_mode: TextAlignMode,
     pub text_baseline_mode: TextBaselineMode,
     pub text_rotation: Option<f32>, // Rotation in degrees
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
     // Optional font name to request from the client environment.
     // If None or if the request fails, the bundled default font is used.
     pub font_family: Option<String>,
@@ -540,6 +541,7 @@ struct TextLayerUniforms {
     text_size_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
+    model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
     text_rotation: f32, // Rotation in degrees
     color: Vec4,
 }
@@ -682,6 +684,13 @@ pub async fn base_draw_text_layer(
             AspectRatioAlignmentMode::Start => 1,
             AspectRatioAlignmentMode::End => 2,
         },
+        model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+            // Column 0
+            1.0, 0.0, 0.0, 0.0, // Column 1
+            0.0, 1.0, 0.0, 0.0, // Column 2
+            0.0, 0.0, 1.0, 0.0, // Column 3
+            0.0, 0.0, 0.0, 1.0,
+        ])),
         text_rotation: layer_params.text_rotation.unwrap_or(0.0),
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
@@ -933,6 +942,13 @@ pub fn base_draw_text_layer_svg(
 
     let layer_w = viewport_w - (margin_left + margin_right) as f32;
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+    let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]);
     // End TODO
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
@@ -951,7 +967,7 @@ pub fn base_draw_text_layer_svg(
             layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
             view_params.aspect_ratio_alignment_mode,
-            None,
+            Some(&model_matrix_raw),
         );
 
         // Create a circle or square element based on point_shape_mode.

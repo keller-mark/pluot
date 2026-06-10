@@ -27,6 +27,7 @@ pub struct ZarrPointLayerParams {
     pub point_radius_unit_mode_x: UnitsMode,
     pub point_radius_unit_mode_y: UnitsMode,
     pub point_shape_mode: PointShapeMode,
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
     // Data keys
     pub store_name: Option<String>,
@@ -178,6 +179,7 @@ impl PreparedLayer for ZarrPointLayer {
                 point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
                 point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
+                model_matrix: self.layer_params.model_matrix,
                 position_x: x_f32.clone(),
                 position_y: y_f32.clone(),
                 labels_vec: l_i32.clone(),

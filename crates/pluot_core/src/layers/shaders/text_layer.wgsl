@@ -102,6 +102,7 @@ struct TextLayerUniforms {
     text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     text_rotation: f32, // rotation angle in degrees
     color: vec4<f32>,     // rgba color for points
 };
@@ -242,7 +243,7 @@ fn vs_main(
             (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
             // TODO: support applying a model matrix (arbitrarily passed by the user)
             // before applying the camera (i.e., transforming the data coordinates).
-            * vec4(elem_pos_orig, 0.0, 1.0)
+            * u.model_matrix * vec4(elem_pos_orig, 0.0, 1.0)
         );
 
         if(u.data_unit_mode_x == 1u) {
@@ -251,6 +252,16 @@ fn vs_main(
         if(u.data_unit_mode_y == 1u) {
             elem_pos_norm.y = elem_pos_norm_for_data.y;
         }
+    }
+
+    // Apply model_matrix in normalized space for pixel-mode axes.
+    // Data-mode axes already had model_matrix applied to data coords above.
+    let elem_pos_norm_pixel = u.model_matrix * vec4f(elem_pos_norm.x, elem_pos_norm.y, 0.0, 1.0);
+    if(u.data_unit_mode_x == 0u) {
+        elem_pos_norm.x = elem_pos_norm_pixel.x;
+    }
+    if(u.data_unit_mode_y == 0u) {
+        elem_pos_norm.y = elem_pos_norm_pixel.y;
     }
 
     // Now, use a shared code path downstream of elem_pos_norm.

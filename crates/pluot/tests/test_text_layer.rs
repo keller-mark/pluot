@@ -40,6 +40,7 @@ fn corner_text_data() -> TextLayerParams {
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
+        model_matrix: None,
         text_rotation: None,
         font_family: None,
         font_weight: FontWeight::Normal,
@@ -67,6 +68,7 @@ fn corner_text_pixels() -> TextLayerParams {
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
+        model_matrix: None,
         text_rotation: None,
         font_family: None,
         font_weight: FontWeight::Normal,
@@ -536,6 +538,71 @@ async fn test_text_layer_pdf_base14_font_helvetica() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_text_layer_pdf_base14_font_helvetica").await;
+}
+
+// ── model_matrix ─────────────────────────────────────────────────────────────
+
+// Scale 0.5 in data mode: text labels shrink to lower-left quadrant of [0,1]².
+#[tokio::test]
+async fn test_text_layer_square_contain_data_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_model_matrix_scale").await;
+}
+
+// Translate +0.25 in data mode: text labels shift toward upper-right.
+#[tokio::test]
+async fn test_text_layer_square_contain_data_units_model_matrix_translate() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                1.0,  0.0,  0.0, 0.0,
+                0.0,  1.0,  0.0, 0.0,
+                0.0,  0.0,  1.0, 0.0,
+                0.25, 0.25, 0.0, 1.0,
+            ]),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_model_matrix_translate").await;
+}
+
+// Scale 0.5 in pixel mode: model_matrix operates in normalized [0,1] space.
+#[tokio::test]
+async fn test_text_layer_square_contain_pixel_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_text_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_units_model_matrix_scale").await;
 }
 
 /*

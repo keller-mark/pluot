@@ -124,6 +124,7 @@ struct LineLayerUniforms {
     line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     color: vec4<f32>,     // rgba color for points
 };
 
@@ -213,8 +214,8 @@ fn vs_main(
         );
 
         // Convert to NDC for extrusion calculation
-        let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
-        let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
+        let source_pos_ndc = (NORM_TO_NDC_MAT * u.model_matrix * vec4f(source_point_pos_norm.xy, 0.0, 1.0)).xy;
+        let target_pos_ndc = (NORM_TO_NDC_MAT * u.model_matrix * vec4f(target_point_pos_norm.xy, 0.0, 1.0)).xy;
 
         result_source_position_px = source_pos_ndc;
         result_target_position_px = target_pos_ndc;
@@ -256,8 +257,8 @@ fn vs_main(
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
-    let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
-    let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
+    let source_pos_norm = transform_mat * u.model_matrix * vec4(source_point_pos_orig, 0.0, 1.0);
+    let target_pos_norm = transform_mat * u.model_matrix * vec4(target_point_pos_orig, 0.0, 1.0);
 
     // Convert to NDC for extrusion calculation
     let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;

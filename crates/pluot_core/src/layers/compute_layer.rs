@@ -77,6 +77,7 @@ impl PreparedLayer for ComputeLayer {
             font_family: None,
             font_weight: FontWeight::Normal,
             font_style: FontStyle::Normal,
+            model_matrix: None,
 
             position_x: Arc::new(text_position_x),
             position_y: Arc::new(text_position_y),

@@ -30,6 +30,8 @@ pub struct RectLayerParams {
     pub stroke_width: Option<f32>,
     pub stroke_width_unit_mode: UnitsMode, // TODO: split into X and Y parts?
 
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
+
     // TODO: combine these params so that only sensible states are representable.
     pub fill_color_mode: ColorMode,
     pub fill_color: Option<(u8, u8, u8)>,
@@ -95,6 +97,7 @@ struct RectLayerUniforms {
     stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
+    model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
     fill_color_mode: u32,
     fill_color: Vec4,                      // rgba color for points
 }
@@ -225,6 +228,13 @@ impl DrawToRasterGpu for RectLayer {
                 AspectRatioAlignmentMode::Start => 1,
                 AspectRatioAlignmentMode::End => 2,
             },
+            model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+                // Column 0
+                1.0, 0.0, 0.0, 0.0, // Column 1
+                0.0, 1.0, 0.0, 0.0, // Column 2
+                0.0, 0.0, 1.0, 0.0, // Column 3
+                0.0, 0.0, 0.0, 1.0,
+            ])),
             fill_color_mode: match layer_params.fill_color_mode {
                 ColorMode::Static => 0,
                 ColorMode::Explicit => 1,
@@ -516,6 +526,13 @@ impl DrawToSvg for RectLayer {
 
         let layer_w = viewport_w - (margin_left + margin_right) as f32;
         let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+        let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
         // End TODO
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
@@ -537,7 +554,7 @@ impl DrawToSvg for RectLayer {
                 layer_params.data_unit_mode_y,
                 view_params.aspect_ratio_mode,
                 view_params.aspect_ratio_alignment_mode,
-                None,
+                Some(&model_matrix_raw),
             );
             let (target_x_px, target_y_px) = get_point_position(
                 target_x,
@@ -549,7 +566,7 @@ impl DrawToSvg for RectLayer {
                 layer_params.data_unit_mode_y,
                 view_params.aspect_ratio_mode,
                 view_params.aspect_ratio_alignment_mode,
-                None,
+                Some(&model_matrix_raw),
             );
 
             let rect_height = (target_y_px - source_y_px).abs();

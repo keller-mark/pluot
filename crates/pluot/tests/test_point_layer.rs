@@ -33,6 +33,7 @@ fn corner_points_data() -> PointLayerParams {
         point_radius_unit_mode_x: UnitsMode::Pixels,
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
+        model_matrix: None,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
@@ -50,6 +51,7 @@ fn corner_points_pixels() -> PointLayerParams {
         point_radius_unit_mode_x: UnitsMode::Pixels,
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
+        model_matrix: None,
         position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
@@ -542,6 +544,72 @@ async fn test_point_layer_tall_ignore_circle_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_tall_ignore_circle_no_margins").await;
+}
+
+// ── model_matrix ─────────────────────────────────────────────────────────────
+
+// Scale 0.5 in data mode: corner points at [0,1]² → [0,0.5]², lower-left quadrant.
+#[tokio::test]
+async fn test_point_layer_square_contain_data_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_model_matrix_scale").await;
+}
+
+// Translate +0.25 in data mode: corner points shift toward upper-right.
+#[tokio::test]
+async fn test_point_layer_square_contain_data_units_model_matrix_translate() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            model_matrix: Some([
+                1.0,  0.0,  0.0, 0.0,
+                0.0,  1.0,  0.0, 0.0,
+                0.0,  0.0,  1.0, 0.0,
+                0.25, 0.25, 0.0, 1.0,
+            ]),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_model_matrix_translate").await;
+}
+
+// Scale 0.5 in pixel mode: model_matrix operates in normalized [0,1] space.
+// Points at pixel corners → normalized [0,1]² → scaled to [0,0.5]², lower-left quadrant.
+#[tokio::test]
+async fn test_point_layer_square_contain_pixel_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_points_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_model_matrix_scale").await;
 }
 
 // TODO: performance tests with many elements, both raster and svg formats

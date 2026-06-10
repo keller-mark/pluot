@@ -92,6 +92,7 @@ struct RectLayerUniforms {
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     fill_color_mode: u32,
     fill_color: vec4<f32>,     // rgba color for points
 };
@@ -218,7 +219,7 @@ fn vs_main(
         );
 
         // TODO: handle rotation.
-        let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
+        let point_pos_ndc = (NORM_TO_NDC_MAT * u.model_matrix * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
         // Original rect size in pixels (before stroke expansion), for the fragment shader.
         let rect_w_px = abs(target_point_pos_px.x - source_point_pos_px.x);
@@ -246,8 +247,8 @@ fn vs_main(
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
-    let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
-    let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
+    let source_pos_norm = transform_mat * u.model_matrix * vec4(source_point_pos_orig, 0.0, 1.0);
+    let target_pos_norm = transform_mat * u.model_matrix * vec4(target_point_pos_orig, 0.0, 1.0);
 
     // Compute the center point in normalized coordinates, to use as the origin for rotation and scaling.
     let center_point_pos_norm = (source_pos_norm + target_pos_norm) / 2.0;

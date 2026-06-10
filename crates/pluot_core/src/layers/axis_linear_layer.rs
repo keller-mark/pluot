@@ -227,6 +227,7 @@ impl AxisLinearLayer {
             data_unit_mode_y: UnitsMode::Pixels,
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
+            model_matrix: None,
             source_position_x: Arc::new(line_source_position_x),
             source_position_y: Arc::new(line_source_position_y),
             target_position_x: Arc::new(line_target_position_x),
@@ -256,7 +257,7 @@ impl AxisLinearLayer {
                 font_family: None,
                 font_weight: FontWeight::Normal,
                 font_style: FontStyle::Normal,
-
+                model_matrix: None,
                 position_x: Arc::new(text_position_x),
                 position_y: Arc::new(text_position_y),
                 text_vec: Arc::new(text_strings),
