@@ -16,14 +16,15 @@ How it works: "headless" plotting. Pluot uses Rust :crab: and WebGPU to quickly 
 
 ## Citation
 
-If you found this useful, please cite:
+If you found this useful, please cite our [preprint](https://doi.org/10.48550/arXiv.2605.14118):
 
 ```bibtex
 @article{keller2026pluot,
   title = {{Pluot: Towards 'write once, run everywhere' visualization software}},
   author = {Keller, Mark S. and Gehlenborg, Nils},
   journal = {arXiv},
-  year = {2026}
+  year = {2026},
+  doi = {10.48550/arXiv.2605.14118}
 }
 ```
 
@@ -87,6 +88,13 @@ See my [blog post](https://markk.co/blog/2026-04-24-pluot-motivations) for more 
 Further developer documentation can be found in [dev-docs](./dev-docs/README.md).
 
 ## Set up environment
+
+After cloning the repository, pull down the submodule containing font files.
+
+```sh
+git submodule update --init --recursive
+cd bindings-js/core && pnpm run copy-fonts && cd -
+```
 
 Install Rust tools with [Rustup](https://rustup.rs/).
 

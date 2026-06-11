@@ -6,7 +6,7 @@ use pluot_core::compute::reduce::{
 
 // All tests use the CPU fallback path (gpu_context = None).
 
-// ── reduce_min ───────────────────────────────────────────────────────────────
+// reduce_min
 
 #[tokio::test]
 async fn test_reduce_min_basic() {
@@ -39,7 +39,7 @@ async fn test_reduce_min_all_same() {
     assert_eq!(reduce_min(None, input).await, 7.0);
 }
 
-// ── reduce_max ───────────────────────────────────────────────────────────────
+// reduce_max
 
 #[tokio::test]
 async fn test_reduce_max_basic() {
@@ -64,7 +64,7 @@ async fn test_reduce_max_negative() {
     assert_eq!(reduce_max(None, input).await, -0.5);
 }
 
-// ── reduce_sum ───────────────────────────────────────────────────────────────
+// reduce_sum
 
 #[tokio::test]
 async fn test_reduce_sum_basic() {
@@ -89,7 +89,7 @@ async fn test_reduce_sum_negative() {
     assert_eq!(reduce_sum(None, input).await, 2.0);
 }
 
-// ── reduce_extent ────────────────────────────────────────────────────────────
+// reduce_extent
 
 #[tokio::test]
 async fn test_reduce_extent_basic() {
@@ -121,7 +121,7 @@ async fn test_reduce_extent_negative() {
 
 #[tokio::test]
 async fn test_histogram_known_extent_uniform() {
-    // 10 values in [0, 10), 2 bins → 5 per bin.
+    // 10 values in [0, 10), 2 bins --> 5 per bin.
     let input = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     let bins = reduce_histogram_with_known_extent(None, input, 2, 0.0, 10.0).await;
     assert_eq!(bins, vec![5, 5]);
@@ -177,7 +177,7 @@ async fn test_histogram_unknown_extent_basic() {
 
 #[tokio::test]
 async fn test_histogram_unknown_extent_single_value() {
-    // All identical → extent is (v, v), zero range → all in bin 0.
+    // All identical --> extent is (v, v), zero range --> all in bin 0.
     let input = Arc::new(vec![3.0, 3.0, 3.0]);
     let bins = reduce_histogram_with_unknown_extent(None, input, 4).await;
     assert_eq!(bins, vec![3, 0, 0, 0]);

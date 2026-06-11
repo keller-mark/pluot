@@ -92,6 +92,7 @@ struct RectLayerUniforms {
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     fill_color_mode: u32,
     fill_color: vec4<f32>,     // rgba color for points
 };
@@ -133,8 +134,8 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Corner points of this rect
-    let source_point_pos_orig = vec2<f32>(position_x0_coords[instance_index], position_y0_coords[instance_index]);
-    let target_point_pos_orig = vec2<f32>(position_x1_coords[instance_index], position_y1_coords[instance_index]);
+    let source_point_pos_orig = u.model_matrix * vec4f(position_x0_coords[instance_index], position_y0_coords[instance_index], 0.0, 1.0);
+    let target_point_pos_orig = u.model_matrix * vec4f(position_x1_coords[instance_index], position_y1_coords[instance_index], 0.0, 1.0);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -246,8 +247,8 @@ fn vs_main(
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
-    let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
-    let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
+    let source_pos_norm = transform_mat * source_point_pos_orig;
+    let target_pos_norm = transform_mat * target_point_pos_orig;
 
     // Compute the center point in normalized coordinates, to use as the origin for rotation and scaling.
     let center_point_pos_norm = (source_pos_norm + target_pos_norm) / 2.0;
@@ -258,6 +259,7 @@ fn vs_main(
     // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
     // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
     // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
     let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
     let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
 
@@ -305,8 +307,8 @@ fn vs_main(
 // but this will affect the alpha blending step, causing alpha-blending
 // to happen in the sRGB space, which is perceptually non-linear,
 // and can cause darkening artifacts during the circle anti-aliasing step.
-fn srgb_to_linear(c: f32) -> f32 {
-    return pow(c, 2.2);
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return pow(c, vec3<f32>(2.2));
 }
 
 
@@ -366,6 +368,6 @@ fn fs_main(
     }
 
     var out: FSOut;
-    out.color = vec4<f32>(srgb_to_linear(out_color.r), srgb_to_linear(out_color.g), srgb_to_linear(out_color.b), 1.0);
+    out.color = vec4<f32>(srgb_to_linear(out_color), 1.0);
     return out;
 }

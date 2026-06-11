@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode};
+use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, FontWeight, FontStyle};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
@@ -187,6 +187,7 @@ impl AxisBandLayer {
             data_unit_mode_y: UnitsMode::Pixels,
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
+            model_matrix: None,
             source_position_x: Arc::new(line_source_position_x),
             source_position_y: Arc::new(line_source_position_y),
             target_position_x: Arc::new(line_target_position_x),
@@ -213,6 +214,10 @@ impl AxisBandLayer {
                 text_align_mode,
                 text_baseline_mode,
                 text_rotation: Some(text_rotation as f32),
+                model_matrix: None,
+                font_family: None,
+                font_weight: FontWeight::Normal,
+                font_style: FontStyle::Normal,
                 position_x: Arc::new(text_position_x),
                 position_y: Arc::new(text_position_y),
                 text_vec: Arc::new(text_strings),

@@ -168,13 +168,13 @@ pub enum TwoTextOverflow {
 pub struct TwoText {
     pub x: f64,
     pub y: f64,
-    pub width: f64,
-    pub height: f64,
     pub text: String,
 
     pub fill: TwoColor,
     pub fontsize: f64,
-    pub font: String,
+    pub font_family: String,
+    pub font_weight: String,
+    pub font_style: String,
     // Corresponds to canvas `context.textAlign`.
     // Possible values: "start", "middle", "end".
     pub align: TwoTextAlign,
@@ -194,12 +194,12 @@ impl Default for TwoText {
         Self {
             x: 0.0,
             y: 0.0,
-            width: 0.0,
-            height: 0.0,
             text: String::new(),
             fill: TwoColor::Rgb((0, 0, 0)),
             fontsize: 14.0,
-            font: "Arial,sans-serif".to_string(),
+            font_family: "Helvetica,sans-serif".to_string(),
+            font_weight: "normal".to_string(),
+            font_style: "normal".to_string(),
             align: TwoTextAlign::Middle,
             baseline: TwoTextBaseline::Alphabetic,
             opacity: 1.0,

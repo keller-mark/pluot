@@ -22,7 +22,7 @@ use pluot::{
 //   - For BitmapLayer, this includes testing different dimension orders,
 //     different channel settings (colors, windows), opacity, and pixel_offset
 
-// Helper: a 4×4 two-channel image in CYX order (matches the JS demo)
+// Helper: a 4x4 two-channel image in CYX order (matches the JS demo)
 // Channel 0 (red): low values, Channel 1 (blue): high values
 fn bitmap_cyx_data() -> BitmapLayerParams {
     BitmapLayerParams {
@@ -54,7 +54,7 @@ fn bitmap_cyx_data() -> BitmapLayerParams {
     }
 }
 
-// Helper: same image in Pixels unit mode (4×4 pixel image positioned in pixel space)
+// Helper: same image in Pixels unit mode (4x4 pixel image positioned in pixel space)
 fn bitmap_cyx_pixels() -> BitmapLayerParams {
     BitmapLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
@@ -83,7 +83,7 @@ fn layer_params(bitmap_params: BitmapLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::BitmapLayer(bitmap_params)]
 }
 
-// Column-major 4×4 scale matrix: zoom of 1/8 (zoomed out 8×), centered at origin.
+// Column-major 4x4 scale matrix: zoom of 1/8 (zoomed out 8x), centered at origin.
 // Format matches position_utils.rs: [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, 0, 0, tx, ty, 0, 1]
 const CAMERA_ZOOM_OUT_8X: [f32; 16] = [
     0.125, 0.0,   0.0, 0.0,
@@ -92,7 +92,7 @@ const CAMERA_ZOOM_OUT_8X: [f32; 16] = [
     0.0,   0.0,   0.0, 1.0,
 ];
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_bitmap_layer_square_contain_data_units_no_margins() {
@@ -218,7 +218,7 @@ async fn test_bitmap_layer_square_contain_data_units_layer_bounds_overrides_view
     render_and_check_both_snapshots(params, "test_bitmap_layer_square_contain_data_units_layer_bounds_overrides_view_margins").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_bitmap_layer_wide_ignore_data_units_no_margins() {
@@ -310,7 +310,7 @@ async fn test_bitmap_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_bitmap_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_bitmap_layer_tall_ignore_data_units_no_margins() {
@@ -441,7 +441,7 @@ async fn test_bitmap_layer_square_contain_data_units_pixel_offset() {
 // Test with a different dimension order (XYC)
 #[tokio::test]
 async fn test_bitmap_layer_square_contain_data_units_xyc_order() {
-    // Same 4×4 two-channel image, but stored in XYC order
+    // Same 4x4 two-channel image, but stored in XYC order
     // XYC: [x=0..3, y=0..3, c=0..1]
     // For each (x, y) pair: [channel_0_value, channel_1_value]
     let data_xyc: Vec<u16> = {

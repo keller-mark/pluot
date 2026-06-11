@@ -11,6 +11,7 @@ use pluot::{
     PointLayerParams, PointShapeMode,
     LineLayerParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
+    FontWeight, FontStyle,
 };
 
 // Multi-layer tests exercise rendering of multiple layers stacked together.
@@ -21,7 +22,7 @@ use pluot::{
 // - With and without view-level margins
 // - Mixed layer types: point+line, point+text, line+text, point+line+text
 
-// ── Shared layer helpers ──────────────────────────────────────────────────────
+// Shared layer helpers
 
 fn corner_points() -> PointLayerParams {
     PointLayerParams {
@@ -33,6 +34,7 @@ fn corner_points() -> PointLayerParams {
         point_radius_unit_mode_x: UnitsMode::Pixels,
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
+        model_matrix: None,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
@@ -47,6 +49,7 @@ fn cross_lines() -> LineLayerParams {
         data_unit_mode_y: UnitsMode::Data,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
+        model_matrix: None,
         source_position_x: Arc::new(vec![0.0, 1.0]),
         source_position_y: Arc::new(vec![0.0, 0.0]),
         target_position_x: Arc::new(vec![1.0, 0.0]),
@@ -65,7 +68,11 @@ fn corner_labels() -> TextLayerParams {
         text_size_unit_mode: UnitsMode::Pixels,
         text_align_mode: TextAlignMode::Middle,
         text_baseline_mode: TextBaselineMode::Middle,
+        model_matrix: None,
         text_rotation: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
         text_vec: Arc::new(vec![
@@ -89,7 +96,7 @@ fn text_layer_params(t: TextLayerParams) -> LayerParams {
     LayerParams::TextLayer(t)
 }
 
-// ── Point + Line ─────────────────────────────────────────────────────────────
+// Point + Line
 
 // Points rendered first (below lines)
 #[tokio::test]
@@ -123,7 +130,7 @@ async fn test_multi_layer_square_contain_lines_then_points() {
     render_and_check_both_snapshots(params, "test_multi_layer_square_contain_lines_then_points").await;
 }
 
-// ── Point + Text ──────────────────────────────────────────────────────────────
+// Point + Text
 
 #[tokio::test]
 async fn test_multi_layer_square_contain_points_then_text() {
@@ -155,7 +162,7 @@ async fn test_multi_layer_square_contain_text_then_points() {
     render_and_check_both_snapshots(params, "test_multi_layer_square_contain_text_then_points").await;
 }
 
-// ── Line + Text ───────────────────────────────────────────────────────────────
+// Line + Text
 
 #[tokio::test]
 async fn test_multi_layer_square_contain_lines_then_text() {
@@ -172,7 +179,7 @@ async fn test_multi_layer_square_contain_lines_then_text() {
     render_and_check_both_snapshots(params, "test_multi_layer_square_contain_lines_then_text").await;
 }
 
-// ── All three layers ──────────────────────────────────────────────────────────
+// All three layers
 
 #[tokio::test]
 async fn test_multi_layer_square_contain_lines_points_text() {
@@ -222,7 +229,7 @@ async fn test_multi_layer_square_cover_lines_points_text() {
     render_and_check_both_snapshots(params, "test_multi_layer_square_cover_lines_points_text").await;
 }
 
-// ── With view margins ─────────────────────────────────────────────────────────
+// With view margins
 
 #[tokio::test]
 async fn test_multi_layer_square_contain_lines_points_text_view_margins() {
@@ -244,7 +251,7 @@ async fn test_multi_layer_square_contain_lines_points_text_view_margins() {
     render_and_check_both_snapshots(params, "test_multi_layer_square_contain_lines_points_text_view_margins").await;
 }
 
-// ── With per-layer bounds ─────────────────────────────────────────────────────
+// With per-layer bounds
 
 // Two layers with different individual bounds (each occupies a different sub-region)
 #[tokio::test]
@@ -280,7 +287,7 @@ async fn test_multi_layer_square_contain_split_bounds() {
     render_and_check_both_snapshots(params, "test_multi_layer_square_contain_split_bounds").await;
 }
 
-// ── Wide and tall canvases ────────────────────────────────────────────────────
+// Wide and tall canvases
 
 #[tokio::test]
 async fn test_multi_layer_wide_contain_lines_points_text() {

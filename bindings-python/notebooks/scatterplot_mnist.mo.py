@@ -109,7 +109,10 @@ async def _(camera_view, render_to_image, umap_df):
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
                         position_x=[100 + (600-100-10)/2],
                         position_y=[60],
-                        text_vec=["UMAP_1"]
+                        text_vec=["UMAP_1"],
+                        font_family="Courier",
+                        font_weight="Normal",
+                        font_style="Normal",
                     )
                 ),
                 dict(
@@ -126,7 +129,10 @@ async def _(camera_view, render_to_image, umap_df):
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
                         position_y=[100 + (600-100-10)/2],
                         position_x=[60],
-                        text_vec=["UMAP_2"]
+                        text_vec=["UMAP_2"],
+                        font_family="Courier",
+                        font_weight="Normal",
+                        font_style="Normal",
                     )
                 )
             ]
@@ -187,7 +193,10 @@ async def _(camera_view, render_to_svg, umap_df):
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
                         position_x=[100 + (600-100-10)/2],
                         position_y=[60],
-                        text_vec=["UMAP_1"]
+                        text_vec=["UMAP_1"],
+                        font_family="Courier",
+                        font_weight="Normal",
+                        font_style="Normal",
                     )
                 ),
                 dict(
@@ -204,7 +213,10 @@ async def _(camera_view, render_to_svg, umap_df):
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
                         position_y=[100 + (600-100-10)/2],
                         position_x=[60],
-                        text_vec=["UMAP_2"]
+                        text_vec=["UMAP_2"],
+                        font_family="Courier",
+                        font_weight="Normal",
+                        font_style="Normal",
                     )
                 )
             ]

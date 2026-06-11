@@ -7,19 +7,19 @@
 </defs>
 <g height="200" width="100">
 <g clip-path="url(#my_text_layer_clip_path)" transform="translate(10,10)">
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 0 130)" x="0" y="130">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 0 130)" x="0" y="130">
 A
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 80 130)" x="80" y="130">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 80 130)" x="80" y="130">
 B
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 80 50)" x="80" y="50">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 80 50)" x="80" y="50">
 C
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 0 50)" x="0" y="50">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 0 50)" x="0" y="50">
 D
 </text>
-<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" transform="rotate(0 40 90)" x="40" y="90">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 40 90)" x="40" y="90">
 Hello world
 </text>
 </g>

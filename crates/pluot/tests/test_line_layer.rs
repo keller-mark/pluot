@@ -21,7 +21,7 @@ use pluot::{
 // - Layer-specific stuff
 //   - For LineLayer, this includes testing different line widths and line width unit modes
 
-// Helper: 8 lines forming a toy house with a chimney in a 1×1 data space
+// Helper: 8 lines forming a toy house with a chimney in a 1x1 data space
 fn cross_lines_data() -> LineLayerParams {
     LineLayerParams {
         layer_id: "my_line_layer".to_string(),
@@ -30,6 +30,7 @@ fn cross_lines_data() -> LineLayerParams {
         data_unit_mode_y: UnitsMode::Data,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
+        model_matrix: None,
         source_position_x: Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70]),
         source_position_y: Arc::new(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.75, 0.50, 1.00]),
         target_position_x: Arc::new(vec![1.0, 0.0, 1.0, 0.5, 0.5, 0.70, 1.00, 1.00]),
@@ -47,6 +48,7 @@ fn cross_lines_pixels() -> LineLayerParams {
         data_unit_mode_y: UnitsMode::Pixels,
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
+        model_matrix: None,
         source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
         source_position_y: Arc::new(vec![  0.0,  0.0,   0.0, 50.0,  50.0,  75.0,  50.0, 100.0]),
         target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
@@ -85,7 +87,7 @@ fn layer_params(line_params: LineLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::LineLayer(line_params)]
 }
 
-// ── Square canvas (100×100) ───────────────────────────────────────────────────
+// ── Square canvas (100x100) ───────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_line_layer_square_contain_data_units_no_margins() {
@@ -204,7 +206,7 @@ async fn test_line_layer_square_contain_data_units_layer_bounds_overrides_view_m
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_layer_bounds_overrides_view_margins").await;
 }
 
-// ── Wide canvas (200×100) ─────────────────────────────────────────────────────
+// Wide canvas (200x100)
 
 #[tokio::test]
 async fn test_line_layer_wide_ignore_data_units_no_margins() {
@@ -296,7 +298,7 @@ async fn test_line_layer_wide_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_line_layer_wide_contain_data_units_layer_bounds").await;
 }
 
-// ── Tall canvas (100×200) ─────────────────────────────────────────────────────
+// Tall canvas (100x200)
 
 #[tokio::test]
 async fn test_line_layer_tall_ignore_data_units_no_margins() {
@@ -388,7 +390,7 @@ async fn test_line_layer_tall_contain_data_units_layer_bounds() {
     render_and_check_both_snapshots(params, "test_line_layer_tall_contain_data_units_layer_bounds").await;
 }
 
-// ── Line width tests ──────────────────────────────────────────────────────────
+// Line width tests
 
 #[tokio::test]
 async fn test_line_layer_wide_contain_data_units_thick_line_width() {
@@ -429,4 +431,69 @@ async fn test_line_layer_square_contain_pixel_x_data_y_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_x_data_y_no_margins").await;
+}
+
+// model_matrix
+
+// Scale 0.5 in data mode: lines shrink to lower-left quadrant of the unit square.
+#[tokio::test]
+async fn test_line_layer_square_contain_data_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_model_matrix_scale").await;
+}
+
+// Translate +0.25 in data mode: lines shift toward upper-right.
+#[tokio::test]
+async fn test_line_layer_square_contain_data_units_model_matrix_translate() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            model_matrix: Some([
+                1.0,  0.0,  0.0, 0.0,
+                0.0,  1.0,  0.0, 0.0,
+                0.0,  0.0,  1.0, 0.0,
+                0.25, 0.25, 0.0, 1.0,
+            ]),
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_model_matrix_translate").await;
+}
+
+// Scale 0.5 in pixel mode: model_matrix operates in normalized [0,1] space.
+#[tokio::test]
+async fn test_line_layer_square_contain_pixel_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..cross_lines_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_units_model_matrix_scale").await;
 }

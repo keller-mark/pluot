@@ -5,7 +5,7 @@ use ome_zarr_metadata::v0_5::{
 
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
-    // (in scientific notation format where the tuple is `(coefficient, exponent)` meaning `coefficient × 10^exponent` meters)
+    // (in scientific notation format where the tuple is `(coefficient, exponent)` meaning `coefficient x 10^exponent` meters)
     // Reference: https://github.com/hms-dbmi/viv/blob/6cf019ac1608242682109ffe93d412103667271d/packages/layers/src/utils.js#L158C1-L181C1
     match unit {
         // SI prefixes with positive exponents (multiples of meter)
@@ -33,11 +33,11 @@ pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64
         AxisUnitSpace::Zeptometer => (1.0, -21),
         AxisUnitSpace::Yoctometer => (1.0, -24),
         // Non-SI units with coefficients relative to meter
-        AxisUnitSpace::Inch => (2.54, -2),      // 0.0254 m = 2.54 × 10⁻² m
-        AxisUnitSpace::Foot => (3.048, -1),     // 0.3048 m = 3.048 × 10⁻¹ m
-        AxisUnitSpace::Yard => (9.144, -1),     // 0.9144 m = 9.144 × 10⁻¹ m
-        AxisUnitSpace::Mile => (1.609344, 3),   // 1609.344 m = 1.609344 × 10³ m
-        AxisUnitSpace::Parsec => (3.0857, 16),  // ~3.0857 × 10¹⁶ m
+        AxisUnitSpace::Inch => (2.54, -2),      // 0.0254 m = 2.54 x 10⁻² m
+        AxisUnitSpace::Foot => (3.048, -1),     // 0.3048 m = 3.048 x 10⁻¹ m
+        AxisUnitSpace::Yard => (9.144, -1),     // 0.9144 m = 9.144 x 10⁻¹ m
+        AxisUnitSpace::Mile => (1.609344, 3),   // 1609.344 m = 1.609344 x 10³ m
+        AxisUnitSpace::Parsec => (3.0857, 16),  // ~3.0857 x 10¹⁶ m
         // TODO: would it be better to just interpret as meters if unrecognized?
         _ => panic!("Unrecognized AxisUnitSpace unit: {:?}", unit),
     }

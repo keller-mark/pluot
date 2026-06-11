@@ -104,6 +104,12 @@ export CC=/opt/homebrew/opt/llvm/bin/clang
 export AR=/opt/homebrew/opt/llvm/bin/llvm-ar
 ```
 
+On macOS, if you run into an Xcode SDK conflict (e.g., during `snappy_src` compilation), try setting the `SDKROOT` environment variable to ensure that C and C++ system headers come from the same CommandLineTools SDK version:
+
+```sh
+export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk
+```
+
 ## Publishing to crates io
 
 ```sh

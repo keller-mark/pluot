@@ -1,6 +1,7 @@
 import * as wasm from "pluot";
 import { lru, type LruStore } from "./lru-store.js";
 import type { AsyncReadable } from "zarrita";
+import { FontStore } from "./fonts.js";
 
 export const { render_wasm, pick_wasm } = wasm;
 
@@ -57,6 +58,9 @@ async function _initialize() {
     },
   });
 
+  // Register the font store so Rust can request fonts via zarr_get("__fonts__", "{name}.ttf").
+  stores["__fonts__"] = lru(new FontStore());
+
   // Opt-in to better error messages.
   wasm.set_panic_hook();
 }
@@ -87,3 +91,5 @@ export function setStoreByName(storeName: string, store: AsyncReadable) {
 export function getStore(storeName: string) {
   return stores[storeName];
 }
+
+export { setFont } from "./fonts.js";

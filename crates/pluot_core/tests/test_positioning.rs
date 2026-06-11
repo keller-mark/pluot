@@ -66,7 +66,7 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_aram_center() {
     assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
-// ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
+// TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES
 #[test]
 fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_aram_center() {
     // Consider data points at the corners of a unit square.
@@ -394,7 +394,7 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_aram_center() {
 }
 
 
-// ======== TESTING CAMERA ZOOM TRANSFORMS ========
+// TESTING CAMERA ZOOM TRANSFORMS
 // The "base" / easiest case: square aspect ratio, ignore mode, zero margins.
 #[test]
 fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_aram_center() {
@@ -692,7 +692,7 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera_aram_cente
     assert_eq!((size_out_x, size_out_y), (25.0_f32, 25.0_f32));
 }
 
-// ======== _aram_start variants ========
+// _aram_start variants
 
 // The "base" / easiest case: square aspect ratio, ignore mode, identity camera, zero margins.
 #[test]
@@ -756,7 +756,7 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_aram_start() {
     assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
-// ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
+// TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES
 #[test]
 fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_aram_start() {
     // Consider data points at the corners of a unit square.
@@ -1084,7 +1084,7 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_aram_start() {
 }
 
 
-// ======== TESTING CAMERA ZOOM TRANSFORMS ========
+// TESTING CAMERA ZOOM TRANSFORMS
 // The "base" / easiest case: square aspect ratio, ignore mode, zero margins.
 #[test]
 fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_aram_start() {
@@ -1382,7 +1382,7 @@ fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_out_4x_camera_aram_start
     assert_eq!((size_out_x, size_out_y), (25.0_f32, 25.0_f32));
 }
 
-// ======== _aram_end variants ========
+// _aram_end variants
 
 // The "base" / easiest case: square aspect ratio, ignore mode, identity camera, zero margins.
 #[test]
@@ -1446,7 +1446,7 @@ fn test_square_aspect_ratio_with_ignore_mode_and_identity_camera_aram_end() {
     assert_eq!((size_out_x, size_out_y), (100.0_f32, 100.0_f32));
 }
 
-// ======== TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES ========
+// TESTING HANDLING OF DIFFERENT ASPECT RATIO MODES
 #[test]
 fn test_wide_aspect_ratio_with_ignore_mode_and_identity_camera_aram_end() {
     // Consider data points at the corners of a unit square.
@@ -1774,7 +1774,7 @@ fn test_tall_aspect_ratio_with_cover_mode_and_identity_camera_aram_end() {
 }
 
 
-// ======== TESTING CAMERA ZOOM TRANSFORMS ========
+// TESTING CAMERA ZOOM TRANSFORMS
 // The "base" / easiest case: square aspect ratio, ignore mode, zero margins.
 #[test]
 fn test_square_aspect_ratio_with_ignore_mode_and_zoomed_in_2x_camera_aram_end() {

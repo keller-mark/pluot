@@ -9,7 +9,7 @@ use encase::{ShaderType, UniformBuffer};
 
 // Reference: https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/main.rs
 
-// ── Mode enum ────────────────────────────────────────────────────────────────
+// Mode enum
 
 /// Discriminant values must stay in sync with the WGSL MODE_* constants in
 /// shaders/reduce.wgsl.
@@ -53,10 +53,10 @@ impl ReduceMode {
     }
 }
 
-// ── Uniform struct ────────────────────────────────────────────────────────────
+// Uniform struct
 
 /// Must match `ReduceUniforms` in shaders/reduce.wgsl exactly (field order
-/// and types).  5 × 4 bytes = 20 bytes.
+/// and types).  5 x 4 bytes = 20 bytes.
 #[derive(ShaderType)]
 struct ReduceUniforms {
     mode: u32,
@@ -67,7 +67,7 @@ struct ReduceUniforms {
     data_max: f32,
 }
 
-// ── Core dispatch function ────────────────────────────────────────────────────
+// Core dispatch function
 
 /// Dispatches a GPU reduction and returns raw partial results as `Vec<f32>`.
 ///
@@ -88,7 +88,7 @@ pub async fn compute_reduce(
 
     let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/reduce.wgsl"));
 
-    // ── Uniforms ──────────────────────────────────────────────────────────────
+    // Uniforms
 
     let (num_bins, data_min, data_max) = match &mode {
         ReduceMode::Histogram { num_bins, data_min, data_max } => (*num_bins, *data_min, *data_max),
@@ -115,7 +115,7 @@ pub async fn compute_reduce(
     });
     queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
-    // ── Input buffer ──────────────────────────────────────────────────────────
+    // Input buffer
 
     let input_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("reduce_input"),
@@ -123,12 +123,12 @@ pub async fn compute_reduce(
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    // ── Output buffer ─────────────────────────────────────────────────────────
+    // Output buffer
     //
     // Size depends on mode:
-    //   Min / Max / Sum  → one f32  per workgroup (partial result)
-    //   Extent           → two f32  per workgroup ([partial_min, partial_max])
-    //   Histogram        → num_bins u32 values    (globally accumulated counts)
+    //   Min / Max / Sum  --> one f32  per workgroup (partial result)
+    //   Extent           --> two f32  per workgroup ([partial_min, partial_max])
+    //   Histogram        --> num_bins u32 values    (globally accumulated counts)
     //
     // WebGPU zero-initialises all newly created buffers, so the histogram
     // output starts at zero without an explicit clear pass.
@@ -155,7 +155,7 @@ pub async fn compute_reduce(
         mapped_at_creation: false,
     });
 
-    // ── Bind group layout ─────────────────────────────────────────────────────
+    // Bind group layout
     //
     // main_scalar    uses bindings 0 (uniform), 1 (input), 2 (output f32)
     // main_histogram uses bindings 0 (uniform), 1 (input), 3 (output atomic<u32>)
@@ -216,7 +216,7 @@ pub async fn compute_reduce(
         ],
     });
 
-    // ── Pipeline ──────────────────────────────────────────────────────────────
+    // Pipeline
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
@@ -235,7 +235,7 @@ pub async fn compute_reduce(
         cache: None,
     });
 
-    // ── Dispatch ──────────────────────────────────────────────────────────────
+    // Dispatch
 
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -254,7 +254,7 @@ pub async fn compute_reduce(
 
     queue.submit([encoder.finish()]);
 
-    // ── Read back ─────────────────────────────────────────────────────────────
+    // Read back
 
     let buffer_slice = download_buffer.slice(..);
 
@@ -284,7 +284,7 @@ pub async fn compute_reduce(
     bytemuck::allocation::pod_collect_to_vec(&data)
 }
 
-// ── CPU fallbacks ─────────────────────────────────────────────────────────────
+// CPU fallbacks
 
 fn cpu_reduce_min(input: &[f32]) -> f32 {
     input.iter().copied().fold(f32::INFINITY, f32::min)

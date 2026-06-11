@@ -92,6 +92,7 @@ struct PointLayerUniforms {
     point_shape_mode: u32, // 0: square; 1: circle
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     fill_color_mode: u32, // 0: static color for all points; 1: categorical // TODO: expand this, remove hard-coded categorical logic
     fill_color: vec4<f32>, // rgba color
 };
@@ -127,7 +128,7 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Center of this point in data space
-    let point_pos_orig = vec2<f32>(x_coords[instance_index], y_coords[instance_index]);
+    let point_pos_orig = u.model_matrix * vec4f(x_coords[instance_index], y_coords[instance_index], 0.0, 1.0);
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
@@ -220,14 +221,15 @@ fn vs_main(
         // after all NDC-space operations are done. This keeps translations in the correct space.
 
         (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-        // TODO: support applying a model matrix (arbitrarily passed by the user)
+        // Support applying a model matrix (arbitrarily passed by the user)
         // before applying the camera (i.e., transforming the data coordinates).
-        * vec4(point_pos_orig, 0.0, 1.0)
+        * point_pos_orig
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
     // Compute the vertex position by accounting for point position and point size.
     // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
     let point_radius_norm = vec4f(
         u.point_radius / layer_width_px,
         u.point_radius / layer_height_px,
@@ -268,8 +270,8 @@ fn vs_main(
 // but this will affect the alpha blending step, causing alpha-blending
 // to happen in the sRGB space, which is perceptually non-linear,
 // and can cause darkening artifacts during the circle anti-aliasing step.
-fn srgb_to_linear(c: f32) -> f32 {
-    return pow(c, 2.2);
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return pow(c, vec3<f32>(2.2));
 }
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
@@ -287,7 +289,7 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
         vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
     );
     let c = colors[index % 10];
-    return vec4<f32>(srgb_to_linear(c.r), srgb_to_linear(c.g), srgb_to_linear(c.b), c.a);
+    return vec4<f32>(srgb_to_linear(c.rgb), c.a);
 }
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -305,11 +307,9 @@ fn fs_main(
     // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
     var alpha = 1.0;
     if(u.point_shape_mode == 1u) {
-        // TODO: improve this somehow?
-        let dist = length(corner);
-        // fwidth gives the rate of change across fragments
-        let edge_width = fwidth(dist);
-        alpha = 1.0 - smoothstep(1.0 - edge_width, 1.0 + edge_width, dist);
+        // Signed-distance anti-aliasing: linear 1-pixel fade centered on the circle edge.
+        let dist_px = length(corner) * u.point_radius;
+        alpha = clamp(u.point_radius - dist_px + 0.475, 0.0, 1.0);
         if (alpha < 0.001) {
             discard;
         }

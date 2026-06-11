@@ -104,9 +104,7 @@ struct OmeZarrMultiscaleMetadata {
     dimension_order: OmeDimensionOrder,
 }
 
-// ---------------------------------------------------------------------------
 // OmeZarrMultiscaleLayer — metadata + sublayer orchestration only
-// ---------------------------------------------------------------------------
 
 /// A sublayer group for a single resolution level.
 struct LevelSublayers {

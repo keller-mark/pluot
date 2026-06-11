@@ -22,7 +22,7 @@ pub struct SvgContext {
     /// The `<svg>` document wrapper (used when serializing with `include_document = true`).
     pub document: Document,
     pub group: Group,
-    /// Map from the bit-patterns of `(x, y, width, height)` → clip-path id.
+    /// Map from the bit-patterns of `(x, y, width, height)` --> clip-path id.
     /// Keyed on bit-patterns so that identical `f64` values map to the same id
     /// without any floating-point tolerance concerns.
     clip_path_ids: HashMap<(u64, u64, u64, u64), String>,
@@ -274,7 +274,9 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                     .set("opacity", d.opacity)
                     .set("fill", d.fill.to_string())
                     .set("font-size", d.fontsize)
-                    .set("font-family", d.font.as_str());
+                    .set("font-family", d.font_family.as_str())
+                    .set("font-weight", d.font_weight.as_str()) // TODO: omit when "normal" to minimize SVG size
+                    .set("font-style", d.font_style.as_str());  // TODO: omit when "normal" to minimize SVG size
 
                 if let Some(rotation) = d.rotation {
                     text = text.set("transform", format!("rotate({} {} {})", rotation, d.x, d.y));
@@ -389,12 +391,12 @@ mod tests {
                 text: "Hello".to_string(),
                 x: 150.0,
                 y: 160.0,
-                width: 100.0,
-                height: 100.0,
                 opacity: 1.0,
                 fill: TwoColor::Rgb((0, 128, 255)),
                 fontsize: 12.0,
-                font: "Arial".to_string(),
+                font_family: "Arial".to_string(),
+                font_weight: "normal".to_string(),
+                font_style: "normal".to_string(),
                 align: TwoTextAlign::Middle,
                 baseline: TwoTextBaseline::Middle,
                 rotation: None,
@@ -411,7 +413,7 @@ mod tests {
                 <circle cx="50" cy="60" fill="rgb(0, 255, 0)" opacity="1" r="15"/>
                 <line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="3" x1="70" x2="90" y1="80" y2="100"/>
                 <path d="M 110 120 L 130 140" fill="rgb(0, 255, 255)" opacity="1" stroke="rgb(255, 0, 255)" stroke-width="4"/>
-                <text dominant-baseline="middle" fill="rgb(0, 128, 255)" font-family="Arial" font-size="12" opacity="1" text-anchor="middle" x="150" y="160">Hello</text>
+                <text dominant-baseline="middle" fill="rgb(0, 128, 255)" font-family="Arial" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" x="150" y="160">Hello</text>
             </g>
         "#;
 
@@ -469,7 +471,7 @@ mod tests {
         update_svg(&mut ctx, &elements);
 
         let svg_str = ctx.to_svg_string(false);
-        // Two distinct rects → two distinct <clipPath> elements, inside <defs>.
+        // Two distinct rects --> two distinct <clipPath> elements, inside <defs>.
         assert_eq!(svg_str.matches("<clipPath").count(), 2);
         assert!(svg_str.contains("<defs>"));
         assert!(svg_str.contains("clipPath1"));
