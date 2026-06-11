@@ -9,7 +9,6 @@ requested bytes from the registered zarr stores, and replies with
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from typing import Any
 
@@ -17,6 +16,7 @@ import anywidget
 import traitlets
 from zarr.abc.store import RangeByteRequest, Store, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
+from .sync_store import SyncStoreWrapper
 
 
 DEFAULT_CAMERA_MATRIX_2D: list[float] = [
@@ -359,7 +359,7 @@ class PluotWasmWidget(anywidget.AnyWidget):
         super().__init__(**kwargs)
         self._stores: dict = dict(stores or {})
         if store is not None:
-            store_name = str(uuid.uuid4())
+            store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
             self._stores[store_name] = store
             self.store_name = store_name
         self.on_msg(self._handle_msg)
@@ -370,26 +370,19 @@ class PluotWasmWidget(anywidget.AnyWidget):
     def _handle_msg(self, _widget: Any, content: Any, buffers: list[bytes]) -> None:
         if not isinstance(content, dict) or content.get("kind") != "anywidget-command":
             return
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            return
-        if loop.is_running():
-            loop.create_task(self._dispatch_command(content, buffers))
-        else:
-            loop.run_until_complete(self._dispatch_command(content, buffers))
+        self._dispatch_command(content, buffers)
 
-    async def _dispatch_command(self, msg: dict, buffers: list[bytes]) -> None:
+    def _dispatch_command(self, msg: dict, buffers: list[bytes]) -> None:
         name = msg.get("name")
         params = msg.get("msg")
         msg_id = msg.get("id")
         try:
             if name == "_zarr_get":
-                response, result_buffers = await self._zarr_get(params, buffers)
+                response, result_buffers = self._zarr_get(params, buffers)
             elif name == "_zarr_get_range":
-                response, result_buffers = await self._zarr_get_range(params, buffers)
+                response, result_buffers = self._zarr_get_range(params, buffers)
             elif name == "_zarr_get_multi":
-                response, result_buffers = await self._zarr_get_multi(params, buffers)
+                response, result_buffers = self._zarr_get_multi(params, buffers)
             else:
                 return
         except Exception as exc:  # noqa: BLE001
@@ -403,20 +396,20 @@ class PluotWasmWidget(anywidget.AnyWidget):
             result_buffers,
         )
 
-    async def _zarr_get(self, params: list, _buffers: list[bytes]) -> tuple:
+    def _zarr_get(self, params: list, _buffers: list[bytes]) -> tuple:
         [store_name, key] = params
-        store = self._stores[store_name]
+        store = SyncStoreWrapper(self._stores[store_name])
         try:
-            buf = await store.get(key.lstrip("/"), prototype=default_buffer_prototype())
+            buf = store.get(key.lstrip("/"), prototype=default_buffer_prototype())
             if buf is None:
                 return {"success": False}, []
             return {"success": True}, [buf.to_bytes()]
         except Exception:  # noqa: BLE001
             return {"success": False}, []
 
-    async def _zarr_get_range(self, params: list, _buffers: list[bytes]) -> tuple:
+    def _zarr_get_range(self, params: list, _buffers: list[bytes]) -> tuple:
         [store_name, key, range_query] = params
-        store = self._stores[store_name]
+        store = SyncStoreWrapper(self._stores[store_name])
         try:
             if "suffixLength" in range_query:
                 byte_range = SuffixByteRequest(suffix=range_query["suffixLength"])
@@ -427,7 +420,7 @@ class PluotWasmWidget(anywidget.AnyWidget):
                 )
             else:
                 return {"success": False}, []
-            buf = await store.get(
+            buf = store.get(
                 key.lstrip("/"),
                 byte_range=byte_range,
                 prototype=default_buffer_prototype(),
@@ -438,14 +431,14 @@ class PluotWasmWidget(anywidget.AnyWidget):
         except Exception:  # noqa: BLE001
             return {"success": False}, []
 
-    async def _zarr_get_multi(self, params_arr: list, buffers: list[bytes]) -> tuple:
+    def _zarr_get_multi(self, params_arr: list, buffers: list[bytes]) -> tuple:
         result_dicts = []
         result_buffers = []
         for params in params_arr:
             if len(params) == 2:
-                result_dict, result_buffer_arr = await self._zarr_get(params, buffers)
+                result_dict, result_buffer_arr = self._zarr_get(params, buffers)
             elif len(params) == 3:
-                result_dict, result_buffer_arr = await self._zarr_get_range(params, buffers)
+                result_dict, result_buffer_arr = self._zarr_get_range(params, buffers)
             else:
                 result_dict, result_buffer_arr = {"success": False}, []
             result_dicts.append(result_dict)
