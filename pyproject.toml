@@ -33,6 +33,10 @@ dev = [
   "pandas",
   "obstore"
 ]
+widget = [
+    "anywidget==0.11.0",
+    "traitlets"
+]
 
 [project.urls]
 repository = "https://github.com/keller-mark/pluot"
