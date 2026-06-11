@@ -93,6 +93,7 @@ After cloning the repository, pull down the submodule containing font files.
 
 ```sh
 git submodule update --init --recursive
+cd bindings-js/core && pnpm run copy-fonts && cd -
 ```
 
 Install Rust tools with [Rustup](https://rustup.rs/).
