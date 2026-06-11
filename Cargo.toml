@@ -53,9 +53,9 @@ type_complexity = "allow"
 [workspace.dependencies]
 inventory = "0.3.21"
 
-pyo3 = { version = "0.27", features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
-pythonize = { version = "0.27" }
+pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
+pythonize = { version = "0.28" }
 pyo3-log = { version = "0.13.2" }
 
 log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings?
@@ -86,11 +86,11 @@ pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU
 wgpu = { version = "29.0.1" }
-glam = { version = "0.30.8", features = ["encase"] }
+glam = { version = "0.33.1", features = ["encase"] }
 encase = { version = "0.12.0" }
 
 # Matrix multiplication for SVG rendering
-nalgebra-glm = "0.3"
+nalgebra-glm = "0.21"
 
 fontdue = "0.9.x" # For font rasterization and text layout.
 
