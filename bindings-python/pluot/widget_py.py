@@ -245,7 +245,7 @@ class PluotPyWidget(anywidget.AnyWidget):
 
     def __init__(self, store: Store | None = None, **kwargs: Any) -> None:
         if store is not None:
-            store_name = str(uuid.uuid4())
+            store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
             GLOBAL_STORES[store_name] = store
             kwargs["store_name"] = store_name
         super().__init__(**kwargs)
