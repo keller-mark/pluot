@@ -86,5 +86,6 @@ test_that("ZarrPointLayer renders correctly from a MemoryStore", {
   )
 
   expect_true(startsWith(svg_str, "<"))
-  expect_equal(nchar(svg_str), 623)
+  # 4 data point rects, plus one rect used for the layer clipping area
+  expect_equal(stringr::str_count(svg_str, pattern = "<rect"), 5)
 })

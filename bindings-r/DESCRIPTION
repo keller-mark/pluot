@@ -24,7 +24,8 @@ Suggests:
     knitr,
     rmarkdown,
     htmltools,
-    crul
+    crul,
+    stringr
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Encoding: UTF-8
