@@ -96,3 +96,53 @@ pluot_render <- function(
   json_str <- jsonlite::toJSON(params, auto_unbox = TRUE, null = "null")
   .Call("wrap__render_r", as.character(json_str))
 }
+
+#' @export
+render_to_raster <- function(
+  layers,
+  width,
+  height,
+  ...
+) {
+    raw_bytes <- pluot_render(layers=layers, width=width, height=height, format = "Raster", ...)
+    pixel_bytes <- raw_bytes[-length(raw_bytes)]          # drop status byte
+    vals <- as.integer(pixel_bytes)
+    arr  <- array(vals, dim = c(4L, width, height))       # [channel, x, y]
+    img  <- as.raster(aperm(arr, c(3L, 2L, 1L)), max = 255L)  # --> [y, x, channel]
+    return(img)
+}
+
+#' @export
+render_to_svg <- function(
+    layers,
+    width,
+    height,
+    ...
+) {
+    raw_bytes <- pluot_render(layers=layers, width=width, height=height, format = "Vector", ...)
+    return(rawToChar(raw_bytes))
+}
+
+#' @export
+display_raster <- function(
+    layers,
+    width,
+    height,
+    ...
+) {
+    raster_obj <- render_to_raster(layers=layers, width=width, height=height, ...)
+    plot.new()
+    plot.window(xlim = c(0, width), ylim = c(0, height), asp = 1)
+    rasterImage(raster_obj, 0, 0, width, height)
+}
+
+#' @export
+display_svg <- function(
+    layers,
+    width,
+    height,
+    ...
+) {
+    svg_str <- render_to_svg(layers=layers, width=width, height=height, ...)
+    htmltools::browsable(htmltools::HTML(svg_str))
+}

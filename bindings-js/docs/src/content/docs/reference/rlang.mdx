@@ -20,7 +20,14 @@ Use Zarr data from `pizzarr` [Store instances](https://github.com/zarr-developer
 ```r
 library(pluotr)
 
-svg_result <- pluot_render(
+camera_identity <- c(
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+)
+
+display_svg(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -41,12 +48,9 @@ svg_result <- pluot_render(
   ),
   width       = 200L,
   height      = 200L,
-  format      = "Vector",
   camera_view = camera_identity,
   plot_id     = "intro_svg"
 )
-
-htmltools::HTML(rawToChar(svg_result))
 ```
 
 ### Zarr example
@@ -70,7 +74,7 @@ camera_view <- c(
   0.0,  -1.0, 0.0, 1.0
 )
 
-result <- pluot_render(
+display_raster( # or display_svg
   layers = list(
     list(
       layer_type   = "ZarrBarPlotLayer",
@@ -96,6 +100,4 @@ result <- pluot_render(
   wait_for_store_gets = TRUE,
   cache_enabled       = FALSE
 )
-
-plot(pluot_raster(result, w, h), interpolate = FALSE)
 ```

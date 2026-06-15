@@ -20,13 +20,6 @@ camera_identity <- c(
   0, 0, 1, 0,
   0, 0, 0, 1
 )
-
-pluot_raster <- function(raw_bytes, width, height) {
-  pixel_bytes <- raw_bytes[-length(raw_bytes)]
-  vals <- as.double(as.integer(pixel_bytes)) / 255.0
-  arr  <- array(vals, dim = c(4L, width, height))
-  as.raster(aperm(arr, c(3L, 2L, 1L)))
-}
 ```
 
 pluot builds plots by compositing layers. Each layer is a named list with a
@@ -47,7 +40,7 @@ Key parameters:
 | `data_unit_mode_*` | `"Pixels"` or `"Data"` |
 
 ```{r point-layer, fig.width=3, fig.height=3}
-result <- pluot_render(
+display_raster(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -71,7 +64,6 @@ result <- pluot_render(
   camera_view = camera_identity,
   plot_id     = "lt_point"
 )
-plot(pluot_raster(result, 200L, 200L), interpolate = FALSE)
 ```
 
 ## AxisLinearLayer
@@ -81,7 +73,7 @@ Set `position` to `"Left"`, `"Right"`, `"Top"`, or `"Bottom"`. Axes require
 matching margins so they have space to render outside the data area.
 
 ```{r axis-layer, fig.width=4, fig.height=4}
-result <- pluot_render(
+display_raster(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -111,13 +103,12 @@ result <- pluot_render(
   width         = 400L,
   height        = 400L,
   camera_view   = camera_identity,
-  margin_left   = 70L,
-  margin_bottom = 60L,
+  margin_left   = 40L,
+  margin_bottom = 40L,
   margin_top    = 20L,
   margin_right  = 20L,
   plot_id       = "lt_axis"
 )
-plot(pluot_raster(result, 400L, 400L), interpolate = FALSE)
 ```
 
 ## TextLayer
@@ -131,7 +122,7 @@ w <- 400L
 h <- 300L
 ml <- 70L; mb <- 60L; mt <- 30L; mr <- 20L
 
-svg_result <- pluot_render(
+display_svg(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -207,7 +198,6 @@ svg_result <- pluot_render(
   ),
   width         = w,
   height        = h,
-  format        = "Vector",
   camera_view   = camera_identity,
   margin_left   = ml,
   margin_bottom = mb,
@@ -215,7 +205,6 @@ svg_result <- pluot_render(
   margin_right  = mr,
   plot_id       = "lt_text"
 )
-htmltools::HTML(rawToChar(svg_result))
 ```
 
 ## Compositing layers
@@ -229,7 +218,7 @@ n  <- 200L
 xs <- 80 + runif(n) * 240
 ys <- 40 + runif(n) * 180
 
-svg_result <- pluot_render(
+display_svg(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -278,7 +267,6 @@ svg_result <- pluot_render(
   ),
   width         = 400L,
   height        = 300L,
-  format        = "Vector",
   camera_view   = camera_identity,
   margin_left   = 70L,
   margin_bottom = 50L,
@@ -286,5 +274,4 @@ svg_result <- pluot_render(
   margin_right  = 20L,
   plot_id       = "lt_composite"
 )
-htmltools::HTML(rawToChar(svg_result))
 ```

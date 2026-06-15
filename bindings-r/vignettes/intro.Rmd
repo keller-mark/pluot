@@ -32,12 +32,6 @@ object that `plot()` can display directly.
 ```{r raster-helper}
 library(pluotr)
 
-pluot_raster <- function(raw_bytes, width, height) {
-  pixel_bytes <- raw_bytes[-length(raw_bytes)]          # drop status byte
-  vals <- as.double(as.integer(pixel_bytes)) / 255.0
-  arr  <- array(vals, dim = c(4L, width, height))       # [channel, x, y]
-  as.raster(aperm(arr, c(3L, 2L, 1L)))                  # --> [y, x, channel]
-}
 ```
 
 ## Raster output
@@ -57,7 +51,7 @@ camera_identity <- c(
   0, 0, 0, 1
 )
 
-result <- pluot_render(
+display_raster(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -81,8 +75,6 @@ result <- pluot_render(
   camera_view = camera_identity,
   plot_id     = "intro_raster"
 )
-
-plot(pluot_raster(result, 200L, 200L), interpolate = FALSE)
 ```
 
 ## SVG output
@@ -92,7 +84,7 @@ This is useful for publication figures or when you want to embed the chart in an
 HTML document.
 
 ```{r svg}
-svg_result <- pluot_render(
+display_svg(
   layers = list(
     list(
       layer_type   = "PointLayer",
@@ -113,10 +105,7 @@ svg_result <- pluot_render(
   ),
   width       = 200L,
   height      = 200L,
-  format      = "Vector",
   camera_view = camera_identity,
   plot_id     = "intro_svg"
 )
-
-htmltools::HTML(rawToChar(svg_result))
 ```
