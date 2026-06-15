@@ -94,7 +94,7 @@ jobs:
         working-directory: bindings-r
         error-on: '"error"'
         build_args: 'c("--no-build-vignettes")'
-        args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes")'
+        args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes", "--no-manual")'
 
 
   py_and_wasm_unit_tests:
