@@ -54,13 +54,13 @@ pub use crate::bindings::python::{
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "r"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "rlang"))]
 pub use crate::bindings::r::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,
 };
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "python"), not(feature = "r")))]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "python"), not(feature = "rlang")))]
 pub use crate::bindings::plain_rust::{
     log, zarr_get, zarr_get_range_from_end, zarr_get_range_from_offset, zarr_has,
     zarr_get_status, zarr_get_range_from_end_status, zarr_get_range_from_offset_status, zarr_has_status,

@@ -31,7 +31,7 @@ default = []
 # Define features to toggle which dependency is active
 python = ["pluot_core/python", "pyo3"]
 # R bindings feature
-r = ["pluot_core/r"]
+rlang = ["pluot_core/rlang"]
 # Define a feature for running unit tests in GPU-less environments
 lacks_gpu = ["pluot_core/lacks_gpu"]
 # Embed URW Core 35 fonts via include_bytes! for plain-Rust use (enables PDF Base-14 font tests)

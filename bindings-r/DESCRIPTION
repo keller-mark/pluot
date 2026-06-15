@@ -2,9 +2,15 @@ Package: pluotr
 Type: Package
 Title: Visualize data in R using Pluot.
 Version: 1.2.3
-Authors@R: c(person("Mark", "Keller", role = c("aut", "cre"), email = "mark_keller@hms.harvard.edu",
-    comment = c(ORCID = "TODO")),
-      person("Authors of the dependency Rust crates", role = "aut", comment = "see AUTHORS file"))
+Authors@R: c(
+        person(
+            given = "Mark",
+            family = "Keller",
+            email = "mark_keller@g.harvard.edu",
+            role = c("aut"),
+            comment = c(ORCID = "0000-0003-3003-874X")
+        )
+    )
 Description: R bindings to the Pluot Rust code.
 License: MIT + file LICENSE
 URL: https://github.com/keller-mark/pluot

@@ -9,7 +9,7 @@ camera_view <- c(
 )
 
 # Four points at the corners of the [0,1]x[0,1] data space.
-# Square shape, 25-px radius → 4 filled rectangles each covering ~1/4 of the
+# Square shape, 25-px radius --> 4 filled rectangles each covering ~1/4 of the
 # 100x100 canvas.  Expected pixel sum matches the Python binding test.
 basic_layers <- list(
   list(
