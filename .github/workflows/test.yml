@@ -93,7 +93,7 @@ jobs:
       with:
         working-directory: bindings-r
         error-on: '"error"'
-        args: 'c("--no-vignettes")'
+        args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes")'
 
   py_and_wasm_unit_tests:
     # We use a macOS runner for tests that rely on the GPU.
