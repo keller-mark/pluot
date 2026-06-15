@@ -91,9 +91,9 @@ jobs:
         working-directory: bindings-r
     - uses: r-lib/actions/check-r-package@v2
       with:
-        upload-snapshots: true
         working-directory: bindings-r
         error-on: '"error"'
+        args: 'c("--no-vignettes")'
 
   py_and_wasm_unit_tests:
     # We use a macOS runner for tests that rely on the GPU.

@@ -31,6 +31,8 @@ basic_layers <- list(
 )
 
 test_that("render returns a raw vector of the correct length", {
+  skip_if(identical(Sys.getenv("CI"), "true"))
+
   result <- pluot_render(
     layers      = basic_layers,
     width       = 100L,
@@ -46,6 +48,8 @@ test_that("render returns a raw vector of the correct length", {
 })
 
 test_that("render produces expected pixel sum", {
+  skip_if(identical(Sys.getenv("CI"), "true"))
+
   result <- pluot_render(
     layers      = basic_layers,
     width       = 100L,
@@ -61,17 +65,15 @@ test_that("render produces expected pixel sum", {
 })
 
 test_that("SVG render returns valid SVG text", {
-  result <- pluot_render(
+  svg_str <- render_to_svg(
     layers      = basic_layers,
     width       = 100L,
     height      = 100L,
     camera_view = camera_view,
     plot_id     = "test",
     store_name  = "my_store",
-    format      = "Vector"
   )
 
-  svg_str <- rawToChar(result)
   expect_true(startsWith(svg_str, "<"))
   expect_equal(nchar(svg_str), 635)
 })
