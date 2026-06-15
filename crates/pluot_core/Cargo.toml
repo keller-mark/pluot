@@ -25,7 +25,7 @@ workspace = true
 default = []
 # Define features to toggle which dependency is active
 python = ["pyo3", "pyo3-async-runtimes", "pythonize", "pyo3-log", "tokio"]
-r = ["dep:extendr-api"]
+rlang = ["dep:extendr-api"]
 # Define a feature for running unit tests in GPU-less environments
 lacks_gpu = []
 # Embed URW Core 35 fonts (permissive PDF Base-14 alternatives) via include_bytes!.

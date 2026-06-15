@@ -168,6 +168,9 @@ svg_result <- pluot_render(
         text_size            = 14.0,
         text_align_mode      = "Middle",
         text_baseline_mode   = "Middle",
+        font_family = NULL,
+        font_weight = "Normal",
+        font_style = "Normal",
         bounds               = list(
           margin_top = 0, margin_left = 0,
           margin_right = 0, margin_bottom = 0
@@ -189,6 +192,9 @@ svg_result <- pluot_render(
         text_align_mode      = "Middle",
         text_baseline_mode   = "Middle",
         text_rotation        = -90.0,
+        font_family = NULL,
+        font_weight = "Normal",
+        font_style = "Normal",
         bounds               = list(
           margin_top = 0, margin_left = 0,
           margin_right = 0, margin_bottom = 0
@@ -259,6 +265,9 @@ svg_result <- pluot_render(
         text_size           = 16.0,
         text_align_mode     = "Middle",
         text_baseline_mode  = "Middle",
+        font_family = NULL,
+        font_weight = "Normal",
+        font_style = "Normal",
         bounds              = list(margin_top=0, margin_left=0,
                                    margin_right=0, margin_bottom=0),
         position_x          = list(200.0),

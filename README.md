@@ -85,7 +85,7 @@ See my [blog post](https://markk.co/blog/2026-04-24-pluot-motivations) for more 
 
 ## Development
 
-Further developer documentation can be found in [dev-docs](./dev-docs/README.md).
+Further developer documentation, including troubleshooting tips, can be found in [dev-docs](./dev-docs/README.md).
 
 ## Set up environment
 
@@ -231,6 +231,18 @@ cargo clippy --fix
 ```sh
 cargo doc --no-deps
 open target/doc/pluot/index.html
+```
+
+### Build for R
+
+With R and RStudio installed:
+
+```sh
+open bindings-r/pluotr.Rproj
+```
+
+```r
+devtools::install()
 ```
 
 

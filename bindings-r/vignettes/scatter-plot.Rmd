@@ -39,8 +39,8 @@ w      <- 500L
 h      <- 500L
 
 # Scale data to the drawable area [margin, w-20] × [20, h-margin]
-x_px <- margin + runif(n) * (w - margin - 20L)
-y_px <- 20L    + runif(n) * (h - 20L - margin)
+x_px <- runif(n) * (w - margin - 20L)
+y_px <- runif(n) * (h - margin - 20L)
 
 # Assign 5 categorical groups (0-based integer labels drive colour)
 groups <- as.integer(rep_len(0L:4L, n))
