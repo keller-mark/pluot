@@ -59,7 +59,7 @@ arr <- array(as.integer(raw_bytes[-length(raw_bytes)]),
 
 ## Testing
 
-The zarr tests require **pizzarr >= 0.2.0** for `zarr_format = 3L` support. The CRAN source package fails to compile on macOS (same C++ stdlib issue as pluot itself). Install the pure-R build from r-universe instead:
+The zarr tests require **pizzarr >= 0.2.0** for `zarr_format = 3L` support. Install the pure-R build from r-universe instead:
 
 ```r
 # Download the pure-R tarball from r-universe (no Rust compilation needed)

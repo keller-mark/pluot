@@ -18,7 +18,7 @@ BugReports: https://github.com/keller-mark/pluot/issues
 SystemRequirements: Cargo (Rust's package manager), rustc
 Imports:
     jsonlite,
-    pizzarr
+    pizzarr (>= 0.2.0)
 Suggests:
     testthat (>= 3.0.0),
     knitr,
