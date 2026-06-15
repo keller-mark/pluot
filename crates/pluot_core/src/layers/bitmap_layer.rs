@@ -612,7 +612,7 @@ impl DrawToRasterGpu for BitmapLayer {
                                 operation: wgpu::BlendOperation::Add,
                             },
                             alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                src_factor: wgpu::BlendFactor::One,
                                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                                 operation: wgpu::BlendOperation::Add,
                             },
@@ -721,7 +721,7 @@ impl DrawToSvg for BitmapLayer {
                     let idx = y * y_stride + x * x_stride + c * c_stride;
                     let raw = layer_params.data.get_f32(idx);
 
-                    // Apply window [lo, hi] → normalize to [0, 1], clamp.
+                    // Apply window [lo, hi] --> normalize to [0, 1], clamp.
                     let (lo, hi) = ch.window;
                     let t = ((raw - lo) / (hi - lo)).clamp(0.0, 1.0);
 

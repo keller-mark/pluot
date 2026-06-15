@@ -124,6 +124,7 @@ struct LineLayerUniforms {
     line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     color: vec4<f32>,     // rgba color for points
 };
 
@@ -161,8 +162,8 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Source and target points of this line
-    let source_point_pos_orig = vec2<f32>(source_x_coords[instance_index], source_y_coords[instance_index]);
-    let target_point_pos_orig = vec2<f32>(target_x_coords[instance_index], target_y_coords[instance_index]);
+    let source_point_pos_orig = u.model_matrix * vec4f(source_x_coords[instance_index], source_y_coords[instance_index], 0.0, 1.0);
+    let target_point_pos_orig = u.model_matrix * vec4f(target_x_coords[instance_index], target_y_coords[instance_index], 0.0, 1.0);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -256,14 +257,15 @@ fn vs_main(
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
     // Transform source and target points to normalized view space
-    let source_pos_norm = transform_mat * vec4(source_point_pos_orig, 0.0, 1.0);
-    let target_pos_norm = transform_mat * vec4(target_point_pos_orig, 0.0, 1.0);
+    let source_pos_norm = transform_mat * source_point_pos_orig;
+    let target_pos_norm = transform_mat * target_point_pos_orig;
 
     // Convert to NDC for extrusion calculation
     let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
     let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
     // TODO: Handle line_width_unit_mode == 1 (data coordinates)
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
     let line_width_ndc = u.line_width / layer_height_px * 2.0;
 
     result_source_position_data = source_pos_ndc;
@@ -305,6 +307,17 @@ fn vs_main(
 }
 
 
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the Tableau 10 values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return pow(c, vec3<f32>(2.2));
+}
+
 fn get_categorical_color(index: i32) -> vec4<f32> {
     // Simple categorical colormap (Tableau 10)
     const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
@@ -319,7 +332,8 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
         vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
         vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
     );
-    return colors[index % 10];
+    let c = colors[index % 10];
+    return vec4<f32>(srgb_to_linear(c.rgb), c.a);
 }
 
 

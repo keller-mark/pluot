@@ -37,6 +37,7 @@ pub struct PointLayerParams {
     pub point_radius_unit_mode_x: UnitsMode,
     pub point_radius_unit_mode_y: UnitsMode,
     pub point_shape_mode: PointShapeMode,
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub position_y: Arc<Vec<f32>>,
@@ -100,6 +101,7 @@ struct PointLayerUniforms {
     point_shape_mode: u32, // 0 = square, 1 = circle
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
+    model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
     fill_color_mode: u32,
     fill_color: Vec4,         // rgba color for points. TODO: split into separate RGB + opacity?
 }
@@ -222,6 +224,13 @@ impl DrawToRasterGpu for PointLayer {
                 AspectRatioAlignmentMode::Start => 1,
                 AspectRatioAlignmentMode::End => 2,
             },
+            model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+                // Column 0
+                1.0, 0.0, 0.0, 0.0, // Column 1
+                0.0, 1.0, 0.0, 0.0, // Column 2
+                0.0, 0.0, 1.0, 0.0, // Column 3
+                0.0, 0.0, 0.0, 1.0,
+            ])),
             fill_color_mode: 2, // TODO: use ColorMode here.
             fill_color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
         };
@@ -341,7 +350,6 @@ impl DrawToRasterGpu for PointLayer {
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                        //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -349,7 +357,7 @@ impl DrawToRasterGpu for PointLayer {
                                 operation: wgpu::BlendOperation::Add,
                             },
                             alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                src_factor: wgpu::BlendFactor::One,
                                 dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                                 operation: wgpu::BlendOperation::Add,
                             },
@@ -476,6 +484,13 @@ impl DrawToSvg for PointLayer {
 
         let layer_w = viewport_w - (margin_left + margin_right) as f32;
         let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+        let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
         // End TODO
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
@@ -494,7 +509,7 @@ impl DrawToSvg for PointLayer {
                 layer_params.data_unit_mode_y,
                 view_params.aspect_ratio_mode,
                 view_params.aspect_ratio_alignment_mode,
-                None,
+                Some(&model_matrix_raw),
             );
 
             // TODO: handle point_radius_unit_mode

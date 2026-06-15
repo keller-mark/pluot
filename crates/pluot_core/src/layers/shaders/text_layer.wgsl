@@ -102,6 +102,7 @@ struct TextLayerUniforms {
     text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
+    model_matrix: mat4x4<f32>,
     text_rotation: f32, // rotation angle in degrees
     color: vec4<f32>,     // rgba color for points
 };
@@ -141,8 +142,8 @@ fn vs_main(
     @location(2) uv_rect: vec4<f32>,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    let elem_pos_x_orig = elem_pos.x; // Note: elem_pos is the position for the whole text element, not the individual glyph.
-    let elem_pos_y_orig = elem_pos.y; // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    // Note: elem_pos is the position for the whole text element, not the individual glyph.
+    let elem_pos_orig = u.model_matrix * vec4f(elem_pos.x, elem_pos.y, 0.0, 1.0);
 
     let glyph_offset_x_px = glyph_px.x;
     let glyph_offset_y_px = glyph_px.y;
@@ -198,18 +199,14 @@ fn vs_main(
     // Initially compute elem_pos_norm for data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
     // Convert text element position from pixel space to normalized space (0 to 1)
     var elem_pos_norm = vec2<f32>(
-        elem_pos_x_orig / layer_width_px,
-        elem_pos_y_orig / layer_height_px
+        elem_pos_orig.x / layer_width_px,
+        elem_pos_orig.y / layer_height_px
     );
 
     // Now check if we actually need to compute elem_pos_norm (x or y coords) for data_unit_mode == "data".
     if(u.data_unit_mode_x == 1u || u.data_unit_mode_y == 1u) {
         // Handle data_unit_mode == "data" (i.e., the elem_pos_orig is in data coordinate system units, not pixels).
         // Convert elem_pos from data coordinate system units to normalized space (0 to 1).
-        let elem_pos_orig = vec2<f32>(
-            elem_pos_x_orig,
-            elem_pos_y_orig
-        );
 
         /// Model-view-projection matrix
         // References:
@@ -240,9 +237,9 @@ fn vs_main(
             // after all NDC-space operations are done. This keeps translations in the correct space.
 
             (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-            // TODO: support applying a model matrix (arbitrarily passed by the user)
+            // Support applying a model matrix (arbitrarily passed by the user)
             // before applying the camera (i.e., transforming the data coordinates).
-            * vec4(elem_pos_orig, 0.0, 1.0)
+            * elem_pos_orig
         );
 
         if(u.data_unit_mode_x == 1u) {
@@ -256,7 +253,8 @@ fn vs_main(
     // Now, use a shared code path downstream of elem_pos_norm.
     let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
 
-    // TODO: support a data-units size mode?
+    // TODO: support a data-units size mode.
+    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
 
     // Compute the glyph position in normalized space.
     let glyph_size_norm = vec4f(
@@ -312,14 +310,21 @@ fn vs_main(
     return out;
 }
 
+// The current TextureFormat is Rgba8UnormSrgb,
+// which tells the GPU "my shader outputs linear light values",
+// but the color values are already sRGB (not linear).
+// We could alternatively switch the TextureFormat to non-SRGB,
+// but this will affect the alpha blending step, causing alpha-blending
+// to happen in the sRGB space, which is perceptually non-linear,
+// and can cause darkening artifacts during the circle anti-aliasing step.
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return pow(c, vec3<f32>(2.2));
+}
+
 @fragment
 fn fs_main(@location(0) uv: vec2<f32>) -> FSOut {
     let a = textureSample(glyph_tex, glyph_sampler, uv).r;
-    // Premultiply for blending
-    let rgb = u.color.rgb * a;
-
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(rgb, a);
+    out.color = vec4<f32>(srgb_to_linear(u.color.rgb), a);
     return out;
 }

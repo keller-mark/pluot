@@ -1,0 +1,19 @@
+[package]
+name = "pluot_slint"
+description = "An example desktop GUI built with the Slint framework."
+edition = "2021"
+# rust-version = "1.92"
+publish = false
+
+[[bin]]
+name = "pluot_slint"
+path = "src/main.rs"
+
+[dependencies]
+async-compat = "0.2.5"
+pluot = { path = "../../crates/pluot" }
+slint = "1.16.1"
+tokio = { version = "1.52.3", features = ["sync"] }
+
+[build-dependencies]
+slint-build = "1.16.1"

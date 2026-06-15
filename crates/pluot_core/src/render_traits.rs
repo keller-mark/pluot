@@ -72,6 +72,20 @@ pub enum ColorMode {
     Quantitative,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum FontStyle {
+    Normal,
+    Italic,
+    Oblique,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum FontWeight {
+    Normal,
+    Bold,
+}
+
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,
@@ -252,7 +266,7 @@ pub async fn draw_layers_to_raster(
                 resolve_target: None,
                 ops: wgpu::Operations {
                     // TODO: make background color configurable.
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: wgpu::StoreOp::Store,
                 },
             })],

@@ -13,9 +13,9 @@
 //   @group(0) @binding(2)  output        : array<f32>      (storage, read_write)
 //
 //   Output layout:
-//     Min / Max / Sum  →  one f32 per workgroup (partial result); the caller
+//     Min / Max / Sum  -->  one f32 per workgroup (partial result); the caller
 //                         reduces the workgroup_count partial values to one.
-//     Extent           →  two f32 per workgroup: [partial_min, partial_max]
+//     Extent           -->  two f32 per workgroup: [partial_min, partial_max]
 //
 // ── Bindings for main_histogram ─────────────────────────────────────────────
 //   @group(0) @binding(0)  uniforms      : ReduceUniforms        (uniform)
@@ -25,7 +25,7 @@
 //   output_hist must be zero-initialised by the caller before dispatch.
 //   Size: uniforms.num_bins  (must be <= MAX_HISTOGRAM_BINS = 256).
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// Constants
 
 const WORKGROUP_SIZE: u32       = 64u;
 const MAX_HISTOGRAM_BINS: u32   = 256u;
@@ -37,7 +37,7 @@ const MODE_SUM:       u32 = 2u;
 const MODE_EXTENT:    u32 = 3u;
 const MODE_HISTOGRAM: u32 = 4u;
 
-// ── Uniforms ─────────────────────────────────────────────────────────────────
+// Uniforms
 
 struct ReduceUniforms {
     // Which reduction to perform (see MODE_* constants above).
@@ -69,7 +69,7 @@ var<workgroup> shared_b: array<f32, 64>;
 // (workgroup address space — spec §6.3.1).
 var<workgroup> local_hist: array<atomic<u32>, 256>;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Helpers
 
 // Maximum finite f32 (identity for min-reduction).
 fn pos_inf() -> f32 { return 0x1.fffffep+127f; }

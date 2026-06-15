@@ -33,13 +33,17 @@ dev = [
   "pandas",
   "obstore"
 ]
+widget = [
+    "anywidget==0.11.0",
+    "traitlets"
+]
 
 [project.urls]
 repository = "https://github.com/keller-mark/pluot"
 
 
 [tool.maturin]
-features = ["pyo3/extension-module", "python"]
+features = ["pyo3/extension-module", "python", "embed_fonts"]
 # module-name = <package name>.<rust pymodule name>
 module-name = "pluot._internal"
 # Reference: https://www.maturin.rs/project_layout.html#mixed-rustpython-project

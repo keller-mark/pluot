@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -24,8 +24,50 @@ use crate::two::shapes::{
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::get_point_position;
 use crate::log;
+use crate::{zarr_get, zarr_get_status, FutureExt, Duration};
+use crate::zarr_types::ZarrPeekResult;
 
-const FONT_BYTES: &[u8] = include_bytes!("../two/fonts/Inter-Bold.ttf").as_slice();
+const FONT_BYTES: &[u8] = include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf").as_slice();
+
+#[cfg(feature = "embed_fonts")]
+pub(crate) fn get_urw_font_bytes(font_family: &str, font_weight: FontWeight, font_style: FontStyle) -> Option<&'static [u8]> {
+    match (font_family, font_weight, font_style) {
+        ("Courier", FontWeight::Normal, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
+        ("Courier", FontWeight::Bold, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Bold.ttf")),
+        ("Courier", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Italic.ttf")),
+        ("Courier", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-BoldItalic.ttf")),
+        ("Helvetica", FontWeight::Normal, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf")),
+        ("Helvetica", FontWeight::Bold, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Bold.ttf")),
+        ("Helvetica", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Oblique.ttf")),
+        ("Helvetica", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-BoldOblique.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Normal, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Bold, FontStyle::Normal)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Bold.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Italic.ttf")),
+        ("Times-Roman" | "Times", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-BoldItalic.ttf")),
+        ("Symbol", _, _)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/StandardSymbolsPS.ttf")),
+        ("ZapfDingbats", _, _)
+            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/D050000L.ttf")),
+        _ => None,
+    }
+}
+
+#[cfg(not(feature = "embed_fonts"))]
+pub(crate) fn get_urw_font_bytes(_font_family: &str, _font_weight: FontWeight, _font_style: FontStyle) -> Option<&'static [u8]> {
+    None
+}
 
 // Cached font atlas data
 #[derive(Clone)]
@@ -35,23 +77,26 @@ struct FontAtlasCache {
     glyph_cache: HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>, // char + font_size -> metrics + bitmap
 }
 
+// Cache key for the bundled default font.
+const DEFAULT_FONT_CACHE_KEY: &str = "_default";
+
 thread_local! {
-    static FONT_ATLAS: RefCell<Option<FontAtlasCache>> = const { RefCell::new(None) };
+    static FONT_ATLAS: RefCell<HashMap<String, FontAtlasCache>> = RefCell::new(HashMap::new());
 }
 
-fn get_or_init_font_atlas() -> FontAtlasCache {
+fn get_or_init_font_atlas(font_bytes: &[u8], cache_key: &str) -> FontAtlasCache {
     FONT_ATLAS.with(|atlas| {
         let mut atlas_ref = atlas.borrow_mut();
-        if let Some(ref cached_atlas) = *atlas_ref {
+        if let Some(cached_atlas) = atlas_ref.get(cache_key) {
             cached_atlas.clone()
         } else {
-            let font = Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("load font");
+            let font = Font::from_bytes(font_bytes, FontSettings::default()).expect("load font");
             let cache = FontAtlasCache {
                 font,
                 atlas_texture: None,
                 glyph_cache: HashMap::new(),
             };
-            *atlas_ref = Some(cache.clone());
+            atlas_ref.insert(cache_key.to_string(), cache.clone());
             cache
         }
     })
@@ -73,13 +118,17 @@ fn measure_text_width(font: &Font, text: &str, font_size: f32) -> f32 {
         return 0.0;
     }
 
-    // Calculate the total width by finding the rightmost point
-    let mut max_x = 0.0f32;
+    // Use exact (non-ceil'd) advance widths to match SVG text width measurement.
+    // fontdue internally uses ceil(advance_width) for cursor, causing slightly wider text.
+    let mut exact_cursor = 0.0f32;
+    let mut ceil_cursor = 0.0f32;
     for glyph in glyphs {
-        let right_edge = glyph.x + glyph.width as f32;
-        max_x = max_x.max(right_edge);
+        let (metrics, _) = font.rasterize_config(glyph.key);
+        let _ = glyph.x - ceil_cursor;
+        ceil_cursor += metrics.advance_width.ceil();
+        exact_cursor += metrics.advance_width;
     }
-    max_x
+    exact_cursor
 }
 
 fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_baseline: TextBaselineMode, text_width: f32) -> (f32, f32) {
@@ -90,11 +139,9 @@ fn calculate_text_position(font_size: f32, text_align: TextAlignMode, text_basel
     };
 
     let y = match text_baseline {
-        // For some reason, GlyphPosition.y is always a big negative number -(font_size plus some extra pixels)
-        // So we adjust accordingly here.
-        TextBaselineMode::Top => font_size - font_size,
-        TextBaselineMode::Middle => font_size - font_size / 2.0,
-        TextBaselineMode::Alphabetic => font_size - font_size / 2.0, // TODO
+        TextBaselineMode::Top => font_size * 0.013,
+        TextBaselineMode::Middle => font_size * 0.525,
+        TextBaselineMode::Alphabetic => font_size * 0.785,
         TextBaselineMode::Bottom => font_size,
     };
 
@@ -119,8 +166,11 @@ fn parse_color(color: &TwoColor) -> [f32; 4] {
     }
 }
 
-// Configurable padding around each glyph to prevent texture bleeding
-const PADDING: usize = 1;
+// Horizontal padding between glyphs to prevent left/right texture bleeding.
+// No vertical padding: v=0 with ClampToEdge correctly samples the first row.
+const H_PADDING: usize = 1;
+const V_PADDING: usize = 1;
+const RASTER_SCALE: f32 = 2.0; // Rasterize at 2x to improve quality at small sizes
 
 
 
@@ -152,6 +202,12 @@ pub struct TextLayerParams {
     pub text_align_mode: TextAlignMode,
     pub text_baseline_mode: TextBaselineMode,
     pub text_rotation: Option<f32>, // Rotation in degrees
+    pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
+    // Optional font name to request from the client environment.
+    // If None or if the request fails, the bundled default font is used.
+    pub font_family: Option<String>,
+    pub font_weight: FontWeight,
+    pub font_style: FontStyle,
 
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub position_y: Arc<Vec<f32>>,
@@ -210,11 +266,61 @@ impl PreparedLayer for TextLayer {
 
         let n = self.layer_params.text_vec.len();
         let font_size = self.layer_params.text_size;
+        let raster_font_size = font_size * RASTER_SCALE;
         let text_align_mode = self.layer_params.text_align_mode;
         let text_baseline_mode = self.layer_params.text_baseline_mode;
 
+        let weight_str = match self.layer_params.font_weight {
+            FontWeight::Normal => "Normal",
+            FontWeight::Bold => "Bold",
+        };
+        let style_str = match self.layer_params.font_style {
+            FontStyle::Normal => "Normal",
+            FontStyle::Italic => "Italic",
+            FontStyle::Oblique => "Oblique",
+        };
+
+        // Check font availability via the __fonts__ zarr store.
+        // If the font is still loading, fall back to the bundled default so internal_data
+        // is always populated; bailed_early signals the caller to re-prepare once the
+        // custom font arrives.
+        let mut font_pending = false;
+        let custom_font_bytes: Option<Vec<u8>> = if let Some(ref font_family) = self.layer_params.font_family {
+            if let Some(bytes) = get_urw_font_bytes(font_family, self.layer_params.font_weight, self.layer_params.font_style) {
+                Some(bytes.to_vec())
+            } else {
+                let font_key = format!("{}/{}/{}.ttf", font_family, style_str, weight_str);
+                match zarr_get_status("__fonts__", &font_key) {
+                    ZarrPeekResult::Pending => {
+                        font_pending = true;
+                        None // Fall back to the bundled default font while loading.
+                    }
+                    ZarrPeekResult::Fulfilled => {
+                        let font_future = zarr_get("__fonts__", &font_key);
+                        match crate::maybe_timeout!(font_future, self.view_params.timeout).await {
+                            Ok(bytes) => Some(bytes.to_vec()),
+                            Err(_) => None, // Timeout — fall back to the bundled default font.
+                        }
+                    }
+                    ZarrPeekResult::Rejected => None, // Fall back to the bundled default font.
+                }
+            }
+        } else {
+            None
+        };
+
+        // While the custom font is pending, cache the fallback render under the default key
+        // so that the cache miss fires correctly once the real font bytes arrive.
+        let font_cache_key = if font_pending {
+            DEFAULT_FONT_CACHE_KEY.to_string()
+        } else {
+            self.layer_params.font_family.as_deref()
+                .map(|f| format!("{}/{}/{}", f, style_str, weight_str))
+                .unwrap_or_else(|| DEFAULT_FONT_CACHE_KEY.to_string())
+        };
+
         // Build cache keys based on the data that affects the internal representation.
-        // This includes: text strings, positions, font size, alignment, and baseline.
+        // This includes: text strings, positions, font size, alignment, baseline, and font name.
         let cache_keys: Vec<String> = vec![
             self.layer_params.layer_id.clone(),
             format!("{:?}", self.layer_params.text_vec), // TODO: use a better key
@@ -223,12 +329,24 @@ impl PreparedLayer for TextLayer {
             format!("{}", font_size),
             format!("{:?}", text_align_mode),
             format!("{:?}", text_baseline_mode),
+            font_cache_key.clone(),
         ];
 
         // Use memoization to cache the internal data
         let internal_data = use_memo_internal_text_layer_data(async || {
-            // Get cached font
-            let font_atlas = get_or_init_font_atlas();
+            // Get cached font — use custom bytes if available, otherwise use the bundled default.
+            let font_bytes: &[u8] = if let Some(ref bytes) = custom_font_bytes {
+                bytes.as_slice()
+            } else {
+                FONT_BYTES
+            };
+            let font_atlas = get_or_init_font_atlas(font_bytes, &font_cache_key);
+
+            // Baseline position in raster space: -ceil(ascent). Matches fontdue's internal
+            // baseline_y so we can use exact m.bounds.ymin instead of floor'd g.y.
+            let baseline_y_raster: f32 = font_atlas.font
+                .horizontal_line_metrics(raster_font_size)
+                .map_or(-raster_font_size, |lm| -lm.ascent.ceil());
 
             // Build a comprehensive layout with all text elements to create the atlas
             let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
@@ -242,7 +360,7 @@ impl PreparedLayer for TextLayer {
             for text_str in self.layer_params.text_vec.iter() {
                 layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(text_str, font_size, 0),
+                    &TextStyle::new(text_str, raster_font_size, 0),
                 );
             }
 
@@ -262,11 +380,11 @@ impl PreparedLayer for TextLayer {
             let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
 
             for g in glyphs {
-                // Rasterize the glyph to get its bitmap representation.
+                let w1 = g.width;
+                let h1 = g.height;
                 let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-                // Add padding around each glyph: PADDING + glyph_width + PADDING
-                atlas_width += 2 * PADDING + metrics.width.max(1);
-                atlas_height = atlas_height.max(2 * PADDING + metrics.height.max(1));
+                atlas_width += 2 * H_PADDING + metrics.width.max(1);
+                atlas_height = atlas_height.max(2 * V_PADDING + metrics.height.max(1));
                 rasters.push((metrics, bitmap));
             }
 
@@ -281,7 +399,7 @@ impl PreparedLayer for TextLayer {
 
             // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
             let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
-            let mut x_cursor: usize = PADDING; // Start with padding offset
+            let mut x_cursor: usize = 0; // First glyph starts at 0; ClampToEdge handles the left boundary
 
             // Now process each text element individually to generate instance data
             let mut all_instance_data: Vec<f32> = Vec::new();
@@ -300,8 +418,8 @@ impl PreparedLayer for TextLayer {
                 let text_width = measure_text_width(
                     &font_atlas.font,
                     text_str,
-                    font_size,
-                );
+                    raster_font_size,
+                ) / RASTER_SCALE;
 
                 // Calculate offset based on alignment and baseline.
                 // These offsets are in pixel units.
@@ -321,13 +439,30 @@ impl PreparedLayer for TextLayer {
                 });
                 element_layout.append(
                     &[&font_atlas.font],
-                    &TextStyle::new(text_str, font_size, 0),
+                    &TextStyle::new(text_str, raster_font_size, 0),
                 );
 
                 let element_glyphs = element_layout.glyphs();
 
                 // Track our position in the atlas for this text element
                 let mut element_cursor = x_cursor;
+
+                // Precompute exact x-positions for all glyphs in this element.
+                // fontdue's layout uses ceil(advance_width) for cursor advancement,
+                // which causes character spacing to be slightly wider than SVG's.
+                // We recompute using exact (fractional) advance widths to match SVG.
+                let exact_glyph_x: Vec<f32> = {
+                    let mut ceil_cursor = 0.0f32;
+                    let mut exact_cursor = 0.0f32;
+                    element_glyphs.iter().enumerate().map(|(i, g)| {
+                        let m = &rasters[total_instances as usize + i].0;
+                        let xmin = g.x - ceil_cursor;
+                        let ex = exact_cursor + xmin;
+                        ceil_cursor += m.advance_width.ceil();
+                        exact_cursor += m.advance_width;
+                        ex
+                    }).collect()
+                };
 
                 // Iterate over each glyph in the string.
                 for (i, g) in element_glyphs.iter().enumerate() {
@@ -337,36 +472,30 @@ impl PreparedLayer for TextLayer {
                     let gw = m.width.max(0);
                     let gh = m.height.max(0);
 
-                    // Copy bitmap into atlas with padding offset
+                    // Copy bitmap into atlas (no vertical padding — v=0/ClampToEdge handles top edge)
                     if gw > 0 && gh > 0 {
                         for row in 0..gh {
                             let src = &bmp[row * gw..row * gw + gw];
-                            // Offset destination by PADDING pixels vertically and horizontally
-                            let dst_row = PADDING + row;
-                            let dst_start = dst_row * atlas_width + element_cursor;
-                            let dst_end = dst_start + gw;
-                            let dst = &mut atlas[dst_start..dst_end];
-                            dst.copy_from_slice(src);
+                            let dst_start = (V_PADDING + row) * atlas_width + element_cursor;
+                            atlas[dst_start..dst_start + gw].copy_from_slice(src);
                         }
                     }
 
-                    // Compute screen-space rect for this glyph
-                    // TODO: update this logic so that the rect is in whatever data_units_mode is?
-                    // (ensure the text measurement is happening in the correct units too).
-                    let x_px = offset_x + g.x;
-                    let y_px = offset_y + g.y;
-                    let w_px = g.width as f32;
-                    let h_px: f32 = g.height as f32;
+                    // Compute screen-space rect for this glyph using exact advance-based x.
+                    // Divide by RASTER_SCALE to convert from 2x raster space back to 1x screen pixels.
+                    // Use m.bounds.ymin (exact, non-floor'd) instead of g.y (which bakes in
+                    // fontdue's floor(ymin) rounding) so all baseline-sitting glyphs share the
+                    // same y_px regardless of sub-pixel ymin variation.
+                    let x_px = offset_x + exact_glyph_x[i] / RASTER_SCALE;
+                    let y_px = offset_y + (m.bounds.ymin + baseline_y_raster) / RASTER_SCALE;
+                    let w_px = g.width as f32 / RASTER_SCALE;
+                    let h_px: f32 = g.height as f32 / RASTER_SCALE;
 
-                    /*log(&format!("Glyph '{}' at (x={}, y={}), size (w={}, h={}), g.x={}, g.y={}, text_x_pos={}, text_y_pos={}, offset_x={}, offset_y={}",
-                        elem_i, x_px, y_px, w_px, h_px, g.x, g.y, text_x_pos, text_y_pos, offset_x, offset_y
-                    ));*/
-
-                    // UV rectangle (normalized) - exclude padding from sampled area
+                    // UV: no vertical padding, relies on ClampToEdge at v=0 for correct top-edge sampling
                     let u0 = (element_cursor as f32) / (atlas_width as f32);
-                    let v0 = (PADDING as f32) / (atlas_height as f32);
+                    let v0 = (V_PADDING as f32) / (atlas_height as f32);
                     let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
-                    let v1 = ((PADDING + gh) as f32) / (atlas_height as f32);
+                    let v1 = ((V_PADDING + gh) as f32) / (atlas_height as f32);
 
                     if gw > 0 && gh > 0 {
                         all_instance_data.extend_from_slice(&[
@@ -377,7 +506,7 @@ impl PreparedLayer for TextLayer {
                     }
 
                     // Advance cursor by glyph width + padding for next glyph
-                    element_cursor += gw + 2 * PADDING;
+                    element_cursor += gw + 2 * H_PADDING;
                 }
 
                 x_cursor = element_cursor;
@@ -396,7 +525,7 @@ impl PreparedLayer for TextLayer {
         self.internal_data = Some(internal_data);
 
         return PrepareResult {
-            bailed_early: false,
+            bailed_early: font_pending,
         }
     }
 }
@@ -412,6 +541,7 @@ struct TextLayerUniforms {
     text_size_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
+    model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
     text_rotation: f32, // Rotation in degrees
     color: Vec4,
 }
@@ -554,6 +684,13 @@ pub async fn base_draw_text_layer(
             AspectRatioAlignmentMode::Start => 1,
             AspectRatioAlignmentMode::End => 2,
         },
+        model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+            // Column 0
+            1.0, 0.0, 0.0, 0.0, // Column 1
+            0.0, 1.0, 0.0, 0.0, // Column 2
+            0.0, 0.0, 1.0, 0.0, // Column 3
+            0.0, 0.0, 0.0, 1.0,
+        ])),
         text_rotation: layer_params.text_rotation.unwrap_or(0.0),
         // TODO: then, update the WGSL shader to match.
         // TODO: then, update the shader logic so that it does similar positioning logic
@@ -682,8 +819,11 @@ pub async fn base_draw_text_layer(
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
+                        // Composite alpha correctly: a_out = a_src + (1 - a_src) * a_dst.
+                        // One/Zero would replace dst alpha with src alpha, erasing
+                        // alpha from layers rendered below the text layer.
                         alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            src_factor: wgpu::BlendFactor::One,
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
@@ -802,6 +942,13 @@ pub fn base_draw_text_layer_svg(
 
     let layer_w = viewport_w - (margin_left + margin_right) as f32;
     let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+    let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]);
     // End TODO
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
@@ -820,17 +967,24 @@ pub fn base_draw_text_layer_svg(
             layer_params.data_unit_mode_y,
             view_params.aspect_ratio_mode,
             view_params.aspect_ratio_alignment_mode,
-            None,
+            Some(&model_matrix_raw),
         );
 
         // Create a circle or square element based on point_shape_mode.
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
             y: (layer_h - py) as f64,
-            width: 100.0, // TODO?
-            height: 100.0, // TODO?
             text: layer_params.text_vec[i].clone(),
-            font: "Arial".to_string(), // TODO: font should match the one used for raster rendering.
+            font_family: layer_params.font_family.clone().unwrap_or_else(|| "Helvetica".to_string()),
+            font_weight: match layer_params.font_weight {
+                FontWeight::Normal => "normal".to_string(),
+                FontWeight::Bold => "bold".to_string(),
+            },
+            font_style: match layer_params.font_style {
+                FontStyle::Normal => "normal".to_string(),
+                FontStyle::Italic => "italic".to_string(),
+                FontStyle::Oblique => "oblique".to_string(),
+            },
             fontsize: layer_params.text_size as f64,
             // TODO: unify these enums.
             align: match layer_params.text_align_mode {

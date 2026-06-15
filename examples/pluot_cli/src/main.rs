@@ -2,6 +2,8 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use image::{save_buffer_with_format, ColorType, ImageFormat};
 use pluot::{render, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams, ViewMode};
+use resvg::usvg;
+use tiny_skia;
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -23,8 +25,9 @@ struct Args {
     input: Option<PathBuf>,
 
     /// Output file path. The extension determines the format:
-    ///   .svg  -> vector (SVG)
-    ///   .png  -> raster (PNG)
+    ///   .svg         -> vector (SVG)
+    ///   .png         -> raster (GPU-rendered PNG)
+    ///   .via_svg.png -> SVG rendered to PNG via resvg
     #[arg(short, long)]
     output: PathBuf,
 
@@ -76,6 +79,11 @@ struct Args {
     /// Bottom margin in pixels.
     #[arg(long)]
     margin_bottom: Option<f32>,
+
+    /// Font file(s) to register for SVG-->PNG rendering via resvg.
+    /// Can be specified multiple times. Has no effect on GPU raster output.
+    #[arg(long = "font_path")]
+    font_path: Vec<PathBuf>,
 }
 
 
@@ -104,8 +112,21 @@ pub struct JsonRenderParams {
     pub plot_params: JsonPlotParams,
 }
 
+/// Return true when the output path ends with `.via_svg.png`.
+fn is_via_svg_png(path: &PathBuf) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.ends_with(".via_svg.png"))
+        .unwrap_or(false)
+}
+
 /// Infer the graphics format from the output file extension.
+///
+/// `.via_svg.png` uses the vector renderer; post-processing converts it to PNG.
 fn infer_format(path: &PathBuf) -> GraphicsFormat {
+    if is_via_svg_png(path) {
+        return GraphicsFormat::Vector;
+    }
     path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| match ext.to_ascii_lowercase().as_str() {
@@ -258,13 +279,63 @@ async fn main() {
 
     let width = params.width;
     let height = params.height;
+    let via_svg_png = is_via_svg_png(&args.output);
     let is_vector = params.format == GraphicsFormat::Vector;
 
     // Render the plot.
     let result = render(params).await;
 
     // Write the output.
-    if is_vector {
+    if via_svg_png {
+        // SVG --> PNG via resvg: render with the vector backend, then rasterize.
+        let svg_string = match String::from_utf8(result) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error: SVG output is not valid UTF-8: {}", e);
+                process::exit(1);
+            }
+        };
+        let mut opt = usvg::Options::default();
+        for path in &args.font_path {
+            if let Err(e) = opt.fontdb_mut().load_font_file(path) {
+                eprintln!("Warning: failed to load font {:?}: {}", path, e);
+            }
+        }
+        let tree = match usvg::Tree::from_str(&svg_string, &opt) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Error parsing SVG: {}", e);
+                process::exit(1);
+            }
+        };
+        let size = tree.size().to_int_size();
+        let mut pixmap = match tiny_skia::Pixmap::new(size.width(), size.height()) {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "Error: failed to allocate pixmap ({}x{})",
+                    size.width(),
+                    size.height()
+                );
+                process::exit(1);
+            }
+        };
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+        match pixmap.save_png(&args.output) {
+            Ok(_) => {
+                eprintln!(
+                    "Wrote PNG output via SVG ({}x{}) to {}",
+                    size.width(),
+                    size.height(),
+                    args.output.display()
+                );
+            }
+            Err(e) => {
+                eprintln!("Error writing PNG output: {}", e);
+                process::exit(1);
+            }
+        }
+    } else if is_vector {
         // Vector: the render function returns a complete SVG document as UTF-8 bytes.
         match fs::write(&args.output, &result) {
             Ok(_) => {
