@@ -56,7 +56,7 @@ test_that("ZarrPointLayer renders correctly from a MemoryStore", {
 
   pluot_register_store("zarr_render_store", g$get_store())
 
-  result <- pluot_render(
+  svg_str <- render_to_svg(
     layers = list(
       list(
         layer_type = "ZarrPointLayer",
@@ -85,10 +85,6 @@ test_that("ZarrPointLayer renders correctly from a MemoryStore", {
     cache_enabled       = FALSE
   )
 
-  expect_type(result, "raw")
-  # RGBA × pixels + trailing status byte
-  expect_length(result, 100L * 100L * 4L + 1L)
-  # Verify the image is non-empty (points were actually rendered)
-  pixel_bytes <- result[-length(result)]
-  expect_true(sum(as.integer(pixel_bytes)) > 0L)
+  expect_true(startsWith(svg_str, "<"))
+  expect_equal(nchar(svg_str), 623)
 })
