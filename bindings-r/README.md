@@ -6,28 +6,6 @@
 - `pluotr`: The R package in `bindings-r`
 - `pluotr_rs`: The Rust staticlib crate embedded inside the R package; depends on `pluot` and `extendr-api`, and registers the package entry points with R via extendr's `extendr_module!` macro
 
-## Architecture
-
-`pluotr_rs` uses [extendr](https://extendr.github.io/) (v0.9) instead of hand-written C glue:
-
-### How the call chain works
-
-**Rendering:**
-```
-R: pluot_render(...)
-  --> .Call("wrap__render_r", json_str)          # extendr-registered symbol
-  --> Rust: render_r(json_params: &str) -> Raw   # #[extendr] fn in lib.rs
-  --> render::do_render(json_str)                # calls pluot::render via futures::block_on
-```
-
-**Zarr store callbacks (e.g. when the layer fetches a chunk):**
-```
-Rust: zarr_get(store_name, key)                # in pluot_core::bindings::r
-  --> R!("pluotr:::pluot_zarr_get({{store_name}}, {{key}})")
-  --> R: pluot_zarr_get(store_name, key)         # in zarr.R, reads from pizzarr store cache
-```
-
-
 ## Development
 
 Usage in RStudio:
@@ -35,31 +13,11 @@ Usage in RStudio:
 ```r
 devtools::install()
 library(pluotr)
-
-# Render a plot — returns a raw vector of RGBA bytes (width × height × 4)
-raw_bytes <- pluotr::pluot_render(
-  layers = list(
-    list(
-      layer_type = "PointLayer",
-      layer_params = list(
-        x = list(1, 2, 3),
-        y = list(4, 5, 6)
-      )
-    )
-  ),
-  width  = 800L,
-  height = 600L
-)
-
-# Reconstruct an image with e.g. the 'png' or 'magick' package
-# (drop the trailing status byte emitted by pluot)
-arr <- array(as.integer(raw_bytes[-length(raw_bytes)]),
-             dim = c(4L, 800L, 600L))
 ```
 
 ## Testing
 
-The zarr tests require **pizzarr >= 0.2.0** for `zarr_format = 3L` support. Install the pure-R build from r-universe instead:
+The zarr tests require **pizzarr >= 0.2.0** for `zarr_format = 3L` support. Install the pure-R build from r-universe if you have issues with the CRAN build:
 
 ```r
 # Download the pure-R tarball from r-universe (no Rust compilation needed)
@@ -71,49 +29,14 @@ download.file(
 install.packages(tmp, repos = NULL, type = "source")
 ```
 
-The r-universe package has no `src/` directory — it is a pure-R implementation that installs without a Rust toolchain.
-
-```r
-# Run all tests
-devtools::test(pkg = "/path/to/pluot/bindings-r")
-
-# Run only the zarr integration tests
-devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "zarr")
-
-# Run only the render tests
-devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "render")
-
-# Run only the FPS benchmark tests
-devtools::test(pkg = "/path/to/pluot/bindings-r", filter = "fps")
-```
-
-Tests live in `tests/testthat/` and use the [testthat](https://testthat.r-lib.org/) framework:
-
-| File | What it tests |
-|---|---|
-| `test-render.R` | Byte count, pixel sum, and SVG output for a 4-point PointLayer at 100×100 |
-| `test-fps.R` | PointLayer renders complete at positive FPS across a range of point counts and resolutions |
-| `test-zarr.R` | Zarr store callbacks (register, has, get, range), and a full ZarrPointLayer render from a pizzarr MemoryStore |
+The r-universe package has no `src/` directory; it is a pure-R implementation that installs without a Rust toolchain.
 
 ## Importing `pluot` from `pluotr_rs`
 
-`pluotr_rs` is a standalone Cargo project — it declares `[workspace]` in its own `Cargo.toml` so that Cargo does not traverse up into the pluot workspace. This keeps `cargo vendor` scoped to only `pluotr_rs`'s transitive dependencies (not the entire workspace).
+`pluotr_rs` is a standalone Cargo project. It declares `[workspace]` in its own `Cargo.toml` so that Cargo does not traverse up into the pluot workspace. This keeps `cargo vendor` scoped to only `pluotr_rs`'s transitive dependencies (not the entire workspace).
 
-The `pluot` crate is made available via a symlink:
-
-```
-src/crates -> ../../crates   (symlink)
-```
-
-and referenced by path in `pluotr_rs/Cargo.toml`:
-
-```toml
-pluot = { path = "../crates/pluot", features = ["rlang", "embed_fonts"] }
-```
-
-`R CMD build` follows the symlink and copies the real crate source into the build tarball, so the package builds correctly when installed from a temporary directory (as `devtools::install()` does).
-
-Because `pluot`, `pluot_core`, and `pluot_zarr` use `*.workspace = true` for many of their fields and dependencies, a dedicated [src/Cargo.toml](src/Cargo.toml) workspace root is provided alongside the symlink. When Cargo walks up from `src/crates/pluot/` to resolve workspace-inherited values, it finds this file. `pluotr_rs` still declares its own `[workspace]` and is not a member of the `src/` workspace.
+The `pluot` crate is made available via a symlink, referenced by path in `pluotr_rs/Cargo.toml`.
+Because `pluot`, `pluot_core`, and `pluot_zarr` use `*.workspace = true` for many of their fields and dependencies, the Cargo.toml workspace root is symlinked from the repo root and is provided alongside the symlinked crates directory. When Cargo walks up from `src/crates/pluot/` to resolve workspace-inherited values, it finds this file. `pluotr_rs` still declares its own `[workspace]` and is not a member of the `src/` workspace.
 
 ## Package Structure
 
@@ -121,31 +44,28 @@ Because `pluot`, `pluot_core`, and `pluot_zarr` use `*.workspace = true` for man
 
 ```
 bindings-r/
-├─ configure                ← checks if 'cargo' is installed on PATH
-├─ cleanup                  ← stub; re-enable for CRAN (runs vendor-update.sh)
+├─ configure                # checks if 'cargo' is installed on PATH
+├─ cleanup                  # stub; re-enable for CRAN (runs vendor-update.sh)
 ├─ src/
-│  ├─ Cargo.toml            ← workspace root for pluot/pluot_core/pluot_zarr;
-│  │                           provides [workspace.package] and [workspace.dependencies]
-│  │                           so their *.workspace = true fields resolve correctly
-│  ├─ crates -> ../../crates  ← symlink; R CMD build follows it to include crate source
-│  ├─ pluotr_rs/            ← standalone staticlib crate: extendr-based wrappers over pluot
-│  │  ├─ Cargo.toml         ← own [workspace] root; deps: pluot (path), extendr-api
+│  ├─ Cargo.toml -> ../../Cargo.toml  # symlink; tricks into seeing this as workspace root
+│  ├─ crates -> ../../crates          # symlink; R CMD build follows it to include crate source
+│  ├─ pluotr_rs/            # standalone staticlib crate: extendr-based wrappers around pluot
+│  │  ├─ Cargo.toml         # own [workspace] root; deps: pluot (path to symlink), extendr-api
 │  │  ├─ src/
-│  │  │  ├─ lib.rs          ← #[extendr] fn render_r + extendr_module! { mod pluotr; }
-│  │  │  └─ render.rs       ← do_render(): calls pluot::render via block_on
-│  │  ├─ vendor-update.sh   ← creates vendor.tar.xz for CRAN
-│  │  └─ vendor-authors.R   ← generates inst/AUTHORS from cargo metadata
-│  ├─ Makevars              ← builds pluotr_rs, links libpluotr_rs.a
-│  ├─ Makevars.win          ← Windows variant (cross-compile targets)
-│  └─ wrapper.c             ← 2-line entrypoint: R_init_pluotr --> R_init_pluotr_extendr
+│  │  │  ├─ lib.rs          # #[extendr] fn render_r + extendr_module! { mod pluotr; }
+│  │  │  └─ render.rs       # do_render(): calls pluot::render via block_on
+│  │  ├─ vendor-update.sh   # creates vendor.tar.xz for CRAN
+│  │  └─ vendor-authors.R   # generates inst/AUTHORS from cargo metadata
+│  ├─ Makevars              # builds pluotr_rs, links libpluotr_rs.a
+│  ├─ Makevars.win          # Windows variant (cross-compile targets)
+│  └─ wrapper.c             # 2-line entrypoint: R_init_pluotr --> R_init_pluotr_extendr
 ├─ R/
-│  ├─ render.R              ← pluot_render()
-│  └─ zarr.R                ← pluot_register_store(), pluot_zarr_*() callbacks
+│  ├─ render.R              # pluot_render()
+│  └─ zarr.R                # pluot_register_store(), pluot_zarr_*() callbacks
 ├─ tests/
 │  ├─ testthat.R
 │  └─ testthat/
 │     ├─ test-render.R
-│     ├─ test-fps.R
 │     └─ test-zarr.R
 ├─ DESCRIPTION
 └─ NAMESPACE
@@ -183,19 +103,3 @@ R CMD INSTALL .
 ```
 
 If you need offline/CRAN builds, regenerate `vendor.tar.xz` afterwards (see [Vendoring](#vendoring) above).
-
-### Tests panic with `EOF while parsing a value at line 1 column 0`
-
-The zarr layer received empty bytes for a metadata key. This means the R zarr callback returned nothing — likely because the `pluot_zarr_get_status` call failed silently. Check that:
-
-1. The store was registered with `pluot_register_store(name, store)` before calling `pluot_render`.
-2. The key paths in `layer_params` match the keys used in `pluot_register_store`.
-3. `wait_for_store_gets = TRUE` is set so Rust waits for synchronous R callbacks.
-
-## Installing this package
-
-If Rust is available, clone this repository and run the regular `R CMD INSTALL` command:
-
-```
-R CMD INSTALL pluotr
-```
