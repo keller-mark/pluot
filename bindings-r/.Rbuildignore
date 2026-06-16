@@ -1,0 +1,10 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^src/pluotr_rs/target
+^src/pluotr_rs/vendor/
+\.lock$
+\.rs\.bk$
+^README.md$
+^.travis.yml$
+^appveyor.yml$
+^\.github$

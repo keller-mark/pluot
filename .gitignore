@@ -23,6 +23,7 @@ __pycache__/
 .venv/
 .ropeproject/
 __marimo__/
+.Rproj.user
 
 .astro/
 npm-debug.log*

@@ -1,0 +1,145 @@
+---
+title: "Zarr-backed Scatter Plots"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Zarr-backed Scatter Plots}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r helpers, include=FALSE}
+library(pluotr)
+```
+
+`ZarrPointLayer` reads point coordinates and colour labels directly from
+[Zarr v3](https://zarr.dev) arrays. This is useful when your data already lives
+in a Zarr store on disk or in the cloud — pluotr fetches only the chunks it
+needs through a set of R callbacks, so the full array never has to be loaded
+into memory at once.
+
+This vignette shows how to build a Zarr v3 store in memory using
+[pizzarr](https://zarr-developers.github.io/pizzarr/) and render it with
+`ZarrPointLayer`.
+
+## Prerequisites
+
+pizzarr >= 0.2.0 is required for `zarr_format = 3L` support.
+See `bindings-r/README.md` in the Pluot repository for troubleshooting instructions if needed.
+
+```{r install-pizzarr, eval=FALSE}
+install.packages("pizzarr")
+```
+
+## Building an in-memory Zarr v3 store
+
+`zarr_create_group(zarr_format = 3L)` creates an in-memory group that stores
+metadata in `zarr.json` files (Zarr v3 format). Each `create_dataset` call adds
+one named array to the group.
+
+`ZarrPointLayer` expects:
+- **x / y arrays** — `dtype = "<f8"` (64-bit float)
+- **colour labels array** — `dtype = "<i8"` (64-bit integer, 0-based category
+  index)
+
+```{r build-store}
+library(pizzarr)
+
+set.seed(42)
+n      <- 200L
+groups <- as.integer(rep_len(0L:4L, n))   # 5 colour categories
+
+g <- zarr_create_group(zarr_format = 3L)
+g$create_dataset("x",      data = array(runif(n)),         shape = n, dtype = "<f8")
+g$create_dataset("y",      data = array(runif(n)),         shape = n, dtype = "<f8")
+g$create_dataset("labels", data = array(as.double(groups)), shape = n, dtype = "<i8")
+```
+
+## Registering the store with pluotr
+
+`pluot_register_store()` gives the store a name that `ZarrPointLayer` can look
+up at render time. The name is an arbitrary string; pass the same value as
+`store_name` in `pluot_render()`.
+
+```{r register-store}
+library(pluotr)
+
+pluot_register_store("demo_store", g$get_store())
+```
+
+## Rendering
+
+`ZarrPointLayer` reads coordinates in **data space** (the unit range `[0, 1]`
+for both axes here) and colours each point by its label. The `x_key`, `y_key`,
+and `color_key` parameters are absolute paths within the store.
+
+Set `wait_for_store_gets = TRUE` so that Rust waits for the synchronous R zarr
+callbacks before proceeding.
+
+```{r render, fig.width=5, fig.height=5}
+w <- 500L
+h <- 500L
+
+display_raster(
+  layers = list(
+    list(
+      layer_type   = "ZarrPointLayer",
+      layer_params = list(
+        layer_id                 = "scatter",
+        data_unit_mode_x         = "Data",
+        data_unit_mode_y         = "Data",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 6.0,
+        bounds                   = NULL,
+        store_name               = NULL,
+        x_key                    = "/x",
+        y_key                    = "/y",
+        color_key                = "/labels"
+      )
+    )
+  ),
+  width               = w,
+  height              = h,
+  camera_view         = c(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1),
+  plot_id             = "zarr_scatter",
+  store_name          = "demo_store",
+  wait_for_store_gets = TRUE,
+  cache_enabled       = FALSE
+)
+```
+
+## Using a real Zarr store on disk
+
+The same approach works for stores on disk: open the store with `pizzarr`, then
+register it with `pluot_register_store()`. pluotr will call back into R to
+fetch each chunk via the standard pizzarr store interface, so any store type
+that pizzarr supports (local filesystem, HTTP, S3, …) works without any changes
+to the rendering code.
+
+```{r disk-store, eval=FALSE}
+disk_store <- pizzarr::DirectoryStore$new("/path/to/my.zarr")
+pluot_register_store("disk_store", disk_store)
+
+display_raster(
+  layers = list(
+    list(
+      layer_type   = "ZarrPointLayer",
+      layer_params = list(
+        layer_id    = "scatter",
+        # ... same params as above ...
+        x_key       = "/coords/x",
+        y_key       = "/coords/y",
+        color_key   = "/obs/cluster"
+      )
+    )
+  ),
+  store_name          = "disk_store",
+  wait_for_store_gets = TRUE,
+  # ...
+)
+```

@@ -1,0 +1,129 @@
+---
+title: "Scatter Plots"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Scatter Plots}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r helpers, include=FALSE}
+library(pluotr)
+```
+
+This vignette shows how to build scatter plots with axes, margins, and a
+calibrated camera view.
+
+## Data in pixel space
+
+The simplest approach is to scale your data to pixel coordinates directly and
+use the identity camera. Here 500 random points are placed within the inner
+area of a 500×500 canvas, leaving room for axis labels on the left and bottom.
+
+```{r scatter-pixels, fig.width=5, fig.height=5}
+set.seed(42)
+n      <- 500L
+margin <- 80L          # pixels reserved for axis labels
+w      <- 500L
+h      <- 500L
+
+# Scale data to the drawable area [margin, w-20] × [20, h-margin]
+x_px <- runif(n) * (w - margin - 20L)
+y_px <- runif(n) * (h - margin - 20L)
+
+# Assign 5 categorical groups (0-based integer labels drive colour)
+groups <- as.integer(rep_len(0L:4L, n))
+
+camera_identity <- c(
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+)
+
+display_raster(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "scatter",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 5.0,
+        bounds                   = NULL,
+        position_x               = x_px,
+        position_y               = y_px,
+        labels_vec               = groups
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left_axis",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom_axis", position = "Bottom")
+    )
+  ),
+  width         = w,
+  height        = h,
+  camera_view   = camera_identity,
+  margin_left   = margin,
+  margin_bottom = margin,
+  margin_top    = 20L,
+  margin_right  = 20L,
+  plot_id       = "scatter_pixels"
+)
+```
+
+## SVG output for publication
+
+Replace `format = "Raster"` with `format = "Vector"` to get SVG. The same
+layer definition works for both output modes.
+
+```{r scatter-svg}
+display_svg(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "scatter",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 5.0,
+        bounds                   = NULL,
+        position_x               = x_px,
+        position_y               = y_px,
+        labels_vec               = groups
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left_axis",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom_axis", position = "Bottom")
+    )
+  ),
+  width         = w,
+  height        = h,
+  camera_view   = camera_identity,
+  margin_left   = margin,
+  margin_bottom = margin,
+  margin_top    = 20L,
+  margin_right  = 20L,
+  plot_id       = "scatter_svg"
+)
+```
+

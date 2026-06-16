@@ -1,0 +1,277 @@
+---
+title: "Layer Types"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Layer Types}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r helpers, include=FALSE}
+library(pluotr)
+
+camera_identity <- c(
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+)
+```
+
+pluot builds plots by compositing layers. Each layer is a named list with a
+`layer_type` string and a `layer_params` list. This vignette walks through the
+built-in layer types.
+
+## PointLayer
+
+`PointLayer` renders a set of points at inline pixel or data coordinates.
+Key parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `position_x`, `position_y` | Numeric vectors of coordinates |
+| `labels_vec` | Integer vector of group indices (drives colour) |
+| `point_radius` | Radius in the units given by `point_radius_unit_mode_*` |
+| `point_shape_mode` | `"Circle"` or `"Square"` |
+| `data_unit_mode_*` | `"Pixels"` or `"Data"` |
+
+```{r point-layer, fig.width=3, fig.height=3}
+display_raster(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "pts",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 18.0,
+        bounds                   = NULL,
+        position_x               = c(50, 100, 150, 50, 150),
+        position_y               = c(50,  50,  50, 150, 150),
+        labels_vec               = c(0L, 1L, 2L, 3L, 4L)
+      )
+    )
+  ),
+  width       = 200L,
+  height      = 200L,
+  camera_view = camera_identity,
+  plot_id     = "lt_point"
+)
+```
+
+## AxisLinearLayer
+
+`AxisLinearLayer` draws a linear axis along one edge of the drawable area.
+Set `position` to `"Left"`, `"Right"`, `"Top"`, or `"Bottom"`. Axes require
+matching margins so they have space to render outside the data area.
+
+```{r axis-layer, fig.width=4, fig.height=4}
+display_raster(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "pts",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 8.0,
+        bounds                   = NULL,
+        position_x               = c(100, 160, 220, 280, 340),
+        position_y               = c(200, 140,  80, 200, 120),
+        labels_vec               = c(0L, 1L, 2L, 3L, 4L)
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left_axis",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom_axis", position = "Bottom")
+    )
+  ),
+  width         = 400L,
+  height        = 400L,
+  camera_view   = camera_identity,
+  margin_left   = 40L,
+  margin_bottom = 40L,
+  margin_top    = 20L,
+  margin_right  = 20L,
+  plot_id       = "lt_axis"
+)
+```
+
+## TextLayer
+
+`TextLayer` places text labels at arbitrary positions. Like `PointLayer` it
+accepts `data_unit_mode_*` (`"Pixels"` or `"Data"`). `text_rotation` rotates
+the label in degrees (anti-clockwise).
+
+```{r text-layer}
+w <- 400L
+h <- 300L
+ml <- 70L; mb <- 60L; mt <- 30L; mr <- 20L
+
+display_svg(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "pts",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 8.0,
+        bounds                   = NULL,
+        position_x               = c(100, 160, 220, 280, 340),
+        position_y               = c(180, 130,  80, 200, 110),
+        labels_vec               = c(0L, 1L, 2L, 3L, 4L)
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left_axis",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom_axis", position = "Bottom")
+    ),
+    # Horizontal axis title centred below the bottom axis
+    list(
+      layer_type   = "TextLayer",
+      layer_params = list(
+        layer_id             = "x_title",
+        data_unit_mode_x     = "Pixels",
+        data_unit_mode_y     = "Pixels",
+        text_size_unit_mode  = "Pixels",
+        text_size            = 14.0,
+        text_align_mode      = "Middle",
+        text_baseline_mode   = "Middle",
+        font_family = NULL,
+        font_weight = "Normal",
+        font_style = "Normal",
+        bounds               = list(
+          margin_top = 0, margin_left = 0,
+          margin_right = 0, margin_bottom = 0
+        ),
+        position_x           = list(ml + (w - ml - mr) / 2),
+        position_y           = list(h - 12.0),
+        text_vec             = list("X axis")
+      )
+    ),
+    # Vertical axis title rotated 90° along the left margin
+    list(
+      layer_type   = "TextLayer",
+      layer_params = list(
+        layer_id             = "y_title",
+        data_unit_mode_x     = "Pixels",
+        data_unit_mode_y     = "Pixels",
+        text_size_unit_mode  = "Pixels",
+        text_size            = 14.0,
+        text_align_mode      = "Middle",
+        text_baseline_mode   = "Middle",
+        text_rotation        = -90.0,
+        font_family = NULL,
+        font_weight = "Normal",
+        font_style = "Normal",
+        bounds               = list(
+          margin_top = 0, margin_left = 0,
+          margin_right = 0, margin_bottom = 0
+        ),
+        position_x           = list(18.0),
+        position_y           = list(mt + (h - mt - mb) / 2),
+        text_vec             = list("Y axis")
+      )
+    )
+  ),
+  width         = w,
+  height        = h,
+  camera_view   = camera_identity,
+  margin_left   = ml,
+  margin_bottom = mb,
+  margin_top    = mt,
+  margin_right  = mr,
+  plot_id       = "lt_text"
+)
+```
+
+## Compositing layers
+
+Layers are drawn in list order (first = bottom, last = top). You can overlay
+any combination of the types above to build complex plots.
+
+```{r composite}
+set.seed(7)
+n  <- 200L
+xs <- 80 + runif(n) * 240
+ys <- 40 + runif(n) * 180
+
+display_svg(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "bg",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 4.0,
+        bounds                   = NULL,
+        position_x               = xs,
+        position_y               = ys,
+        labels_vec               = as.integer(rep_len(0L:4L, n))
+      )
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "left",   position = "Left")
+    ),
+    list(
+      layer_type   = "AxisLinearLayer",
+      layer_params = list(layer_id = "bottom", position = "Bottom")
+    ),
+    list(
+      layer_type   = "TextLayer",
+      layer_params = list(
+        layer_id            = "title",
+        data_unit_mode_x    = "Pixels",
+        data_unit_mode_y    = "Pixels",
+        text_size_unit_mode = "Pixels",
+        text_size           = 16.0,
+        text_align_mode     = "Middle",
+        text_baseline_mode  = "Middle",
+        font_family = NULL,
+        font_weight = "Normal",
+        font_style = "Normal",
+        bounds              = list(margin_top=0, margin_left=0,
+                                   margin_right=0, margin_bottom=0),
+        position_x          = list(200.0),
+        position_y          = list(14.0),
+        text_vec            = list("Composite plot")
+      )
+    )
+  ),
+  width         = 400L,
+  height        = 300L,
+  camera_view   = camera_identity,
+  margin_left   = 70L,
+  margin_bottom = 50L,
+  margin_top    = 30L,
+  margin_right  = 20L,
+  plot_id       = "lt_composite"
+)
+```

@@ -1,0 +1,110 @@
+---
+title: Usage from R
+description: How to render plots from R.
+sidebar:
+    # Set a custom order for the link (lower numbers are displayed higher up)
+    order: 15
+---
+import { Aside } from '@astrojs/starlight/components';
+import { LinkButton } from '@astrojs/starlight/components';
+
+
+Install the `pluotr` package from GitHub.
+
+```sh frame="none"
+devtools::install_github("keller-mark/pluot", subdir="bindings-r")
+```
+
+
+<LinkButton href="https://github.com/keller-mark/pluot/tree/main/bindings-r/vignettes">View RMarkdown vignettes</LinkButton>
+
+## Zarr data
+
+Use Zarr data from `pizzarr` [Store instances](https://github.com/zarr-developers/pizzarr/blob/main/R/stores.R).
+
+### Example
+
+```r
+library(pluotr)
+
+camera_identity <- c(
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+)
+
+display_svg(
+  layers = list(
+    list(
+      layer_type   = "PointLayer",
+      layer_params = list(
+        layer_id                 = "four_points",
+        data_unit_mode_x         = "Pixels",
+        data_unit_mode_y         = "Pixels",
+        point_radius_unit_mode_x = "Pixels",
+        point_radius_unit_mode_y = "Pixels",
+        point_shape_mode         = "Circle",
+        point_radius             = 20.0,
+        bounds                   = NULL,
+        position_x               = c(60,  60, 140, 140),
+        position_y               = c(60, 140,  60, 140),
+        labels_vec               = c(0L, 1L, 2L, 3L)
+      )
+    )
+  ),
+  width       = 200L,
+  height      = 200L,
+  camera_view = camera_identity,
+  plot_id     = "intro_svg"
+)
+```
+
+### Zarr example
+
+```r
+library(pluotr)
+library(pizzarr)
+
+store <- HttpStore$new(
+  "https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/wheat.zarr"
+)
+pluot_register_store("wheat_store", store)
+
+w <- 800L
+h <- 600L
+
+camera_view <- c(
+  0.15, 0.0,  0.0, 0.0,
+  0.0,  0.01, 0.0, 0.0,
+  0.0,  0.0,  1.0, 0.0,
+  0.0,  -1.0, 0.0, 1.0
+)
+
+display_raster( # or display_svg
+  layers = list(
+    list(
+      layer_type   = "ZarrBarPlotLayer",
+      layer_params = list(
+        layer_id        = "barplot_layer",
+        bounds          = NULL,
+        orientation     = "Vertical",
+        identifier_key  = "/year",
+        quantity_key    = "/wheat",
+        fill_color_mode = "Categorical"
+      )
+    )
+  ),
+  width               = w,
+  height              = h,
+  camera_view         = camera_view,
+  margin_left         = 100L,
+  margin_bottom       = 100L,
+  margin_top          = 10L,
+  margin_right        = 10L,
+  plot_id             = "wheat_barplot",
+  store_name          = "wheat_store",
+  wait_for_store_gets = TRUE,
+  cache_enabled       = FALSE
+)
+```
