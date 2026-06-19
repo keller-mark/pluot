@@ -101,16 +101,8 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 sample_count: 1,
                 // Dimensions of the texture.
                 dimension: wgpu::TextureDimension::D2,
-                // Format of the texture.
-                // If using vello: Must use a non-sRGB UNORM format for Vello offscreen rendering.
-                // Vello also requires TextureUsages::STORAGE_BINDING, which requires Rgba8Unorm (incompatible with Rgba8UnormSrgb format)
-                // If using vger: Use Rgba8UnormSrgb.
-                format: TextureFormat::Rgba8UnormSrgb,
-                // Allowed usages of the texture. If used in other ways, the operation will panic.
+                format: TextureFormat::Rgba8Unorm,
                 usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-                // Specifies what view formats will be allowed when calling Texture::create_view on this texture.
-                // View formats of the same format as the texture are always allowed.
-                // Note: currently, only the srgb-ness is allowed to change. (ex: Rgba8Unorm texture + Rgba8UnormSrgb view)
                 view_formats: &[],
             };
             let texture = gpu_context.device.create_texture(&texture_desc);
@@ -197,6 +189,19 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 let dst_start = (y as usize) * (unpadded_bytes_per_row as usize);
                 let dst_end = dst_start + (unpadded_bytes_per_row as usize);
                 pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
+            }
+
+            // De-premultiply: blending over a transparent clear color stores premultiplied
+            // bytes (R*A, G*A, B*A, A). putImageData on the JS side expects straight alpha,
+            // so without this step the browser compositor applies alpha a second time.
+            for pixel in pixels[..(unpadded_bytes_per_row * height) as usize].chunks_exact_mut(4) {
+                let a = pixel[3];
+                if a > 0 && a < 255 {
+                    let inv_a = 255.0 / a as f32;
+                    pixel[0] = (pixel[0] as f32 * inv_a).round() as u8;
+                    pixel[1] = (pixel[1] as f32 * inv_a).round() as u8;
+                    pixel[2] = (pixel[2] as f32 * inv_a).round() as u8;
+                }
             }
 
             let mut bailed_early = prepare_bailed_early;

@@ -280,13 +280,6 @@ fn vs_main(
     return out;
 }
 
-// The current TextureFormat is Rgba8UnormSrgb,
-// which tells the GPU "my shader outputs linear light values",
-// but the channel colors are already sRGB (not linear).
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    return pow(c, vec3<f32>(2.2));
-}
-
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // Use image dimensions from uniforms to convert normalized coordinates to pixel coordinates.
@@ -310,8 +303,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         let idx = texel_coords.y * u.y_stride + texel_coords.x * u.x_stride + channel_index * u.c_stride;
         let intensity = img_data[idx];
         let ch_color = u.channels[channel_index].color;
-        // Ensure that additive blending happens in SRGB space.
-        let ch_color_linear = srgb_to_linear(ch_color);
         let ch_window = u.channels[channel_index].window;
 
         // Apply windowing to adjust contrast limits.
@@ -323,9 +314,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         // References:
         // - https://github.com/hms-dbmi/viv/blob/main/packages/extensions/src/color-palette-extension/color-palette-module.js
         // - https://github.com/hms-dbmi/viv/blob/08a74203b99f54bc62307c741944ed61e33e810c/packages/layers/src/xr-layer/xr-layer-fragment.glsl.js#L39
-        final_color += ch_color_linear * windowed;
+        final_color += ch_color * windowed;
     }
 
     // Output the blended color.
-    return vec4<f32>(final_color, 1.0);
+    return vec4<f32>(final_color, u.opacity);
 }

@@ -212,13 +212,18 @@ pub async fn use_memo_vec_string<E>(initializer: impl AsyncFnOnce() -> Result<Ve
     Ok(buffer)
 }
 
+// The initializer returns Option<CachedInternalTextLayerData> so it can short-circuit:
+// returning None means "the data could not be produced yet (e.g., the requested font is
+// still loading)", in which case nothing is cached and None is returned. The caller is
+// then expected to fall back to a different memoization (e.g., the bundled default font)
+// under a different cache key.
 pub async fn use_memo_internal_text_layer_data(
-    initializer: impl AsyncFnOnce() -> CachedInternalTextLayerData,
+    initializer: impl AsyncFnOnce() -> Option<CachedInternalTextLayerData>,
     keys: &[String],
     cache_enabled: bool
-) -> Arc<CachedInternalTextLayerData> {
+) -> Option<Arc<CachedInternalTextLayerData>> {
     if !cache_enabled {
-        return Arc::new(initializer().await);
+        return initializer().await.map(Arc::new);
     }
 
     // First, check if the data already exists in cache
@@ -229,11 +234,12 @@ pub async fn use_memo_internal_text_layer_data(
     });
 
     if let Some(data) = data_exists {
-        return data;
+        return Some(data);
     }
 
-    // Data doesn't exist, so create it
-    let data = Arc::new(initializer().await);
+    // Data doesn't exist, so try to create it. If the initializer short-circuits
+    // (returns None), do not cache anything and propagate None to the caller.
+    let data = Arc::new(initializer().await?);
 
     // Store it in the cache
     USE_MEMO_CACHE_INTERNAL_TEXT_LAYER_DATA.with(|map| {
@@ -248,7 +254,7 @@ pub async fn use_memo_internal_text_layer_data(
         map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
     });
 
-    data
+    Some(data)
 }
 
 pub async fn use_memo_numeric_data<E>(
