@@ -99,7 +99,8 @@ struct TextLayerUniforms {
     data_unit_mode_x: u32, // 0: pixel units, 1: data units
     data_unit_mode_y: u32, // 0: pixel units, 1: data units
     text_size: f32,
-    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    text_size_px_reference: f32, // em size (px) the glyph geometry was built at
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -194,6 +195,32 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    // Model-view-projection matrix, and the full data->normalized transform. Hoisted here
+    // so it can be shared by both the data-units positioning (below) and the data-units
+    // text size scaling. References:
+    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
+    let transform_mat = NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT;
+
+    // Text size: pixels (default) or data coordinate system units.
+    // The glyph geometry (offsets/sizes in glyph_px) was built at u.text_size_px_reference
+    // pixels (in pixel mode this equals text_size, so text_scale == 1). In data mode the
+    // on-screen size depends on the camera, so transform text_size as a delta (w=0 so
+    // translations cancel out, since it is a size) through the same pipeline as positions,
+    // collapse to an isotropic pixel size (so glyphs are not distorted), then divide by the
+    // reference em size to obtain the geometry scale factor. Mirrors get_point_size().
+    var text_scale = 1.0;
+    if (u.text_size_unit_mode == 1u) {
+        let size_norm_data = transform_mat * u.model_matrix * vec4f(u.text_size, u.text_size, 0.0, 0.0);
+        let size_px_data = (abs(size_norm_data.x) * layer_width_px + abs(size_norm_data.y) * layer_height_px) * 0.5;
+        text_scale = size_px_data / u.text_size_px_reference;
+    }
+    let glyph_offset_x_px_scaled = glyph_offset_x_px * text_scale;
+    let glyph_offset_y_px_scaled = glyph_offset_y_px * text_scale;
+    let glyph_width_px_scaled = glyph_width_px * text_scale;
+    let glyph_height_px_scaled = glyph_height_px * text_scale;
+
     // Use mutable variables for elem_pos_norm.
 
     // Initially compute elem_pos_norm for data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
@@ -207,12 +234,6 @@ fn vs_main(
     if(u.data_unit_mode_x == 1u || u.data_unit_mode_y == 1u) {
         // Handle data_unit_mode == "data" (i.e., the elem_pos_orig is in data coordinate system units, not pixels).
         // Convert elem_pos from data coordinate system units to normalized space (0 to 1).
-
-        /// Model-view-projection matrix
-        // References:
-        // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
-        // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
-        let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
         // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
         // Where:
@@ -236,9 +257,9 @@ fn vs_main(
             // We apply camera AFTER converting to NDC, and DON'T convert back until
             // after all NDC-space operations are done. This keeps translations in the correct space.
 
-            (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT)
-            // Support applying a model matrix (arbitrarily passed by the user)
-            // before applying the camera (i.e., transforming the data coordinates).
+            transform_mat
+            // Note: elem_pos_orig already includes the user-provided model matrix
+            // (applied above), transforming the data coordinates before the camera.
             * elem_pos_orig
         );
 
@@ -253,23 +274,15 @@ fn vs_main(
     // Now, use a shared code path downstream of elem_pos_norm.
     let elem_pos_ndc = NORM_TO_NDC_MAT * vec4f(elem_pos_norm.xy, 0.0, 1.0);
 
-    // TODO: support a data-units size mode.
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-
-    // Compute the glyph position in normalized space.
-    let glyph_size_norm = vec4f(
-        glyph_width_px / layer_width_px,
-        glyph_height_px / layer_height_px,
-        0.0,
-        1.0
-    );
-    let glyph_size_ndc = vec4f(glyph_size_norm.xy * 2.0, 0.0, 1.0);
+    // Below we use the text-size-scaled glyph geometry (glyph_*_px_scaled). In pixel mode
+    // text_scale == 1, so these equal the original pixel values; in data mode they are
+    // scaled to the on-screen size derived from the camera transform above.
 
     // Handle rotation of the glyph position offset and corner position.
     // Rotate in pixel space (isotropic), then convert to normalized space.
     let glyph_offset_px = vec4f(
-        glyph_offset_x_px + glyph_width_px / 2.0,
-        glyph_offset_y_px + glyph_height_px / 2.0,
+        glyph_offset_x_px_scaled + glyph_width_px_scaled / 2.0,
+        glyph_offset_y_px_scaled + glyph_height_px_scaled / 2.0,
         0.0,
         1.0
     );
@@ -288,8 +301,8 @@ fn vs_main(
 
     // Rotate the corner around the glyph center in pixel space, then convert to NDC.
     let corner_px = vec4f(
-        corner.x * glyph_width_px / 2.0,
-        corner.y * glyph_height_px / 2.0,
+        corner.x * glyph_width_px_scaled / 2.0,
+        corner.y * glyph_height_px_scaled / 2.0,
         0.0, 1.0);
     let rotated_corner_px = (ROTATION_MAT * corner_px).xy;
     let rotated_corner = vec2f(

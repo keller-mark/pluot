@@ -121,7 +121,7 @@ struct LineLayerUniforms {
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
     line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -264,9 +264,18 @@ fn vs_main(
     let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
     let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
-    // TODO: Handle line_width_unit_mode == 1 (data coordinates)
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let line_width_ndc = u.line_width / layer_height_px * 2.0;
+    // Line width: pixels (default) or data coordinate system units.
+    // Pixel-mode width: line_width is in screen pixels (defined relative to height).
+    var line_width_ndc = u.line_width / layer_height_px * 2.0;
+    if (u.line_width_unit_mode == 1u) {
+        // Data-coordinate width: transform line_width as a delta (w=0 so translations
+        // cancel out, since it is a size, not a position), through the same pipeline as
+        // positions, then collapse the per-axis screen extents back to a single
+        // height-relative NDC width. This mirrors get_point_size() in positioning.rs.
+        let lw_norm_data = transform_mat * u.model_matrix * vec4f(u.line_width, u.line_width, 0.0, 0.0);
+        let lw_px_data = (abs(lw_norm_data.x) * layer_width_px + abs(lw_norm_data.y) * layer_height_px) * 0.5;
+        line_width_ndc = lw_px_data / layer_height_px * 2.0;
+    }
 
     result_source_position_data = source_pos_ndc;
     result_target_position_data = target_pos_ndc;

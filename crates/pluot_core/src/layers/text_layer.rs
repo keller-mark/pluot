@@ -22,7 +22,7 @@ use crate::two::shapes::{
     TwoColor, TwoText, TwoTextAlign, TwoTextBaseline
 };
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 use crate::log;
 use crate::{zarr_get, zarr_get_status, FutureExt, Duration};
 use crate::zarr_types::ZarrPeekResult;
@@ -171,6 +171,18 @@ fn parse_color(color: &TwoColor) -> [f32; 4] {
 const H_PADDING: usize = 1;
 const V_PADDING: usize = 1;
 const RASTER_SCALE: f32 = 2.0; // Rasterize at 2x to improve quality at small sizes
+
+// Reference em size (in pixels) used to rasterize the glyph atlas when text_size is
+// expressed in data-coordinate units. In data mode the on-screen pixel size of the text
+// depends on the camera/zoom and is only known at render time, so the atlas is built at a
+// fixed reference size for consistent quality and the shader scales the glyph geometry to
+// the actual on-screen size (see text_layer.wgsl). In pixel mode the atlas is built at the
+// text_size directly, so this constant is unused.
+//
+// TODO: The reference font size should depend on the size and zoom level and some threshold between reference sizes,
+// so that as the text becomes larger, a higher-resolution glyph atlas can be used, but the threshold will ensure
+// that we are not computing and storing differently-sized glyph atlases all the time.
+const DATA_MODE_REFERENCE_FONT_SIZE_PX: f32 = 64.0;
 
 
 
@@ -432,10 +444,6 @@ impl TextLayer {
         view_params: ViewParams,
         layer_params: TextLayerParams,
     ) -> Self {
-        // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
-            panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
-        }
         Self {
             view_params,
             layer_params,
@@ -463,7 +471,14 @@ impl PreparedLayer for TextLayer {
         // descendant layers, so that they can asynchronously load their data in their prepare function
         // prior to their font atlas preparation.
 
-        let font_size = self.layer_params.text_size;
+        // The font size used to rasterize the atlas and lay out glyph geometry.
+        // In pixel mode this is the on-screen text size directly. In data mode the
+        // on-screen size is camera-dependent (resolved per-render in the shader), so we
+        // rasterize at a fixed reference size and let the shader scale the geometry.
+        let font_size = match self.layer_params.text_size_unit_mode {
+            UnitsMode::Pixels => self.layer_params.text_size,
+            UnitsMode::Data => DATA_MODE_REFERENCE_FONT_SIZE_PX,
+        };
         let text_align_mode = self.layer_params.text_align_mode;
         let text_baseline_mode = self.layer_params.text_baseline_mode;
         let cache_enabled = self.view_params.cache_enabled;
@@ -596,6 +611,9 @@ struct TextLayerUniforms {
     data_unit_mode_y: u32, // 0 = pixels, 1 = data units
     text_size: f32,
     text_size_unit_mode: u32, // 0 = pixels, 1 = data units
+    // The reference em size (in pixels) that the glyph atlas geometry was built at.
+    // Used in data mode to scale the geometry to the actual on-screen size.
+    text_size_px_reference: f32,
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
@@ -731,6 +749,11 @@ pub async fn base_draw_text_layer(
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
         }, // 0 = pixels, 1 = data units
+        // Must match the font size used to build the atlas geometry in prepare().
+        text_size_px_reference: match layer_params.text_size_unit_mode {
+            UnitsMode::Pixels => layer_params.text_size,
+            UnitsMode::Data => DATA_MODE_REFERENCE_FONT_SIZE_PX,
+        },
         aspect_ratio_mode: match view_params.aspect_ratio_mode {
             AspectRatioMode::Ignore => 0,
             AspectRatioMode::Contain => 1,
@@ -1008,6 +1031,27 @@ pub fn base_draw_text_layer_svg(
     ]);
     // End TODO
 
+    // Resolve the on-screen text size in pixels. For data-coordinate units, transform the
+    // text size through the same pipeline as positions (mirrors get_point_size() in the
+    // WGSL shader), collapsing the per-axis screen extents to a single isotropic value.
+    let text_size = if layer_params.text_size_unit_mode == UnitsMode::Data {
+        let (sx, sy) = get_point_size(
+            layer_params.text_size,
+            layer_params.text_size,
+            layer_w,
+            layer_h,
+            &camera_view,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
+            view_params.aspect_ratio_mode,
+            view_params.aspect_ratio_alignment_mode,
+            Some(&model_matrix_raw),
+        );
+        (sx.abs() + sy.abs()) * 0.5
+    } else {
+        layer_params.text_size
+    };
+
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
         let x = layer_params.position_x[i];
@@ -1042,7 +1086,7 @@ pub fn base_draw_text_layer_svg(
                 FontStyle::Italic => "italic".to_string(),
                 FontStyle::Oblique => "oblique".to_string(),
             },
-            fontsize: layer_params.text_size as f64,
+            fontsize: text_size as f64,
             // TODO: unify these enums.
             align: match layer_params.text_align_mode {
                 TextAlignMode::Start => TwoTextAlign::Start,

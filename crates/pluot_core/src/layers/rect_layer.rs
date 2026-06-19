@@ -9,7 +9,7 @@ use std::sync::{Arc};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams
 };
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::two::shapes::{
@@ -56,10 +56,6 @@ pub struct RectLayer {
 
 impl RectLayer {
     pub fn new(view_params: ViewParams, layer_params: RectLayerParams) -> Self {
-        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
-            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
-        }
         Self {
             view_params,
             layer_params,
@@ -535,6 +531,29 @@ impl DrawToSvg for RectLayer {
         ]);
         // End TODO
 
+        // Resolve the stroke width in pixels. For data-coordinate units, transform the
+        // stroke width through the same pipeline as positions (mirrors get_point_size()
+        // in the WGSL shader), collapsing the per-axis screen extents to a single value.
+        let stroke_width = layer_params.stroke_width.map(|sw| {
+            if layer_params.stroke_width_unit_mode == UnitsMode::Data {
+                let (sx, sy) = get_point_size(
+                    sw,
+                    sw,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    layer_params.data_unit_mode_x,
+                    layer_params.data_unit_mode_y,
+                    view_params.aspect_ratio_mode,
+                    view_params.aspect_ratio_alignment_mode,
+                    Some(&model_matrix_raw),
+                );
+                (sx.abs() + sy.abs()) * 0.5
+            } else {
+                sw
+            }
+        });
+
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
             let source_x = layer_params.position_x0[i];
@@ -587,7 +606,7 @@ impl DrawToSvg for RectLayer {
                 stroke: if layer_params.stroke_width.is_some() {
                     Some(color)
                 } else { None },
-                linewidth: layer_params.stroke_width.unwrap_or(0.0) as f64,
+                linewidth: stroke_width.unwrap_or(0.0) as f64,
                 ..Default::default()
             }));
         }

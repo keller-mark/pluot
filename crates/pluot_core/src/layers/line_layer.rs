@@ -12,7 +12,7 @@ use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -47,10 +47,6 @@ impl LineLayer {
         view_params: ViewParams,
         layer_params: LineLayerParams,
     ) -> Self {
-        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.line_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
-            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
-        }
         Self {
             view_params,
             layer_params,
@@ -497,6 +493,27 @@ impl DrawToSvg for LineLayer {
         ]);
         // End TODO
 
+        // Resolve the line width in pixels. For data-coordinate units, transform the
+        // line width through the same pipeline as positions (mirrors get_point_size()
+        // in the WGSL shader), collapsing the per-axis screen extents to a single value.
+        let line_width = if layer_params.line_width_unit_mode == UnitsMode::Data {
+            let (sx, sy) = get_point_size(
+                layer_params.line_width,
+                layer_params.line_width,
+                layer_w,
+                layer_h,
+                &camera_view,
+                layer_params.data_unit_mode_x,
+                layer_params.data_unit_mode_y,
+                view_params.aspect_ratio_mode,
+                view_params.aspect_ratio_alignment_mode,
+                Some(&model_matrix_raw),
+            );
+            (sx.abs() + sy.abs()) * 0.5
+        } else {
+            layer_params.line_width
+        };
+
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
             let source_x = layer_params.source_position_x[i];
@@ -536,7 +553,7 @@ impl DrawToSvg for LineLayer {
                 y1: (layer_h - source_y_px) as f64,
                 x2: target_x_px as f64,
                 y2: (layer_h - target_y_px) as f64,
-                linewidth: layer_params.line_width as f64,
+                linewidth: line_width as f64,
                 // TODO: more params
                 ..Default::default()
             }));

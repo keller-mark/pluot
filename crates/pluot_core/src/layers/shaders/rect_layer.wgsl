@@ -104,6 +104,8 @@ struct VSOut {
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-inter-stage-variables.html#a-interpolate
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
+    // Effective stroke width in pixels per axis (resolved from pixel or data units).
+    @location(3) @interpolate(flat) stroke_width_px: vec2<f32>,
 };
 
 struct FSOut {
@@ -171,11 +173,9 @@ fn vs_main(
     // - The browser draws 5px of that stroke extending inward from the path.
     // Result: the total visual size of the object will be 110px (100 width + 5 left overhang + 5 right overhang).
 
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates) (will involve the camera matrix).
     // Note: data stroke_width units is only supported when also using data units for the positions,
-    // so we do not need to support data stroke width units when using pixel units for the positions.
-    let stroke_width_norm = u.stroke_width / layer_height_px;
-    let stroke_width_half_norm = stroke_width_norm / 2.0;
+    // so we do not need to support data stroke width units when using pixel units for the positions
+    // (see the panic in RectLayer::new). The data-units handling is in the data path below.
 
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var result_size_px = vec2<f32>(0.0, 0.0);
@@ -229,11 +229,14 @@ fn vs_main(
         result_size_px = vec2f(rect_w_px, rect_h_px);
 
         if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+            // Data-units stroke is only valid alongside data-units positions, so here
+            // (pixel positions) the stroke width is always already in pixels.
             var out: VSOut;
             out.position = result_position_px;
             out.quad_pos = (corner + 1.0) * 0.5;
             out.instance_index = instance_index;
             out.rect_size_px = result_size_px;
+            out.stroke_width_px = vec2f(u.stroke_width, u.stroke_width);
             return out;
         }
     }
@@ -258,10 +261,23 @@ fn vs_main(
 
     // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
     // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
-    let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+    var sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
+    var sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+    if (u.stroke_width_unit_mode == 1u) {
+        // Data-coordinate stroke width: transform it as a delta (w=0 so translations
+        // cancel out, since it is a size, not a position) through the same pipeline as
+        // positions. This mirrors get_point_size() in positioning.rs. The result is
+        // already in normalized units, so no division by the layer size is needed.
+        let sw_norm_data = transform_mat * u.model_matrix * vec4f(u.stroke_width, u.stroke_width, 0.0, 0.0);
+        sw_half_norm_x = abs(sw_norm_data.x) / 2.0;
+        sw_half_norm_y = abs(sw_norm_data.y) / 2.0;
+    }
+
+    // Effective stroke width in pixels per axis (for the fragment shader's stroke band).
+    let stroke_width_px = vec2f(
+        sw_half_norm_x * 2.0 * layer_width_px,
+        sw_half_norm_y * 2.0 * layer_height_px
+    );
 
     let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
     let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -297,6 +313,7 @@ fn vs_main(
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     out.rect_size_px = result_size_data;
+    out.stroke_width_px = stroke_width_px;
     return out;
 }
 
@@ -324,16 +341,19 @@ fn fs_main(
     @location(0) quad_pos: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(3) @interpolate(flat) stroke_width_px: vec2<f32>,
 ) -> FSOut {
 
     // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
     // The stroke band is stroke_width thick from the outer edge inward
     // (stroke_width/2 was added outward + stroke_width/2 extends inward from the original boundary).
-    let expanded_w = rect_size_px.x + u.stroke_width;
-    let expanded_h = rect_size_px.y + u.stroke_width;
+    // stroke_width_px is the effective per-axis stroke width in pixels (resolved from
+    // pixel or data units in the vertex shader).
+    let expanded_w = rect_size_px.x + stroke_width_px.x;
+    let expanded_h = rect_size_px.y + stroke_width_px.y;
 
-    let stroke_frac_x = u.stroke_width / expanded_w;
-    let stroke_frac_y = u.stroke_width / expanded_h;
+    let stroke_frac_x = stroke_width_px.x / expanded_w;
+    let stroke_frac_y = stroke_width_px.y / expanded_h;
 
     // quad_pos ranges from (0,0) to (1,1) across the expanded quad.
     // If the fragment is beyond the stroke band on ALL four sides, it's interior — discard.
