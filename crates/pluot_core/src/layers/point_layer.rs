@@ -15,7 +15,7 @@ use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -79,11 +79,10 @@ impl PointLayer {
         layer_params: PointLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.point_radius_unit_mode_x == UnitsMode::Data && layer_params.data_unit_mode_x == UnitsMode::Pixels {
-            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
-        }
-        if layer_params.point_radius_unit_mode_y == UnitsMode::Data && layer_params.data_unit_mode_y == UnitsMode::Pixels {
-            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        if layer_params.point_radius_unit_mode_x != layer_params.point_radius_unit_mode_y {
+            // TODO: support ellipses, potentially in a separate layer type.
+            // See https://github.com/keller-mark/pluot-private/blob/main/point_layer.wgsl
+            panic!("point_radius_unit_mode must be the same for X and Y axes. Please reach out if you need ellipse support");
         }
         Self {
             view_params,
@@ -535,8 +534,24 @@ impl DrawToSvg for PointLayer {
                 Some(&model_matrix_raw),
             );
 
-            // TODO: handle point_radius_unit_mode
-            let point_radius = layer_params.point_radius;
+            let point_radius = if layer_params.point_radius_unit_mode_x == UnitsMode::Data {
+                let (sx, sy) = get_point_size(
+                    layer_params.point_radius,
+                    layer_params.point_radius,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    layer_params.data_unit_mode_x,
+                    layer_params.data_unit_mode_y,
+                    view_params.aspect_ratio_mode,
+                    view_params.aspect_ratio_alignment_mode,
+                    Some(&model_matrix_raw),
+                );
+                // Note: sx and sy will currently always be the same unless ellipses are supported.
+                (sx.abs() + sy.abs()) * 0.5
+            } else {
+                layer_params.point_radius
+            };
 
             let label = layer_params.labels_vec[i];
             let (r, g, b) = get_categorical_color(label);
