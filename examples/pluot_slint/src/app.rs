@@ -85,6 +85,7 @@ impl PluotApp {
                 position_x: Arc::new(position_x),
                 position_y: Arc::new(position_y),
                 labels_vec: Arc::new(vec![0; num_points]),
+                ..Default::default()
             })],
             width: self.plot_width,
             height: self.plot_height,
