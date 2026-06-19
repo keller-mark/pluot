@@ -548,6 +548,166 @@ async fn test_point_layer_tall_ignore_circle_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_tall_ignore_circle_no_margins").await;
 }
 
+// ── Data-units point radius ──────────────────────────────────────────────────
+// point_radius_unit_mode_x/y == UnitsMode::Data: the radius is expressed in the
+// same data units as the positions, so it scales with the camera/aspect-ratio
+// transform (and the model matrix). Both X and Y radius unit modes must match.
+
+// Helper: corner points in data space with the radius also expressed in data
+// units (0.1 data units == 10% of the [0,1] data extent in both axes).
+fn corner_points_data_radius() -> PointLayerParams {
+    PointLayerParams {
+        point_radius: 0.25,
+        point_radius_unit_mode_x: UnitsMode::Data,
+        point_radius_unit_mode_y: UnitsMode::Data,
+        point_opacity: 0.5,
+        ..corner_points_data()
+    }
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(0.0),
+                margin_right: Some(0.0),
+                margin_top: Some(0.0),
+                margin_bottom: Some(0.0),
+            }),
+            ..corner_points_data_radius()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_radius_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_ignore_data_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_data_radius()),
+        aspect_ratio_mode: AspectRatioMode::Ignore,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_ignore_data_radius_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_cover_data_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_data_radius()),
+        aspect_ratio_mode: AspectRatioMode::Cover,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_cover_data_radius_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_radius_view_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_data_radius()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        margin_left: Some(10.0),
+        margin_right: Some(10.0),
+        margin_top: Some(10.0),
+        margin_bottom: Some(10.0),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_radius_view_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_radius_layer_bounds() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            bounds: Some(MarginParams {
+                margin_left: Some(10.0),
+                margin_right: Some(10.0),
+                margin_top: Some(10.0),
+                margin_bottom: Some(10.0),
+            }),
+            ..corner_points_data_radius()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_radius_layer_bounds").await;
+}
+
+// Wide/tall canvases: a data-units radius is anisotropic in screen space under
+// Ignore, but Contain keeps the data axes uniformly scaled.
+#[tokio::test]
+async fn test_point_layer_wide_contain_data_radius_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(corner_points_data_radius()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_wide_contain_data_radius_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_tall_contain_data_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_points_data_radius()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_tall_contain_data_radius_no_margins").await;
+}
+
+// Circle shape with a data-units radius.
+#[tokio::test]
+async fn test_point_layer_square_contain_circle_data_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            point_shape_mode: PointShapeMode::Circle,
+            ..corner_points_data_radius()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_circle_data_radius_no_margins").await;
+}
+
+// A data-units radius scales with the model matrix (unlike a pixel radius).
+#[tokio::test]
+async fn test_point_layer_square_contain_data_radius_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_points_data_radius()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_radius_model_matrix_scale").await;
+}
+
 // model_matrix
 
 // Scale 0.5 in data mode: corner points at (0,1) become (0,0.5), lower-left quadrant.
