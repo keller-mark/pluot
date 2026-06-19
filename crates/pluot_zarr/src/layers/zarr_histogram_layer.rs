@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use pluot_core::{maybe_timeout, FutureExt, Duration};
+use pluot_core::{maybe_timeout, FutureExt, Duration, log};
 
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
@@ -143,10 +143,11 @@ impl PreparedLayer for ZarrHistogramLayer {
                 if is_timed_out_zarrs_error(&e) {
                     return PrepareResult { bailed_early: true };
                 } else {
-                    panic!("Zarrs error during OmeZarrBitmapLayer prepare: {:?}", e);
+                    panic!("Zarrs error during ZarrHistogramLayer prepare: {:?}", e);
                 }
             }
-            Err(_) => {
+            Err(e) => {
+                log(&format!("Other error during ZarrHistogramLayer prepare: {:?}", e));
                 // Wall-clock timeout from maybe_timeout!
                 return PrepareResult { bailed_early: true };
             }

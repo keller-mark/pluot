@@ -11,10 +11,6 @@ This histogram displays the distribution of 1 million values (the same array use
 
 The histogram values are computed via WebGPU compute shaders, and then passed to the BarPlotLayer for rendering.
 
-<Aside type="caution">
-    This example is not working in Firefox. Please try in Chrome if the plot does not render.
-</Aside>
-
 <PluotWrapper
     client:load
     client:only="react"
@@ -40,7 +36,7 @@ The histogram values are computed via WebGPU compute shaders, and then passed to
     }}
     viewMode={"2d"}
     marginLeft={60}
-    marginBottom={60}
+    marginBottom={80}
     marginTop={10}
     marginRight={10}
     width={700}

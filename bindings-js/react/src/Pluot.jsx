@@ -65,7 +65,7 @@ export function Pluot(props) {
     aspectRatioAlignmentMode = "Start", // "Center", "Start", "End"
     format = "Raster", // "Raster", "Vector"
     minTimeout = 32,
-    maxTimeout = 32,
+    maxTimeout = 5000,
     allowSimultaneousRenders = true,
     debugMargins = false,
     cameraMatrix: controlledCameraMatrix = null,
@@ -131,7 +131,7 @@ export function Pluot(props) {
 
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
-  const currentTimeout = useRef(maxTimeout);
+  const currentTimeout = useRef(minTimeout);
 
   // TODO: do we want to use the backlog approach or not?
   // (Similar to the one used in the Vitessce heatmap)
@@ -335,11 +335,16 @@ export function Pluot(props) {
 
       const frameBailedEarly = arr.at(-1) === 1;
       if (frameBailedEarly) {
-        currentTimeout.current = maxTimeout;
+        // We multiply the current timeout by two to implement an exponential backoff
+        // while the Rust side is bailing early.
+        // A downstream useEffect restarts the exponential backoff from scratch
+        // if any other plotting parameters change.
+        currentTimeout.current = Math.min(currentTimeout.current * 2, maxTimeout);
         incBacklogIteration(); // Increment this to force a re-render.
         setBailedEarly(true); // Update this to show the loading indicator.
       } else {
         // Successful render.
+        currentTimeout.current = minTimeout;
         setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
@@ -366,6 +371,16 @@ export function Pluot(props) {
   useEffect(() => {
     return () => throttledRender.cancel();
   }, [throttledRender]);
+
+  // Reset the backoff timeout whenever plot parameters change so the next
+  // sequence of bailed-early renders starts from the minimum again.
+  useEffect(() => {
+    currentTimeout.current = minTimeout;
+  }, [plotId, plotType, plotParams, storeName, format,
+    width, height, aspectRatioMode, aspectRatioAlignmentMode,
+    marginLeft, marginRight, marginTop, marginBottom,
+    cameraMatrix,
+  ]);
 
   // TODO: use react-query?
   useEffect(() => {
