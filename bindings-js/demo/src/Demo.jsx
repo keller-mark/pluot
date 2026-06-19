@@ -29,6 +29,7 @@ const DEMOS = {
             point_radius: 5.0,
             store_name: "gaussian_quantiles_store",
             bounds: null,
+            point_opacity: 0.4,
 
             x_key: "/n_1000/x_coords",
             y_key: "/n_1000/y_coords",

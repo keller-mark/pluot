@@ -17,6 +17,7 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct ZarrPointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -29,6 +30,8 @@ pub struct ZarrPointLayerParams {
     pub point_shape_mode: PointShapeMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
+    pub point_opacity: f32,
+
     // Data keys
     pub store_name: Option<String>,
     pub x_key: String,
@@ -36,7 +39,26 @@ pub struct ZarrPointLayerParams {
     pub color_key: Option<String>,
 }
 
-// TODO: defaults for params?
+impl Default for ZarrPointLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
+            point_radius: 1.0,
+            point_radius_unit_mode_x: UnitsMode::Pixels,
+            point_radius_unit_mode_y: UnitsMode::Pixels,
+            point_shape_mode: PointShapeMode::Circle,
+            model_matrix: None,
+            point_opacity: 1.0,
+            store_name: None,
+            x_key: "".to_string(),
+            y_key: "".to_string(),
+            color_key: None,
+        }
+    }
+}
 
 pub struct ZarrPointLayerData {
     pub x_arr: Arc<Vec<f32>>,
@@ -179,6 +201,7 @@ impl PreparedLayer for ZarrPointLayer {
                 point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
                 point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
+                point_opacity: self.layer_params.point_opacity,
                 model_matrix: self.layer_params.model_matrix,
                 position_x: x_f32.clone(),
                 position_y: y_f32.clone(),

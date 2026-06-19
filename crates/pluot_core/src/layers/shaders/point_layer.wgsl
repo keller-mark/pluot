@@ -90,6 +90,7 @@ struct PointLayerUniforms {
     point_radius_unit_mode_x: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     point_radius_unit_mode_y: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     point_shape_mode: u32, // 0: square; 1: circle
+    point_opacity: f32,
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -305,11 +306,11 @@ fn fs_main(
 
     // Handling of circle point shape mode
     // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
-    var alpha = 1.0;
+    var alpha = u.point_opacity;
     if(u.point_shape_mode == 1u) {
         // Signed-distance anti-aliasing: linear 1-pixel fade centered on the circle edge.
         let dist_px = length(corner) * u.point_radius;
-        alpha = clamp(u.point_radius - dist_px + 0.475, 0.0, 1.0);
+        alpha = clamp(u.point_radius - dist_px + 0.475, 0.0, u.point_opacity);
         if (alpha < 0.001) {
             discard;
         }
