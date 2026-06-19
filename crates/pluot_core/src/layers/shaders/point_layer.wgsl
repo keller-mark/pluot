@@ -87,9 +87,10 @@ struct PointLayerUniforms {
     data_unit_mode_x: u32, // 0: pixel units, 1: data units
     data_unit_mode_y: u32, // 0: pixel units, 1: data units
     point_radius: f32,
-    point_radius_unit_mode_x: u32, // 0: px units, 1: data coordinate system units // TODO: use this
-    point_radius_unit_mode_y: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    point_radius_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
+    point_radius_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
     point_shape_mode: u32, // 0: square; 1: circle
+    point_opacity: f32,
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -101,6 +102,7 @@ struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) corner: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
+    @location(2) @interpolate(flat) point_radius_px: f32,
 };
 
 struct FSOut {
@@ -153,6 +155,45 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
+    // Model-view-projection matrix
+    // References:
+    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
+
+    // --- Point radius in NDC space ---
+    //
+    // Pixel-mode radius (point_radius_unit_mode == 0):
+    //   point_radius is in screen pixels; convert directly to NDC offsets.
+    let point_radius_ndc_px = vec2f(
+        u.point_radius / layer_width_px * 2.0,
+        u.point_radius / layer_height_px * 2.0
+    );
+
+    // Data-coordinate radius (point_radius_unit_mode == 1):
+    //   point_radius is in data coordinate system units. Transform it through the same
+    //   pipeline as positions, but with w=0 so translations cancel out (it is a delta/size,
+    //   not a position). This mirrors get_point_size() in positioning.rs.
+    let radius_orig_data = u.model_matrix * vec4f(u.point_radius, u.point_radius, 0.0, 0.0);
+    let radius_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * radius_orig_data;
+    let point_radius_ndc_data = abs(radius_norm_data.xy) * 2.0;
+    // Effective pixel radius for the circle SDF: average of x and y screen extents.
+    let point_radius_px_data = (abs(radius_norm_data.x) * layer_width_px + abs(radius_norm_data.y) * layer_height_px) * 0.5;
+
+    // Select per-axis NDC radius and the scalar pixel radius passed to the fragment shader.
+    var point_radius_ndc_x = point_radius_ndc_px.x;
+    var point_radius_ndc_y = point_radius_ndc_px.y;
+    var point_radius_px: f32 = u.point_radius;
+
+    if (u.point_radius_unit_mode_x == 1u) {
+        point_radius_ndc_x = point_radius_ndc_data.x;
+        point_radius_px = point_radius_px_data;
+    }
+    if (u.point_radius_unit_mode_y == 1u) {
+        point_radius_ndc_y = point_radius_ndc_data.y;
+        point_radius_px = point_radius_px_data;
+    }
+
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
@@ -165,19 +206,10 @@ fn vs_main(
         );
         let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
-        // Compute the vertex position by accounting for point position and point size.
-        let point_radius_norm = vec4f(
-            u.point_radius / layer_width_px,
-            u.point_radius / layer_height_px,
-            0.0,
-            1.0
-        );
-        let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
-
         // The final point position in NDC space.
         result_position_px = vec4f(
-            point_pos_ndc.x + (corner.x * point_radius_ndc.x),
-            point_pos_ndc.y + (corner.y * point_radius_ndc.y),
+            point_pos_ndc.x + (corner.x * point_radius_ndc_x),
+            point_pos_ndc.y + (corner.y * point_radius_ndc_y),
             0.0,
             1.0
         );
@@ -187,16 +219,11 @@ fn vs_main(
             out.position = result_position_px;
             out.corner = corner;
             out.instance_index = instance_index;
+            out.point_radius_px = point_radius_px;
             return out;
         }
     }
 
-
-    // Model-view-projection matrix
-    // References:
-    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
-    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
-    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
     // TYPICALLY: position = projectionMatrix * viewMatrix * modelMatrix * inputModelSpacePosition
     // Where:
@@ -227,21 +254,10 @@ fn vs_main(
     );
     let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
-    // Compute the vertex position by accounting for point position and point size.
-    // TODO: support a "point radius mode" to allow setting the point radius in data coordinate system units.
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let point_radius_norm = vec4f(
-        u.point_radius / layer_width_px,
-        u.point_radius / layer_height_px,
-        0.0,
-        1.0
-    );
-    let point_radius_ndc = vec4f(point_radius_norm.xy * 2.0, 0.0, 1.0);
-
     // The final point position in NDC space.
     result_position_data = vec4f(
-        point_pos_ndc.x + (corner.x * point_radius_ndc.x),
-        point_pos_ndc.y + (corner.y * point_radius_ndc.y),
+        point_pos_ndc.x + (corner.x * point_radius_ndc_x),
+        point_pos_ndc.y + (corner.y * point_radius_ndc_y),
         0.0,
         1.0
     );
@@ -259,20 +275,10 @@ fn vs_main(
     out.position = result_position_data;
     out.corner = corner;
     out.instance_index = instance_index;
+    out.point_radius_px = point_radius_px;
     return out;
 }
 
-
-// The current TextureFormat is Rgba8UnormSrgb,
-// which tells the GPU "my shader outputs linear light values",
-// but the Tableau 10 values are already sRGB (not linear).
-// We could alternatively switch the TextureFormat to non-SRGB,
-// but this will affect the alpha blending step, causing alpha-blending
-// to happen in the sRGB space, which is perceptually non-linear,
-// and can cause darkening artifacts during the circle anti-aliasing step.
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    return pow(c, vec3<f32>(2.2));
-}
 
 fn get_categorical_color(index: i32) -> vec4<f32> {
     // Simple categorical colormap (Tableau 10)
@@ -288,8 +294,7 @@ fn get_categorical_color(index: i32) -> vec4<f32> {
         vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
         vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
     );
-    let c = colors[index % 10];
-    return vec4<f32>(srgb_to_linear(c.rgb), c.a);
+    return colors[index % 10];
 }
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -301,15 +306,16 @@ fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) corner: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
+    @location(2) @interpolate(flat) point_radius_px: f32,
 ) -> FSOut {
 
     // Handling of circle point shape mode
     // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
-    var alpha = 1.0;
+    var alpha = u.point_opacity;
     if(u.point_shape_mode == 1u) {
         // Signed-distance anti-aliasing: linear 1-pixel fade centered on the circle edge.
-        let dist_px = length(corner) * u.point_radius;
-        alpha = clamp(u.point_radius - dist_px + 0.475, 0.0, 1.0);
+        let dist_px = length(corner) * point_radius_px;
+        alpha = clamp(point_radius_px - dist_px + 0.475, 0.0, u.point_opacity);
         if (alpha < 0.001) {
             discard;
         }

@@ -137,6 +137,7 @@ fn build_params(
             position_x: Arc::new(position_x),
             position_y: Arc::new(position_y),
             labels_vec: Arc::new(vec![0; num_points]),
+            ..Default::default()
         })],
         width: plot_width,
         height: plot_height,

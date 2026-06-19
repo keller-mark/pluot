@@ -38,6 +38,7 @@ fn corner_points() -> PointLayerParams {
         position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
         position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        ..Default::default()
     }
 }
 

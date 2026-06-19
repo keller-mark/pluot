@@ -15,7 +15,7 @@ use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -27,6 +27,7 @@ pub enum PointShapeMode {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct PointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -39,13 +40,33 @@ pub struct PointLayerParams {
     pub point_shape_mode: PointShapeMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
+    pub point_opacity: f32, // TODO: support per-point opacity as well?
+
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub position_y: Arc<Vec<f32>>,
     // TODO: improve naming here
     pub labels_vec: Arc<Vec<i32>>,
 }
 
-// TODO: defaults for params?
+impl Default for PointLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
+            point_radius: 1.0,
+            point_radius_unit_mode_x: UnitsMode::Pixels,
+            point_radius_unit_mode_y: UnitsMode::Pixels,
+            point_shape_mode: PointShapeMode::Circle,
+            model_matrix: None,
+            point_opacity: 1.0,
+            position_x: Arc::new(vec![]),
+            position_y: Arc::new(vec![]),
+            labels_vec: Arc::new(vec![]),
+        }
+    }
+}
 
 pub struct PointLayer {
     view_params: ViewParams,
@@ -58,11 +79,10 @@ impl PointLayer {
         layer_params: PointLayerParams,
     ) -> Self {
         // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.point_radius_unit_mode_x == UnitsMode::Data && layer_params.data_unit_mode_x == UnitsMode::Pixels {
-            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
-        }
-        if layer_params.point_radius_unit_mode_y == UnitsMode::Data && layer_params.data_unit_mode_y == UnitsMode::Pixels {
-            panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        if layer_params.point_radius_unit_mode_x != layer_params.point_radius_unit_mode_y {
+            // TODO: support ellipses, potentially in a separate layer type.
+            // See https://github.com/keller-mark/pluot-private/blob/main/point_layer.wgsl
+            panic!("point_radius_unit_mode must be the same for X and Y axes. Please reach out if you need ellipse support");
         }
         Self {
             view_params,
@@ -99,6 +119,7 @@ struct PointLayerUniforms {
     point_radius_unit_mode_x: u32, // 0 = pixels, 1 = data units
     point_radius_unit_mode_y: u32, // 0 = pixels, 1 = data units
     point_shape_mode: u32, // 0 = square, 1 = circle
+    point_opacity: f32,
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
@@ -214,6 +235,7 @@ impl DrawToRasterGpu for PointLayer {
                 PointShapeMode::Square => 0,
                 PointShapeMode::Circle => 1,
             },
+            point_opacity: layer_params.point_opacity,
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
                 AspectRatioMode::Contain => 1,
@@ -349,7 +371,7 @@ impl DrawToRasterGpu for PointLayer {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -512,8 +534,24 @@ impl DrawToSvg for PointLayer {
                 Some(&model_matrix_raw),
             );
 
-            // TODO: handle point_radius_unit_mode
-            let point_radius = layer_params.point_radius;
+            let point_radius = if layer_params.point_radius_unit_mode_x == UnitsMode::Data {
+                let (sx, sy) = get_point_size(
+                    layer_params.point_radius,
+                    layer_params.point_radius,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    layer_params.data_unit_mode_x,
+                    layer_params.data_unit_mode_y,
+                    view_params.aspect_ratio_mode,
+                    view_params.aspect_ratio_alignment_mode,
+                    Some(&model_matrix_raw),
+                );
+                // Note: sx and sy will currently always be the same unless ellipses are supported.
+                (sx.abs() + sy.abs()) * 0.5
+            } else {
+                layer_params.point_radius
+            };
 
             let label = layer_params.labels_vec[i];
             let (r, g, b) = get_categorical_color(label);
@@ -526,6 +564,7 @@ impl DrawToSvg for PointLayer {
                     y: (layer_h - py) as f64,
                     radius: point_radius as f64,
                     fill,
+                    opacity: layer_params.point_opacity as f64,
                     ..Default::default()
                 }),
                 PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
@@ -534,6 +573,7 @@ impl DrawToSvg for PointLayer {
                     width: (point_radius * 2.0) as f64,
                     height: (point_radius * 2.0) as f64,
                     fill,
+                    opacity: layer_params.point_opacity as f64,
                     ..Default::default()
                 })
             });
