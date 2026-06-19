@@ -310,21 +310,10 @@ fn vs_main(
     return out;
 }
 
-// The current TextureFormat is Rgba8UnormSrgb,
-// which tells the GPU "my shader outputs linear light values",
-// but the color values are already sRGB (not linear).
-// We could alternatively switch the TextureFormat to non-SRGB,
-// but this will affect the alpha blending step, causing alpha-blending
-// to happen in the sRGB space, which is perceptually non-linear,
-// and can cause darkening artifacts during the circle anti-aliasing step.
-fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
-    return pow(c, vec3<f32>(2.2));
-}
-
 @fragment
 fn fs_main(@location(0) uv: vec2<f32>) -> FSOut {
     let a = textureSample(glyph_tex, glyph_sampler, uv).r;
     var out: FSOut;
-    out.color = vec4<f32>(srgb_to_linear(u.color.rgb), a);
+    out.color = vec4<f32>(u.color.rgb, a);
     return out;
 }
