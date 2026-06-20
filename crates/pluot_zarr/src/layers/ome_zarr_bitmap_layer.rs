@@ -111,6 +111,20 @@ impl OmeZarrBitmapLayer {
     }
 
     /// Load tile data from the zarr array, using the cache.
+    ///
+    /// Caching is two-level, mirroring the nested `use_memo` pattern in
+    /// `zarr_histogram_layer.rs`:
+    ///   * Each channel's slice is fetched and cached independently, keyed only by
+    ///     that channel's `c_index` (plus the shared tile keys). Changing one
+    ///     channel's index therefore only re-fetches that single channel from storage.
+    ///   * The concatenated multi-channel tile is also cached, keyed by all selected
+    ///     channel indices, so an unchanged re-render is a single cache hit with no
+    ///     re-concatenation. On a partial change the outer cache misses, the unchanged
+    ///     channels hit their per-channel caches, and only the changed channel is
+    ///     re-fetched before the tile is re-concatenated.
+    /// TODO: does this approach use an unnecessarily large amount of memory / is it doing double-cacheing of the same data?
+    /// If so, try to keep the independent channel array cacheing and do not cache the concatenated channel data;
+    /// simply re-concatenate on the fly each render and check if performant enough.
     async fn load_tile_data(&self) -> Result<NumericData, zarrs::array::ArrayError> {
         let store = self.store.clone();
         let array_path = self.layer_params.array_path.clone();
@@ -136,8 +150,10 @@ impl OmeZarrBitmapLayer {
         let tile_h = y_end - y_start;
         let tile_w = x_end - x_start;
 
-        // Build cache keys that uniquely identify this tile's data.
-        let mut keys: Vec<String> = vec![
+        let cache_enabled = self.view_params.cache_enabled;
+
+        // Cache keys shared by every entry for this tile (everything except the channel selection).
+        let base_keys: Vec<String> = vec![
             self.store_name.clone(),
             array_path.clone(),
             format!("slice_x_{:?}", slice_x),
@@ -145,21 +161,20 @@ impl OmeZarrBitmapLayer {
             format!("z_{:?}", target_z),
             format!("t_{:?}", target_t),
         ];
-        for cs in &channel_settings {
-            keys.push(format!("c_{}", cs.c_index));
-        }
 
-        // TODO: Request and cache the data for each channel independently, rather than together.
-        // (Currently, this caches all channel data together, so it all must be reloaded if any channel settings change.)
-        // (Also see the above keys.push which is related:
-        // it causes the cache key to depend on all selected channel indices;
-        // this is correct under the current implementation,
-        // but would not be in the improved implementation).
+        // Outer cache key: the concatenated tile depends on all selected channel indices.
+        let mut combined_keys = base_keys.clone();
+        for cs in &channel_settings {
+            combined_keys.push(format!("c_{}", cs.c_index));
+        }
 
         let cached = use_memo_numeric_data(async || {
             let num_channels = channel_settings.len();
             let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
 
+            // Open the array once; it is reused by every per-channel fetch below.
+            // When `array_metadata` is provided (the common multiscale path) this is a
+            // cheap in-memory construction with no storage I/O.
             let array = if let Some(metadata) = array_metadata {
                 zarrs::array::Array::new_with_metadata(store.clone(), &array_path, metadata)
                     .unwrap_or_else(|e| {
@@ -173,74 +188,106 @@ impl OmeZarrBitmapLayer {
                     })
             };
 
-            // Build array subsets for each channel.
-            let subsets: Vec<zarrs::array::ArraySubset> = channel_settings
-                .iter()
-                .map(|cs| {
-                    let mut start = array_shape.iter().map(|_| 0u64).collect::<Vec<_>>();
-                    let mut shape = array_shape.clone();
-
-                    start[y_dim_i] = y_start;
-                    shape[y_dim_i] = tile_h;
-                    start[x_dim_i] = x_start;
-                    shape[x_dim_i] = tile_w;
-
-                    if let Some(z_dim_i) = z_dim_i {
-                        let z = target_z.unwrap_or(0);
-                        start[z_dim_i] = z;
-                        shape[z_dim_i] = 1;
-                    }
-                    if let Some(t_dim_i) = t_dim_i {
-                        let t = target_t.unwrap_or(0);
-                        start[t_dim_i] = t;
-                        shape[t_dim_i] = 1;
-                    }
-
-                    // Override the C dimension for this specific channel.
-                    if let Some(c_dim_i) = c_dim_i {
-                        start[c_dim_i] = cs.c_index as u64;
-                        shape[c_dim_i] = 1;
-                    }
-
-                    zarrs::array::ArraySubset::new_with_start_shape(start, shape)
-                        .expect("Valid array subset")
-                })
-                .collect();
-
             // Detect the array's data type to load in the native dtype.
             use zarrs::plugin::{ExtensionName, ZarrVersion};
             let dtype_name = array
                 .data_type()
                 .name(ZarrVersion::V3)
-                .expect("Array data type must have a V3 name");
+                .expect("Array data type must have a V3 name")
+                .to_string();
 
-            macro_rules! load_tile_data {
+            // Fetch (and independently cache) each channel's slice.
+            let mut channel_parts: Vec<Arc<NumericData>> = Vec::with_capacity(num_channels);
+            for cs in &channel_settings {
+                // Per-channel cache key: depends only on this channel's index,
+                // not on the rest of the channel selection.
+                let mut channel_keys = base_keys.clone();
+                channel_keys.push(format!("c_{}", cs.c_index));
+
+                // Build the array subset for this single channel.
+                let mut start = array_shape.iter().map(|_| 0u64).collect::<Vec<_>>();
+                let mut shape = array_shape.clone();
+
+                start[y_dim_i] = y_start;
+                shape[y_dim_i] = tile_h;
+                start[x_dim_i] = x_start;
+                shape[x_dim_i] = tile_w;
+
+                if let Some(z_dim_i) = z_dim_i {
+                    start[z_dim_i] = target_z.unwrap_or(0);
+                    shape[z_dim_i] = 1;
+                }
+                if let Some(t_dim_i) = t_dim_i {
+                    start[t_dim_i] = target_t.unwrap_or(0);
+                    shape[t_dim_i] = 1;
+                }
+                if let Some(c_dim_i) = c_dim_i {
+                    start[c_dim_i] = cs.c_index as u64;
+                    shape[c_dim_i] = 1;
+                }
+
+                let subset = zarrs::array::ArraySubset::new_with_start_shape(start, shape)
+                    .expect("Valid array subset");
+
+                let array = &array;
+                let dtype_name = &dtype_name;
+                let channel_data = use_memo_numeric_data(async || {
+                    macro_rules! load_channel_data {
+                        ($rust_ty:ty, $variant:ident) => {{
+                            let chunk = array
+                                .async_retrieve_array_subset::<Vec<$rust_ty>>(&subset)
+                                .await?;
+                            NumericData::$variant(Arc::new(chunk))
+                        }};
+                    }
+
+                    Ok::<NumericData, zarrs::array::ArrayError>(match dtype_name.as_str() {
+                        "uint8" => load_channel_data!(u8, Uint8),
+                        "uint16" => load_channel_data!(u16, Uint16),
+                        "uint32" => load_channel_data!(u32, Uint32),
+                        "uint64" => load_channel_data!(u64, Uint64),
+                        "int8" => load_channel_data!(i8, Int8),
+                        "int16" => load_channel_data!(i16, Int16),
+                        "int32" => load_channel_data!(i32, Int32),
+                        "int64" => load_channel_data!(i64, Int64),
+                        "float32" => load_channel_data!(f32, Float32),
+                        "float64" => load_channel_data!(f64, Float64),
+                        _ => panic!("Unsupported zarr data type: {}", dtype_name),
+                    })
+                }, &channel_keys, cache_enabled).await?;
+
+                channel_parts.push(channel_data);
+            }
+
+            // Concatenate the per-channel slices into one contiguous tile buffer.
+            // All channels share the array's data type, so we match on it once.
+            macro_rules! concat_channels {
                 ($rust_ty:ty, $variant:ident) => {{
                     let mut combined: Vec<$rust_ty> = Vec::with_capacity(tile_num_elements);
-                    for subset in &subsets {
-                        let chunk = array
-                            .async_retrieve_array_subset::<Vec<$rust_ty>>(subset)
-                            .await?;
-                        combined.extend_from_slice(&chunk);
+                    for part in &channel_parts {
+                        match &**part {
+                            NumericData::$variant(v) => combined.extend_from_slice(v),
+                            _ => unreachable!("All channels share the array's data type"),
+                        }
                     }
                     NumericData::$variant(Arc::new(combined))
                 }};
             }
 
-            Ok(match &*dtype_name {
-                "uint8" => load_tile_data!(u8, Uint8),
-                "uint16" => load_tile_data!(u16, Uint16),
-                "uint32" => load_tile_data!(u32, Uint32),
-                "uint64" => load_tile_data!(u64, Uint64),
-                "int8" => load_tile_data!(i8, Int8),
-                "int16" => load_tile_data!(i16, Int16),
-                "int32" => load_tile_data!(i32, Int32),
-                "int64" => load_tile_data!(i64, Int64),
-                "float32" => load_tile_data!(f32, Float32),
-                "float64" => load_tile_data!(f64, Float64),
+            Ok::<NumericData, zarrs::array::ArrayError>(match dtype_name.as_str() {
+                "uint8" => concat_channels!(u8, Uint8),
+                "uint16" => concat_channels!(u16, Uint16),
+                "uint32" => concat_channels!(u32, Uint32),
+                "uint64" => concat_channels!(u64, Uint64),
+                "int8" => concat_channels!(i8, Int8),
+                "int16" => concat_channels!(i16, Int16),
+                "int32" => concat_channels!(i32, Int32),
+                "int64" => concat_channels!(i64, Int64),
+                "float32" => concat_channels!(f32, Float32),
+                "float64" => concat_channels!(f64, Float64),
                 _ => panic!("Unsupported zarr data type: {}", dtype_name),
             })
-        }, &keys, self.view_params.cache_enabled).await;
+        }, &combined_keys, cache_enabled).await;
 
         // cached is Result<Arc<NumericData>, ArrayError>
         match cached {
