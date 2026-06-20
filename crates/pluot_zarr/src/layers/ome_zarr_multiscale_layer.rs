@@ -32,6 +32,7 @@ use crate::layers::ome_zarr_utils::{
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct OmeZarrMultiscaleLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -48,6 +49,22 @@ pub struct OmeZarrMultiscaleLayerParams {
     /// Channel settings specifying which channels to render and how.
     pub channel_settings: Vec<OmeZarrChannelSetting>,
     pub opacity: f32,
+}
+
+impl Default for OmeZarrMultiscaleLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            store_name: None,
+            group_path: None,
+            multiscale_index: None,
+            target_z: None,
+            target_t: None,
+            channel_settings: vec![],
+            opacity: 1.0,
+        }
+    }
 }
 
 thread_local! {

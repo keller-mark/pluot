@@ -18,6 +18,7 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct ZarrBarPlotLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -32,6 +33,21 @@ pub struct ZarrBarPlotLayerParams {
     pub fill_color_mode: ColorMode,
 
     // TODO: see TODOs in bar_plot_layer.rs
+}
+
+impl Default for ZarrBarPlotLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            orientation: BarOrientation::Vertical,
+            store_name: None,
+            identifier_key: "".to_string(),
+            quantity_key: "".to_string(),
+            fill_color: None,
+            fill_color_mode: ColorMode::Static,
+        }
+    }
 }
 
 pub struct ZarrBarPlotLayer {

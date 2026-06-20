@@ -144,6 +144,7 @@ impl DimensionOrder {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct BitmapLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -193,7 +194,23 @@ pub struct BitmapLayerParams {
     pub data: NumericData,
 }
 
-// TODO: defaults for params?
+impl Default for BitmapLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
+            pixel_offset: None,
+            model_matrix: None,
+            dimension_order: DimensionOrder::CYX,
+            shape: vec![],
+            channel_settings: vec![],
+            opacity: 1.0,
+            data: NumericData::Uint8(Arc::new(vec![])),
+        }
+    }
+}
 
 
 pub struct BitmapLayer {

@@ -16,6 +16,7 @@ use crate::positioning::get_point_position;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct LineLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -31,10 +32,27 @@ pub struct LineLayerParams {
     pub target_position_x: Arc<Vec<f32>>,
     pub target_position_y: Arc<Vec<f32>>,
     // TODO: improve naming here
-    pub labels_vec: Vec<i32>,
+    pub labels_vec: Arc<Vec<i32>>,
 }
 
-// TODO: defaults for params?
+impl Default for LineLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
+            line_width: 1.0,
+            line_width_unit_mode: UnitsMode::Pixels,
+            model_matrix: None,
+            source_position_x: Arc::new(vec![]),
+            source_position_y: Arc::new(vec![]),
+            target_position_x: Arc::new(vec![]),
+            target_position_y: Arc::new(vec![]),
+            labels_vec: Arc::new(vec![]),
+        }
+    }
+}
 
 
 pub struct LineLayer {

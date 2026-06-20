@@ -18,6 +18,7 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct ZarrPoint3dLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -30,6 +31,22 @@ pub struct ZarrPoint3dLayerParams {
     pub y_key: String,
     pub z_key: String,
     pub color_key: Option<String>,
+}
+
+impl Default for ZarrPoint3dLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            point_radius: 1.0,
+            point_shape_mode: PointShapeMode::Circle,
+            store_name: None,
+            x_key: "".to_string(),
+            y_key: "".to_string(),
+            z_key: "".to_string(),
+            color_key: None,
+        }
+    }
 }
 
 pub struct ZarrPoint3dLayerData {
