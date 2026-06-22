@@ -375,6 +375,7 @@ impl PreparedLayer for ZarrPointLayer {
                 data_unit_mode_x: self.layer_params.data_unit_mode_x,
                 data_unit_mode_y: self.layer_params.data_unit_mode_y,
                 point_radius,
+                // TODO: if point_radius is None, override the point_radius_unit_mode values to always be UnitsMode::Pixels.
                 point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
                 point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
