@@ -6,7 +6,6 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
-use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
@@ -118,48 +117,13 @@ impl ZarrPointLayer {
 
 // Port of the dynamic point-scale / density-opacity model from regl-scatterplot:
 // https://github.com/flekschas/regl-scatterplot/blob/master/src/index.js
-//
-// Units note: regl-scatterplot works in DEVICE pixels (its point size is scaled
-// by `window.devicePixelRatio` and its viewport is in device pixels). pluot's
-// `point_radius` (in Pixels unit mode) is in CSS/logical pixels — the shader maps
-// it to NDC via `point_radius / layer_width_px * 2`, which is resolution
-// independent, so no `devicePixelRatio` factor belongs in the radius itself.
-// Device pixels = CSS pixels * device_pixel_ratio (see multiscale_utils.rs).
-//
-// pluot's `Data` unit mode places coordinates in the same space `get_bounds`
-// reports the visible window in, so counting the points inside `get_bounds` gives
-// the regl-scatterplot `numPointsInView`, and a data-unit radius converts to
-// pixels via the visible-range-to-layer-size ratio (mirroring the shader's
-// data-mode radius math).
-//
-// Zoom note: regl-scatterplot's `camera.scaling` is 1 at the fit-to-data view
-// (`scaling = data_range / visible_range`), and both the point scale and the
-// opacity `s` term are expressed relative to that. pluot's *raw* camera zoom is
-// only 1-at-fit when the data is exactly normalized to (0,1), so we instead
-// derive the relative zoom from `data_extent / visible_extent` (== 1 at fit for
-// any data range). This avoids crushing the opacity when zoomed out / when the
-// data does not fill the (0,1) range.
-
 const MIN_POINT_SIZE_IN_PX: f32 = 1.0;
 const DEFAULT_POINT_SIZE_IN_PX: f32 = 6.0;
 const OPACITY_BY_DENSITY_FILL: f32 = 0.15;
-// Lowest opacity that still renders something in 8-bit (u8) alpha output. regl-scatterplot
-// notes the density opacity should be clamped to `1 / precision` on the low end "so that we
-// never render *nothing*"; for a u8 destination that is 1/255 (1.01 to avoid truncating to 0).
-// Without this floor the plot fades to fully transparent when zoomed far enough out (s -> 0).
+// Lowest opacity that still renders something in 8-bit (u8) alpha output
 const MIN_DENSITY_OPACITY: f32 = 1.01 / 255.0;
 
-/// Port of `getAsinhPointScale` (the default `pointScaleMode = 'asinh'`), returning
-/// a dimensionless multiplier applied to the base point size. `scaling` is the zoom
-/// relative to the fit-to-data view (1 at fit, > 1 zoomed in, < 1 zoomed out).
-///
-/// When zoomed in (`scaling > 1`) the scale grows sub-linearly via `asinh`, so
-/// points don't blow up; otherwise it falls back to the linear scale clamped to
-/// `minPointScale = MIN_POINT_SIZE / base_point_size` (a floor of `MIN_POINT_SIZE`
-/// CSS px). Unlike regl-scatterplot we omit the `devicePixelRatio` factor, since
-/// the resulting radius is interpreted by pluot in CSS pixels (see units note
-/// above). (`getLinearPointScale` / `getConstantPointScale` are the other modes;
-/// pluot uses the `asinh` default.)
+/// Port of `getAsinhPointScale` (the default `pointScaleMode = 'asinh'`).
 fn get_asinh_point_scale(scaling: f32, base_point_size: f32) -> f32 {
     let min_point_scale = MIN_POINT_SIZE_IN_PX / base_point_size;
     if scaling > 1.0 {
@@ -173,12 +137,8 @@ fn get_asinh_point_scale(scaling: f32, base_point_size: f32) -> f32 {
 ///
 /// Lowers opacity in dense regions so overlapping points remain legible, taking
 /// the points currently in view into account so sparse areas stay opaque.
-/// `p` is the rendered point size in device pixels, `s` is the view scale
-/// (`camera.view[0] * camera.view[5]`), `width`/`height` are the viewport in
-/// device pixels, and `num_points_in_view` is the number of points within the
-/// current view bounds. (The formula is a ratio of areas, so it is invariant to
-/// whether CSS or device pixels are used, as long as `p`, `width` and `height`
-/// agree — we feed device pixels so the `MIN_POINT_SIZE` floor matches regl.)
+/// `p` is the rendered point **diameter** in device pixels (matching regl-scatterplot's
+/// `pointSize[0] * pointScale`).
 fn get_opacity_density(
     p: f32,
     s: f32,
@@ -299,33 +259,12 @@ impl PreparedLayer for ZarrPointLayer {
             } else {
                 let dpr = self.view_params.device_pixel_ratio;
 
-                // Cache the (camera-independent) data extent. Returns [x_min, x_max, y_min, y_max].
-                let x_for_extent = x_f32.clone();
-                let y_for_extent = y_f32.clone();
-                let extent_future_deps = vec![
-                    "point_extent".to_string(),
-                    self.store_name.clone(),
-                    self.layer_params.layer_id.clone(),
-                    self.layer_params.x_key.clone(),
-                    self.layer_params.y_key.clone(),
-                ];
-                let extent = use_memo_vec_f32(async || {
-                    let (x_min, x_max) = reduce_extent(gpu_context, x_for_extent).await;
-                    let (y_min, y_max) = reduce_extent(gpu_context, y_for_extent).await;
-                    Ok::<Vec<f32>, std::convert::Infallible>(vec![x_min, x_max, y_min, y_max])
-                }, &extent_future_deps, self.view_params.cache_enabled)
-                    .await
-                    .expect("Extent computation failed in ZarrPointLayer.prepare");
-                let x_range = (extent[1] - extent[0]).abs().max(f32::EPSILON);
-                let y_range = (extent[3] - extent[2]).abs().max(f32::EPSILON);
-
-                // Visible extent (camera + aspect ratio + margins applied), in the same space
-                // as the positions — the pluot equivalent of deck/regl's getBounds.
+                // Visible extent (camera + aspect ratio + margins applied), in the
+                // normalized [0, 1] space that the camera and vertex shader operate in —
+                // the pluot equivalent of deck/regl's getBounds.
                 let visible = get_bounds(&self.view_params);
-                let visible_x = (visible.x_max - visible.x_min).abs().max(f32::EPSILON);
-                let visible_y = (visible.y_max - visible.y_min).abs().max(f32::EPSILON);
 
-                let (zoom_x, zoom_y, translate_x, translate_y) = camera_matrix_to_zoom_and_translation(self.view_params.camera_view);
+                let (zoom_x, zoom_y, _translate_x, _translate_y) = camera_matrix_to_zoom_and_translation(self.view_params.camera_view);
 
                 // Plot area in CSS pixels (viewport minus margins, matching get_bounds);
                 // pluot's layer_size / Pixels-mode point_radius are CSS pixels.
@@ -371,18 +310,26 @@ impl PreparedLayer for ZarrPointLayer {
                     }
                 };
 
-                let min_point_size_data_units = (MIN_POINT_SIZE_IN_PX / px_per_data_unit);
+                // On-screen CSS pixels spanned by one data unit at the current zoom. A
+                // data-unit length is magnified by the camera, so unlike px_per_data_unit
+                // (camera-independent) this includes zoom_x — matching the vertex shader,
+                // which pushes the radius through the camera transform.
+                let css_px_per_data_unit = (px_per_data_unit * zoom_x).max(f32::EPSILON);
+
+                let min_point_size_data_units = MIN_POINT_SIZE_IN_PX / css_px_per_data_unit;
 
                 // Auto point size from the regl asinh model, in CSS pixels.
                 let auto_radius_px = (DEFAULT_POINT_SIZE_IN_PX * get_asinh_point_scale(zoom_x, DEFAULT_POINT_SIZE_IN_PX)) / 2.0;
 
                 // Resolve point_radius in the layer's configured unit mode. A user-provided
-                // radius is used as-is; an auto radius (pixels) is converted to data units
-                // when the radius unit mode is Data.
+                // radius is used as-is; an auto radius (CSS pixels) is converted to data units
+                // when the radius unit mode is Data — dividing by css_px_per_data_unit (not just
+                // px_per_data_unit) so the rendered point is auto_radius_px on screen regardless
+                // of zoom, matching regl-scatterplot's screen-anchored, asinh-scaled points.
                 let point_radius = match self.layer_params.point_radius {
                     Some(radius) => radius,
                     None => if radius_is_data {
-                        (auto_radius_px / px_per_data_unit).max(min_point_size_data_units)
+                        (auto_radius_px / css_px_per_data_unit).max(min_point_size_data_units * 2.0)
                     } else { auto_radius_px },
                 };
 
@@ -390,30 +337,48 @@ impl PreparedLayer for ZarrPointLayer {
                     Some(opacity) => opacity,
                     None => {
                         // numPointsInView: count points inside the current view bounds.
+                        // Positions are mapped through the layer's model_matrix into the same
+                        // normalized [0, 1] space as `visible` (mirroring the vertex shader,
+                        // which applies model_matrix before the camera). Identity when None.
+                        let model_matrix = self.layer_params.model_matrix;
+                        let to_norm = |x: f32, y: f32| -> (f32, f32) {
+                            match model_matrix {
+                                // Column-major 4x4; (x, y, 0, 1) affine transform.
+                                Some(m) => (
+                                    m[0] * x + m[4] * y + m[12],
+                                    m[1] * x + m[5] * y + m[13],
+                                ),
+                                None => (x, y),
+                            }
+                        };
                         let num_points_in_view = x_f32
                             .iter()
                             .zip(y_f32.iter())
                             .filter(|(x, y)| {
-                                **x >= visible.x_min && **x <= visible.x_max
-                                    && **y >= visible.y_min && **y <= visible.y_max
+                                let (nx, ny) = to_norm(**x, **y);
+                                nx >= visible.x_min && nx <= visible.x_max
+                                    && ny >= visible.y_min && ny <= visible.y_max
                             })
                             .count();
 
                         // The density formula needs the rendered point size and the plot area
                         // in the same units. Convert both to device pixels (a Data-unit radius
-                        // first to CSS pixels via px_per_data_unit, then * dpr).
-                        let point_radius_css = if radius_is_data { point_radius * px_per_data_unit } else { point_radius };
+                        // first to CSS pixels via css_px_per_data_unit — which includes zoom, so
+                        // it matches the size actually rendered — then * dpr).
+                        let point_radius_css = if radius_is_data { point_radius * css_px_per_data_unit } else { point_radius };
                         let point_radius_device = point_radius_css * dpr;
 
                         // Compute the plot's x and y range from the view matrix, though these could come from any source
                         // const s = (2 / (2 / camera.view[0])) * (2 / (2 / camera.view[5]));
                         // Reference: https://github.com/flekschas/regl-scatterplot/blob/fbf3204762643f2fe9c432f83f342ab78843ba6d/src/index.js#L1753-L1754
                         let s = (2.0 / (2.0 / zoom_x)) * (2.0 / (2.0 / zoom_y));
-;
+
                         let render_points_as_squares = self.layer_params.point_shape_mode == PointShapeMode::Square;
 
+                        // getOpacityDensity uses `p` as diameter (matching regl-scatterplot's
+                        // `pointSize[0] * pointScale`). pluot stores radii, so multiply by 2.
                         get_opacity_density(
-                            point_radius_device,
+                            point_radius_device * 2.0,
                             s,
                             layer_w * dpr,
                             layer_h * dpr,
