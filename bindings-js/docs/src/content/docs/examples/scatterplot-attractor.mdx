@@ -1,0 +1,19 @@
+---
+title: Scatterplot - Attractor
+description: Scatterplot example.
+sidebar:
+    order: 11
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { AttractorWrapper } from '../../../components/AttractorWrapper.jsx';
+
+
+This scatterplot renders 1 million points.
+
+<AttractorWrapper
+    client:load
+    client:only="react"
+
+    numPoints={1000000}
+    attractorType={"Rossler"}
+/>
