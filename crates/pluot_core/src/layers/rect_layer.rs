@@ -19,6 +19,7 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct RectLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -45,6 +46,27 @@ pub struct RectLayerParams {
     pub position_x1: Arc<Vec<f32>>,
     pub position_y1: Arc<Vec<f32>>,
     pub labels_vec: Arc<Vec<i32>>,
+}
+
+impl Default for RectLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
+            stroke_width: None,
+            stroke_width_unit_mode: UnitsMode::Pixels,
+            model_matrix: None,
+            fill_color_mode: ColorMode::Static,
+            fill_color: None,
+            position_x0: Arc::new(vec![]),
+            position_y0: Arc::new(vec![]),
+            position_x1: Arc::new(vec![]),
+            position_y1: Arc::new(vec![]),
+            labels_vec: Arc::new(vec![]),
+        }
+    }
 }
 
 // TODO: consider eliminating once we have a PolygonLayer?

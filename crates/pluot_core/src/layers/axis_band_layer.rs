@@ -18,12 +18,23 @@ const DEFAULT_FONT_SIZE: f64 = 12.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AxisBandLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
     pub domain: Arc<Vec<String>>,
 
     // TODO: support a data_unit_mode param?
+}
+
+impl Default for AxisBandLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            position: AxisPosition::Bottom,
+            domain: Arc::new(vec![]),
+        }
+    }
 }
 
 pub struct AxisBandLayer {
@@ -192,7 +203,7 @@ impl AxisBandLayer {
             source_position_y: Arc::new(line_source_position_y),
             target_position_x: Arc::new(line_target_position_x),
             target_position_y: Arc::new(line_target_position_y),
-            labels_vec: line_labels_vec,
+            labels_vec: Arc::new(line_labels_vec),
         };
         sublayers.push(Box::new(LineLayer::new(
             self.view_params.clone(),

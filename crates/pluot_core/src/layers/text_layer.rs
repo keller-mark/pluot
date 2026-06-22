@@ -390,6 +390,7 @@ pub enum TextBaselineMode {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct TextLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -411,6 +412,29 @@ pub struct TextLayerParams {
     pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
     pub position_y: Arc<Vec<f32>>,
     pub text_vec: Arc<Vec<String>>,
+}
+
+impl Default for TextLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Data,
+            text_size: 12.0,
+            text_size_unit_mode: UnitsMode::Pixels,
+            text_align_mode: TextAlignMode::Start,
+            text_baseline_mode: TextBaselineMode::Alphabetic,
+            text_rotation: None,
+            model_matrix: None,
+            font_family: None,
+            font_weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
+            position_x: Arc::new(vec![]),
+            position_y: Arc::new(vec![]),
+            text_vec: Arc::new(vec![]),
+        }
+    }
 }
 
 // TODO: defaults for params?

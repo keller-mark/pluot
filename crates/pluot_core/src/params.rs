@@ -88,6 +88,7 @@ pub enum PlotParams {
 
 /// The params that are passed to the [`crate::render::render`] function.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct RenderParams {
     /// The width of the plot, in pixels.
     pub width: u32,

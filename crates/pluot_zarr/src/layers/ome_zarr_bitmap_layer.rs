@@ -23,6 +23,7 @@ use pluot_core::layers::multiscale_utils::to_y_slice;
 
 /// Parameters for constructing an `OmeZarrBitmapLayer`.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct OmeZarrBitmapLayerParams {
     /// Zarr store name. Falls back to view_params.store_name if None.
     pub store_name: Option<String>,
@@ -51,6 +52,7 @@ pub struct OmeZarrBitmapLayerParams {
 
     /// Model matrix encoding the physical voxel size and any affine transforms.
     /// The parent layer should convert per-resolution scale values into this matrix.
+    // TODO: make optional?
     pub model_matrix: [f32; 16],
 
     // Optional X and Y slice ranges for this tile. If None, the full range of the array is loaded.
@@ -64,6 +66,34 @@ pub struct OmeZarrBitmapLayerParams {
     pub bounds: Option<MarginParams>,
     pub opacity: f32,
     pub layer_id: String,
+}
+
+impl Default for OmeZarrBitmapLayerParams {
+    fn default() -> Self {
+        Self {
+            store_name: None,
+            array_path: "".to_string(),
+            array_metadata: None,
+            array_shape: vec![],
+            array_chunk_shape: vec![],
+            array_dimension_order: OmeDimensionOrder::new(vec![OmeDim::Y, OmeDim::X]),
+            target_z: None,
+            target_t: None,
+            // Column-major identity matrix.
+            model_matrix: [
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ],
+            slice_x: None,
+            slice_y: None,
+            channel_settings: vec![],
+            bounds: None,
+            opacity: 1.0,
+            layer_id: "".to_string(),
+        }
+    }
 }
 
 /// A sublayer that loads a single OME-Zarr tile in `prepare()` and delegates

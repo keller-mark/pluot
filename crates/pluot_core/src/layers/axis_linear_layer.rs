@@ -30,11 +30,21 @@ pub enum AxisPosition {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AxisLinearLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
 
     // TODO: support a data_unit_mode param.
+}
+
+impl Default for AxisLinearLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            position: AxisPosition::Bottom,
+        }
+    }
 }
 
 pub struct AxisLinearLayer {
@@ -232,7 +242,7 @@ impl AxisLinearLayer {
             source_position_y: Arc::new(line_source_position_y),
             target_position_x: Arc::new(line_target_position_x),
             target_position_y: Arc::new(line_target_position_y),
-            labels_vec: line_labels_vec, // TODO: make this optional in LineLayerParams
+            labels_vec: Arc::new(line_labels_vec), // TODO: make this optional in LineLayerParams
         };
         sublayers.push(Box::new(LineLayer::new(
             self.view_params.clone(),

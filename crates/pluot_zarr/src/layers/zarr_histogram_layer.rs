@@ -15,6 +15,7 @@ use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_ext
 use pluot_core::plot_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct ZarrHistogramLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -33,6 +34,21 @@ pub struct ZarrHistogramLayerParams {
     pub cache_data: bool,
 
     pub fill_color: Option<(u8, u8, u8)>,
+}
+
+impl Default for ZarrHistogramLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            orientation: BarOrientation::Vertical,
+            store_name: None,
+            data_key: "".to_string(),
+            num_bins: 50,
+            cache_data: true,
+            fill_color: None,
+        }
+    }
 }
 
 pub struct ZarrHistogramLayer {
