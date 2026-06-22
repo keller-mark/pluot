@@ -156,7 +156,7 @@ fn get_point_size_device_pixels(
 
     // Point size bounds, in screen pixels.
     let point_screen_size_max = 10.0;
-    let point_screen_size_min = 1.0 / device_pixel_ratio;
+    let point_screen_size_min = 2.0 / device_pixel_ratio;
 
     let x_axis_range = 2.0 / (x_range / visible_x.max(f32::EPSILON));
     let y_axis_range = 2.0 / (y_range / visible_y.max(f32::EPSILON));
@@ -199,7 +199,7 @@ fn get_point_opacity(
 
     // p (the pixel length/width of a point) is 1 for us, so it drops out.
     let alpha = ((rho * w * h) / n) * (y0 / y) * (x0 / x);
-    alpha.clamp(1.01 / 255.0, 1.0)
+    alpha.clamp(2.01 / 255.0, 1.0)
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
