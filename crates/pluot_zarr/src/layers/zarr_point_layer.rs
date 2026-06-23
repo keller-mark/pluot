@@ -118,22 +118,15 @@ impl ZarrPointLayer {
 
 // Port of the dynamic point-size / opacity heuristics from vitessce:
 // https://github.com/vitessce/vitessce/blob/main/packages/view-types/scatterplot/src/shared-spatial-scatterplot/dynamic-opacity.js
-//
-// pluot's `Data` unit mode places coordinates in normalized (0,1) space, which
-// is the same space `get_bounds` reports the visible window in. So the data
-// extent (from `reduce_extent`) and the visible extent (from `get_bounds`) share
-// units, and deck.gl's `(dataRange / visibleRange)` ratios carry over directly.
-// This replaces deck.gl's `2 ** zoom` scale factor and `OrthographicView.getBounds()`.
-
 const BASE_POINT_SIZE: f32 = 5.0;
-const LARGE_DATASET_CELL_COUNT: f32 = 10000.0;
-const SMALL_DATASET_CELL_COUNT: f32 = 100.0;
+const LARGE_DATASET_COUNT: f32 = 10000.0;
+const SMALL_DATASET_COUNT: f32 = 100.0;
 
 /// Port of `getInitialPointSize`: the point size (in data/axis units) decreases
 /// as the number of points grows, to mitigate overplotting. Ranges from 0.05
 /// (<= 100 points) down to 0.0005 (>= 10000 points).
-fn get_initial_point_size(num_cells: usize) -> f32 {
-    BASE_POINT_SIZE / (num_cells as f32).clamp(SMALL_DATASET_CELL_COUNT, LARGE_DATASET_CELL_COUNT)
+fn get_initial_point_size(num_points: usize) -> f32 {
+    BASE_POINT_SIZE / (num_points as f32).clamp(SMALL_DATASET_COUNT, LARGE_DATASET_COUNT)
 }
 
 /// Port of `getPointSizeDevicePixels`: converts the axis-space initial point size
@@ -150,9 +143,9 @@ fn get_point_size_device_pixels(
     visible_y: f32,
     width: f32,
     height: f32,
-    num_cells: usize,
+    num_points: usize,
 ) -> f32 {
-    let point_size = get_initial_point_size(num_cells);
+    let point_size = get_initial_point_size(num_points);
 
     // Point size bounds, in screen pixels.
     let point_screen_size_max = 10.0;
@@ -182,9 +175,9 @@ fn get_point_opacity(
     visible_y: f32,
     width: f32,
     height: f32,
-    num_cells: usize,
+    num_points: usize,
 ) -> f32 {
-    let n = num_cells as f32;
+    let n = num_points as f32;
 
     // deck.gl: X = maxY - minY (visible y span), Y = maxX - minX (visible x span).
     let x = visible_y.max(f32::EPSILON);
