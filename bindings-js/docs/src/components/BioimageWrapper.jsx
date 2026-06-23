@@ -13,6 +13,21 @@ import { PluotWrapper } from './PluotWrapper.jsx';
 // Create a client
 const queryClient = new QueryClient();
 
+function hexToRgb(hex) {
+  // Strip a leading "#" if present
+  const cleaned = hex.replace(/^#/, "");
+
+  if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) {
+    throw new Error(`Invalid hex color: "${hex}"`);
+  }
+
+  const r = parseInt(cleaned.slice(0, 2), 16);
+  const g = parseInt(cleaned.slice(2, 4), 16);
+  const b = parseInt(cleaned.slice(4, 6), 16);
+
+  return { r, g, b };
+}
+
 async function queryFn(ctx) {
   const { store } = ctx.meta;
   const group = await zarr.open(store, { kind: "group" });
@@ -24,6 +39,8 @@ async function queryFn(ctx) {
 
   const channels = ngffAttrs.ome.omero?.channels;
 
+  const hasZ = ngffAttrs.ome.multiscales?.[0]?.axes?.find(axisObj => axisObj.name === "z");
+
   if (Array.isArray(channels)) {
 
     // Based on the channel metadata, we want to set up BOTH the:
@@ -31,32 +48,45 @@ async function queryFn(ctx) {
     // - Callback function that returns plotParams, given the current control values.
 
     const controls = {};
+
+    if (hasZ) {
+      controls["target_z"] = {
+        // TODO: load array to find number of Z slices
+        // TODO: use omero.rdefs.defaultZ if provided,
+        // OR derive based on num Z slices if not.
+        value: 40,
+        min: 0,
+        max: 100,
+        label: 'Z slice',
+      };
+    }
+
     channels.forEach((c, i) => {
       const channelName = c.label ?? `Channel ${i}`;
+
+      // TODO: check omero.rdefs.model to determine whether RGB or not.
+      // TODO: use a default palette for fallback colors based on channel index,
+      // rather than always falling back to white.
+      const channelColorObj = c.color
+        ? hexToRgb(c.color)
+        : { r: 255, g: 255, b: 255 };
+
       controls[channelName] = folder({
         [`channel_${i}___visible`]: {
-          // TODO: use c.active if provided
-          value: true,
+          // Use c.active if provided
+          value: c.active ?? true,
           label: 'Visible',
         },
         [`channel_${i}___color`]: {
-          // TODO: use c.color if provided.
-          // If not, check omero.rdefs.model.
-          value: {
-            r: 255,
-            g: 255,
-            b: 255,
-          },
+          value: channelColorObj,
           label: 'Color',
         },
         [`channel_${i}___window`]: {
-          // TODO: use c.window.start, c.window.end if provided
-          // OR use array dtype if not.
-          value: [0.0, 90000.0],
-          // TODO: use c.window.min, c.window.max if provided
-          // OR use array dtype if not.
-          min: 0.0,
-          max: 100000.0,
+          // TODO: use array dtype if window.start/end are not present.
+          value: [c.window?.start ?? 0.0, c.window?.end ?? 1.0],
+          // TODO: use array dtype if window.min/max are not present.
+          min: c.window?.min ?? 0.0,
+          max: c.window?.max ?? 10000.0,
           label: 'Window',
         },
       }, { order: i });
@@ -100,7 +130,7 @@ async function queryFn(ctx) {
               layer_id: "ome_zarr_multiscale_layer",
               // TODO: use omero.rdefs.defaultZ if provided,
               // OR derive based on num Z slices if not.
-              target_z: 40,
+              target_z: currControls['target_z'],
               // TODO: use omero.rdefs.defaultT if provided,
               // OR derive based on num T slices if not.
               target_t: 0,

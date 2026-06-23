@@ -55,7 +55,7 @@ fn cross_lines() -> LineLayerParams {
         source_position_y: Arc::new(vec![0.0, 0.0]),
         target_position_x: Arc::new(vec![1.0, 0.0]),
         target_position_y: Arc::new(vec![1.0, 1.0]),
-        labels_vec: vec![0, 1],
+        labels_vec: Arc::new(vec![0, 1]),
     }
 }
 
