@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { setStoreByName } from '@pluot/react';
 import * as zarr from 'zarrita';
 import { PluotWrapper } from './PluotWrapper.jsx';
 
@@ -9,6 +8,7 @@ function getAttractorData(attractorType, N) {
   const xData = new Float64Array(N);
   const yData = new Float64Array(N);
 
+  // Adapted from https://observablehq.com/@rreusser/selecting-the-right-opacity-for-2d-point-clouds
   switch (attractorType) {
     case 'Uniform grid':
       const w = Math.floor(Math.sqrt(N));
@@ -223,7 +223,13 @@ export function AttractorWrapper(props) {
             }
           ]
         }}
-        viewMode={"2d"}
+      viewMode={"2d"}
+      cameraMatrix={[
+        0.05, 0.0, 0.0, 0.0,
+        0.0, 0.05, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0
+      ]}
     />
 
   );

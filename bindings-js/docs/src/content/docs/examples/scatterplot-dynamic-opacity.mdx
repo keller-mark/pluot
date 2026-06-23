@@ -1,0 +1,20 @@
+---
+title: Scatterplot, dynamic opacity
+description: Scatterplot example.
+sidebar:
+    order: 11
+---
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { AttractorWrapper } from '../../../components/AttractorWrapper.jsx';
+
+
+This scatterplot renders 1 million points with coordinates based on the [Rössler attractor](https://en.wikipedia.org/wiki/R%C3%B6ssler_attractor).
+The data-generating function and dynamic point opacity approach are based on Ricky Reusser's [Selecting the Right Opacity for 2D Point Clouds](https://observablehq.com/@rreusser/selecting-the-right-opacity-for-2d-point-clouds).
+
+<AttractorWrapper
+    client:load
+    client:only="react"
+
+    numPoints={1000000}
+    attractorType={"Rossler"}
+/>

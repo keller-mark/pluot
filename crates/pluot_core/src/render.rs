@@ -4,6 +4,7 @@ use crate::render_types::GpuContext;
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
 use crate::render_traits::{MarginParams, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
+use crate::render_post::unpremultiply;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
@@ -151,7 +152,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             // Un-premultiply on the GPU: a full-screen pass that samples the
             // premultiplied `texture` and writes straight alpha into
             // `resolved_texture`.
-            crate::render_post::unpremultiply(&gpu_context, &mut encoder, &texture, &resolved_texture);
+            unpremultiply(&gpu_context, &mut encoder, &texture, &resolved_texture);
 
             // Copy the un-premultiplied texture to the output buffer.
             encoder.copy_texture_to_buffer(
