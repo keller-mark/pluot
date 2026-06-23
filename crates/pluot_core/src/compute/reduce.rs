@@ -110,9 +110,9 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 ///
 /// The input is processed in chunks so that an arbitrarily large array can be
 /// reduced even though a single dispatch is bounded by
-/// `max_compute_workgroups_per_dimension` (≈65 535 → ~4.19 M elements) and a
+/// `max_compute_workgroups_per_dimension` (~65,535 or ~4M elements) and a
 /// single storage binding is bounded by `max_storage_buffer_binding_size`
-/// (default 128 MiB → ~33 M elements).  Each chunk is dispatched separately and
+/// (default 128 MiB or ~33M elements).  Each chunk is dispatched separately and
 /// the partial results are combined as described below.
 ///
 /// **Return value layout**

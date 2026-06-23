@@ -10,20 +10,6 @@ function getAttractorData(attractorType, N) {
 
   // Adapted from https://observablehq.com/@rreusser/selecting-the-right-opacity-for-2d-point-clouds
   switch (attractorType) {
-    case 'Uniform grid':
-      const w = Math.floor(Math.sqrt(N));
-      for (var i = 0; i <= N; i++) {
-        xData[i] = ((i % w) / w - 0.5) * initialAxisDimensions[0];
-        yData[i] =
-          (Math.floor(i / w) / w - 0.5) * initialAxisDimensions[1];
-      }
-      break;
-    case 'Random':
-      for (var i = 0; i <= N; i++) {
-        xData[i] = (Math.random() - 0.5) * initialAxisDimensions[0];
-        yData[i] = (Math.random() - 0.5) * initialAxisDimensions[1];
-      }
-      break;
     case 'Rossler': {
       let xn = 2.644838333129883,
         yn = 4.060488700866699,
@@ -129,7 +115,6 @@ function getAttractorData(attractorType, N) {
 
 async function fillAttractorStore(store, attractorType, N) {
   const [xData, yData] = getAttractorData(attractorType, N);
-  console.log(xData, yData)
 
   const h = zarr.root(store);
 	const xArr = await zarr.create(h.resolve(`/${attractorType}/${N}/X`), {
@@ -193,8 +178,6 @@ export function AttractorWrapper(props) {
 
     return memoryStore;
   }, [attractorType, numPoints]);
-
-
 
   return (
     <PluotWrapper
