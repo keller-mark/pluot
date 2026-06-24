@@ -115,13 +115,14 @@ struct CurveLayerUniforms {
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
-    line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    stroke_width: f32,
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     subdivisions: u32, // number of straight sub-segments per cubic Bezier segment
     model_matrix: mat4x4<f32>,
-    color: vec4<f32>, // rgba stroke color for the curve
+    stroke_color: vec4<f32>, // rgba stroke color (alpha includes stroke opacity)
+    fill_color: vec4<f32>, // rgba fill color (alpha includes fill opacity)
 };
 
 struct VSOut {
@@ -134,8 +135,10 @@ struct FSOut {
 };
 
 @group(0) @binding(0) var<uniform> u: CurveLayerUniforms;
-// Flat list of cubic control points: 4 consecutive vec2 per Bezier segment
-// (p0, p1, p2, p3, then the next segment's p0, ...).
+// Per-pass storage buffer of model-space vec2 points. For the stroke pass (vs_main)
+// this is a flat list of cubic control points: 4 consecutive vec2 per Bezier segment
+// (p0, p1, p2, p3, then the next segment's p0, ...). For the fill pass (vs_fill) it is
+// a flat list of triangle vertices (3 consecutive vec2 per triangle).
 @group(0) @binding(1) var<storage, read> control_points: array<vec2<f32>>;
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -221,20 +224,35 @@ fn vs_main(
 
     let corner = QUAD[vertex_index & 3u];
 
-    // TODO: Handle line_width_unit_mode == 1 (data coordinates).
-    let line_width_ndc = u.line_width / u.layer_size.y * 2.0;
+    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
+    let stroke_width_ndc = u.stroke_width / u.layer_size.y * 2.0;
 
     let point_pos_ndc = extrude_line(
         source_ndc,
         target_ndc,
         corner,
-        line_width_ndc,
+        stroke_width_ndc,
         layer_aspect_ratio
     );
 
     var out: VSOut;
     out.position = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
-    out.color = u.color;
+    out.color = u.stroke_color;
+    return out;
+}
+
+// Fill entry point. The bound storage buffer holds the triangulated fill geometry
+// as a flat list of model-space vertices (3 per triangle); we project each through
+// the same pipeline as the stroke and shade it with the fill color.
+@vertex
+fn vs_fill(@builtin(vertex_index) vertex_index: u32) -> VSOut {
+    let model_point = control_points[vertex_index];
+    let layer_aspect_ratio = u.layer_size.x / u.layer_size.y;
+    let pos_ndc = project_point(model_point, layer_aspect_ratio);
+
+    var out: VSOut;
+    out.position = vec4f(pos_ndc.x, pos_ndc.y, 0.0, 1.0);
+    out.color = u.fill_color;
     return out;
 }
 

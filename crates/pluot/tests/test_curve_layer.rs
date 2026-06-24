@@ -29,8 +29,8 @@ fn wave_curve_data() -> CurveLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        line_width: 2.0,
-        line_width_unit_mode: UnitsMode::Pixels,
+        stroke_width: 2.0,
+        stroke_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
         commands: Arc::new(vec![
             PathCommand::MoveTo { x: 0.1, y: 0.5 },
@@ -38,7 +38,12 @@ fn wave_curve_data() -> CurveLayerParams {
             PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
         ]),
         subdivisions: 32,
-        color: [1.0, 0.0, 0.0, 1.0],
+        stroked: true,
+        filled: false,
+        stroke_color: [1.0, 0.0, 0.0, 1.0],
+        fill_color: [0.0, 0.0, 1.0, 1.0],
+        stroke_opacity: 1.0,
+        fill_opacity: 1.0,
     }
 }
 
@@ -356,7 +361,7 @@ async fn test_curve_layer_wide_contain_data_units_thick_line_width() {
         width: 200,
         height: 100,
         layers: layer_params(CurveLayerParams {
-            line_width: 10.0,
+            stroke_width: 10.0,
             ..wave_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -451,4 +456,66 @@ async fn test_curve_layer_wide_contain_closed_curve_data_units() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_wide_contain_closed_curve_data_units").await;
+}
+
+// ── Fill modes (stroked / filled / both, separate colors and opacity) ────────
+
+// Filled only: opaque blue interior, no stroke outline.
+#[tokio::test]
+async fn test_curve_layer_square_contain_closed_curve_filled() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: false,
+            filled: true,
+            fill_color: [0.0, 0.0, 1.0, 1.0],
+            ..closed_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_closed_curve_filled").await;
+}
+
+// Both stroked and filled: blue fill under a red stroke.
+#[tokio::test]
+async fn test_curve_layer_square_contain_closed_curve_stroke_and_fill() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            stroke_width: 4.0,
+            stroke_color: [1.0, 0.0, 0.0, 1.0],
+            fill_color: [0.0, 0.0, 1.0, 1.0],
+            ..closed_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_closed_curve_stroke_and_fill").await;
+}
+
+// Separate stroke/fill opacity values: semi-transparent fill, opaque stroke.
+#[tokio::test]
+async fn test_curve_layer_square_contain_closed_curve_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            stroke_width: 4.0,
+            stroke_color: [1.0, 0.0, 0.0, 1.0],
+            fill_color: [0.0, 0.0, 1.0, 1.0],
+            stroke_opacity: 1.0,
+            fill_opacity: 0.5,
+            ..closed_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_closed_curve_fill_opacity").await;
 }

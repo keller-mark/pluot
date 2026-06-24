@@ -1,5 +1,5 @@
 // A CurveLayer that renders SVG-like vector paths (lines, cubic/quadratic Bezier
-// curves and elliptical arcs) as stroked curves.
+// curves and elliptical arcs) as stroked and/or filled curves.
 //
 // We use line_layer.rs and its shader (shaders/line_layer.wgsl) as a reference.
 // In contrast to LineLayer, CurveLayer accepts a sequence of path drawing commands
@@ -11,12 +11,14 @@
 // sub-segments into quads. This keeps the bulk of the per-curve work in the vertex
 // shader so rendering stays efficient and scalable.
 //
+// A path can be stroked, filled, or both (matching SVG `fill`/`stroke`). The stroke
+// is rendered exactly as above. The fill is produced by flattening each sub-path into
+// a polygon and triangulating it on the CPU (ear clipping); the resulting triangles
+// are projected through the same pipeline in the vertex shader. Stroke and fill carry
+// independent colors and opacity values.
+//
 // Both pixel and data units are supported (matching LineLayer); we assume the
 // position and size values share the same units.
-
-// TODO: Rename line_width to stroke_width.
-// TODO: support both stroked and filled modes.
-// TODO: Support separate stroke/fill colors and opacity values.
 
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
@@ -72,8 +74,8 @@ pub struct CurveLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
-    pub line_width: f32,
-    pub line_width_unit_mode: UnitsMode,
+    pub stroke_width: f32,
+    pub stroke_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
     /// The path to draw, as a sequence of absolute drawing commands.
@@ -82,8 +84,21 @@ pub struct CurveLayerParams {
     /// segment. Higher values produce smoother curves at the cost of more
     /// instanced draws.
     pub subdivisions: u32,
+
+    /// Whether to stroke the path outline. Defaults to `true`.
+    pub stroked: bool,
+    /// Whether to fill the (closed) path interior. Defaults to `false`.
+    pub filled: bool,
     /// RGBA stroke color in [0, 1]. Defaults to opaque black.
-    pub color: [f32; 4],
+    pub stroke_color: [f32; 4],
+    /// RGBA fill color in [0, 1]. Defaults to opaque black.
+    pub fill_color: [f32; 4],
+    /// Additional opacity multiplier for the stroke, in [0, 1]. Multiplies the
+    /// stroke color's alpha (mirrors SVG `stroke-opacity`). Defaults to 1.0.
+    pub stroke_opacity: f32,
+    /// Additional opacity multiplier for the fill, in [0, 1]. Multiplies the fill
+    /// color's alpha (mirrors SVG `fill-opacity`). Defaults to 1.0.
+    pub fill_opacity: f32,
 }
 
 impl Default for CurveLayerParams {
@@ -93,12 +108,17 @@ impl Default for CurveLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            line_width: 1.0,
-            line_width_unit_mode: UnitsMode::Pixels,
+            stroke_width: 1.0,
+            stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            color: [0.0, 0.0, 0.0, 1.0],
+            stroked: true,
+            filled: false,
+            stroke_color: [0.0, 0.0, 0.0, 1.0],
+            fill_color: [0.0, 0.0, 0.0, 1.0],
+            stroke_opacity: 1.0,
+            fill_opacity: 1.0,
         }
     }
 }
@@ -331,11 +351,143 @@ fn eval_cubic(seg: &CubicSegment, t: f32) -> (f32, f32) {
     )
 }
 
+/// Flatten a sub-path's cubic segments into a closed polygon ring, matching the
+/// tessellation used for stroking. Consecutive duplicate points (and a trailing
+/// point coincident with the start) are dropped so the ring has no degenerate edges.
+fn subpath_to_polygon(subpath: &[CubicSegment], subdivisions: u32) -> Vec<(f32, f32)> {
+    let mut points: Vec<(f32, f32)> = Vec::new();
+    if subpath.is_empty() {
+        return points;
+    }
+    let push_unique = |points: &mut Vec<(f32, f32)>, p: (f32, f32)| {
+        match points.last() {
+            Some(last) if (last.0 - p.0).abs() < 1e-9 && (last.1 - p.1).abs() < 1e-9 => {}
+            _ => points.push(p),
+        }
+    };
+    push_unique(&mut points, subpath[0][0]);
+    for seg in subpath {
+        for step in 1..=subdivisions {
+            let t = step as f32 / subdivisions as f32;
+            push_unique(&mut points, eval_cubic(seg, t));
+        }
+    }
+    // Drop a trailing point that closes back onto the start (Close adds one).
+    if points.len() > 1 {
+        let first = points[0];
+        let last = *points.last().unwrap();
+        if (first.0 - last.0).abs() < 1e-9 && (first.1 - last.1).abs() < 1e-9 {
+            points.pop();
+        }
+    }
+    points
+}
+
+/// Twice the signed area of a polygon ring. Positive when the ring is wound
+/// counter-clockwise (in a y-up coordinate system).
+fn signed_area_2x(points: &[(f32, f32)]) -> f32 {
+    let n = points.len();
+    let mut area = 0.0;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += points[i].0 * points[j].1 - points[j].0 * points[i].1;
+    }
+    area
+}
+
+/// True if point `p` lies inside (or on the boundary of) triangle (a, b, c).
+fn point_in_triangle(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
+    let sign = |p1: (f32, f32), p2: (f32, f32), p3: (f32, f32)| {
+        (p1.0 - p3.0) * (p2.1 - p3.1) - (p2.0 - p3.0) * (p1.1 - p3.1)
+    };
+    let d1 = sign(p, a, b);
+    let d2 = sign(p, b, c);
+    let d3 = sign(p, c, a);
+    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    !(has_neg && has_pos)
+}
+
+/// Triangulate a simple polygon ring via ear clipping, returning a flat list of
+/// triangle vertices (3 per triangle). Handles concave polygons; self-intersecting
+/// rings are not supported and cause the routine to bail out early. The output
+/// winding is unspecified (the fill pipeline disables back-face culling).
+fn triangulate(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let n = points.len();
+    let mut out: Vec<(f32, f32)> = Vec::new();
+    if n < 3 {
+        return out;
+    }
+
+    // Work with vertex indices wound counter-clockwise so the convexity test below
+    // (cross product > 0) identifies ear tips consistently.
+    let mut indices: Vec<usize> = (0..n).collect();
+    if signed_area_2x(points) < 0.0 {
+        indices.reverse();
+    }
+
+    out.reserve((n - 2) * 3);
+    // Each successful clip removes one vertex; `guard` bounds the work in case the
+    // ring is degenerate or self-intersecting so we never loop forever.
+    let mut guard = n * n;
+    while indices.len() > 3 && guard > 0 {
+        guard -= 1;
+        let m = indices.len();
+        let mut clipped = false;
+        for i in 0..m {
+            let a = points[indices[(i + m - 1) % m]];
+            let b = points[indices[i]];
+            let c = points[indices[(i + 1) % m]];
+
+            // Reflex or collinear vertices cannot be ear tips.
+            let cross = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+            if cross <= 0.0 {
+                continue;
+            }
+
+            // Reject if any other vertex lies inside the candidate ear triangle.
+            let mut contains = false;
+            for (k, &idx) in indices.iter().enumerate() {
+                if k == (i + m - 1) % m || k == i || k == (i + 1) % m {
+                    continue;
+                }
+                if point_in_triangle(points[idx], a, b, c) {
+                    contains = true;
+                    break;
+                }
+            }
+            if contains {
+                continue;
+            }
+
+            out.push(a);
+            out.push(b);
+            out.push(c);
+            indices.remove(i);
+            clipped = true;
+            break;
+        }
+        if !clipped {
+            // No ear found: the ring is degenerate/self-intersecting. Stop here.
+            return out;
+        }
+    }
+    if indices.len() == 3 {
+        out.push(points[indices[0]]);
+        out.push(points[indices[1]]);
+        out.push(points[indices[2]]);
+    }
+    out
+}
+
 pub struct CurveLayer {
     view_params: ViewParams,
     layer_params: CurveLayerParams,
-    /// Flattened cubic segments grouped by sub-path (used for SVG rendering).
+    /// Flattened cubic segments grouped by sub-path (used for stroking and SVG).
     subpaths: Vec<Vec<CubicSegment>>,
+    /// Triangulated fill geometry: a flat list of model-space triangle vertices
+    /// (3 per triangle). Empty unless the layer is filled.
+    fill_vertices: Vec<(f32, f32)>,
 }
 
 impl CurveLayer {
@@ -343,18 +495,34 @@ impl CurveLayer {
         view_params: ViewParams,
         layer_params: CurveLayerParams,
     ) -> Self {
-        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.line_width_unit_mode == UnitsMode::Data
+        // Error if stroke_width_unit_mode is "data" when data_unit_mode is "pixels".
+        if layer_params.stroke_width_unit_mode == UnitsMode::Data
             && (layer_params.data_unit_mode_x == UnitsMode::Pixels
                 || layer_params.data_unit_mode_y == UnitsMode::Pixels)
         {
-            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
         let subpaths = commands_to_subpaths(&layer_params.commands);
+
+        // Precompute fill triangles only when needed; each sub-path is triangulated
+        // independently (no even-odd hole handling between sub-paths).
+        let fill_vertices = if layer_params.filled {
+            let subdivisions = layer_params.subdivisions.max(1);
+            let mut verts = Vec::new();
+            for subpath in &subpaths {
+                let polygon = subpath_to_polygon(subpath, subdivisions);
+                verts.extend(triangulate(&polygon));
+            }
+            verts
+        } else {
+            Vec::new()
+        };
+
         Self {
             view_params,
             layer_params,
             subpaths,
+            fill_vertices,
         }
     }
 
@@ -380,13 +548,14 @@ struct CurveLayerUniforms {
     camera_view: Mat4,
     data_unit_mode_x: u32, // 0 = pixels, 1 = data units
     data_unit_mode_y: u32, // 0 = pixels, 1 = data units
-    line_width: f32,
-    line_width_unit_mode: u32, // 0 = pixels, 1 = data units
+    stroke_width: f32,
+    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     subdivisions: u32, // sub-segments per cubic Bezier segment
     model_matrix: Mat4,
-    color: Vec4, // rgba stroke color
+    stroke_color: Vec4, // rgba stroke color (alpha already includes stroke_opacity)
+    fill_color: Vec4, // rgba fill color (alpha already includes fill_opacity)
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -394,35 +563,28 @@ struct CurveLayerUniforms {
 impl DrawToRasterGpu for CurveLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         let GpuContext { device, queue } = gpu_context;
-        let Self { layer_params, view_params, subpaths } = self;
+        let Self { layer_params, view_params, subpaths, fill_vertices } = self;
 
         let num_segments = self.num_segments();
         let subdivisions = layer_params.subdivisions.max(1);
-        // Nothing to draw (empty path, or a path with only MoveTo/Close commands).
-        if num_segments == 0 {
+
+        // Decide which passes to run. Stroke needs segments; fill needs triangles.
+        let do_stroke = layer_params.stroked && num_segments > 0;
+        let do_fill = layer_params.filled && !fill_vertices.is_empty();
+        // Nothing to draw (empty path, only MoveTo/Close, or both modes disabled).
+        if !do_stroke && !do_fill {
             return;
         }
 
-        // Flatten control points into a tightly-packed f32 buffer: 4 vec2 (8 floats)
-        // per cubic segment, matching `array<vec2<f32>>` (stride 8) in the shader.
-        let mut control_points: Vec<f32> = Vec::with_capacity(num_segments * 8);
-        for subpath in subpaths {
-            for seg in subpath {
-                for (x, y) in seg {
-                    control_points.push(*x);
-                    control_points.push(*y);
-                }
-            }
-        }
-        let control_points_bytes: &[u8] = bytemuck::cast_slice(&control_points);
-
-        let control_points_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Curve Control Points Storage Buffer"),
-            size: control_points_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&control_points_buffer, 0, control_points_bytes);
+        // Final stroke/fill colors, folding the separate opacity multipliers into alpha.
+        let stroke_rgba = {
+            let [r, g, b, a] = layer_params.stroke_color;
+            [r, g, b, a * layer_params.stroke_opacity]
+        };
+        let fill_rgba = {
+            let [r, g, b, a] = layer_params.fill_color;
+            [r, g, b, a * layer_params.fill_opacity]
+        };
 
         // Note: WGSL treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -461,8 +623,8 @@ impl DrawToRasterGpu for CurveLayer {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
             },
-            line_width: layer_params.line_width,
-            line_width_unit_mode: match layer_params.line_width_unit_mode {
+            stroke_width: layer_params.stroke_width,
+            stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
             },
@@ -483,7 +645,8 @@ impl DrawToRasterGpu for CurveLayer {
                 0.0, 0.0, 1.0, 0.0,
                 0.0, 0.0, 0.0, 1.0,
             ])),
-            color: Vec4::from_array(layer_params.color),
+            stroke_color: Vec4::from_array(stroke_rgba),
+            fill_color: Vec4::from_array(fill_rgba),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -523,21 +686,6 @@ impl DrawToRasterGpu for CurveLayer {
                 },
             ],
         });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("CurveLayer BG"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: control_points_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/curve_layer.wgsl"));
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -546,45 +694,77 @@ impl DrawToRasterGpu for CurveLayer {
             immediate_size: 0,
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("CurveLayer RPD"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
-        });
+        // Both passes share the same layout, blend, and target; only the vertex
+        // entry point and primitive topology differ (quads for stroke, triangles
+        // for fill).
+        let make_pipeline = |entry_point: &str, topology: wgpu::PrimitiveTopology| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("CurveLayer RPD"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                cache: None,
+                multiview_mask: None,
+            })
+        };
+
+        // Build a storage-buffer-backed bind group from a tightly-packed f32 slice
+        // (interpreted as `array<vec2<f32>>` in the shader).
+        let make_bind_group = |label: &str, data: &[f32]| {
+            let bytes: &[u8] = bytemuck::cast_slice(data);
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: bytes.len() as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&buffer, 0, bytes);
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        };
 
         // Handle margins by adjusting viewport and scissor rect (see LineLayer).
         pass.set_viewport(
@@ -602,12 +782,44 @@ impl DrawToRasterGpu for CurveLayer {
             (viewport_h - (margin_top + margin_bottom) as f32) as u32,
         );
 
-        pass.set_pipeline(&render_pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        // Fill first, so the stroke is drawn on top of the fill.
+        if do_fill {
+            // Flatten triangle vertices into a tightly-packed f32 buffer: 1 vec2 per
+            // vertex, 3 vertices per triangle.
+            let mut fill_data: Vec<f32> = Vec::with_capacity(fill_vertices.len() * 2);
+            for (x, y) in fill_vertices {
+                fill_data.push(*x);
+                fill_data.push(*y);
+            }
+            let fill_bind_group = make_bind_group("Curve Fill Vertices", &fill_data);
+            let fill_pipeline = make_pipeline("vs_fill", wgpu::PrimitiveTopology::TriangleList);
 
-        // One instance per (segment, sub-segment); 4 vertices per instance (quad).
-        let instance_count = (num_segments as u32) * subdivisions;
-        pass.draw(0..4, 0..instance_count);
+            pass.set_pipeline(&fill_pipeline);
+            pass.set_bind_group(0, &fill_bind_group, &[]);
+            pass.draw(0..(fill_vertices.len() as u32), 0..1);
+        }
+
+        if do_stroke {
+            // Flatten control points into a tightly-packed f32 buffer: 4 vec2 (8 floats)
+            // per cubic segment, matching `array<vec2<f32>>` (stride 8) in the shader.
+            let mut control_points: Vec<f32> = Vec::with_capacity(num_segments * 8);
+            for subpath in subpaths {
+                for seg in subpath {
+                    for (x, y) in seg {
+                        control_points.push(*x);
+                        control_points.push(*y);
+                    }
+                }
+            }
+            let stroke_bind_group = make_bind_group("Curve Control Points", &control_points);
+            let stroke_pipeline = make_pipeline("vs_main", wgpu::PrimitiveTopology::TriangleStrip);
+
+            pass.set_pipeline(&stroke_pipeline);
+            pass.set_bind_group(0, &stroke_bind_group, &[]);
+            // One instance per (segment, sub-segment); 4 vertices per instance (quad).
+            let instance_count = (num_segments as u32) * subdivisions;
+            pass.draw(0..4, 0..instance_count);
+        }
     }
 }
 
@@ -621,7 +833,7 @@ impl DrawToRasterCpu for CurveLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for CurveLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
-        let Self { layer_params, view_params, subpaths } = self;
+        let Self { layer_params, view_params, subpaths, .. } = self;
 
         let camera_view = view_params.camera_view.unwrap_or([
             1.0, 0.0, 0.0, 0.0,
@@ -674,16 +886,30 @@ impl DrawToSvg for CurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b, a] = layer_params.color;
-        let stroke = TwoColor::Rgba((
-            (r * 255.0).round().clamp(0.0, 255.0) as u8,
-            (g * 255.0).round().clamp(0.0, 255.0) as u8,
-            (b * 255.0).round().clamp(0.0, 255.0) as u8,
-            (a * 255.0).round().clamp(0.0, 255.0) as u8,
-        ));
+        // Fold the separate opacity multiplier into each color's alpha (mirrors the
+        // GPU path); the element-level SVG `opacity` stays at 1.0.
+        let to_rgba = |[r, g, b, a]: [f32; 4], opacity: f32| -> TwoColor {
+            TwoColor::Rgba((
+                (r * 255.0).round().clamp(0.0, 255.0) as u8,
+                (g * 255.0).round().clamp(0.0, 255.0) as u8,
+                (b * 255.0).round().clamp(0.0, 255.0) as u8,
+                (a * opacity * 255.0).round().clamp(0.0, 255.0) as u8,
+            ))
+        };
+        let stroke = if layer_params.stroked {
+            Some(to_rgba(layer_params.stroke_color, layer_params.stroke_opacity))
+        } else {
+            None
+        };
+        let fill = if layer_params.filled {
+            Some(to_rgba(layer_params.fill_color, layer_params.fill_opacity))
+        } else {
+            None
+        };
 
-        // Emit one stroked TwoPath polyline per sub-path. We flatten each cubic
-        // segment into `subdivisions` line segments (matching the GPU tessellation).
+        // Emit one TwoPath per sub-path. We flatten each cubic segment into
+        // `subdivisions` line segments (matching the GPU tessellation). SVG implicitly
+        // closes each sub-path when filling, matching the per-sub-path GPU fill.
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {
             if subpath.is_empty() {
@@ -702,9 +928,9 @@ impl DrawToSvg for CurveLayer {
             }
             svg_elements.push(TwoElement::Path(TwoPath {
                 points,
-                stroke: Some(stroke.clone()),
-                fill: None,
-                linewidth: layer_params.line_width as f64,
+                stroke: stroke.clone(),
+                fill: fill.clone(),
+                linewidth: layer_params.stroke_width as f64,
                 opacity: 1.0,
             }));
         }
