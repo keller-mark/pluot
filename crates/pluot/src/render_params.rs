@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 use pluot_core::layers::line_layer::{LineLayerParams};
+use pluot_core::layers::curve_layer::{CurveLayerParams};
 use pluot_core::layers::rect_layer::{RectLayerParams};
 use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
@@ -36,6 +37,7 @@ pub enum LayerParams {
 
     PointLayer(PointLayerParams),
     LineLayer(LineLayerParams),
+    CurveLayer(CurveLayerParams),
     RectLayer(RectLayerParams),
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),

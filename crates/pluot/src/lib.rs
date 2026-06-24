@@ -11,6 +11,7 @@ pub use pluot_core::{project, unproject, get_bounds};
 // Re-export layer param types for convenience.
 pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 pub use pluot_core::layers::line_layer::{LineLayerParams};
+pub use pluot_core::layers::curve_layer::{CurveLayerParams, PathCommand};
 pub use pluot_core::layers::rect_layer::{RectLayerParams};
 pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 pub use pluot_core::render_traits::{FontWeight, FontStyle};
