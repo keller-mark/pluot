@@ -4,6 +4,7 @@ use crate::render_types::GpuContext;
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
 use crate::render_traits::{MarginParams, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
+use crate::render_post::unpremultiply;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
@@ -102,10 +103,25 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 // Dimensions of the texture.
                 dimension: wgpu::TextureDimension::D2,
                 format: TextureFormat::Rgba8Unorm,
-                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+                // TEXTURE_BINDING so the un-premultiply pass below can sample it.
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             };
             let texture = gpu_context.device.create_texture(&texture_desc);
+
+            // Second texture that receives the straight-alpha result of the
+            // un-premultiply post-process pass. This is what gets copied out;
+            // we can't read and write `texture` in the same pass.
+            let resolved_texture = gpu_context.device.create_texture(&TextureDescriptor {
+                label: Some("Un-premultiplied Render Texture"),
+                size: texture_desc.size,
+                mip_level_count: texture_desc.mip_level_count,
+                sample_count: texture_desc.sample_count,
+                dimension: texture_desc.dimension,
+                format: texture_desc.format,
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
 
             // Create a buffer to store the output (RGBA8)
             let bytes_per_pixel: u32 = 4;
@@ -133,9 +149,14 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 &texture,
             ).await;
 
-            // Copy the texture to the output buffer.
+            // Un-premultiply on the GPU: a full-screen pass that samples the
+            // premultiplied `texture` and writes straight alpha into
+            // `resolved_texture`.
+            unpremultiply(&gpu_context, &mut encoder, &texture, &resolved_texture);
+
+            // Copy the un-premultiplied texture to the output buffer.
             encoder.copy_texture_to_buffer(
-                texture.as_image_copy(),
+                resolved_texture.as_image_copy(),
                 wgpu::TexelCopyBufferInfo {
                     buffer: &output_buffer,
                     layout: wgpu::TexelCopyBufferLayout {
@@ -191,18 +212,8 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
                 pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
             }
 
-            // De-premultiply: blending over a transparent clear color stores premultiplied
-            // bytes (R*A, G*A, B*A, A). putImageData on the JS side expects straight alpha,
-            // so without this step the browser compositor applies alpha a second time.
-            for pixel in pixels[..(unpadded_bytes_per_row * height) as usize].chunks_exact_mut(4) {
-                let a = pixel[3];
-                if a > 0 && a < 255 {
-                    let inv_a = 255.0 / a as f32;
-                    pixel[0] = (pixel[0] as f32 * inv_a).round() as u8;
-                    pixel[1] = (pixel[1] as f32 * inv_a).round() as u8;
-                    pixel[2] = (pixel[2] as f32 * inv_a).round() as u8;
-                }
-            }
+            // De-premultiplication now happens on the GPU (see the un-premultiply
+            // pass above), so the depadded buffer already holds straight alpha.
 
             let mut bailed_early = prepare_bailed_early;
             bailed_early = bailed_early || render_result.bailed_early;

@@ -8,6 +8,8 @@ use crate::params::LayerParams;
 use crate::registry::get_layer_from_registry;
 use serde::{Deserialize, Serialize};
 
+// TODO: use From and Into to define the integer conversions, rather than manually defining in comments?
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioMode {
     /*

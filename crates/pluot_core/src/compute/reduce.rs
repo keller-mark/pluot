@@ -69,14 +69,62 @@ struct ReduceUniforms {
 
 // Core dispatch function
 
+/// Maps `download_buffer` for reading, copies its contents into a `Vec<f32>`
+/// (interpreting the raw bytes as `f32`), then unmaps it so the buffer can be
+/// reused or dropped.
+async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) -> Vec<f32> {
+    let buffer_slice = download_buffer.slice(..);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let (sender, receiver) = oneshot_channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+            if res.is_err() {
+                panic!("Failed to map buffer for reading");
+            }
+            sender.send(res).ok();
+        });
+        let _ = device.poll(wgpu::PollType::Poll);
+        receiver.receive().await.unwrap().unwrap();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            if result.is_err() {
+                panic!("Failed to map buffer for reading");
+            }
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+    }
+
+    let data = buffer_slice.get_mapped_range();
+    let result = bytemuck::allocation::pod_collect_to_vec(&data);
+    drop(data);
+    download_buffer.unmap();
+    result
+}
+
 /// Dispatches a GPU reduction and returns raw partial results as `Vec<f32>`.
 ///
+/// **Large inputs**
+///
+/// The input is processed in chunks so that an arbitrarily large array can be
+/// reduced even though a single dispatch is bounded by
+/// `max_compute_workgroups_per_dimension` (~65,535 or ~4M elements) and a
+/// single storage binding is bounded by `max_storage_buffer_binding_size`
+/// (default 128 MiB or ~33M elements).  Each chunk is dispatched separately and
+/// the partial results are combined as described below.
+///
 /// **Return value layout**
-/// - `Min / Max / Sum`:  one `f32` per workgroup; caller folds into final scalar.
+/// - `Min / Max / Sum`:  one `f32` per workgroup, concatenated across all
+///                       chunks; caller folds them into the final scalar.
 /// - `Extent`:           two `f32` per workgroup — `[partial_min, partial_max]`
-///                       interleaved; caller folds each separately.
+///                       interleaved, concatenated across chunks; caller folds
+///                       each component separately.
 /// - `Histogram`:        `num_bins` values whose bytes are actually `u32` bin
-///                       counts; use `bytemuck::cast_slice` to recover `u32`s.
+///                       counts, accumulated across all chunks via the shader's
+///                       global atomics; use `bytemuck::cast_slice` to recover
+///                       the `u32`s.
 pub async fn compute_reduce(
     gpu_context: &GpuContext<'_>,
     input_arr: Arc<Vec<f32>>,
@@ -84,78 +132,45 @@ pub async fn compute_reduce(
 ) -> Vec<f32> {
     let GpuContext { device, queue } = gpu_context;
     let is_histogram = mode.is_histogram();
-    let workgroup_count = input_arr.len().div_ceil(64);
+    let is_extent = matches!(mode, ReduceMode::Extent);
 
     let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/reduce.wgsl"));
-
-    // Uniforms
 
     let (num_bins, data_min, data_max) = match &mode {
         ReduceMode::Histogram { num_bins, data_min, data_max } => (*num_bins, *data_min, *data_max),
         _ => (0, 0.0, 0.0),
     };
 
-    let uniforms = ReduceUniforms {
-        mode: mode.discriminant(),
-        num_elements: input_arr.len() as u32,
-        num_bins,
-        data_min,
-        data_max,
+    // ── Chunk sizing ──────────────────────────────────────────────────────────
+    //
+    // A single dispatch is limited along each dimension; an element count above
+    // `max_compute_workgroups_per_dimension * 64` would exceed that.  A single
+    // bound storage buffer is also limited by `max_storage_buffer_binding_size`.
+    // We pick the largest chunk that satisfies both limits.
+
+    let limits = device.limits();
+    let max_elems_by_dispatch =
+        (limits.max_compute_workgroups_per_dimension as usize).saturating_mul(64);
+    let max_elems_by_binding = (limits.max_storage_buffer_binding_size as usize) / 4;
+    let chunk_elements = max_elems_by_dispatch.min(max_elems_by_binding).max(64);
+
+    // ── Uniform layout (size is constant across chunks) ───────────────────────
+
+    let uniform_size = {
+        let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+        buffer
+            .write(&ReduceUniforms {
+                mode: mode.discriminant(),
+                num_elements: 0,
+                num_bins,
+                data_min,
+                data_max,
+            })
+            .unwrap();
+        buffer.into_inner().len() as u64
     };
 
-    let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-    buffer.write(&uniforms).unwrap();
-    let uniform_bytes = buffer.into_inner();
-
-    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("reduce_uniforms"),
-        size: uniform_bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-    // Input buffer
-
-    let input_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("reduce_input"),
-        contents: bytemuck::cast_slice(&input_arr),
-        usage: wgpu::BufferUsages::STORAGE,
-    });
-
-    // Output buffer
-    //
-    // Size depends on mode:
-    //   Min / Max / Sum  --> one f32  per workgroup (partial result)
-    //   Extent           --> two f32  per workgroup ([partial_min, partial_max])
-    //   Histogram        --> num_bins u32 values    (globally accumulated counts)
-    //
-    // WebGPU zero-initialises all newly created buffers, so the histogram
-    // output starts at zero without an explicit clear pass.
-
-    let output_size_bytes: u64 = if is_histogram {
-        (num_bins as u64) * 4
-    } else if matches!(mode, ReduceMode::Extent) {
-        (workgroup_count as u64) * 2 * 4
-    } else {
-        (workgroup_count as u64) * 4
-    };
-
-    let output_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("reduce_output"),
-        size: output_size_bytes,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-
-    let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("reduce_download"),
-        size: output_size_bytes,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-
-    // Bind group layout
+    // ── Bind group layout & pipeline (created once, reused per chunk) ─────────
     //
     // main_scalar    uses bindings 0 (uniform), 1 (input), 2 (output f32)
     // main_histogram uses bindings 0 (uniform), 1 (input), 3 (output atomic<u32>)
@@ -165,7 +180,7 @@ pub async fn compute_reduce(
         visibility: wgpu::ShaderStages::COMPUTE,
         ty: wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Uniform,
-            min_binding_size: NonZeroU64::new(uniform_bytes.len() as u64),
+            min_binding_size: NonZeroU64::new(uniform_size),
             has_dynamic_offset: false,
         },
         count: None,
@@ -197,27 +212,6 @@ pub async fn compute_reduce(
         entries: &[uniform_entry, input_entry, output_entry],
     });
 
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: input_data_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: if is_histogram { 3 } else { 2 },
-                resource: output_data_buffer.as_entire_binding(),
-            },
-        ],
-    });
-
-    // Pipeline
-
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[Some(&bind_group_layout)],
@@ -235,53 +229,169 @@ pub async fn compute_reduce(
         cache: None,
     });
 
-    // Dispatch
+    // ── Histogram: a single output buffer accumulated across all chunks ───────
+    //
+    // The histogram shader accumulates into this buffer with global atomics, so
+    // every chunk's dispatch adds into the same bins.  WebGPU zero-initialises
+    // newly created buffers, so it starts at zero without an explicit clear.
 
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    let hist_output = if is_histogram {
+        Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("reduce_histogram_output"),
+            size: (num_bins as u64) * 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        }))
+    } else {
+        None
+    };
 
-    {
-        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+    // ── Process each chunk ────────────────────────────────────────────────────
+
+    let total = input_arr.len();
+    let mut scalar_partials: Vec<f32> = Vec::new();
+    let mut offset = 0usize;
+
+    while offset < total {
+        let chunk_len = (total - offset).min(chunk_elements);
+        let chunk = &input_arr[offset..offset + chunk_len];
+        let workgroup_count = chunk_len.div_ceil(64);
+
+        // Uniforms for this chunk (num_elements is the chunk length).
+
+        let mut uniform_buf = UniformBuffer::new(Vec::<u8>::new());
+        uniform_buf
+            .write(&ReduceUniforms {
+                mode: mode.discriminant(),
+                num_elements: chunk_len as u32,
+                num_bins,
+                data_min,
+                data_max,
+            })
+            .unwrap();
+        let uniform_bytes = uniform_buf.into_inner();
+
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("reduce_uniforms"),
+            size: uniform_bytes.len() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+
+        // Input buffer for this chunk.
+
+        let input_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("reduce_input"),
+            contents: bytemuck::cast_slice(chunk),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        // Output buffer: per-chunk for scalar modes, shared accumulator for
+        // histogram.
+        //
+        //   Min / Max / Sum  --> one f32 per workgroup (partial result)
+        //   Extent           --> two f32 per workgroup ([partial_min, partial_max])
+
+        let scalar_output_bytes: u64 = if is_extent {
+            (workgroup_count as u64) * 2 * 4
+        } else {
+            (workgroup_count as u64) * 4
+        };
+
+        let scalar_output_buffer = if is_histogram {
+            None
+        } else {
+            Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("reduce_output"),
+                size: scalar_output_bytes,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            }))
+        };
+
+        let output_binding_resource = if is_histogram {
+            hist_output.as_ref().unwrap().as_entire_binding()
+        } else {
+            scalar_output_buffer.as_ref().unwrap().as_entire_binding()
+        };
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
-            timestamp_writes: None,
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: input_data_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: if is_histogram { 3 } else { 2 },
+                    resource: output_binding_resource,
+                },
+            ],
         });
-        compute_pass.set_pipeline(&pipeline);
-        compute_pass.set_bind_group(0, &bind_group, &[]);
-        compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            compute_pass.set_pipeline(&pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
+        }
+
+        // For scalar modes, read this chunk's partials back immediately and
+        // append them.  For histogram, the result accumulates in hist_output and
+        // is read back once after all chunks complete.
+        if let Some(scalar_output_buffer) = scalar_output_buffer.as_ref() {
+            let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("reduce_download"),
+                size: scalar_output_bytes,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            encoder.copy_buffer_to_buffer(
+                scalar_output_buffer,
+                0,
+                &download_buffer,
+                0,
+                scalar_output_bytes,
+            );
+            queue.submit([encoder.finish()]);
+            scalar_partials.extend(read_back_f32(device, &download_buffer).await);
+        } else {
+            queue.submit([encoder.finish()]);
+        }
+
+        offset += chunk_len;
     }
 
-    encoder.copy_buffer_to_buffer(&output_data_buffer, 0, &download_buffer, 0, output_size_bytes);
+    // ── Read back the final result ────────────────────────────────────────────
 
-    queue.submit([encoder.finish()]);
-
-    // Read back
-
-    let buffer_slice = download_buffer.slice(..);
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        let (sender, receiver) = oneshot_channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-            if res.is_err() {
-                panic!("Failed to map buffer for reading");
-            }
-            sender.send(res).ok();
+    if let Some(hist_output) = hist_output {
+        let size = (num_bins as u64) * 4;
+        let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("reduce_download"),
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
         });
-        let _ = device.poll(wgpu::PollType::Poll);
-        receiver.receive().await.unwrap().unwrap();
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&hist_output, 0, &download_buffer, 0, size);
+        queue.submit([encoder.finish()]);
+        read_back_f32(device, &download_buffer).await
+    } else {
+        scalar_partials
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            if result.is_err() {
-                panic!("Failed to map buffer for reading");
-            }
-        });
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
-    }
-
-    let data = buffer_slice.get_mapped_range();
-    bytemuck::allocation::pod_collect_to_vec(&data)
 }
 
 // CPU fallbacks
