@@ -97,6 +97,12 @@ base64.workspace = true
 # To compress SVG strings before passing to JS.
 lz-str.workspace = true
 
+
+# For curve algorithms
+kurbo = "0.13.1"
+# For polygons
+pluot_triangulation = { workspace = true }
+
 # WASM-specific dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-time = { workspace = true, default-features = true }

@@ -1,0 +1,11 @@
+[package]
+name = "pluot_triangulation"
+edition = "2021"
+version = "0.1.0"
+license = "BSD-3"
+homepage = "https://github.com/napari/bermuda"
+repository.workspace = true
+
+[lib]
+name = "pluot_triangulation"
+crate-type = ["lib"]

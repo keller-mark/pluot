@@ -25,6 +25,12 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+// `kurbo` provides the curve math (quadratic/arc -> cubic conversion and Bezier
+// evaluation); `pluot_triangulation` provides the polygon fill triangulation.
+use kurbo::{Arc as KurboArc, CubicBez, ParamCurve, Point as KurboPoint, QuadBez, SvgArc, Vec2 as KurboVec2};
+use pluot_triangulation::point::calc_dedup_edges;
+use pluot_triangulation::{is_convex, sweeping_line_triangulation, triangulate_convex_polygon, Point as TriPoint};
+
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
@@ -123,171 +129,22 @@ impl Default for CurveLayerParams {
     }
 }
 
-/// A flattened cubic Bezier segment: control points p0, p1, p2, p3.
-type CubicSegment = [(f32, f32); 4];
-
-/// Convert a quadratic Bezier (p0, control, p1) into an equivalent cubic Bezier.
-fn quadratic_to_cubic(p0: (f32, f32), c: (f32, f32), p1: (f32, f32)) -> CubicSegment {
-    let c1 = (
-        p0.0 + 2.0 / 3.0 * (c.0 - p0.0),
-        p0.1 + 2.0 / 3.0 * (c.1 - p0.1),
-    );
-    let c2 = (
-        p1.0 + 2.0 / 3.0 * (c.0 - p1.0),
-        p1.1 + 2.0 / 3.0 * (c.1 - p1.1),
-    );
-    [p0, c1, c2, p1]
-}
-
-/// Signed angle (radians) between vectors u and v.
-fn vector_angle(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 {
-    let dot = ux * vx + uy * vy;
-    let len = (ux * ux + uy * uy).sqrt() * (vx * vx + vy * vy).sqrt();
-    let mut ang = (dot / len).clamp(-1.0, 1.0).acos();
-    if ux * vy - uy * vx < 0.0 {
-        ang = -ang;
-    }
-    ang
-}
-
-/// Convert an elliptical arc (SVG "A" command) into a sequence of cubic Bezier
-/// segments, using the endpoint-to-center parameterization from the SVG spec
-/// implementation notes (https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes).
-fn arc_to_cubics(
-    start: (f32, f32),
-    rx: f32,
-    ry: f32,
-    x_axis_rotation_deg: f32,
-    large_arc: bool,
-    sweep: bool,
-    end: (f32, f32),
-) -> Vec<CubicSegment> {
-    let (x1, y1) = (start.0 as f64, start.1 as f64);
-    let (x2, y2) = (end.0 as f64, end.1 as f64);
-
-    // Degenerate radii (or a zero-length arc) collapse to a straight line.
-    let mut rx = (rx as f64).abs();
-    let mut ry = (ry as f64).abs();
-    if rx < 1e-12 || ry < 1e-12 || (x1 == x2 && y1 == y2) {
-        return vec![line_to_cubic(start, end)];
-    }
-
-    let phi = (x_axis_rotation_deg as f64).to_radians();
-    let (sin_phi, cos_phi) = phi.sin_cos();
-
-    // Step 1: compute (x1', y1') in the rotated coordinate system.
-    let dx = (x1 - x2) / 2.0;
-    let dy = (y1 - y2) / 2.0;
-    let x1p = cos_phi * dx + sin_phi * dy;
-    let y1p = -sin_phi * dx + cos_phi * dy;
-
-    // Correct out-of-range radii.
-    let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
-    if lambda > 1.0 {
-        let s = lambda.sqrt();
-        rx *= s;
-        ry *= s;
-    }
-
-    // Step 2: compute the center (cx', cy') in the rotated system.
-    let rx2 = rx * rx;
-    let ry2 = ry * ry;
-    let x1p2 = x1p * x1p;
-    let y1p2 = y1p * y1p;
-    let mut num = rx2 * ry2 - rx2 * y1p2 - ry2 * x1p2;
-    if num < 0.0 {
-        num = 0.0;
-    }
-    let denom = rx2 * y1p2 + ry2 * x1p2;
-    let mut coef = (num / denom).sqrt();
-    if large_arc == sweep {
-        coef = -coef;
-    }
-    let cxp = coef * rx * y1p / ry;
-    let cyp = -coef * ry * x1p / rx;
-
-    // Step 3: compute the center (cx, cy) in the original system.
-    let cx = cos_phi * cxp - sin_phi * cyp + (x1 + x2) / 2.0;
-    let cy = sin_phi * cxp + cos_phi * cyp + (y1 + y2) / 2.0;
-
-    // Step 4: compute the start angle and sweep angle.
-    let theta1 = vector_angle(1.0, 0.0, (x1p - cxp) / rx, (y1p - cyp) / ry);
-    let mut dtheta = vector_angle(
-        (x1p - cxp) / rx,
-        (y1p - cyp) / ry,
-        (-x1p - cxp) / rx,
-        (-y1p - cyp) / ry,
-    );
-    let tau = std::f64::consts::PI * 2.0;
-    if !sweep && dtheta > 0.0 {
-        dtheta -= tau;
-    } else if sweep && dtheta < 0.0 {
-        dtheta += tau;
-    }
-
-    // Split into segments each spanning at most 90 degrees for good accuracy.
-    let n_segs = (dtheta.abs() / (std::f64::consts::FRAC_PI_2))
-        .ceil()
-        .max(1.0) as usize;
-    let delta = dtheta / n_segs as f64;
-    // Control-point distance factor for approximating an arc of `delta` with a cubic.
-    let alpha = (4.0 / 3.0) * (delta / 4.0).tan();
-
-    // Point on the ellipse at parameter angle `t`.
-    let point = |t: f64| -> (f64, f64) {
-        let (st, ct) = t.sin_cos();
-        (
-            cos_phi * rx * ct - sin_phi * ry * st + cx,
-            sin_phi * rx * ct + cos_phi * ry * st + cy,
-        )
-    };
-    // Derivative (tangent) of the ellipse at parameter angle `t`.
-    let deriv = |t: f64| -> (f64, f64) {
-        let (st, ct) = t.sin_cos();
-        (
-            -cos_phi * rx * st - sin_phi * ry * ct,
-            -sin_phi * rx * st + cos_phi * ry * ct,
-        )
-    };
-
-    let mut segments = Vec::with_capacity(n_segs);
-    let mut angle = theta1;
-    let mut p0 = point(angle);
-    let mut d0 = deriv(angle);
-    for _ in 0..n_segs {
-        let angle2 = angle + delta;
-        let p3 = point(angle2);
-        let d3 = deriv(angle2);
-        let p1 = (p0.0 + alpha * d0.0, p0.1 + alpha * d0.1);
-        let p2 = (p3.0 - alpha * d3.0, p3.1 - alpha * d3.1);
-        segments.push([
-            (p0.0 as f32, p0.1 as f32),
-            (p1.0 as f32, p1.1 as f32),
-            (p2.0 as f32, p2.1 as f32),
-            (p3.0 as f32, p3.1 as f32),
-        ]);
-        angle = angle2;
-        p0 = p3;
-        d0 = d3;
-    }
-    segments
-}
-
-/// Represent a straight line as a (degenerate) cubic Bezier so it can share the
-/// same evaluation path on the GPU. With the control points at the endpoints, the
-/// traced geometry is exactly the line segment.
-fn line_to_cubic(p0: (f32, f32), p1: (f32, f32)) -> CubicSegment {
-    [p0, p0, p1, p1]
+/// Represent a straight line as a (degenerate) cubic Bezier so it can share the same
+/// evaluation path on the GPU. With the control points at the endpoints, the traced
+/// geometry is exactly the line segment.
+fn line_to_cubic(p0: KurboPoint, p1: KurboPoint) -> CubicBez {
+    CubicBez::new(p0, p0, p1, p1)
 }
 
 /// Flatten a sequence of drawing commands into per-sub-path lists of cubic Bezier
-/// segments. A new sub-path begins at each MoveTo; Close adds a closing segment
-/// back to the sub-path start.
-fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicSegment>> {
-    let mut subpaths: Vec<Vec<CubicSegment>> = Vec::new();
-    let mut current: Vec<CubicSegment> = Vec::new();
-    let mut cursor = (0.0f32, 0.0f32);
-    let mut subpath_start = (0.0f32, 0.0f32);
+/// segments. A new sub-path begins at each MoveTo; Close adds a closing segment back
+/// to the sub-path start. Quadratic Beziers and elliptical arcs are converted to
+/// cubics via `kurbo` (`QuadBez::raise` and `Arc::to_cubic_beziers` respectively).
+fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
+    let mut subpaths: Vec<Vec<CubicBez>> = Vec::new();
+    let mut current: Vec<CubicBez> = Vec::new();
+    let mut cursor = KurboPoint::ZERO;
+    let mut subpath_start = KurboPoint::ZERO;
 
     for command in commands {
         match *command {
@@ -295,32 +152,56 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicSegment>> {
                 if !current.is_empty() {
                     subpaths.push(std::mem::take(&mut current));
                 }
-                cursor = (x, y);
-                subpath_start = (x, y);
+                cursor = KurboPoint::new(x as f64, y as f64);
+                subpath_start = cursor;
             }
             PathCommand::LineTo { x, y } => {
-                current.push(line_to_cubic(cursor, (x, y)));
-                cursor = (x, y);
+                let end = KurboPoint::new(x as f64, y as f64);
+                current.push(line_to_cubic(cursor, end));
+                cursor = end;
             }
             PathCommand::CubicTo { x1, y1, x2, y2, x, y } => {
-                current.push([cursor, (x1, y1), (x2, y2), (x, y)]);
-                cursor = (x, y);
+                let end = KurboPoint::new(x as f64, y as f64);
+                current.push(CubicBez::new(
+                    cursor,
+                    KurboPoint::new(x1 as f64, y1 as f64),
+                    KurboPoint::new(x2 as f64, y2 as f64),
+                    end,
+                ));
+                cursor = end;
             }
             PathCommand::QuadraticTo { x1, y1, x, y } => {
-                current.push(quadratic_to_cubic(cursor, (x1, y1), (x, y)));
-                cursor = (x, y);
+                let end = KurboPoint::new(x as f64, y as f64);
+                let quad = QuadBez::new(cursor, KurboPoint::new(x1 as f64, y1 as f64), end);
+                // kurbo raises the quadratic to an exactly-equivalent cubic.
+                current.push(quad.raise());
+                cursor = end;
             }
             PathCommand::ArcTo { rx, ry, x_axis_rotation, large_arc, sweep, x, y } => {
-                current.extend(arc_to_cubics(
-                    cursor,
-                    rx,
-                    ry,
-                    x_axis_rotation,
+                let end = KurboPoint::new(x as f64, y as f64);
+                let svg_arc = SvgArc {
+                    from: cursor,
+                    to: end,
+                    radii: KurboVec2::new(rx as f64, ry as f64),
+                    x_rotation: (x_axis_rotation as f64).to_radians(),
                     large_arc,
                     sweep,
-                    (x, y),
-                ));
-                cursor = (x, y);
+                };
+                match KurboArc::from_svg_arc(&svg_arc) {
+                    Some(arc) => {
+                        // Tolerance scaled to the arc's size so the cubic approximation
+                        // stays accurate regardless of the coordinate unit scale.
+                        let tolerance = (svg_arc.radii.hypot() * 1e-3).max(1e-9);
+                        let mut p0 = cursor;
+                        arc.to_cubic_beziers(tolerance, |p1, p2, p3| {
+                            current.push(CubicBez::new(p0, p1, p2, p3));
+                            p0 = p3;
+                        });
+                    }
+                    // Degenerate arc (zero radius / zero length): treat as a line.
+                    None => current.push(line_to_cubic(cursor, end)),
+                }
+                cursor = end;
             }
             PathCommand::Close => {
                 if cursor != subpath_start {
@@ -336,25 +217,11 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicSegment>> {
     subpaths
 }
 
-/// Evaluate a cubic Bezier at parameter t in [0, 1]. Mirrors `cubic_bezier` in the shader.
-fn eval_cubic(seg: &CubicSegment, t: f32) -> (f32, f32) {
-    let mt = 1.0 - t;
-    let mt2 = mt * mt;
-    let t2 = t * t;
-    let a = mt2 * mt;
-    let b = 3.0 * mt2 * t;
-    let c = 3.0 * mt * t2;
-    let d = t2 * t;
-    (
-        seg[0].0 * a + seg[1].0 * b + seg[2].0 * c + seg[3].0 * d,
-        seg[0].1 * a + seg[1].1 * b + seg[2].1 * c + seg[3].1 * d,
-    )
-}
-
 /// Flatten a sub-path's cubic segments into a closed polygon ring, matching the
-/// tessellation used for stroking. Consecutive duplicate points (and a trailing
-/// point coincident with the start) are dropped so the ring has no degenerate edges.
-fn subpath_to_polygon(subpath: &[CubicSegment], subdivisions: u32) -> Vec<(f32, f32)> {
+/// per-cubic `subdivisions` tessellation used for stroking. Consecutive duplicate
+/// points (and a trailing point coincident with the start) are dropped so the ring
+/// has no degenerate edges. Bezier points are evaluated via `kurbo`.
+fn subpath_to_ring(subpath: &[CubicBez], subdivisions: u32) -> Vec<(f32, f32)> {
     let mut points: Vec<(f32, f32)> = Vec::new();
     if subpath.is_empty() {
         return points;
@@ -365,11 +232,13 @@ fn subpath_to_polygon(subpath: &[CubicSegment], subdivisions: u32) -> Vec<(f32, 
             _ => points.push(p),
         }
     };
-    push_unique(&mut points, subpath[0][0]);
+    let start = subpath[0].p0;
+    push_unique(&mut points, (start.x as f32, start.y as f32));
     for seg in subpath {
         for step in 1..=subdivisions {
-            let t = step as f32 / subdivisions as f32;
-            push_unique(&mut points, eval_cubic(seg, t));
+            let t = step as f64 / subdivisions as f64;
+            let p = seg.eval(t);
+            push_unique(&mut points, (p.x as f32, p.y as f32));
         }
     }
     // Drop a trailing point that closes back onto the start (Close adds one).
@@ -383,9 +252,9 @@ fn subpath_to_polygon(subpath: &[CubicSegment], subdivisions: u32) -> Vec<(f32, 
     points
 }
 
-/// Twice the signed area of a polygon ring. Positive when the ring is wound
-/// counter-clockwise (in a y-up coordinate system).
-fn signed_area_2x(points: &[(f32, f32)]) -> f32 {
+/// Twice the signed area of a polygon ring; used only to discard degenerate
+/// (zero-area / fully-collinear) rings before triangulation.
+fn ring_area_2x(points: &[(f32, f32)]) -> f32 {
     let n = points.len();
     let mut area = 0.0;
     for i in 0..n {
@@ -395,96 +264,49 @@ fn signed_area_2x(points: &[(f32, f32)]) -> f32 {
     area
 }
 
-/// True if point `p` lies inside (or on the boundary of) triangle (a, b, c).
-fn point_in_triangle(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> bool {
-    let sign = |p1: (f32, f32), p2: (f32, f32), p3: (f32, f32)| {
-        (p1.0 - p3.0) * (p2.1 - p3.1) - (p2.0 - p3.0) * (p1.1 - p3.1)
-    };
-    let d1 = sign(p, a, b);
-    let d2 = sign(p, b, c);
-    let d3 = sign(p, c, a);
-    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
-    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
-    !(has_neg && has_pos)
-}
+/// Triangulate the filled interior of the path using `pluot_triangulation`, returning
+/// a flat list of model-space triangle vertices (3 per triangle). Each sub-path is
+/// flattened into a polygon ring and triangulated independently; the rings' fills are
+/// then unioned. This matches the SVG fill output, which paints one `<path>` per
+/// sub-path (so nested sub-paths overlap rather than cutting holes).
+fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(f32, f32)> {
+    let mut verts: Vec<(f32, f32)> = Vec::new();
 
-/// Triangulate a simple polygon ring via ear clipping, returning a flat list of
-/// triangle vertices (3 per triangle). Handles concave polygons; self-intersecting
-/// rings are not supported and cause the routine to bail out early. The output
-/// winding is unspecified (the fill pipeline disables back-face culling).
-fn triangulate(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
-    let n = points.len();
-    let mut out: Vec<(f32, f32)> = Vec::new();
-    if n < 3 {
-        return out;
-    }
-
-    // Work with vertex indices wound counter-clockwise so the convexity test below
-    // (cross product > 0) identifies ear tips consistently.
-    let mut indices: Vec<usize> = (0..n).collect();
-    if signed_area_2x(points) < 0.0 {
-        indices.reverse();
-    }
-
-    out.reserve((n - 2) * 3);
-    // Each successful clip removes one vertex; `guard` bounds the work in case the
-    // ring is degenerate or self-intersecting so we never loop forever.
-    let mut guard = n * n;
-    while indices.len() > 3 && guard > 0 {
-        guard -= 1;
-        let m = indices.len();
-        let mut clipped = false;
-        for i in 0..m {
-            let a = points[indices[(i + m - 1) % m]];
-            let b = points[indices[i]];
-            let c = points[indices[(i + 1) % m]];
-
-            // Reflex or collinear vertices cannot be ear tips.
-            let cross = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
-            if cross <= 0.0 {
-                continue;
-            }
-
-            // Reject if any other vertex lies inside the candidate ear triangle.
-            let mut contains = false;
-            for (k, &idx) in indices.iter().enumerate() {
-                if k == (i + m - 1) % m || k == i || k == (i + 1) % m {
-                    continue;
-                }
-                if point_in_triangle(points[idx], a, b, c) {
-                    contains = true;
-                    break;
-                }
-            }
-            if contains {
-                continue;
-            }
-
-            out.push(a);
-            out.push(b);
-            out.push(c);
-            indices.remove(i);
-            clipped = true;
-            break;
+    for subpath in subpaths {
+        let ring = subpath_to_ring(subpath, subdivisions);
+        // A fillable ring needs at least 3 vertices and non-zero area; a fully-collinear
+        // ring has nothing to fill (and would make the triangulator panic), so skip it.
+        if ring.len() < 3 || ring_area_2x(&ring).abs() <= 1e-12 {
+            continue;
         }
-        if !clipped {
-            // No ear found: the ring is degenerate/self-intersecting. Stop here.
-            return out;
+        let pts: Vec<TriPoint> = ring.iter().map(|&(x, y)| TriPoint::new(x, y)).collect();
+
+        // A convex ring has a trivial fan triangulation; a concave ring goes through the
+        // sweep-line algorithm (decompose into monotone polygons, then triangulate).
+        let (triangles, points) = if is_convex(&pts) {
+            let tris = triangulate_convex_polygon(&pts);
+            (tris, pts)
+        } else {
+            let edges = calc_dedup_edges(std::slice::from_ref(&pts));
+            sweeping_line_triangulation(edges)
+        };
+
+        for t in &triangles {
+            for &idx in &[t.x, t.y, t.z] {
+                let p = points[idx];
+                verts.push((p.x, p.y));
+            }
         }
     }
-    if indices.len() == 3 {
-        out.push(points[indices[0]]);
-        out.push(points[indices[1]]);
-        out.push(points[indices[2]]);
-    }
-    out
+
+    verts
 }
 
 pub struct CurveLayer {
     view_params: ViewParams,
     layer_params: CurveLayerParams,
-    /// Flattened cubic segments grouped by sub-path (used for stroking and SVG).
-    subpaths: Vec<Vec<CubicSegment>>,
+    /// Flattened cubic Bezier segments grouped by sub-path (used for stroking and SVG).
+    subpaths: Vec<Vec<CubicBez>>,
     /// Triangulated fill geometry: a flat list of model-space triangle vertices
     /// (3 per triangle). Empty unless the layer is filled.
     fill_vertices: Vec<(f32, f32)>,
@@ -504,16 +326,9 @@ impl CurveLayer {
         }
         let subpaths = commands_to_subpaths(&layer_params.commands);
 
-        // Precompute fill triangles only when needed; each sub-path is triangulated
-        // independently (no even-odd hole handling between sub-paths).
+        // Precompute the fill triangulation only when needed.
         let fill_vertices = if layer_params.filled {
-            let subdivisions = layer_params.subdivisions.max(1);
-            let mut verts = Vec::new();
-            for subpath in &subpaths {
-                let polygon = subpath_to_polygon(subpath, subdivisions);
-                verts.extend(triangulate(&polygon));
-            }
-            verts
+            compute_fill_vertices(&subpaths, layer_params.subdivisions.max(1))
         } else {
             Vec::new()
         };
@@ -805,9 +620,9 @@ impl DrawToRasterGpu for CurveLayer {
             let mut control_points: Vec<f32> = Vec::with_capacity(num_segments * 8);
             for subpath in subpaths {
                 for seg in subpath {
-                    for (x, y) in seg {
-                        control_points.push(*x);
-                        control_points.push(*y);
+                    for p in [seg.p0, seg.p1, seg.p2, seg.p3] {
+                        control_points.push(p.x as f32);
+                        control_points.push(p.y as f32);
                     }
                 }
             }
@@ -917,13 +732,13 @@ impl DrawToSvg for CurveLayer {
             }
             let mut points: Vec<(f64, f64)> = Vec::new();
             // Start at the very first control point of the sub-path.
-            let first = subpath[0][0];
-            points.push(to_px(first.0, first.1));
+            let first = subpath[0].p0;
+            points.push(to_px(first.x as f32, first.y as f32));
             for seg in subpath {
                 for step in 1..=subdivisions {
-                    let t = step as f32 / subdivisions as f32;
-                    let (x, y) = eval_cubic(seg, t);
-                    points.push(to_px(x, y));
+                    let t = step as f64 / subdivisions as f64;
+                    let p = seg.eval(t);
+                    points.push(to_px(p.x as f32, p.y as f32));
                 }
             }
             svg_elements.push(TwoElement::Path(TwoPath {
