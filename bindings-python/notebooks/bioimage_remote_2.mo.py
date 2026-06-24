@@ -6,18 +6,87 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image, render_to_svg
-    import numpy as np
-    import marimo as mo
-    import json
-    import zarr
-    return mo, np, render_to_image, render_to_svg, zarr
+    from pluot import render_to_image, render_to_svg, PluotWasmWidget
+    return PluotWasmWidget, render_to_svg
+
+
+@app.cell
+def _(
+    PluotWasmWidget,
+    camera_view,
+    ch0_slider,
+    ch1_slider,
+    height,
+    margin_bottom,
+    margin_left,
+    margin_right,
+    margin_top,
+    store,
+    width,
+    z_slider,
+):
+    PluotWasmWidget(
+        plot_params=dict(
+            layers=[
+                dict(
+                  layer_type = "OmeZarrMultiscaleLayer",
+                  layer_params = dict(
+                      layer_id = "ome_zarr_multiscale_layer",
+                        target_z = int(z_slider.value),
+                        target_t = 0,
+                        channel_settings= [
+                          dict(
+                            c_index = 0,
+                            window = ch0_slider.value,
+                            color = [1.0, 1.0, 0.0],
+                          ),
+                          dict(
+                            c_index = 1,
+                            window = ch1_slider.value,
+                            color = [0.0, 1.0, 1.0],
+                          )
+                        ],
+                        opacity= 1.0,
+                  )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params = dict(
+                        layer_id="bottom_axis",
+                        position="Bottom"
+                    )
+                ),
+                dict(
+                    layer_type="AxisLinearLayer",
+                    layer_params = dict(
+                        layer_id="left_axis",
+                        position="Left"
+                    )
+                )
+            ]
+        ),
+        camera_matrix=camera_view,
+        width=width,
+        height=height,
+        plot_id="bioimaging",
+        plot_type="LayeredPlot",
+        margin_left=margin_left,
+        margin_bottom=margin_bottom,
+        margin_top=margin_top,
+        margin_right=margin_right,
+        store=store,
+    )
+    return
 
 
 @app.cell
 def _():
+    import numpy as np
+    import marimo as mo
+    import json
+    import zarr
     from obstore.store import HTTPStore
-    return (HTTPStore,)
+    return HTTPStore, mo, np, zarr
 
 
 @app.cell
@@ -45,8 +114,8 @@ def _():
 
 @app.cell
 def _():
-    width = 800
-    height = 800
+    width = 600
+    height = 600
     margin_left = 100
     margin_right = 10
     margin_top = 10
@@ -93,14 +162,14 @@ def _(
     # Zoom into a specific region: x in [0.2, 0.8], y in [0.3, 0.7]
     bounds = Bounds(x_min=0.0, x_max=1.0e-4, y_min=0.0, y_max=1.0e-4)
 
-    camera_view = list(get_camera_matrix_from_bounds(bounds, prev_camera, viewport))
+    camera_view = [float(v) for v in list(get_camera_matrix_from_bounds(bounds, prev_camera, viewport))]
     print(camera_view)
     return (camera_view,)
 
 
 @app.cell
 def _(mo):
-    z_slider = mo.ui.slider(start=0.0, stop=235.0, value=100.0)
+    z_slider = mo.ui.slider(start=0.0, stop=235.0, value=35.0)
     z_slider
     return (z_slider,)
 
@@ -114,78 +183,8 @@ def _(mo):
 
 
 @app.cell
-async def _(
-    camera_view,
-    ch0_slider,
-    ch1_slider,
-    height,
-    margin_bottom,
-    margin_left,
-    margin_right,
-    margin_top,
-    render_to_image,
-    store,
-    width,
-    z_slider,
-):
-    img = await render_to_image(
-        camera_view=camera_view,
-        width=width,
-        height=height,
-        plot_id="bioimaging",
-        plot_type="LayeredPlot",
-        margin_left=margin_left,
-        margin_bottom=margin_bottom,
-        margin_top=margin_top,
-        margin_right=margin_right,
-        store=store,
-        plot_params=dict(
-            layers=[
-                dict(
-                  layer_type = "OmeZarrMultiscaleLayer",
-                  layer_params = dict(
-                      layer_id= "ome_zarr_multiscale_layer",
-                        target_z= int(z_slider.value),
-                        target_t= 0,
-                        channel_settings= [
-                          dict(
-                            c_index= 0,
-                            window= ch0_slider.value,
-                            color= [1.0, 0.0, 0.0],
-                          ),
-                          dict(
-                            c_index= 1,
-                            window= ch1_slider.value,
-                            color= [0.0, 1.0, 0.0],
-                          )
-                        ],
-                        opacity= 1.0,
-                  )
-                ),
-                dict(
-                    layer_type="AxisLinearLayer",
-                    layer_params = dict(
-                        layer_id="bottom_axis",
-                        position="Bottom"
-                    )
-                ),
-                dict(
-                    layer_type="AxisLinearLayer",
-                    layer_params = dict(
-                        layer_id="left_axis",
-                        position="Left"
-                    )
-                )
-            ]
-        ),
-    )
-    img
-    return (img,)
-
-
-@app.cell
-def _(img):
-    img.save("../pluot-figures/bioimage.png")
+def _():
+    # img.save("../pluot-figures/bioimage.png")
     return
 
 
