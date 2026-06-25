@@ -34,9 +34,9 @@ pub struct FilledPolygonLayerParams {
     /// Rings with fewer than 3 points are silently skipped.
     pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
 
-    /// RGBA fill color in [0, 1]. Defaults to opaque black.
-    pub fill_color: [f32; 4],
-    /// Additional opacity multiplier for the fill. Defaults to 1.
+    /// RGB fill color in [0, 1]. Defaults to opaque black.
+    pub fill_color: [f32; 3],
+    /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
 
@@ -49,7 +49,7 @@ impl Default for FilledPolygonLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
             polygons: Arc::new(vec![]),
-            fill_color: [0.0, 0.0, 0.0, 1.0],
+            fill_color: [0.0, 0.0, 0.0],
             fill_opacity: 1.0,
         }
     }
@@ -158,12 +158,11 @@ impl DrawToSvg for FilledPolygonLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b, a] = layer_params.fill_color;
-        let fill = TwoColor::Rgba((
+        let [r, g, b] = layer_params.fill_color;
+        let fill = TwoColor::Rgb((
             (r * 255.0).round().clamp(0.0, 255.0) as u8,
             (g * 255.0).round().clamp(0.0, 255.0) as u8,
             (b * 255.0).round().clamp(0.0, 255.0) as u8,
-            (a * layer_params.fill_opacity * 255.0).round().clamp(0.0, 255.0) as u8,
         ));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(layer_params.polygons.len());
@@ -179,6 +178,8 @@ impl DrawToSvg for FilledPolygonLayer {
                 fill: Some(fill.clone()),
                 linewidth: 0.0,
                 opacity: 1.0,
+                fill_opacity: layer_params.fill_opacity as f64,
+                stroke_opacity: 1.0,
             }));
         }
 

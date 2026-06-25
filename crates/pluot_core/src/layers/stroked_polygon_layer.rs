@@ -37,11 +37,11 @@ pub struct StrokedPolygonLayerParams {
     /// Rings with fewer than 2 points are silently skipped.
     pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
 
-    /// RGBA stroke color in [0, 1]. Defaults to opaque black.
-    pub stroke_color: [f32; 4],
+    /// RGB stroke color in [0, 1]. Defaults to opaque black.
+    pub stroke_color: [f32; 3],
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
-    /// Additional opacity multiplier for the stroke. Defaults to 1.
+    /// Opacity multiplier for the stroke. Defaults to 1.
     pub stroke_opacity: f32,
 }
 
@@ -54,7 +54,7 @@ impl Default for StrokedPolygonLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
             polygons: Arc::new(vec![]),
-            stroke_color: [0.0, 0.0, 0.0, 1.0],
+            stroke_color: [0.0, 0.0, 0.0],
             stroke_width: 1.0,
             stroke_opacity: 1.0,
         }
@@ -92,8 +92,8 @@ pub struct StrokedPolygonLayer {
 impl StrokedPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
         let (points, segments) = polygon_gpu_data(&layer_params.polygons);
-        let [r, g, b, a] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
+        let [r, g, b] = layer_params.stroke_color;
+        let stroke_color = Vec4::new(r, g, b, layer_params.stroke_opacity);
         Self { view_params, layer_params, points, segments, stroke_color }
     }
 }
@@ -327,12 +327,11 @@ impl DrawToSvg for StrokedPolygonLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b, a] = layer_params.stroke_color;
-        let stroke = TwoColor::Rgba((
+        let [r, g, b] = layer_params.stroke_color;
+        let stroke = TwoColor::Rgb((
             (r * 255.0).round().clamp(0.0, 255.0) as u8,
             (g * 255.0).round().clamp(0.0, 255.0) as u8,
             (b * 255.0).round().clamp(0.0, 255.0) as u8,
-            (a * layer_params.stroke_opacity * 255.0).round().clamp(0.0, 255.0) as u8,
         ));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(layer_params.polygons.len());
@@ -348,6 +347,8 @@ impl DrawToSvg for StrokedPolygonLayer {
                 fill: None,
                 linewidth: layer_params.stroke_width as f64,
                 opacity: 1.0,
+                fill_opacity: 1.0,
+                stroke_opacity: layer_params.stroke_opacity as f64,
             }));
         }
 

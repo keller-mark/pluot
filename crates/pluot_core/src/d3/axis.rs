@@ -144,6 +144,8 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
             fill: None,
             linewidth: 1.0,
             opacity: 1.0,
+            fill_opacity: 1.0,
+            stroke_opacity: 1.0,
         }));
 
         // Ticks

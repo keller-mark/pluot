@@ -7,10 +7,10 @@
 </defs>
 <g height="100" width="100">
 <g clip-path="url(#my_polygon_layer_filled_clip_path)" transform="translate(0,0)">
-<path d="M 10 70 L 50 90 L 90 70 L 70 10 L 30.000001907348633 10 L 10 70" fill="rgba(0, 204, 0, 179)" opacity="1"/>
+<path d="M 10 70 L 50 90 L 90 70 L 70 10 L 30.000001907348633 10 L 10 70" fill="rgb(0, 204, 0)" fill-opacity="0.699999988079071" opacity="1"/>
 </g>
 <g clip-path="url(#my_polygon_layer_filled_clip_path)" transform="translate(0,0)">
-<path d="M 10 70 L 50 90 L 90 70 L 70 10 L 30.000001907348633 10 L 10 70" fill="none" opacity="1" stroke="rgba(0, 128, 0, 255)" stroke-width="3"/>
+<path d="M 10 70 L 50 90 L 90 70 L 70 10 L 30.000001907348633 10 L 10 70" fill="none" opacity="1" stroke="rgb(0, 128, 0)" stroke-width="3"/>
 </g>
 </g>
 </g>

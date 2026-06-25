@@ -7,7 +7,7 @@
 </defs>
 <g height="100" width="100">
 <g clip-path="url(#my_polygon_layer_filled_clip_path)" transform="translate(0,0)">
-<path d="M 10 90 L 90 90 L 50 10 L 10 90" fill="rgba(0, 0, 255, 255)" opacity="1"/>
+<path d="M 10 90 L 90 90 L 50 10 L 10 90" fill="rgb(0, 0, 255)" opacity="1"/>
 </g>
 </g>
 </g>

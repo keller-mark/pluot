@@ -52,7 +52,7 @@ pub struct StrokedCurveLayerParams {
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
     pub subdivisions: u32,
-    pub stroke_color: [f32; 4],
+    pub stroke_color: [f32; 3],
     pub stroke_opacity: f32,
 }
 
@@ -67,7 +67,7 @@ impl Default for StrokedCurveLayerParams {
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            stroke_color: [0.0, 0.0, 0.0, 1.0],
+            stroke_color: [0.0, 0.0, 0.0],
             stroke_opacity: 1.0,
         }
     }
@@ -86,8 +86,8 @@ impl StrokedCurveLayer {
         let subpaths = commands_to_subpaths(&layer_params.commands);
         let subdivisions = layer_params.subdivisions.max(1);
         let polylines = subpaths.iter().map(|s| flatten_subpath(s, subdivisions)).collect();
-        let [r, g, b, a] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
+        let [r, g, b] = layer_params.stroke_color;
+        let stroke_color = Vec4::new(r, g, b, layer_params.stroke_opacity);
         Self { view_params, layer_params, subpaths, polylines, stroke_color }
     }
 }
@@ -351,12 +351,11 @@ impl DrawToSvg for StrokedCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b, a] = layer_params.stroke_color;
-        let stroke = TwoColor::Rgba((
+        let [r, g, b] = layer_params.stroke_color;
+        let stroke = TwoColor::Rgb((
             (r * 255.0).round().clamp(0.0, 255.0) as u8,
             (g * 255.0).round().clamp(0.0, 255.0) as u8,
             (b * 255.0).round().clamp(0.0, 255.0) as u8,
-            (a * layer_params.stroke_opacity * 255.0).round().clamp(0.0, 255.0) as u8,
         ));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
@@ -380,6 +379,8 @@ impl DrawToSvg for StrokedCurveLayer {
                 fill: None,
                 linewidth: layer_params.stroke_width as f64,
                 opacity: 1.0,
+                fill_opacity: 1.0,
+                stroke_opacity: layer_params.stroke_opacity as f64,
             }));
         }
 
