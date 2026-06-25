@@ -36,10 +36,10 @@ fn triangle_data() -> PolygonLayerParams {
         ]]),
         stroked: true,
         filled: false,
-        stroke_color: [1.0, 0.0, 0.0],
+        stroke_color: [255, 0, 0],
         stroke_width: 2.0,
         stroke_opacity: 1.0,
-        fill_color: [0.0, 0.0, 1.0],
+        fill_color: [0, 0, 255],
         fill_opacity: 1.0,
     }
 }
@@ -292,8 +292,8 @@ async fn test_polygon_layer_square_contain_stroke_and_fill() {
             stroked: true,
             filled: true,
             stroke_width: 4.0,
-            stroke_color: [1.0, 0.0, 0.0],
-            fill_color: [0.0, 0.0, 1.0],
+            stroke_color: [255, 0, 0],
+            fill_color: [0, 0, 255],
             ..triangle_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -311,8 +311,8 @@ async fn test_polygon_layer_square_contain_fill_opacity() {
             stroked: true,
             filled: true,
             stroke_width: 4.0,
-            stroke_color: [1.0, 0.0, 0.0],
-            fill_color: [0.0, 0.0, 1.0],
+            stroke_color: [255, 0, 0],
+            fill_color: [0, 0, 255],
             stroke_opacity: 1.0,
             fill_opacity: 0.5,
             ..triangle_data()
@@ -381,8 +381,8 @@ async fn test_polygon_layer_square_contain_pentagon_stroke_and_fill() {
             stroked: true,
             filled: true,
             stroke_width: 3.0,
-            stroke_color: [0.0, 0.5, 0.0],
-            fill_color: [0.0, 0.8, 0.0],
+            stroke_color: [0, 128, 0],
+            fill_color: [0, 204, 0],
             fill_opacity: 0.7,
             ..quad_data()
         }),

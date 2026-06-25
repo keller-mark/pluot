@@ -192,8 +192,8 @@ pub struct FilledCurveLayerParams {
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
     pub subdivisions: u32,
-    /// RGB fill color in [0, 1]. Defaults to opaque black.
-    pub fill_color: [f32; 3],
+    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub fill_color: [u8; 3],
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -208,7 +208,7 @@ impl Default for FilledCurveLayerParams {
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            fill_color: [0.0, 0.0, 0.0],
+            fill_color: [0, 0, 0],
             fill_opacity: 1.0,
         }
     }
@@ -313,11 +313,7 @@ impl DrawToSvg for FilledCurveLayer {
         };
 
         let [r, g, b] = layer_params.fill_color;
-        let fill = TwoColor::Rgb((
-            (r * 255.0).round().clamp(0.0, 255.0) as u8,
-            (g * 255.0).round().clamp(0.0, 255.0) as u8,
-            (b * 255.0).round().clamp(0.0, 255.0) as u8,
-        ));
+        let fill = TwoColor::Rgb((r, g, b));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {

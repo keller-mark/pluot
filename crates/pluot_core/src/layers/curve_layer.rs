@@ -30,8 +30,10 @@ pub struct CurveLayerParams {
     pub subdivisions: u32,
     pub stroked: bool,
     pub filled: bool,
-    pub stroke_color: [f32; 3],
-    pub fill_color: [f32; 3],
+    /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub stroke_color: [u8; 3],
+    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub fill_color: [u8; 3],
     pub stroke_opacity: f32,
     pub fill_opacity: f32,
 }
@@ -50,8 +52,8 @@ impl Default for CurveLayerParams {
             subdivisions: 32,
             stroked: true,
             filled: false,
-            stroke_color: [0.0, 0.0, 0.0],
-            fill_color: [0.0, 0.0, 0.0],
+            stroke_color: [0, 0, 0],
+            fill_color: [0, 0, 0],
             stroke_opacity: 1.0,
             fill_opacity: 1.0,
         }

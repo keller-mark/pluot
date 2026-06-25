@@ -37,8 +37,8 @@ pub struct StrokedPolygonLayerParams {
     /// Rings with fewer than 2 points are silently skipped.
     pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
 
-    /// RGB stroke color in [0, 1]. Defaults to opaque black.
-    pub stroke_color: [f32; 3],
+    /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub stroke_color: [u8; 3],
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
     /// Opacity multiplier for the stroke. Defaults to 1.
@@ -54,7 +54,7 @@ impl Default for StrokedPolygonLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
             polygons: Arc::new(vec![]),
-            stroke_color: [0.0, 0.0, 0.0],
+            stroke_color: [0, 0, 0],
             stroke_width: 1.0,
             stroke_opacity: 1.0,
         }
@@ -93,7 +93,7 @@ impl StrokedPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
         let (points, segments) = polygon_gpu_data(&layer_params.polygons);
         let [r, g, b] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r, g, b, layer_params.stroke_opacity);
+        let stroke_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.stroke_opacity);
         Self { view_params, layer_params, points, segments, stroke_color }
     }
 }
@@ -328,11 +328,7 @@ impl DrawToSvg for StrokedPolygonLayer {
         };
 
         let [r, g, b] = layer_params.stroke_color;
-        let stroke = TwoColor::Rgb((
-            (r * 255.0).round().clamp(0.0, 255.0) as u8,
-            (g * 255.0).round().clamp(0.0, 255.0) as u8,
-            (b * 255.0).round().clamp(0.0, 255.0) as u8,
-        ));
+        let stroke = TwoColor::Rgb((r, g, b));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(layer_params.polygons.len());
         for ring in layer_params.polygons.iter() {

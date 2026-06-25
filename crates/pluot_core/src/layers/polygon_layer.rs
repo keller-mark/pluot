@@ -36,15 +36,15 @@ pub struct PolygonLayerParams {
     /// Whether to fill the polygon interiors. Defaults to `false`.
     pub filled: bool,
 
-    /// RGB stroke color in [0, 1]. Defaults to opaque black.
-    pub stroke_color: [f32; 3],
+    /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub stroke_color: [u8; 3],
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
     /// Opacity multiplier for the stroke. Defaults to 1.
     pub stroke_opacity: f32,
 
-    /// RGB fill color in [0, 1]. Defaults to opaque black.
-    pub fill_color: [f32; 3],
+    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub fill_color: [u8; 3],
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -60,10 +60,10 @@ impl Default for PolygonLayerParams {
             polygons: Arc::new(vec![]),
             stroked: true,
             filled: false,
-            stroke_color: [0.0, 0.0, 0.0],
+            stroke_color: [0, 0, 0],
             stroke_width: 1.0,
             stroke_opacity: 1.0,
-            fill_color: [0.0, 0.0, 0.0],
+            fill_color: [0, 0, 0],
             fill_opacity: 1.0,
         }
     }

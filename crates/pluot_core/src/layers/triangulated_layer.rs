@@ -34,8 +34,8 @@ pub struct TriangulatedLayerParams {
     /// Each consecutive triple forms one triangle.
     pub vertices: Arc<Vec<(f32, f32)>>,
 
-    /// RGB fill color in [0, 1]. Defaults to opaque black.
-    pub fill_color: [f32; 3],
+    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
+    pub fill_color: [u8; 3],
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -49,7 +49,7 @@ impl Default for TriangulatedLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
             vertices: Arc::new(vec![]),
-            fill_color: [0.0, 0.0, 0.0],
+            fill_color: [0, 0, 0],
             fill_opacity: 1.0,
         }
     }
@@ -80,7 +80,7 @@ pub struct TriangulatedLayer {
 impl TriangulatedLayer {
     pub fn new(view_params: ViewParams, layer_params: TriangulatedLayerParams) -> Self {
         let [r, g, b] = layer_params.fill_color;
-        let fill_color = Vec4::new(r, g, b, layer_params.fill_opacity);
+        let fill_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.fill_opacity);
         Self { view_params, layer_params, fill_color }
     }
 }
@@ -319,11 +319,7 @@ impl DrawToSvg for TriangulatedLayer {
         };
 
         let [r, g, b] = layer_params.fill_color;
-        let fill = TwoColor::Rgb((
-            (r * 255.0).round().clamp(0.0, 255.0) as u8,
-            (g * 255.0).round().clamp(0.0, 255.0) as u8,
-            (b * 255.0).round().clamp(0.0, 255.0) as u8,
-        ));
+        let fill = TwoColor::Rgb((r, g, b));
 
         let verts = &layer_params.vertices;
         let num_triangles = verts.len() / 3;
