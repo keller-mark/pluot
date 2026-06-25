@@ -1,9 +1,3 @@
 [submodule "vendor/urw-core35-fonts"]
 	path = vendor/urw-core35-fonts
 	url = https://github.com/twardoch/urw-core35-fonts
-[submodule "vendor/webgpu-instanced-lines"]
-	path = vendor/webgpu-instanced-lines
-	url = https://github.com/rreusser/webgpu-instanced-lines
-[submodule "vendor/deck.gl"]
-	path = vendor/deck.gl
-	url = https://github.com/visgl/deck.gl
