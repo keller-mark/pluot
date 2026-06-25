@@ -1,3 +1,5 @@
+// Shared utility functions for polygon and curve layers.
+
 use kurbo::{CubicBez, ParamCurve};
 
 use crate::render_traits::MarginParams;
@@ -68,37 +70,37 @@ pub(crate) fn polygon_edges_from_rings(
     (src_x, src_y, dst_x, dst_y)
 }
 
-/// Extract per-edge segment arrays with neighbor context for miter join computation.
-/// Returns parallel arrays (prev_x, prev_y, src_x, src_y, dst_x, dst_y, next_x, next_y)
-/// where prev is the vertex before src and next is the vertex after dst (wrapping around
-/// closed rings). Rings with fewer than 2 points are skipped.
-#[allow(clippy::type_complexity)]
-pub(crate) fn polygon_segments_with_neighbors(
+/// Build compact GPU-ready data for stroked polygon rendering with miter joins.
+///
+/// Returns:
+/// - `points`: all ring vertices concatenated as flat `[x, y, x, y, …]` f32 values.
+/// - `segments`: one `[ring_start, ring_end, local_idx]` u32 triple per edge, where
+///   `ring_start`/`ring_end` are absolute indices into `points` (in vertex units, not
+///   byte units) and `local_idx` is the 0-based index of the edge's source vertex
+///   within its ring. The shader uses these to look up prev/src/dst/next with
+///   correct wrap-around via modular arithmetic, without any redundant storage.
+///
+/// Rings with fewer than 2 points are skipped.
+pub(crate) fn polygon_gpu_data(
     rings: &[Vec<(f32, f32)>],
-) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) {
-    let mut prev_x: Vec<f32> = vec![];
-    let mut prev_y: Vec<f32> = vec![];
-    let mut src_x: Vec<f32> = vec![];
-    let mut src_y: Vec<f32> = vec![];
-    let mut dst_x: Vec<f32> = vec![];
-    let mut dst_y: Vec<f32> = vec![];
-    let mut next_x: Vec<f32> = vec![];
-    let mut next_y: Vec<f32> = vec![];
+) -> (Vec<f32>, Vec<[u32; 3]>) {
+    let mut points: Vec<f32> = Vec::new();
+    let mut segments: Vec<[u32; 3]> = Vec::new();
+
     for ring in rings {
         if ring.len() < 2 {
             continue;
         }
-        let n = ring.len();
-        for i in 0..n {
-            let prev = ring[(i + n - 1) % n];
-            let src  = ring[i];
-            let dst  = ring[(i + 1) % n];
-            let next = ring[(i + 2) % n];
-            prev_x.push(prev.0); prev_y.push(prev.1);
-            src_x.push(src.0);   src_y.push(src.1);
-            dst_x.push(dst.0);   dst_y.push(dst.1);
-            next_x.push(next.0); next_y.push(next.1);
+        let ring_start = (points.len() / 2) as u32;
+        for &(x, y) in ring {
+            points.push(x);
+            points.push(y);
+        }
+        let ring_end = (points.len() / 2 - 1) as u32;
+        for local_idx in 0..(ring.len() as u32) {
+            segments.push([ring_start, ring_end, local_idx]);
         }
     }
-    (prev_x, prev_y, src_x, src_y, dst_x, dst_y, next_x, next_y)
+
+    (points, segments)
 }

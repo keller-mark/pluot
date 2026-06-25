@@ -1,3 +1,9 @@
+// TriangulatedLayer is intended to be used as a sub-layer
+// by FilledPolygonLayer and FilledCurveLayer.
+// These "parent" layers can internally compute triangulations
+// before passing the pre-triangulated vertices to a
+// TriangulatedLayer sub-layer.
+
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};

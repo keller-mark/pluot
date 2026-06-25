@@ -1,3 +1,10 @@
+// StrokedCurveLayer accepts path commands as input.
+// This layer is intended to be used as a sub-layer of CurveLayer.
+// In the vector drawing case, rendering is performed by simply defining an SVG path element.
+// In the raster drawing case, we use the approach from rreusser/webgpu-instanced-lines
+// to render bezier curves and arcs via WebGPU. Note that this approach has overhead,
+// and is therefore not currently meant to render a ton of individual curves.
+
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use kurbo::{CubicBez, ParamCurve};
@@ -128,9 +135,6 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         ]));
 
         let GpuContext { device, queue } = gpu_context;
-
-        pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
-        pass.set_scissor_rect(margin_left as u32, margin_top as u32, layer_w as u32, layer_h as u32);
 
         let mut pts_data: Vec<f32> = Vec::new();
         let mut seg_data: Vec<u32> = Vec::new();
@@ -297,6 +301,9 @@ impl DrawToRasterGpu for StrokedCurveLayer {
                 },
             ],
         });
+
+        pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
+        pass.set_scissor_rect(margin_left as u32, margin_top as u32, layer_w as u32, layer_h as u32);
 
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);

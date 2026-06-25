@@ -1,5 +1,6 @@
-// PathCommand lives here so FilledCurveLayer owns the full curve-to-fill pipeline.
-// CurveLayer re-exports PathCommand from this module for backward compatibility.
+// FilledCurveLayer accepts path commands as input, internally converts the path to triangles,
+// and ultimately renders a TriangulatedLayer as a sub-layer.
+// This layer is intended to be used as a sub-layer of CurveLayer.
 
 use earcut::Earcut;
 use kurbo::{Arc as KurboArc, CubicBez, ParamCurve, Point as KurboPoint, QuadBez, SvgArc, Vec2 as KurboVec2};

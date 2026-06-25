@@ -3,14 +3,17 @@
 // and overlaps that appear when adjacent rectangle quads meet at an angle.
 //
 // Approach: instanced rendering with 4 vertices (TriangleStrip quad) per edge.
-// For each edge (prev→src→dst→next), the two corners at src use the miter bisector
-// of the prev→src→dst turn, and the two corners at dst use the miter bisector of
-// the src→dst→next turn. Adjacent segments share the same miter corners at their
-// shared vertex, so quads tile seamlessly without gaps or overlaps.
+// Each instance reads ring metadata from the `segments` buffer and looks up
+// prev/src/dst/next via modular index arithmetic into the shared `points` buffer.
+// Adjacent segments share the same miter corners at their common vertex, so quads
+// tile seamlessly without gaps or overlaps.
 //
-// All geometry is computed in pixel space to keep the aspect-ratio math simple.
-// Miter extension is clamped to MITER_LIMIT × half-width to avoid spikes at
-// very sharp angles.
+// GPU buffers (2 storage buffers, no redundant data):
+//   points:   flat interleaved [x0,y0, x1,y1, …] for all ring vertices
+//   segments: per-edge [ring_start, ring_end, local_idx] metadata
+//
+// All geometry is computed in pixel space. Miter extension is clamped to
+// MITER_LIMIT × half-width to avoid spikes at very sharp angles.
 
 fn scale_mat(x: f32, y: f32, z: f32) -> mat4x4<f32> {
     return mat4x4<f32>(
@@ -60,6 +63,15 @@ struct StrokedPolygonUniforms {
     color: vec4<f32>,
 };
 
+// Per-edge ring metadata. ring_start and ring_end are absolute vertex indices
+// into `points`; local_idx is the 0-based index of this edge's source vertex
+// within its ring, so the source vertex is at points[ring_start + local_idx].
+struct SegmentEntry {
+    ring_start: u32,
+    ring_end:   u32,
+    local_idx:  u32,
+};
+
 struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -69,15 +81,9 @@ struct FSOut {
     @location(0) color: vec4<f32>,
 };
 
-@group(0) @binding(0) var<uniform> u: StrokedPolygonUniforms;
-@group(0) @binding(1) var<storage, read> src_x_coords:  array<f32>;
-@group(0) @binding(2) var<storage, read> src_y_coords:  array<f32>;
-@group(0) @binding(3) var<storage, read> dst_x_coords:  array<f32>;
-@group(0) @binding(4) var<storage, read> dst_y_coords:  array<f32>;
-@group(0) @binding(5) var<storage, read> prev_x_coords: array<f32>;
-@group(0) @binding(6) var<storage, read> prev_y_coords: array<f32>;
-@group(0) @binding(7) var<storage, read> next_x_coords: array<f32>;
-@group(0) @binding(8) var<storage, read> next_y_coords: array<f32>;
+@group(0) @binding(0) var<uniform>       u:        StrokedPolygonUniforms;
+@group(0) @binding(1) var<storage, read> points:   array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
 
 // corner.x: -1 = source end, +1 = target end
 // corner.y: -1 = one side,   +1 = other side
@@ -91,18 +97,17 @@ const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
 const MITER_LIMIT: f32 = 4.0;
 
 // Project a model-space point to pixel space, handling data/pixel unit modes.
-// Pixel space: (0,0) = top-left of the layer viewport, (layer_w, layer_h) = bottom-right.
-fn project_to_px(x: f32, y: f32) -> vec2<f32> {
+// Pixel space: (0,0) = top-left of the layer viewport, layer_size = bottom-right.
+fn project_to_px(pt: vec2<f32>) -> vec2<f32> {
     let layer_w = u.layer_size.x;
     let layer_h = u.layer_size.y;
-    let aspect = layer_w / layer_h;
+    let aspect  = layer_w / layer_h;
 
-    let orig = u.model_matrix * vec4f(x, y, 0.0, 1.0);
+    let orig = u.model_matrix * vec4f(pt.x, pt.y, 0.0, 1.0);
 
     let NORM_TO_NDC = translate_mat(-1.0, -1.0, 0.0) * scale_mat(2.0, 2.0, 1.0);
     let NDC_TO_NORM = translate_mat( 0.5,  0.5, 0.0) * scale_mat(0.5, 0.5, 1.0);
 
-    // Pixel-mode NDC (data treated as raw pixel coordinates)
     let norm_px = vec2<f32>(orig.x / layer_w, orig.y / layer_h);
     let ndc_px  = (NORM_TO_NDC * vec4f(norm_px, 0.0, 1.0)).xy;
 
@@ -111,30 +116,25 @@ fn project_to_px(x: f32, y: f32) -> vec2<f32> {
         ndc = ndc_px;
     } else {
         let ASPECT_RATIO_MAT = get_aspect_ratio_mat(aspect, u.aspect_ratio_mode, u.aspect_ratio_alignment_mode);
-        let mvp = ASPECT_RATIO_MAT * u.camera_view;
+        let mvp       = ASPECT_RATIO_MAT * u.camera_view;
         let transform = NDC_TO_NORM * mvp * NORM_TO_NDC;
-        let transformed = transform * orig;
-        var ndc_data = (NORM_TO_NDC * vec4f(transformed.xy, 0.0, 1.0)).xy;
+        var ndc_data  = (NORM_TO_NDC * vec4f((transform * orig).xy, 0.0, 1.0)).xy;
 
         if (u.data_unit_mode_x == 0u) { ndc_data.x = ndc_px.x; }
         if (u.data_unit_mode_y == 0u) { ndc_data.y = ndc_px.y; }
         ndc = ndc_data;
     }
 
-    // NDC [-1,1] → pixel [0, layer_size]
     return (ndc + vec2<f32>(1.0, 1.0)) * 0.5 * vec2<f32>(layer_w, layer_h);
 }
 
-// Compute the miter-join corner position at `curr_px`.
-// `prev_px` and `next_px` are the neighboring polygon vertices (in pixel space).
-// `side` is -1.0 or +1.0 to select which side of the path.
-// `half_width` is the stroke half-width in pixels.
-// Returns the miter offset position in pixel space.
+// Compute the miter-join corner at `curr_px` given pixel-space neighbors.
+// `side` is -1.0 or +1.0; `half_width` is stroke half-width in pixels.
 fn miter_corner_px(
     prev_px: vec2<f32>,
     curr_px: vec2<f32>,
     next_px: vec2<f32>,
-    side: f32,
+    side:       f32,
     half_width: f32,
 ) -> vec2<f32> {
     let delta_a = curr_px - prev_px;
@@ -142,12 +142,8 @@ fn miter_corner_px(
     let delta_b = next_px - curr_px;
     let len_b   = length(delta_b);
 
-    // Both neighbors degenerate: can't compute a direction, return the vertex.
-    if (len_a < 0.5 && len_b < 0.5) {
-        return curr_px;
-    }
+    if (len_a < 0.5 && len_b < 0.5) { return curr_px; }
 
-    // Only one neighbor is valid: fall back to simple perpendicular extrusion.
     if (len_a < 0.5) {
         let d = delta_b / len_b;
         return curr_px + side * vec2<f32>(-d.y, d.x) * half_width;
@@ -157,7 +153,6 @@ fn miter_corner_px(
         return curr_px + side * vec2<f32>(-d.y, d.x) * half_width;
     }
 
-    // Both neighbors valid: compute miter bisector.
     let dir_a  = delta_a / len_a;
     let dir_b  = delta_b / len_b;
     let perp_a = vec2<f32>(-dir_a.y, dir_a.x);
@@ -166,18 +161,14 @@ fn miter_corner_px(
     let miter_sum = perp_a + perp_b;
     let miter_len = length(miter_sum);
 
-    // Near-180° hairpin (antiparallel segments): miter is degenerate, use perp_b.
+    // Near-180° hairpin: miter is degenerate, fall back to perp_b.
     if (miter_len < 1e-6) {
         return curr_px + side * perp_b * half_width;
     }
 
-    let miter_dir = miter_sum / miter_len;
-
-    // sin of the half-angle between the two edge directions.
-    // miter_scale = 1/sin(half_angle); clamped to MITER_LIMIT to prevent spikes.
+    let miter_dir   = miter_sum / miter_len;
     let sin_half    = dot(miter_dir, perp_b);
     let miter_scale = min(1.0 / max(sin_half, 1.0 / MITER_LIMIT), MITER_LIMIT);
-
     return curr_px + side * miter_dir * half_width * miter_scale;
 }
 
@@ -186,15 +177,25 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index)   vertex_index:   u32,
 ) -> VSOut {
-    let corner = QUAD[vertex_index & 3u];
+    let seg        = segments[instance_index];
+    let ring_start = seg.ring_start;
+    let ring_size  = seg.ring_end - ring_start + 1u;
+    let li         = seg.local_idx;
 
-    let prev_px = project_to_px(prev_x_coords[instance_index], prev_y_coords[instance_index]);
-    let src_px  = project_to_px(src_x_coords[instance_index],  src_y_coords[instance_index]);
-    let dst_px  = project_to_px(dst_x_coords[instance_index],  dst_y_coords[instance_index]);
-    let next_px = project_to_px(next_x_coords[instance_index], next_y_coords[instance_index]);
+    // Look up the four neighboring vertices with ring-wrap via modular arithmetic.
+    let prev_pt = points[ring_start + (li + ring_size - 1u) % ring_size];
+    let src_pt  = points[ring_start + li];
+    let dst_pt  = points[ring_start + (li + 1u) % ring_size];
+    let next_pt = points[ring_start + (li + 2u) % ring_size];
+
+    let prev_px = project_to_px(prev_pt);
+    let src_px  = project_to_px(src_pt);
+    let dst_px  = project_to_px(dst_pt);
+    let next_px = project_to_px(next_pt);
 
     let half_width = u.line_width * 0.5;
-    let side = corner.y;
+    let corner     = QUAD[vertex_index & 3u];
+    let side       = corner.y;
 
     var pos_px: vec2<f32>;
     if (corner.x < 0.0) {
@@ -205,12 +206,11 @@ fn vs_main(
         pos_px = miter_corner_px(src_px, dst_px, next_px, side, half_width);
     }
 
-    // Pixel [0, layer_size] → NDC [-1, 1]
     let pos_ndc = pos_px / u.layer_size * 2.0 - vec2<f32>(1.0, 1.0);
 
     var out: VSOut;
     out.position = vec4f(pos_ndc, 0.0, 1.0);
-    out.color = u.color;
+    out.color    = u.color;
     return out;
 }
 

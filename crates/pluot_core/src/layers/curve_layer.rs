@@ -13,7 +13,7 @@ use crate::wgpu;
 use super::stroked_curve_layer::{StrokedCurveLayer, StrokedCurveLayerParams};
 use super::filled_curve_layer::{FilledCurveLayer, FilledCurveLayerParams};
 
-// Re-export PathCommand so existing code importing it from curve_layer still works.
+// TODO: refactor by moving PathCommand into curve_and_polygon_utils.rs
 pub use super::filled_curve_layer::PathCommand;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

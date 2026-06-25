@@ -1,3 +1,7 @@
+// FilledPolygonLayer accepts polygon vertices as input, internally converts these to triangles,
+// and ultimately renders a TriangulatedLayer as a sub-layer.
+// This layer is intended to be used as a sub-layer of PolygonLayer.
+
 use earcut::Earcut;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

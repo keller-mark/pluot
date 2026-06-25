@@ -1,10 +1,18 @@
+// StrokedPolygonLayer accepts polygon vertices as input.
+// This layer is intended to be used as a sub-layer of PolygonLayer.
+// In the vector drawing case, rendering is performed by simply defining an SVG path element.
+// In the raster drawing case, we use the approach from the DeckGL PathLayer
+// to ensure clean line joins at polygon vertices via WebGPU.
+// Note that this approach has slightly more overhead than simply rendering lines alone,
+// (e.g., compared to delegating to a LineLayer sub-layer).
+
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::positioning::get_point_position;
-use super::curve_and_polygon_utils::{polygon_segments_with_neighbors, resolve_margins};
+use super::curve_and_polygon_utils::{polygon_gpu_data, resolve_margins};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
@@ -74,26 +82,19 @@ struct StrokedPolygonLayerUniforms {
 pub struct StrokedPolygonLayer {
     view_params: ViewParams,
     layer_params: StrokedPolygonLayerParams,
-    prev_x: Vec<f32>,
-    prev_y: Vec<f32>,
-    stroke_src_x: Vec<f32>,
-    stroke_src_y: Vec<f32>,
-    stroke_dst_x: Vec<f32>,
-    stroke_dst_y: Vec<f32>,
-    next_x: Vec<f32>,
-    next_y: Vec<f32>,
+    /// Flat interleaved [x0, y0, x1, y1, …] vertex positions for all rings.
+    points: Vec<f32>,
+    /// Per-edge metadata: [ring_start, ring_end, local_idx] (indices into `points` in vertex units).
+    segments: Vec<[u32; 3]>,
     stroke_color: Vec4,
 }
 
 impl StrokedPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
-        let (prev_x, prev_y, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, next_x, next_y) =
-            polygon_segments_with_neighbors(&layer_params.polygons);
-
+        let (points, segments) = polygon_gpu_data(&layer_params.polygons);
         let [r, g, b, a] = layer_params.stroke_color;
         let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
-
-        Self { view_params, layer_params, prev_x, prev_y, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, next_x, next_y, stroke_color }
+        Self { view_params, layer_params, points, segments, stroke_color }
     }
 }
 
@@ -113,9 +114,9 @@ impl PreparedLayer for StrokedPolygonLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for StrokedPolygonLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, prev_x, prev_y, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, next_x, next_y, stroke_color } = self;
+        let Self { view_params, layer_params, points, segments, stroke_color } = self;
 
-        let n = stroke_src_x.len();
+        let n = segments.len();
         if n == 0 {
             return;
         }
@@ -171,8 +172,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         });
         queue.write_buffer(&uniform_buf, 0, &uniform_bytes);
 
-        let make_storage_buf = |label: &str, data: &[f32]| -> wgpu::Buffer {
-            let bytes: &[u8] = bytemuck::cast_slice(data);
+        let make_storage_buf = |label: &str, bytes: &[u8]| -> wgpu::Buffer {
             let buf = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
                 size: bytes.len() as u64,
@@ -183,14 +183,23 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             buf
         };
 
-        let src_x_buf  = make_storage_buf("StrokedPolygon SrcX",  stroke_src_x);
-        let src_y_buf  = make_storage_buf("StrokedPolygon SrcY",  stroke_src_y);
-        let dst_x_buf  = make_storage_buf("StrokedPolygon DstX",  stroke_dst_x);
-        let dst_y_buf  = make_storage_buf("StrokedPolygon DstY",  stroke_dst_y);
-        let prev_x_buf = make_storage_buf("StrokedPolygon PrevX", prev_x);
-        let prev_y_buf = make_storage_buf("StrokedPolygon PrevY", prev_y);
-        let next_x_buf = make_storage_buf("StrokedPolygon NextX", next_x);
-        let next_y_buf = make_storage_buf("StrokedPolygon NextY", next_y);
+        // Flat interleaved [x0, y0, x1, y1, …] — maps to array<vec2<f32>> in the shader.
+        let points_buf = make_storage_buf("StrokedPolygon Points", bytemuck::cast_slice(points));
+
+        // Flat [ring_start, ring_end, local_idx, …] u32 triples — maps to array<SegmentEntry>.
+        let segments_flat: Vec<u32> = segments.iter().flat_map(|s| s.iter().copied()).collect();
+        let segments_buf = make_storage_buf("StrokedPolygon Segments", bytemuck::cast_slice(&segments_flat));
+
+        let storage_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
 
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("StrokedPolygon BGL"),
@@ -205,86 +214,8 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
+                storage_entry(1),
+                storage_entry(2),
             ],
         });
 
@@ -293,14 +224,8 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             layout: &bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: src_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: src_y_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: dst_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: dst_y_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: prev_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: prev_y_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 7, resource: next_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 8, resource: next_y_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: points_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: segments_buf.as_entire_binding() },
             ],
         });
 
