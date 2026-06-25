@@ -18,9 +18,8 @@ use glam::{Mat4, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use earcut::Earcut;
 use kurbo::{Arc as KurboArc, CubicBez, ParamCurve, Point as KurboPoint, QuadBez, SvgArc, Vec2 as KurboVec2};
-use pluot_triangulation::point::calc_dedup_edges;
-use pluot_triangulation::{is_convex, sweeping_line_triangulation, triangulate_convex_polygon, Point as TriPoint};
 
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -243,24 +242,16 @@ fn ring_area_2x(points: &[(f32, f32)]) -> f32 {
 
 fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(f32, f32)> {
     let mut verts: Vec<(f32, f32)> = Vec::new();
+    let mut ec: Earcut<f32> = Earcut::new();
+    let mut indices: Vec<u32> = Vec::new();
     for subpath in subpaths {
         let ring = subpath_to_ring(subpath, subdivisions);
         if ring.len() < 3 || ring_area_2x(&ring).abs() <= 1e-12 {
             continue;
         }
-        let pts: Vec<TriPoint> = ring.iter().map(|&(x, y)| TriPoint::new(x, y)).collect();
-        let (triangles, points) = if is_convex(&pts) {
-            let tris = triangulate_convex_polygon(&pts);
-            (tris, pts)
-        } else {
-            let edges = calc_dedup_edges(std::slice::from_ref(&pts));
-            sweeping_line_triangulation(edges)
-        };
-        for t in &triangles {
-            for &idx in &[t.x, t.y, t.z] {
-                let p = points[idx];
-                verts.push((p.x, p.y));
-            }
+        ec.earcut(ring.iter().map(|&(x, y)| [x, y]), &[] as &[u32], &mut indices);
+        for &i in &indices {
+            verts.push(ring[i as usize]);
         }
     }
     verts

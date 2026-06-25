@@ -2,7 +2,6 @@
 
 [workspace]
 members = [
-    "crates/pluot_triangulation",
     "crates/pluot_core",
     "crates/pluot_zarr",
     "crates/pluot",
@@ -83,7 +82,6 @@ serde_json = "1.0.143"
 # We register these here so that they can be used via .workspace = true by sibling crates.
 pluot_core = { version = "0.1.0", path = "crates/pluot_core" }
 pluot_zarr = { version = "0.1.0", path = "crates/pluot_zarr" }
-pluot_triangulation = { version = "0.1.0", path = "crates/pluot_triangulation" }
 pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU

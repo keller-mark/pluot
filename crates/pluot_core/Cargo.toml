@@ -101,7 +101,7 @@ lz-str.workspace = true
 # For curve algorithms
 kurbo = "0.13.1"
 # For polygons
-pluot_triangulation = { workspace = true }
+earcut = "0.4.10"
 
 # WASM-specific dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
