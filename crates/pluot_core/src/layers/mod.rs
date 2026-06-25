@@ -5,6 +5,8 @@ pub mod curve_layer;
 pub(crate) mod stroked_curve_layer;
 pub(crate) mod filled_curve_layer;
 pub mod polygon_layer;
+pub mod filled_polygon_layer;
+pub mod stroked_polygon_layer;
 pub mod rect_layer;
 pub mod text_layer;
 pub mod bitmap_layer;
