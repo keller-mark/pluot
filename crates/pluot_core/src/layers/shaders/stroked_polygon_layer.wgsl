@@ -161,7 +161,7 @@ fn miter_corner_px(
     let miter_sum = perp_a + perp_b;
     let miter_len = length(miter_sum);
 
-    // Near-180° hairpin: miter is degenerate, fall back to perp_b.
+    // Near-180-degree hairpin: miter is degenerate, fall back to perp_b.
     if (miter_len < 1e-6) {
         return curr_px + side * perp_b * half_width;
     }
@@ -199,10 +199,10 @@ fn vs_main(
 
     var pos_px: vec2<f32>;
     if (corner.x < 0.0) {
-        // Source end: miter using prev→src→dst
+        // Source end: miter using prev->src->dst
         pos_px = miter_corner_px(prev_px, src_px, dst_px, side, half_width);
     } else {
-        // Target end: miter using src→dst→next
+        // Target end: miter using src->dst->next
         pos_px = miter_corner_px(src_px, dst_px, next_px, side, half_width);
     }
 

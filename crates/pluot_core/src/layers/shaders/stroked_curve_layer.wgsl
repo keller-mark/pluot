@@ -3,14 +3,14 @@
 // the transparent gaps that appear when adjacent rectangle quads meet at an angle.
 //
 // Approach: 4-point window instancing (adapted from webgpu-instanced-lines).
-// Each instance draws segment B→C plus half of the join geometry at both ends.
+// Each instance draws segment B->C plus half of the join geometry at both ends.
 // The geometry is a triangle strip; even-indexed strip vertices are outer arc
 // points, odd-indexed strip vertices are center points, and one special vertex
 // per half is the inner miter corner that fills the concave side of the join.
 //
 // Constants (fixed at compile time):
-//   JOIN_RESOLUTION = 8   → 16 arc steps per join/cap
-//   VERTS_PER_HALF  = 19  → (16 + 3) vertices per strip half
+//   JOIN_RESOLUTION = 8   -> 16 arc steps per join/cap
+//   VERTS_PER_HALF  = 19  -> (16 + 3) vertices per strip half
 //   VERTS_PER_INSTANCE = 38
 //
 // CPU side: all sub-paths are packed into a single flat points buffer. A
@@ -19,7 +19,7 @@
 // Instance i draws the segment from points[poly_start+local_b] to
 // points[poly_start+local_b+1].
 
-// --- Shared projection helpers (identical to curve_layer.wgsl) ----------------
+// Shared projection helpers (identical to curve_layer.wgsl)
 
 fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
   return mat4x4<f32>(
@@ -99,7 +99,7 @@ struct FSOut {
     @location(0) color: vec4<f32>,
 }
 
-// --- Constants ----------------------------------------------------------------
+// Constants
 
 // Number of arc steps per join half. Higher = smoother but more vertices.
 const JOIN_RESOLUTION: u32 = 8u;
@@ -111,7 +111,7 @@ const VERTS_PER_HALF_F: f32 = 19.0;
 const VERTS_PER_INSTANCE_F: f32 = 38.0;
 const PI: f32 = 3.141592653589793;
 
-// --- Helpers ------------------------------------------------------------------
+// Helpers
 
 fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
     let point_pos_orig = u.model_matrix * vec4f(model_point.x, model_point.y, 0.0, 1.0);
@@ -140,7 +140,7 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
     return pos_ndc_data;
 }
 
-// Convert NDC [-1,1]^2 → pixel coordinates [0,layer_size].
+// Convert NDC [-1,1]^2 -> pixel coordinates [0,layer_size].
 fn ndc_to_px(ndc: vec2<f32>) -> vec2<f32> {
     return (ndc + vec2<f32>(1.0, 1.0)) * 0.5 * u.layer_size;
 }
@@ -150,7 +150,7 @@ fn px_to_ndc(px: vec2<f32>) -> vec2<f32> {
     return px / u.layer_size * 2.0 - vec2<f32>(1.0, 1.0);
 }
 
-// --- Vertex shader ------------------------------------------------------------
+// Vertex shader
 
 @vertex
 fn vs_stroke(
@@ -164,10 +164,8 @@ fn vs_stroke(
     let poly_start = i32(seg.poly_start);
     let poly_end = i32(seg.poly_end);
 
-    //--------------------------------------------------------------------------
-    // 4-point window: A (prev) → B (start) → C (end) → D (next)
+    // 4-point window: A (prev) -> B (start) -> C (end) -> D (next)
     // B = poly_start + local_b; indices are absolute into the flat points buffer.
-    //--------------------------------------------------------------------------
     let A_idx = i32(seg.local_b) - 1 + poly_start;
     let B_idx = i32(seg.local_b)     + poly_start;
     let C_idx = i32(seg.local_b) + 1 + poly_start;
@@ -189,10 +187,8 @@ fn vs_stroke(
     var aInvalid = aOutOfBounds;
     var dInvalid = dOutOfBounds;
 
-    //--------------------------------------------------------------------------
     // Determine which half of the triangle strip this vertex belongs to.
-    // The strip is symmetric: the C-side is computed by swapping B↔C (mirror).
-    //--------------------------------------------------------------------------
+    // The strip is symmetric: the C-side is computed by swapping B and C (mirror).
     let idx = f32(vertex_index);
     let mirror = idx >= VERTS_PER_HALF_F;
     let mirrorSign = select(1.0, -1.0, mirror);
@@ -203,23 +199,19 @@ fn vs_stroke(
         let ti = dInvalid; dInvalid = aInvalid; aInvalid = ti;
     }
 
-    //--------------------------------------------------------------------------
     // Handle line endpoints: caps (aInvalid) and tangent extrapolation (dInvalid).
-    // For caps: reflect A across B so the A→B tangent opposes B→C, producing a
-    // 180° arc (semicircle). For dInvalid: extrapolate D to get a tangent.
-    //--------------------------------------------------------------------------
+    // For caps: reflect A across B so the A->B tangent opposes B->C, producing a
+    // 180-degree arc (semicircle). For dInvalid: extrapolate D to get a tangent.
     let isCap = aInvalid; // we always insert round caps
 
     if (aInvalid) {
-        pA = pC; // reflect → tAB = -tBC → 180° cap geometry
+        pA = pC; // reflect -> tAB = -tBC -> 180-degree cap geometry
     }
     if (dInvalid) {
         pD = 2.0 * pC - pB; // extrapolate D for consistent tangent at C
     }
 
-    //--------------------------------------------------------------------------
     // Tangent and normal vectors (all in pixel space).
-    //--------------------------------------------------------------------------
     var tBC = pC - pB;
     let lBC = length(tBC);
     if (lBC > 1e-6) { tBC = tBC / lBC; }
@@ -232,67 +224,52 @@ fn vs_stroke(
 
     let cosB = clamp(dot(tAB, tBC), -1.0, 1.0);
 
-    //--------------------------------------------------------------------------
     // Turn direction at B: positive = CCW (outer join on the left).
-    //--------------------------------------------------------------------------
     var dirB = -dot(tBC, nAB); // 2D cross product
     let bCollinear = abs(dirB) < 1e-4;
     let bIsHairpin = bCollinear && cosB < 0.0;
     dirB = select(sign(dirB), -mirrorSign, bCollinear);
 
-    //--------------------------------------------------------------------------
     // Miter bisector vector (points toward the outer join corner).
-    //--------------------------------------------------------------------------
     var miter = select(0.5 * (nAB + nBC) * dirB, -tBC, bIsHairpin);
 
-    //--------------------------------------------------------------------------
-    // Map vertex_index → join fan index i.
-    // Even i → outer arc vertex; odd i → center vertex; i==MAX_RES+1 → inner miter.
-    //--------------------------------------------------------------------------
+    // Map vertex_index -> join fan index i.
+    // Even i -> outer arc vertex; odd i -> center vertex; i==MAX_RES+1 -> inner miter.
     var i = select(idx, VERTS_PER_INSTANCE_F - idx, mirror);
     i = i + select(0.0, -1.0, dirB < 0.0);
     i = i - select(0.0, 1.0, mirror);
     i = max(0.0, i);
 
-    //--------------------------------------------------------------------------
     // Build local coordinate basis for vertex offset.
     //   xBasis: tangent direction (for miter extension along segment)
     //   yBasis: outward normal direction (for line width)
-    //--------------------------------------------------------------------------
     var xBasis = tBC;
     var yBasis = nBC * dirB;
     var xy = vec2<f32>(0.0, 0.0); // offset in (xBasis, yBasis) space
 
     if (i == MAX_RES_F + 1.0) {
-        //----------------------------------------------------------------------
         // Inner miter corner: fills the concave side of the join.
         // m = tan(half turning angle); clamped so it doesn't exceed segment lengths.
-        //----------------------------------------------------------------------
         let cross_val = tAB.x * tBC.y - tAB.y * tBC.x;
         let m = select(cross_val / (1.0 + cosB), 0.0, cosB <= -0.9999);
         let max_ext = select(min(lBC, lAB) / max(half_width, 1e-6), 1e9, half_width < 1e-6);
         xy = vec2<f32>(min(abs(m), max_ext), -1.0);
     } else {
-        //----------------------------------------------------------------------
         // Join / cap arc geometry.
         // Switch to miter-aligned basis: yBasis along the bisector, xBasis perpendicular.
-        //----------------------------------------------------------------------
         let m2 = dot(miter, miter);
         let lm = sqrt(m2);
         if (lm > 1e-6) {
-            yBasis = miter / lm;
-            xBasis = dirB * vec2<f32>(yBasis.y, -yBasis.x);
+            yBasis = miter /                 xBasis = dirB * vec2<f32>(yBasis.y, -yBasis.x);
         }
 
         // miterLimit² = 4² = 16; if miter vector is very short, fall back to bevel.
         let isBevel = 1.0 > 16.0 * m2;
 
         if (i % 2.0 == 0.0) {
-            //------------------------------------------------------------------
             // Outer arc vertex: sweep from one edge normal to the other.
-            // t ∈ [0,1] parameterizes the arc; capMult doubles the sweep for caps.
+            // t (in range [0,1]) parameterizes the arc; capMult doubles the sweep for caps.
             // theta = angle in the miter-aligned frame.
-            //------------------------------------------------------------------
             let t = clamp(i, 0.0, MAX_RES_F) / MAX_RES_F;
             let capMult = select(1.0, 2.0, isCap);
             let theta = -0.5 * (acos(cosB) * t - PI) * capMult;
@@ -302,9 +279,7 @@ fn vs_stroke(
         // (For non-round joins there would be a bevel offset, but we always use round.)
     }
 
-    //--------------------------------------------------------------------------
     // Apply offset in pixel space, convert back to NDC.
-    //--------------------------------------------------------------------------
     let dP = xBasis * xy.x + yBasis * xy.y;
     let pos_px = pB + half_width * dP;
     let pos_ndc = px_to_ndc(pos_px);
