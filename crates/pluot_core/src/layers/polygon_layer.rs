@@ -15,8 +15,6 @@ use crate::wgpu;
 use super::stroked_polygon_layer::{StrokedPolygonLayer, StrokedPolygonLayerParams};
 use super::filled_polygon_layer::{FilledPolygonLayer, FilledPolygonLayerParams};
 
-// ── Params ─────────────────────────────────────────────────────────────────────
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct PolygonLayerParams {
@@ -69,8 +67,6 @@ impl Default for PolygonLayerParams {
     }
 }
 
-// ── Layer ──────────────────────────────────────────────────────────────────────
-
 pub struct PolygonLayer {
     stroke_sublayer: Option<StrokedPolygonLayer>,
     fill_sublayer: Option<FilledPolygonLayer>,
@@ -113,12 +109,11 @@ impl PolygonLayer {
     }
 }
 
-// ── Trait impls ────────────────────────────────────────────────────────────────
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for PolygonLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        // TODO: run the sub-layers' prepare() functions here
         PrepareResult { bailed_early: false }
     }
 }

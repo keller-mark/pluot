@@ -61,7 +61,34 @@ impl Default for StrokedPolygonLayerParams {
     }
 }
 
-// ── Uniforms ───────────────────────────────────────────────────────────────────
+pub struct StrokedPolygonLayer {
+    view_params: ViewParams,
+    layer_params: StrokedPolygonLayerParams,
+    /// Flat interleaved [x0, y0, x1, y1, …] vertex positions for all rings.
+    points: Vec<f32>,
+    /// Per-edge metadata: [ring_start, ring_end, local_idx] (indices into `points` in vertex units).
+    segments: Vec<[u32; 3]>,
+    stroke_color: Vec4,
+}
+
+impl StrokedPolygonLayer {
+    pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
+        // TODO: move this logic to the prepare() function?
+        // TODO: only do these computations in the raster drawing case?
+        let (points, segments) = polygon_gpu_data(&layer_params.polygons);
+        let [r, g, b] = layer_params.stroke_color;
+        let stroke_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.stroke_opacity);
+        Self { view_params, layer_params, points, segments, stroke_color }
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl PreparedLayer for StrokedPolygonLayer {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        PrepareResult { bailed_early: false }
+    }
+}
 
 #[derive(ShaderType, Debug)]
 struct StrokedPolygonLayerUniforms {
@@ -75,39 +102,6 @@ struct StrokedPolygonLayerUniforms {
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
     color: Vec4,
-}
-
-// ── Layer ──────────────────────────────────────────────────────────────────────
-
-pub struct StrokedPolygonLayer {
-    view_params: ViewParams,
-    layer_params: StrokedPolygonLayerParams,
-    /// Flat interleaved [x0, y0, x1, y1, …] vertex positions for all rings.
-    points: Vec<f32>,
-    /// Per-edge metadata: [ring_start, ring_end, local_idx] (indices into `points` in vertex units).
-    segments: Vec<[u32; 3]>,
-    stroke_color: Vec4,
-}
-
-impl StrokedPolygonLayer {
-    pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
-        let (points, segments) = polygon_gpu_data(&layer_params.polygons);
-        let [r, g, b] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.stroke_opacity);
-        Self { view_params, layer_params, points, segments, stroke_color }
-    }
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-// ── Trait impls ────────────────────────────────────────────────────────────────
-
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for StrokedPolygonLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
-        PrepareResult { bailed_early: false }
-    }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

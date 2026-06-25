@@ -19,8 +19,6 @@ use crate::wgpu;
 
 use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
 
-// ── Params ─────────────────────────────────────────────────────────────────────
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FilledPolygonLayerParams {
@@ -55,8 +53,6 @@ impl Default for FilledPolygonLayerParams {
     }
 }
 
-// ── Layer ──────────────────────────────────────────────────────────────────────
-
 pub struct FilledPolygonLayer {
     view_params: ViewParams,
     layer_params: FilledPolygonLayerParams,
@@ -65,6 +61,8 @@ pub struct FilledPolygonLayer {
 
 impl FilledPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: FilledPolygonLayerParams) -> Self {
+        // TODO: move the triangulation into the prepare() function?
+        // TODO: only do the triangulation in the raster drawing case?
         let mut ec = Earcut::new();
         let mut indices = Vec::new();
         let mut verts: Vec<(f32, f32)> = Vec::new();
@@ -81,14 +79,12 @@ impl FilledPolygonLayer {
     }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-// ── Trait impls ────────────────────────────────────────────────────────────────
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for FilledPolygonLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        // TODO: run the TriangulatedLayer sub-layer's prepare function here?
         PrepareResult { bailed_early: false }
     }
 }

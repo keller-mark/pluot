@@ -13,8 +13,7 @@ use crate::wgpu;
 use super::stroked_curve_layer::{StrokedCurveLayer, StrokedCurveLayerParams};
 use super::filled_curve_layer::{FilledCurveLayer, FilledCurveLayerParams};
 
-// TODO: refactor by moving PathCommand into curve_and_polygon_utils.rs
-pub use super::filled_curve_layer::PathCommand;
+pub use super::curve_and_polygon_utils::PathCommand;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -116,6 +115,7 @@ impl CurveLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CurveLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        // TODO: run the sub-layers' prepare() functions here
         PrepareResult { bailed_early: false }
     }
 }

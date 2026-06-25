@@ -21,28 +21,11 @@ use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
 
-use super::curve_and_polygon_utils::{flatten_subpath, resolve_margins};
-use super::filled_curve_layer::{commands_to_subpaths, PathCommand};
+use super::curve_and_polygon_utils::{commands_to_subpaths, flatten_subpath, resolve_margins, PathCommand};
 
 // Must match VERTS_PER_INSTANCE_F = 38 in stroked_curve_layer.wgsl.
 // With JOIN_RESOLUTION=8: (8*2 + 3) * 2 = 38.
 const VERTS_PER_INSTANCE: u32 = 38;
-
-#[derive(ShaderType, Debug)]
-struct StrokedCurveLayerUniforms {
-    layer_size: Vec2,
-    camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
-    stroke_width: f32,
-    aspect_ratio_mode: u32,
-    aspect_ratio_alignment_mode: u32,
-    model_matrix: Mat4,
-    stroke_color: Vec4,
-
-    // TODO: define a stroke_linecap parameter, with either None or Round options,
-    // and add support for this configurable property in both the Raster and SVG drawing cases.
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -87,6 +70,8 @@ pub struct StrokedCurveLayer {
 
 impl StrokedCurveLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedCurveLayerParams) -> Self {
+        // TODO: move this logic to the prepare() function?
+        // TODO: only do these computations in the raster drawing case?
         let subpaths = commands_to_subpaths(&layer_params.commands);
         let subdivisions = layer_params.subdivisions.max(1);
         let polylines = subpaths.iter().map(|s| flatten_subpath(s, subdivisions)).collect();
@@ -103,6 +88,22 @@ impl PreparedLayer for StrokedCurveLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         PrepareResult { bailed_early: false }
     }
+}
+
+#[derive(ShaderType, Debug)]
+struct StrokedCurveLayerUniforms {
+    layer_size: Vec2,
+    camera_view: Mat4,
+    data_unit_mode_x: u32,
+    data_unit_mode_y: u32,
+    stroke_width: f32,
+    aspect_ratio_mode: u32,
+    aspect_ratio_alignment_mode: u32,
+    model_matrix: Mat4,
+    stroke_color: Vec4,
+
+    // TODO: define a stroke_linecap parameter, with either None or Round options,
+    // and add support for this configurable property in both the Raster and SVG drawing cases.
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
