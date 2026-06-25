@@ -357,14 +357,4 @@ impl DrawToSvg for FilledCurveLayer {
     }
 }
 
-inventory::submit! {
-    crate::registry::LayerRegistration {
-        layer_type_name: "FilledCurveLayer",
-        create_layer: |value, view_params| {
-            let params: FilledCurveLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(FilledCurveLayer::new(view_params.clone(), params))
-        },
-    }
-}
-
 impl PickableLayer for FilledCurveLayer {}

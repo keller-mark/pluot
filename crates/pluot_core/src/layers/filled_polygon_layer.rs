@@ -201,14 +201,4 @@ impl DrawToSvg for FilledPolygonLayer {
     }
 }
 
-inventory::submit! {
-    crate::registry::LayerRegistration {
-        layer_type_name: "FilledPolygonLayer",
-        create_layer: |value, view_params| {
-            let params: FilledPolygonLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(FilledPolygonLayer::new(view_params.clone(), params))
-        },
-    }
-}
-
 impl PickableLayer for FilledPolygonLayer {}

@@ -370,14 +370,4 @@ impl DrawToSvg for StrokedPolygonLayer {
     }
 }
 
-inventory::submit! {
-    crate::registry::LayerRegistration {
-        layer_type_name: "StrokedPolygonLayer",
-        create_layer: |value, view_params| {
-            let params: StrokedPolygonLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(StrokedPolygonLayer::new(view_params.clone(), params))
-        },
-    }
-}
-
 impl PickableLayer for StrokedPolygonLayer {}

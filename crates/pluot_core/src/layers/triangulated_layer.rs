@@ -355,14 +355,4 @@ impl DrawToSvg for TriangulatedLayer {
     }
 }
 
-inventory::submit! {
-    crate::registry::LayerRegistration {
-        layer_type_name: "TriangulatedLayer",
-        create_layer: |value, view_params| {
-            let params: TriangulatedLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(TriangulatedLayer::new(view_params.clone(), params))
-        },
-    }
-}
-
 impl PickableLayer for TriangulatedLayer {}

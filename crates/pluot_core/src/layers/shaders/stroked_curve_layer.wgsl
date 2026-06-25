@@ -260,7 +260,8 @@ fn vs_stroke(
         let m2 = dot(miter, miter);
         let lm = sqrt(m2);
         if (lm > 1e-6) {
-            yBasis = miter /                 xBasis = dirB * vec2<f32>(yBasis.y, -yBasis.x);
+            yBasis = miter / lm;
+            xBasis = dirB * vec2<f32>(yBasis.y, -yBasis.x);
         }
 
         // miterLimit² = 4² = 16; if miter vector is very short, fall back to bevel.

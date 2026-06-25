@@ -400,14 +400,4 @@ impl DrawToSvg for StrokedCurveLayer {
     }
 }
 
-inventory::submit! {
-    crate::registry::LayerRegistration {
-        layer_type_name: "StrokedCurveLayer",
-        create_layer: |value, view_params| {
-            let params: StrokedCurveLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(StrokedCurveLayer::new(view_params.clone(), params))
-        },
-    }
-}
-
 impl PickableLayer for StrokedCurveLayer {}
