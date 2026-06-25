@@ -13,8 +13,11 @@
 //   VERTS_PER_HALF  = 19  → (16 + 3) vertices per strip half
 //   VERTS_PER_INSTANCE = 38
 //
-// CPU side: each sub-path is pre-flattened into a flat list of model-space vec2
-// points. Instance i draws the segment from points[i] to points[i+1].
+// CPU side: all sub-paths are packed into a single flat points buffer. A
+// companion segments buffer holds one entry per segment: [poly_start, poly_end,
+// local_b], where local_b is the 0-based segment index within its polyline.
+// Instance i draws the segment from points[poly_start+local_b] to
+// points[poly_start+local_b+1].
 
 // --- Shared projection helpers (identical to curve_layer.wgsl) ----------------
 
@@ -74,11 +77,19 @@ struct StrokedCurveLayerUniforms {
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
     stroke_color: vec4<f32>,        // rgba (alpha already folded with stroke_opacity)
-    point_count: u32,               // number of points in this sub-path's polyline
+}
+
+// Per-segment metadata: indices into the flat points buffer.
+// Stride = 12 bytes (3 × u32); matches the CPU-side Vec<u32> layout.
+struct SegmentEntry {
+    poly_start: u32,   // index of the first point of this polyline in `points`
+    poly_end: u32,     // index of the last point (inclusive)
+    local_b: u32,      // 0-based segment index within its polyline (B = poly_start + local_b)
 }
 
 @group(0) @binding(0) var<uniform> u: StrokedCurveLayerUniforms;
 @group(0) @binding(1) var<storage, read> points: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
@@ -149,26 +160,29 @@ fn vs_stroke(
     var out: VSOut;
     out.color = u.stroke_color;
 
-    let N = i32(u.point_count);
+    let seg = segments[instance_index];
+    let poly_start = i32(seg.poly_start);
+    let poly_end = i32(seg.poly_end);
 
     //--------------------------------------------------------------------------
     // 4-point window: A (prev) → B (start) → C (end) → D (next)
+    // B = poly_start + local_b; indices are absolute into the flat points buffer.
     //--------------------------------------------------------------------------
-    let A_idx = i32(instance_index) - 1;
-    let B_idx = i32(instance_index);
-    let C_idx = i32(instance_index) + 1;
-    let D_idx = i32(instance_index) + 2;
+    let A_idx = i32(seg.local_b) - 1 + poly_start;
+    let B_idx = i32(seg.local_b)     + poly_start;
+    let C_idx = i32(seg.local_b) + 1 + poly_start;
+    let D_idx = i32(seg.local_b) + 2 + poly_start;
 
-    let aOutOfBounds = A_idx < 0;
-    let dOutOfBounds = D_idx >= N;
+    let aOutOfBounds = A_idx < poly_start;
+    let dOutOfBounds = D_idx > poly_end;
 
     let aspect = u.layer_size.x / u.layer_size.y;
 
     // Fetch and project all four points (clamp OOB indices; validity tracked separately).
-    var pA = ndc_to_px(project_point(points[u32(clamp(A_idx, 0, N - 1))], aspect));
-    var pB = ndc_to_px(project_point(points[u32(clamp(B_idx, 0, N - 1))], aspect));
-    var pC = ndc_to_px(project_point(points[u32(clamp(C_idx, 0, N - 1))], aspect));
-    var pD = ndc_to_px(project_point(points[u32(clamp(D_idx, 0, N - 1))], aspect));
+    var pA = ndc_to_px(project_point(points[u32(clamp(A_idx, poly_start, poly_end))], aspect));
+    var pB = ndc_to_px(project_point(points[u32(clamp(B_idx, poly_start, poly_end))], aspect));
+    var pC = ndc_to_px(project_point(points[u32(clamp(C_idx, poly_start, poly_end))], aspect));
+    var pD = ndc_to_px(project_point(points[u32(clamp(D_idx, poly_start, poly_end))], aspect));
 
     let half_width = u.stroke_width * 0.5;
 

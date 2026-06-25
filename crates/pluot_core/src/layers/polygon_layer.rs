@@ -1,19 +1,18 @@
 // PolygonLayer — renders a collection of polygons as stroked outlines, filled
 // interiors, or both.
 //
-// Each polygon is a ring of model-space (x, y) vertices. Rendering is split
-// across two internal sub-layers:
-//
-//   FilledPolygonLayer — triangulates each ring via earcut on the CPU and renders
-//     the resulting triangles with FilledCurveLayer's shader.
-//
-//   StrokedPolygonLayer — closes each ring into a polyline (appending the first
-//     point at the end) and renders with StrokedCurveLayer's round-join shader.
+// GPU rendering:
+//   Fill  — draw_fill_gpu (earcut-triangulated vertices, filled_curve_layer.wgsl)
+//   Stroke — draw_stroked_polygon_gpu (one quad per edge, LineLayer approach with
+//             stroked_polygon_layer.wgsl). This is much simpler/more efficient than
+//             the round-join bezier approach used by CurveLayer, and appropriate for
+//             straight polygon edges.
 //
 // SVG rendering emits one closed TwoPath per polygon.
 
 use earcut::Earcut;
-use glam::{Mat4, Vec4};
+use encase::{ShaderType, UniformBuffer};
+use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -27,10 +26,7 @@ use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
 
-use super::filled_curve_layer::FilledCurveLayer;
-use super::filled_polygon_layer::FilledPolygonLayer;
-use super::stroked_curve_layer::StrokedCurveLayer;
-use super::stroked_polygon_layer::StrokedPolygonLayer;
+use super::filled_curve_layer::draw_fill_gpu;
 
 // ── Params ─────────────────────────────────────────────────────────────────────
 
@@ -97,8 +93,6 @@ fn resolve_margins(params: &PolygonLayerParams, view: &ViewParams) -> (f64, f64,
     (ml, mt, mr, mb)
 }
 
-/// Triangulate a polygon ring using earcut, appending flat (x, y) triangle
-/// vertices to `out`. Rings with fewer than 3 vertices are skipped.
 fn triangulate_ring(ring: &[(f32, f32)], ec: &mut Earcut<f32>, indices: &mut Vec<u32>, out: &mut Vec<(f32, f32)>) {
     if ring.len() < 3 {
         return;
@@ -109,17 +103,216 @@ fn triangulate_ring(ring: &[(f32, f32)], ec: &mut Earcut<f32>, indices: &mut Vec
     }
 }
 
-/// Build a closed polyline from a polygon ring.
-/// The ring is closed by appending the first point if the last point differs from it.
-fn ring_to_closed_polyline(ring: &[(f32, f32)]) -> Vec<(f32, f32)> {
-    if ring.len() < 2 {
-        return vec![];
+// ── Polygon stroke draw function (LineLayer approach) ──────────────────────────
+
+#[derive(ShaderType, Debug)]
+struct StrokedPolygonUniforms {
+    layer_size: Vec2,
+    camera_view: Mat4,
+    data_unit_mode_x: u32,
+    data_unit_mode_y: u32,
+    line_width: f32,
+    line_width_unit_mode: u32,
+    aspect_ratio_mode: u32,
+    aspect_ratio_alignment_mode: u32,
+    model_matrix: Mat4,
+    color: Vec4,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_stroked_polygon_gpu(
+    gpu_context: &GpuContext<'_>,
+    pass: &mut wgpu::RenderPass,
+    src_x: &[f32],
+    src_y: &[f32],
+    dst_x: &[f32],
+    dst_y: &[f32],
+    color: Vec4,
+    stroke_width: f32,
+    layer_w: f32,
+    layer_h: f32,
+    camera_view: &[f32; 16],
+    data_unit_mode_x: u32,
+    data_unit_mode_y: u32,
+    aspect_ratio_mode: u32,
+    aspect_ratio_alignment_mode: u32,
+    model_matrix: Mat4,
+    margin_left: f64,
+    margin_top: f64,
+    margin_right: f64,
+    margin_bottom: f64,
+) {
+    let n = src_x.len();
+    if n == 0 {
+        return;
     }
-    let mut pts = ring.to_vec();
-    if pts.first() != pts.last() {
-        pts.push(pts[0]);
-    }
-    pts
+
+    let GpuContext { device, queue } = gpu_context;
+
+    let uniform_struct = StrokedPolygonUniforms {
+        layer_size: Vec2::new(layer_w, layer_h),
+        camera_view: Mat4::from_cols_array(camera_view),
+        data_unit_mode_x,
+        data_unit_mode_y,
+        line_width: stroke_width,
+        line_width_unit_mode: 0, // always pixels
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        model_matrix,
+        color,
+    };
+
+    let mut ub = UniformBuffer::new(Vec::<u8>::new());
+    ub.write(&uniform_struct).unwrap();
+    let uniform_bytes = ub.into_inner();
+
+    let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("StrokedPolygon Uniform"),
+        size: uniform_bytes.len() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&uniform_buf, 0, &uniform_bytes);
+
+    let make_storage_buf = |label: &str, data: &[f32]| -> wgpu::Buffer {
+        let bytes: &[u8] = bytemuck::cast_slice(data);
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buf, 0, bytes);
+        buf
+    };
+
+    let src_x_buf = make_storage_buf("StrokedPolygon SrcX", src_x);
+    let src_y_buf = make_storage_buf("StrokedPolygon SrcY", src_y);
+    let dst_x_buf = make_storage_buf("StrokedPolygon DstX", dst_x);
+    let dst_y_buf = make_storage_buf("StrokedPolygon DstY", dst_y);
+
+    let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("StrokedPolygon BGL"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("StrokedPolygon BG"),
+        layout: &bgl,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: src_x_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: src_y_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: dst_x_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: dst_y_buf.as_entire_binding() },
+        ],
+    });
+
+    let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/stroked_polygon_layer.wgsl"));
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("StrokedPolygon PLD"),
+        bind_group_layouts: &[Some(&bgl)],
+        immediate_size: 0,
+    });
+
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("StrokedPolygon RPD"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        cache: None,
+        multiview_mask: None,
+    });
+
+    pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
+    pass.set_scissor_rect(margin_left as u32, margin_top as u32, layer_w as u32, layer_h as u32);
+
+    pass.set_pipeline(&pipeline);
+    pass.set_bind_group(0, &bind_group, &[]);
+    pass.draw(0..4, 0..(n as u32));
 }
 
 // ── Layer ──────────────────────────────────────────────────────────────────────
@@ -127,109 +320,59 @@ fn ring_to_closed_polyline(ring: &[(f32, f32)]) -> Vec<(f32, f32)> {
 pub struct PolygonLayer {
     view_params: ViewParams,
     layer_params: PolygonLayerParams,
-    stroked: Option<StrokedPolygonLayer>,
-    filled: Option<FilledPolygonLayer>,
+    /// Pre-triangulated fill vertices (empty when fill is disabled).
+    fill_vertices: Vec<(f32, f32)>,
+    /// Flat segment arrays for polygon edge strokes (empty when stroke is disabled).
+    stroke_src_x: Vec<f32>,
+    stroke_src_y: Vec<f32>,
+    stroke_dst_x: Vec<f32>,
+    stroke_dst_y: Vec<f32>,
+    /// Pre-multiplied stroke/fill colors (opacity baked in).
+    stroke_color: Vec4,
+    fill_color: Vec4,
 }
 
 impl PolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: PolygonLayerParams) -> Self {
-        let camera_view = view_params.camera_view.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
-
-        let (margin_left, margin_top, margin_right, margin_bottom) =
-            resolve_margins(&layer_params, &view_params);
-
-        let data_unit_mode_x = match layer_params.data_unit_mode_x {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        };
-        let data_unit_mode_y = match layer_params.data_unit_mode_y {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        };
-        let aspect_ratio_mode = match view_params.aspect_ratio_mode {
-            AspectRatioMode::Ignore => 0,
-            AspectRatioMode::Contain => 1,
-            AspectRatioMode::Cover => 2,
-        };
-        let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode {
-            AspectRatioAlignmentMode::Center => 0,
-            AspectRatioAlignmentMode::Start => 1,
-            AspectRatioAlignmentMode::End => 2,
-        };
-        let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]));
-
-        let filled = if layer_params.filled {
+        let fill_vertices = if layer_params.filled {
             let mut ec = Earcut::new();
             let mut indices = Vec::new();
-            let mut fill_vertices: Vec<(f32, f32)> = Vec::new();
+            let mut verts: Vec<(f32, f32)> = Vec::new();
             for ring in layer_params.polygons.iter() {
-                triangulate_ring(ring, &mut ec, &mut indices, &mut fill_vertices);
+                triangulate_ring(ring, &mut ec, &mut indices, &mut verts);
             }
-            if fill_vertices.is_empty() {
-                None
-            } else {
-                let [r, g, b, a] = layer_params.fill_color;
-                Some(FilledPolygonLayer(FilledCurveLayer {
-                    view_params: view_params.clone(),
-                    fill_color: Vec4::new(r, g, b, a * layer_params.fill_opacity),
-                    fill_vertices,
-                    data_unit_mode_x,
-                    data_unit_mode_y,
-                    aspect_ratio_mode,
-                    aspect_ratio_alignment_mode,
-                    model_matrix,
-                    margin_left,
-                    margin_top,
-                    margin_right,
-                    margin_bottom,
-                    camera_view,
-                }))
-            }
+            verts
         } else {
-            None
+            vec![]
         };
 
-        let stroked = if layer_params.stroked && !layer_params.polygons.is_empty() {
-            let polylines: Vec<Vec<(f32, f32)>> = layer_params.polygons.iter()
-                .map(|ring| ring_to_closed_polyline(ring))
-                .filter(|pts| pts.len() >= 2)
-                .collect();
-            if polylines.is_empty() {
-                None
-            } else {
-                let [r, g, b, a] = layer_params.stroke_color;
-                Some(StrokedPolygonLayer(StrokedCurveLayer {
-                    view_params: view_params.clone(),
-                    stroke_color: Vec4::new(r, g, b, a * layer_params.stroke_opacity),
-                    stroke_width: layer_params.stroke_width,
-                    polylines,
-                    data_unit_mode_x,
-                    data_unit_mode_y,
-                    aspect_ratio_mode,
-                    aspect_ratio_alignment_mode,
-                    model_matrix,
-                    margin_left,
-                    margin_top,
-                    margin_right,
-                    margin_bottom,
-                    camera_view,
-                }))
+        let (mut stroke_src_x, mut stroke_src_y, mut stroke_dst_x, mut stroke_dst_y) =
+            (vec![], vec![], vec![], vec![]);
+        if layer_params.stroked {
+            for ring in layer_params.polygons.iter() {
+                if ring.len() < 2 { continue; }
+                let n = ring.len();
+                for i in 0..n {
+                    let j = (i + 1) % n;
+                    stroke_src_x.push(ring[i].0);
+                    stroke_src_y.push(ring[i].1);
+                    stroke_dst_x.push(ring[j].0);
+                    stroke_dst_y.push(ring[j].1);
+                }
             }
-        } else {
-            None
-        };
+        }
 
-        Self { view_params, layer_params, stroked, filled }
+        let [r, g, b, a] = layer_params.stroke_color;
+        let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
+        let [r, g, b, a] = layer_params.fill_color;
+        let fill_color = Vec4::new(r, g, b, a * layer_params.fill_opacity);
+
+        Self {
+            view_params, layer_params,
+            fill_vertices,
+            stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y,
+            stroke_color, fill_color,
+        }
     }
 }
 
@@ -238,9 +381,7 @@ impl PolygonLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for PolygonLayer {
-    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
-        if let Some(f) = &mut self.filled  { f.prepare(gpu_context).await; }
-        if let Some(s) = &mut self.stroked { s.prepare(gpu_context).await; }
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         PrepareResult { bailed_early: false }
     }
 }
@@ -249,9 +390,47 @@ impl PreparedLayer for PolygonLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for PolygonLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        // Fill first so the stroke renders on top.
-        if let Some(f) = &self.filled  { f.draw(gpu_context, pass).await; }
-        if let Some(s) = &self.stroked { s.draw(gpu_context, pass).await; }
+        let Self { view_params, layer_params, fill_vertices, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, stroke_color, fill_color } = self;
+
+        let (margin_left, margin_top, margin_right, margin_bottom) =
+            resolve_margins(layer_params, view_params);
+
+        let camera_view = view_params.camera_view.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        let layer_w = view_params.width as f32 - (margin_left + margin_right) as f32;
+        let layer_h = view_params.height as f32 - (margin_top + margin_bottom) as f32;
+
+        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let aspect_ratio_mode = match view_params.aspect_ratio_mode { AspectRatioMode::Ignore => 0, AspectRatioMode::Contain => 1, AspectRatioMode::Cover => 2 };
+        let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode { AspectRatioAlignmentMode::Center => 0, AspectRatioAlignmentMode::Start => 1, AspectRatioAlignmentMode::End => 2 };
+        let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]));
+
+        // Fill first so stroke renders on top.
+        draw_fill_gpu(
+            gpu_context, pass, fill_vertices, *fill_color,
+            layer_w, layer_h, &camera_view,
+            data_unit_mode_x, data_unit_mode_y,
+            aspect_ratio_mode, aspect_ratio_alignment_mode,
+            model_matrix, margin_left, margin_top, margin_right, margin_bottom,
+        );
+        draw_stroked_polygon_gpu(
+            gpu_context, pass,
+            stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y,
+            *stroke_color, layer_params.stroke_width,
+            layer_w, layer_h, &camera_view,
+            data_unit_mode_x, data_unit_mode_y,
+            aspect_ratio_mode, aspect_ratio_alignment_mode,
+            model_matrix, margin_left, margin_top, margin_right, margin_bottom,
+        );
     }
 }
 
@@ -321,8 +500,6 @@ impl DrawToSvg for PolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
-            // Project ring to pixel space and close it (append first point) so
-            // TwoPath emits a fully closed path outline.
             let mut points: Vec<(f64, f64)> = ring.iter().map(|&(x, y)| to_px(x, y)).collect();
             points.push(points[0]);
             svg_elements.push(TwoElement::Path(TwoPath {

@@ -1,18 +1,12 @@
 // A CurveLayer that renders SVG-like vector paths (lines, cubic/quadratic Bezier
 // curves and elliptical arcs) as stroked and/or filled curves.
 //
-// GPU rendering is split across two internal sub-layers:
+// GPU rendering is split across two free functions:
 //
-//   StrokedCurveLayer — round joins & round caps (webgpu-instanced-lines approach).
-//     The CPU pre-flattens each sub-path into a polyline; each instance in the
-//     vertex shader draws one segment with proper join geometry at both ends,
-//     eliminating the transparent gaps visible with simple per-segment quads.
+//   draw_stroked_curve_gpu — round joins & round caps (webgpu-instanced-lines approach).
+//   draw_fill_gpu          — triangulated fill interior (earcut).
 //
-//   FilledCurveLayer — triangulated fill interior (ear-clipping / sweep-line).
-//     Identical to the previous implementation; CPU triangulates, GPU projects.
-//
-// SVG rendering is handled directly in this file (it walks `subpaths` and emits
-// TwoPath polyline elements, one per sub-path, exactly as before).
+// SVG rendering walks `subpaths` and emits one TwoPath polyline per sub-path.
 
 use glam::{Mat4, Vec4};
 use serde::{Deserialize, Serialize};
@@ -28,8 +22,8 @@ use crate::wgpu;
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 
-use super::stroked_curve_layer::{flatten_subpath, StrokedCurveLayer};
-use super::filled_curve_layer::FilledCurveLayer;
+use super::stroked_curve_layer::{flatten_subpath, draw_stroked_curve_gpu};
+use super::filled_curve_layer::draw_fill_gpu;
 
 /// A single drawing command, the post-parsed form of an SVG path segment.
 /// All coordinates are absolute (relative SVG commands should be resolved before
@@ -91,11 +85,9 @@ pub struct CurveLayerParams {
     pub stroke_color: [f32; 4],
     /// RGBA fill color in [0, 1]. Defaults to opaque black.
     pub fill_color: [f32; 4],
-    /// Additional opacity multiplier for the stroke, in [0, 1]. Multiplies the
-    /// stroke color's alpha (mirrors SVG `stroke-opacity`). Defaults to 1.0.
+    /// Additional opacity multiplier for the stroke, in [0, 1].
     pub stroke_opacity: f32,
-    /// Additional opacity multiplier for the fill, in [0, 1]. Multiplies the fill
-    /// color's alpha (mirrors SVG `fill-opacity`). Defaults to 1.0.
+    /// Additional opacity multiplier for the fill, in [0, 1].
     pub fill_opacity: f32,
 }
 
@@ -125,7 +117,6 @@ fn line_to_cubic(p0: KurboPoint, p1: KurboPoint) -> CubicBez {
     CubicBez::new(p0, p0, p1, p1)
 }
 
-/// Flatten path commands into per-sub-path lists of cubic Bezier segments.
 fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
     let mut subpaths: Vec<Vec<CubicBez>> = Vec::new();
     let mut current: Vec<CubicBez> = Vec::new();
@@ -199,7 +190,6 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
     subpaths
 }
 
-/// Flatten a sub-path into a closed polygon ring for fill triangulation.
 fn subpath_to_ring(subpath: &[CubicBez], subdivisions: u32) -> Vec<(f32, f32)> {
     let mut points: Vec<(f32, f32)> = Vec::new();
     if subpath.is_empty() {
@@ -257,7 +247,6 @@ fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(
     verts
 }
 
-/// Helper: resolve layer bounds and extract margin values.
 fn resolve_margins(layer_params: &CurveLayerParams, view_params: &ViewParams) -> (f64, f64, f64, f64) {
     let bounds = if layer_params.bounds.is_none() {
         &view_params.margins
@@ -276,8 +265,13 @@ pub struct CurveLayer {
     layer_params: CurveLayerParams,
     /// Cubic Bezier segments per sub-path (used by SVG rendering).
     subpaths: Vec<Vec<CubicBez>>,
-    stroked: Option<StrokedCurveLayer>,
-    filled: Option<FilledCurveLayer>,
+    /// Pre-triangulated fill vertices (empty when fill is disabled).
+    fill_vertices: Vec<(f32, f32)>,
+    /// Pre-flattened polylines per sub-path (empty when stroke is disabled).
+    polylines: Vec<Vec<(f32, f32)>>,
+    /// Pre-multiplied stroke/fill colors (opacity baked in).
+    stroke_color: Vec4,
+    fill_color: Vec4,
 }
 
 impl CurveLayer {
@@ -291,113 +285,33 @@ impl CurveLayer {
 
         let subpaths = commands_to_subpaths(&layer_params.commands);
         let subdivisions = layer_params.subdivisions.max(1);
-
         let has_segments = subpaths.iter().any(|s| !s.is_empty());
-        let do_stroke = layer_params.stroked && has_segments;
-        let do_fill = layer_params.filled;
 
-        let camera_view = view_params.camera_view.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
-
-        let (margin_left, margin_top, margin_right, margin_bottom) =
-            resolve_margins(&layer_params, &view_params);
-
-        let data_unit_mode_x = match layer_params.data_unit_mode_x {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        };
-        let data_unit_mode_y = match layer_params.data_unit_mode_y {
-            UnitsMode::Pixels => 0,
-            UnitsMode::Data => 1,
-        };
-        let aspect_ratio_mode = match view_params.aspect_ratio_mode {
-            AspectRatioMode::Ignore => 0,
-            AspectRatioMode::Contain => 1,
-            AspectRatioMode::Cover => 2,
-        };
-        let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode {
-            AspectRatioAlignmentMode::Center => 0,
-            AspectRatioAlignmentMode::Start => 1,
-            AspectRatioAlignmentMode::End => 2,
-        };
-        let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]));
-
-        let stroked = if do_stroke {
-            let [r, g, b, a] = layer_params.stroke_color;
-            let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
-            let polylines = subpaths.iter()
-                .map(|s| flatten_subpath(s, subdivisions))
-                .collect();
-            Some(StrokedCurveLayer {
-                view_params: view_params.clone(),
-                stroke_color,
-                stroke_width: layer_params.stroke_width,
-                polylines,
-                data_unit_mode_x,
-                data_unit_mode_y,
-                aspect_ratio_mode,
-                aspect_ratio_alignment_mode,
-                model_matrix,
-                margin_left,
-                margin_top,
-                margin_right,
-                margin_bottom,
-                camera_view,
-            })
+        let polylines = if layer_params.stroked && has_segments {
+            subpaths.iter().map(|s| flatten_subpath(s, subdivisions)).collect()
         } else {
-            None
+            vec![]
         };
 
-        let filled = if do_fill {
-            let fill_vertices = compute_fill_vertices(&subpaths, subdivisions);
-            if fill_vertices.is_empty() {
-                None
-            } else {
-                let [r, g, b, a] = layer_params.fill_color;
-                let fill_color = Vec4::new(r, g, b, a * layer_params.fill_opacity);
-                Some(FilledCurveLayer {
-                    view_params: view_params.clone(),
-                    fill_color,
-                    fill_vertices,
-                    data_unit_mode_x,
-                    data_unit_mode_y,
-                    aspect_ratio_mode,
-                    aspect_ratio_alignment_mode,
-                    model_matrix,
-                    margin_left,
-                    margin_top,
-                    margin_right,
-                    margin_bottom,
-                    camera_view,
-                })
-            }
+        let fill_vertices = if layer_params.filled {
+            compute_fill_vertices(&subpaths, subdivisions)
         } else {
-            None
+            vec![]
         };
 
-        Self { view_params, layer_params, subpaths, stroked, filled }
+        let [r, g, b, a] = layer_params.stroke_color;
+        let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
+        let [r, g, b, a] = layer_params.fill_color;
+        let fill_color = Vec4::new(r, g, b, a * layer_params.fill_opacity);
+
+        Self { view_params, layer_params, subpaths, fill_vertices, polylines, stroke_color, fill_color }
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for CurveLayer {
-    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
-        if let Some(s) = &mut self.stroked {
-            s.prepare(gpu_context).await;
-        }
-        if let Some(f) = &mut self.filled {
-            f.prepare(gpu_context).await;
-        }
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         PrepareResult { bailed_early: false }
     }
 }
@@ -406,13 +320,45 @@ impl PreparedLayer for CurveLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for CurveLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        // Fill first so the stroke renders on top.
-        if let Some(filled) = &self.filled {
-            filled.draw(gpu_context, pass).await;
-        }
-        if let Some(stroked) = &self.stroked {
-            stroked.draw(gpu_context, pass).await;
-        }
+        let Self { view_params, layer_params, fill_vertices, polylines, stroke_color, fill_color, .. } = self;
+
+        let (margin_left, margin_top, margin_right, margin_bottom) =
+            resolve_margins(layer_params, view_params);
+
+        let camera_view = view_params.camera_view.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        let layer_w = view_params.width as f32 - (margin_left + margin_right) as f32;
+        let layer_h = view_params.height as f32 - (margin_top + margin_bottom) as f32;
+
+        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let aspect_ratio_mode = match view_params.aspect_ratio_mode { AspectRatioMode::Ignore => 0, AspectRatioMode::Contain => 1, AspectRatioMode::Cover => 2 };
+        let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode { AspectRatioAlignmentMode::Center => 0, AspectRatioAlignmentMode::Start => 1, AspectRatioAlignmentMode::End => 2 };
+        let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]));
+
+        // Fill first so stroke renders on top.
+        draw_fill_gpu(
+            gpu_context, pass, fill_vertices, *fill_color,
+            layer_w, layer_h, &camera_view,
+            data_unit_mode_x, data_unit_mode_y,
+            aspect_ratio_mode, aspect_ratio_alignment_mode,
+            model_matrix, margin_left, margin_top, margin_right, margin_bottom,
+        );
+        draw_stroked_curve_gpu(
+            gpu_context, pass, polylines, *stroke_color, layer_params.stroke_width,
+            layer_w, layer_h, &camera_view,
+            data_unit_mode_x, data_unit_mode_y,
+            aspect_ratio_mode, aspect_ratio_alignment_mode,
+            model_matrix, margin_left, margin_top, margin_right, margin_bottom,
+        );
     }
 }
 
