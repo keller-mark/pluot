@@ -19,8 +19,6 @@ use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
 
-// ── Params ─────────────────────────────────────────────────────────────────────
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct TriangulatedLayerParams {
@@ -55,22 +53,6 @@ impl Default for TriangulatedLayerParams {
     }
 }
 
-// ── Uniforms ───────────────────────────────────────────────────────────────────
-
-#[derive(ShaderType, Debug)]
-struct TriangulatedLayerUniforms {
-    layer_size: Vec2,
-    camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
-    aspect_ratio_mode: u32,
-    aspect_ratio_alignment_mode: u32,
-    model_matrix: Mat4,
-    fill_color: Vec4,
-}
-
-// ── Layer ──────────────────────────────────────────────────────────────────────
-
 pub struct TriangulatedLayer {
     view_params: ViewParams,
     layer_params: TriangulatedLayerParams,
@@ -85,8 +67,6 @@ impl TriangulatedLayer {
     }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
 fn resolve_margins(params: &TriangulatedLayerParams, view: &ViewParams) -> (f64, f64, f64, f64) {
     let b = if params.bounds.is_none() { &view.margins } else { &params.bounds };
     let ml = b.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
@@ -96,14 +76,24 @@ fn resolve_margins(params: &TriangulatedLayerParams, view: &ViewParams) -> (f64,
     (ml, mt, mr, mb)
 }
 
-// ── Trait impls ────────────────────────────────────────────────────────────────
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for TriangulatedLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         PrepareResult { bailed_early: false }
     }
+}
+
+#[derive(ShaderType, Debug)]
+struct TriangulatedLayerUniforms {
+    layer_size: Vec2,
+    camera_view: Mat4,
+    data_unit_mode_x: u32,
+    data_unit_mode_y: u32,
+    aspect_ratio_mode: u32,
+    aspect_ratio_alignment_mode: u32,
+    model_matrix: Mat4,
+    fill_color: Vec4,
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

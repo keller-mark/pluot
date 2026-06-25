@@ -22,8 +22,6 @@ use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
 
-// ── Params ─────────────────────────────────────────────────────────────────────
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct StrokedPolygonLayerParams {
