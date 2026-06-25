@@ -2,6 +2,8 @@ pub mod point_layer;
 pub mod point_3d_layer;
 pub mod line_layer;
 pub mod curve_layer;
+pub(crate) mod stroked_curve_layer;
+pub(crate) mod filled_curve_layer;
 pub mod rect_layer;
 pub mod text_layer;
 pub mod bitmap_layer;

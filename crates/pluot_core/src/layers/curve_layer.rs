@@ -1,32 +1,23 @@
 // A CurveLayer that renders SVG-like vector paths (lines, cubic/quadratic Bezier
 // curves and elliptical arcs) as stroked and/or filled curves.
 //
-// We use line_layer.rs and its shader (shaders/line_layer.wgsl) as a reference.
-// In contrast to LineLayer, CurveLayer accepts a sequence of path drawing commands
-// (the post-parsed form of an SVG path string such as the violin-plot outline
-// "M49.39,230.8L48.419,228.65C47.448,226.499,...Z"). On the CPU we flatten every
-// command into a list of cubic Bezier segments (lines and quadratics become cubics;
-// arcs become one or more cubics). The flattened control points are uploaded to the
-// GPU, and the vertex shader evaluates each Bezier and extrudes the resulting
-// sub-segments into quads. This keeps the bulk of the per-curve work in the vertex
-// shader so rendering stays efficient and scalable.
+// GPU rendering is split across two internal sub-layers:
 //
-// A path can be stroked, filled, or both (matching SVG `fill`/`stroke`). The stroke
-// is rendered exactly as above. The fill is produced by flattening each sub-path into
-// a polygon and triangulating it on the CPU (ear clipping); the resulting triangles
-// are projected through the same pipeline in the vertex shader. Stroke and fill carry
-// independent colors and opacity values.
+//   StrokedCurveLayer — round joins & round caps (webgpu-instanced-lines approach).
+//     The CPU pre-flattens each sub-path into a polyline; each instance in the
+//     vertex shader draws one segment with proper join geometry at both ends,
+//     eliminating the transparent gaps visible with simple per-segment quads.
 //
-// Both pixel and data units are supported (matching LineLayer); we assume the
-// position and size values share the same units.
+//   FilledCurveLayer — triangulated fill interior (ear-clipping / sweep-line).
+//     Identical to the previous implementation; CPU triangulates, GPU projects.
+//
+// SVG rendering is handled directly in this file (it walks `subpaths` and emits
+// TwoPath polyline elements, one per sub-path, exactly as before).
 
-use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
+use glam::{Mat4, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-// `kurbo` provides the curve math (quadratic/arc -> cubic conversion and Bezier
-// evaluation); `pluot_triangulation` provides the polygon fill triangulation.
 use kurbo::{Arc as KurboArc, CubicBez, ParamCurve, Point as KurboPoint, QuadBez, SvgArc, Vec2 as KurboVec2};
 use pluot_triangulation::point::calc_dedup_edges;
 use pluot_triangulation::{is_convex, sweeping_line_triangulation, triangulate_convex_polygon, Point as TriPoint};
@@ -37,7 +28,9 @@ use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+
+use super::stroked_curve_layer::{flatten_subpath, StrokedCurveLayer};
+use super::filled_curve_layer::FilledCurveLayer;
 
 /// A single drawing command, the post-parsed form of an SVG path segment.
 /// All coordinates are absolute (relative SVG commands should be resolved before
@@ -129,17 +122,11 @@ impl Default for CurveLayerParams {
     }
 }
 
-/// Represent a straight line as a (degenerate) cubic Bezier so it can share the same
-/// evaluation path on the GPU. With the control points at the endpoints, the traced
-/// geometry is exactly the line segment.
 fn line_to_cubic(p0: KurboPoint, p1: KurboPoint) -> CubicBez {
     CubicBez::new(p0, p0, p1, p1)
 }
 
-/// Flatten a sequence of drawing commands into per-sub-path lists of cubic Bezier
-/// segments. A new sub-path begins at each MoveTo; Close adds a closing segment back
-/// to the sub-path start. Quadratic Beziers and elliptical arcs are converted to
-/// cubics via `kurbo` (`QuadBez::raise` and `Arc::to_cubic_beziers` respectively).
+/// Flatten path commands into per-sub-path lists of cubic Bezier segments.
 fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
     let mut subpaths: Vec<Vec<CubicBez>> = Vec::new();
     let mut current: Vec<CubicBez> = Vec::new();
@@ -173,7 +160,6 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
             PathCommand::QuadraticTo { x1, y1, x, y } => {
                 let end = KurboPoint::new(x as f64, y as f64);
                 let quad = QuadBez::new(cursor, KurboPoint::new(x1 as f64, y1 as f64), end);
-                // kurbo raises the quadratic to an exactly-equivalent cubic.
                 current.push(quad.raise());
                 cursor = end;
             }
@@ -189,8 +175,6 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
                 };
                 match KurboArc::from_svg_arc(&svg_arc) {
                     Some(arc) => {
-                        // Tolerance scaled to the arc's size so the cubic approximation
-                        // stays accurate regardless of the coordinate unit scale.
                         let tolerance = (svg_arc.radii.hypot() * 1e-3).max(1e-9);
                         let mut p0 = cursor;
                         arc.to_cubic_beziers(tolerance, |p1, p2, p3| {
@@ -198,7 +182,6 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
                             p0 = p3;
                         });
                     }
-                    // Degenerate arc (zero radius / zero length): treat as a line.
                     None => current.push(line_to_cubic(cursor, end)),
                 }
                 cursor = end;
@@ -217,10 +200,7 @@ fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez>> {
     subpaths
 }
 
-/// Flatten a sub-path's cubic segments into a closed polygon ring, matching the
-/// per-cubic `subdivisions` tessellation used for stroking. Consecutive duplicate
-/// points (and a trailing point coincident with the start) are dropped so the ring
-/// has no degenerate edges. Bezier points are evaluated via `kurbo`.
+/// Flatten a sub-path into a closed polygon ring for fill triangulation.
 fn subpath_to_ring(subpath: &[CubicBez], subdivisions: u32) -> Vec<(f32, f32)> {
     let mut points: Vec<(f32, f32)> = Vec::new();
     if subpath.is_empty() {
@@ -241,7 +221,6 @@ fn subpath_to_ring(subpath: &[CubicBez], subdivisions: u32) -> Vec<(f32, f32)> {
             push_unique(&mut points, (p.x as f32, p.y as f32));
         }
     }
-    // Drop a trailing point that closes back onto the start (Close adds one).
     if points.len() > 1 {
         let first = points[0];
         let last = *points.last().unwrap();
@@ -252,11 +231,9 @@ fn subpath_to_ring(subpath: &[CubicBez], subdivisions: u32) -> Vec<(f32, f32)> {
     points
 }
 
-/// Twice the signed area of a polygon ring; used only to discard degenerate
-/// (zero-area / fully-collinear) rings before triangulation.
 fn ring_area_2x(points: &[(f32, f32)]) -> f32 {
     let n = points.len();
-    let mut area = 0.0;
+    let mut area = 0.0f32;
     for i in 0..n {
         let j = (i + 1) % n;
         area += points[i].0 * points[j].1 - points[j].0 * points[i].1;
@@ -264,25 +241,14 @@ fn ring_area_2x(points: &[(f32, f32)]) -> f32 {
     area
 }
 
-/// Triangulate the filled interior of the path using `pluot_triangulation`, returning
-/// a flat list of model-space triangle vertices (3 per triangle). Each sub-path is
-/// flattened into a polygon ring and triangulated independently; the rings' fills are
-/// then unioned. This matches the SVG fill output, which paints one `<path>` per
-/// sub-path (so nested sub-paths overlap rather than cutting holes).
 fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(f32, f32)> {
     let mut verts: Vec<(f32, f32)> = Vec::new();
-
     for subpath in subpaths {
         let ring = subpath_to_ring(subpath, subdivisions);
-        // A fillable ring needs at least 3 vertices and non-zero area; a fully-collinear
-        // ring has nothing to fill (and would make the triangulator panic), so skip it.
         if ring.len() < 3 || ring_area_2x(&ring).abs() <= 1e-12 {
             continue;
         }
         let pts: Vec<TriPoint> = ring.iter().map(|&(x, y)| TriPoint::new(x, y)).collect();
-
-        // A convex ring has a trivial fan triangulation; a concave ring goes through the
-        // sweep-line algorithm (decompose into monotone polygons, then triangulate).
         let (triangles, points) = if is_convex(&pts) {
             let tris = triangulate_convex_polygon(&pts);
             (tris, pts)
@@ -290,7 +256,6 @@ fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(
             let edges = calc_dedup_edges(std::slice::from_ref(&pts));
             sweeping_line_triangulation(edges)
         };
-
         for t in &triangles {
             for &idx in &[t.x, t.y, t.z] {
                 let p = points[idx];
@@ -298,110 +263,48 @@ fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(
             }
         }
     }
-
     verts
+}
+
+/// Helper: resolve layer bounds and extract margin values.
+fn resolve_margins(layer_params: &CurveLayerParams, view_params: &ViewParams) -> (f64, f64, f64, f64) {
+    let bounds = if layer_params.bounds.is_none() {
+        &view_params.margins
+    } else {
+        &layer_params.bounds
+    };
+    let ml = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
+    let mt = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
+    let mr = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
+    let mb = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
+    (ml, mt, mr, mb)
 }
 
 pub struct CurveLayer {
     view_params: ViewParams,
     layer_params: CurveLayerParams,
-    /// Flattened cubic Bezier segments grouped by sub-path (used for stroking and SVG).
+    /// Cubic Bezier segments per sub-path (used by SVG rendering).
     subpaths: Vec<Vec<CubicBez>>,
-    /// Triangulated fill geometry: a flat list of model-space triangle vertices
-    /// (3 per triangle). Empty unless the layer is filled.
-    fill_vertices: Vec<(f32, f32)>,
+    stroked: Option<StrokedCurveLayer>,
+    filled: Option<FilledCurveLayer>,
 }
 
 impl CurveLayer {
-    pub fn new(
-        view_params: ViewParams,
-        layer_params: CurveLayerParams,
-    ) -> Self {
-        // Error if stroke_width_unit_mode is "data" when data_unit_mode is "pixels".
+    pub fn new(view_params: ViewParams, layer_params: CurveLayerParams) -> Self {
         if layer_params.stroke_width_unit_mode == UnitsMode::Data
             && (layer_params.data_unit_mode_x == UnitsMode::Pixels
                 || layer_params.data_unit_mode_y == UnitsMode::Pixels)
         {
             panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
+
         let subpaths = commands_to_subpaths(&layer_params.commands);
-
-        // Precompute the fill triangulation only when needed.
-        let fill_vertices = if layer_params.filled {
-            compute_fill_vertices(&subpaths, layer_params.subdivisions.max(1))
-        } else {
-            Vec::new()
-        };
-
-        Self {
-            view_params,
-            layer_params,
-            subpaths,
-            fill_vertices,
-        }
-    }
-
-    /// Total number of cubic Bezier segments across all sub-paths.
-    fn num_segments(&self) -> usize {
-        self.subpaths.iter().map(|s| s.len()).sum()
-    }
-}
-
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for CurveLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
-        PrepareResult {
-            bailed_early: false,
-        }
-    }
-}
-
-#[derive(ShaderType, Debug)]
-struct CurveLayerUniforms {
-    layer_size: Vec2, // (layer_width, layer_height) in pixels
-    camera_view: Mat4,
-    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
-    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
-    stroke_width: f32,
-    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units
-    aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
-    aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
-    subdivisions: u32, // sub-segments per cubic Bezier segment
-    model_matrix: Mat4,
-    stroke_color: Vec4, // rgba stroke color (alpha already includes stroke_opacity)
-    fill_color: Vec4, // rgba fill color (alpha already includes fill_opacity)
-}
-
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for CurveLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let GpuContext { device, queue } = gpu_context;
-        let Self { layer_params, view_params, subpaths, fill_vertices } = self;
-
-        let num_segments = self.num_segments();
         let subdivisions = layer_params.subdivisions.max(1);
 
-        // Decide which passes to run. Stroke needs segments; fill needs triangles.
-        let do_stroke = layer_params.stroked && num_segments > 0;
-        let do_fill = layer_params.filled && !fill_vertices.is_empty();
-        // Nothing to draw (empty path, only MoveTo/Close, or both modes disabled).
-        if !do_stroke && !do_fill {
-            return;
-        }
+        let has_segments = subpaths.iter().any(|s| !s.is_empty());
+        let do_stroke = layer_params.stroked && has_segments;
+        let do_fill = layer_params.filled;
 
-        // Final stroke/fill colors, folding the separate opacity multipliers into alpha.
-        let stroke_rgba = {
-            let [r, g, b, a] = layer_params.stroke_color;
-            [r, g, b, a * layer_params.stroke_opacity]
-        };
-        let fill_rgba = {
-            let [r, g, b, a] = layer_params.fill_color;
-            [r, g, b, a * layer_params.fill_opacity]
-        };
-
-        // Note: WGSL treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
             1.0, 0.0, 0.0, 0.0,
             0.0, 1.0, 0.0, 0.0,
@@ -409,231 +312,115 @@ impl DrawToRasterGpu for CurveLayer {
             0.0, 0.0, 0.0, 1.0,
         ]);
 
-        // Use layer-specific bounds if not None, otherwise use the view's margins.
-        let bounds = if layer_params.bounds.is_none() {
-            &view_params.margins
+        let (margin_left, margin_top, margin_right, margin_bottom) =
+            resolve_margins(&layer_params, &view_params);
+
+        let data_unit_mode_x = match layer_params.data_unit_mode_x {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        };
+        let data_unit_mode_y = match layer_params.data_unit_mode_y {
+            UnitsMode::Pixels => 0,
+            UnitsMode::Data => 1,
+        };
+        let aspect_ratio_mode = match view_params.aspect_ratio_mode {
+            AspectRatioMode::Ignore => 0,
+            AspectRatioMode::Contain => 1,
+            AspectRatioMode::Cover => 2,
+        };
+        let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode {
+            AspectRatioAlignmentMode::Center => 0,
+            AspectRatioAlignmentMode::Start => 1,
+            AspectRatioAlignmentMode::End => 2,
+        };
+        let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]));
+
+        let stroked = if do_stroke {
+            let [r, g, b, a] = layer_params.stroke_color;
+            let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
+            let polylines = subpaths.iter()
+                .map(|s| flatten_subpath(s, subdivisions))
+                .collect();
+            Some(StrokedCurveLayer {
+                view_params: view_params.clone(),
+                stroke_color,
+                stroke_width: layer_params.stroke_width,
+                polylines,
+                data_unit_mode_x,
+                data_unit_mode_y,
+                aspect_ratio_mode,
+                aspect_ratio_alignment_mode,
+                model_matrix,
+                margin_left,
+                margin_top,
+                margin_right,
+                margin_bottom,
+                camera_view,
+            })
         } else {
-            &layer_params.bounds
+            None
         };
 
-        let margin_top = if let Some(m) = &bounds { m.margin_top.unwrap_or(0.0) } else { 0.0 } as f64;
-        let margin_right = if let Some(m) = &bounds { m.margin_right.unwrap_or(0.0) } else { 0.0 } as f64;
-        let margin_bottom = if let Some(m) = &bounds { m.margin_bottom.unwrap_or(0.0) } else { 0.0 } as f64;
-        let margin_left = if let Some(m) = &bounds { m.margin_left.unwrap_or(0.0) } else { 0.0 } as f64;
-
-        let viewport_w = view_params.width as f32;
-        let viewport_h = view_params.height as f32;
-
-        let layer_w = viewport_w - (margin_left + margin_right) as f32;
-        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-
-        let uniform_struct = CurveLayerUniforms {
-            layer_size: Vec2::new(layer_w, layer_h),
-            camera_view: Mat4::from_cols_array(&camera_view),
-            data_unit_mode_x: match layer_params.data_unit_mode_x {
-                UnitsMode::Pixels => 0,
-                UnitsMode::Data => 1,
-            },
-            data_unit_mode_y: match layer_params.data_unit_mode_y {
-                UnitsMode::Pixels => 0,
-                UnitsMode::Data => 1,
-            },
-            stroke_width: layer_params.stroke_width,
-            stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
-                UnitsMode::Pixels => 0,
-                UnitsMode::Data => 1,
-            },
-            aspect_ratio_mode: match view_params.aspect_ratio_mode {
-                AspectRatioMode::Ignore => 0,
-                AspectRatioMode::Contain => 1,
-                AspectRatioMode::Cover => 2,
-            },
-            aspect_ratio_alignment_mode: match view_params.aspect_ratio_alignment_mode {
-                AspectRatioAlignmentMode::Center => 0,
-                AspectRatioAlignmentMode::Start => 1,
-                AspectRatioAlignmentMode::End => 2,
-            },
-            subdivisions,
-            model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
-                1.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            ])),
-            stroke_color: Vec4::from_array(stroke_rgba),
-            fill_color: Vec4::from_array(fill_rgba),
-        };
-
-        let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-        buffer.write(&uniform_struct).unwrap();
-        let uniform_bytes = buffer.into_inner();
-
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Curve Uniform Buffer"),
-            size: uniform_bytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("CurveLayer BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/curve_layer.wgsl"));
-
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("CurveLayer PLD"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-
-        // Both passes share the same layout, blend, and target; only the vertex
-        // entry point and primitive topology differ (quads for stroke, triangles
-        // for fill).
-        let make_pipeline = |entry_point: &str, topology: wgpu::PrimitiveTopology| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("CurveLayer RPD"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some(entry_point),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                cache: None,
-                multiview_mask: None,
-            })
-        };
-
-        // Build a storage-buffer-backed bind group from a tightly-packed f32 slice
-        // (interpreted as `array<vec2<f32>>` in the shader).
-        let make_bind_group = |label: &str, data: &[f32]| {
-            let bytes: &[u8] = bytemuck::cast_slice(data);
-            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: bytes.len() as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            queue.write_buffer(&buffer, 0, bytes);
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(label),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: buffer.as_entire_binding(),
-                    },
-                ],
-            })
-        };
-
-        // Handle margins by adjusting viewport and scissor rect (see LineLayer).
-        pass.set_viewport(
-            margin_left as f32,
-            margin_top as f32,
-            viewport_w - (margin_left + margin_right) as f32,
-            viewport_h - (margin_top + margin_bottom) as f32,
-            0.0,
-            1.0,
-        );
-        pass.set_scissor_rect(
-            margin_left as u32,
-            margin_top as u32,
-            (viewport_w - (margin_left + margin_right) as f32) as u32,
-            (viewport_h - (margin_top + margin_bottom) as f32) as u32,
-        );
-
-        // Fill first, so the stroke is drawn on top of the fill.
-        if do_fill {
-            // Flatten triangle vertices into a tightly-packed f32 buffer: 1 vec2 per
-            // vertex, 3 vertices per triangle.
-            let mut fill_data: Vec<f32> = Vec::with_capacity(fill_vertices.len() * 2);
-            for (x, y) in fill_vertices {
-                fill_data.push(*x);
-                fill_data.push(*y);
+        let filled = if do_fill {
+            let fill_vertices = compute_fill_vertices(&subpaths, subdivisions);
+            if fill_vertices.is_empty() {
+                None
+            } else {
+                let [r, g, b, a] = layer_params.fill_color;
+                let fill_color = Vec4::new(r, g, b, a * layer_params.fill_opacity);
+                Some(FilledCurveLayer {
+                    view_params: view_params.clone(),
+                    fill_color,
+                    fill_vertices,
+                    data_unit_mode_x,
+                    data_unit_mode_y,
+                    aspect_ratio_mode,
+                    aspect_ratio_alignment_mode,
+                    model_matrix,
+                    margin_left,
+                    margin_top,
+                    margin_right,
+                    margin_bottom,
+                    camera_view,
+                })
             }
-            let fill_bind_group = make_bind_group("Curve Fill Vertices", &fill_data);
-            let fill_pipeline = make_pipeline("vs_fill", wgpu::PrimitiveTopology::TriangleList);
+        } else {
+            None
+        };
 
-            pass.set_pipeline(&fill_pipeline);
-            pass.set_bind_group(0, &fill_bind_group, &[]);
-            pass.draw(0..(fill_vertices.len() as u32), 0..1);
+        Self { view_params, layer_params, subpaths, stroked, filled }
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl PreparedLayer for CurveLayer {
+    async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        if let Some(s) = &mut self.stroked {
+            s.prepare(gpu_context).await;
         }
+        if let Some(f) = &mut self.filled {
+            f.prepare(gpu_context).await;
+        }
+        PrepareResult { bailed_early: false }
+    }
+}
 
-        if do_stroke {
-            // Flatten control points into a tightly-packed f32 buffer: 4 vec2 (8 floats)
-            // per cubic segment, matching `array<vec2<f32>>` (stride 8) in the shader.
-            let mut control_points: Vec<f32> = Vec::with_capacity(num_segments * 8);
-            for subpath in subpaths {
-                for seg in subpath {
-                    for p in [seg.p0, seg.p1, seg.p2, seg.p3] {
-                        control_points.push(p.x as f32);
-                        control_points.push(p.y as f32);
-                    }
-                }
-            }
-            let stroke_bind_group = make_bind_group("Curve Control Points", &control_points);
-            let stroke_pipeline = make_pipeline("vs_main", wgpu::PrimitiveTopology::TriangleStrip);
-
-            pass.set_pipeline(&stroke_pipeline);
-            pass.set_bind_group(0, &stroke_bind_group, &[]);
-            // One instance per (segment, sub-segment); 4 vertices per instance (quad).
-            let instance_count = (num_segments as u32) * subdivisions;
-            pass.draw(0..4, 0..instance_count);
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterGpu for CurveLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        // Fill first so the stroke renders on top.
+        if let Some(filled) = &self.filled {
+            filled.draw(gpu_context, pass).await;
+        }
+        if let Some(stroked) = &self.stroked {
+            stroked.draw(gpu_context, pass).await;
         }
     }
 }
@@ -657,52 +444,32 @@ impl DrawToSvg for CurveLayer {
             0.0, 0.0, 0.0, 1.0,
         ]);
 
-        let bounds = if layer_params.bounds.is_none() {
-            &view_params.margins
-        } else {
-            &layer_params.bounds
-        };
-
-        let margin_top = if let Some(m) = &bounds { m.margin_top.unwrap_or(0.0) } else { 0.0 } as f64;
-        let margin_right = if let Some(m) = &bounds { m.margin_right.unwrap_or(0.0) } else { 0.0 } as f64;
-        let margin_bottom = if let Some(m) = &bounds { m.margin_bottom.unwrap_or(0.0) } else { 0.0 } as f64;
-        let margin_left = if let Some(m) = &bounds { m.margin_left.unwrap_or(0.0) } else { 0.0 } as f64;
+        let (margin_left, margin_top, margin_right, margin_bottom) =
+            resolve_margins(layer_params, view_params);
 
         let viewport_w = view_params.width as f32;
         let viewport_h = view_params.height as f32;
-
         let layer_w = viewport_w - (margin_left + margin_right) as f32;
         let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
 
-        let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
+        let subdivisions = layer_params.subdivisions.max(1) as f64;
 
-        let subdivisions = layer_params.subdivisions.max(1);
+        use crate::positioning::get_point_position;
 
-        // Convert a model-space point to a pixel position within the layer area,
-        // flipping Y to match the SVG coordinate system (as LineLayer does).
         let to_px = |x: f32, y: f32| -> (f64, f64) {
             let (px, py) = get_point_position(
-                x,
-                y,
-                layer_w,
-                layer_h,
+                x, y,
+                layer_w, layer_h,
                 &camera_view,
-                layer_params.data_unit_mode_x,
-                layer_params.data_unit_mode_y,
-                view_params.aspect_ratio_mode,
-                view_params.aspect_ratio_alignment_mode,
-                Some(&model_matrix_raw),
+                layer_params.data_unit_mode_x.clone(),
+                layer_params.data_unit_mode_y.clone(),
+                view_params.aspect_ratio_mode.clone(),
+                view_params.aspect_ratio_alignment_mode.clone(),
+                layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
             );
             (px as f64, (layer_h - py) as f64)
         };
 
-        // Fold the separate opacity multiplier into each color's alpha (mirrors the
-        // GPU path); the element-level SVG `opacity` stays at 1.0.
         let to_rgba = |[r, g, b, a]: [f32; 4], opacity: f32| -> TwoColor {
             TwoColor::Rgba((
                 (r * 255.0).round().clamp(0.0, 255.0) as u8,
@@ -722,21 +489,17 @@ impl DrawToSvg for CurveLayer {
             None
         };
 
-        // Emit one TwoPath per sub-path. We flatten each cubic segment into
-        // `subdivisions` line segments (matching the GPU tessellation). SVG implicitly
-        // closes each sub-path when filling, matching the per-sub-path GPU fill.
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {
             if subpath.is_empty() {
                 continue;
             }
             let mut points: Vec<(f64, f64)> = Vec::new();
-            // Start at the very first control point of the sub-path.
             let first = subpath[0].p0;
             points.push(to_px(first.x as f32, first.y as f32));
             for seg in subpath {
-                for step in 1..=subdivisions {
-                    let t = step as f64 / subdivisions as f64;
+                for step in 1..=(subdivisions as u32) {
+                    let t = step as f64 / subdivisions;
                     let p = seg.eval(t);
                     points.push(to_px(p.x as f32, p.y as f32));
                 }
