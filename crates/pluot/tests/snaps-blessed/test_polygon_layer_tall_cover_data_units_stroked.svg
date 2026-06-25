@@ -1,12 +1,12 @@
 <svg height="200" width="100" xmlns="http://www.w3.org/2000/svg">
 <g>
 <defs>
-<clipPath id="my_polygon_layer_clip_path">
+<clipPath id="my_polygon_layer_stroked_clip_path">
 <rect height="200" width="100" x="0" y="0"/>
 </clipPath>
 </defs>
 <g height="200" width="100">
-<g clip-path="url(#my_polygon_layer_clip_path)" transform="translate(0,0)">
+<g clip-path="url(#my_polygon_layer_stroked_clip_path)" transform="translate(0,0)">
 <path d="M -30.000001907348633 180 L 130 180 L 50 20 L -30.000001907348633 180" fill="none" opacity="1" stroke="rgba(255, 0, 0, 255)" stroke-width="2"/>
 </g>
 </g>

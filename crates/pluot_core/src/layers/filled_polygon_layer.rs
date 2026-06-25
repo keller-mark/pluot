@@ -1,18 +1,19 @@
 use earcut::Earcut;
-use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::positioning::get_point_position;
+use super::curve_and_polygon_utils::resolve_margins;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
+
+use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
 
 // ── Params ─────────────────────────────────────────────────────────────────────
 
@@ -50,61 +51,33 @@ impl Default for FilledPolygonLayerParams {
     }
 }
 
-// ── Uniforms ───────────────────────────────────────────────────────────────────
-
-#[derive(ShaderType, Debug)]
-struct FilledPolygonLayerUniforms {
-    layer_size: Vec2,
-    camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
-    aspect_ratio_mode: u32,
-    aspect_ratio_alignment_mode: u32,
-    model_matrix: Mat4,
-    fill_color: Vec4,
-}
-
 // ── Layer ──────────────────────────────────────────────────────────────────────
 
 pub struct FilledPolygonLayer {
     view_params: ViewParams,
     layer_params: FilledPolygonLayerParams,
-    fill_vertices: Vec<(f32, f32)>,
-    fill_color: Vec4,
+    fill_vertices: Arc<Vec<(f32, f32)>>,
 }
 
 impl FilledPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: FilledPolygonLayerParams) -> Self {
         let mut ec = Earcut::new();
         let mut indices = Vec::new();
-        let mut fill_vertices: Vec<(f32, f32)> = Vec::new();
+        let mut verts: Vec<(f32, f32)> = Vec::new();
         for ring in layer_params.polygons.iter() {
             if ring.len() < 3 {
                 continue;
             }
             ec.earcut(ring.iter().map(|&(x, y)| [x, y]), &[] as &[u32], &mut indices);
             for &i in indices.iter() {
-                fill_vertices.push(ring[i as usize]);
+                verts.push(ring[i as usize]);
             }
         }
-
-        let [r, g, b, a] = layer_params.fill_color;
-        let fill_color = Vec4::new(r, g, b, a * layer_params.fill_opacity);
-
-        Self { view_params, layer_params, fill_vertices, fill_color }
+        Self { view_params, layer_params, fill_vertices: Arc::new(verts) }
     }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-fn resolve_margins(params: &FilledPolygonLayerParams, view: &ViewParams) -> (f64, f64, f64, f64) {
-    let b = if params.bounds.is_none() { &view.margins } else { &params.bounds };
-    let ml = b.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
-    let mt = b.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
-    let mr = b.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
-    let mb = b.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
-    (ml, mt, mr, mb)
-}
 
 // ── Trait impls ────────────────────────────────────────────────────────────────
 
@@ -120,170 +93,23 @@ impl PreparedLayer for FilledPolygonLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for FilledPolygonLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, fill_vertices, fill_color } = self;
-
-        if fill_vertices.is_empty() {
+        if self.fill_vertices.is_empty() {
             return;
         }
-
-        let (margin_left, margin_top, margin_right, margin_bottom) =
-            resolve_margins(layer_params, view_params);
-
-        let camera_view = view_params.camera_view.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
-
-        let layer_w = view_params.width as f32 - (margin_left + margin_right) as f32;
-        let layer_h = view_params.height as f32 - (margin_top + margin_bottom) as f32;
-
-        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
-        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
-        let aspect_ratio_mode = match view_params.aspect_ratio_mode { AspectRatioMode::Ignore => 0, AspectRatioMode::Contain => 1, AspectRatioMode::Cover => 2 };
-        let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode { AspectRatioAlignmentMode::Center => 0, AspectRatioAlignmentMode::Start => 1, AspectRatioAlignmentMode::End => 2 };
-        let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]));
-
-        let GpuContext { device, queue } = gpu_context;
-
-        let uniform_struct = FilledPolygonLayerUniforms {
-            layer_size: Vec2::new(layer_w, layer_h),
-            camera_view: Mat4::from_cols_array(&camera_view),
-            data_unit_mode_x,
-            data_unit_mode_y,
-            aspect_ratio_mode,
-            aspect_ratio_alignment_mode,
-            model_matrix,
-            fill_color: *fill_color,
-        };
-
-        let mut buf = UniformBuffer::new(Vec::<u8>::new());
-        buf.write(&uniform_struct).unwrap();
-        let uniform_bytes = buf.into_inner();
-
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("FilledPolygon Uniform"),
-            size: uniform_bytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("FilledPolygon BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/filled_polygon_layer.wgsl"));
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("FilledPolygon PLD"),
-            bind_group_layouts: &[Some(&bgl)],
-            immediate_size: 0,
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("FilledPolygon RPD"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_fill"),
-                compilation_options: Default::default(),
-                buffers: &[],
+        let triangulated = TriangulatedLayer::new(
+            self.view_params.clone(),
+            TriangulatedLayerParams {
+                layer_id: self.layer_params.layer_id.clone(),
+                bounds: self.layer_params.bounds.clone(),
+                data_unit_mode_x: self.layer_params.data_unit_mode_x.clone(),
+                data_unit_mode_y: self.layer_params.data_unit_mode_y.clone(),
+                model_matrix: self.layer_params.model_matrix,
+                vertices: Arc::clone(&self.fill_vertices),
+                fill_color: self.layer_params.fill_color,
+                fill_opacity: self.layer_params.fill_opacity,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
-        });
-
-        let mut fill_data: Vec<f32> = Vec::with_capacity(fill_vertices.len() * 2);
-        for (x, y) in fill_vertices {
-            fill_data.push(*x);
-            fill_data.push(*y);
-        }
-        let fill_bytes: &[u8] = bytemuck::cast_slice(&fill_data);
-        let fill_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("FilledPolygon Vertices"),
-            size: fill_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&fill_buf, 0, fill_bytes);
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("FilledPolygon BG"),
-            layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: fill_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
-        pass.set_scissor_rect(margin_left as u32, margin_top as u32, layer_w as u32, layer_h as u32);
-
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.draw(0..(fill_vertices.len() as u32), 0..1);
+        );
+        DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;
     }
 }
 
@@ -307,7 +133,7 @@ impl DrawToSvg for FilledPolygonLayer {
         ]);
 
         let (margin_left, margin_top, margin_right, margin_bottom) =
-            resolve_margins(layer_params, view_params);
+            resolve_margins(&layer_params.bounds, &view_params.margins);
 
         let viewport_w = view_params.width as f32;
         let viewport_h = view_params.height as f32;

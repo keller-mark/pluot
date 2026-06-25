@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::positioning::get_point_position;
-use super::curve_and_polygon_utils::{polygon_segments_with_neighbors, resolve_margins};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
@@ -18,26 +17,24 @@ use crate::wgpu;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct StrokedPolygonLayerParams {
+pub struct TriangulatedLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
 
-    /// One polygon per element; each is a ring of (x, y) model-space vertices.
-    /// Rings with fewer than 2 points are silently skipped.
-    pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
+    /// Pre-triangulated vertices in (x, y) model-space; length must be a multiple of 3.
+    /// Each consecutive triple forms one triangle.
+    pub vertices: Arc<Vec<(f32, f32)>>,
 
-    /// RGBA stroke color in [0, 1]. Defaults to opaque black.
-    pub stroke_color: [f32; 4],
-    /// Stroke width in pixels. Defaults to 1.
-    pub stroke_width: f32,
-    /// Additional opacity multiplier for the stroke. Defaults to 1.
-    pub stroke_opacity: f32,
+    /// RGBA fill color in [0, 1]. Defaults to opaque black.
+    pub fill_color: [f32; 4],
+    /// Additional opacity multiplier for the fill. Defaults to 1.
+    pub fill_opacity: f32,
 }
 
-impl Default for StrokedPolygonLayerParams {
+impl Default for TriangulatedLayerParams {
     fn default() -> Self {
         Self {
             layer_id: "".to_string(),
@@ -45,10 +42,9 @@ impl Default for StrokedPolygonLayerParams {
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
-            polygons: Arc::new(vec![]),
-            stroke_color: [0.0, 0.0, 0.0, 1.0],
-            stroke_width: 1.0,
-            stroke_opacity: 1.0,
+            vertices: Arc::new(vec![]),
+            fill_color: [0.0, 0.0, 0.0, 1.0],
+            fill_opacity: 1.0,
         }
     }
 }
@@ -56,54 +52,49 @@ impl Default for StrokedPolygonLayerParams {
 // ── Uniforms ───────────────────────────────────────────────────────────────────
 
 #[derive(ShaderType, Debug)]
-struct StrokedPolygonLayerUniforms {
+struct TriangulatedLayerUniforms {
     layer_size: Vec2,
     camera_view: Mat4,
     data_unit_mode_x: u32,
     data_unit_mode_y: u32,
-    line_width: f32,
-    line_width_unit_mode: u32,
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
-    color: Vec4,
+    fill_color: Vec4,
 }
 
 // ── Layer ──────────────────────────────────────────────────────────────────────
 
-pub struct StrokedPolygonLayer {
+pub struct TriangulatedLayer {
     view_params: ViewParams,
-    layer_params: StrokedPolygonLayerParams,
-    prev_x: Vec<f32>,
-    prev_y: Vec<f32>,
-    stroke_src_x: Vec<f32>,
-    stroke_src_y: Vec<f32>,
-    stroke_dst_x: Vec<f32>,
-    stroke_dst_y: Vec<f32>,
-    next_x: Vec<f32>,
-    next_y: Vec<f32>,
-    stroke_color: Vec4,
+    layer_params: TriangulatedLayerParams,
+    fill_color: Vec4,
 }
 
-impl StrokedPolygonLayer {
-    pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
-        let (prev_x, prev_y, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, next_x, next_y) =
-            polygon_segments_with_neighbors(&layer_params.polygons);
-
-        let [r, g, b, a] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r, g, b, a * layer_params.stroke_opacity);
-
-        Self { view_params, layer_params, prev_x, prev_y, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, next_x, next_y, stroke_color }
+impl TriangulatedLayer {
+    pub fn new(view_params: ViewParams, layer_params: TriangulatedLayerParams) -> Self {
+        let [r, g, b, a] = layer_params.fill_color;
+        let fill_color = Vec4::new(r, g, b, a * layer_params.fill_opacity);
+        Self { view_params, layer_params, fill_color }
     }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+fn resolve_margins(params: &TriangulatedLayerParams, view: &ViewParams) -> (f64, f64, f64, f64) {
+    let b = if params.bounds.is_none() { &view.margins } else { &params.bounds };
+    let ml = b.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
+    let mt = b.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
+    let mr = b.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
+    let mb = b.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
+    (ml, mt, mr, mb)
+}
+
 // ── Trait impls ────────────────────────────────────────────────────────────────
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for StrokedPolygonLayer {
+impl PreparedLayer for TriangulatedLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         PrepareResult { bailed_early: false }
     }
@@ -111,17 +102,16 @@ impl PreparedLayer for StrokedPolygonLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for StrokedPolygonLayer {
+impl DrawToRasterGpu for TriangulatedLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, prev_x, prev_y, stroke_src_x, stroke_src_y, stroke_dst_x, stroke_dst_y, next_x, next_y, stroke_color } = self;
+        let Self { view_params, layer_params, fill_color } = self;
 
-        let n = stroke_src_x.len();
-        if n == 0 {
+        if layer_params.vertices.is_empty() {
             return;
         }
 
         let (margin_left, margin_top, margin_right, margin_bottom) =
-            resolve_margins(&layer_params.bounds, &view_params.margins);
+            resolve_margins(layer_params, view_params);
 
         let camera_view = view_params.camera_view.unwrap_or([
             1.0, 0.0, 0.0, 0.0,
@@ -146,54 +136,31 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
 
         let GpuContext { device, queue } = gpu_context;
 
-        let uniform_struct = StrokedPolygonLayerUniforms {
+        let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
             data_unit_mode_x,
             data_unit_mode_y,
-            line_width: layer_params.stroke_width,
-            line_width_unit_mode: 0, // always pixels
             aspect_ratio_mode,
             aspect_ratio_alignment_mode,
             model_matrix,
-            color: *stroke_color,
+            fill_color: *fill_color,
         };
 
-        let mut ub = UniformBuffer::new(Vec::<u8>::new());
-        ub.write(&uniform_struct).unwrap();
-        let uniform_bytes = ub.into_inner();
+        let mut buf = UniformBuffer::new(Vec::<u8>::new());
+        buf.write(&uniform_struct).unwrap();
+        let uniform_bytes = buf.into_inner();
 
-        let uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("StrokedPolygon Uniform"),
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Triangulated Uniform"),
             size: uniform_bytes.len() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        queue.write_buffer(&uniform_buf, 0, &uniform_bytes);
-
-        let make_storage_buf = |label: &str, data: &[f32]| -> wgpu::Buffer {
-            let bytes: &[u8] = bytemuck::cast_slice(data);
-            let buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: bytes.len() as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            queue.write_buffer(&buf, 0, bytes);
-            buf
-        };
-
-        let src_x_buf  = make_storage_buf("StrokedPolygon SrcX",  stroke_src_x);
-        let src_y_buf  = make_storage_buf("StrokedPolygon SrcY",  stroke_src_y);
-        let dst_x_buf  = make_storage_buf("StrokedPolygon DstX",  stroke_dst_x);
-        let dst_y_buf  = make_storage_buf("StrokedPolygon DstY",  stroke_dst_y);
-        let prev_x_buf = make_storage_buf("StrokedPolygon PrevX", prev_x);
-        let prev_y_buf = make_storage_buf("StrokedPolygon PrevY", prev_y);
-        let next_x_buf = make_storage_buf("StrokedPolygon NextX", next_x);
-        let next_y_buf = make_storage_buf("StrokedPolygon NextY", next_y);
+        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("StrokedPolygon BGL"),
+            label: Some("Triangulated BGL"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -215,109 +182,23 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
                     },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
             ],
         });
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("StrokedPolygon BG"),
-            layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: src_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: src_y_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: dst_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: dst_y_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: prev_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: prev_y_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 7, resource: next_x_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 8, resource: next_y_buf.as_entire_binding() },
-            ],
-        });
-
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/stroked_polygon_layer.wgsl"));
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/triangulated_layer.wgsl"));
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("StrokedPolygon PLD"),
+            label: Some("Triangulated PLD"),
             bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("StrokedPolygon RPD"),
+            label: Some("Triangulated RPD"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: Some("vs_main"),
+                entry_point: Some("vs_fill"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
@@ -343,7 +224,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
@@ -352,24 +233,53 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             multiview_mask: None,
         });
 
+        let mut fill_data: Vec<f32> = Vec::with_capacity(layer_params.vertices.len() * 2);
+        for (x, y) in layer_params.vertices.iter() {
+            fill_data.push(*x);
+            fill_data.push(*y);
+        }
+        let fill_bytes: &[u8] = bytemuck::cast_slice(&fill_data);
+        let fill_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Triangulated Vertices"),
+            size: fill_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&fill_buf, 0, fill_bytes);
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Triangulated BG"),
+            layout: &bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: fill_buf.as_entire_binding(),
+                },
+            ],
+        });
+
         pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
         pass.set_scissor_rect(margin_left as u32, margin_top as u32, layer_w as u32, layer_h as u32);
 
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
-        pass.draw(0..4, 0..(n as u32));
+        pass.draw(0..(layer_params.vertices.len() as u32), 0..1);
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for StrokedPolygonLayer {
+impl DrawToRasterCpu for TriangulatedLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for StrokedPolygonLayer {
+impl DrawToSvg for TriangulatedLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         let Self { layer_params, view_params, .. } = self;
 
@@ -381,7 +291,7 @@ impl DrawToSvg for StrokedPolygonLayer {
         ]);
 
         let (margin_left, margin_top, margin_right, margin_bottom) =
-            resolve_margins(&layer_params.bounds, &view_params.margins);
+            resolve_margins(layer_params, view_params);
 
         let viewport_w = view_params.width as f32;
         let viewport_h = view_params.height as f32;
@@ -402,26 +312,27 @@ impl DrawToSvg for StrokedPolygonLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b, a] = layer_params.stroke_color;
-        let stroke = TwoColor::Rgba((
+        let [r, g, b, a] = layer_params.fill_color;
+        let fill = TwoColor::Rgba((
             (r * 255.0).round().clamp(0.0, 255.0) as u8,
             (g * 255.0).round().clamp(0.0, 255.0) as u8,
             (b * 255.0).round().clamp(0.0, 255.0) as u8,
-            (a * layer_params.stroke_opacity * 255.0).round().clamp(0.0, 255.0) as u8,
+            (a * layer_params.fill_opacity * 255.0).round().clamp(0.0, 255.0) as u8,
         ));
 
-        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(layer_params.polygons.len());
-        for ring in layer_params.polygons.iter() {
-            if ring.len() < 3 {
-                continue;
-            }
-            let mut points: Vec<(f64, f64)> = ring.iter().map(|&(x, y)| to_px(x, y)).collect();
-            points.push(points[0]);
+        let verts = &layer_params.vertices;
+        let num_triangles = verts.len() / 3;
+        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(num_triangles);
+
+        for i in 0..num_triangles {
+            let p0 = to_px(verts[i * 3].0, verts[i * 3].1);
+            let p1 = to_px(verts[i * 3 + 1].0, verts[i * 3 + 1].1);
+            let p2 = to_px(verts[i * 3 + 2].0, verts[i * 3 + 2].1);
             svg_elements.push(TwoElement::Path(TwoPath {
-                points,
-                stroke: Some(stroke.clone()),
-                fill: None,
-                linewidth: layer_params.stroke_width as f64,
+                points: vec![p0, p1, p2, p0],
+                stroke: None,
+                fill: Some(fill.clone()),
+                linewidth: 0.0,
                 opacity: 1.0,
             }));
         }
@@ -440,12 +351,12 @@ impl DrawToSvg for StrokedPolygonLayer {
 
 inventory::submit! {
     crate::registry::LayerRegistration {
-        layer_type_name: "StrokedPolygonLayer",
+        layer_type_name: "TriangulatedLayer",
         create_layer: |value, view_params| {
-            let params: StrokedPolygonLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(StrokedPolygonLayer::new(view_params.clone(), params))
+            let params: TriangulatedLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(TriangulatedLayer::new(view_params.clone(), params))
         },
     }
 }
 
-impl PickableLayer for StrokedPolygonLayer {}
+impl PickableLayer for TriangulatedLayer {}

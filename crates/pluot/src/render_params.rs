@@ -3,7 +3,12 @@ use serde::{Deserialize, Serialize};
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 use pluot_core::layers::line_layer::{LineLayerParams};
 use pluot_core::layers::curve_layer::{CurveLayerParams};
+use pluot_core::layers::stroked_curve_layer::StrokedCurveLayerParams;
+use pluot_core::layers::filled_curve_layer::FilledCurveLayerParams;
 use pluot_core::layers::polygon_layer::PolygonLayerParams;
+use pluot_core::layers::stroked_polygon_layer::StrokedPolygonLayerParams;
+use pluot_core::layers::filled_polygon_layer::FilledPolygonLayerParams;
+use pluot_core::layers::triangulated_layer::TriangulatedLayerParams;
 use pluot_core::layers::rect_layer::{RectLayerParams};
 use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
@@ -39,7 +44,12 @@ pub enum LayerParams {
     PointLayer(PointLayerParams),
     LineLayer(LineLayerParams),
     CurveLayer(CurveLayerParams),
+    StrokedCurveLayer(StrokedCurveLayerParams),
+    FilledCurveLayer(FilledCurveLayerParams),
     PolygonLayer(PolygonLayerParams),
+    StrokedPolygonLayer(StrokedPolygonLayerParams),
+    FilledPolygonLayer(FilledPolygonLayerParams),
+    TriangulatedLayer(TriangulatedLayerParams),
     RectLayer(RectLayerParams),
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),
