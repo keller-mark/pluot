@@ -7,7 +7,7 @@
 </defs>
 <g height="200" width="100">
 <g clip-path="url(#my_polygon_layer_stroked_clip_path)" transform="translate(0,0)">
-<path d="M 10 180 L 90 180 L 50 20 L 10 180" fill="none" opacity="1" stroke="rgb(255, 0, 0)" stroke-width="2"/>
+<path d="M 10 180 L 90 180 L 50 20 Z" fill="none" opacity="1" stroke="rgb(255, 0, 0)" stroke-width="2"/>
 </g>
 </g>
 </g>

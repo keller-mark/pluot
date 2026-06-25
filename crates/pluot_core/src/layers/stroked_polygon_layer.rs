@@ -339,16 +339,26 @@ impl DrawToSvg for StrokedPolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
-            let mut points: Vec<(f64, f64)> = ring.iter().map(|&(x, y)| to_px(x, y)).collect();
-            points.push(points[0]);
+            let mut d = String::new();
+            for (i, &(x, y)) in ring.iter().enumerate() {
+                let (px, py) = to_px(x, y);
+                if i == 0 {
+                    d.push_str(&format!("M {} {}", px, py));
+                } else {
+                    d.push_str(&format!(" L {} {}", px, py));
+                }
+            }
+            d.push_str(" Z");
             svg_elements.push(TwoElement::Path(TwoPath {
-                points,
+                d,
                 stroke: Some(stroke.clone()),
                 fill: None,
                 linewidth: layer_params.stroke_width as f64,
                 opacity: 1.0,
                 fill_opacity: 1.0,
                 stroke_opacity: layer_params.stroke_opacity as f64,
+                stroke_linejoin: None,
+                stroke_linecap: None,
             }));
         }
 

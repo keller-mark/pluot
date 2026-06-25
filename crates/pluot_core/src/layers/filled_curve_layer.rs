@@ -324,24 +324,28 @@ impl DrawToSvg for FilledCurveLayer {
             if subpath.is_empty() {
                 continue;
             }
-            let mut points: Vec<(f64, f64)> = Vec::new();
+            let mut d = String::new();
             let first = subpath[0].p0;
-            points.push(to_px(first.x as f32, first.y as f32));
+            let (fx, fy) = to_px(first.x as f32, first.y as f32);
+            d.push_str(&format!("M {} {}", fx, fy));
             for seg in subpath {
                 for step in 1..=(subdivisions as u32) {
                     let t = step as f64 / subdivisions;
                     let p = seg.eval(t);
-                    points.push(to_px(p.x as f32, p.y as f32));
+                    let (px, py) = to_px(p.x as f32, p.y as f32);
+                    d.push_str(&format!(" L {} {}", px, py));
                 }
             }
             svg_elements.push(TwoElement::Path(TwoPath {
-                points,
+                d,
                 stroke: None,
                 fill: Some(fill.clone()),
                 linewidth: 0.0,
                 opacity: 1.0,
                 fill_opacity: layer_params.fill_opacity as f64,
                 stroke_opacity: 1.0,
+                stroke_linejoin: None,
+                stroke_linecap: None,
             }));
         }
 

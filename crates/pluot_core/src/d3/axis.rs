@@ -138,14 +138,24 @@ impl<D: Clone + std::fmt::Display> Axis<D> {
             }
         };
 
+        let mut path_d = String::new();
+        for (i, (x, y)) in path_points.iter().enumerate() {
+            if i == 0 {
+                path_d.push_str(&format!("M {} {}", x, y));
+            } else {
+                path_d.push_str(&format!(" L {} {}", x, y));
+            }
+        }
         elements.push(TwoElement::Path(TwoPath {
-            points: path_points,
+            d: path_d,
             stroke: Some(TwoColor::Rgb((0, 0, 0))),
             fill: None,
             linewidth: 1.0,
             opacity: 1.0,
             fill_opacity: 1.0,
             stroke_opacity: 1.0,
+            stroke_linejoin: None,
+            stroke_linecap: None,
         }));
 
         // Ticks

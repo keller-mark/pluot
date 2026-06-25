@@ -39,6 +39,9 @@ struct StrokedCurveLayerUniforms {
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
     stroke_color: Vec4,
+
+    // TODO: define a stroke_linecap parameter, with either None or Round options,
+    // and add support for this configurable property in both the Raster and SVG drawing cases.
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -363,24 +366,28 @@ impl DrawToSvg for StrokedCurveLayer {
             if subpath.is_empty() {
                 continue;
             }
-            let mut points: Vec<(f64, f64)> = Vec::new();
+            let mut d = String::new();
             let first = subpath[0].p0;
-            points.push(to_px(first.x as f32, first.y as f32));
+            let (fx, fy) = to_px(first.x as f32, first.y as f32);
+            d.push_str(&format!("M {} {}", fx, fy));
             for seg in subpath {
                 for step in 1..=(subdivisions as u32) {
                     let t = step as f64 / subdivisions;
                     let p = seg.eval(t);
-                    points.push(to_px(p.x as f32, p.y as f32));
+                    let (px, py) = to_px(p.x as f32, p.y as f32);
+                    d.push_str(&format!(" L {} {}", px, py));
                 }
             }
             svg_elements.push(TwoElement::Path(TwoPath {
-                points,
+                d,
                 stroke: Some(stroke.clone()),
                 fill: None,
                 linewidth: layer_params.stroke_width as f64,
                 opacity: 1.0,
                 fill_opacity: 1.0,
                 stroke_opacity: layer_params.stroke_opacity as f64,
+                stroke_linejoin: Some("round".to_string()),
+                stroke_linecap: Some("round".to_string()),
             }));
         }
 

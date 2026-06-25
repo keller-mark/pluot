@@ -231,15 +231,7 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                 group.add(line)
             }
             TwoElement::Path(d) => {
-                let mut path_d = String::new();
-                if let Some((first, rest)) = d.points.split_first() {
-                    path_d.push_str(&format!("M {} {}", first.0, first.1));
-                    for p in rest {
-                        path_d.push_str(&format!(" L {} {}", p.0, p.1));
-                    }
-                }
-
-                let mut path = Path::new().set("opacity", d.opacity).set("d", path_d);
+                let mut path = Path::new().set("opacity", d.opacity).set("d", d.d.as_str());
 
                 if let Some(fill) = &d.fill {
                     path = path.set("fill", fill.to_string());
@@ -256,6 +248,12 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
                         .set("stroke", stroke.to_string());
                     if d.stroke_opacity < 1.0 {
                         path = path.set("stroke-opacity", d.stroke_opacity);
+                    }
+                    if let Some(linejoin) = &d.stroke_linejoin {
+                        path = path.set("stroke-linejoin", linejoin.as_str());
+                    }
+                    if let Some(linecap) = &d.stroke_linecap {
+                        path = path.set("stroke-linecap", linecap.as_str());
                     }
                 }
 
@@ -387,13 +385,15 @@ mod tests {
                 linewidth: 3.0,
             }),
             TwoElement::Path(TwoPath {
-                points: vec![(110.0, 120.0), (130.0, 140.0)],
+                d: "M 110 120 L 130 140".to_string(),
                 opacity: 1.0,
                 fill: Some(TwoColor::Rgb((0, 255, 255))),
                 fill_opacity: 1.0,
                 stroke: Some(TwoColor::Rgb((255, 0, 255))),
                 stroke_opacity: 1.0,
                 linewidth: 4.0,
+                stroke_linejoin: None,
+                stroke_linecap: None,
             }),
             TwoElement::Text(TwoText {
                 text: "Hello".to_string(),

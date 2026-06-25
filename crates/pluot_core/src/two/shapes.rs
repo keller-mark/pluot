@@ -102,7 +102,7 @@ impl Default for TwoLine {
 
 #[derive(Clone, Debug)]
 pub struct TwoPath {
-    pub points: Vec<(f64, f64)>,
+    pub d: String,
     pub stroke: Option<TwoColor>,
     pub fill: Option<TwoColor>,
     // Width of the stroke line if stroke is not null.
@@ -110,18 +110,22 @@ pub struct TwoPath {
     pub opacity: f64,
     pub fill_opacity: f64,
     pub stroke_opacity: f64,
+    pub stroke_linejoin: Option<String>,
+    pub stroke_linecap: Option<String>,
 }
 
 impl Default for TwoPath {
     fn default() -> Self {
         Self {
-            points: Vec::new(),
+            d: String::new(),
             stroke: Some(TwoColor::Rgb((0, 0, 0))),
             fill: Some(TwoColor::Rgb((255, 255, 255))),
             linewidth: 1.0,
             opacity: 1.0,
             fill_opacity: 1.0,
             stroke_opacity: 1.0,
+            stroke_linejoin: None,
+            stroke_linecap: None,
         }
     }
 }

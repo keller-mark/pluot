@@ -333,14 +333,17 @@ impl DrawToSvg for TriangulatedLayer {
             let p0 = to_px(verts[i * 3].0, verts[i * 3].1);
             let p1 = to_px(verts[i * 3 + 1].0, verts[i * 3 + 1].1);
             let p2 = to_px(verts[i * 3 + 2].0, verts[i * 3 + 2].1);
+            let d = format!("M {} {} L {} {} L {} {} Z", p0.0, p0.1, p1.0, p1.1, p2.0, p2.1);
             svg_elements.push(TwoElement::Path(TwoPath {
-                points: vec![p0, p1, p2, p0],
+                d,
                 stroke: None,
                 fill: Some(fill.clone()),
                 linewidth: 0.0,
                 opacity: 1.0,
                 fill_opacity: layer_params.fill_opacity as f64,
                 stroke_opacity: 1.0,
+                stroke_linejoin: None,
+                stroke_linecap: None,
             }));
         }
 
