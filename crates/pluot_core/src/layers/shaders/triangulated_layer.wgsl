@@ -1,4 +1,4 @@
-// FilledCurveLayer shader.
+// TriangulatedLayer shader.
 // Projects pre-triangulated fill geometry (flat list of model-space vertices,
 // 3 per triangle) through the same projection pipeline as the stroke and shades
 // each triangle with the fill color.
@@ -49,7 +49,7 @@ fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_
     return translate(x_trans, y_trans, 0.0) * scale(x_scale, y_scale, 1.0);
 }
 
-struct FilledCurveLayerUniforms {
+struct TriangulatedLayerUniforms {
     layer_size: vec2<f32>,
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32,
@@ -60,7 +60,7 @@ struct FilledCurveLayerUniforms {
     fill_color: vec4<f32>,
 }
 
-@group(0) @binding(0) var<uniform> u: FilledCurveLayerUniforms;
+@group(0) @binding(0) var<uniform> u: TriangulatedLayerUniforms;
 @group(0) @binding(1) var<storage, read> vertices: array<vec2<f32>>;
 
 struct VSOut {
