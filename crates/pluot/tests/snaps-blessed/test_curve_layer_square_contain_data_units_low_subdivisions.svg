@@ -1,0 +1,14 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_curve_layer_stroked_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#my_curve_layer_stroked_clip_path)" transform="translate(0,0)">
+<path d="M 10 50 L 27.037036895751953 23.333335876464844 L 39.62963104248047 23.333335876464844 L 50 50 L 60.3703727722168 76.66666412353516 L 72.96296691894531 76.66666412353516 L 90 50" fill="none" opacity="1" stroke="rgb(255, 0, 0)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+</g>
+</g>
+</g>
+</svg>

@@ -13,7 +13,7 @@ impl ToString for TwoColor {
     fn to_string(&self) -> String {
         match self {
             TwoColor::Rgb(rgb) => format!("rgb({}, {}, {})", rgb.0, rgb.1, rgb.2),
-            TwoColor::Rgba(rgba) => format!("rgba({}, {}, {}, {})", rgba.0, rgba.1, rgba.2, rgba.3),
+            TwoColor::Rgba(rgba) => format!("rgba({}, {}, {}, {:.4})", rgba.0, rgba.1, rgba.2, rgba.3 as f64 / 255.0),
         }
     }
 }
@@ -102,22 +102,30 @@ impl Default for TwoLine {
 
 #[derive(Clone, Debug)]
 pub struct TwoPath {
-    pub points: Vec<(f64, f64)>,
+    pub d: String,
     pub stroke: Option<TwoColor>,
     pub fill: Option<TwoColor>,
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
+    pub fill_opacity: f64,
+    pub stroke_opacity: f64,
+    pub stroke_linejoin: Option<String>,
+    pub stroke_linecap: Option<String>,
 }
 
 impl Default for TwoPath {
     fn default() -> Self {
         Self {
-            points: Vec::new(),
+            d: String::new(),
             stroke: Some(TwoColor::Rgb((0, 0, 0))),
             fill: Some(TwoColor::Rgb((255, 255, 255))),
             linewidth: 1.0,
             opacity: 1.0,
+            fill_opacity: 1.0,
+            stroke_opacity: 1.0,
+            stroke_linejoin: None,
+            stroke_linecap: None,
         }
     }
 }
