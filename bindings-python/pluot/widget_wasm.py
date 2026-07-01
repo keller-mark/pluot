@@ -35,7 +35,7 @@ DEFAULT_CAMERA_MATRIX_3D: list[float] = [
 
 
 _ESM = r"""
-import * as pluot from 'https://unpkg.com/@pluot/core@0.1.1/dist/index.js';
+import * as pluot from 'https://unpkg.com/@pluot/core@0.1.2/dist/index.js';
 import * as uuid from "https://esm.sh/@lukeed/uuid@2.0.1/es2022/uuid.mjs";
 
 // Fallback UUID for non-secure (http://) contexts where crypto.randomUUID is unavailable.
@@ -211,7 +211,7 @@ function render({ model, el }) {
             plot_type: model.get("plot_type"),
             store_name: model.get("store_name"),
             plot_params: model.get("plot_params"),
-            camera_view: model.get("camera_matrix"),
+            camera_view: model.get("camera_view"),
             margin_top: model.get("margin_top"),
             margin_right: model.get("margin_right"),
             margin_bottom: model.get("margin_bottom"),
@@ -247,21 +247,21 @@ function render({ model, el }) {
 
     function onWheel(event) {
         event.preventDefault();
-        const cur = new Float32Array(model.get("camera_matrix"));
+        const cur = new Float32Array(model.get("camera_view"));
         const handler = model.get("view_mode") === "3d" ? pluot.onWheel3d : pluot.onWheel2d;
         const next = handler(getViewportParams(model), cur, event);
         if (next === cur) return;
-        model.set("camera_matrix", Array.from(next));
+        model.set("camera_view", Array.from(next));
         model.save_changes();
         scheduleRender();
     }
 
     function onMouseMove(event) {
-        const cur = new Float32Array(model.get("camera_matrix"));
+        const cur = new Float32Array(model.get("camera_view"));
         const handler = model.get("view_mode") === "3d" ? pluot.onMouseMove3d : pluot.onMouseMove2d;
         const next = handler(getViewportParams(model), cur, event);
         if (next === cur) return;
-        model.set("camera_matrix", Array.from(next));
+        model.set("camera_view", Array.from(next));
         model.save_changes();
         scheduleRender();
     }
@@ -283,7 +283,7 @@ function render({ model, el }) {
         "width", "height",
         "margin_top", "margin_right", "margin_bottom", "margin_left",
         "aspect_ratio_mode", "aspect_ratio_alignment_mode",
-        "view_mode", "camera_matrix",
+        "view_mode", "camera_view",
         "plot_id", "plot_type", "store_name", "plot_params", "format",
     ];
     for (const key of renderKeys) {
@@ -335,7 +335,7 @@ class PluotWasmWidget(anywidget.AnyWidget):
     # Synced: layout and camera state.
     width = traitlets.Int(800).tag(sync=True)
     height = traitlets.Int(800).tag(sync=True)
-    camera_matrix = traitlets.List(
+    camera_view = traitlets.List(
         trait=traitlets.Float(),
         default_value=DEFAULT_CAMERA_MATRIX_2D,
     ).tag(sync=True)

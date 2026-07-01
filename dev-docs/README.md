@@ -118,6 +118,7 @@ cargo publish --dry-run
 cargo publish
 
 # JS
+# Bump versions in core/package.json and react/package.json
 pnpm run build
 pnpm run bundle
 npm login

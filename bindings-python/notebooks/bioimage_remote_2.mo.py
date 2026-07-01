@@ -6,12 +6,12 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image, render_to_svg
+    from pluot import render_to_image, render_to_svg, PluotWasmWidget
     import numpy as np
     import marimo as mo
     import json
     import zarr
-    return mo, np, render_to_image, render_to_svg, zarr
+    return PluotWasmWidget, mo, np, render_to_image, render_to_svg, zarr
 
 
 @app.cell
@@ -45,8 +45,8 @@ def _():
 
 @app.cell
 def _():
-    width = 800
-    height = 800
+    width = 500
+    height = 500
     margin_left = 100
     margin_right = 10
     margin_top = 10
@@ -93,7 +93,7 @@ def _(
     # Zoom into a specific region: x in [0.2, 0.8], y in [0.3, 0.7]
     bounds = Bounds(x_min=0.0, x_max=1.0e-4, y_min=0.0, y_max=1.0e-4)
 
-    camera_view = list(get_camera_matrix_from_bounds(bounds, prev_camera, viewport))
+    camera_view = [float(l) for l in list(get_camera_matrix_from_bounds(bounds, prev_camera, viewport))]
     print(camera_view)
     return (camera_view,)
 
@@ -114,7 +114,7 @@ def _(mo):
 
 
 @app.cell
-async def _(
+def _(
     camera_view,
     ch0_slider,
     ch1_slider,
@@ -123,12 +123,11 @@ async def _(
     margin_left,
     margin_right,
     margin_top,
-    render_to_image,
     store,
     width,
     z_slider,
 ):
-    img = await render_to_image(
+    plot_params = dict(
         camera_view=camera_view,
         width=width,
         height=height,
@@ -179,6 +178,12 @@ async def _(
             ]
         ),
     )
+    return (plot_params,)
+
+
+@app.cell
+async def _(plot_params, render_to_image):
+    img = await render_to_image(**plot_params)
     img
     return (img,)
 
@@ -190,71 +195,9 @@ def _(img):
 
 
 @app.cell
-async def _(
-    camera_view,
-    ch0_slider,
-    ch1_slider,
-    height,
-    margin_bottom,
-    margin_left,
-    margin_right,
-    margin_top,
-    render_to_svg,
-    store,
-    width,
-    z_slider,
-):
-    svg_string = await render_to_svg(
-        camera_view=camera_view,
-        width=width,
-        height=height,
-        plot_id="bioimaging",
-        plot_type="LayeredPlot",
-        margin_left=margin_left,
-        margin_bottom=margin_bottom,
-        margin_top=margin_top,
-        margin_right=margin_right,
-        store=store,
-        plot_params=dict(
-            layers=[
-                dict(
-                  layer_type = "OmeZarrMultiscaleLayer",
-                  layer_params = dict(
-                      layer_id= "ome_zarr_multiscale_layer",
-                        target_z= int(z_slider.value),
-                        target_t= 0,
-                        channel_settings= [
-                          dict(
-                            c_index= 0,
-                            window= ch0_slider.value,
-                            color= [1.0, 0.0, 0.0],
-                          ),
-                          dict(
-                            c_index= 1,
-                            window= ch1_slider.value,
-                            color= [0.0, 1.0, 0.0],
-                          )
-                        ],
-                        opacity= 1.0,
-                  )
-                ),
-                dict(
-                    layer_type="AxisLinearLayer",
-                    layer_params = dict(
-                        layer_id="bottom_axis",
-                        position="Bottom"
-                    )
-                ),
-                dict(
-                    layer_type="AxisLinearLayer",
-                    layer_params = dict(
-                        layer_id="left_axis",
-                        position="Left"
-                    )
-                )
-            ]
-        ),
-    )
+async def _(plot_params, render_to_svg):
+    svg_string = await render_to_svg(**plot_params)
+    svg_string
     return (svg_string,)
 
 
@@ -268,6 +211,12 @@ def _(mo, svg_string):
 def _(svg_string):
     with open("../pluot-figures/bioimage.svg", "w") as f:
         f.write(svg_string)
+    return
+
+
+@app.cell
+def _(PluotWasmWidget, plot_params):
+    PluotWasmWidget(**plot_params)
     return
 
 
