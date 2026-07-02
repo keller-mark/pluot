@@ -97,7 +97,7 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
     }
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range().expect("MapRangeError");
     let result = bytemuck::allocation::pod_collect_to_vec(&data);
     drop(data);
     download_buffer.unmap();

@@ -855,27 +855,29 @@ pub async fn base_draw_text_layer(
         });
 
     // Vertex buffer layout: two vec4<f32> per instance
-    let vertex_buffers = [wgpu::VertexBufferLayout {
-        array_stride: (NUM_VALUES_PER_INSTANCE * std::mem::size_of::<f32>()) as u64,
-        step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &[
-            wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                offset: (2 * std::mem::size_of::<f32>()) as u64,
-                shader_location: 1,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                offset: (6 * std::mem::size_of::<f32>()) as u64,
-                shader_location: 2,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ],
-    }];
+    let vertex_buffers = [
+        Some(wgpu::VertexBufferLayout {
+            array_stride: (NUM_VALUES_PER_INSTANCE * std::mem::size_of::<f32>()) as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: (2 * std::mem::size_of::<f32>()) as u64,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: (6 * std::mem::size_of::<f32>()) as u64,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        })
+    ];
 
     let render_pipeline = device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {

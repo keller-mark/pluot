@@ -199,7 +199,8 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
             }
 
             // Read and depad rows into a tightly packed RGBA buffer
-            let data = buffer_slice.get_mapped_range();
+            let data = buffer_slice.get_mapped_range()
+                .expect("MapRangeError");
 
             let num_extra_bytes = 1;
             let mut pixels = vec![0u8; (unpadded_bytes_per_row * height + num_extra_bytes) as usize];
