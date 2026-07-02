@@ -53,9 +53,9 @@ type_complexity = "allow"
 [workspace.dependencies]
 inventory = "0.3.21"
 
-pyo3 = { version = "0.28", features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
-pythonize = { version = "0.28" }
+pyo3 = { version = "0.29", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
+pythonize = { version = "0.29" }
 pyo3-log = { version = "0.13.2" }
 
 log = "~0.4" # TODO: make this python-specific, if continues to only be used in python bindings?
@@ -85,7 +85,7 @@ pluot_zarr = { version = "0.1.0", path = "crates/pluot_zarr" }
 pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU
-wgpu = { version = "29.0.1" }
+wgpu = { version = "30.0.0" }
 glam = { version = "0.33.1", features = ["encase"] }
 encase = { version = "0.12.0" }
 

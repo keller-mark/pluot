@@ -236,7 +236,7 @@ pub async fn compute_example(gpu_context: &GpuContext<'_>) -> f32 {
     }
 
     // We can now read the data from the buffer.
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range().expect("MapRangeError");
     // Convert the data back to a slice of f32.
     let result: &[f32] = bytemuck::cast_slice(&data);
     return result[0] as f32;
