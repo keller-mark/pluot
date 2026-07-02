@@ -7,17 +7,25 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     from pluot import render_to_image, render_to_svg, PluotWasmWidget
+    from pluot.viewport import Bounds, ViewportParams, Margins, get_camera_matrix_from_bounds, get_bounds
     import numpy as np
     import marimo as mo
     import json
     import zarr
-    return PluotWasmWidget, mo, np, render_to_image, render_to_svg, zarr
-
-
-@app.cell
-def _():
     from obstore.store import HTTPStore
-    return (HTTPStore,)
+    return (
+        Bounds,
+        HTTPStore,
+        Margins,
+        PluotWasmWidget,
+        ViewportParams,
+        get_camera_matrix_from_bounds,
+        mo,
+        np,
+        render_to_image,
+        render_to_svg,
+        zarr,
+    )
 
 
 @app.cell
@@ -30,17 +38,7 @@ def _(HTTPStore, zarr):
 @app.cell
 def _(store, zarr):
     group = zarr.open_group(store=store, mode='r')
-    dict(group.attrs)
     return
-
-
-@app.cell
-def _():
-    from pluot.viewport import (
-        Bounds, ViewportParams, Margins,
-        get_camera_matrix_from_bounds, get_bounds
-    )
-    return Bounds, Margins, ViewportParams, get_camera_matrix_from_bounds
 
 
 @app.cell
@@ -100,15 +98,15 @@ def _(
 
 @app.cell
 def _(mo):
-    z_slider = mo.ui.slider(start=0.0, stop=235.0, value=100.0)
+    z_slider = mo.ui.slider(start=0.0, stop=235.0, value=100.0, label="Z-slice")
     z_slider
     return (z_slider,)
 
 
 @app.cell
 def _(mo):
-    ch0_slider = mo.ui.range_slider(start=0.0, stop=2055.0, value=[0.0, 2055.0])
-    ch1_slider = mo.ui.range_slider(start=0.0, stop=2055.0, value=[0.0, 2055.0])
+    ch0_slider = mo.ui.range_slider(start=0.0, stop=2055.0, value=[0.0, 2055.0], label="Channel 0 (LaminB1) intensity")
+    ch1_slider = mo.ui.range_slider(start=0.0, stop=2055.0, value=[0.0, 2055.0], label="Channel 1 (Dapi) intensity")
     mo.vstack([ch0_slider, ch1_slider])
     return ch0_slider, ch1_slider
 
@@ -116,8 +114,6 @@ def _(mo):
 @app.cell
 def _(
     camera_view,
-    ch0_slider,
-    ch1_slider,
     height,
     margin_bottom,
     margin_left,
@@ -125,9 +121,8 @@ def _(
     margin_top,
     store,
     width,
-    z_slider,
 ):
-    plot_params = dict(
+    partial_params = dict(
         camera_view=camera_view,
         width=width,
         height=height,
@@ -137,7 +132,15 @@ def _(
         margin_bottom=margin_bottom,
         margin_top=margin_top,
         margin_right=margin_right,
-        store=store,
+        store=store
+    )
+    return (partial_params,)
+
+
+@app.cell
+def _(ch0_slider, ch1_slider, partial_params, z_slider):
+    params = dict(
+        **partial_params,
         plot_params=dict(
             layers=[
                 dict(
@@ -178,12 +181,12 @@ def _(
             ]
         ),
     )
-    return (plot_params,)
+    return (params,)
 
 
 @app.cell
-async def _(plot_params, render_to_image):
-    img = await render_to_image(**plot_params)
+async def _(params, render_to_image):
+    img = await render_to_image(**params)
     img
     return (img,)
 
@@ -195,8 +198,8 @@ def _(img):
 
 
 @app.cell
-async def _(plot_params, render_to_svg):
-    svg_string = await render_to_svg(**plot_params)
+async def _(params, render_to_svg):
+    svg_string = await render_to_svg(**params)
     svg_string
     return (svg_string,)
 
@@ -215,8 +218,21 @@ def _(svg_string):
 
 
 @app.cell
-def _(PluotWasmWidget, plot_params):
-    PluotWasmWidget(**plot_params)
+def _(PluotWasmWidget, partial_params):
+    w = PluotWasmWidget(**partial_params)
+    w
+    return (w,)
+
+
+@app.cell
+def _(params, w):
+    w.plot_params = params["plot_params"]
+    return
+
+
+@app.cell
+def _(w):
+    w.width = 700
     return
 
 

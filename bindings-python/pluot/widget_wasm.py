@@ -192,12 +192,34 @@ function render({ model, el }) {
     // --- Rendering ---
 
     let renderFrame = 0;
+    // render_wasm can take longer than a frame. If trait changes keep arriving
+    // while a render is in flight (e.g. dragging the camera), don't start a new
+    // WASM call on top of it -- that just piles up blocking work and makes
+    // input laggy. Instead mark a render as pending and, once the in-flight one
+    // finishes, kick off exactly one more so it picks up the latest values.
+    let isRendering = false;
+    let renderPending = false;
 
     function scheduleRender() {
         if (renderFrame) return;
         renderFrame = requestAnimationFrame(() => {
             renderFrame = 0;
-            doRender();
+            runRender();
+        });
+    }
+
+    function runRender() {
+        if (isRendering) {
+            renderPending = true;
+            return;
+        }
+        isRendering = false;
+        doRender().finally(() => {
+            isRendering = false;
+            if (renderPending) {
+                renderPending = false;
+                scheduleRender();
+            }
         });
     }
 
