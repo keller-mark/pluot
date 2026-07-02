@@ -85,7 +85,7 @@ pluot_zarr = { version = "0.1.0", path = "crates/pluot_zarr" }
 pluot = { version = "0.1.0", path = "crates/pluot" }
 
 # WebGPU
-wgpu = { version = "29.0.1" }
+wgpu = { version = "30.0.0" }
 glam = { version = "0.33.1", features = ["encase"] }
 encase = { version = "0.12.0" }
 
