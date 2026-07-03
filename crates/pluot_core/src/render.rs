@@ -26,6 +26,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         camera_view: params.camera_view,
         timeout: params.timeout,
         wait_for_store_gets: params.wait_for_store_gets,
+        wait_for_store_pushes: params.wait_for_store_pushes,
         cache_enabled: params.cache_enabled,
         aspect_ratio_mode: params.aspect_ratio_mode,
         aspect_ratio_alignment_mode: params.aspect_ratio_alignment_mode,

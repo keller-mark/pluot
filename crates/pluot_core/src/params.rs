@@ -136,6 +136,9 @@ pub struct RenderParams {
     /// If false, proceed to rendering something partially, without waiting for all .get/.getRange async calls to successfully resolve.
     pub wait_for_store_gets: bool,
 
+    // Whether the frontend (e.g., JS) is configured to "push" Promise statuses.
+    pub wait_for_store_pushes: bool,
+
     // TODO: combine wait_for_store_gets and timeout into a single enum, since the timeout value is irrelevant when wait_for_store_gets is false
 
     /// Timeout in ms before bailing out of awaiting a data request.
@@ -193,6 +196,7 @@ impl Default for RenderParams {
                 layers: vec![],
             }),
             wait_for_store_gets: true,
+            wait_for_store_pushes: true,
             timeout: None,
             cache_enabled: true,
             svg_compression_enabled: false,

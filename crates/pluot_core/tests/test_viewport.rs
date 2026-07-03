@@ -23,6 +23,7 @@ fn make_view_params(
         camera_view,
         timeout: None,
         wait_for_store_gets: true,
+        wait_for_store_pushes: true,
         cache_enabled: false,
         margins: None,
         store_name: None,
@@ -287,6 +288,7 @@ fn test_get_bounds_with_margins() {
         camera_view: identity_camera(),
         timeout: None,
         wait_for_store_gets: true,
+        wait_for_store_pushes: true,
         cache_enabled: false,
         margins: Some(MarginParams {
             margin_left: Some(20.0),
@@ -314,6 +316,7 @@ fn test_get_bounds_get_camera_matrix_from_bounds_roundtrip_1() {
         camera_view: identity_camera(),
         timeout: None,
         wait_for_store_gets: true,
+        wait_for_store_pushes: true,
         cache_enabled: false,
         margins: Some(MarginParams {
             margin_left: Some(20.0),

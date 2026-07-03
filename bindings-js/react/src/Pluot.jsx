@@ -209,6 +209,8 @@ export function Pluot(props) {
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
       wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
+      // The LruStore wrappers in @pluot/core push their Promise statuses to Rust (see makeLruStore in core.ts).
+      wait_for_store_pushes: true,
       cache_enabled: true,
       svg_compression_enabled: true,
       svg_include_document: false,
@@ -284,6 +286,8 @@ export function Pluot(props) {
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
       wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
+      // The LruStore wrappers in @pluot/core push their Promise statuses to Rust (see makeLruStore in core.ts).
+      wait_for_store_pushes: true,
       cache_enabled: true,
       svg_compression_enabled: true,
       svg_include_document: false,

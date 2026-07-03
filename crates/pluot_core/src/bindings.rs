@@ -127,6 +127,37 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
         set_zarr_imports_internal(imports);
     }
 
+    fn convert_peek_result(status: JsZarrPeekResult) -> ZarrPeekResult {
+        match status {
+            JsZarrPeekResult::Pending => ZarrPeekResult::Pending,
+            JsZarrPeekResult::Fulfilled => ZarrPeekResult::Fulfilled,
+            JsZarrPeekResult::Rejected => ZarrPeekResult::Rejected,
+            _ => panic!("Invalid JsZarrPeekResult"),
+        }
+    }
+
+    /// Push the current Promise status for a (store, cache key) pair.
+    /// The JS side must push Promise state changes (via this function,
+    /// `zarr_remove_promise_status`, and `zarr_clear_promise_statuses`) whenever
+    /// rendering with `wait_for_store_pushes: true`.
+    /// `key` must be the JS-side cache key (with leading slash and any byte-range suffix).
+    #[wasm_bindgen]
+    pub fn zarr_push_promise_status(store_name: &str, key: &str, status: JsZarrPeekResult) {
+        crate::zarr::push_promise_status(store_name, key, convert_peek_result(status));
+    }
+
+    /// Forget the Promise status for a (store, cache key) pair (e.g., on LRU eviction).
+    #[wasm_bindgen]
+    pub fn zarr_remove_promise_status(store_name: &str, key: &str) {
+        crate::zarr::remove_promise_status(store_name, key);
+    }
+
+    /// Forget all Promise statuses for a store (e.g., on cache clear or store replacement).
+    #[wasm_bindgen]
+    pub fn zarr_clear_promise_statuses(store_name: &str) {
+        crate::zarr::clear_promise_statuses(store_name);
+    }
+
     fn convert_to_bytes(u8arr: js_sys::Uint8Array) -> zarrs::storage::Bytes {
         // Copy data from Uint8Array into a Rust Vec<u8>
         let mut vec = vec![0u8; u8arr.length() as usize];

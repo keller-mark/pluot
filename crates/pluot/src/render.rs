@@ -32,6 +32,7 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
         plot_id: render_params.plot_id,
         store_name: render_params.store_name,
         wait_for_store_gets: render_params.wait_for_store_gets,
+        wait_for_store_pushes: render_params.wait_for_store_pushes,
         timeout: render_params.timeout,
         cache_enabled: render_params.cache_enabled,
         svg_compression_enabled: render_params.svg_compression_enabled,

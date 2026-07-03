@@ -115,8 +115,8 @@ wasm-bindgen = { version = "0.2.106" }
 wasm-bindgen-futures = { version = "0.4.56" }
 wasm-bindgen-shared = { version = "0.2.106" }
 wasm-bindgen-test = "0.3.34"
-web-sys = { version = "0.3.77" }
-js-sys = { version = "0.3.77" }
+web-sys = { version = "0.3.103" }
+js-sys = { version = "0.3.103" }
 serde-wasm-bindgen = { version = "0.6.5" }
 console_error_panic_hook = { version = "0.1.7" }
 

@@ -16,6 +16,64 @@ use zarrs::storage::{
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+
+// "Pushing" model for Promise statuses.
+// Rather than doing a full roundtrip (e.g., Rust->JS->Rust) on every re-render while a Promise
+// is pending, we keep a HashMap of Promise statuses on the Rust side.
+// On the first status check for a particular key, we still do the roundtrip so that the host
+// (e.g., JS) side "kicks off" the Promise loading for this key, and we record the returned status.
+// On subsequent re-renders, we only check the Rust-side HashMap.
+// When a Promise settles on the host side, the host calls a bound Rust function
+// (exposed via bindings.rs) to "push" the updated status for this key into the HashMap,
+// so the next re-render "sees" it without a roundtrip.
+// Hosts that do not push status updates (e.g., Python, R) must pass
+// `wait_for_store_pushes: false` in the render params, in which case every status check
+// falls back to the roundtrip ("pulling" model).
+// Maps store name -> (host cache key -> last known Promise status).
+static ZARR_PROMISE_STATUSES: OnceLock<Mutex<HashMap<String, HashMap<String, ZarrPeekResult>>>> =
+    OnceLock::new();
+
+fn get_promise_statuses() -> &'static Mutex<HashMap<String, HashMap<String, ZarrPeekResult>>> {
+    ZARR_PROMISE_STATUSES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Called by the host to push the settled (or re-pending) status of the Promise
+/// for `cache_key` (the host-side cache key, e.g., "/path/to/chunk" or "/path/to/chunk:0:99").
+pub fn push_promise_status(store_name: &str, cache_key: &str, status: ZarrPeekResult) {
+    let mut map = get_promise_statuses().lock().unwrap();
+    map.entry(store_name.to_string())
+        .or_default()
+        .insert(cache_key.to_string(), status);
+}
+
+/// Called by the host when it forgets the Promise for `cache_key` (e.g., LRU eviction),
+/// so the next status check does a fresh roundtrip.
+pub fn remove_promise_status(store_name: &str, cache_key: &str) {
+    if let Some(store_map) = get_promise_statuses().lock().unwrap().get_mut(store_name) {
+        store_map.remove(cache_key);
+    }
+}
+
+/// Called by the host when it clears all Promises for a store (e.g., cache clear or store replacement).
+pub fn clear_promise_statuses(store_name: &str) {
+    get_promise_statuses().lock().unwrap().remove(store_name);
+}
+
+fn get_pushed_promise_status(store_name: &str, cache_key: &str) -> Option<ZarrPeekResult> {
+    get_promise_statuses()
+        .lock()
+        .unwrap()
+        .get(store_name)
+        .and_then(|store_map| store_map.get(cache_key))
+        .copied()
+}
+
+/// The host-side cache key for this key/byte-range.
+/// The host (see lru-store.ts) uses zarrita AbsolutePath keys, which have a leading slash.
+fn host_cache_key(key: &str, byte_range: Option<ByteRange>) -> String {
+    format!("/{}", normalize_key(key, byte_range))
+}
+
 // We need to use quick_cache.
 // Using mini_moka did not work, as its sync Cache was not compatible with WASM,
 // and its unsync Cache was not cooperating with OnceLock/Mutex/RefCell/OnceCell/etc.
@@ -28,6 +86,7 @@ static ZARR_STORE_CACHES: OnceLock<Mutex<HashMap<String, Arc<Cache<String, Bytes
 // since we now have the use_memo_ functions in cache.rs.
 // We disable cacheing here to prevent double caching,
 // minimizing memory usage.
+// TODO: remove the caching stuff from here entirely
 const ZARR_CACHE_ENABLED: bool = false;
 
 fn get_or_init_store_cache(name: &str) -> Arc<Cache<String, Bytes>> {
@@ -97,16 +156,43 @@ pub fn is_timed_out_zarrs_error(err: &zarrs::array::ArrayError) -> bool {
 pub struct AsyncZarritaStore {
     store_name: String,
     wait_for_store_gets: bool,
+    wait_for_store_pushes: bool,
 }
 
 impl AsyncZarritaStore {
     /// Create a new [`AsyncZarritaStore`].
     #[must_use]
-    pub fn new(store_name: String, wait_for_store_gets: bool) -> Self {
+    pub fn new(store_name: String, wait_for_store_gets: bool, wait_for_store_pushes: bool) -> Self {
         Self {
             store_name,
             wait_for_store_gets,
+            wait_for_store_pushes,
         }
+    }
+
+    /// Check the Promise status for `cache_key`, preferring the Rust-side HashMap
+    /// when the host pushes status updates (`wait_for_store_pushes`).
+    /// The `fetch_status` roundtrip only happens on the first check for a key
+    /// (kicking off the Promise on the host side), or on every check when the
+    /// host does not push.
+    fn check_promise_status(
+        &self,
+        cache_key: &str,
+        fetch_status: impl FnOnce() -> ZarrPeekResult,
+    ) -> ZarrPeekResult {
+        if !self.wait_for_store_pushes {
+            return fetch_status();
+        }
+        if let Some(status) = get_pushed_promise_status(&self.store_name, cache_key) {
+            return status;
+        }
+        let status = fetch_status();
+        // or_insert: never overwrite a status the host pushed while the roundtrip was in flight.
+        let mut map = get_promise_statuses().lock().unwrap();
+        *map.entry(self.store_name.to_string())
+            .or_default()
+            .entry(cache_key.to_string())
+            .or_insert(status)
     }
 
     /// Fetch a single byte range, checking status first if `wait_for_store_gets` is false.
@@ -119,11 +205,16 @@ impl AsyncZarritaStore {
             ByteRange::FromStart(start, Some(len)) => {
                 // This is the getRange({ offset, length }) case.
                 if !self.wait_for_store_gets {
-                    let promise_status = zarr_get_range_from_offset_status(
-                        &self.store_name,
-                        key,
-                        start as u32,
-                        len as u32,
+                    let promise_status = self.check_promise_status(
+                        &host_cache_key(key, Some(byte_range)),
+                        || {
+                            zarr_get_range_from_offset_status(
+                                &self.store_name,
+                                key,
+                                start as u32,
+                                len as u32,
+                            )
+                        },
                     );
                     if promise_status == ZarrPeekResult::Pending {
                         // We cannot await and the promise is still pending.
@@ -143,10 +234,15 @@ impl AsyncZarritaStore {
             ByteRange::Suffix(suffix_length) => {
                 // This is the getRange({ suffixLength }) case.
                 if !self.wait_for_store_gets {
-                    let promise_status = zarr_get_range_from_end_status(
-                        &self.store_name,
-                        key,
-                        suffix_length as u32,
+                    let promise_status = self.check_promise_status(
+                        &host_cache_key(key, Some(byte_range)),
+                        || {
+                            zarr_get_range_from_end_status(
+                                &self.store_name,
+                                key,
+                                suffix_length as u32,
+                            )
+                        },
                     );
                     if promise_status == ZarrPeekResult::Pending {
                         // We cannot await and the promise is still pending.
@@ -168,7 +264,10 @@ impl AsyncZarritaStore {
 
     pub async fn has(&self, key: &StoreKey) -> Result<bool, StorageError> {
         if !self.wait_for_store_gets {
-            let promise_status = zarr_has_status(&self.store_name, key.as_str());
+            let promise_status = self.check_promise_status(
+                &host_cache_key(key.as_str(), None),
+                || zarr_has_status(&self.store_name, key.as_str()),
+            );
             if promise_status == ZarrPeekResult::Pending {
                 return Err(make_storage_error());
             }
@@ -207,7 +306,10 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         }
 
         if !self.wait_for_store_gets {
-            let promise_status = zarr_get_status(&self.store_name, key.as_str());
+            let promise_status = self.check_promise_status(
+                &host_cache_key(key.as_str(), None),
+                || zarr_get_status(&self.store_name, key.as_str()),
+            );
             if promise_status == ZarrPeekResult::Pending {
                 return Err(make_storage_error());
             }

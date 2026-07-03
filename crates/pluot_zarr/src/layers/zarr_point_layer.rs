@@ -105,7 +105,7 @@ impl ZarrPointLayer {
             }
         };
 
-        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
+        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets, view_params.wait_for_store_pushes);
         Self {
             view_params,
             layer_params,

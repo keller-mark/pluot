@@ -1,5 +1,5 @@
 import * as wasm from "pluot";
-import { lru, type LruStore } from "./lru-store.js";
+import { lru, type LruStore, type PromiseState } from "./lru-store.js";
 import type { AsyncReadable } from "zarrita";
 import { FontStore } from "./fonts.js";
 
@@ -10,6 +10,35 @@ const stores: Record<string, LruStore<AsyncReadable>> = {};
 
 let isInitializedPromise: Promise<any> | undefined = undefined;
 let isWasmReady = false;
+
+// Create an LruStore that "pushes" its Promise state changes into the Rust-side
+// HashMap (see zarr.rs), so that Rust status checks with `wait_for_store_pushes: true`
+// do not need a JS roundtrip on every re-render.
+// Pushes are dropped while the wasm module is not ready yet; this is safe because the
+// Rust-side HashMap is only populated by status checks during rendering, which
+// cannot have happened before the wasm module is ready.
+function makeLruStore(storeName: string, store: AsyncReadable): LruStore<AsyncReadable> {
+  return lru(
+    store,
+    undefined,
+    (cacheKey: string, state: PromiseState | undefined) => {
+      if (!isWasmReady) return;
+      if (state === undefined) {
+        console.log("Removing promise state", storeName, cacheKey);
+        wasm.zarr_remove_promise_status(storeName, cacheKey);
+      } else if (state !== 'pending') {
+        // Only push settled states (fulfilled/rejected). Rust records the pending
+        // state itself from the initial status-check roundtrip that kicks off the Promise.
+        console.log("Pushing promise state", storeName, cacheKey, state);
+        wasm.zarr_push_promise_status(storeName, cacheKey, state);
+      }
+    },
+    () => {
+      if (!isWasmReady) return;
+      wasm.zarr_clear_promise_statuses(storeName);
+    },
+  );
+}
 
 async function _initialize() {
   // IMPORTANT: This function should only be executed ONCE.
@@ -59,7 +88,7 @@ async function _initialize() {
   });
 
   // Register the font store so Rust can request fonts via zarr_get("__fonts__", "{name}.ttf").
-  stores["__fonts__"] = lru(new FontStore());
+  stores["__fonts__"] = makeLruStore("__fonts__", new FontStore());
 
   // Opt-in to better error messages.
   wasm.set_panic_hook();
@@ -80,12 +109,16 @@ export function getIsWasmReady(): boolean {
 }
 
 export function setStore(store: AsyncReadable, plotId: string): string {
-  stores[plotId + "_store"] = lru(store);
+  setStoreByName(plotId + "_store", store);
   return plotId + "_store";
 }
 
 export function setStoreByName(storeName: string, store: AsyncReadable) {
-  stores[storeName] = lru(store);
+  // Forget the Promise statuses pushed by any store previously registered under this name.
+  if (isWasmReady && stores[storeName]) {
+    wasm.zarr_clear_promise_statuses(storeName);
+  }
+  stores[storeName] = makeLruStore(storeName, store);
 }
 
 export function getStore(storeName: string) {

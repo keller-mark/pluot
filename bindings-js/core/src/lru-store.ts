@@ -36,6 +36,16 @@ export function createGetRange<S extends AsyncReadable>(store: S) {
   };
 }
 
+export type PromiseState = 'pending' | 'fulfilled' | 'rejected';
+
+// Called on every promise state change so the states can be mirrored elsewhere
+// (e.g., "pushed" into the Rust-side HashMap via wasm.zarr_push_promise_status).
+// `state === undefined` means the key was forgotten (e.g., LRU eviction).
+export type OnPromiseStateChange = (cacheKey: string, state: PromiseState | undefined) => void;
+
+// Called when all promise states are dropped at once (see clearCache).
+export type OnPromiseStatesClear = () => void;
+
 // A class-based version of the proxy-based lru() function from vizarr.
 // Reference: https://github.com/hms-dbmi/vizarr/blob/862745c1c7c095748bbe97475da61807d5b49189/src/lru-store.ts
 export class LruStore<S extends AsyncReadable> implements AsyncReadable {
@@ -44,21 +54,33 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
   #cache: QuickLRU<string, [Promise<Uint8Array | undefined>, AbortController]>;
 
   // We need a way to synchronously peek at the promise state (a-la Bun's peek or Effect's Deferred.poll).
-  // We can probably do something more sophisticated but will try this first.
-  // TODO: should this map be stored on the Rust side instead, so that the peeking can be performed without
-  // the JS function call? Instead, JS would "push" the promise states by calling a Rust function upon any
-  // promise state change, via a new function exposed from Rust such as `wasm.push_promise_state(key, 'fulfilled')`
-  #promise_states: Map<string, 'pending' | 'fulfilled' | 'rejected'>;
+  #promise_states: Map<string, PromiseState>;
 
-  constructor(store: S, maxSize = 100) {
+  #on_state_change?: OnPromiseStateChange;
+
+  #on_clear?: OnPromiseStatesClear;
+
+  constructor(store: S, maxSize = 100, onStateChange?: OnPromiseStateChange, onClear?: OnPromiseStatesClear) {
     this.#inner_store = store;
     this.#promise_states = new Map();
+    this.#on_state_change = onStateChange;
+    this.#on_clear = onClear;
     this.#cache = new QuickLRU({
       maxSize,
       onEviction: (key, _value) => {
-        this.#promise_states.delete(key);
+        this.#deleteState(key);
       },
     });
+  }
+
+  #setState(cacheKey: string, state: PromiseState) {
+    this.#promise_states.set(cacheKey, state);
+    this.#on_state_change?.(cacheKey, state);
+  }
+
+  #deleteState(cacheKey: string) {
+    this.#promise_states.delete(cacheKey);
+    this.#on_state_change?.(cacheKey, undefined);
   }
 
   async get(...args: Parameters<S["get"]>): Promise<Uint8Array | undefined> {
@@ -76,13 +98,13 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
     });
 
     const getResultPromise = Promise.resolve(getResult);
-    this.#promise_states.set(cacheKey, 'pending');
+    this.#setState(cacheKey, 'pending');
 
     const result = getResultPromise.then((val) => {
-      this.#promise_states.set(cacheKey, 'fulfilled');
+      this.#setState(cacheKey, 'fulfilled');
       return val;
     }).catch((err) => {
-      this.#promise_states.set(cacheKey, 'rejected');
+      this.#setState(cacheKey, 'rejected');
       this.#cache.delete(cacheKey);
       throw err;
     });
@@ -91,10 +113,10 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
   }
 
   // Synchronously peek at the promise state.
-  getPeek(...args: Parameters<S["get"]>): 'pending' | 'fulfilled' | 'rejected' | undefined {
+  getPeek(...args: Parameters<S["get"]>): PromiseState | undefined {
     this.get(...args); // Kick off the promise but do not await. TODO: do we want to do this here?
     const [key, opts] = args;
-    // console.log(`LRU getPeek: ${key}`);
+    console.log(`LRU getPeek: ${key}`);
     const cacheKey = normalizeKey(key);
     return this.#promise_states.get(cacheKey);
   }
@@ -119,13 +141,13 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
     });
 
     const getRangeResultPromise = Promise.resolve(getRangeResult);
-    this.#promise_states.set(cacheKey, 'pending');
+    this.#setState(cacheKey, 'pending');
 
     const result = getRangeResultPromise.then((val) => {
-      this.#promise_states.set(cacheKey, 'fulfilled');
+      this.#setState(cacheKey, 'fulfilled');
       return val;
     }).catch((err) => {
-      this.#promise_states.set(cacheKey, 'rejected');
+      this.#setState(cacheKey, 'rejected');
       this.#cache.delete(cacheKey);
       throw err;
     });
@@ -134,9 +156,10 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
   }
 
   // Synchronously peek at the promise state.
-  getRangePeek(...args: Parameters<NonNullable<S["getRange"]>>): 'pending' | 'fulfilled' | 'rejected' | undefined {
+  getRangePeek(...args: Parameters<NonNullable<S["getRange"]>>): PromiseState | undefined {
     this.getRange(...args); // Kick off the promise but do not await. TODO: do we want to do this here?
     const [key, range, opts] = args;
+    console.log(`LRU getRangePeek: ${key}`, range);
     const cacheKey = normalizeKey(key, range);
     return this.#promise_states.get(cacheKey);
   }
@@ -150,9 +173,15 @@ export class LruStore<S extends AsyncReadable> implements AsyncReadable {
     });
     this.#cache.clear();
     this.#promise_states = new Map();
+    this.#on_clear?.();
   }
 }
 
-export function lru(inner_store: AsyncReadable, maxSize = 100): LruStore<AsyncReadable> {
-  return new LruStore(inner_store, maxSize);
+export function lru(
+  inner_store: AsyncReadable,
+  maxSize = 100,
+  onStateChange?: OnPromiseStateChange,
+  onClear?: OnPromiseStatesClear,
+): LruStore<AsyncReadable> {
+  return new LruStore(inner_store, maxSize, onStateChange, onClear);
 }

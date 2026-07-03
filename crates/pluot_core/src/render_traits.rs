@@ -118,6 +118,9 @@ pub struct ViewParams {
 
     pub wait_for_store_gets: bool,
 
+    // Whether the frontend (e.g., JS) is configured to "push" Promise statuses.
+    pub wait_for_store_pushes: bool,
+
     // Allow disabling memoization/cacheing. Useful for testing/debugging.
     pub cache_enabled: bool,
 
@@ -143,6 +146,7 @@ impl Default for ViewParams {
             camera_view: None,
             timeout: None,
             wait_for_store_gets: true,
+            wait_for_store_pushes: true,
             cache_enabled: true,
             margins: None,
             store_name: None,
