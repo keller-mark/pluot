@@ -7,6 +7,7 @@ use glam::{Mat4, Vec2, Vec3, Vec4};
 use image::{codecs::bmp::BmpEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
@@ -365,6 +366,137 @@ fn compute_strides(shape: &[u32]) -> Vec<usize> {
 }
 
 
+/// The render pipeline and its bind group layout for `BitmapLayer` are fully
+/// determined by the shader and the target format, both of which are static.
+/// Building them is expensive (WGSL compilation + render-pipeline creation), and
+/// previously this happened on every `draw` call, i.e. once per layer per frame —
+/// the dominant per-frame cost while tiles stream in. We build them once per GPU
+/// device and cache them for reuse across frames.
+///
+/// Keyed by device (single slot): if a different device is seen (e.g. a fresh
+/// native GPU context per render, or after WebGPU context loss) the cached handles
+/// belong to a dropped/foreign device, so we rebuild rather than reuse them.
+struct CachedBitmapPipeline {
+    device: wgpu::Device,
+    bind_group_layout: wgpu::BindGroupLayout,
+    render_pipeline: wgpu::RenderPipeline,
+}
+
+thread_local! {
+    static BITMAP_PIPELINE_CACHE: RefCell<Option<CachedBitmapPipeline>> = const { RefCell::new(None) };
+}
+
+/// Return the (bind group layout, render pipeline) for `BitmapLayer`, building and
+/// caching them on first use for a given `device`. Only the per-frame bind group
+/// (which references this frame's uniform + image data buffers) still needs to be
+/// created per draw; the layout and pipeline are reused.
+fn get_or_create_bitmap_pipeline(
+    device: &wgpu::Device,
+) -> (wgpu::BindGroupLayout, wgpu::RenderPipeline) {
+    BITMAP_PIPELINE_CACHE.with(|cache| {
+        // Reuse the cached handles if they were built for this same device.
+        if let Some(cached) = cache.borrow().as_ref() {
+            if &cached.device == device {
+                return (
+                    cached.bind_group_layout.clone(),
+                    cached.render_pipeline.clone(),
+                );
+            }
+        }
+
+        // Create bind group layout for positions + uniforms
+        let bind_group_layout = device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Bioimage BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        // The uniforms buffer.
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        // The image pixel data storage buffer.
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let shader = device
+            .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
+
+        let render_pipeline_layout = device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[Some(&bind_group_layout)],
+                immediate_size: 0,
+            });
+
+        // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
+        let render_pipeline = device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::SrcAlpha,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                cache: None,
+                multiview_mask: None,
+            });
+
+        *cache.borrow_mut() = Some(CachedBitmapPipeline {
+            device: device.clone(),
+            bind_group_layout: bind_group_layout.clone(),
+            render_pipeline: render_pipeline.clone(),
+        });
+
+        (bind_group_layout, render_pipeline)
+    })
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for BitmapLayer {
@@ -548,36 +680,12 @@ impl DrawToRasterGpu for BitmapLayer {
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
 
-        // Create bind group layout and bind group for positions + uniforms
-        let bind_group_layout = device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Bioimage BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        // The uniforms buffer.
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The image pixel data storage buffer.
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+        // Fetch the cached (static) bind group layout and render pipeline for this
+        // layer type, building them once per device instead of on every frame.
+        let (bind_group_layout, render_pipeline) = get_or_create_bitmap_pipeline(device);
 
+        // Create the per-frame bind group referencing this frame's uniform + image
+        // data buffers, using the cached bind group layout.
         let bind_group = device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Bioimage BG"),
@@ -594,60 +702,9 @@ impl DrawToRasterGpu for BitmapLayer {
                 ],
             });
 
-        let shader = device
-            .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
-
-        let render_pipeline_layout = device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[Some(&bind_group_layout)],
-                immediate_size: 0,
-            });
-
-        // TODO: Extract the shared render pipeline logic. There is a lot of duplication here.
-        let render_pipeline = device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Render Pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        //blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleStrip,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                cache: None,
-                multiview_mask: None,
-            });
-
-        // Can everything before pass.set_pipeline be cached? Probably not the queue.write calls...
+        // The shader module, pipeline layout, and render pipeline are now built and
+        // cached once per device by get_or_create_bitmap_pipeline (above), rather
+        // than recreated here on every frame.
 
         // Handle margins by adjusting viewport and scissor rect.
         // This allows us to avoid accounting for margins in the shaders, simplifying them.
