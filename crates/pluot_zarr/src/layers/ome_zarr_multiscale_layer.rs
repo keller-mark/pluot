@@ -329,7 +329,18 @@ impl OmeZarrMultiscaleLayer {
         let y_dim_i = metadata.dimension_order.index_of(OmeDim::Y).unwrap();
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
-            let tiles = get_visible_tiles(&self.view_params, level);
+
+            // Convert per-resolution scale to a model_matrix (pixel -> world coords).
+            let scale_x = level.scale[1] as f32;
+            let scale_y = level.scale[0] as f32;
+            let model_matrix: [f32; 16] = [
+                scale_x, 0.0, 0.0, 0.0,
+                0.0, scale_y, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ];
+
+            let tiles = get_visible_tiles(&self.view_params, level, Some(&model_matrix));
 
             if tiles.is_empty() {
                 continue;
@@ -339,16 +350,6 @@ impl OmeZarrMultiscaleLayer {
             let full_shape = &metadata.full_shapes[level_idx];
             let chunk_shape = &metadata.chunk_shapes[level_idx];
             let array_metadata = &metadata.array_metadatas[level_idx];
-
-            // Convert per-resolution scale to a model_matrix.
-            let scale_x = level.scale[1] as f32;
-            let scale_y = level.scale[0] as f32;
-            let model_matrix: [f32; 16] = [
-                scale_x, 0.0, 0.0, 0.0,
-                0.0, scale_y, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            ];
 
             let mut sublayers = Vec::new();
             let mut tile_rects = Vec::new();

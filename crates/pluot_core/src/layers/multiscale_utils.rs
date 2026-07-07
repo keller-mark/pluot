@@ -1,3 +1,4 @@
+use nalgebra_glm::{DMat4, DVec4};
 use serde::{Deserialize, Serialize};
 
 use crate::render_traits::ViewParams;
@@ -153,20 +154,72 @@ pub fn to_y_slice(start: u64, end: u64, height: u64) -> (u64, u64) {
 ///   - A tile at column `col` starts at x = col * chunk_width * scale_x
 ///   - A tile at row `row` starts at y = row * chunk_height * scale_y
 ///   - Its width/height is chunk_shape * scale (or smaller for partial edge tiles)
-pub fn get_visible_tiles(view_params: &ViewParams, level: &ResolutionLevel) -> Vec<VisibleTile> {
+///
+/// If `model_matrix` is provided, it is treated as the column-major affine
+/// transform mapping (Y-up) pixel coordinates at this level to world/data
+/// coordinates — the same matrix passed to the sublayers that render the tiles
+/// (world = model_matrix * pixel). Visibility is then computed by mapping the
+/// visible world extent through the inverse matrix (taking the axis-aligned
+/// bounding box of the transformed corners, so rotations and shears are
+/// handled conservatively). If `model_matrix` is None, world = pixel *
+/// level.scale is assumed. The `phys_*` fields are always expressed in the
+/// scale-based physical space (pixel * level.scale), independent of
+/// `model_matrix`, so they remain comparable across resolution levels.
+pub fn get_visible_tiles(
+    view_params: &ViewParams,
+    level: &ResolutionLevel,
+    model_matrix: Option<&[f32; 16]>,
+) -> Vec<VisibleTile> {
     // Compute the visible extent with respect to the coordinate system.
     let b = get_bounds(view_params);
     let (min_x, max_x, min_y, max_y) = (b.x_min as f64, b.x_max as f64, b.y_min as f64, b.y_max as f64);
 
-    let num_img_px_per_m_in_x = 1.0 / level.scale[1];
-    let num_img_px_per_m_in_y = 1.0 / level.scale[0];
+    // Map the visible world extent to (Y-up) pixel coordinates at this level.
+    let (min_x_px, max_x_px, min_y_px, max_y_px) = match model_matrix {
+        Some(m) => {
+            let m64: Vec<f64> = m.iter().map(|&v| v as f64).collect();
+            let mat = DMat4::from_column_slice(&m64);
+            let inv = mat
+                .try_inverse()
+                .expect("model_matrix must be invertible to compute visible tiles");
 
-    // Map the physical extent to pixel indices.
-    let min_x_pixel = ((min_x * num_img_px_per_m_in_x).floor() as i32).max(0);
-    let max_x_pixel = ((max_x * num_img_px_per_m_in_x).ceil() as i32).min(level.shape[1] as i32);
+            let corners = [
+                (min_x, min_y),
+                (min_x, max_y),
+                (max_x, min_y),
+                (max_x, max_y),
+            ];
+            let mut px_min = f64::INFINITY;
+            let mut px_max = f64::NEG_INFINITY;
+            let mut py_min = f64::INFINITY;
+            let mut py_max = f64::NEG_INFINITY;
+            for (x, y) in corners {
+                let p = inv * DVec4::new(x, y, 0.0, 1.0);
+                px_min = px_min.min(p.x);
+                px_max = px_max.max(p.x);
+                py_min = py_min.min(p.y);
+                py_max = py_max.max(p.y);
+            }
+            (px_min, px_max, py_min, py_max)
+        }
+        None => {
+            let num_img_px_per_m_in_x = 1.0 / level.scale[1];
+            let num_img_px_per_m_in_y = 1.0 / level.scale[0];
+            (
+                min_x * num_img_px_per_m_in_x,
+                max_x * num_img_px_per_m_in_x,
+                min_y * num_img_px_per_m_in_y,
+                max_y * num_img_px_per_m_in_y,
+            )
+        }
+    };
+
+    // Map the pixel-space extent to pixel indices.
+    let min_x_pixel = (min_x_px.floor() as i32).max(0);
+    let max_x_pixel = (max_x_px.ceil() as i32).min(level.shape[1] as i32);
     // Note min_y_pixel here is below max_y_pixel (we have not yet flipped).
-    let min_y_pixel_below = ((min_y * num_img_px_per_m_in_y).floor() as i32).max(0);
-    let max_y_pixel_above = ((max_y * num_img_px_per_m_in_y).ceil() as i32).min(level.shape[0] as i32);
+    let min_y_pixel_below = (min_y_px.floor() as i32).max(0);
+    let max_y_pixel_above = (max_y_px.ceil() as i32).min(level.shape[0] as i32);
 
 
     // Convert the pixel indices to tile indices, accounting for irregular edge tiles.
@@ -466,7 +519,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, None);
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].col, 0);
         assert_eq!(tiles[0].row, 0);
@@ -493,7 +546,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         // 512/256 = 2 cols x 2 rows = 4 tiles
         assert_eq!(tiles.len(), 4);
 
@@ -522,7 +575,7 @@ mod tests {
         };
         // Zoom out to see all tiles.
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 4);
 
     }
@@ -540,7 +593,7 @@ mod tests {
             scale: [2.0, 2.0],
         };
         let vp = make_view_params(100, 100, None);
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].phys_x0, 0.0);
         assert_eq!(tiles[0].phys_y0, 512.0);
@@ -559,7 +612,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(1.0, 3.0, 3.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 0, "No tiles should be visible when panned away");
     }
 
@@ -573,7 +626,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 4);
         // Bottom row first: (row=0,col=0), (row=0,col=1), then top row: (row=1,col=0), (row=1,col=1)
         assert_eq!((tiles[0].row, tiles[0].col), (0, 0));
@@ -597,7 +650,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 4);
 
         // Find each tile by (row, col) and verify its array indices.
@@ -642,7 +695,7 @@ mod tests {
             scale: [2.0, 3.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 1);
 
         let find = |row: i32, col: i32| tiles.iter().find(|t| t.row == row && t.col == col).unwrap();
@@ -666,7 +719,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 4);
 
         let find = |row: i32, col: i32| tiles.iter().find(|t| t.row == row && t.col == col).unwrap();
@@ -704,7 +757,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].col, 0);
         assert_eq!(tiles[0].row, 0);
@@ -762,7 +815,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(10.0, -5.0, -5.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 1, "Only one tile should be visible");
         assert_eq!(tiles[0].col, 0);
         assert_eq!(tiles[0].row, 0);
@@ -781,7 +834,7 @@ mod tests {
             scale: [1.0, 1.0],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         // 1 row x 2 cols = 2 tiles.
         assert_eq!(tiles.len(), 2);
         let cols: Vec<i32> = tiles.iter().map(|t| t.col).collect();
@@ -809,7 +862,7 @@ mod tests {
         let phys_w = 400.0 * 0.5; // 200.0
 
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
 
         // num cols = ceil(400/150) = 3, num rows = ceil(300/100) = 3. Total = 9 tiles.
         assert_eq!(tiles.len(), 9);
@@ -835,7 +888,7 @@ mod tests {
             scale: [0.5, 0.5],
         };
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
 
         // Reconstruct covered pixel sets from the tile slices and verify full coverage.
         let mut covered_x = vec![false; 400];
@@ -866,7 +919,7 @@ mod tests {
         // 2 rows x 3 cols = 6 tiles.
         let num_tile_rows = (512f64 / 256.0).ceil() as i32; // 2
         let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
-        let tiles = get_visible_tiles(&vp, &level);
+        let tiles = get_visible_tiles(&vp, &level, None);
         assert_eq!(tiles.len(), 4);
 
         for t in &tiles {
@@ -879,5 +932,118 @@ mod tests {
             assert_eq!(t.tile_y_start, expected_y_start);
             assert_eq!(t.tile_y_end, (expected_y_start + 256).min(512));
         }
+    }
+
+    // get_visible_tiles with model_matrix
+
+    #[test]
+    fn test_get_visible_tiles_model_matrix_scale_matches_scale_field() {
+        // A model_matrix encoding the same scale as level.scale must select the
+        // same tiles as the scale-based (None) path.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [2.0, 3.0],
+        };
+        let model_matrix: [f32; 16] = [
+            3.0, 0.0, 0.0, 0.0,
+            0.0, 2.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles_none = get_visible_tiles(&vp, &level, None);
+        let tiles_mat = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles_none.len(), tiles_mat.len());
+        for (a, b) in tiles_none.iter().zip(tiles_mat.iter()) {
+            assert_eq!((a.row, a.col), (b.row, b.col));
+            assert_eq!((a.tile_x_start, a.tile_x_end), (b.tile_x_start, b.tile_x_end));
+            assert_eq!((a.tile_y_start, a.tile_y_end), (b.tile_y_start, b.tile_y_end));
+            assert!((a.phys_x0 - b.phys_x0).abs() < 1e-9);
+            assert!((a.phys_y0 - b.phys_y0).abs() < 1e-9);
+            assert!((a.phys_x1 - b.phys_x1).abs() < 1e-9);
+            assert!((a.phys_y1 - b.phys_y1).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_get_visible_tiles_model_matrix_translation() {
+        // A translation in the model_matrix shifts which tiles are visible.
+        // Image 512x512, chunk 256x256, identity camera => visible world range
+        // is [0,1] x [0,1]. With world = pixel - 256 in both axes, the visible
+        // world range maps back to pixel range [256, 257]^2, which lies in
+        // tile col=1, physical row=1 (array rows 0..256).
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let model_matrix: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            -256.0, -256.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, None);
+
+        // Without the matrix, the visible sliver is in tile (row=0, col=0).
+        let tiles_none = get_visible_tiles(&vp, &level, None);
+        assert_eq!(tiles_none.len(), 1);
+        assert_eq!((tiles_none[0].row, tiles_none[0].col), (0, 0));
+
+        // With the translation, tile (row=1, col=1) is the visible one.
+        let tiles = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles.len(), 1);
+        assert_eq!((tiles[0].row, tiles[0].col), (1, 1));
+        assert_eq!(tiles[0].tile_x_start, 256);
+        assert_eq!(tiles[0].tile_x_end, 512);
+        assert_eq!(tiles[0].tile_y_start, 0);
+        assert_eq!(tiles[0].tile_y_end, 256);
+    }
+
+    #[test]
+    fn test_get_visible_tiles_model_matrix_translation_offscreen() {
+        // A translation that moves the image completely out of view yields no tiles.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let model_matrix: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            1000.0, 1000.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, None);
+        let tiles = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles.len(), 0, "No tiles should be visible when the image is translated away");
+    }
+
+    #[test]
+    fn test_get_visible_tiles_model_matrix_rotation() {
+        // 90-degree rotation composed with a translation:
+        //   world_x = 512 - pixel_y, world_y = pixel_x.
+        // Identity camera => visible world range [0,1]^2, which maps back to
+        // pixel_x in [0,1] and pixel_y in [511,512]: tile col=0, physical row=1.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let model_matrix: [f32; 16] = [
+            0.0, 1.0, 0.0, 0.0,
+            -1.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            512.0, 0.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, None);
+        let tiles = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles.len(), 1);
+        assert_eq!((tiles[0].row, tiles[0].col), (1, 0));
+        assert_eq!(tiles[0].tile_x_start, 0);
+        assert_eq!(tiles[0].tile_x_end, 256);
+        assert_eq!(tiles[0].tile_y_start, 0);
+        assert_eq!(tiles[0].tile_y_end, 256);
     }
 }
