@@ -3,14 +3,17 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{DMat4, DVec4, Mat4, Vec2, Vec3, Vec4};
 use image::{codecs::bmp::BmpEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
@@ -872,4 +875,197 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for BitmapLayer {}
+impl PickableLayer for BitmapLayer {
+    /// Pick the image pixel under the given data coordinate.
+    ///
+    /// Returns the array indices of the picked pixel ("x", "y", top-down array
+    /// convention, local to this layer's data) and the value of each channel
+    /// at that pixel ("channel_{i}").
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel-units positioning places the image relative to the layer
+        // bounds rather than in data space, so a data-space containment test
+        // does not apply.
+        if self.layer_params.data_unit_mode_x == UnitsMode::Pixels
+            || self.layer_params.data_unit_mode_y == UnitsMode::Pixels
+        {
+            return None;
+        }
+
+        let dims = parse_dimensions(&self.layer_params.dimension_order, &self.layer_params.shape);
+        let (x_dim_idx, img_w) = *dims.get(&'X')?;
+        let (y_dim_idx, img_h) = *dims.get(&'Y')?;
+        let (c_dim_idx, _) = *dims.get(&'C')?;
+        if img_w == 0 || img_h == 0 {
+            return None;
+        }
+
+        // Map the world coordinate into the image's (Y-up) pixel space by
+        // inverting the model_matrix; the vertex shader computes
+        // world = model_matrix * (pixel + pixel_offset).
+        let m = self.layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+        let mut m64 = [0.0f64; 16];
+        for (i, v) in m.iter().enumerate() {
+            m64[i] = *v as f64;
+        }
+        let mat = DMat4::from_cols_array(&m64);
+        if mat.determinant() == 0.0 {
+            return None;
+        }
+        let p = mat.inverse() * DVec4::new(cx as f64, cy as f64, 0.0, 1.0);
+
+        let (off_x, off_y) = self.layer_params.pixel_offset.unwrap_or((0, 0));
+        // Local (Y-up) pixel coordinates within this image.
+        let lx = p.x - off_x as f64;
+        let ly = p.y - off_y as f64;
+        if lx < 0.0 || lx > img_w as f64 || ly < 0.0 || ly > img_h as f64 {
+            return None;
+        }
+
+        // Convert to array indices, matching the fragment shader: the quad's
+        // bottom edge samples the last array row (arrays are stored
+        // top-to-bottom), and edge coordinates clamp to the valid range.
+        let texel_x = (lx.floor() as i64).clamp(0, img_w as i64 - 1) as usize;
+        let texel_y = ((img_h as f64 - ly).floor() as i64).clamp(0, img_h as i64 - 1) as usize;
+
+        let strides = compute_strides(&self.layer_params.shape);
+        let x_stride = strides[x_dim_idx];
+        let y_stride = strides[y_dim_idx];
+        let c_stride = strides[c_dim_idx];
+
+        let mut info = HashMap::new();
+        info.insert("x".to_string(), texel_x.to_string());
+        info.insert("y".to_string(), texel_y.to_string());
+        for channel_index in 0..self.layer_params.channel_settings.len() {
+            let idx = texel_y * y_stride + texel_x * x_stride + channel_index * c_stride;
+            if idx < self.layer_params.data.len() {
+                info.insert(
+                    format!("channel_{}", channel_index),
+                    self.layer_params.data.get_f32(idx).to_string(),
+                );
+            }
+        }
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 2x2 single-channel image with values:
+    ///   array row 0 (top):    [10, 20]
+    ///   array row 1 (bottom): [30, 40]
+    fn make_layer(
+        pixel_offset: Option<(u32, u32)>,
+        model_matrix: Option<[f32; 16]>,
+    ) -> BitmapLayer {
+        BitmapLayer::new(
+            ViewParams::default(),
+            BitmapLayerParams {
+                layer_id: "test_bitmap".to_string(),
+                pixel_offset,
+                model_matrix,
+                dimension_order: DimensionOrder::CYX,
+                shape: vec![1, 2, 2],
+                channel_settings: vec![ChannelSettings {
+                    window: (0.0, 255.0),
+                    color: (1.0, 1.0, 1.0),
+                }],
+                data: NumericData::Uint8(Arc::new(vec![10, 20, 30, 40])),
+                ..BitmapLayerParams::default()
+            },
+        )
+    }
+
+    fn pick_at(layer: &BitmapLayer, x: f32, y: f32) -> Option<LayerPickingResult> {
+        layer.pick(
+            ScreenCoord { x: 0.0, y: 0.0 },
+            Some(DataCoord::TwoD { x, y }),
+        )
+    }
+
+    #[test]
+    fn test_pick_identity_matrix() {
+        // With no model_matrix, world == pixel: the image spans [0,2]^2 with
+        // the quad's bottom edge sampling the last array row.
+        let layer = make_layer(None, None);
+
+        // Bottom-left quadrant --> array row 1, col 0 --> 30.
+        let r = pick_at(&layer, 0.5, 0.5).unwrap();
+        assert_eq!(r.layer_id, "test_bitmap");
+        assert_eq!(r.info.get("x").unwrap(), "0");
+        assert_eq!(r.info.get("y").unwrap(), "1");
+        assert_eq!(r.info.get("channel_0").unwrap(), "30");
+
+        // Top-right quadrant --> array row 0, col 1 --> 20.
+        let r = pick_at(&layer, 1.5, 1.5).unwrap();
+        assert_eq!(r.info.get("x").unwrap(), "1");
+        assert_eq!(r.info.get("y").unwrap(), "0");
+        assert_eq!(r.info.get("channel_0").unwrap(), "20");
+    }
+
+    #[test]
+    fn test_pick_outside_returns_none() {
+        let layer = make_layer(None, None);
+        assert!(pick_at(&layer, -0.5, 0.5).is_none());
+        assert!(pick_at(&layer, 2.5, 0.5).is_none());
+        assert!(pick_at(&layer, 0.5, 2.5).is_none());
+        assert!(pick_at(&layer, 0.5, -0.5).is_none());
+    }
+
+    #[test]
+    fn test_pick_with_scale_matrix() {
+        // world = 2 * pixel: the image spans [0,4]^2.
+        let model_matrix = [
+            2.0, 0.0, 0.0, 0.0,
+            0.0, 2.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let layer = make_layer(None, Some(model_matrix));
+
+        // world (3, 1) --> pixel (1.5, 0.5) --> array row 1, col 1 --> 40.
+        let r = pick_at(&layer, 3.0, 1.0).unwrap();
+        assert_eq!(r.info.get("x").unwrap(), "1");
+        assert_eq!(r.info.get("y").unwrap(), "1");
+        assert_eq!(r.info.get("channel_0").unwrap(), "40");
+
+        // Inside [0,2]^2 pixel bounds but checked in world space, so still valid;
+        // outside the scaled extent is not.
+        assert!(pick_at(&layer, 4.5, 1.0).is_none());
+    }
+
+    #[test]
+    fn test_pick_with_pixel_offset() {
+        // pixel_offset shifts the image to world [2,4]^2 (identity matrix).
+        let layer = make_layer(Some((2, 2)), None);
+
+        assert!(pick_at(&layer, 0.5, 0.5).is_none());
+
+        // world (2.5, 2.5) --> local pixel (0.5, 0.5) --> array row 1, col 0 --> 30.
+        let r = pick_at(&layer, 2.5, 2.5).unwrap();
+        assert_eq!(r.info.get("x").unwrap(), "0");
+        assert_eq!(r.info.get("y").unwrap(), "1");
+        assert_eq!(r.info.get("channel_0").unwrap(), "30");
+    }
+
+    #[test]
+    fn test_pick_pixels_units_mode_returns_none() {
+        let mut layer = make_layer(None, None);
+        layer.layer_params.data_unit_mode_x = UnitsMode::Pixels;
+        assert!(pick_at(&layer, 0.5, 0.5).is_none());
+    }
+}

@@ -278,6 +278,51 @@ pub fn get_visible_tiles(
     tiles
 }
 
+/// Identify which visible tile (index into `tiles`) contains the given
+/// world/data coordinate, e.g., for picking.
+///
+/// `model_matrix` follows the same convention as `get_visible_tiles`: the
+/// column-major affine transform mapping (Y-up) pixel coordinates at this
+/// level to world coordinates (world = model_matrix * pixel). If None,
+/// world = pixel * level.scale is assumed.
+///
+/// The world coordinate is mapped into (Y-up) pixel space through the inverse
+/// matrix and compared against each tile's pixel extent, so the result is
+/// consistent with where the tiles are actually rendered, including under
+/// translation, rotation, and shear.
+pub fn pick_visible_tile(
+    world_x: f64,
+    world_y: f64,
+    level: &ResolutionLevel,
+    tiles: &[VisibleTile],
+    model_matrix: Option<&[f32; 16]>,
+) -> Option<usize> {
+    // Map the world coordinate into (Y-up) pixel coordinates at this level.
+    let (px, py) = match model_matrix {
+        Some(m) => {
+            let m64: Vec<f64> = m.iter().map(|&v| v as f64).collect();
+            let inv = DMat4::from_column_slice(&m64)
+                .try_inverse()
+                .expect("model_matrix must be invertible to pick tiles");
+            let p = inv * DVec4::new(world_x, world_y, 0.0, 1.0);
+            (p.x, p.y)
+        }
+        None => (world_x / level.scale[1], world_y / level.scale[0]),
+    };
+
+    let height = level.shape[0] as f64;
+    tiles.iter().position(|t| {
+        // tile_y_start/end are array indices (Y-down); flip to Y-up pixel
+        // coordinates, matching the pixel_offset the tile is rendered at.
+        let y0 = height - t.tile_y_end as f64;
+        let y1 = height - t.tile_y_start as f64;
+        t.tile_x_start as f64 <= px
+            && px <= t.tile_x_end as f64
+            && y0 <= py
+            && py <= y1
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1045,5 +1090,146 @@ mod tests {
         assert_eq!(tiles[0].tile_x_end, 256);
         assert_eq!(tiles[0].tile_y_start, 0);
         assert_eq!(tiles[0].tile_y_end, 256);
+    }
+
+    // pick_visible_tile
+
+    /// World-space center of a tile's rendered position, assuming
+    /// world = pixel * scale (i.e., a scale-only model_matrix or None).
+    fn tile_world_center(t: &VisibleTile, level: &ResolutionLevel) -> (f64, f64) {
+        let h = level.shape[0] as f64;
+        let cx = (t.tile_x_start + t.tile_x_end) as f64 / 2.0 * level.scale[1];
+        // tile_y_* are array indices; the tile renders at Y-up pixels
+        // [h - tile_y_end, h - tile_y_start].
+        let cy = ((h - t.tile_y_end as f64) + (h - t.tile_y_start as f64)) / 2.0 * level.scale[0];
+        (cx, cy)
+    }
+
+    #[test]
+    fn test_pick_visible_tile_no_matrix_matches_rendered_positions() {
+        // Picking at the center of each tile's rendered world position returns
+        // that tile's index. Uses a partial edge tile (300 % 256 != 0) and
+        // anisotropic scale to exercise the Y flip.
+        let level = ResolutionLevel {
+            shape: [300, 300],
+            chunk_shape: [256, 256],
+            scale: [2.0, 3.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.0005, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level, None);
+        assert_eq!(tiles.len(), 4);
+
+        for (i, t) in tiles.iter().enumerate() {
+            let (cx, cy) = tile_world_center(t, &level);
+            assert_eq!(
+                pick_visible_tile(cx, cy, &level, &tiles, None),
+                Some(i),
+                "tile (row={}, col={}) should be picked at its rendered center",
+                t.row, t.col,
+            );
+        }
+    }
+
+    #[test]
+    fn test_pick_visible_tile_scale_matrix_matches_none() {
+        // A model_matrix encoding the same scale as level.scale picks the same
+        // tiles as the scale-based (None) path.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [2.0, 3.0],
+        };
+        let model_matrix: [f32; 16] = [
+            3.0, 0.0, 0.0, 0.0,
+            0.0, 2.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.0005, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles.len(), 4);
+
+        for t in &tiles {
+            let (cx, cy) = tile_world_center(t, &level);
+            assert_eq!(
+                pick_visible_tile(cx, cy, &level, &tiles, Some(&model_matrix)),
+                pick_visible_tile(cx, cy, &level, &tiles, None),
+            );
+        }
+    }
+
+    #[test]
+    fn test_pick_visible_tile_outside_returns_none() {
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let vp = make_view_params(100, 100, Some(camera_matrix(0.001, 0.0, 0.0)));
+        let tiles = get_visible_tiles(&vp, &level, None);
+        assert_eq!(tiles.len(), 4);
+
+        assert_eq!(pick_visible_tile(-1.0, 100.0, &level, &tiles, None), None);
+        assert_eq!(pick_visible_tile(100.0, 513.0, &level, &tiles, None), None);
+        assert_eq!(pick_visible_tile(1000.0, 1000.0, &level, &tiles, None), None);
+    }
+
+    #[test]
+    fn test_pick_visible_tile_translation() {
+        // With world = pixel - 256, the image occupies world [-256, 256]^2.
+        // The visible tile (from the matching get_visible_tiles test) is
+        // (row=1, col=1): pixels [256, 512]^2, i.e., world [0, 256]^2.
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let model_matrix: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            -256.0, -256.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, None);
+        let tiles = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles.len(), 1);
+
+        // Inside the tile's translated world extent.
+        assert_eq!(pick_visible_tile(0.5, 0.5, &level, &tiles, Some(&model_matrix)), Some(0));
+        assert_eq!(pick_visible_tile(100.0, 200.0, &level, &tiles, Some(&model_matrix)), Some(0));
+        // Outside the tile (would be inside without the translation).
+        assert_eq!(pick_visible_tile(300.0, 300.0, &level, &tiles, Some(&model_matrix)), None);
+        // Without accounting for the matrix, the same point would (wrongly)
+        // miss the tile.
+        assert_eq!(pick_visible_tile(0.5, 0.5, &level, &tiles, None), None);
+    }
+
+    #[test]
+    fn test_pick_visible_tile_rotation() {
+        // world_x = 512 - pixel_y, world_y = pixel_x (90-degree rotation plus
+        // translation). The visible tile is col=0 (pixel_x in [0, 256]),
+        // physical row=1 (pixel_y in [256, 512]), i.e., world x in [0, 256],
+        // world y in [0, 256].
+        let level = ResolutionLevel {
+            shape: [512, 512],
+            chunk_shape: [256, 256],
+            scale: [1.0, 1.0],
+        };
+        let model_matrix: [f32; 16] = [
+            0.0, 1.0, 0.0, 0.0,
+            -1.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            512.0, 0.0, 0.0, 1.0,
+        ];
+        let vp = make_view_params(100, 100, None);
+        let tiles = get_visible_tiles(&vp, &level, Some(&model_matrix));
+        assert_eq!(tiles.len(), 1);
+
+        // world (2, 100) --> pixel (100, 510): inside the tile.
+        assert_eq!(pick_visible_tile(2.0, 100.0, &level, &tiles, Some(&model_matrix)), Some(0));
+        // world (2, 300) --> pixel (300, 510): outside in pixel X.
+        assert_eq!(pick_visible_tile(2.0, 300.0, &level, &tiles, Some(&model_matrix)), None);
+        // world (400, 100) --> pixel (100, 112): outside in pixel Y.
+        assert_eq!(pick_visible_tile(400.0, 100.0, &level, &tiles, Some(&model_matrix)), None);
     }
 }

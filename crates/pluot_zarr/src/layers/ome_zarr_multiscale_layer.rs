@@ -15,10 +15,12 @@ use pluot_core::render_traits::{
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::multiscale_utils::{
-    ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
+    ResolutionLevel, VisibleTile, get_visible_tiles, pick_visible_tile, select_resolution_level,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
+use pluot_core::LayerPickingResult;
+use pluot_core::viewport::{DataCoord, ScreenCoord};
 use ome_zarr_metadata::v0_5::{
     OmeFields, CoordinateTransform, CoordinateTransformScale,
     Axis, AxisType, AxisUnit, AxisUnitSpace,
@@ -127,8 +129,13 @@ struct OmeZarrMultiscaleMetadata {
 struct LevelSublayers {
     level_idx: usize,
     sublayers: Vec<OmeZarrBitmapLayer>,
+    /// Visible tile for each sublayer (parallel to `sublayers`).
+    tiles: Vec<VisibleTile>,
     /// Physical rectangle for each sublayer (parallel to `sublayers`).
     tile_rects: Vec<PhysicalRect>,
+    /// The pixel-to-world model matrix for this level (the same matrix passed
+    /// to the sublayers and to get_visible_tiles).
+    model_matrix: [f32; 16],
     prepare_results: Vec<PrepareResult>,
 }
 
@@ -391,7 +398,9 @@ impl OmeZarrMultiscaleLayer {
             all_level_sublayers.push(LevelSublayers {
                 level_idx,
                 sublayers,
+                tiles,
                 tile_rects,
+                model_matrix,
                 prepare_results: Vec::new(),
             });
         }
@@ -583,4 +592,43 @@ impl DrawToSvg for OmeZarrMultiscaleLayer {
     }
 }
 
-impl PickableLayer for OmeZarrMultiscaleLayer {}
+impl PickableLayer for OmeZarrMultiscaleLayer {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+        let metadata = self.metadata.as_ref()?;
+
+        // level_sublayers is ordered coarsest-first and finer levels are drawn
+        // on top of coarser ones, so search from finest to coarsest and
+        // delegate to the first ready tile containing the picked coordinate.
+        for level_group in self.level_sublayers.iter().rev() {
+            let level = &metadata.resolution_levels[level_group.level_idx];
+            let Some(tile_i) = pick_visible_tile(
+                cx as f64,
+                cy as f64,
+                level,
+                &level_group.tiles,
+                Some(&level_group.model_matrix),
+            ) else {
+                continue;
+            };
+
+            let ready = level_group
+                .prepare_results
+                .get(tile_i)
+                .is_some_and(|r| !r.bailed_early);
+            if !ready {
+                continue;
+            }
+
+            return PickableLayer::pick(
+                &level_group.sublayers[tile_i],
+                screen_coord,
+                data_coord,
+            );
+        }
+        None
+    }
+
+}
