@@ -2,7 +2,7 @@
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
 use encase::{ShaderType, UniformBuffer};
-use glam::{Mat4, Vec2, Vec4};
+use glam::{DMat4, DVec4, Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
@@ -616,7 +616,29 @@ impl PickableLayer for PointLayer {
             return None;
         }
 
-        // TODO: fix this.
+        // Map the world coordinate into the point's model space by inverting
+        // the model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position_x, position_y, 0, 1).
+        let m = self.layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+        let mut m64 = [0.0f64; 16];
+        for (i, v) in m.iter().enumerate() {
+            m64[i] = *v as f64;
+        }
+        let mat = DMat4::from_cols_array(&m64);
+        if mat.determinant() == 0.0 {
+            return None;
+        }
+        let p = mat.inverse() * DVec4::new(cx as f64, cy as f64, 0.0, 1.0);
+        let (cx, cy) = (p.x as f32, p.y as f32);
+
+        // For now, this is a very naive picking implementation that just iterates over the points to find the closest match.
+        // In the future, we will use multiple render targets to perform GPU-accelerated picking
+        // Reference: https://github.com/keller-mark/pluot/issues/140
 
         let mut min_dist_sq = f32::MAX;
         let mut closest_idx = 0usize;
@@ -643,3 +665,4 @@ impl PickableLayer for PointLayer {
         })
     }
 }
+
