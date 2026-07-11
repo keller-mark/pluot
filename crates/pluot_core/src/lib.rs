@@ -11,6 +11,7 @@ pub mod viewport;
 mod picking;
 pub mod layers;
 pub mod plot_layers;
+pub mod shader_modules;
 pub mod registry;
 pub mod compute;
 
