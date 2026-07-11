@@ -27,6 +27,9 @@
 //! as a `String`, ready to hand to `device.create_shader_module` via
 //! `wgpu::ShaderSource::Wgsl`.
 //!
+//! (Ideally we could use a more robust system such as WESL, but this adds ~1MB
+//! to the WASM binary size, at least last time I tried it.)
+//!
 //! ```ignore
 //! use pluot_core::shader_modules::{common, ShaderBuilder, WgslScalar};
 //!
@@ -64,6 +67,10 @@ pub mod common {
     /// Depends on [`SCALE`] and [`TRANSLATE`] also being injected into the same
     /// module (order does not matter to WGSL, but both must be present).
     pub const GET_ASPECT_RATIO_MAT: &str = include_str!("wgsl_functions/get_aspect_ratio_mat.wgsl");
+
+    /// `fn rotate_z(angle_deg) -> mat4x4<f32>` — builds a rotation matrix about
+    /// the Z axis (angle in degrees).
+    pub const ROTATE_Z: &str = include_str!("wgsl_functions/rotate_z.wgsl");
 }
 
 /// A WGSL scalar type usable as the element type of a storage array.

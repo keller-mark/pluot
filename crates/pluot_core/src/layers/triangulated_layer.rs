@@ -15,6 +15,7 @@ use crate::render_traits::{
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -181,7 +182,16 @@ impl DrawToRasterGpu for TriangulatedLayer {
             ],
         });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/triangulated_layer.wgsl"));
+        // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
+        let shader_source = ShaderBuilder::new(include_str!("shaders/triangulated_layer.wgsl"))
+            .inject_function("scale", common::SCALE)
+            .inject_function("translate", common::TRANSLATE)
+            .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .build();
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("triangulated_layer.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Triangulated PLD"),
@@ -194,7 +204,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: Some("vs_fill"),
+                entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },

@@ -9,6 +9,7 @@ use std::sync::{Arc};
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
+use crate::shader_modules::{common, ShaderBuilder};
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
@@ -363,8 +364,17 @@ impl DrawToRasterGpu for LineLayer {
                 ],
             });
 
+        // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
+        let shader_source = ShaderBuilder::new(include_str!("shaders/line_layer.wgsl"))
+            .inject_function("scale", common::SCALE)
+            .inject_function("translate", common::TRANSLATE)
+            .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .build();
         let shader = device
-            .create_shader_module(wgpu::include_wgsl!("shaders/line_layer.wgsl"));
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("line_layer.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
 
         let render_pipeline_layout = device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

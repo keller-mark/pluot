@@ -3,51 +3,13 @@
 // 3 per triangle) through the same projection pipeline as the stroke and shades
 // each triangle with the fill color.
 
-fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(x, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, y, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, z, 0.0),
-    vec4<f32>(0.0, 0.0, 0.0, 1.0)
-  );
-}
+// The following functions are injected at compile time by the shader-module
+// system (see `crate::shader_modules`). Their sources live in `wgsl_functions/`.
+{{scale}}
 
-fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(1.0, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, 1.0, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, 1.0, 0.0),
-    vec4<f32>(x, y, z, 1.0),
-  );
-}
+{{translate}}
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
-    var x_scale = 1.0;
-    var y_scale = 1.0;
-    if (aspect_ratio_mode == 1u) {
-        if (layer_aspect_ratio > 1.0) {
-            x_scale = 1.0 / layer_aspect_ratio;
-        } else if (layer_aspect_ratio < 1.0) {
-            y_scale = layer_aspect_ratio;
-        }
-    } else if (aspect_ratio_mode == 2u) {
-        if (layer_aspect_ratio > 1.0) {
-            y_scale = layer_aspect_ratio;
-        } else if (layer_aspect_ratio < 1.0) {
-            x_scale = 1.0 / layer_aspect_ratio;
-        }
-    }
-    var x_trans = 0.0;
-    var y_trans = 0.0;
-    if (aspect_ratio_alignment_mode == 1u) {
-        x_trans = x_scale - 1.0;
-        y_trans = y_scale - 1.0;
-    } else if (aspect_ratio_alignment_mode == 2u) {
-        x_trans = 1.0 - x_scale;
-        y_trans = 1.0 - y_scale;
-    }
-    return translate(x_trans, y_trans, 0.0) * scale(x_scale, y_scale, 1.0);
-}
+{{get_aspect_ratio_mat}}
 
 struct TriangulatedLayerUniforms {
     layer_size: vec2<f32>,
@@ -104,7 +66,7 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
 }
 
 @vertex
-fn vs_fill(@builtin(vertex_index) vertex_index: u32) -> VSOut {
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VSOut {
     let model_point = vertices[vertex_index];
     let layer_aspect_ratio = u.layer_size.x / u.layer_size.y;
     let pos_ndc = project_point(model_point, layer_aspect_ratio);

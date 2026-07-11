@@ -14,6 +14,7 @@ use fontdue::{Font, FontSettings};
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
+use crate::shader_modules::{common, ShaderBuilder};
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
 use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
@@ -844,8 +845,18 @@ pub async fn base_draw_text_layer(
             ],
         });
 
+    // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
+    let shader_source = ShaderBuilder::new(include_str!("shaders/text_layer.wgsl"))
+        .inject_function("rotate_z", common::ROTATE_Z)
+        .inject_function("scale", common::SCALE)
+        .inject_function("translate", common::TRANSLATE)
+        .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+        .build();
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/text_layer.wgsl"));
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("text_layer.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
