@@ -82,8 +82,8 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-            position_x: [100, 100],
-            position_y: [100, 200],
+            position_x: { dtype: "Float32", values: [100, 100] },
+            position_y: { dtype: "Float32", values: [100, 200] },
             labels_vec: [0, 1],
           }
         },
@@ -157,7 +157,7 @@ const DEMOS = {
               }
             ],
 
-            data: { Uint16: [
+            data: { dtype: "Uint16", values: [
               0, 110, 210, 310,
               20, 120, 220, 320,
               30, 130, 230, 330,

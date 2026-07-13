@@ -9,6 +9,7 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     PointLayerParams, PointShapeMode,
+    NumericData,
     LineLayerParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
     FontWeight, FontStyle,
@@ -35,8 +36,8 @@ fn corner_points() -> PointLayerParams {
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
         model_matrix: None,
-        position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
         ..Default::default()
     }
@@ -365,15 +366,15 @@ async fn test_multi_layer_square_contain_two_point_layers() {
         layers: vec![
             point_layer_params(PointLayerParams {
                 layer_id: "points_a".to_string(),
-                position_x: Arc::new(vec![0.0, 1.0]),
-                position_y: Arc::new(vec![0.0, 0.0]),
+                position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+                position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0])),
                 labels_vec: Arc::new(vec![0, 1]),
                 ..corner_points()
             }),
             point_layer_params(PointLayerParams {
                 layer_id: "points_b".to_string(),
-                position_x: Arc::new(vec![0.0, 1.0]),
-                position_y: Arc::new(vec![1.0, 1.0]),
+                position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+                position_y: NumericData::Float32(Arc::new(vec![1.0, 1.0])),
                 labels_vec: Arc::new(vec![2, 3]),
                 ..corner_points()
             }),

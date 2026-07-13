@@ -29,8 +29,8 @@ basic_plot_kwargs = dict(
                     point_shape_mode="Square",
                     point_radius=25.0,
                     bounds=None,
-                    position_x=[0, 1, 0, 1],
-                    position_y=[0, 0, 1, 1],
+                    position_x={"dtype": "Float32", "values": [0, 1, 0, 1]},
+                    position_y={"dtype": "Float32", "values": [0, 0, 1, 1]},
                     labels_vec=[0, 1, 2, 3],
                 )
             ),

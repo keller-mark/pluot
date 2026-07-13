@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::layers::bitmap_layer::NumericData;
+use crate::numeric_data::NumericData;
 use crate::zarr::AsyncZarritaStore;
 
 // Note: this store cache is no longer needed, as the store does cacheing internally now.

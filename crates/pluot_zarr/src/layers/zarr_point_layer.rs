@@ -374,8 +374,8 @@ impl PreparedLayer for ZarrPointLayer {
                 point_shape_mode: self.layer_params.point_shape_mode,
                 point_opacity,
                 model_matrix: self.layer_params.model_matrix,
-                position_x: x_f32.clone(),
-                position_y: y_f32.clone(),
+                position_x: x_f32.clone().into(),
+                position_y: y_f32.clone().into(),
                 labels_vec: l_i32.clone(),
             }
         );

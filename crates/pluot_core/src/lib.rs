@@ -7,6 +7,7 @@ pub mod render_traits;
 mod render;
 mod render_post;
 pub mod positioning;
+pub mod numeric_data;
 pub mod viewport;
 mod picking;
 pub mod layers;

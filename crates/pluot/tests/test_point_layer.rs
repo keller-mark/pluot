@@ -9,6 +9,7 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     PointLayerParams, PointShapeMode,
+    NumericData,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -34,8 +35,8 @@ fn corner_points_data() -> PointLayerParams {
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
         model_matrix: None,
-        position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
         ..Default::default()
     }
@@ -53,8 +54,8 @@ fn corner_points_pixels() -> PointLayerParams {
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
         model_matrix: None,
-        position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
         ..Default::default()
     }
@@ -65,8 +66,8 @@ fn corner_points_data_x_pixel_y() -> PointLayerParams {
     PointLayerParams {
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Pixels,
-        position_x: Arc::new(vec![0.0, 0.5, 0.5, 0.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 0.5, 0.5, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         ..corner_points_data()
     }
 }
@@ -76,8 +77,8 @@ fn corner_points_pixel_x_data_y() -> PointLayerParams {
     PointLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Data,
-        position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 0.5, 0.5]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.5, 0.5])),
         ..corner_points_data()
     }
 }
@@ -249,8 +250,8 @@ async fn test_point_layer_wide_contain_pixel_units_no_margins() {
         width: 200,
         height: 100,
         layers: layer_params(PointLayerParams {
-            position_x: Arc::new(vec![0.0, 200.0, 200.0, 0.0]),
-            position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+            position_x: NumericData::Float32(Arc::new(vec![0.0, 200.0, 200.0, 0.0])),
+            position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
             ..corner_points_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -339,8 +340,8 @@ async fn test_point_layer_tall_contain_pixel_units_no_margins() {
         width: 100,
         height: 200,
         layers: layer_params(PointLayerParams {
-            position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-            position_y: Arc::new(vec![0.0, 0.0, 200.0, 200.0]),
+            position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
+            position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 200.0, 200.0])),
             ..corner_points_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

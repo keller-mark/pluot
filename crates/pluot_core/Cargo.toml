@@ -128,7 +128,7 @@ futures-time = { workspace = true, default-features = false, features = ["web"] 
 
 
 [dev-dependencies]
-
+serde_json.workspace = true
 
 
 
