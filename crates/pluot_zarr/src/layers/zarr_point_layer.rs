@@ -5,12 +5,13 @@ use pluot_core::{maybe_timeout, FutureExt, Duration};
 use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
+use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
+use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
@@ -18,6 +19,7 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 use pluot_core::viewport::get_bounds;
 
+use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -195,6 +197,8 @@ fn get_point_opacity(
     alpha.clamp(2.01 / 255.0, 1.0)
 }
 
+
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for ZarrPointLayer {
@@ -217,34 +221,25 @@ impl PreparedLayer for ZarrPointLayer {
         }, &l_i32_future_deps, self.view_params.cache_enabled);
 
         // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
-        let x_f32_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let x_f32_future = use_memo_vec_f32(async || {
-            let x_array_path = &self.layer_params.x_key.as_ref();
-            let x_array_future = zarrs::array::Array::async_open(store.clone(), x_array_path);
-            let x_array = x_array_future.await.unwrap();
-            let x_subset = x_array.subset_all();
-            let position_x = x_array.async_retrieve_array_subset::<Vec<f64>>(&x_subset).await?;
-            let x_f32_inner: Vec<f32> = position_x.iter().map(|&x| x as f32).collect();
-            Ok(x_f32_inner)
-        }, &x_f32_future_deps, self.view_params.cache_enabled);
+        // Load the X and Y coordinate arrays in their native dtype (any dtype
+        // supported by NumericData); PointLayer uploads each to the GPU at its
+        // native width, so there is no per-element cast here.
+        let x_data_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
+        let x_data_future = use_memo_numeric_data(async || {
+            load_arr_as_numeric_data(store.clone(), &self.layer_params.x_key).await
+        }, &x_data_future_deps, self.view_params.cache_enabled);
 
-        let y_f32_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let y_f32_future = use_memo_vec_f32(async || {
-            let y_array_path = &self.layer_params.y_key.as_ref();
-            let y_array_future = zarrs::array::Array::async_open(store.clone(), y_array_path);
-            let y_array = y_array_future.await.unwrap();
-            let y_subset = y_array.subset_all();
-            let position_y = y_array.async_retrieve_array_subset::<Vec<f64>>(&y_subset).await?;
-            let y_f32_inner: Vec<f32> = position_y.iter().map(|&y| y as f32).collect();
-            Ok(y_f32_inner)
-        }, &y_f32_future_deps, self.view_params.cache_enabled);
+        let y_data_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
+        let y_data_future = use_memo_numeric_data(async || {
+            load_arr_as_numeric_data(store.clone(), &self.layer_params.y_key).await
+        }, &y_data_future_deps, self.view_params.cache_enabled);
 
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
-        //let (x_f32, y_f32, l_i32) = futures::join!(x_f32_future, y_f32_future, l_i32_future);
+        //let (x_data, y_data, l_i32) = futures::join!(x_data_future, y_data_future, l_i32_future);
 
         let futures_try_join_result = futures::try_join!(
-            maybe_timeout!(x_f32_future, self.view_params.timeout),
-            maybe_timeout!(y_f32_future, self.view_params.timeout),
+            maybe_timeout!(x_data_future, self.view_params.timeout),
+            maybe_timeout!(y_data_future, self.view_params.timeout),
             maybe_timeout!(l_i32_future, self.view_params.timeout),
         );
 
@@ -253,10 +248,10 @@ impl PreparedLayer for ZarrPointLayer {
         // We want to render the chunks that have loaded prior to the timeout (if there was a timeout specified).
         // First convert the requested slice to the chunk keys?
 
-        let (x_f32, y_f32, l_i32) = match futures_try_join_result {
-            Ok((x_f32_result, y_f32_result, l_i32_result)) => {
-                // Each result is Result<Arc<Vec<_>>, ArrayError> from the _result cache fns.
-                match (x_f32_result, y_f32_result, l_i32_result) {
+        let (x_data, y_data, l_i32) = match futures_try_join_result {
+            Ok((x_data_result, y_data_result, l_i32_result)) => {
+                // x/y are Result<Arc<NumericData>, ArrayError>; labels are Result<Arc<Vec<i32>>, ArrayError>.
+                match (x_data_result, y_data_result, l_i32_result) {
                     (Ok(x), Ok(y), Ok(l)) => (x, y, l),
                     (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
                         if is_timed_out_zarrs_error(&e) {
@@ -285,8 +280,10 @@ impl PreparedLayer for ZarrPointLayer {
                 // Both provided: no need to compute the extent.
                 (self.layer_params.point_radius.unwrap(), self.layer_params.point_opacity.unwrap())
             } else {
-                let x_for_extent = x_f32.clone();
-                let y_for_extent = y_f32.clone();
+                // reduce_extent accepts NumericData directly and reduces it on
+                // the GPU in its native dtype — no CPU-side cast to f32.
+                let x_for_extent = x_data.as_ref().clone();
+                let y_for_extent = y_data.as_ref().clone();
 
                 // Cache the extent so repeated prepares (e.g. on pan/zoom) reuse it.
                 // Returns [x_min, x_max, y_min, y_max].
@@ -306,7 +303,7 @@ impl PreparedLayer for ZarrPointLayer {
                     .expect("Extent computation failed in ZarrPointLayer.prepare");
 
                 let (x_min, x_max, y_min, y_max) = (extent[0], extent[1], extent[2], extent[3]);
-                let num_points = x_f32.len();
+                let num_points = x_data.len();
 
                 // Data extent (in pluot's (0,1) data space for Data unit mode).
                 let x_range = (x_max - x_min).abs();
@@ -374,8 +371,8 @@ impl PreparedLayer for ZarrPointLayer {
                 point_shape_mode: self.layer_params.point_shape_mode,
                 point_opacity,
                 model_matrix: self.layer_params.model_matrix,
-                position_x: x_f32.clone().into(),
-                position_y: y_f32.clone().into(),
+                position_x: x_data.as_ref().clone(),
+                position_y: y_data.as_ref().clone(),
                 labels_vec: l_i32.clone(),
             }
         );
