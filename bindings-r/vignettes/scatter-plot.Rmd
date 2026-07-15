@@ -58,8 +58,8 @@ display_raster(
         point_shape_mode         = "Circle",
         point_radius             = 5.0,
         bounds                   = NULL,
-        position_x               = x_px,
-        position_y               = y_px,
+        position_x               = list(dtype = "Float32", values = x_px),
+        position_y               = list(dtype = "Float32", values = y_px),
         labels_vec               = groups
       )
     ),
@@ -102,8 +102,8 @@ display_svg(
         point_shape_mode         = "Circle",
         point_radius             = 5.0,
         bounds                   = NULL,
-        position_x               = x_px,
-        position_y               = y_px,
+        position_x               = list(dtype = "Float32", values = x_px),
+        position_y               = list(dtype = "Float32", values = y_px),
         labels_vec               = groups
       )
     ),
