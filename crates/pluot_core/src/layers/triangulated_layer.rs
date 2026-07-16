@@ -15,6 +15,7 @@ use crate::render_traits::{
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::numeric_data::NumericData;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -29,9 +30,13 @@ pub struct TriangulatedLayerParams {
     pub data_unit_mode_y: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
 
-    /// Pre-triangulated vertices in (x, y) model-space; length must be a multiple of 3.
-    /// Each consecutive triple forms one triangle.
-    pub vertices: Arc<Vec<(f32, f32)>>,
+    /// Pre-triangulated vertices as a flat, interleaved 1D array of model-space
+    /// coordinates `[x0, y0, x1, y1, …]`. Its length is `2 * num_vertices`, and
+    /// each consecutive run of 3 vertices (6 values) forms one triangle. Any
+    /// supported numeric dtype is accepted (see [`NumericData`]); the data is
+    /// uploaded to the GPU as a texture at its native width where possible.
+    // TODO: also support non-interleaved vertices?
+    pub vertices: NumericData,
 
     /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
     pub fill_color: [u8; 3],
@@ -47,7 +52,7 @@ impl Default for TriangulatedLayerParams {
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
-            vertices: Arc::new(vec![]),
+            vertices: NumericData::Float32(Arc::new(vec![])),
             fill_color: [0, 0, 0],
             fill_opacity: 1.0,
         }
@@ -133,6 +138,13 @@ impl DrawToRasterGpu for TriangulatedLayer {
 
         let GpuContext { device, queue } = gpu_context;
 
+        // Upload the flat interleaved [x0, y0, x1, y1, …] coordinate array into a
+        // single-channel 2D texture at its native byte width where possible. The
+        // shader recomputes each vertex's two flat indices (2*i, 2*i+1) and maps
+        // them back to 2D texel coordinates. See `NumericData::create_data_texture`.
+        let (vertices_texture_view, vertices_dtype) =
+            layer_params.vertices.create_data_texture(device, queue, "Triangulated Vertices Texture");
+
         let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -170,12 +182,14 @@ impl DrawToRasterGpu for TriangulatedLayer {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
+                    // The interleaved vertex coordinates texture. Its sample type
+                    // must match the dtype-specific texture format chosen above.
                     binding: 1,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: vertices_dtype.binding_sample_type(),
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -187,6 +201,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_texture_sample_type("vertices_dtype", vertices_dtype)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("triangulated_layer.wgsl"),
@@ -239,20 +254,6 @@ impl DrawToRasterGpu for TriangulatedLayer {
             multiview_mask: None,
         });
 
-        let mut fill_data: Vec<f32> = Vec::with_capacity(layer_params.vertices.len() * 2);
-        for (x, y) in layer_params.vertices.iter() {
-            fill_data.push(*x);
-            fill_data.push(*y);
-        }
-        let fill_bytes: &[u8] = bytemuck::cast_slice(&fill_data);
-        let fill_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Triangulated Vertices"),
-            size: fill_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&fill_buf, 0, fill_bytes);
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Triangulated BG"),
             layout: &bgl,
@@ -263,7 +264,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: fill_buf.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&vertices_texture_view),
                 },
             ],
         });
@@ -273,7 +274,9 @@ impl DrawToRasterGpu for TriangulatedLayer {
 
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
-        pass.draw(0..(layer_params.vertices.len() as u32), 0..1);
+        // Two interleaved coordinate values per vertex.
+        let num_vertices = (layer_params.vertices.len() / 2) as u32;
+        pass.draw(0..num_vertices, 0..1);
     }
 }
 
@@ -322,13 +325,18 @@ impl DrawToSvg for TriangulatedLayer {
         let fill = TwoColor::Rgb((r, g, b));
 
         let verts = &layer_params.vertices;
-        let num_triangles = verts.len() / 3;
+        // Flat interleaved [x, y, …]: 2 values per vertex, 3 vertices per triangle.
+        let num_triangles = verts.len() / 6;
+        let vertex = |v: usize| (verts.get_f32(v * 2), verts.get_f32(v * 2 + 1));
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(num_triangles);
 
         for i in 0..num_triangles {
-            let p0 = to_px(verts[i * 3].0, verts[i * 3].1);
-            let p1 = to_px(verts[i * 3 + 1].0, verts[i * 3 + 1].1);
-            let p2 = to_px(verts[i * 3 + 2].0, verts[i * 3 + 2].1);
+            let (v0x, v0y) = vertex(i * 3);
+            let (v1x, v1y) = vertex(i * 3 + 1);
+            let (v2x, v2y) = vertex(i * 3 + 2);
+            let p0 = to_px(v0x, v0y);
+            let p1 = to_px(v1x, v1y);
+            let p2 = to_px(v2x, v2y);
             let d = format!("M {} {} L {} {} L {} {} Z", p0.0, p0.1, p1.0, p1.1, p2.0, p2.1);
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,

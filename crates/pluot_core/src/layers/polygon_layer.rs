@@ -9,6 +9,7 @@ use crate::render_traits::{
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use crate::numeric_data::NumericData;
 use crate::two::svg::SvgContext;
 use crate::wgpu;
 
@@ -25,9 +26,15 @@ pub struct PolygonLayerParams {
     pub data_unit_mode_y: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
 
-    /// One polygon per element; each polygon is a ring of (x, y) model-space vertices.
-    /// Rings with fewer than 3 points are silently skipped.
-    pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
+    /// All polygon vertices as a flat, interleaved 1D array of model-space
+    /// coordinates `[x0, y0, x1, y1, …]`, with each polygon's ring concatenated
+    /// after the previous one. Any supported numeric dtype is accepted.
+    pub polygons: NumericData,
+    /// Arrow-style vertex offsets with `num_polygons + 1` entries: polygon `p`
+    /// occupies vertex indices `polygon_offsets[p]..polygon_offsets[p + 1]`.
+    /// Any supported numeric dtype is accepted. Rings with fewer than 3 vertices
+    /// are silently skipped.
+    pub polygon_offsets: NumericData,
 
     /// Whether to stroke the polygon outlines. Defaults to `true`.
     pub stroked: bool,
@@ -55,7 +62,8 @@ impl Default for PolygonLayerParams {
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
-            polygons: Arc::new(vec![]),
+            polygons: NumericData::Float32(Arc::new(vec![])),
+            polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             stroked: true,
             filled: false,
             stroke_color: [0, 0, 0],
@@ -74,6 +82,9 @@ pub struct PolygonLayer {
 
 impl PolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: PolygonLayerParams) -> Self {
+        // The flat interleaved coordinate array + vertex offsets are passed
+        // straight through to the sub-layers, sharing the underlying buffers
+        // (cloning a `NumericData` only bumps its inner `Arc`).
         let stroke_sublayer = if layer_params.stroked {
             Some(StrokedPolygonLayer::new(view_params.clone(), StrokedPolygonLayerParams {
                 layer_id: format!("{}_stroked", layer_params.layer_id),
@@ -81,7 +92,8 @@ impl PolygonLayer {
                 data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
                 model_matrix: layer_params.model_matrix,
-                polygons: Arc::clone(&layer_params.polygons),
+                polygons: layer_params.polygons.clone(),
+                polygon_offsets: layer_params.polygon_offsets.clone(),
                 stroke_color: layer_params.stroke_color,
                 stroke_width: layer_params.stroke_width,
                 stroke_opacity: layer_params.stroke_opacity,
@@ -97,7 +109,8 @@ impl PolygonLayer {
                 data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
                 model_matrix: layer_params.model_matrix,
-                polygons: Arc::clone(&layer_params.polygons),
+                polygons: layer_params.polygons.clone(),
+                polygon_offsets: layer_params.polygon_offsets.clone(),
                 fill_color: layer_params.fill_color,
                 fill_opacity: layer_params.fill_opacity,
             }))

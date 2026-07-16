@@ -23,7 +23,21 @@ struct TriangulatedLayerUniforms {
 }
 
 @group(0) @binding(0) var<uniform> u: TriangulatedLayerUniforms;
-@group(0) @binding(1) var<storage, read> vertices: array<vec2<f32>>;
+// The interleaved vertex coordinates [x0, y0, x1, y1, …] are uploaded as a
+// single-channel (red-only) 2D texture holding the flat array reshaped into rows:
+// flat element `idx` lives at texel `(idx % width, idx / width)`. The data is NOT
+// reordered on the CPU, so the shader recomputes the 2D texel coords. The texture's
+// sampled type is injected at runtime by the shader-module system (see
+// `crate::shader_modules`) so that 8/16/32-bit data lives on the GPU at native
+// width: `f32` for floating-point data, `u32` for unsigned, `i32` for signed.
+@group(0) @binding(1) var vertices: texture_2d<{{vertices_dtype}}>;
+
+// Load the flat coordinate value at index `idx`, widening it to f32.
+// `f32(...)` is a no-op when the injected sampled type is already f32.
+fn load_coord(idx: u32) -> f32 {
+    let w = textureDimensions(vertices).x;
+    return f32(textureLoad(vertices, vec2<u32>(idx % w, idx / w), 0).x);
+}
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
@@ -67,7 +81,11 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VSOut {
-    let model_point = vertices[vertex_index];
+    // Two interleaved coordinate values per vertex: x at 2*i, y at 2*i + 1.
+    let model_point = vec2<f32>(
+        load_coord(2u * vertex_index),
+        load_coord(2u * vertex_index + 1u),
+    );
     let layer_aspect_ratio = u.layer_size.x / u.layer_size.y;
     let pos_ndc = project_point(model_point, layer_aspect_ratio);
 

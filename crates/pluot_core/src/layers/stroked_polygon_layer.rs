@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::positioning::get_point_position;
-use super::curve_and_polygon_utils::{polygon_gpu_data, resolve_margins};
+use crate::numeric_data::NumericData;
+use super::curve_and_polygon_utils::{
+    polygon_rings_from_flat, polygon_segments_from_offsets, resolve_margins,
+};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
@@ -32,9 +35,15 @@ pub struct StrokedPolygonLayerParams {
     pub data_unit_mode_y: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
 
-    /// One polygon per element; each is a ring of (x, y) model-space vertices.
-    /// Rings with fewer than 2 points are silently skipped.
-    pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
+    /// All polygon vertices as a flat, interleaved 1D array of model-space
+    /// coordinates `[x0, y0, x1, y1, …]`, with each polygon's ring concatenated
+    /// after the previous one. Any supported numeric dtype is accepted.
+    pub polygons: NumericData,
+    /// Arrow-style vertex offsets with `num_polygons + 1` entries: polygon `p`
+    /// occupies vertex indices `polygon_offsets[p]..polygon_offsets[p + 1]`.
+    /// Any supported numeric dtype is accepted. Rings with fewer than 2 vertices
+    /// are silently skipped.
+    pub polygon_offsets: NumericData,
 
     /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
     pub stroke_color: [u8; 3],
@@ -52,7 +61,8 @@ impl Default for StrokedPolygonLayerParams {
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
-            polygons: Arc::new(vec![]),
+            polygons: NumericData::Float32(Arc::new(vec![])),
+            polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             stroke_color: [0, 0, 0],
             stroke_width: 1.0,
             stroke_opacity: 1.0,
@@ -63,9 +73,8 @@ impl Default for StrokedPolygonLayerParams {
 pub struct StrokedPolygonLayer {
     view_params: ViewParams,
     layer_params: StrokedPolygonLayerParams,
-    /// Flat interleaved [x0, y0, x1, y1, …] vertex positions for all rings.
-    points: Vec<f32>,
-    /// Per-edge metadata: [ring_start, ring_end, local_idx] (indices into `points` in vertex units).
+    /// Per-edge metadata: [ring_start, ring_end, local_idx] (vertex indices into
+    /// the flat `polygons` coordinate array).
     segments: Vec<[u32; 3]>,
     stroke_color: Vec4,
 }
@@ -74,10 +83,10 @@ impl StrokedPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?
-        let (points, segments) = polygon_gpu_data(&layer_params.polygons);
+        let segments = polygon_segments_from_offsets(&layer_params.polygon_offsets);
         let [r, g, b] = layer_params.stroke_color;
         let stroke_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.stroke_opacity);
-        Self { view_params, layer_params, points, segments, stroke_color }
+        Self { view_params, layer_params, segments, stroke_color }
     }
 }
 
@@ -107,7 +116,7 @@ struct StrokedPolygonLayerUniforms {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for StrokedPolygonLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, points, segments, stroke_color } = self;
+        let Self { view_params, layer_params, segments, stroke_color } = self;
 
         let n = segments.len();
         if n == 0 {
@@ -165,34 +174,23 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         });
         queue.write_buffer(&uniform_buf, 0, &uniform_bytes);
 
-        let make_storage_buf = |label: &str, bytes: &[u8]| -> wgpu::Buffer {
-            let buf = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: bytes.len() as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            queue.write_buffer(&buf, 0, bytes);
-            buf
-        };
-
-        // Flat interleaved [x0, y0, x1, y1, …] — maps to array<vec2<f32>> in the shader.
-        let points_buf = make_storage_buf("StrokedPolygon Points", bytemuck::cast_slice(points));
+        // Upload the flat interleaved [x0, y0, x1, y1, …] vertex coordinates into a
+        // single-channel 2D texture at its native byte width where possible. The
+        // shader recomputes each vertex's two flat indices (2*i, 2*i+1) and maps
+        // them back to 2D texel coordinates. See `NumericData::create_data_texture`.
+        let (points_texture_view, points_dtype) =
+            layer_params.polygons.create_data_texture(device, queue, "StrokedPolygon Points Texture");
 
         // Flat [ring_start, ring_end, local_idx, …] u32 triples — maps to array<SegmentEntry>.
         let segments_flat: Vec<u32> = segments.iter().flat_map(|s| s.iter().copied()).collect();
-        let segments_buf = make_storage_buf("StrokedPolygon Segments", bytemuck::cast_slice(&segments_flat));
-
-        let storage_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        };
+        let segments_bytes: &[u8] = bytemuck::cast_slice(&segments_flat);
+        let segments_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("StrokedPolygon Segments"),
+            size: segments_bytes.len() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&segments_buf, 0, segments_bytes);
 
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("StrokedPolygon BGL"),
@@ -207,8 +205,28 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
                     },
                     count: None,
                 },
-                storage_entry(1),
-                storage_entry(2),
+                wgpu::BindGroupLayoutEntry {
+                    // The interleaved vertex coordinates texture. Its sample type
+                    // must match the dtype-specific texture format chosen above.
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: points_dtype.binding_sample_type(),
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -217,7 +235,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             layout: &bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: points_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&points_texture_view) },
                 wgpu::BindGroupEntry { binding: 2, resource: segments_buf.as_entire_binding() },
             ],
         });
@@ -227,6 +245,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_texture_sample_type("points_dtype", points_dtype)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stroked_polygon_layer.wgsl"),
@@ -332,8 +351,9 @@ impl DrawToSvg for StrokedPolygonLayer {
         let [r, g, b] = layer_params.stroke_color;
         let stroke = TwoColor::Rgb((r, g, b));
 
-        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(layer_params.polygons.len());
-        for ring in layer_params.polygons.iter() {
+        let rings = polygon_rings_from_flat(&layer_params.polygons, &layer_params.polygon_offsets);
+        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(rings.len());
+        for ring in rings.iter() {
             if ring.len() < 3 {
                 continue;
             }

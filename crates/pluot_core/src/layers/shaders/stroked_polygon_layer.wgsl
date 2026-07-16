@@ -55,8 +55,27 @@ struct FSOut {
 };
 
 @group(0) @binding(0) var<uniform>       u:        StrokedPolygonUniforms;
-@group(0) @binding(1) var<storage, read> points:   array<vec2<f32>>;
+// The interleaved vertex coordinates [x0, y0, x1, y1, …] are uploaded as a
+// single-channel (red-only) 2D texture holding the flat array reshaped into rows:
+// flat element `idx` lives at texel `(idx % width, idx / width)`. The data is NOT
+// reordered on the CPU, so the shader recomputes the 2D texel coords. The texture's
+// sampled type is injected at runtime by the shader-module system (see
+// `crate::shader_modules`) so that 8/16/32-bit data lives on the GPU at native
+// width: `f32` for floating-point data, `u32` for unsigned, `i32` for signed.
+@group(0) @binding(1) var points: texture_2d<{{points_dtype}}>;
 @group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
+
+// Load the vertex at index `idx` from the interleaved coordinate texture:
+// its x is at flat index 2*idx and its y at 2*idx + 1. `f32(...)` is a no-op
+// when the injected sampled type is already f32, and widens u32/i32 otherwise.
+fn load_point(idx: u32) -> vec2<f32> {
+    let w = textureDimensions(points).x;
+    let xi = 2u * idx;
+    let yi = xi + 1u;
+    let x = f32(textureLoad(points, vec2<u32>(xi % w, xi / w), 0).x);
+    let y = f32(textureLoad(points, vec2<u32>(yi % w, yi / w), 0).x);
+    return vec2<f32>(x, y);
+}
 
 // corner.x: -1 = source end, +1 = target end
 // corner.y: -1 = one side,   +1 = other side
@@ -156,10 +175,10 @@ fn vs_main(
     let li         = seg.local_idx;
 
     // Look up the four neighboring vertices with ring-wrap via modular arithmetic.
-    let prev_pt = points[ring_start + (li + ring_size - 1u) % ring_size];
-    let src_pt  = points[ring_start + li];
-    let dst_pt  = points[ring_start + (li + 1u) % ring_size];
-    let next_pt = points[ring_start + (li + 2u) % ring_size];
+    let prev_pt = load_point(ring_start + (li + ring_size - 1u) % ring_size);
+    let src_pt  = load_point(ring_start + li);
+    let dst_pt  = load_point(ring_start + (li + 1u) % ring_size);
+    let next_pt = load_point(ring_start + (li + 2u) % ring_size);
 
     let prev_px = project_to_px(prev_pt);
     let src_px  = project_to_px(src_pt);

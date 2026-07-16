@@ -2,12 +2,14 @@
 // and ultimately renders a TriangulatedLayer as a sub-layer.
 // This layer is intended to be used as a sub-layer of PolygonLayer.
 
-use earcut::Earcut;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::positioning::get_point_position;
-use super::curve_and_polygon_utils::resolve_margins;
+use crate::numeric_data::NumericData;
+use super::curve_and_polygon_utils::{
+    polygon_rings_from_flat, resolve_margins, triangulate_polygon_rings,
+};
 use crate::render_traits::{
     DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
@@ -28,9 +30,15 @@ pub struct FilledPolygonLayerParams {
     pub data_unit_mode_y: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
 
-    /// One polygon per element; each is a ring of (x, y) model-space vertices.
-    /// Rings with fewer than 3 points are silently skipped.
-    pub polygons: Arc<Vec<Vec<(f32, f32)>>>,
+    /// All polygon vertices as a flat, interleaved 1D array of model-space
+    /// coordinates `[x0, y0, x1, y1, …]`, with each polygon's ring concatenated
+    /// after the previous one. Any supported numeric dtype is accepted.
+    pub polygons: NumericData,
+    /// Arrow-style vertex offsets with `num_polygons + 1` entries: polygon `p`
+    /// occupies vertex indices `polygon_offsets[p]..polygon_offsets[p + 1]`.
+    /// Any supported numeric dtype is accepted. Rings with fewer than 3 vertices
+    /// are silently skipped.
+    pub polygon_offsets: NumericData,
 
     /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
     pub fill_color: [u8; 3],
@@ -46,7 +54,8 @@ impl Default for FilledPolygonLayerParams {
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
-            polygons: Arc::new(vec![]),
+            polygons: NumericData::Float32(Arc::new(vec![])),
+            polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             fill_color: [0, 0, 0],
             fill_opacity: 1.0,
         }
@@ -56,26 +65,21 @@ impl Default for FilledPolygonLayerParams {
 pub struct FilledPolygonLayer {
     view_params: ViewParams,
     layer_params: FilledPolygonLayerParams,
-    fill_vertices: Arc<Vec<(f32, f32)>>,
+    /// Triangulated fill geometry as a flat interleaved [x, y, …] f32 array.
+    fill_vertices: NumericData,
 }
 
 impl FilledPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: FilledPolygonLayerParams) -> Self {
         // TODO: move the triangulation into the prepare() function?
         // TODO: only do the triangulation in the raster drawing case?
-        let mut ec = Earcut::new();
-        let mut indices = Vec::new();
-        let mut verts: Vec<(f32, f32)> = Vec::new();
-        for ring in layer_params.polygons.iter() {
-            if ring.len() < 3 {
-                continue;
-            }
-            ec.earcut(ring.iter().map(|&(x, y)| [x, y]), &[] as &[u32], &mut indices);
-            for &i in indices.iter() {
-                verts.push(ring[i as usize]);
-            }
+        let rings = polygon_rings_from_flat(&layer_params.polygons, &layer_params.polygon_offsets);
+        let verts = triangulate_polygon_rings(&rings);
+        Self {
+            view_params,
+            layer_params,
+            fill_vertices: NumericData::Float32(Arc::new(verts)),
         }
-        Self { view_params, layer_params, fill_vertices: Arc::new(verts) }
     }
 }
 
@@ -104,7 +108,7 @@ impl DrawToRasterGpu for FilledPolygonLayer {
                 data_unit_mode_x: self.layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: self.layer_params.data_unit_mode_y.clone(),
                 model_matrix: self.layer_params.model_matrix,
-                vertices: Arc::clone(&self.fill_vertices),
+                vertices: self.fill_vertices.clone(),
                 fill_color: self.layer_params.fill_color,
                 fill_opacity: self.layer_params.fill_opacity,
             },
@@ -157,8 +161,9 @@ impl DrawToSvg for FilledPolygonLayer {
         let [r, g, b] = layer_params.fill_color;
         let fill = TwoColor::Rgb((r, g, b));
 
-        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(layer_params.polygons.len());
-        for ring in layer_params.polygons.iter() {
+        let rings = polygon_rings_from_flat(&layer_params.polygons, &layer_params.polygon_offsets);
+        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(rings.len());
+        for ring in rings.iter() {
             if ring.len() < 3 {
                 continue;
             }

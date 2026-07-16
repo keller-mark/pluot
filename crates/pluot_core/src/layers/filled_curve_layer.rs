@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::positioning::get_point_position;
+use crate::numeric_data::NumericData;
 use crate::render_traits::{
     DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
@@ -57,7 +58,8 @@ pub struct FilledCurveLayer {
     view_params: ViewParams,
     layer_params: FilledCurveLayerParams,
     subpaths: Vec<Vec<CubicBez>>,
-    fill_vertices: Arc<Vec<(f32, f32)>>,
+    /// Triangulated fill geometry as a flat interleaved [x, y, …] f32 array.
+    fill_vertices: NumericData,
 }
 
 impl FilledCurveLayer {
@@ -66,7 +68,7 @@ impl FilledCurveLayer {
         // TODO: only do the triangulation in the raster drawing case?
         let subpaths = commands_to_subpaths(&layer_params.commands);
         let subdivisions = layer_params.subdivisions.max(1);
-        let fill_vertices = Arc::new(compute_fill_vertices(&subpaths, subdivisions));
+        let fill_vertices = NumericData::Float32(Arc::new(compute_fill_vertices(&subpaths, subdivisions)));
         Self { view_params, layer_params, subpaths, fill_vertices }
     }
 }
@@ -95,7 +97,7 @@ impl DrawToRasterGpu for FilledCurveLayer {
                 data_unit_mode_x: self.layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: self.layer_params.data_unit_mode_y.clone(),
                 model_matrix: self.layer_params.model_matrix,
-                vertices: Arc::clone(&self.fill_vertices),
+                vertices: self.fill_vertices.clone(),
                 fill_color: self.layer_params.fill_color,
                 fill_opacity: self.layer_params.fill_opacity,
             },
