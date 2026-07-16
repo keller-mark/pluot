@@ -7,6 +7,7 @@ use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::layers::axis_linear_layer::AxisPosition;
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -199,10 +200,10 @@ impl AxisBandLayer {
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            source_position_x: Arc::new(line_source_position_x),
-            source_position_y: Arc::new(line_source_position_y),
-            target_position_x: Arc::new(line_target_position_x),
-            target_position_y: Arc::new(line_target_position_y),
+            source_position_x: NumericData::Float32(Arc::new(line_source_position_x)),
+            source_position_y: NumericData::Float32(Arc::new(line_source_position_y)),
+            target_position_x: NumericData::Float32(Arc::new(line_target_position_x)),
+            target_position_y: NumericData::Float32(Arc::new(line_target_position_y)),
             labels_vec: Arc::new(line_labels_vec),
         };
         sublayers.push(Box::new(LineLayer::new(

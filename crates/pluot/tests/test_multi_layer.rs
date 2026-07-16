@@ -52,10 +52,10 @@ fn cross_lines() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
-        source_position_x: Arc::new(vec![0.0, 1.0]),
-        source_position_y: Arc::new(vec![0.0, 0.0]),
-        target_position_x: Arc::new(vec![1.0, 0.0]),
-        target_position_y: Arc::new(vec![1.0, 1.0]),
+        source_position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+        source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0])),
+        target_position_x: NumericData::Float32(Arc::new(vec![1.0, 0.0])),
+        target_position_y: NumericData::Float32(Arc::new(vec![1.0, 1.0])),
         labels_vec: Arc::new(vec![0, 1]),
     }
 }

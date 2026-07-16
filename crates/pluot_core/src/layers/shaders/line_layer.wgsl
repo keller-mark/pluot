@@ -65,10 +65,19 @@ struct FSOut {
 
 // These group/binding locations will need to match with the locations used by Model.
 @group(0) @binding(0) var<uniform> u: LineLayerUniforms;
-@group(0) @binding(1) var<storage, read> source_x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> source_y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> target_x_coords: array<f32>;
-@group(0) @binding(4) var<storage, read> target_y_coords: array<f32>;
+// The source/target X/Y coordinate arrays are uploaded as single-channel
+// (red-only) 2D textures holding the flat array reshaped into rows: element
+// `idx` (the instance index) lives at texel `(idx % width, idx / width)`. The
+// data is NOT reordered on the CPU, so the shader recomputes the 2D texel
+// coords from the instance index. Each texture's sampled type is injected at
+// runtime by the shader-module system (see `crate::shader_modules`) so that
+// 8/16/32-bit data lives on the GPU at native width: `f32` for floating-point
+// data, `u32` for unsigned, `i32` for signed. Each array is independent and
+// may differ in dtype.
+@group(0) @binding(1) var source_x_coords: texture_2d<{{source_x_dtype}}>;
+@group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_dtype}}>;
+@group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_dtype}}>;
+@group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_dtype}}>;
 @group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
 
 
@@ -86,9 +95,20 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Source and target points of this line
-    let source_point_pos_orig = u.model_matrix * vec4f(source_x_coords[instance_index], source_y_coords[instance_index], 0.0, 1.0);
-    let target_point_pos_orig = u.model_matrix * vec4f(target_x_coords[instance_index], target_y_coords[instance_index], 0.0, 1.0);
+    // Source and target points of this line. Map the flat instance index into the
+    // 2D texture each coordinate array was reshaped into on upload:
+    // (idx % width, idx / width). `f32(...)` is a no-op when the injected
+    // sampled type is already f32, and widens u32/i32 texels to f32 otherwise.
+    let source_x_tex_width = textureDimensions(source_x_coords).x;
+    let source_y_tex_width = textureDimensions(source_y_coords).x;
+    let target_x_tex_width = textureDimensions(target_x_coords).x;
+    let target_y_tex_width = textureDimensions(target_y_coords).x;
+    let source_x_val = f32(textureLoad(source_x_coords, vec2<u32>(instance_index % source_x_tex_width, instance_index / source_x_tex_width), 0).x);
+    let source_y_val = f32(textureLoad(source_y_coords, vec2<u32>(instance_index % source_y_tex_width, instance_index / source_y_tex_width), 0).x);
+    let target_x_val = f32(textureLoad(target_x_coords, vec2<u32>(instance_index % target_x_tex_width, instance_index / target_x_tex_width), 0).x);
+    let target_y_val = f32(textureLoad(target_y_coords, vec2<u32>(instance_index % target_y_tex_width, instance_index / target_y_tex_width), 0).x);
+    let source_point_pos_orig = u.model_matrix * vec4f(source_x_val, source_y_val, 0.0, 1.0);
+    let target_point_pos_orig = u.model_matrix * vec4f(target_x_val, target_y_val, 0.0, 1.0);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 

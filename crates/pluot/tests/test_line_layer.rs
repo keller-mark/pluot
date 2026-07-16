@@ -8,7 +8,7 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
-    LineLayerParams,
+    LineLayerParams, NumericData,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -31,10 +31,10 @@ fn cross_lines_data() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
-        source_position_x: Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70]),
-        source_position_y: Arc::new(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.75, 0.50, 1.00]),
-        target_position_x: Arc::new(vec![1.0, 0.0, 1.0, 0.5, 0.5, 0.70, 1.00, 1.00]),
-        target_position_y: Arc::new(vec![0.0, 0.5, 0.5, 1.0, 1.0, 1.00, 1.00, 1.00]),
+        source_position_x: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70])),
+        source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.75, 0.50, 1.00])),
+        target_position_x: NumericData::Float32(Arc::new(vec![1.0, 0.0, 1.0, 0.5, 0.5, 0.70, 1.00, 1.00])),
+        target_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.5, 0.5, 1.0, 1.0, 1.00, 1.00, 1.00])),
         labels_vec: Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7]),
     }
 }
@@ -49,10 +49,10 @@ fn cross_lines_pixels() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
-        source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
-        source_position_y: Arc::new(vec![  0.0,  0.0,   0.0, 50.0,  50.0,  75.0,  50.0, 100.0]),
-        target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
-        target_position_y: Arc::new(vec![  0.0, 50.0,  50.0,100.0, 100.0, 100.0, 100.0, 100.0]),
+        source_position_x: NumericData::Float32(Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0])),
+        source_position_y: NumericData::Float32(Arc::new(vec![  0.0,  0.0,   0.0, 50.0,  50.0,  75.0,  50.0, 100.0])),
+        target_position_x: NumericData::Float32(Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0])),
+        target_position_y: NumericData::Float32(Arc::new(vec![  0.0, 50.0,  50.0,100.0, 100.0, 100.0, 100.0, 100.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7]),
     }
 }
@@ -62,10 +62,10 @@ fn cross_lines_data_x_pixel_y() -> LineLayerParams {
     LineLayerParams {
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Pixels,
-        source_position_x: Arc::new(vec![0.0, 0.0, 0.5, 0.0, 0.5, 0.35, 0.5, 0.35]),
-        source_position_y: Arc::new(vec![0.0, 0.0, 0.0, 50.0, 50.0, 75.0, 50.0, 100.0]),
-        target_position_x: Arc::new(vec![0.5, 0.0, 0.5, 0.25, 0.25, 0.35, 0.5, 0.5]),
-        target_position_y: Arc::new(vec![0.0, 50.0, 50.0, 100.0, 100.0, 100.0, 100.0, 100.0]),
+        source_position_x: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.5, 0.0, 0.5, 0.35, 0.5, 0.35])),
+        source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.0, 50.0, 50.0, 75.0, 50.0, 100.0])),
+        target_position_x: NumericData::Float32(Arc::new(vec![0.5, 0.0, 0.5, 0.25, 0.25, 0.35, 0.5, 0.5])),
+        target_position_y: NumericData::Float32(Arc::new(vec![0.0, 50.0, 50.0, 100.0, 100.0, 100.0, 100.0, 100.0])),
         ..cross_lines_data()
     }
 }
@@ -75,10 +75,10 @@ fn cross_lines_pixel_x_data_y() -> LineLayerParams {
     LineLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Data,
-        source_position_x: Arc::new(vec![0.0, 0.0, 100.0, 0.0, 100.0, 70.0, 100.0, 70.0]),
-        source_position_y: Arc::new(vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.375, 0.25, 0.5]),
-        target_position_x: Arc::new(vec![100.0, 0.0, 100.0, 50.0, 50.0, 70.0, 100.0, 100.0]),
-        target_position_y: Arc::new(vec![0.0, 0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 0.5]),
+        source_position_x: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 0.0, 100.0, 70.0, 100.0, 70.0])),
+        source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.375, 0.25, 0.5])),
+        target_position_x: NumericData::Float32(Arc::new(vec![100.0, 0.0, 100.0, 50.0, 50.0, 70.0, 100.0, 100.0])),
+        target_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.25, 0.25, 0.5, 0.5, 0.5, 0.5, 0.5])),
         ..cross_lines_data()
     }
 }
@@ -250,10 +250,10 @@ async fn test_line_layer_wide_contain_pixel_units_no_margins() {
         width: 200,
         height: 100,
         layers: layer_params(LineLayerParams {
-            source_position_x: Arc::new(vec![  0.0,  0.0, 200.0,   0.0, 200.0, 140.0, 200.0, 140.0]),
-            source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,  50.0,  50.0,  75.0,  75.0, 100.0]),
-            target_position_x: Arc::new(vec![200.0,  0.0, 200.0, 100.0, 100.0, 140.0, 200.0, 200.0]),
-            target_position_y: Arc::new(vec![  0.0, 50.0,  50.0, 100.0, 100.0, 100.0, 100.0, 100.0]),
+            source_position_x: NumericData::Float32(Arc::new(vec![  0.0,  0.0, 200.0,   0.0, 200.0, 140.0, 200.0, 140.0])),
+            source_position_y: NumericData::Float32(Arc::new(vec![  0.0,  0.0,   0.0,  50.0,  50.0,  75.0,  75.0, 100.0])),
+            target_position_x: NumericData::Float32(Arc::new(vec![200.0,  0.0, 200.0, 100.0, 100.0, 140.0, 200.0, 200.0])),
+            target_position_y: NumericData::Float32(Arc::new(vec![  0.0, 50.0,  50.0, 100.0, 100.0, 100.0, 100.0, 100.0])),
             ..cross_lines_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -342,10 +342,10 @@ async fn test_line_layer_tall_contain_pixel_units_no_margins() {
         width: 100,
         height: 200,
         layers: layer_params(LineLayerParams {
-            source_position_x: Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0]),
-            source_position_y: Arc::new(vec![  0.0,  0.0,   0.0,100.0, 100.0, 150.0, 150.0, 200.0]),
-            target_position_x: Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0]),
-            target_position_y: Arc::new(vec![  0.0,100.0, 100.0,200.0, 200.0, 200.0, 200.0, 200.0]),
+            source_position_x: NumericData::Float32(Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0])),
+            source_position_y: NumericData::Float32(Arc::new(vec![  0.0,  0.0,   0.0,100.0, 100.0, 150.0, 150.0, 200.0])),
+            target_position_x: NumericData::Float32(Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0])),
+            target_position_y: NumericData::Float32(Arc::new(vec![  0.0,100.0, 100.0,200.0, 200.0, 200.0, 200.0, 200.0])),
             ..cross_lines_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
