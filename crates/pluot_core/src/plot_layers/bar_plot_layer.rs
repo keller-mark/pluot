@@ -11,6 +11,7 @@ use crate::viewport::{get_bounds, DataCoord, ScreenCoord};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
+use crate::numeric_data::NumericData;
 use crate::layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
 use crate::layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -122,10 +123,10 @@ impl BarPlotLayer {
                             fill_color: self.layer_params.fill_color,
                             fill_color_mode: self.layer_params.fill_color_mode,
                             model_matrix: None,
-                            position_x0: Arc::new(position_x0),
-                            position_y0: Arc::new(position_y0),
-                            position_x1: Arc::new(position_x1),
-                            position_y1: Arc::new(position_y1),
+                            position_x0: NumericData::Float32(Arc::new(position_x0)),
+                            position_y0: NumericData::Float32(Arc::new(position_y0)),
+                            position_x1: NumericData::Float32(Arc::new(position_x1)),
+                            position_y1: NumericData::Float32(Arc::new(position_y1)),
                             labels_vec: Arc::new(labels_vec),
                         }
                     )),
@@ -172,10 +173,10 @@ impl BarPlotLayer {
                             fill_color: self.layer_params.fill_color,
                             fill_color_mode: self.layer_params.fill_color_mode,
                             model_matrix: None,
-                            position_x0: Arc::new(position_x0),
-                            position_y0: Arc::new(position_y0),
-                            position_x1: Arc::new(position_x1),
-                            position_y1: Arc::new(position_y1),
+                            position_x0: NumericData::Float32(Arc::new(position_x0)),
+                            position_y0: NumericData::Float32(Arc::new(position_y0)),
+                            position_x1: NumericData::Float32(Arc::new(position_x1)),
+                            position_y1: NumericData::Float32(Arc::new(position_y1)),
                             labels_vec: Arc::new(labels_vec),
                         }
                     )),

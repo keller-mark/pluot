@@ -9,6 +9,7 @@ use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
+use crate::numeric_data::NumericData;
 use crate::layers::multiscale_utils::{
     self, ResolutionLevel, get_visible_tiles, select_resolution_level,
 };
@@ -90,10 +91,10 @@ impl MultiscaleLayer {
                 fill_color: None,
                 fill_color_mode: ColorMode::Categorical,
                 model_matrix: None,
-                position_x0: Arc::new(x0_vec),
-                position_y0: Arc::new(y0_vec),
-                position_x1: Arc::new(x1_vec),
-                position_y1: Arc::new(y1_vec),
+                position_x0: NumericData::Float32(Arc::new(x0_vec)),
+                position_y0: NumericData::Float32(Arc::new(y0_vec)),
+                position_x1: NumericData::Float32(Arc::new(x1_vec)),
+                position_y1: NumericData::Float32(Arc::new(y1_vec)),
                 labels_vec: Arc::new(labels_vec),
             };
             sublayers.push(Box::new(RectLayer::new(

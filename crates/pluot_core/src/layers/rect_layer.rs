@@ -10,6 +10,7 @@ use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::positioning::get_point_position;
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
@@ -38,14 +39,16 @@ pub struct RectLayerParams {
     pub fill_color_mode: ColorMode,
     pub fill_color: Option<(u8, u8, u8)>,
 
-    // TODO(ref): pass in references instead of owned Vecs?
-    // Would this cause issues when using serde to create layers based on JSON params?
     // TODO: improve naming here - should these be "source_x", "source_y", etc?
-    pub position_x0: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub position_y0: Arc<Vec<f32>>,
+    // Each may be any supported numeric dtype (8-64 bit int/uint, or 32/64-bit
+    // float), and may differ across the four arrays. The data is uploaded to
+    // the GPU as a texture at its native width wherever possible (see
+    // `NumericData::create_data_texture`).
+    pub position_x0: NumericData,
+    pub position_y0: NumericData,
     // TODO: accept x/y/width/height instead?
-    pub position_x1: Arc<Vec<f32>>,
-    pub position_y1: Arc<Vec<f32>>,
+    pub position_x1: NumericData,
+    pub position_y1: NumericData,
     pub labels_vec: Arc<Vec<i32>>,
 }
 
@@ -61,10 +64,10 @@ impl Default for RectLayerParams {
             model_matrix: None,
             fill_color_mode: ColorMode::Static,
             fill_color: None,
-            position_x0: Arc::new(vec![]),
-            position_y0: Arc::new(vec![]),
-            position_x1: Arc::new(vec![]),
-            position_y1: Arc::new(vec![]),
+            position_x0: NumericData::Float32(Arc::new(vec![])),
+            position_y0: NumericData::Float32(Arc::new(vec![])),
+            position_x1: NumericData::Float32(Arc::new(vec![])),
+            position_y1: NumericData::Float32(Arc::new(vec![])),
             labels_vec: Arc::new(vec![]),
         }
     }
@@ -132,12 +135,20 @@ impl DrawToRasterGpu for RectLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
-        let position_x0_bytes = bytemuck::cast_slice(&layer_params.position_x0);
-        let position_y0_bytes = bytemuck::cast_slice(&layer_params.position_y0);
-
-        let position_x1_bytes = bytemuck::cast_slice(&layer_params.position_x1);
-        let position_y1_bytes = bytemuck::cast_slice(&layer_params.position_y1);
+        // Upload the four corner coordinate arrays into single-channel 2D
+        // textures, each at its native byte width wherever possible (8/16/32-bit
+        // are zero-copy; only 64-bit dtypes are narrowed to 32 bits). Each array is
+        // uploaded independently so they may have different dtypes; the shader
+        // reads each texel via its instance index and widens it to f32. See
+        // `NumericData::create_data_texture`.
+        let (position_x0_texture_view, position_x0_dtype) =
+            layer_params.position_x0.create_data_texture(device, queue, "x0 Coordinates Texture");
+        let (position_y0_texture_view, position_y0_dtype) =
+            layer_params.position_y0.create_data_texture(device, queue, "y0 Coordinates Texture");
+        let (position_x1_texture_view, position_x1_dtype) =
+            layer_params.position_x1.create_data_texture(device, queue, "x1 Coordinates Texture");
+        let (position_y1_texture_view, position_y1_dtype) =
+            layer_params.position_y1.create_data_texture(device, queue, "y1 Coordinates Texture");
 
         // More efficient version that eliminates intermediate vectors and redundant operations
         let n = layer_params.labels_vec.len();
@@ -145,39 +156,6 @@ impl DrawToRasterGpu for RectLayer {
         // Convert to f32 and cast to bytes directly - no for loop needed
         // let labels_i32: Vec<i32> = layer_params.labels_vec.iter().map(|&c| c as i32).collect();
         let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-        // Create separate buffers for X and Y coordinates
-        let position_x0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("x0 Coordinates Storage Buffer"),
-            size: position_x0_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&position_x0_buffer, 0, position_x0_bytes);
-
-        let position_y0_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("y0 Coordinates Storage Buffer"),
-            size: position_y0_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&position_y0_buffer, 0, position_y0_bytes);
-
-        let position_x1_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("x1 Coordinates Storage Buffer"),
-            size: position_x1_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&position_x1_buffer, 0, position_x1_bytes);
-
-        let position_y1_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("y1 Coordinates Storage Buffer"),
-            size: position_y1_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&position_y1_buffer, 0, position_y1_bytes);
 
         let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Class labels Storage Buffer"),
@@ -303,46 +281,50 @@ impl DrawToRasterGpu for RectLayer {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The Source X coordinates buffer.
+                    // The x0 coordinates texture. Its sample type must match
+                    // the dtype-specific texture format chosen above.
                     binding: 1,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: position_x0_dtype.binding_sample_type(),
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The Source Y coordinates buffer.
+                    // The y0 coordinates texture. Its sample type must match
+                    // the dtype-specific texture format chosen above.
                     binding: 2,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: position_y0_dtype.binding_sample_type(),
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The Target X coordinates buffer.
+                    // The x1 coordinates texture. Its sample type must match
+                    // the dtype-specific texture format chosen above.
                     binding: 3,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: position_x1_dtype.binding_sample_type(),
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    // The Target Y coordinates buffer.
+                    // The y1 coordinates texture. Its sample type must match
+                    // the dtype-specific texture format chosen above.
                     binding: 4,
                     visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: position_y1_dtype.binding_sample_type(),
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 },
@@ -369,19 +351,19 @@ impl DrawToRasterGpu for RectLayer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: position_x0_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&position_x0_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: position_y0_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&position_y0_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: position_x1_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&position_x1_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: position_y1_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&position_y1_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
@@ -395,6 +377,10 @@ impl DrawToRasterGpu for RectLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_texture_sample_type("position_x0_dtype", position_x0_dtype)
+            .inject_texture_sample_type("position_y0_dtype", position_y0_dtype)
+            .inject_texture_sample_type("position_x1_dtype", position_x1_dtype)
+            .inject_texture_sample_type("position_y1_dtype", position_y1_dtype)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect_layer.wgsl"),
@@ -569,10 +555,10 @@ impl DrawToSvg for RectLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
-            let source_x = layer_params.position_x0[i];
-            let source_y = layer_params.position_y0[i];
-            let target_x = layer_params.position_x1[i];
-            let target_y = layer_params.position_y1[i];
+            let source_x = layer_params.position_x0.get_f32(i);
+            let source_y = layer_params.position_y0.get_f32(i);
+            let target_x = layer_params.position_x1.get_f32(i);
+            let target_y = layer_params.position_y1.get_f32(i);
             let label = layer_params.labels_vec[i];
 
             // Convert data coordinates to pixel coordinates within the layer area.

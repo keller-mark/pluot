@@ -30,10 +30,10 @@ async fn test_render_triangle() {
             "stroke_width": 2.0,
             "fill_color": null,
             "fill_color_mode": "Categorical",
-            "position_x0": [2.0],
-            "position_y0": [4.0],
-            "position_x1": [16.0],
-            "position_y1": [8.0],
+            "position_x0": {"dtype": "Float32", "values": [2.0]},
+            "position_y0": {"dtype": "Float32", "values": [4.0]},
+            "position_x1": {"dtype": "Float32", "values": [16.0]},
+            "position_y1": {"dtype": "Float32", "values": [8.0]},
             "labels_vec": [4],
         }
     });
