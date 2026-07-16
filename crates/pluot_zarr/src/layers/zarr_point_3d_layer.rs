@@ -5,6 +5,7 @@ use pluot_core::{maybe_timeout, FutureExt, Duration};
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 
 use pluot_core::log;
+use pluot_core::numeric_data::NumericData;
 use pluot_core::wgpu;
 use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
@@ -173,9 +174,9 @@ impl PreparedLayer for ZarrPoint3dLayer {
                 bounds: self.layer_params.bounds.clone(),
                 point_radius: self.layer_params.point_radius,
                 point_shape_mode: self.layer_params.point_shape_mode,
-                position_x: x_f32.clone(),
-                position_y: y_f32.clone(),
-                position_z: z_f32.clone(),
+                position_x: NumericData::Float32(x_f32.clone()),
+                position_y: NumericData::Float32(y_f32.clone()),
+                position_z: NumericData::Float32(z_f32.clone()),
                 labels_vec: l_i32.clone(),
             }
         );

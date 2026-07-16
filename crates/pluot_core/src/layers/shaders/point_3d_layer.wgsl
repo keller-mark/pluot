@@ -18,9 +18,17 @@ struct FSOut {
 };
 
 @group(0) @binding(0) var<uniform> u: Point3dLayerUniforms;
-@group(0) @binding(1) var<storage, read> x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> z_coords: array<f32>;
+// The X/Y/Z coordinate arrays are uploaded as single-channel (red-only) 2D
+// textures holding the flat array reshaped into rows: element `idx` (the
+// instance index) lives at texel `(idx % width, idx / width)`. The data is NOT
+// reordered on the CPU, so the shader recomputes the 2D texel coords from the
+// instance index. Each texture's sampled type is injected at runtime by the
+// shader-module system (see `crate::shader_modules`) so that 8/16/32-bit data
+// lives on the GPU at native width: `f32` for floating-point data, `u32` for
+// unsigned, `i32` for signed. X, Y, and Z are independent and may differ in dtype.
+@group(0) @binding(1) var x_coords: texture_2d<{{x_dtype}}>;
+@group(0) @binding(2) var y_coords: texture_2d<{{y_dtype}}>;
+@group(0) @binding(3) var z_coords: texture_2d<{{z_dtype}}>;
 @group(0) @binding(4) var<storage, read> labels_coords: array<i32>;
 
 
@@ -38,8 +46,18 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Center of this point in 3D data space
-    let p = vec3<f32>(x_coords[instance_index], y_coords[instance_index], z_coords[instance_index]);
+    // Center of this point in 3D data space. Map the flat instance index into
+    // the 2D texture the coordinates were reshaped into on upload:
+    // (idx % width, idx / width). `f32(...)` is a no-op when the injected
+    // sampled type is already f32, and widens u32/i32 texels to f32 otherwise.
+    let x_tex_width = textureDimensions(x_coords).x;
+    let y_tex_width = textureDimensions(y_coords).x;
+    let z_tex_width = textureDimensions(z_coords).x;
+    let p = vec3<f32>(
+        f32(textureLoad(x_coords, vec2<u32>(instance_index % x_tex_width, instance_index / x_tex_width), 0).x),
+        f32(textureLoad(y_coords, vec2<u32>(instance_index % y_tex_width, instance_index / y_tex_width), 0).x),
+        f32(textureLoad(z_coords, vec2<u32>(instance_index % z_tex_width, instance_index / z_tex_width), 0).x)
+    );
 
     // View aspect ratio
     let view_aspect_ratio = u.layer_size.x / u.layer_size.y;

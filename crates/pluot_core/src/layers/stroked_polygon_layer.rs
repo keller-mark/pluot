@@ -49,6 +49,9 @@ pub struct StrokedPolygonLayerParams {
     pub stroke_color: [u8; 3],
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
+
+    // TODO: implement a stroke_width_unit_mode to support both pixel and data unit mode.
+
     /// Opacity multiplier for the stroke. Defaults to 1.
     pub stroke_opacity: f32,
 }
