@@ -166,8 +166,8 @@ display_svg(
           margin_top = 0, margin_left = 0,
           margin_right = 0, margin_bottom = 0
         ),
-        position_x           = list(ml + (w - ml - mr) / 2),
-        position_y           = list(h - 12.0),
+        position_x           = list(dtype = "Float32", values = list(ml + (w - ml - mr) / 2)),
+        position_y           = list(dtype = "Float32", values = list(h - 12.0)),
         text_vec             = list("X axis")
       )
     ),
@@ -190,8 +190,8 @@ display_svg(
           margin_top = 0, margin_left = 0,
           margin_right = 0, margin_bottom = 0
         ),
-        position_x           = list(18.0),
-        position_y           = list(mt + (h - mt - mb) / 2),
+        position_x           = list(dtype = "Float32", values = list(18.0)),
+        position_y           = list(dtype = "Float32", values = list(mt + (h - mt - mb) / 2)),
         text_vec             = list("Y axis")
       )
     )
@@ -259,8 +259,8 @@ display_svg(
         font_style = "Normal",
         bounds              = list(margin_top=0, margin_left=0,
                                    margin_right=0, margin_bottom=0),
-        position_x          = list(200.0),
-        position_y          = list(14.0),
+        position_x          = list(dtype = "Float32", values = list(200.0)),
+        position_y          = list(dtype = "Float32", values = list(14.0)),
         text_vec            = list("Composite plot")
       )
     )

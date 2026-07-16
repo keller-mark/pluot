@@ -31,8 +31,8 @@ def _text_layer_kwargs(font_family: str | None = None) -> dict:
         font_family=font_family,
         font_weight="Normal",
         font_style="Normal",
-        position_x=[0.0, 1.0, 1.0, 0.0, 0.5],
-        position_y=[0.0, 0.0, 1.0, 1.0, 0.5],
+        position_x={"dtype": "Float32", "values": [0.0, 1.0, 1.0, 0.0, 0.5]},
+        position_y={"dtype": "Float32", "values": [0.0, 0.0, 1.0, 1.0, 0.5]},
         text_vec=["A", "B", "C", "D", "Hello"],
     )
     return dict(

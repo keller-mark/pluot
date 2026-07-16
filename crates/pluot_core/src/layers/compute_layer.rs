@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
+use crate::numeric_data::NumericData;
 use crate::render_traits::{AspectRatioMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, PreparedAndDraw, FontWeight, FontStyle};
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
@@ -79,8 +80,8 @@ impl PreparedLayer for ComputeLayer {
             font_style: FontStyle::Normal,
             model_matrix: None,
 
-            position_x: Arc::new(text_position_x),
-            position_y: Arc::new(text_position_y),
+            position_x: NumericData::Float32(Arc::new(text_position_x)),
+            position_y: NumericData::Float32(Arc::new(text_position_y)),
             text_vec: Arc::new(text_strings),
         };
         self.sub_layer_instances.push(Box::new(TextLayer::new(

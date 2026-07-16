@@ -230,8 +230,8 @@ impl AxisBandLayer {
                 font_family: None,
                 font_weight: FontWeight::Normal,
                 font_style: FontStyle::Normal,
-                position_x: Arc::new(text_position_x),
-                position_y: Arc::new(text_position_y),
+                position_x: NumericData::Float32(Arc::new(text_position_x)),
+                position_y: NumericData::Float32(Arc::new(text_position_y)),
                 text_vec: Arc::new(text_strings),
             };
             sublayers.push(Box::new(TextLayer::new(

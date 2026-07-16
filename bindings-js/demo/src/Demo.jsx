@@ -130,8 +130,8 @@ const DEMOS = {
               margin_left: 0,
             },*/
 
-            position_x: [10, 110],
-            position_y: [60, 110],
+            position_x: { dtype: "Float32", values: [10, 110] },
+            position_y: { dtype: "Float32", values: [60, 110] },
             text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },
