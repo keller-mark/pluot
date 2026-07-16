@@ -19,7 +19,7 @@ When you add a new test:
 1. Call the appropriate helper at the end of the test:
    - Raster: `check_snapshot(&image, "my_test.png")`
    - SVG: `check_svg_snapshot(&svg_string, "my_test.svg")`
-2. Run the test — it will **fail** because no reference snapshot exists yet:
+2. Run the test. It will **fail** because no reference snapshot exists yet:
    ```
    cargo test -p pluot test_name
    ```
@@ -35,7 +35,7 @@ When you add a new test:
 
 When rendering output changes intentionally (e.g., shader fix, new layer behavior):
 
-1. Run the tests — the affected snapshot test(s) will fail with a mismatch message.
+1. Run the tests. The affected snapshot test(s) will fail with a mismatch message.
 2. The test writes the new output to `tests/snaps-dirty/`.
 3. Inspect the current output to verify the change is correct.
 4. Bless the updated snapshot:

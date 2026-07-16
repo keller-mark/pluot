@@ -32,7 +32,7 @@ pluot_register_store <- function(name, store) {
   1L
 }
 
-# Status functions — because R is single-threaded, the first call always
+# Status functions. Because R is single-threaded, the first call always
 # performs the synchronous fetch and caches the result.  Status is therefore
 # never Pending; it is always Fulfilled or Rejected.
 
@@ -85,7 +85,7 @@ pluot_zarr_get_range_from_end_status <- function(store_name, key,
   .peek_status(cache_key)
 }
 
-# Data fetch functions — read from the cache populated by the status calls.
+# Data fetch functions. Read from the cache populated by the status calls.
 
 pluot_zarr_has <- function(store_name, key) {
   cache_key <- .has_cache_key(store_name, key)

@@ -73,7 +73,7 @@ bindings-r/
 
 ## Vendoring
 
-> **Vendoring is currently disabled** — the [cleanup](cleanup) script is a stub. Re-enable it for CRAN submission by uncommenting the body of that file.
+> **Vendoring is currently disabled.** The [cleanup](cleanup) script is a stub. Re-enable it for CRAN submission by uncommenting the body of that file.
 
 Per the [2023 CRAN guidelines](https://cran.r-project.org/web/packages/using_rust.html), cargo crates should be vendored in the source package to support offline installation. The two-step process when re-enabled:
 

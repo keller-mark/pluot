@@ -123,7 +123,8 @@ struct OmeZarrMultiscaleMetadata {
     dimension_order: OmeDimensionOrder,
 }
 
-// OmeZarrMultiscaleLayer — metadata + sublayer orchestration only
+// OmeZarrMultiscaleLayer.
+// This layer queries for metadata and orchestrates sublayers.
 
 /// A sublayer group for a single resolution level.
 struct LevelSublayers {
@@ -306,7 +307,7 @@ impl OmeZarrMultiscaleLayer {
     }
 
     /// Build OmeZarrBitmapLayer sublayers for visible tiles at levels from coarsest to target_level.
-    /// This method only constructs sublayer structs — no tile data is loaded here.
+    /// This method only constructs sublayer structs. No tile data is loaded here.
     fn build_sublayers(
         &self,
         metadata: &OmeZarrMultiscaleMetadata,
@@ -479,7 +480,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         let metadata = metadata.as_ref();
 
         // Build sublayers for all visible tiles at each level from coarsest to target.
-        // No tile data is loaded here — only sublayer structs are constructed.
+        // No tile data is loaded here. Only sublayer structs are constructed.
         self.level_sublayers = self.build_sublayers(metadata);
 
         // Collect all sublayers at each resolution level (coarse to fine),

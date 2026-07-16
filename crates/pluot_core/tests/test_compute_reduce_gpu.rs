@@ -15,7 +15,7 @@ use pluot_core::compute::reduce::{
 async fn gpu_ctx() -> (pluot_core::wgpu::Device, pluot_core::wgpu::Queue) {
     get_or_init_gpu_context()
         .await
-        .expect("No suitable GPU adapter found — run with --features lacks_gpu to skip GPU tests")
+        .expect("No suitable GPU adapter found. Run with --features lacks_gpu to skip GPU tests")
 }
 
 // reduce_min (GPU)
@@ -40,7 +40,7 @@ async fn test_gpu_reduce_min_negative() {
 async fn test_gpu_reduce_min_large() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    // 1000 elements — spans multiple workgroups (64 threads each).
+    // 1000 elements - spans multiple workgroups (64 threads each).
     let mut data: Vec<f32> = (0..1000).map(|i| i as f32).collect();
     data[537] = -42.0;
     let input = Arc::new(data);

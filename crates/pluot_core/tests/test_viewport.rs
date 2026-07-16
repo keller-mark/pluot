@@ -112,7 +112,7 @@ fn test_project_square_ignore_identity_camera() {
     assert_eq!((s2.x, s2.y), (100.0, 100.0));
 }
 
-// Wide viewport with ignore mode — data stretches to fill width.
+// Wide viewport with ignore mode. Data stretches to fill width.
 #[test]
 fn test_project_wide_ignore_identity_camera() {
     let view_params = make_view_params(200, 100, AspectRatioMode::Ignore, identity_camera());
@@ -127,7 +127,7 @@ fn test_project_wide_ignore_identity_camera() {
     assert_eq!((s2.x, s2.y), (200.0, 100.0));
 }
 
-// Wide viewport with contain mode — data is centered horizontally (pixel range [50, 150]).
+// Wide viewport with contain mode. Data is centered horizontally (pixel range [50, 150]).
 #[test]
 fn test_project_wide_contain_identity_camera() {
     let view_params = make_view_params(200, 100, AspectRatioMode::Contain, identity_camera());
@@ -142,7 +142,7 @@ fn test_project_wide_contain_identity_camera() {
     assert_eq!((s2.x, s2.y), (150.0, 100.0));
 }
 
-// Tall viewport with contain mode — data is centered vertically (pixel range [50, 150]).
+// Tall viewport with contain mode. Data is centered vertically (pixel range [50, 150]).
 #[test]
 fn test_project_tall_contain_identity_camera() {
     let view_params = make_view_params(100, 200, AspectRatioMode::Contain, identity_camera());
@@ -178,7 +178,7 @@ fn test_unproject_returns_none_for_out_of_bounds() {
     assert!(unproject(&view_params, None, ScreenCoord { x: 50.0,  y: 101.0 }).is_none());
 }
 
-// Inverse of project with wide contain — screen corners of data area map back to data corners.
+// Inverse of project with wide contain. Screen corners of data area map back to data corners.
 #[test]
 fn test_unproject_wide_contain_identity_camera() {
     let view_params = make_view_params(200, 100, AspectRatioMode::Contain, identity_camera());
@@ -207,7 +207,7 @@ fn test_unproject_with_margins() {
     assert_data_2d(unproject(&view_params, margin_bounds.clone(), ScreenCoord { x: 100.0, y: 100.0 }), 1.0, 1.0);
 }
 
-// Round-trip: project a data coord to screen, then unproject back — should recover the original.
+// Round-trip: project a data coord to screen, then unproject back. Should recover the original.
 #[test]
 fn test_project_unproject_roundtrip_square_ignore() {
     let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());
@@ -419,7 +419,7 @@ fn test_get_camera_matrix_from_bounds_wide_cover() {
     assert_eq!(camera_matrix, identity_camera().unwrap());
 }
 
-// Under Ignore mode, x and y zoom independently — no min-zoom constraint.
+// Under Ignore mode, x and y zoom independently. No min-zoom constraint.
 #[test]
 fn test_get_camera_matrix_from_bounds_asymmetric_ranges_independent_zoom() {
     let view_params = make_view_params(100, 100, AspectRatioMode::Ignore, identity_camera());

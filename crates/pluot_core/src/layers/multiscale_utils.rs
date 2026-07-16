@@ -126,7 +126,7 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
         }
     }
 
-    // Zoomed in past native resolution — use the finest level.
+    // Zoomed in past native resolution; use the finest level.
     0
 }
 
@@ -157,7 +157,7 @@ pub fn to_y_slice(start: u64, end: u64, height: u64) -> (u64, u64) {
 ///
 /// If `model_matrix` is provided, it is treated as the column-major affine
 /// transform mapping (Y-up) pixel coordinates at this level to world/data
-/// coordinates — the same matrix passed to the sublayers that render the tiles
+/// coordinates, the same matrix passed to the sublayers that render the tiles
 /// (world = model_matrix * pixel). Visibility is then computed by mapping the
 /// visible world extent through the inverse matrix (taking the axis-aligned
 /// bounding box of the transformed corners, so rotations and shears are
@@ -631,7 +631,7 @@ mod tests {
         // shape=[512,512], chunk=[256,256], scale=[2.0,2.0].
         // Physical extent: 512*2 = 1024.
         // Tile phys size: 256*2 = 512.
-        // With identity camera, visible range is (0,1) — only a tiny sliver.
+        // With identity camera, visible range is (0,1): only a tiny sliver.
         let level = ResolutionLevel {
             shape: [512, 512],
             chunk_shape: [256, 256],

@@ -324,7 +324,7 @@ fn build_internal_text_layer_data(
             let gw = m.width.max(0);
             let gh = m.height.max(0);
 
-            // Copy bitmap into atlas (no vertical padding — v=0/ClampToEdge handles top edge)
+            // Copy bitmap into atlas (no vertical padding; v=0/ClampToEdge handles top edge)
             if gw > 0 && gh > 0 {
                 for row in 0..gh {
                     let src = &bmp[row * gw..row * gw + gw];
@@ -544,14 +544,14 @@ impl PreparedLayer for TextLayer {
                 } else {
                     let font_key = format!("{}/{}/{}.ttf", font_family, style_str, weight_str);
                     match zarr_get_status("__fonts__", &font_key) {
-                        // Font not yet available — short-circuit without caching so the
+                        // Font not yet available. Short-circuit without caching so the
                         // fallback font is used this render and we re-prepare later.
                         ZarrPeekResult::Pending => return None,
                         ZarrPeekResult::Fulfilled => {
                             let font_future = zarr_get("__fonts__", &font_key);
                             match crate::maybe_timeout!(font_future, self.view_params.timeout).await {
                                 Ok(bytes) => Some(bytes.to_vec()),
-                                Err(_) => None, // Timeout — fall back to the bundled default font.
+                                Err(_) => None, // Timeout. Fall back to the bundled default font.
                             }
                         }
                         ZarrPeekResult::Rejected => None, // Fall back to the bundled default font.

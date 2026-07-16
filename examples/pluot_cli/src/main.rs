@@ -9,7 +9,7 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
-/// Pluot CLI — render plots to SVG or PNG.
+/// Pluot CLI. Render plots to SVG or PNG.
 ///
 /// Plot parameters (plot_type + plot_params) are read as JSON from a file
 /// (--input) or from stdin. All other rendering parameters are provided

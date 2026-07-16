@@ -4,8 +4,8 @@
 //
 // Two entry points are provided so that the output buffer type can differ:
 //
-//   main_scalar     — Min (0), Max (1), Sum (2), Extent (3)
-//   main_histogram  — Histogram (4)
+//   main_scalar: Min (0), Max (1), Sum (2), Extent (3)
+//   main_histogram: Histogram (4)
 //
 // ── Bindings for main_scalar ────────────────────────────────────────────────
 //   @group(0) @binding(0)  uniforms      : ReduceUniforms  (uniform)
@@ -30,7 +30,7 @@
 const WORKGROUP_SIZE: u32       = 64u;
 const MAX_HISTOGRAM_BINS: u32   = 256u;
 
-// Mode constants — must match the Rust-side ReduceMode discriminants.
+// Mode constants. Must match the Rust-side ReduceMode discriminants.
 const MODE_MIN:       u32 = 0u;
 const MODE_MAX:       u32 = 1u;
 const MODE_SUM:       u32 = 2u;
@@ -66,7 +66,7 @@ var<workgroup> shared_a: array<f32, 64>;
 var<workgroup> shared_b: array<f32, 64>;
 
 // Per-workgroup histogram bins; zero-initialised by the WebGPU runtime
-// (workgroup address space — spec §6.3.1).
+// (workgroup address space is defined in spec 6.3.1).
 var<workgroup> local_hist: array<atomic<u32>, 256>;
 
 // Helpers

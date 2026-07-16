@@ -6,7 +6,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Pluot — egui example",
+        "Pluot egui example",
         options,
         Box::new(|cc| Ok(Box::new(app::PluotApp::new(cc)))),
     )
