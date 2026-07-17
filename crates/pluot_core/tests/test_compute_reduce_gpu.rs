@@ -24,7 +24,7 @@ async fn gpu_ctx() -> (pluot_core::wgpu::Device, pluot_core::wgpu::Queue) {
 async fn test_gpu_reduce_min_basic() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0, 2.6]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0, 2.6]);
     assert_eq!(reduce_min(Some(&ctx), input).await, 1.0);
 }
 
@@ -32,7 +32,7 @@ async fn test_gpu_reduce_min_basic() {
 async fn test_gpu_reduce_min_negative() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![-5.0, -1.0, -100.0, 0.0, 3.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![-5.0, -1.0, -100.0, 0.0, 3.0]);
     assert_eq!(reduce_min(Some(&ctx), input).await, -100.0);
 }
 
@@ -53,7 +53,7 @@ async fn test_gpu_reduce_min_large() {
 async fn test_gpu_reduce_max_basic() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0, 2.6]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0, 2.6]);
     assert_eq!(reduce_max(Some(&ctx), input).await, 9.0);
 }
 
@@ -61,7 +61,7 @@ async fn test_gpu_reduce_max_basic() {
 async fn test_gpu_reduce_max_negative() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![-5.0, -1.0, -100.0, -0.5]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![-5.0, -1.0, -100.0, -0.5]);
     assert_eq!(reduce_max(Some(&ctx), input).await, -0.5);
 }
 
@@ -81,7 +81,7 @@ async fn test_gpu_reduce_max_large() {
 async fn test_gpu_reduce_sum_basic() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![1.0, 2.0, 3.0, 4.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0]);
     assert_eq!(reduce_sum(Some(&ctx), input).await, 10.0);
 }
 
@@ -90,7 +90,7 @@ async fn test_gpu_reduce_sum_large() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
     // 256 ones --> sum should be 256.
-    let input = Arc::new(vec![1.0; 256]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0; 256]);
     assert_eq!(reduce_sum(Some(&ctx), input).await, 256.0);
 }
 
@@ -100,7 +100,7 @@ async fn test_gpu_reduce_sum_large() {
 async fn test_gpu_reduce_extent_basic() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0, 2.6]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0, 2.6]);
     assert_eq!(reduce_extent(Some(&ctx), input).await, (1.0, 9.0));
 }
 
@@ -108,7 +108,7 @@ async fn test_gpu_reduce_extent_basic() {
 async fn test_gpu_reduce_extent_negative() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![-10.0, 5.0, 0.0, -3.0, 7.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![-10.0, 5.0, 0.0, -3.0, 7.0]);
     assert_eq!(reduce_extent(Some(&ctx), input).await, (-10.0, 7.0));
 }
 
@@ -129,7 +129,7 @@ async fn test_gpu_reduce_extent_large() {
 async fn test_gpu_histogram_known_extent_uniform() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     let bins = reduce_histogram_with_known_extent(Some(&ctx), input, 2, 0.0, 10.0).await;
     assert_eq!(bins, vec![5, 5]);
 }
@@ -138,7 +138,7 @@ async fn test_gpu_histogram_known_extent_uniform() {
 async fn test_gpu_histogram_known_extent_out_of_range_clamped() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![-5.0, 0.0, 5.0, 10.0, 15.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![-5.0, 0.0, 5.0, 10.0, 15.0]);
     let bins = reduce_histogram_with_known_extent(Some(&ctx), input, 2, 0.0, 10.0).await;
     assert_eq!(bins, vec![2, 3]);
 }
@@ -147,7 +147,7 @@ async fn test_gpu_histogram_known_extent_out_of_range_clamped() {
 async fn test_gpu_histogram_known_extent_many_bins() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     let bins = reduce_histogram_with_known_extent(Some(&ctx), input, 10, 0.0, 10.0).await;
     assert_eq!(bins, vec![1; 10]);
 }
@@ -156,7 +156,7 @@ async fn test_gpu_histogram_known_extent_many_bins() {
 async fn test_gpu_histogram_known_extent_zero_range() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![5.0, 5.0, 5.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![5.0, 5.0, 5.0]);
     let bins = reduce_histogram_with_known_extent(Some(&ctx), input, 4, 5.0, 5.0).await;
     assert_eq!(bins, vec![3, 0, 0, 0]);
 }
@@ -166,7 +166,7 @@ async fn test_gpu_histogram_known_extent_large() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
     // 1000 values in [0, 1000), 10 bins --> 100 per bin.
-    let input = Arc::new((0..1000).map(|i| i as f32).collect());
+    let input: Arc<Vec<f32>> = Arc::new((0..1000).map(|i| i as f32).collect());
     let bins = reduce_histogram_with_known_extent(Some(&ctx), input, 10, 0.0, 1000.0).await;
     assert_eq!(bins.iter().sum::<u32>(), 1000);
     assert_eq!(bins, vec![100; 10]);
@@ -178,7 +178,7 @@ async fn test_gpu_histogram_known_extent_large() {
 async fn test_gpu_histogram_unknown_extent_basic() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     let bins = reduce_histogram_with_unknown_extent(Some(&ctx), input, 2).await;
     assert_eq!(bins.len(), 2);
     assert_eq!(bins.iter().sum::<u32>(), 10);
@@ -188,7 +188,7 @@ async fn test_gpu_histogram_unknown_extent_basic() {
 async fn test_gpu_histogram_unknown_extent_single_value() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![3.0, 3.0, 3.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![3.0, 3.0, 3.0]);
     let bins = reduce_histogram_with_unknown_extent(Some(&ctx), input, 4).await;
     assert_eq!(bins, vec![3, 0, 0, 0]);
 }
@@ -197,7 +197,7 @@ async fn test_gpu_histogram_unknown_extent_single_value() {
 async fn test_gpu_histogram_unknown_extent_preserves_total() {
     let (device, queue) = gpu_ctx().await;
     let ctx = GpuContext { device: &device, queue: &queue };
-    let input = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
     let bins = reduce_histogram_with_unknown_extent(Some(&ctx), input, 5).await;
     assert_eq!(bins.iter().sum::<u32>(), 5);
 }

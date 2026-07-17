@@ -57,8 +57,8 @@ async def _(camera_view, render_to_image):
                           margin_bottom=0,
                           margin_left=0,
                         ),
-                        position_x=[100, 100, 400, 400],
-                        position_y=[100, 400, 100, 400],
+                        position_x={"dtype": "Float32", "values": [100, 100, 400, 400]},
+                        position_y={"dtype": "Float32", "values": [100, 400, 100, 400]},
                         labels_vec=[0, 1, 2, 3],
                       )
                 ),

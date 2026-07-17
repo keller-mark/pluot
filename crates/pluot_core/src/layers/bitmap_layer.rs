@@ -19,76 +19,9 @@ use crate::wgpu;
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::{get_point_position, get_point_size};
-use crate::log;
+use crate::shader_modules::{common, ShaderBuilder};
+use crate::numeric_data::NumericData;
 
-
-/// Typed numeric array supporting multiple dtypes.
-/// Serialized as a tagged enum, e.g. `{"Uint16": [1, 2, 3]}`.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum NumericData {
-    Uint8(Arc<Vec<u8>>),
-    Uint16(Arc<Vec<u16>>),
-    Uint32(Arc<Vec<u32>>),
-    Uint64(Arc<Vec<u64>>),
-    Int8(Arc<Vec<i8>>),
-    Int16(Arc<Vec<i16>>),
-    Int32(Arc<Vec<i32>>),
-    Int64(Arc<Vec<i64>>),
-    Float32(Arc<Vec<f32>>),
-    Float64(Arc<Vec<f64>>),
-}
-
-impl NumericData {
-    /// Number of elements in the array.
-    fn len(&self) -> usize {
-        match self {
-            NumericData::Uint8(v) => v.len(),
-            NumericData::Uint16(v) => v.len(),
-            NumericData::Uint32(v) => v.len(),
-            NumericData::Uint64(v) => v.len(),
-            NumericData::Int8(v) => v.len(),
-            NumericData::Int16(v) => v.len(),
-            NumericData::Int32(v) => v.len(),
-            NumericData::Int64(v) => v.len(),
-            NumericData::Float32(v) => v.len(),
-            NumericData::Float64(v) => v.len(),
-        }
-    }
-
-    /// Get element at index as f32.
-    fn get_f32(&self, idx: usize) -> f32 {
-        match self {
-            NumericData::Uint8(v) => v[idx] as f32,
-            NumericData::Uint16(v) => v[idx] as f32,
-            NumericData::Uint32(v) => v[idx] as f32,
-            NumericData::Uint64(v) => v[idx] as f32,
-            NumericData::Int8(v) => v[idx] as f32,
-            NumericData::Int16(v) => v[idx] as f32,
-            NumericData::Int32(v) => v[idx] as f32,
-            NumericData::Int64(v) => v[idx] as f32,
-            NumericData::Float32(v) => v[idx],
-            NumericData::Float64(v) => v[idx] as f32,
-        }
-    }
-
-    /// Convert the entire data array to f32 in one go.
-    /// For Float32 data, this borrows the existing slice via bytemuck (zero-copy).
-    /// For other dtypes, values are batch-converted to f32 via iterators.
-    fn as_f32(&self) -> Cow<'_, [f32]> {
-        match self {
-            NumericData::Float32(v) => Cow::Borrowed(v.as_slice()),
-            NumericData::Uint8(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Uint16(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Uint32(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Uint64(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Int8(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Int16(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Int32(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Int64(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-            NumericData::Float64(v) => Cow::Owned(v.iter().map(|&x| x as f32).collect()),
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChannelSettings {
@@ -391,23 +324,15 @@ impl DrawToRasterGpu for BitmapLayer {
         let y_stride = strides[*y_dim_idx] as u32;
         let c_stride = strides[*c_dim_idx] as u32;
 
-        // Convert the entire data array to f32 in one go using bytemuck (zero-copy for Float32).
-        // The flat memory layout is preserved; the shader uses strides to handle dimension ordering.
-        let data_f32 = layer_params.data.as_f32();
-        let data_bytes: &[u8] = bytemuck::cast_slice(&data_f32);
-
-        // Upload the flat f32 data as a storage buffer (not a texture),
-        // so the shader can index into it using strides.
-        // TODO: switch back to using a texture if performance becomes an issue;
-        // textures supposedly have optimizations for 2D spatial access patterns,
-        // but we may need to do more CPU transposing for that to be effective.
-        let image_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Image Data Storage Buffer"),
-            size: data_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&image_data_buffer, 0, data_bytes);
+        // Upload the flat image data into a single-channel (red-only) 2D
+        // texture, reshaped into rows (element `idx` at texel
+        // `(idx % width, idx / width)`). 8/16/32-bit dtypes are uploaded at
+        // native width (zero-copy); only 64-bit dtypes are narrowed to 32 bits
+        // (no 64-bit texture formats exist). The flat memory layout is preserved
+        // with no reordering, so the shader still indexes with per-dimension
+        // strides before mapping the flat index back to 2D texel coordinates.
+        let (image_texture_view, img_data_dtype) =
+            layer_params.data.create_data_texture(device, queue, "Image Data Texture");
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -568,13 +493,14 @@ impl DrawToRasterGpu for BitmapLayer {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The image pixel data storage buffer.
+                        // The image pixel data texture. Its sample type must
+                        // match the dtype-specific texture format chosen above.
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: img_data_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
@@ -592,13 +518,24 @@ impl DrawToRasterGpu for BitmapLayer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: image_data_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&image_texture_view),
                     },
                 ],
             });
 
+        // Assemble the shader source: inject the shared WGSL functions at
+        // compile time and the texture's sampled type at runtime.
+        let shader_source = ShaderBuilder::new(include_str!("shaders/bitmap_layer.wgsl"))
+            .inject_function("scale", common::SCALE)
+            .inject_function("translate", common::TRANSLATE)
+            .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_texture_sample_type("img_data_dtype", img_data_dtype)
+            .build();
         let shader = device
-            .create_shader_module(wgpu::include_wgsl!("shaders/bitmap_layer.wgsl"));
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("bitmap_layer.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
 
         let render_pipeline_layout = device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

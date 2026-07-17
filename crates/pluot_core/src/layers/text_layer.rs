@@ -12,8 +12,10 @@ use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
+use crate::shader_modules::{common, ShaderBuilder};
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
 use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
@@ -182,8 +184,8 @@ fn build_internal_text_layer_data(
     font_bytes: &[u8],
     cache_key: &str,
     text_vec: &[String],
-    position_x: &[f32],
-    position_y: &[f32],
+    position_x: &NumericData,
+    position_y: &NumericData,
     font_size: f32,
     text_align_mode: TextAlignMode,
     text_baseline_mode: TextBaselineMode,
@@ -262,8 +264,8 @@ fn build_internal_text_layer_data(
     // Iterate over each string
     for elem_i in 0..n {
         let text_str = &text_vec[elem_i];
-        let text_x_pos = position_x[elem_i];
-        let text_y_pos = position_y[elem_i];
+        let text_x_pos = position_x.get_f32(elem_i);
+        let text_y_pos = position_y.get_f32(elem_i);
 
         // Measure text width for alignment.
         // Text width is in pixel units.
@@ -409,8 +411,10 @@ pub struct TextLayerParams {
     pub font_weight: FontWeight,
     pub font_style: FontStyle,
 
-    pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub position_y: Arc<Vec<f32>>,
+    // Per-element X/Y coordinates. Each may be any supported numeric dtype
+    // (8-64 bit int/uint, or 32/64-bit float), and X and Y may differ.
+    pub position_x: NumericData,
+    pub position_y: NumericData,
     pub text_vec: Arc<Vec<String>>,
 }
 
@@ -430,8 +434,8 @@ impl Default for TextLayerParams {
             font_family: None,
             font_weight: FontWeight::Normal,
             font_style: FontStyle::Normal,
-            position_x: Arc::new(vec![]),
-            position_y: Arc::new(vec![]),
+            position_x: NumericData::Float32(Arc::new(vec![])),
+            position_y: NumericData::Float32(Arc::new(vec![])),
             text_vec: Arc::new(vec![]),
         }
     }
@@ -844,8 +848,18 @@ pub async fn base_draw_text_layer(
             ],
         });
 
+    // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
+    let shader_source = ShaderBuilder::new(include_str!("shaders/text_layer.wgsl"))
+        .inject_function("rotate_z", common::ROTATE_Z)
+        .inject_function("scale", common::SCALE)
+        .inject_function("translate", common::TRANSLATE)
+        .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+        .build();
     let shader = device
-        .create_shader_module(wgpu::include_wgsl!("shaders/text_layer.wgsl"));
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("text_layer.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
 
     let render_pipeline_layout = device
         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1036,8 +1050,8 @@ pub fn base_draw_text_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        let x = layer_params.position_x[i];
-        let y = layer_params.position_y[i];
+        let x = layer_params.position_x.get_f32(i);
+        let y = layer_params.position_y.get_f32(i);
 
         // Convert data coordinates to pixel coordinates within the layer area.
         let (px, py) = get_point_position(

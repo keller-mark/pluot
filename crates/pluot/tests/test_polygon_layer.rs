@@ -8,7 +8,7 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
-    PolygonLayerParams,
+    PolygonLayerParams, NumericData,
 };
 
 // For each test suite we check:
@@ -29,11 +29,13 @@ fn triangle_data() -> PolygonLayerParams {
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
         model_matrix: None,
-        polygons: Arc::new(vec![vec![
-            (0.1, 0.1),
-            (0.9, 0.1),
-            (0.5, 0.9),
-        ]]),
+        // Flat interleaved [x0, y0, x1, y1, …]; one polygon spanning vertices 0..3.
+        polygons: NumericData::Float32(Arc::new(vec![
+            0.1, 0.1,
+            0.9, 0.1,
+            0.5, 0.9,
+        ])),
+        polygon_offsets: NumericData::Uint32(Arc::new(vec![0, 3])),
         stroked: true,
         filled: false,
         stroke_color: [255, 0, 0],
@@ -47,13 +49,15 @@ fn triangle_data() -> PolygonLayerParams {
 /// A quadrilateral (pentagon) in [0,1] data space.
 fn quad_data() -> PolygonLayerParams {
     PolygonLayerParams {
-        polygons: Arc::new(vec![vec![
-            (0.1, 0.3),
-            (0.5, 0.1),
-            (0.9, 0.3),
-            (0.7, 0.9),
-            (0.3, 0.9),
-        ]]),
+        // One polygon spanning vertices 0..5.
+        polygons: NumericData::Float32(Arc::new(vec![
+            0.1, 0.3,
+            0.5, 0.1,
+            0.9, 0.3,
+            0.7, 0.9,
+            0.3, 0.9,
+        ])),
+        polygon_offsets: NumericData::Uint32(Arc::new(vec![0, 5])),
         ..triangle_data()
     }
 }
@@ -63,11 +67,12 @@ fn triangle_pixels() -> PolygonLayerParams {
     PolygonLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Pixels,
-        polygons: Arc::new(vec![vec![
-            (10.0, 10.0),
-            (90.0, 10.0),
-            (50.0, 90.0),
-        ]]),
+        polygons: NumericData::Float32(Arc::new(vec![
+            10.0, 10.0,
+            90.0, 10.0,
+            50.0, 90.0,
+        ])),
+        polygon_offsets: NumericData::Uint32(Arc::new(vec![0, 3])),
         ..triangle_data()
     }
 }
@@ -75,10 +80,12 @@ fn triangle_pixels() -> PolygonLayerParams {
 /// Two non-overlapping triangles in data space.
 fn two_triangles_data() -> PolygonLayerParams {
     PolygonLayerParams {
-        polygons: Arc::new(vec![
-            vec![(0.05, 0.05), (0.45, 0.05), (0.25, 0.45)],
-            vec![(0.55, 0.55), (0.95, 0.55), (0.75, 0.95)],
-        ]),
+        // Two polygons concatenated: vertices 0..3 and 3..6.
+        polygons: NumericData::Float32(Arc::new(vec![
+            0.05, 0.05, 0.45, 0.05, 0.25, 0.45,
+            0.55, 0.55, 0.95, 0.55, 0.75, 0.95,
+        ])),
+        polygon_offsets: NumericData::Uint32(Arc::new(vec![0, 3, 6])),
         ..triangle_data()
     }
 }

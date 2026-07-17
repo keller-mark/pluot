@@ -14,8 +14,9 @@ use pluot_core::render_traits::{
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmap_layer::{
-    BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
+    BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder,
 };
+use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;

@@ -7,6 +7,7 @@ use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_compos
 use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -238,10 +239,10 @@ impl AxisLinearLayer {
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            source_position_x: Arc::new(line_source_position_x),
-            source_position_y: Arc::new(line_source_position_y),
-            target_position_x: Arc::new(line_target_position_x),
-            target_position_y: Arc::new(line_target_position_y),
+            source_position_x: NumericData::Float32(Arc::new(line_source_position_x)),
+            source_position_y: NumericData::Float32(Arc::new(line_source_position_y)),
+            target_position_x: NumericData::Float32(Arc::new(line_target_position_x)),
+            target_position_y: NumericData::Float32(Arc::new(line_target_position_y)),
             labels_vec: Arc::new(line_labels_vec), // TODO: make this optional in LineLayerParams
         };
         sublayers.push(Box::new(LineLayer::new(
@@ -268,8 +269,8 @@ impl AxisLinearLayer {
                 font_weight: FontWeight::Normal,
                 font_style: FontStyle::Normal,
                 model_matrix: None,
-                position_x: Arc::new(text_position_x),
-                position_y: Arc::new(text_position_y),
+                position_x: NumericData::Float32(Arc::new(text_position_x)),
+                position_y: NumericData::Float32(Arc::new(text_position_y)),
                 text_vec: Arc::new(text_strings),
             };
             sublayers.push(Box::new(TextLayer::new(

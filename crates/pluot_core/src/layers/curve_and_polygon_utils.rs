@@ -4,6 +4,7 @@ use earcut::Earcut;
 use kurbo::{Arc as KurboArc, CubicBez, ParamCurve, Point as KurboPoint, QuadBez, SvgArc, Vec2 as KurboVec2};
 use serde::{Deserialize, Serialize};
 
+use crate::numeric_data::NumericData;
 use crate::render_traits::MarginParams;
 
 /// A single drawing command, the post-parsed form of an SVG path segment.
@@ -145,8 +146,11 @@ fn ring_area_2x(points: &[(f32, f32)]) -> f32 {
     area
 }
 
-pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<(f32, f32)> {
-    let mut verts: Vec<(f32, f32)> = Vec::new();
+/// Triangulate a collection of curve sub-paths into a flat, interleaved list of
+/// triangle-vertex coordinates `[x0, y0, x1, y1, …]` (3 consecutive vertices per
+/// triangle), ready to hand to a `TriangulatedLayer`.
+pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<f32> {
+    let mut verts: Vec<f32> = Vec::new();
     let mut ec: Earcut<f32> = Earcut::new();
     let mut indices: Vec<u32> = Vec::new();
     for subpath in subpaths {
@@ -156,7 +160,30 @@ pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u3
         }
         ec.earcut(ring.iter().map(|&(x, y)| [x, y]), &[] as &[u32], &mut indices);
         for &i in &indices {
-            verts.push(ring[i as usize]);
+            let (x, y) = ring[i as usize];
+            verts.push(x);
+            verts.push(y);
+        }
+    }
+    verts
+}
+
+/// Triangulate a collection of polygon rings into a flat, interleaved list of
+/// triangle-vertex coordinates `[x0, y0, x1, y1, …]` (3 consecutive vertices per
+/// triangle). Rings with fewer than 3 points are skipped.
+pub(crate) fn triangulate_polygon_rings(rings: &[Vec<(f32, f32)>]) -> Vec<f32> {
+    let mut ec: Earcut<f32> = Earcut::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut verts: Vec<f32> = Vec::new();
+    for ring in rings {
+        if ring.len() < 3 {
+            continue;
+        }
+        ec.earcut(ring.iter().map(|&(x, y)| [x, y]), &[] as &[u32], &mut indices);
+        for &i in &indices {
+            let (x, y) = ring[i as usize];
+            verts.push(x);
+            verts.push(y);
         }
     }
     verts
@@ -228,37 +255,63 @@ pub(crate) fn polygon_edges_from_rings(
     (src_x, src_y, dst_x, dst_y)
 }
 
-/// Build compact GPU-ready data for stroked polygon rendering with miter joins.
+/// The flat interleaved polygon representation shared by `PolygonLayer` and its
+/// `StrokedPolygonLayer`/`FilledPolygonLayer` sub-layers:
+/// - `coords`: all polygon vertices concatenated as a flat interleaved
+///   `[x0, y0, x1, y1, …]` array.
+/// - `offsets`: an Arrow-style offset array of `num_polygons + 1` entries, in
+///   vertex units. Polygon `p` occupies vertex indices `offsets[p]..offsets[p+1]`,
+///   i.e. its coordinates live at `coords[2*offsets[p] .. 2*offsets[p+1]]`.
 ///
-/// Returns:
-/// - `points`: all ring vertices concatenated as flat `[x, y, x, y, …]` f32 values.
-/// - `segments`: one `[ring_start, ring_end, local_idx]` u32 triple per edge, where
-///   `ring_start`/`ring_end` are absolute indices into `points` (in vertex units, not
-///   byte units) and `local_idx` is the 0-based index of the edge's source vertex
-///   within its ring. The shader uses these to look up prev/src/dst/next with
-///   correct wrap-around via modular arithmetic, without any redundant storage.
-///
-/// Rings with fewer than 2 points are skipped.
-pub(crate) fn polygon_gpu_data(
-    rings: &[Vec<(f32, f32)>],
-) -> (Vec<f32>, Vec<[u32; 3]>) {
-    let mut points: Vec<f32> = Vec::new();
-    let mut segments: Vec<[u32; 3]> = Vec::new();
+/// Reconstruct per-polygon rings of `(x, y)` vertices from that representation.
+/// Coordinates and offsets are read regardless of their source dtype. Used by the
+/// SVG paths and by the fill triangulation.
+pub(crate) fn polygon_rings_from_flat(
+    coords: &NumericData,
+    offsets: &NumericData,
+) -> Vec<Vec<(f32, f32)>> {
+    let mut rings: Vec<Vec<(f32, f32)>> = Vec::new();
+    let num_offsets = offsets.len();
+    if num_offsets < 2 {
+        return rings;
+    }
+    for p in 0..(num_offsets - 1) {
+        let start = offsets.get_f64(p) as usize;
+        let end = offsets.get_f64(p + 1) as usize;
+        let mut ring = Vec::with_capacity(end.saturating_sub(start));
+        for v in start..end {
+            ring.push((coords.get_f32(2 * v), coords.get_f32(2 * v + 1)));
+        }
+        rings.push(ring);
+    }
+    rings
+}
 
-    for ring in rings {
-        if ring.len() < 2 {
+/// Build per-edge segment metadata for stroked polygon rendering with miter joins,
+/// directly from the flat vertex `offsets` (see [`polygon_rings_from_flat`]).
+///
+/// Returns one `[ring_start, ring_end, local_idx]` u32 triple per edge, where
+/// `ring_start`/`ring_end` are absolute vertex indices into the flat coordinate
+/// array and `local_idx` is the 0-based index of the edge's source vertex within
+/// its ring. The shader uses these to look up prev/src/dst/next with correct
+/// wrap-around via modular arithmetic. Rings with fewer than 2 vertices are skipped.
+pub(crate) fn polygon_segments_from_offsets(offsets: &NumericData) -> Vec<[u32; 3]> {
+    let mut segments: Vec<[u32; 3]> = Vec::new();
+    let num_offsets = offsets.len();
+    if num_offsets < 2 {
+        return segments;
+    }
+    for p in 0..(num_offsets - 1) {
+        let ring_start = offsets.get_f64(p) as u32;
+        let ring_end_excl = offsets.get_f64(p + 1) as u32;
+        let ring_size = ring_end_excl - ring_start;
+        if ring_size < 2 {
             continue;
         }
-        let ring_start = (points.len() / 2) as u32;
-        for &(x, y) in ring {
-            points.push(x);
-            points.push(y);
-        }
-        let ring_end = (points.len() / 2 - 1) as u32;
-        for local_idx in 0..(ring.len() as u32) {
+        let ring_end = ring_end_excl - 1;
+        for local_idx in 0..ring_size {
             segments.push([ring_start, ring_end, local_idx]);
         }
     }
-
-    (points, segments)
+    segments
 }

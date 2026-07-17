@@ -23,8 +23,8 @@ basic_layers <- list(
       point_shape_mode      = "Square",
       point_radius          = 25.0,
       bounds                = NULL,
-      position_x            = c(0, 1, 0, 1),
-      position_y            = c(0, 0, 1, 1),
+      position_x            = list(dtype = "Float32", values = c(0, 1, 0, 1)),
+      position_y            = list(dtype = "Float32", values = c(0, 0, 1, 1)),
       labels_vec            = c(0L, 1L, 2L, 3L)
     )
   )

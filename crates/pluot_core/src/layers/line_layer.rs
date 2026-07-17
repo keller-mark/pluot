@@ -9,6 +9,8 @@ use std::sync::{Arc};
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
+use crate::shader_modules::{common, ShaderBuilder};
+use crate::numeric_data::NumericData;
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
@@ -27,10 +29,14 @@ pub struct LineLayerParams {
     pub line_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
-    pub source_position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub source_position_y: Arc<Vec<f32>>,
-    pub target_position_x: Arc<Vec<f32>>,
-    pub target_position_y: Arc<Vec<f32>>,
+    // Per-line source/target X/Y coordinates. Each may be any supported numeric
+    // dtype (8-64 bit int/uint, or 32/64-bit float), and may differ across the
+    // four arrays. The data is uploaded to the GPU as a texture at its native
+    // width wherever possible (see `NumericData::create_data_texture`).
+    pub source_position_x: NumericData,
+    pub source_position_y: NumericData,
+    pub target_position_x: NumericData,
+    pub target_position_y: NumericData,
     // TODO: improve naming here
     pub labels_vec: Arc<Vec<i32>>,
 }
@@ -45,10 +51,10 @@ impl Default for LineLayerParams {
             line_width: 1.0,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            source_position_x: Arc::new(vec![]),
-            source_position_y: Arc::new(vec![]),
-            target_position_x: Arc::new(vec![]),
-            target_position_y: Arc::new(vec![]),
+            source_position_x: NumericData::Float32(Arc::new(vec![])),
+            source_position_y: NumericData::Float32(Arc::new(vec![])),
+            target_position_x: NumericData::Float32(Arc::new(vec![])),
+            target_position_y: NumericData::Float32(Arc::new(vec![])),
             labels_vec: Arc::new(vec![]),
         }
     }
@@ -116,12 +122,20 @@ impl DrawToRasterGpu for LineLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        // TODO: can more of this be memoized/cached? Which parts need to be re-executed every draw call?
-        let source_x_bytes = bytemuck::cast_slice(&layer_params.source_position_x);
-        let source_y_bytes = bytemuck::cast_slice(&layer_params.source_position_y);
-
-        let target_x_bytes = bytemuck::cast_slice(&layer_params.target_position_x);
-        let target_y_bytes = bytemuck::cast_slice(&layer_params.target_position_y);
+        // Upload the source/target X and Y coordinate arrays into single-channel
+        // 2D textures, each at its native byte width wherever possible (8/16/32-bit
+        // are zero-copy; only 64-bit dtypes are narrowed to 32 bits). Each array is
+        // uploaded independently so they may have different dtypes; the shader
+        // reads each texel via its instance index and widens it to f32. See
+        // `NumericData::create_data_texture`.
+        let (source_x_texture_view, source_x_dtype) =
+            layer_params.source_position_x.create_data_texture(device, queue, "Source X Coordinates Texture");
+        let (source_y_texture_view, source_y_dtype) =
+            layer_params.source_position_y.create_data_texture(device, queue, "Source Y Coordinates Texture");
+        let (target_x_texture_view, target_x_dtype) =
+            layer_params.target_position_x.create_data_texture(device, queue, "Target X Coordinates Texture");
+        let (target_y_texture_view, target_y_dtype) =
+            layer_params.target_position_y.create_data_texture(device, queue, "Target Y Coordinates Texture");
 
         // More efficient version that eliminates intermediate vectors and redundant operations
         let n = layer_params.labels_vec.len();
@@ -129,40 +143,6 @@ impl DrawToRasterGpu for LineLayer {
         // Convert to f32 and cast to bytes directly - no for loop needed
         //let labels_i32: Vec<i32> = layer_params.labels_vec.iter().map(|&c| c as i32).collect();
         let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-
-        // Create separate buffers for X and Y coordinates
-        let source_x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Source X Coordinates Storage Buffer"),
-            size: source_x_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&source_x_buffer, 0, source_x_bytes);
-
-        let source_y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Source Y Coordinates Storage Buffer"),
-            size: source_y_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&source_y_buffer, 0, source_y_bytes);
-
-        let target_x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Target X Coordinates Storage Buffer"),
-            size: target_x_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&target_x_buffer, 0, target_x_bytes);
-
-        let target_y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Target Y Coordinates Storage Buffer"),
-            size: target_y_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&target_y_buffer, 0, target_y_bytes);
 
         let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Class labels Storage Buffer"),
@@ -275,46 +255,50 @@ impl DrawToRasterGpu for LineLayer {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The Source X coordinates buffer.
+                        // The Source X coordinates texture. Its sample type must match
+                        // the dtype-specific texture format chosen above.
                         binding: 1,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: source_x_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The Source Y coordinates buffer.
+                        // The Source Y coordinates texture. Its sample type must match
+                        // the dtype-specific texture format chosen above.
                         binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: source_y_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The Target X coordinates buffer.
+                        // The Target X coordinates texture. Its sample type must match
+                        // the dtype-specific texture format chosen above.
                         binding: 3,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: target_x_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The Target Y coordinates buffer.
+                        // The Target Y coordinates texture. Its sample type must match
+                        // the dtype-specific texture format chosen above.
                         binding: 4,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: target_y_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
@@ -342,19 +326,19 @@ impl DrawToRasterGpu for LineLayer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: source_x_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&source_x_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: source_y_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&source_y_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: target_x_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&target_x_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: target_y_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&target_y_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
@@ -363,8 +347,21 @@ impl DrawToRasterGpu for LineLayer {
                 ],
             });
 
+        // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
+        let shader_source = ShaderBuilder::new(include_str!("shaders/line_layer.wgsl"))
+            .inject_function("scale", common::SCALE)
+            .inject_function("translate", common::TRANSLATE)
+            .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_texture_sample_type("source_x_dtype", source_x_dtype)
+            .inject_texture_sample_type("source_y_dtype", source_y_dtype)
+            .inject_texture_sample_type("target_x_dtype", target_x_dtype)
+            .inject_texture_sample_type("target_y_dtype", target_y_dtype)
+            .build();
         let shader = device
-            .create_shader_module(wgpu::include_wgsl!("shaders/line_layer.wgsl"));
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("line_layer.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
 
         let render_pipeline_layout = device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -517,10 +514,10 @@ impl DrawToSvg for LineLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
-            let source_x = layer_params.source_position_x[i];
-            let source_y = layer_params.source_position_y[i];
-            let target_x = layer_params.target_position_x[i];
-            let target_y = layer_params.target_position_y[i];
+            let source_x = layer_params.source_position_x.get_f32(i);
+            let source_y = layer_params.source_position_y.get_f32(i);
+            let target_x = layer_params.target_position_x.get_f32(i);
+            let target_y = layer_params.target_position_y.get_f32(i);
 
             // Convert data coordinates to pixel coordinates within the layer area.
             let (source_x_px, source_y_px) = get_point_position(

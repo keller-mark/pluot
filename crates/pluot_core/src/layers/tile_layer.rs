@@ -10,6 +10,7 @@ use crate::viewport::get_bounds;
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -100,10 +101,10 @@ impl TileLayer {
                 fill_color: None,
                 fill_color_mode: ColorMode::Categorical,
                 model_matrix: None,
-                position_x0: Arc::new(x0_vec),
-                position_y0: Arc::new(y0_vec),
-                position_x1: Arc::new(x1_vec),
-                position_y1: Arc::new(y1_vec),
+                position_x0: NumericData::Float32(Arc::new(x0_vec)),
+                position_y0: NumericData::Float32(Arc::new(y0_vec)),
+                position_x1: NumericData::Float32(Arc::new(x1_vec)),
+                position_y1: NumericData::Float32(Arc::new(y1_vec)),
                 labels_vec: Arc::new(labels_vec),
             };
             sublayers.push(Box::new(RectLayer::new(

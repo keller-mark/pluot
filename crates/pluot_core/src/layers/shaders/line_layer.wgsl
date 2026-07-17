@@ -1,85 +1,10 @@
-fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(x, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, y, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, z, 0.0),
-    vec4<f32>(0.0, 0.0, 0.0, 1.0)
-  );
-}
+// The following functions are injected at compile time by the shader-module
+// system (see `crate::shader_modules`). Their sources live in `wgsl_functions/`.
+{{scale}}
 
-fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(1.0, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, 1.0, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, 1.0, 0.0),
-    vec4<f32>(x, y, z, 1.0),
-  );
-}
+{{translate}}
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
-    // Determine the x and y extents to use,
-    // based on the aspect ratio mode and layer aspect ratio.
-    // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
-    var x_scale_for_aspect_ratio_mode = 1.0;
-    var y_scale_for_aspect_ratio_mode = 1.0;
-    if (aspect_ratio_mode == 1u) {
-        // fit/contain
-        if (layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    } else if (aspect_ratio_mode == 2u) {
-        // fill/cover
-        if(layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    }
-
-    // To handle aspect_ratio_alignment_mode, we compute the required translation.
-    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
-    // Center (default): no translation needed.
-    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
-    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
-    // When the scaling is 1.0, both formulas yield 0.
-    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
-    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
-    if (aspect_ratio_alignment_mode == 1u) {
-        // start
-        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
-        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
-    } else if (aspect_ratio_alignment_mode == 2u) {
-        // end
-        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
-        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
-    }
-
-    return translate(
-        x_translation_for_aspect_ratio_alignment_mode,
-        y_translation_for_aspect_ratio_alignment_mode,
-        0.0
-    ) * scale(
-        x_scale_for_aspect_ratio_mode,
-        y_scale_for_aspect_ratio_mode,
-        1.0
-    );
-}
+{{get_aspect_ratio_mat}}
 
 // Computes the final vertex position for a line quad.
 // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/line-layer/line-layer-vertex.glsl.h#L56
@@ -140,10 +65,19 @@ struct FSOut {
 
 // These group/binding locations will need to match with the locations used by Model.
 @group(0) @binding(0) var<uniform> u: LineLayerUniforms;
-@group(0) @binding(1) var<storage, read> source_x_coords: array<f32>;
-@group(0) @binding(2) var<storage, read> source_y_coords: array<f32>;
-@group(0) @binding(3) var<storage, read> target_x_coords: array<f32>;
-@group(0) @binding(4) var<storage, read> target_y_coords: array<f32>;
+// The source/target X/Y coordinate arrays are uploaded as single-channel
+// (red-only) 2D textures holding the flat array reshaped into rows: element
+// `idx` (the instance index) lives at texel `(idx % width, idx / width)`. The
+// data is NOT reordered on the CPU, so the shader recomputes the 2D texel
+// coords from the instance index. Each texture's sampled type is injected at
+// runtime by the shader-module system (see `crate::shader_modules`) so that
+// 8/16/32-bit data lives on the GPU at native width: `f32` for floating-point
+// data, `u32` for unsigned, `i32` for signed. Each array is independent and
+// may differ in dtype.
+@group(0) @binding(1) var source_x_coords: texture_2d<{{source_x_dtype}}>;
+@group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_dtype}}>;
+@group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_dtype}}>;
+@group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_dtype}}>;
 @group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
 
 
@@ -161,9 +95,20 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
-    // Source and target points of this line
-    let source_point_pos_orig = u.model_matrix * vec4f(source_x_coords[instance_index], source_y_coords[instance_index], 0.0, 1.0);
-    let target_point_pos_orig = u.model_matrix * vec4f(target_x_coords[instance_index], target_y_coords[instance_index], 0.0, 1.0);
+    // Source and target points of this line. Map the flat instance index into the
+    // 2D texture each coordinate array was reshaped into on upload:
+    // (idx % width, idx / width). `f32(...)` is a no-op when the injected
+    // sampled type is already f32, and widens u32/i32 texels to f32 otherwise.
+    let source_x_tex_width = textureDimensions(source_x_coords).x;
+    let source_y_tex_width = textureDimensions(source_y_coords).x;
+    let target_x_tex_width = textureDimensions(target_x_coords).x;
+    let target_y_tex_width = textureDimensions(target_y_coords).x;
+    let source_x_val = f32(textureLoad(source_x_coords, vec2<u32>(instance_index % source_x_tex_width, instance_index / source_x_tex_width), 0).x);
+    let source_y_val = f32(textureLoad(source_y_coords, vec2<u32>(instance_index % source_y_tex_width, instance_index / source_y_tex_width), 0).x);
+    let target_x_val = f32(textureLoad(target_x_coords, vec2<u32>(instance_index % target_x_tex_width, instance_index / target_x_tex_width), 0).x);
+    let target_y_val = f32(textureLoad(target_y_coords, vec2<u32>(instance_index % target_y_tex_width, instance_index / target_y_tex_width), 0).x);
+    let source_point_pos_orig = u.model_matrix * vec4f(source_x_val, source_y_val, 0.0, 1.0);
+    let target_point_pos_orig = u.model_matrix * vec4f(target_x_val, target_y_val, 0.0, 1.0);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 

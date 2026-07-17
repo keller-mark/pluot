@@ -7,10 +7,17 @@
 //   main_scalar: Min (0), Max (1), Sum (2), Extent (3)
 //   main_histogram: Histogram (4)
 //
+// The input array is uploaded once as a single-channel (red-only) 2D texture:
+// flat element `idx` lives at texel `(idx % width, idx / width)`. Its sampled
+// type (`f32`/`u32`/`i32`) is injected at runtime by the shader-module system
+// (see `crate::shader_modules`), so the array is read at its native dtype and
+// widened to f32 in the shader — no CPU-side cast. A single texture serves every
+// dispatch chunk; `uniforms.base_offset` selects each chunk's element range.
+//
 // ── Bindings for main_scalar ────────────────────────────────────────────────
-//   @group(0) @binding(0)  uniforms      : ReduceUniforms  (uniform)
-//   @group(0) @binding(1)  input         : array<f32>      (storage, read)
-//   @group(0) @binding(2)  output        : array<f32>      (storage, read_write)
+//   @group(0) @binding(0)  uniforms      : ReduceUniforms         (uniform)
+//   @group(0) @binding(1)  input         : texture_2d<dtype>
+//   @group(0) @binding(2)  output        : array<f32>             (storage, read_write)
 //
 //   Output layout:
 //     Min / Max / Sum  -->  one f32 per workgroup (partial result); the caller
@@ -19,7 +26,7 @@
 //
 // ── Bindings for main_histogram ─────────────────────────────────────────────
 //   @group(0) @binding(0)  uniforms      : ReduceUniforms        (uniform)
-//   @group(0) @binding(1)  input         : array<f32>            (storage, read)
+//   @group(0) @binding(1)  input         : texture_2d<dtype>
 //   @group(0) @binding(3)  output_hist   : array<atomic<u32>>    (storage, read_write)
 //
 //   output_hist must be zero-initialised by the caller before dispatch.
@@ -42,7 +49,7 @@ const MODE_HISTOGRAM: u32 = 4u;
 struct ReduceUniforms {
     // Which reduction to perform (see MODE_* constants above).
     mode: u32,
-    // Total number of f32 elements in the input array.
+    // Number of elements processed by THIS dispatch (the current chunk length).
     num_elements: u32,
     // Histogram: number of bins. Must be <= MAX_HISTOGRAM_BINS.
     num_bins: u32,
@@ -50,10 +57,13 @@ struct ReduceUniforms {
     data_min: f32,
     // Histogram: maximum value of the data range (exclusive).
     data_max: f32,
+    // Flat index in the input texture of this chunk's first element. Added to
+    // the per-dispatch global id to locate each element in the shared texture.
+    base_offset: u32,
 }
 
 @group(0) @binding(0) var<uniform>             uniforms:     ReduceUniforms;
-@group(0) @binding(1) var<storage, read>       input:        array<f32>;
+@group(0) @binding(1) var                      input:        texture_2d<{{input_dtype}}>;
 @group(0) @binding(2) var<storage, read_write> output:       array<f32>;
 @group(0) @binding(3) var<storage, read_write> output_hist:  array<atomic<u32>>;
 
@@ -76,6 +86,16 @@ fn pos_inf() -> f32 { return 0x1.fffffep+127f; }
 
 // Minimum finite f32 (identity for max-reduction).
 fn neg_inf() -> f32 { return -0x1.fffffep+127f; }
+
+// Read input element `flat_index`, mapping the flat index into the 2D texture
+// the array was reshaped into on upload (idx % width, idx / width). `f32(...)`
+// is a no-op when the injected sampled type is already f32, and widens u32/i32
+// texels to f32 otherwise.
+fn load_input(flat_index: u32) -> f32 {
+    let tex_width = textureDimensions(input).x;
+    let coords = vec2<u32>(flat_index % tex_width, flat_index / tex_width);
+    return f32(textureLoad(input, coords, 0).x);
+}
 
 // ── Entry point: main_scalar ──────────────────────────────────────────────────
 //
@@ -102,7 +122,7 @@ fn main_scalar(
     // ── Load into shared memory with identity values for out-of-bounds lanes ──
 
     if in_bounds {
-        let v = input[gid];
+        let v = load_input(uniforms.base_offset + gid);
         if mode == MODE_EXTENT {
             shared_a[lid] = v; // min accumulator
             shared_b[lid] = v; // max accumulator
@@ -187,7 +207,7 @@ fn main_histogram(
     // ── Accumulate into workgroup-local histogram ─────────────────────────────
 
     if gid < uniforms.num_elements {
-        let val = input[gid];
+        let val = load_input(uniforms.base_offset + gid);
         var bin: u32;
         if data_range <= 0.0 {
             bin = 0u;

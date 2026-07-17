@@ -15,40 +15,13 @@
 // All geometry is computed in pixel space. Miter extension is clamped to
 // MITER_LIMIT × half-width to avoid spikes at very sharp angles.
 
-fn scale_mat(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-    return mat4x4<f32>(
-        vec4<f32>(x,   0.0, 0.0, 0.0),
-        vec4<f32>(0.0, y,   0.0, 0.0),
-        vec4<f32>(0.0, 0.0, z,   0.0),
-        vec4<f32>(0.0, 0.0, 0.0, 1.0),
-    );
-}
+// The following functions are injected at compile time by the shader-module
+// system (see `crate::shader_modules`). Their sources live in `wgsl_functions/`.
+{{scale}}
 
-fn translate_mat(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-    return mat4x4<f32>(
-        vec4<f32>(1.0, 0.0, 0.0, 0.0),
-        vec4<f32>(0.0, 1.0, 0.0, 0.0),
-        vec4<f32>(0.0, 0.0, 1.0, 0.0),
-        vec4<f32>(x,   y,   z,   1.0),
-    );
-}
+{{translate}}
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
-    var sx = 1.0;
-    var sy = 1.0;
-    if (aspect_ratio_mode == 1u) {
-        if (layer_aspect_ratio > 1.0) { sx = 1.0 / layer_aspect_ratio; }
-        else if (layer_aspect_ratio < 1.0) { sy = layer_aspect_ratio; }
-    } else if (aspect_ratio_mode == 2u) {
-        if (layer_aspect_ratio > 1.0) { sy = layer_aspect_ratio; }
-        else if (layer_aspect_ratio < 1.0) { sx = 1.0 / layer_aspect_ratio; }
-    }
-    var tx = 0.0;
-    var ty = 0.0;
-    if (aspect_ratio_alignment_mode == 1u) { tx = sx - 1.0; ty = sy - 1.0; }
-    else if (aspect_ratio_alignment_mode == 2u) { tx = 1.0 - sx; ty = 1.0 - sy; }
-    return translate_mat(tx, ty, 0.0) * scale_mat(sx, sy, 1.0);
-}
+{{get_aspect_ratio_mat}}
 
 struct StrokedPolygonUniforms {
     layer_size: vec2<f32>,
@@ -82,8 +55,27 @@ struct FSOut {
 };
 
 @group(0) @binding(0) var<uniform>       u:        StrokedPolygonUniforms;
-@group(0) @binding(1) var<storage, read> points:   array<vec2<f32>>;
+// The interleaved vertex coordinates [x0, y0, x1, y1, …] are uploaded as a
+// single-channel (red-only) 2D texture holding the flat array reshaped into rows:
+// flat element `idx` lives at texel `(idx % width, idx / width)`. The data is NOT
+// reordered on the CPU, so the shader recomputes the 2D texel coords. The texture's
+// sampled type is injected at runtime by the shader-module system (see
+// `crate::shader_modules`) so that 8/16/32-bit data lives on the GPU at native
+// width: `f32` for floating-point data, `u32` for unsigned, `i32` for signed.
+@group(0) @binding(1) var points: texture_2d<{{points_dtype}}>;
 @group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
+
+// Load the vertex at index `idx` from the interleaved coordinate texture:
+// its x is at flat index 2*idx and its y at 2*idx + 1. `f32(...)` is a no-op
+// when the injected sampled type is already f32, and widens u32/i32 otherwise.
+fn load_point(idx: u32) -> vec2<f32> {
+    let w = textureDimensions(points).x;
+    let xi = 2u * idx;
+    let yi = xi + 1u;
+    let x = f32(textureLoad(points, vec2<u32>(xi % w, xi / w), 0).x);
+    let y = f32(textureLoad(points, vec2<u32>(yi % w, yi / w), 0).x);
+    return vec2<f32>(x, y);
+}
 
 // corner.x: -1 = source end, +1 = target end
 // corner.y: -1 = one side,   +1 = other side
@@ -105,8 +97,8 @@ fn project_to_px(pt: vec2<f32>) -> vec2<f32> {
 
     let orig = u.model_matrix * vec4f(pt.x, pt.y, 0.0, 1.0);
 
-    let NORM_TO_NDC = translate_mat(-1.0, -1.0, 0.0) * scale_mat(2.0, 2.0, 1.0);
-    let NDC_TO_NORM = translate_mat( 0.5,  0.5, 0.0) * scale_mat(0.5, 0.5, 1.0);
+    let NORM_TO_NDC = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0);
+    let NDC_TO_NORM = translate( 0.5,  0.5, 0.0) * scale(0.5, 0.5, 1.0);
 
     let norm_px = vec2<f32>(orig.x / layer_w, orig.y / layer_h);
     let ndc_px  = (NORM_TO_NDC * vec4f(norm_px, 0.0, 1.0)).xy;
@@ -183,10 +175,10 @@ fn vs_main(
     let li         = seg.local_idx;
 
     // Look up the four neighboring vertices with ring-wrap via modular arithmetic.
-    let prev_pt = points[ring_start + (li + ring_size - 1u) % ring_size];
-    let src_pt  = points[ring_start + li];
-    let dst_pt  = points[ring_start + (li + 1u) % ring_size];
-    let next_pt = points[ring_start + (li + 2u) % ring_size];
+    let prev_pt = load_point(ring_start + (li + ring_size - 1u) % ring_size);
+    let src_pt  = load_point(ring_start + li);
+    let dst_pt  = load_point(ring_start + (li + 1u) % ring_size);
+    let next_pt = load_point(ring_start + (li + 2u) % ring_size);
 
     let prev_px = project_to_px(prev_pt);
     let src_px  = project_to_px(src_pt);

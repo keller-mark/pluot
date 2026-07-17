@@ -82,8 +82,8 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-            position_x: [100, 100],
-            position_y: [100, 200],
+            position_x: { dtype: "Float32", values: [100, 100] },
+            position_y: { dtype: "Float32", values: [100, 200] },
             labels_vec: [0, 1],
           }
         },
@@ -102,10 +102,10 @@ const DEMOS = {
               margin_bottom: 0,
               margin_left: 0,
             },
-            source_position_x: [10, 110],
-            source_position_y: [10, 110],
-            target_position_x: [100, 210],
-            target_position_y: [100, 210],
+            source_position_x: { dtype: "Float32", values: [10, 110] },
+            source_position_y: { dtype: "Float32", values: [10, 110] },
+            target_position_x: { dtype: "Float32", values: [100, 210] },
+            target_position_y: { dtype: "Float32", values: [100, 210] },
             labels_vec: [4, 1],
           }
         },
@@ -130,8 +130,8 @@ const DEMOS = {
               margin_left: 0,
             },*/
 
-            position_x: [10, 110],
-            position_y: [60, 110],
+            position_x: { dtype: "Float32", values: [10, 110] },
+            position_y: { dtype: "Float32", values: [60, 110] },
             text_vec: ["Hello", "The quick brown fox jumps over the lazy dog"],
           }
         },
@@ -157,7 +157,7 @@ const DEMOS = {
               }
             ],
 
-            data: { Uint16: [
+            data: { dtype: "Uint16", values: [
               0, 110, 210, 310,
               20, 120, 220, 320,
               30, 130, 230, 330,
@@ -178,10 +178,10 @@ const DEMOS = {
             stroke_width_unit_mode: "Pixels",
             stroke_width: 5.0,
             fill_color_mode: "Categorical",
-            position_x0: [1],
-            position_y0: [1],
-            position_x1: [2],
-            position_y1: [3],
+            position_x0: { dtype: "Float32", values: [1] },
+            position_y0: { dtype: "Float32", values: [1] },
+            position_x1: { dtype: "Float32", values: [2] },
+            position_y1: { dtype: "Float32", values: [3] },
             labels_vec: [4],
           }
         },

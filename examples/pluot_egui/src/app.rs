@@ -134,8 +134,8 @@ fn build_params(
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
-            position_x: Arc::new(position_x),
-            position_y: Arc::new(position_y),
+            position_x: position_x.into(),
+            position_y: position_y.into(),
             labels_vec: Arc::new(vec![0; num_points]),
             ..Default::default()
         })],

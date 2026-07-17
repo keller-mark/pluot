@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
+use crate::shader_modules::ShaderBuilder;
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -26,9 +28,13 @@ pub struct Point3dLayerParams {
     pub point_radius: f32,
     pub point_shape_mode: PointShapeMode,
 
-    pub position_x: Arc<Vec<f32>>,
-    pub position_y: Arc<Vec<f32>>,
-    pub position_z: Arc<Vec<f32>>,
+    // Per-point X/Y/Z coordinates. Each may be any supported numeric dtype
+    // (8–64 bit int/uint, or 32/64-bit float), and may differ. The data is
+    // uploaded to the GPU as a texture at its native width wherever possible
+    // (see `NumericData::create_data_texture`).
+    pub position_x: NumericData,
+    pub position_y: NumericData,
+    pub position_z: NumericData,
     pub labels_vec: Arc<Vec<i32>>,
 }
 
@@ -39,9 +45,9 @@ impl Default for Point3dLayerParams {
             bounds: None,
             point_radius: 1.0,
             point_shape_mode: PointShapeMode::Circle,
-            position_x: Arc::new(vec![]),
-            position_y: Arc::new(vec![]),
-            position_z: Arc::new(vec![]),
+            position_x: NumericData::Float32(Arc::new(vec![])),
+            position_y: NumericData::Float32(Arc::new(vec![])),
+            position_z: NumericData::Float32(Arc::new(vec![])),
             labels_vec: Arc::new(vec![]),
         }
     }
@@ -90,38 +96,19 @@ impl DrawToRasterGpu for Point3dLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        let x_bytes = bytemuck::cast_slice(&layer_params.position_x);
-        let y_bytes = bytemuck::cast_slice(&layer_params.position_y);
-        let z_bytes = bytemuck::cast_slice(&layer_params.position_z);
-
         let n = layer_params.labels_vec.len();
 
+        // Upload the X, Y, and Z coordinate arrays into single-channel 2D
+        // textures, each at its native byte width wherever possible; see
+        // `NumericData::create_data_texture`.
+        let (x_texture_view, x_dtype) =
+            layer_params.position_x.create_data_texture(device, queue, "X Coordinates Texture");
+        let (y_texture_view, y_dtype) =
+            layer_params.position_y.create_data_texture(device, queue, "Y Coordinates Texture");
+        let (z_texture_view, z_dtype) =
+            layer_params.position_z.create_data_texture(device, queue, "Z Coordinates Texture");
+
         let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-        // Create separate buffers for X, Y, and Z coordinates
-        let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("X Coordinates Storage Buffer"),
-            size: x_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&x_buffer, 0, x_bytes);
-
-        let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Y Coordinates Storage Buffer"),
-            size: y_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&y_buffer, 0, y_bytes);
-
-        let z_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Z Coordinates Storage Buffer"),
-            size: z_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&z_buffer, 0, z_bytes);
 
         let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Class labels Storage Buffer"),
@@ -208,30 +195,30 @@ impl DrawToRasterGpu for Point3dLayer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: x_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: y_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 3,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: z_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
@@ -258,15 +245,15 @@ impl DrawToRasterGpu for Point3dLayer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: x_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&x_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: y_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&y_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
-                        resource: z_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&z_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
@@ -275,8 +262,16 @@ impl DrawToRasterGpu for Point3dLayer {
                 ],
             });
 
+        let shader_source = ShaderBuilder::new(include_str!("shaders/point_3d_layer.wgsl"))
+            .inject_texture_sample_type("x_dtype", x_dtype)
+            .inject_texture_sample_type("y_dtype", y_dtype)
+            .inject_texture_sample_type("z_dtype", z_dtype)
+            .build();
         let shader = device
-            .create_shader_module(wgpu::include_wgsl!("shaders/point_3d_layer.wgsl"));
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("point_3d_layer.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
 
         let render_pipeline_layout = device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -389,9 +384,9 @@ impl PickableLayer for Point3dLayer {
         let mut closest_idx = 0usize;
 
         for i in 0..n {
-            let dx = self.layer_params.position_x[i] - cx;
-            let dy = self.layer_params.position_y[i] - cy;
-            let dz = self.layer_params.position_z[i] - cz;
+            let dx = self.layer_params.position_x.get_f32(i) - cx;
+            let dy = self.layer_params.position_y.get_f32(i) - cy;
+            let dz = self.layer_params.position_z.get_f32(i) - cz;
             let dist_sq = dx * dx + dy * dy + dz * dz;
             if dist_sq < min_dist_sq {
                 min_dist_sq = dist_sq;
@@ -402,9 +397,9 @@ impl PickableLayer for Point3dLayer {
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
         info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
-        info.insert("x".to_string(), self.layer_params.position_x[closest_idx].to_string());
-        info.insert("y".to_string(), self.layer_params.position_y[closest_idx].to_string());
-        info.insert("z".to_string(), self.layer_params.position_z[closest_idx].to_string());
+        info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
+        info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
+        info.insert("z".to_string(), self.layer_params.position_z.format_element(closest_idx));
 
         Some(LayerPickingResult {
             layer_id: self.layer_params.layer_id.clone(),

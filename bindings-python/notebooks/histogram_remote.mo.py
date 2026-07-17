@@ -125,8 +125,8 @@ async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
                         font_weight="Normal",
                         font_style="Normal",
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
-                        position_x=[100 + (width-100-10)/2],
-                        position_y=[15],
+                        position_x=dict(dtype="Float32", values=[100 + (width-100-10)/2]),
+                        position_y=dict(dtype="Float32", values=[15]),
                         text_vec=["Bin"]
                     )
                 ),
@@ -145,8 +145,8 @@ async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
                         font_weight="Normal",
                         font_style="Normal",
                         bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
-                        position_y=[100 + (height-100-10)/2],
-                        position_x=[25],
+                        position_y=dict(dtype="Float32", values=[100 + (height-100-10)/2]),
+                        position_x=dict(dtype="Float32", values=[25]),
                         text_vec=["Count"]
                     )
                 )

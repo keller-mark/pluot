@@ -33,7 +33,7 @@ Key parameters:
 
 | Parameter | Description |
 |-----------|-------------|
-| `position_x`, `position_y` | Numeric vectors of coordinates |
+| `position_x`, `position_y` | Coordinates as `list(dtype = ..., values = ...)`, where `dtype` is one of `"Uint8"`, `"Uint16"`, `"Uint32"`, `"Uint64"`, `"Int8"`, `"Int16"`, `"Int32"`, `"Int64"`, `"Float32"`, `"Float64"` and `values` is a numeric vector |
 | `labels_vec` | Integer vector of group indices (drives colour) |
 | `point_radius` | Radius in the units given by `point_radius_unit_mode_*` |
 | `point_shape_mode` | `"Circle"` or `"Square"` |
@@ -53,8 +53,8 @@ display_raster(
         point_shape_mode         = "Circle",
         point_radius             = 18.0,
         bounds                   = NULL,
-        position_x               = c(50, 100, 150, 50, 150),
-        position_y               = c(50,  50,  50, 150, 150),
+        position_x               = list(dtype = "Float32", values = c(50, 100, 150, 50, 150)),
+        position_y               = list(dtype = "Float32", values = c(50,  50,  50, 150, 150)),
         labels_vec               = c(0L, 1L, 2L, 3L, 4L)
       )
     )
@@ -86,8 +86,8 @@ display_raster(
         point_shape_mode         = "Circle",
         point_radius             = 8.0,
         bounds                   = NULL,
-        position_x               = c(100, 160, 220, 280, 340),
-        position_y               = c(200, 140,  80, 200, 120),
+        position_x               = list(dtype = "Float32", values = c(100, 160, 220, 280, 340)),
+        position_y               = list(dtype = "Float32", values = c(200, 140,  80, 200, 120)),
         labels_vec               = c(0L, 1L, 2L, 3L, 4L)
       )
     ),
@@ -135,8 +135,8 @@ display_svg(
         point_shape_mode         = "Circle",
         point_radius             = 8.0,
         bounds                   = NULL,
-        position_x               = c(100, 160, 220, 280, 340),
-        position_y               = c(180, 130,  80, 200, 110),
+        position_x               = list(dtype = "Float32", values = c(100, 160, 220, 280, 340)),
+        position_y               = list(dtype = "Float32", values = c(180, 130,  80, 200, 110)),
         labels_vec               = c(0L, 1L, 2L, 3L, 4L)
       )
     ),
@@ -166,8 +166,8 @@ display_svg(
           margin_top = 0, margin_left = 0,
           margin_right = 0, margin_bottom = 0
         ),
-        position_x           = list(ml + (w - ml - mr) / 2),
-        position_y           = list(h - 12.0),
+        position_x           = list(dtype = "Float32", values = list(ml + (w - ml - mr) / 2)),
+        position_y           = list(dtype = "Float32", values = list(h - 12.0)),
         text_vec             = list("X axis")
       )
     ),
@@ -190,8 +190,8 @@ display_svg(
           margin_top = 0, margin_left = 0,
           margin_right = 0, margin_bottom = 0
         ),
-        position_x           = list(18.0),
-        position_y           = list(mt + (h - mt - mb) / 2),
+        position_x           = list(dtype = "Float32", values = list(18.0)),
+        position_y           = list(dtype = "Float32", values = list(mt + (h - mt - mb) / 2)),
         text_vec             = list("Y axis")
       )
     )
@@ -231,8 +231,8 @@ display_svg(
         point_shape_mode         = "Circle",
         point_radius             = 4.0,
         bounds                   = NULL,
-        position_x               = xs,
-        position_y               = ys,
+        position_x               = list(dtype = "Float32", values = xs),
+        position_y               = list(dtype = "Float32", values = ys),
         labels_vec               = as.integer(rep_len(0L:4L, n))
       )
     ),
@@ -259,8 +259,8 @@ display_svg(
         font_style = "Normal",
         bounds              = list(margin_top=0, margin_left=0,
                                    margin_right=0, margin_bottom=0),
-        position_x          = list(200.0),
-        position_y          = list(14.0),
+        position_x          = list(dtype = "Float32", values = list(200.0)),
+        position_y          = list(dtype = "Float32", values = list(14.0)),
         text_vec            = list("Composite plot")
       )
     )

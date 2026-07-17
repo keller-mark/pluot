@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
+use crate::shader_modules::{common, ShaderBuilder};
+use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -42,8 +44,12 @@ pub struct PointLayerParams {
 
     pub point_opacity: f32, // TODO: support per-point opacity as well?
 
-    pub position_x: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
-    pub position_y: Arc<Vec<f32>>,
+    // Per-point X/Y coordinates. Each may be any supported numeric dtype
+    // (8–64 bit int/uint, or 32/64-bit float), and X and Y may differ. The
+    // data is uploaded to the GPU as a texture at its native width wherever
+    // possible (see `NumericData::create_data_texture`).
+    pub position_x: NumericData,
+    pub position_y: NumericData,
     // TODO: improve naming here
     pub labels_vec: Arc<Vec<i32>>,
 }
@@ -61,8 +67,8 @@ impl Default for PointLayerParams {
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
             point_opacity: 1.0,
-            position_x: Arc::new(vec![]),
-            position_y: Arc::new(vec![]),
+            position_x: NumericData::Float32(Arc::new(vec![])),
+            position_y: NumericData::Float32(Arc::new(vec![])),
             labels_vec: Arc::new(vec![]),
         }
     }
@@ -134,13 +140,18 @@ impl DrawToRasterGpu for PointLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        // This bytemuck::cast_slice does not clone,
-        // it just reinterprets the same memory.
-        let x_bytes = bytemuck::cast_slice(&layer_params.position_x);
-        let y_bytes = bytemuck::cast_slice(&layer_params.position_y);
-
-        // More efficient version that eliminates intermediate vectors and redundant operations
         let n = layer_params.labels_vec.len();
+
+        // Upload the X and Y coordinate arrays into single-channel 2D textures,
+        // each at its native byte width wherever possible (8/16/32-bit are
+        // zero-copy; only 64-bit dtypes are narrowed to 32 bits). X and Y are
+        // uploaded independently so they may have different dtypes; the shader
+        // reads each texel via its instance index and widens it to f32. See
+        // `NumericData::create_data_texture`.
+        let (x_texture_view, x_dtype) =
+            layer_params.position_x.create_data_texture(device, queue, "X Coordinates Texture");
+        let (y_texture_view, y_dtype) =
+            layer_params.position_y.create_data_texture(device, queue, "Y Coordinates Texture");
 
         // Convert to f32 and cast to bytes directly - no for loop needed
         //let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
@@ -148,23 +159,6 @@ impl DrawToRasterGpu for PointLayer {
 
         // TODO: can more of this be memoized/cached?
         // Which parts need to be re-executed every draw call? Which parts have high overhead?
-
-        // Create separate buffers for X and Y coordinates
-        let x_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("X Coordinates Storage Buffer"),
-            size: x_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&x_buffer, 0, x_bytes);
-
-        let y_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Y Coordinates Storage Buffer"),
-            size: y_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&y_buffer, 0, y_bytes);
 
         let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Class labels Storage Buffer"),
@@ -287,24 +281,26 @@ impl DrawToRasterGpu for PointLayer {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The X coordinates buffer.
+                        // The X coordinates texture. Its sample type must match
+                        // the dtype-specific texture format chosen above.
                         binding: 1,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: x_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        // The Y coordinates buffer.
+                        // The Y coordinates texture. Its sample type must match
+                        // the dtype-specific texture format chosen above.
                         binding: 2,
                         visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: y_dtype.binding_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
@@ -332,11 +328,11 @@ impl DrawToRasterGpu for PointLayer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: x_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&x_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: y_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::TextureView(&y_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -345,8 +341,19 @@ impl DrawToRasterGpu for PointLayer {
                 ],
             });
 
+        // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
+        let shader_source = ShaderBuilder::new(include_str!("shaders/point_layer.wgsl"))
+            .inject_function("scale", common::SCALE)
+            .inject_function("translate", common::TRANSLATE)
+            .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_texture_sample_type("x_dtype", x_dtype)
+            .inject_texture_sample_type("y_dtype", y_dtype)
+            .build();
         let shader = device
-            .create_shader_module(wgpu::include_wgsl!("shaders/point_layer.wgsl"));
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("point_layer.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+            });
 
         let render_pipeline_layout = device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -517,8 +524,8 @@ impl DrawToSvg for PointLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
-            let x = layer_params.position_x[i];
-            let y = layer_params.position_y[i];
+            let x = layer_params.position_x.get_f32(i);
+            let y = layer_params.position_y.get_f32(i);
 
             // Convert data coordinates to pixel coordinates within the layer area.
             let (px, py) = get_point_position(
@@ -644,8 +651,8 @@ impl PickableLayer for PointLayer {
         let mut closest_idx = 0usize;
 
         for i in 0..n {
-            let dx = self.layer_params.position_x[i] - cx;
-            let dy = self.layer_params.position_y[i] - cy;
+            let dx = self.layer_params.position_x.get_f32(i) - cx;
+            let dy = self.layer_params.position_y.get_f32(i) - cy;
             let dist_sq = dx * dx + dy * dy;
             if dist_sq < min_dist_sq {
                 min_dist_sq = dist_sq;
@@ -656,8 +663,9 @@ impl PickableLayer for PointLayer {
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
         info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
-        info.insert("x".to_string(), self.layer_params.position_x[closest_idx].to_string());
-        info.insert("y".to_string(), self.layer_params.position_y[closest_idx].to_string());
+        // Format in the coordinate's native dtype (integers without a decimal point).
+        info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
+        info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
 
         Some(LayerPickingResult {
             layer_id: self.layer_params.layer_id.clone(),

@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use pluot_core::layers::bitmap_layer::{
-    BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder, NumericData,
+    BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder,
 };
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
-use pluot_core::{LayerPickingResult, UnitsMode, ViewParams};
+use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData};
 
 /// A 2x2 single-channel image with values:
 ///   array row 0 (top):    [10, 20]

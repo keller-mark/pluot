@@ -1,7 +1,7 @@
 use crate::{render_types::GpuContext, wgpu};
-use crate::wgpu::util::DeviceExt;
+use crate::numeric_data::NumericData;
+use crate::shader_modules::ShaderBuilder;
 use std::num::NonZeroU64;
-use std::sync::Arc;
 use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 
@@ -56,15 +56,17 @@ impl ReduceMode {
 // Uniform struct
 
 /// Must match `ReduceUniforms` in shaders/reduce.wgsl exactly (field order
-/// and types).  5 x 4 bytes = 20 bytes.
+/// and types).  6 x 4 bytes = 24 bytes.
 #[derive(ShaderType)]
 struct ReduceUniforms {
     mode: u32,
-    // TODO: can the shader just obtain num_elements from the length of the input array?
+    // Number of elements processed by the current dispatch (chunk length).
     num_elements: u32,
     num_bins: u32,
     data_min: f32,
     data_max: f32,
+    // Flat index of the current chunk's first element within the input texture.
+    base_offset: u32,
 }
 
 // Core dispatch function
@@ -127,14 +129,26 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 ///                       the `u32`s.
 pub async fn compute_reduce(
     gpu_context: &GpuContext<'_>,
-    input_arr: Arc<Vec<f32>>,
+    input: &NumericData,
     mode: ReduceMode,
 ) -> Vec<f32> {
     let GpuContext { device, queue } = gpu_context;
     let is_histogram = mode.is_histogram();
     let is_extent = matches!(mode, ReduceMode::Extent);
 
-    let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/reduce.wgsl"));
+    // Upload the input once as a single-channel 2D texture in its native dtype
+    // (8/16/32-bit are zero-copy; only 64-bit is narrowed). The shader reads
+    // each element via `f32(textureLoad(...))`, so there is no CPU-side cast.
+    let (input_view, input_dtype) = input.create_data_texture(device, queue, "reduce_input");
+
+    // Assemble the shader with the texture's sampled type injected at runtime.
+    let shader_source = ShaderBuilder::new(include_str!("shaders/reduce.wgsl"))
+        .inject_texture_sample_type("input_dtype", input_dtype)
+        .build();
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("reduce.wgsl"),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+    });
 
     let (num_bins, data_min, data_max) = match &mode {
         ReduceMode::Histogram { num_bins, data_min, data_max } => (*num_bins, *data_min, *data_max),
@@ -143,16 +157,16 @@ pub async fn compute_reduce(
 
     // ── Chunk sizing ──────────────────────────────────────────────────────────
     //
-    // A single dispatch is limited along each dimension; an element count above
-    // `max_compute_workgroups_per_dimension * 64` would exceed that.  A single
-    // bound storage buffer is also limited by `max_storage_buffer_binding_size`.
-    // We pick the largest chunk that satisfies both limits.
+    // The whole input lives in one texture, so the only per-dispatch limit is
+    // the workgroup count: an element count above
+    // `max_compute_workgroups_per_dimension * 64` would exceed a single
+    // dispatch, so we process the input in chunks of that size, each reading
+    // from the shared texture at its own `base_offset`.
 
     let limits = device.limits();
     let max_elems_by_dispatch =
         (limits.max_compute_workgroups_per_dimension as usize).saturating_mul(64);
-    let max_elems_by_binding = (limits.max_storage_buffer_binding_size as usize) / 4;
-    let chunk_elements = max_elems_by_dispatch.min(max_elems_by_binding).max(64);
+    let chunk_elements = max_elems_by_dispatch.max(64);
 
     // ── Uniform layout (size is constant across chunks) ───────────────────────
 
@@ -165,6 +179,7 @@ pub async fn compute_reduce(
                 num_bins,
                 data_min,
                 data_max,
+                base_offset: 0,
             })
             .unwrap();
         buffer.into_inner().len() as u64
@@ -188,10 +203,10 @@ pub async fn compute_reduce(
     let input_entry = wgpu::BindGroupLayoutEntry {
         binding: 1,
         visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only: true },
-            min_binding_size: Some(NonZeroU64::new(4).unwrap()),
-            has_dynamic_offset: false,
+        ty: wgpu::BindingType::Texture {
+            sample_type: input_dtype.binding_sample_type(),
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
         },
         count: None,
     };
@@ -248,16 +263,16 @@ pub async fn compute_reduce(
 
     // ── Process each chunk ────────────────────────────────────────────────────
 
-    let total = input_arr.len();
+    let total = input.len();
     let mut scalar_partials: Vec<f32> = Vec::new();
     let mut offset = 0usize;
 
     while offset < total {
         let chunk_len = (total - offset).min(chunk_elements);
-        let chunk = &input_arr[offset..offset + chunk_len];
         let workgroup_count = chunk_len.div_ceil(64);
 
-        // Uniforms for this chunk (num_elements is the chunk length).
+        // Uniforms for this chunk (num_elements is the chunk length; base_offset
+        // locates the chunk's first element within the shared input texture).
 
         let mut uniform_buf = UniformBuffer::new(Vec::<u8>::new());
         uniform_buf
@@ -267,6 +282,7 @@ pub async fn compute_reduce(
                 num_bins,
                 data_min,
                 data_max,
+                base_offset: offset as u32,
             })
             .unwrap();
         let uniform_bytes = uniform_buf.into_inner();
@@ -278,14 +294,6 @@ pub async fn compute_reduce(
             mapped_at_creation: false,
         });
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-        // Input buffer for this chunk.
-
-        let input_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("reduce_input"),
-            contents: bytemuck::cast_slice(chunk),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
 
         // Output buffer: per-chunk for scalar modes, shared accumulator for
         // histogram.
@@ -326,7 +334,7 @@ pub async fn compute_reduce(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: input_data_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::TextureView(&input_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: if is_histogram { 3 } else { 2 },
@@ -395,34 +403,89 @@ pub async fn compute_reduce(
 }
 
 // CPU fallbacks
+//
+// Each reducer runs on the input at its native dtype and casts only the scalar
+// *result* to f32 — the input array is never converted to f32 up front.
+// `ScalarToF32` provides that single-value output cast for every supported
+// element type, and `dispatch_cpu!` selects the matching `NumericData` arm.
 
-fn cpu_reduce_min(input: &[f32]) -> f32 {
-    input.iter().copied().fold(f32::INFINITY, f32::min)
+/// Casts one scalar of a supported numeric dtype to f32. Applied only to
+/// reduction outputs — never to convert the input array.
+trait ScalarToF32: Copy {
+    fn scalar_to_f32(self) -> f32;
+}
+macro_rules! impl_scalar_to_f32 {
+    ($($t:ty),*) => { $(impl ScalarToF32 for $t {
+        fn scalar_to_f32(self) -> f32 { self as f32 }
+    })* };
+}
+impl_scalar_to_f32!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+
+/// Runs `$body` — which may reference the bound native slice `$v` — on whichever
+/// dtype the `NumericData` holds, so the CPU reducers stay dtype-generic without
+/// converting the input to f32.
+macro_rules! dispatch_cpu {
+    ($input:expr, |$v:ident| $body:expr) => {
+        match $input {
+            NumericData::Uint8($v) => $body,
+            NumericData::Uint16($v) => $body,
+            NumericData::Uint32($v) => $body,
+            NumericData::Uint64($v) => $body,
+            NumericData::Int8($v) => $body,
+            NumericData::Int16($v) => $body,
+            NumericData::Int32($v) => $body,
+            NumericData::Int64($v) => $body,
+            NumericData::Float32($v) => $body,
+            NumericData::Float64($v) => $body,
+        }
+    };
 }
 
-fn cpu_reduce_max(input: &[f32]) -> f32 {
-    input.iter().copied().fold(f32::NEG_INFINITY, f32::max)
+fn cpu_reduce_min<T: ScalarToF32 + PartialOrd>(input: &[T]) -> f32 {
+    input
+        .iter()
+        .copied()
+        .reduce(|a, b| if b < a { b } else { a })
+        .map_or(f32::INFINITY, ScalarToF32::scalar_to_f32)
 }
 
-fn cpu_reduce_sum(input: &[f32]) -> f32 {
-    input.iter().copied().sum()
+fn cpu_reduce_max<T: ScalarToF32 + PartialOrd>(input: &[T]) -> f32 {
+    input
+        .iter()
+        .copied()
+        .reduce(|a, b| if b > a { b } else { a })
+        .map_or(f32::NEG_INFINITY, ScalarToF32::scalar_to_f32)
 }
 
-fn cpu_reduce_extent(input: &[f32]) -> (f32, f32) {
-    input.iter().copied().fold(
-        (f32::INFINITY, f32::NEG_INFINITY),
-        |(lo, hi), v| (f32::min(lo, v), f32::max(hi, v)),
-    )
+fn cpu_reduce_sum<T: ScalarToF32 + std::iter::Sum>(input: &[T]) -> f32 {
+    // Accumulate in the native dtype; cast only the final sum.
+    input.iter().copied().sum::<T>().scalar_to_f32()
 }
 
-fn cpu_reduce_histogram(input: &[f32], num_bins: u32, data_min: f32, data_max: f32) -> Vec<u32> {
+fn cpu_reduce_extent<T: ScalarToF32 + PartialOrd>(input: &[T]) -> (f32, f32) {
+    match input.split_first() {
+        None => (f32::INFINITY, f32::NEG_INFINITY),
+        Some((&first, rest)) => {
+            let (mut lo, mut hi) = (first, first);
+            for &v in rest {
+                if v < lo { lo = v; }
+                if v > hi { hi = v; }
+            }
+            (lo.scalar_to_f32(), hi.scalar_to_f32())
+        }
+    }
+}
+
+fn cpu_reduce_histogram<T: ScalarToF32>(input: &[T], num_bins: u32, data_min: f32, data_max: f32) -> Vec<u32> {
     let mut bins = vec![0u32; num_bins as usize];
     let range = data_max - data_min;
     for &v in input {
         let bin = if range <= 0.0 {
             0
         } else {
-            let t = (v - data_min) / range;
+            // Bin edges are given in f32, so binning is inherently an f32
+            // comparison; convert one scalar at a time (no up-front input cast).
+            let t = (v.scalar_to_f32() - data_min) / range;
             (t * num_bins as f32).clamp(0.0, (num_bins - 1) as f32) as u32
         };
         bins[bin as usize] += 1;
@@ -436,52 +499,59 @@ fn cpu_reduce_histogram(input: &[f32], num_bins: u32, data_min: f32, data_max: f
 // CPU-side fold of partial workgroup results).  When None, a naive CPU
 // fallback runs instead.
 
-/// Returns the minimum value in `input_arr`, or `f32::INFINITY` if empty.
-pub async fn reduce_min(gpu_context: Option<&GpuContext<'_>>, input_arr: Arc<Vec<f32>>) -> f32 {
+/// Returns the minimum value in `input`, or `f32::INFINITY` if empty.
+///
+/// Accepts anything convertible into [`NumericData`] (e.g. an
+/// `Arc<Vec<f32>>`), so any supported dtype is reduced without a CPU-side cast.
+pub async fn reduce_min(gpu_context: Option<&GpuContext<'_>>, input: impl Into<NumericData>) -> f32 {
+    let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, input_arr, ReduceMode::Min).await;
+            let partials = compute_reduce(ctx, &input, ReduceMode::Min).await;
             partials.into_iter().fold(f32::INFINITY, f32::min)
         }
-        None => cpu_reduce_min(&input_arr),
+        None => dispatch_cpu!(&input, |v| cpu_reduce_min(v)),
     }
 }
 
-/// Returns the maximum value in `input_arr`, or `f32::NEG_INFINITY` if empty.
-pub async fn reduce_max(gpu_context: Option<&GpuContext<'_>>, input_arr: Arc<Vec<f32>>) -> f32 {
+/// Returns the maximum value in `input`, or `f32::NEG_INFINITY` if empty.
+pub async fn reduce_max(gpu_context: Option<&GpuContext<'_>>, input: impl Into<NumericData>) -> f32 {
+    let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, input_arr, ReduceMode::Max).await;
+            let partials = compute_reduce(ctx, &input, ReduceMode::Max).await;
             partials.into_iter().fold(f32::NEG_INFINITY, f32::max)
         }
-        None => cpu_reduce_max(&input_arr),
+        None => dispatch_cpu!(&input, |v| cpu_reduce_max(v)),
     }
 }
 
-/// Returns the sum of all values in `input_arr`, or `0.0` if empty.
-pub async fn reduce_sum(gpu_context: Option<&GpuContext<'_>>, input_arr: Arc<Vec<f32>>) -> f32 {
+/// Returns the sum of all values in `input`, or `0.0` if empty.
+pub async fn reduce_sum(gpu_context: Option<&GpuContext<'_>>, input: impl Into<NumericData>) -> f32 {
+    let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, input_arr, ReduceMode::Sum).await;
+            let partials = compute_reduce(ctx, &input, ReduceMode::Sum).await;
             partials.into_iter().sum()
         }
-        None => cpu_reduce_sum(&input_arr),
+        None => dispatch_cpu!(&input, |v| cpu_reduce_sum(v)),
     }
 }
 
-/// Returns `(min, max)` over `input_arr`, or `(f32::INFINITY, f32::NEG_INFINITY)` if empty.
+/// Returns `(min, max)` over `input`, or `(f32::INFINITY, f32::NEG_INFINITY)` if empty.
 pub async fn reduce_extent(
     gpu_context: Option<&GpuContext<'_>>,
-    input_arr: Arc<Vec<f32>>,
+    input: impl Into<NumericData>,
 ) -> (f32, f32) {
+    let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, input_arr, ReduceMode::Extent).await;
+            let partials = compute_reduce(ctx, &input, ReduceMode::Extent).await;
             let global_min = partials.iter().copied().step_by(2).fold(f32::INFINITY, f32::min);
             let global_max = partials.iter().copied().skip(1).step_by(2).fold(f32::NEG_INFINITY, f32::max);
             (global_min, global_max)
         }
-        None => cpu_reduce_extent(&input_arr),
+        None => dispatch_cpu!(&input, |v| cpu_reduce_extent(v)),
     }
 }
 
@@ -492,18 +562,19 @@ pub async fn reduce_extent(
 /// clamped to the nearest edge bin.  `num_bins` must be ≤ 256.
 pub async fn reduce_histogram_with_known_extent(
     gpu_context: Option<&GpuContext<'_>>,
-    input_arr: Arc<Vec<f32>>,
+    input: impl Into<NumericData>,
     num_bins: u32,
     data_min: f32,
     data_max: f32,
 ) -> Vec<u32> {
+    let input = input.into();
     match gpu_context {
         Some(ctx) => {
             let mode = ReduceMode::Histogram { num_bins, data_min, data_max };
-            let raw = compute_reduce(ctx, input_arr, mode).await;
+            let raw = compute_reduce(ctx, &input, mode).await;
             bytemuck::cast_slice::<f32, u32>(&raw).to_vec()
         }
-        None => cpu_reduce_histogram(&input_arr, num_bins, data_min, data_max),
+        None => dispatch_cpu!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max)),
     }
 }
 
@@ -514,9 +585,10 @@ pub async fn reduce_histogram_with_known_extent(
 /// unknown: one for extent, one for the histogram.  `num_bins` must be ≤ 256.
 pub async fn reduce_histogram_with_unknown_extent(
     gpu_context: Option<&GpuContext<'_>>,
-    input_arr: Arc<Vec<f32>>,
+    input: impl Into<NumericData>,
     num_bins: u32,
 ) -> Vec<u32> {
-    let (data_min, data_max) = reduce_extent(gpu_context, Arc::clone(&input_arr)).await;
-    reduce_histogram_with_known_extent(gpu_context, input_arr, num_bins, data_min, data_max).await
+    let input = input.into();
+    let (data_min, data_max) = reduce_extent(gpu_context, input.clone()).await;
+    reduce_histogram_with_known_extent(gpu_context, input, num_bins, data_min, data_max).await
 }

@@ -1,85 +1,10 @@
-fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(x, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, y, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, z, 0.0),
-    vec4<f32>(0.0, 0.0, 0.0, 1.0)
-  );
-}
+// The following functions are injected at compile time by the shader-module
+// system (see `crate::shader_modules`). Their sources live in `wgsl_functions/`.
+{{scale}}
 
-fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(1.0, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, 1.0, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, 1.0, 0.0),
-    vec4<f32>(x, y, z, 1.0),
-  );
-}
+{{translate}}
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
-    // Determine the x and y extents to use,
-    // based on the aspect ratio mode and layer aspect ratio.
-    // We only need to handle the aspect ratio mode when the layer_aspect_ratio is not 1.
-    var x_scale_for_aspect_ratio_mode = 1.0;
-    var y_scale_for_aspect_ratio_mode = 1.0;
-    if (aspect_ratio_mode == 1u) {
-        // fit/contain
-        if (layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show more than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show exactly (0, 1) in x direction. Show more than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    } else if (aspect_ratio_mode == 2u) {
-        // fill/cover
-        if(layer_aspect_ratio > 1.0) {
-            // Wide rectangle
-            // Show exactly (0, 1) in x direction. Show less than (0, 1) in y direction.
-            y_scale_for_aspect_ratio_mode = layer_aspect_ratio;
-        } else if(layer_aspect_ratio < 1.0) {
-            // Tall layer
-            // Show less than (0, 1) in x direction. Show exactly (0, 1) in y direction.
-            x_scale_for_aspect_ratio_mode = 1.0 / layer_aspect_ratio;
-        } else {
-            // Square layer; no change needed.
-            // Show exactly (0, 1) in both directions.
-        }
-    }
-
-    // To handle aspect_ratio_alignment_mode, we compute the required translation.
-    // After scale(sx, sy), the data axis spans [-sx, +sx] in NDC.
-    // Center (default): no translation needed.
-    // Start: We shift so the start edge aligns to -1. So, tx = sx - 1
-    // End: We shift so the end edge aligns to +1.     So, tx = 1 - sx
-    // When the scaling is 1.0, both formulas yield 0.
-    var x_translation_for_aspect_ratio_alignment_mode = 0.0;
-    var y_translation_for_aspect_ratio_alignment_mode = 0.0;
-    if (aspect_ratio_alignment_mode == 1u) {
-        // start
-        x_translation_for_aspect_ratio_alignment_mode = x_scale_for_aspect_ratio_mode - 1.0;
-        y_translation_for_aspect_ratio_alignment_mode = y_scale_for_aspect_ratio_mode - 1.0;
-    } else if (aspect_ratio_alignment_mode == 2u) {
-        // end
-        x_translation_for_aspect_ratio_alignment_mode = 1.0 - x_scale_for_aspect_ratio_mode;
-        y_translation_for_aspect_ratio_alignment_mode = 1.0 - y_scale_for_aspect_ratio_mode;
-    }
-
-    return translate(
-        x_translation_for_aspect_ratio_alignment_mode,
-        y_translation_for_aspect_ratio_alignment_mode,
-        0.0
-    ) * scale(
-        x_scale_for_aspect_ratio_mode,
-        y_scale_for_aspect_ratio_mode,
-        1.0
-    );
-}
+{{get_aspect_ratio_mat}}
 
 
 struct Channel {
@@ -121,11 +46,16 @@ struct VSOut {
     @location(0) tex_coord: vec2<f32>, // Pass texture coordinates to fragment shader
 };
 
-// The data is converted to f32 on the CPU side (regardless of original dtype)
-// and uploaded as a flat storage buffer. The shader uses strides to index
-// into the buffer, handling any dimension ordering (e.g., CYX vs YXC).
+// The image data is uploaded as a single-channel (red-only) 2D texture holding
+// the flat data reshaped into rows: flat element `idx` lives at texel
+// `(idx % width, idx / width)`. The data is NOT reordered on the CPU, so the
+// shader still computes `idx` from per-dimension strides, handling any
+// dimension ordering (e.g., CYX vs YXC), and only then maps it to 2D coords.
+// The texture's sampled type is injected at runtime by the shader-module system
+// (see `crate::shader_modules`) so that 8/16/32-bit data lives on the GPU at native
+// width: `f32` for floating-point data, `u32` for unsigned, `i32` for signed.
 @group(0) @binding(0) var<storage, read> u: Uniforms;
-@group(0) @binding(1) var<storage, read> img_data: array<f32>;
+@group(0) @binding(1) var img_data: texture_2d<{{img_data_dtype}}>;
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
 // The corresponding texture coordinates (UVs) for each vertex.
@@ -301,7 +231,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         // Compute the flat index into the storage buffer using per-dimension strides.
         // This handles any dimension ordering (e.g., CYX, YXC, XYC, etc.).
         let idx = texel_coords.y * u.y_stride + texel_coords.x * u.x_stride + channel_index * u.c_stride;
-        let intensity = img_data[idx];
+        // Map the flat element index into the 2D texture the data was reshaped
+        // into on upload: (idx % width, idx / width).
+        let tex_width = textureDimensions(img_data).x;
+        let load_coords = vec2<u32>(idx % tex_width, idx / tex_width);
+        // `f32(...)` is a no-op when the injected sampled type is already f32,
+        // and widens u32/i32 texel values to f32 for the windowing math below.
+        let intensity = f32(textureLoad(img_data, load_coords, 0).x);
         let ch_color = u.channels[channel_index].color;
         let ch_window = u.channels[channel_index].window;
 

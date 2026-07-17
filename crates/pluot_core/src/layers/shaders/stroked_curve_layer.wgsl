@@ -21,51 +21,13 @@
 
 // Shared projection helpers (identical to curve_layer.wgsl)
 
-fn scale(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(x, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, y, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, z, 0.0),
-    vec4<f32>(0.0, 0.0, 0.0, 1.0)
-  );
-}
+// The following functions are injected at compile time by the shader-module
+// system (see `crate::shader_modules`). Their sources live in `wgsl_functions/`.
+{{scale}}
 
-fn translate(x: f32, y: f32, z: f32) -> mat4x4<f32> {
-  return mat4x4<f32>(
-    vec4<f32>(1.0, 0.0, 0.0, 0.0),
-    vec4<f32>(0.0, 1.0, 0.0, 0.0),
-    vec4<f32>(0.0, 0.0, 1.0, 0.0),
-    vec4<f32>(x, y, z, 1.0),
-  );
-}
+{{translate}}
 
-fn get_aspect_ratio_mat(layer_aspect_ratio: f32, aspect_ratio_mode: u32, aspect_ratio_alignment_mode: u32) -> mat4x4<f32> {
-    var x_scale = 1.0;
-    var y_scale = 1.0;
-    if (aspect_ratio_mode == 1u) {
-        if (layer_aspect_ratio > 1.0) {
-            x_scale = 1.0 / layer_aspect_ratio;
-        } else if (layer_aspect_ratio < 1.0) {
-            y_scale = layer_aspect_ratio;
-        }
-    } else if (aspect_ratio_mode == 2u) {
-        if (layer_aspect_ratio > 1.0) {
-            y_scale = layer_aspect_ratio;
-        } else if (layer_aspect_ratio < 1.0) {
-            x_scale = 1.0 / layer_aspect_ratio;
-        }
-    }
-    var x_trans = 0.0;
-    var y_trans = 0.0;
-    if (aspect_ratio_alignment_mode == 1u) {
-        x_trans = x_scale - 1.0;
-        y_trans = y_scale - 1.0;
-    } else if (aspect_ratio_alignment_mode == 2u) {
-        x_trans = 1.0 - x_scale;
-        y_trans = 1.0 - y_scale;
-    }
-    return translate(x_trans, y_trans, 0.0) * scale(x_scale, y_scale, 1.0);
-}
+{{get_aspect_ratio_mat}}
 
 struct StrokedCurveLayerUniforms {
     layer_size: vec2<f32>,          // (layer_width, layer_height) in pixels
@@ -153,7 +115,7 @@ fn px_to_ndc(px: vec2<f32>) -> vec2<f32> {
 // Vertex shader
 
 @vertex
-fn vs_stroke(
+fn vs_main(
     @builtin(instance_index) instance_index: u32,
     @builtin(vertex_index) vertex_index: u32,
 ) -> VSOut {

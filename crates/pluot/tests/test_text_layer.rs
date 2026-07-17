@@ -9,7 +9,7 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
-    FontWeight, FontStyle,
+    FontWeight, FontStyle, NumericData,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -45,8 +45,8 @@ fn corner_text_data() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
-        position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5]),
-        position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5])),
         text_vec: Arc::new(vec![
             "A".to_string(),
             "B".to_string(),
@@ -73,8 +73,8 @@ fn corner_text_pixels() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
-        position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         text_vec: Arc::new(vec![
             "A".to_string(),
             "B".to_string(),
@@ -89,8 +89,8 @@ fn corner_text_data_x_pixel_y() -> TextLayerParams {
     TextLayerParams {
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Pixels,
-        position_x: Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5]),
-        position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0, 50.0]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0, 50.0])),
         ..corner_text_data()
     }
 }
@@ -100,8 +100,8 @@ fn corner_text_pixel_x_data_y() -> TextLayerParams {
     TextLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Data,
-        position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0, 50.0]),
-        position_y: Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5]),
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0, 50.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5])),
         ..corner_text_data()
     }
 }
@@ -323,8 +323,8 @@ async fn test_text_layer_wide_contain_pixel_units_no_margins() {
         width: 200,
         height: 100,
         layers: layer_params(TextLayerParams {
-            position_x: Arc::new(vec![0.0, 200.0, 200.0, 0.0]),
-            position_y: Arc::new(vec![0.0, 0.0, 100.0, 100.0]),
+            position_x: NumericData::Float32(Arc::new(vec![0.0, 200.0, 200.0, 0.0])),
+            position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
             ..corner_text_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -413,8 +413,8 @@ async fn test_text_layer_tall_contain_pixel_units_no_margins() {
         width: 100,
         height: 200,
         layers: layer_params(TextLayerParams {
-            position_x: Arc::new(vec![0.0, 100.0, 100.0, 0.0]),
-            position_y: Arc::new(vec![0.0, 0.0, 200.0, 200.0]),
+            position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
+            position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 200.0, 200.0])),
             ..corner_text_pixels()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
