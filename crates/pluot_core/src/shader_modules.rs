@@ -86,20 +86,20 @@ pub mod common {
 /// a value texture assume [`common::FLAT_TEXEL_COORD`] is also injected.
 pub mod color {
     /// Static color shared by every element.
-    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/color/uniform_rgb.wgsl");
+    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/get_fill_color/uniform_rgb.wgsl");
 
     /// Per-element RGB from three parallel value textures.
-    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/color/instanced_rgb.wgsl");
+    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/get_fill_color/instanced_rgb.wgsl");
 
     /// Per-element RGB from one interleaved value texture.
     pub const INSTANCED_RGB_INTERLEAVED: &str =
-        include_str!("wgsl_functions/color/instanced_rgb_interleaved.wgsl");
+        include_str!("wgsl_functions/get_fill_color/instanced_rgb_interleaved.wgsl");
 
     /// Per-element integer labels indexed against a palette texture.
-    pub const CATEGORICAL: &str = include_str!("wgsl_functions/color/categorical.wgsl");
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_fill_color/categorical.wgsl");
 
     /// Per-element scalar values mapped through a continuous colormap.
-    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/color/quantitative.wgsl");
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_fill_color/quantitative.wgsl");
 }
 
 /// Colormap WGSL functions, embedded at compile time from
@@ -111,49 +111,49 @@ pub mod color {
 /// Inject one into a template with [`ShaderBuilder::inject_function`].
 pub mod colormaps {
     /// `fn autumn(x: f32) -> vec4<f32>`
-    pub const AUTUMN: &str = include_str!("wgsl_functions/colormaps/autumn.wgsl");
+    pub const AUTUMN: &str = include_str!("wgsl_functions/colormap_quantitative/autumn.wgsl");
 
     /// `fn bone(x: f32) -> vec4<f32>`
-    pub const BONE: &str = include_str!("wgsl_functions/colormaps/bone.wgsl");
+    pub const BONE: &str = include_str!("wgsl_functions/colormap_quantitative/bone.wgsl");
 
     /// `fn cool(x: f32) -> vec4<f32>`
-    pub const COOL: &str = include_str!("wgsl_functions/colormaps/cool.wgsl");
+    pub const COOL: &str = include_str!("wgsl_functions/colormap_quantitative/cool.wgsl");
 
     /// `fn copper(x: f32) -> vec4<f32>`
-    pub const COPPER: &str = include_str!("wgsl_functions/colormaps/copper.wgsl");
+    pub const COPPER: &str = include_str!("wgsl_functions/colormap_quantitative/copper.wgsl");
 
     /// `fn density(x: f32) -> vec4<f32>`
-    pub const DENSITY: &str = include_str!("wgsl_functions/colormaps/density.wgsl");
+    pub const DENSITY: &str = include_str!("wgsl_functions/colormap_quantitative/density.wgsl");
 
     /// `fn greys(x: f32) -> vec4<f32>`
-    pub const GREYS: &str = include_str!("wgsl_functions/colormaps/greys.wgsl");
+    pub const GREYS: &str = include_str!("wgsl_functions/colormap_quantitative/greys.wgsl");
 
     /// `fn hot(x: f32) -> vec4<f32>`
-    pub const HOT: &str = include_str!("wgsl_functions/colormaps/hot.wgsl");
+    pub const HOT: &str = include_str!("wgsl_functions/colormap_quantitative/hot.wgsl");
 
     /// `fn inferno(x: f32) -> vec4<f32>`
-    pub const INFERNO: &str = include_str!("wgsl_functions/colormaps/inferno.wgsl");
+    pub const INFERNO: &str = include_str!("wgsl_functions/colormap_quantitative/inferno.wgsl");
 
     /// `fn jet(x: f32) -> vec4<f32>`
-    pub const JET: &str = include_str!("wgsl_functions/colormaps/jet.wgsl");
+    pub const JET: &str = include_str!("wgsl_functions/colormap_quantitative/jet.wgsl");
 
     /// `fn magma(x: f32) -> vec4<f32>`
-    pub const MAGMA: &str = include_str!("wgsl_functions/colormaps/magma.wgsl");
+    pub const MAGMA: &str = include_str!("wgsl_functions/colormap_quantitative/magma.wgsl");
 
     /// `fn plasma(x: f32) -> vec4<f32>`
-    pub const PLASMA: &str = include_str!("wgsl_functions/colormaps/plasma.wgsl");
+    pub const PLASMA: &str = include_str!("wgsl_functions/colormap_quantitative/plasma.wgsl");
 
     /// `fn spring(x: f32) -> vec4<f32>`
-    pub const SPRING: &str = include_str!("wgsl_functions/colormaps/spring.wgsl");
+    pub const SPRING: &str = include_str!("wgsl_functions/colormap_quantitative/spring.wgsl");
 
     /// `fn summer(x: f32) -> vec4<f32>`
-    pub const SUMMER: &str = include_str!("wgsl_functions/colormaps/summer.wgsl");
+    pub const SUMMER: &str = include_str!("wgsl_functions/colormap_quantitative/summer.wgsl");
 
     /// `fn viridis(x: f32) -> vec4<f32>`
-    pub const VIRIDIS: &str = include_str!("wgsl_functions/colormaps/viridis.wgsl");
+    pub const VIRIDIS: &str = include_str!("wgsl_functions/colormap_quantitative/viridis.wgsl");
 
     /// `fn winter(x: f32) -> vec4<f32>`
-    pub const WINTER: &str = include_str!("wgsl_functions/colormaps/winter.wgsl");
+    pub const WINTER: &str = include_str!("wgsl_functions/colormap_quantitative/winter.wgsl");
 
     use crate::render_traits::QuantitativeColormap;
 
