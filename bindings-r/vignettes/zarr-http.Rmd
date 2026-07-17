@@ -17,7 +17,7 @@ library(pluotr)
 
 pluotr can render data from any Zarr store that pizzarr supports, including
 stores served over HTTP. This vignette demonstrates `ZarrBarPlotLayer` using a
-publicly available dataset — historical UK wheat prices — fetched directly from
+publicly available dataset, historical UK wheat prices, fetched directly from
 a remote Zarr store.
 
 > **Note:** this vignette requires an internet connection and the

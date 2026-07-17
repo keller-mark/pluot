@@ -133,7 +133,7 @@ fn get_initial_point_size(num_points: usize) -> f32 {
 /// into device pixels, given the data extent (`x_range`/`y_range`) and the
 /// currently-visible extent (`visible_x`/`visible_y`, from `get_bounds`).
 ///
-/// deck.gl computes `(xRange * 2**zoom) / width` — the fraction of the viewport
+/// deck.gl computes `(xRange * 2**zoom) / width`, the fraction of the viewport
 /// the data spans. In pluot that fraction is `x_range / visible_x`.
 fn get_point_size_device_pixels(
     device_pixel_ratio: f32,

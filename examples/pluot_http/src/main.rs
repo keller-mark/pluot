@@ -1,7 +1,7 @@
 //! An HTTP server for rendering plots to SVG or PNG.
 //!
-//! POST /render-svg  — accepts JSON render params, returns SVG (image/svg+xml)
-//! POST /render-png  — accepts JSON render params, returns PNG (image/png)
+//! POST /render-svg - accepts JSON render params, returns SVG (image/svg+xml)
+//! POST /render-png - accepts JSON render params, returns PNG (image/png)
 //!
 //! The request body is a JSON object whose fields correspond to [`pluot::RenderParams`].
 //! Only `layers` is required; all other fields fall back to their defaults when omitted.
@@ -117,7 +117,7 @@ fn render_png(state: State) -> Pin<Box<HandlerFuture>> {
 
 /// Create a `Handler` that is invoked for requests to the path "/"
 pub fn say_hello(state: State) -> (State, &'static str) {
-    (state, "pluot HTTP renderer — POST /render-svg or /render-png with JSON body")
+    (state, "pluot HTTP renderer: POST /render-svg or /render-png with JSON body")
 }
 
 fn router() -> Router {

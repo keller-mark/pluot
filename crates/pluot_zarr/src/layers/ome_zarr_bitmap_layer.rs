@@ -18,6 +18,8 @@ use pluot_core::layers::bitmap_layer::{
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
+use pluot_core::LayerPickingResult;
+use pluot_core::viewport::{DataCoord, ScreenCoord};
 use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
 use pluot_core::layers::multiscale_utils::to_y_slice;
 
@@ -431,4 +433,24 @@ impl DrawToSvg for OmeZarrBitmapLayer {
     }
 }
 
-impl PickableLayer for OmeZarrBitmapLayer {}
+impl PickableLayer for OmeZarrBitmapLayer {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        // Delegate to the inner BitmapLayer (constructed during prepare).
+        // Its "x"/"y" indices are local to this tile's data slice; add the
+        // slice offsets so the result also carries indices into the full
+        // array at this resolution level.
+        let inner = self.inner.as_ref()?;
+        let mut result = PickableLayer::pick(inner, screen_coord, data_coord)?;
+
+        let (x_start, _) = self.layer_params.slice_x.unwrap_or((0, 0));
+        let (y_start, _) = self.layer_params.slice_y.unwrap_or((0, 0));
+        if let Some(x) = result.info.get("x").and_then(|v| v.parse::<u64>().ok()) {
+            result.info.insert("array_x".to_string(), (x_start + x).to_string());
+        }
+        if let Some(y) = result.info.get("y").and_then(|v| v.parse::<u64>().ok()) {
+            result.info.insert("array_y".to_string(), (y_start + y).to_string());
+        }
+
+        Some(result)
+    }
+}

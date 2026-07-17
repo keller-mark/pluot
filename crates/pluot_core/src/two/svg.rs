@@ -73,7 +73,7 @@ impl SvgContext {
     /// Returns `(id, is_new)`.
     ///
     /// If `clip_rect` has been seen before the existing id is returned and
-    /// `is_new` is `false` — no `<clipPath>` element should be emitted.
+    /// `is_new` is `false`; no `<clipPath>` element should be emitted.
     ///
     /// On the first occurrence `preferred_id` is used when provided, otherwise
     /// a fresh `clipPathN` id is generated.  `is_new` is `true` and the caller
@@ -434,7 +434,7 @@ mod tests {
 
         let clip_rect = (0.0_f64, 0.0_f64, 100.0_f64, 100.0_f64);
 
-        // Two groups with the same clip rect but different layer_ids — the second
+        // Two groups with the same clip rect but different layer_ids. The second
         // should reuse the first clip-path id and not emit a duplicate <clipPath>.
         let elements = vec![
             TwoElement::Group(TwoGroup {

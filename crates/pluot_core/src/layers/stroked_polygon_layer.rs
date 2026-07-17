@@ -175,10 +175,10 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             buf
         };
 
-        // Flat interleaved [x0, y0, x1, y1, …] — maps to array<vec2<f32>> in the shader.
+        // Flat interleaved [x0, y0, x1, y1, ...].
         let points_buf = make_storage_buf("StrokedPolygon Points", bytemuck::cast_slice(points));
 
-        // Flat [ring_start, ring_end, local_idx, …] u32 triples — maps to array<SegmentEntry>.
+        // Flat [ring_start, ring_end, local_idx, ...].
         let segments_flat: Vec<u32> = segments.iter().flat_map(|s| s.iter().copied()).collect();
         let segments_buf = make_storage_buf("StrokedPolygon Segments", bytemuck::cast_slice(&segments_flat));
 

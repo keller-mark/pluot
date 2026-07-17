@@ -21,7 +21,7 @@ pub enum ReduceMode {
     Max,
     /// Output: one f32 (the sum of all elements).
     Sum,
-    /// Output: (f32, f32) — (global minimum, global maximum).
+    /// Output: (f32, f32) for (global minimum, global maximum).
     Extent,
     /// Output: Vec<u32> of length `num_bins`.
     ///
@@ -118,7 +118,7 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 /// **Return value layout**
 /// - `Min / Max / Sum`:  one `f32` per workgroup, concatenated across all
 ///                       chunks; caller folds them into the final scalar.
-/// - `Extent`:           two `f32` per workgroup — `[partial_min, partial_max]`
+/// - `Extent`:           two `f32` per workgroup: `[partial_min, partial_max]`
 ///                       interleaved, concatenated across chunks; caller folds
 ///                       each component separately.
 /// - `Histogram`:        `num_bins` values whose bytes are actually `u32` bin

@@ -64,7 +64,7 @@ impl PluotApp {
 impl eframe::App for PluotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Sine wave — pluot raster render");
+            ui.heading("Sine wave");
 
             let freq_changed = ui
                 .add(
@@ -148,7 +148,7 @@ fn build_params(
 }
 
 fn pixels_to_image(width: u32, height: u32, pixels: &[u8]) -> egui::ColorImage {
-    // The last byte is the `bailed_early` flag — strip it before loading the texture.
+    // The last byte is the `bailed_early` flag. Strip it before loading the texture.
     let pixel_data = &pixels[..pixels.len() - 1];
     egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], pixel_data)
 }

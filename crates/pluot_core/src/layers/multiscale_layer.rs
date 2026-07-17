@@ -51,7 +51,7 @@ impl MultiscaleLayer {
         let level_idx = select_resolution_level(&self.view_params, levels);
         let level = &levels[level_idx];
 
-        let tiles = get_visible_tiles(&self.view_params, level);
+        let tiles = get_visible_tiles(&self.view_params, level, None);
 
         let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
 
