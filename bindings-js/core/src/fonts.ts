@@ -46,7 +46,7 @@ async function _tryFontInStylesheets(family: string, weight: FontWeight, style: 
     try {
       rules = sheet.cssRules;
     } catch {
-      continue; // Cross-origin stylesheet — skip.
+      continue; // Cross-origin stylesheet; skip.
     }
     for (const rule of Array.from(rules)) {
       if (!(rule instanceof CSSFontFaceRule)) continue;
@@ -107,7 +107,7 @@ export class FontStore implements AsyncReadable {
     const fromStylesheets = await _tryFontInStylesheets(family, weight, style);
     if (fromStylesheets) return fromStylesheets;
 
-    // Font not found — throw so LruStore marks this key as "rejected".
+    // Font not found. Throw so LruStore marks this key as "rejected".
     throw new Error(`Font not found: ${overrideKey}`);
   }
 }

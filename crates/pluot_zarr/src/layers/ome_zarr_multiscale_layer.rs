@@ -15,10 +15,12 @@ use pluot_core::render_traits::{
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::multiscale_utils::{
-    ResolutionLevel, VisibleTile, get_visible_tiles, select_resolution_level,
+    ResolutionLevel, VisibleTile, get_visible_tiles, pick_visible_tile, select_resolution_level,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
+use pluot_core::LayerPickingResult;
+use pluot_core::viewport::{DataCoord, ScreenCoord};
 use ome_zarr_metadata::v0_5::{
     OmeFields, CoordinateTransform, CoordinateTransformScale,
     Axis, AxisType, AxisUnit, AxisUnitSpace,
@@ -121,14 +123,20 @@ struct OmeZarrMultiscaleMetadata {
     dimension_order: OmeDimensionOrder,
 }
 
-// OmeZarrMultiscaleLayer — metadata + sublayer orchestration only
+// OmeZarrMultiscaleLayer.
+// This layer queries for metadata and orchestrates sublayers.
 
 /// A sublayer group for a single resolution level.
 struct LevelSublayers {
     level_idx: usize,
     sublayers: Vec<OmeZarrBitmapLayer>,
+    /// Visible tile for each sublayer (parallel to `sublayers`).
+    tiles: Vec<VisibleTile>,
     /// Physical rectangle for each sublayer (parallel to `sublayers`).
     tile_rects: Vec<PhysicalRect>,
+    /// The pixel-to-world model matrix for this level (the same matrix passed
+    /// to the sublayers and to get_visible_tiles).
+    model_matrix: [f32; 16],
     prepare_results: Vec<PrepareResult>,
 }
 
@@ -299,7 +307,7 @@ impl OmeZarrMultiscaleLayer {
     }
 
     /// Build OmeZarrBitmapLayer sublayers for visible tiles at levels from coarsest to target_level.
-    /// This method only constructs sublayer structs — no tile data is loaded here.
+    /// This method only constructs sublayer structs. No tile data is loaded here.
     fn build_sublayers(
         &self,
         metadata: &OmeZarrMultiscaleMetadata,
@@ -329,7 +337,18 @@ impl OmeZarrMultiscaleLayer {
         let y_dim_i = metadata.dimension_order.index_of(OmeDim::Y).unwrap();
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
-            let tiles = get_visible_tiles(&self.view_params, level);
+
+            // Convert per-resolution scale to a model_matrix (pixel -> world coords).
+            let scale_x = level.scale[1] as f32;
+            let scale_y = level.scale[0] as f32;
+            let model_matrix: [f32; 16] = [
+                scale_x, 0.0, 0.0, 0.0,
+                0.0, scale_y, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ];
+
+            let tiles = get_visible_tiles(&self.view_params, level, Some(&model_matrix));
 
             if tiles.is_empty() {
                 continue;
@@ -339,16 +358,6 @@ impl OmeZarrMultiscaleLayer {
             let full_shape = &metadata.full_shapes[level_idx];
             let chunk_shape = &metadata.chunk_shapes[level_idx];
             let array_metadata = &metadata.array_metadatas[level_idx];
-
-            // Convert per-resolution scale to a model_matrix.
-            let scale_x = level.scale[1] as f32;
-            let scale_y = level.scale[0] as f32;
-            let model_matrix: [f32; 16] = [
-                scale_x, 0.0, 0.0, 0.0,
-                0.0, scale_y, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            ];
 
             let mut sublayers = Vec::new();
             let mut tile_rects = Vec::new();
@@ -390,7 +399,9 @@ impl OmeZarrMultiscaleLayer {
             all_level_sublayers.push(LevelSublayers {
                 level_idx,
                 sublayers,
+                tiles,
                 tile_rects,
+                model_matrix,
                 prepare_results: Vec::new(),
             });
         }
@@ -469,7 +480,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         let metadata = metadata.as_ref();
 
         // Build sublayers for all visible tiles at each level from coarsest to target.
-        // No tile data is loaded here — only sublayer structs are constructed.
+        // No tile data is loaded here. Only sublayer structs are constructed.
         self.level_sublayers = self.build_sublayers(metadata);
 
         // Collect all sublayers at each resolution level (coarse to fine),
@@ -582,4 +593,43 @@ impl DrawToSvg for OmeZarrMultiscaleLayer {
     }
 }
 
-impl PickableLayer for OmeZarrMultiscaleLayer {}
+impl PickableLayer for OmeZarrMultiscaleLayer {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+            return None;
+        };
+        let metadata = self.metadata.as_ref()?;
+
+        // level_sublayers is ordered coarsest-first and finer levels are drawn
+        // on top of coarser ones, so search from finest to coarsest and
+        // delegate to the first ready tile containing the picked coordinate.
+        for level_group in self.level_sublayers.iter().rev() {
+            let level = &metadata.resolution_levels[level_group.level_idx];
+            let Some(tile_i) = pick_visible_tile(
+                cx as f64,
+                cy as f64,
+                level,
+                &level_group.tiles,
+                Some(&level_group.model_matrix),
+            ) else {
+                continue;
+            };
+
+            let ready = level_group
+                .prepare_results
+                .get(tile_i)
+                .is_some_and(|r| !r.bailed_early);
+            if !ready {
+                continue;
+            }
+
+            return PickableLayer::pick(
+                &level_group.sublayers[tile_i],
+                screen_coord,
+                data_coord,
+            );
+        }
+        None
+    }
+
+}

@@ -60,7 +60,7 @@ fn corner_rects_pixels() -> RectLayerParams {
     }
 }
 
-// Helper: 2 rects — x in [0,1] data space, y in 100px pixel space
+// Helper: 2 rects. x in [0,1] data space, y in 100px pixel space
 fn corner_rects_data_x_pixel_y() -> RectLayerParams {
     RectLayerParams {
         layer_id: "my_rect_layer".to_string(),
@@ -80,7 +80,7 @@ fn corner_rects_data_x_pixel_y() -> RectLayerParams {
     }
 }
 
-// Helper: 2 rects — x in 100px pixel space, y in [0,1] data space
+// Helper: 2 rects. x in 100px pixel space, y in [0,1] data space
 fn corner_rects_pixel_x_data_y() -> RectLayerParams {
     RectLayerParams {
         layer_id: "my_rect_layer".to_string(),

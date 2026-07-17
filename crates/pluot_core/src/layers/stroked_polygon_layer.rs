@@ -184,7 +184,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         let (points_texture_view, points_dtype) =
             layer_params.polygons.create_data_texture(device, queue, "StrokedPolygon Points Texture");
 
-        // Flat [ring_start, ring_end, local_idx, …] u32 triples — maps to array<SegmentEntry>.
+        // Flat [ring_start, ring_end, local_idx, ...].
         let segments_flat: Vec<u32> = segments.iter().flat_map(|s| s.iter().copied()).collect();
         let segments_bytes: &[u8] = bytemuck::cast_slice(&segments_flat);
         let segments_buf = device.create_buffer(&wgpu::BufferDescriptor {

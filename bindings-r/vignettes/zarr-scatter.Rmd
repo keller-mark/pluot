@@ -17,7 +17,7 @@ library(pluotr)
 
 `ZarrPointLayer` reads point coordinates and colour labels directly from
 [Zarr v3](https://zarr.dev) arrays. This is useful when your data already lives
-in a Zarr store on disk or in the cloud — pluotr fetches only the chunks it
+in a Zarr store on disk or in the cloud. Pluotr fetches only the chunks it
 needs through a set of R callbacks, so the full array never has to be loaded
 into memory at once.
 
@@ -41,8 +41,8 @@ metadata in `zarr.json` files (Zarr v3 format). Each `create_dataset` call adds
 one named array to the group.
 
 `ZarrPointLayer` expects:
-- **x / y arrays** — `dtype = "<f8"` (64-bit float)
-- **colour labels array** — `dtype = "<i8"` (64-bit integer, 0-based category
+- **x / y arrays**: `dtype = "<f8"` (64-bit float)
+- **colour labels array**: `dtype = "<i8"` (64-bit integer, 0-based category
   index)
 
 ```{r build-store}

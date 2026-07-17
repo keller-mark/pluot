@@ -280,7 +280,7 @@ fn fs_main(
     let stroke_frac_y = u.stroke_width / expanded_h;
 
     // quad_pos ranges from (0,0) to (1,1) across the expanded quad.
-    // If the fragment is beyond the stroke band on ALL four sides, it's interior — discard.
+    // If the fragment is beyond the stroke band on ALL four sides, it's interior; discard.
     let inside_left   = quad_pos.x > stroke_frac_x;
     let inside_right  = quad_pos.x < (1.0 - stroke_frac_x);
     let inside_bottom = quad_pos.y > stroke_frac_y;
