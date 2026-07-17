@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::render_traits::{
-    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::numeric_data::NumericData;
@@ -88,14 +88,15 @@ impl MultiscaleLayer {
                 data_unit_mode_y: UnitsMode::Data,
                 stroke_width: Some(1.0),
                 stroke_width_unit_mode: UnitsMode::Pixels,
-                fill_color: None,
-                fill_color_mode: ColorMode::Categorical,
+                fill_color: ColorMode::Categorical(CategoricalParams {
+                    values: NumericData::Int32(Arc::new(labels_vec)),
+                    colormap: CategoricalColormap::Tableau10,
+                }),
                 model_matrix: None,
                 position_x0: NumericData::Float32(Arc::new(x0_vec)),
                 position_y0: NumericData::Float32(Arc::new(y0_vec)),
                 position_x1: NumericData::Float32(Arc::new(x1_vec)),
                 position_y1: NumericData::Float32(Arc::new(y1_vec)),
-                labels_vec: Arc::new(labels_vec),
             };
             sublayers.push(Box::new(RectLayer::new(
                 self.view_params.clone(),

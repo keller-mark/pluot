@@ -44,9 +44,8 @@ pub struct BarPlotLayerParams {
     // The Vec of quantities used to compute bar heights/lengths.
     pub quantity: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
 
-    // TODO: color of bars
-    pub fill_color: Option<(u8, u8, u8)>,
-    pub fill_color_mode: ColorMode,
+    // How to color the bars. See [`ColorMode`].
+    pub fill_color: ColorMode,
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin
@@ -91,7 +90,6 @@ impl BarPlotLayer {
         let mut position_y0: Vec<f32> = Vec::with_capacity(n);
         let mut position_x1: Vec<f32> = Vec::with_capacity(n);
         let mut position_y1: Vec<f32> = Vec::with_capacity(n);
-        let labels_vec: Vec<i32> = (0..n as i32).collect();
 
         let mut scale_band = ScaleBand::new();
         scale_band.set_domain(self.layer_params.identifier.as_ref().clone());
@@ -120,14 +118,12 @@ impl BarPlotLayer {
                             data_unit_mode_y: UnitsMode::Data,
                             stroke_width: None,
                             stroke_width_unit_mode: UnitsMode::Pixels,
-                            fill_color: self.layer_params.fill_color,
-                            fill_color_mode: self.layer_params.fill_color_mode,
+                            fill_color: self.layer_params.fill_color.clone(),
                             model_matrix: None,
                             position_x0: NumericData::Float32(Arc::new(position_x0)),
                             position_y0: NumericData::Float32(Arc::new(position_y0)),
                             position_x1: NumericData::Float32(Arc::new(position_x1)),
                             position_y1: NumericData::Float32(Arc::new(position_y1)),
-                            labels_vec: Arc::new(labels_vec),
                         }
                     )),
                     Box::new(AxisLinearLayer::new(
@@ -170,14 +166,12 @@ impl BarPlotLayer {
                             data_unit_mode_y: UnitsMode::Pixels,
                             stroke_width: None,
                             stroke_width_unit_mode: UnitsMode::Pixels,
-                            fill_color: self.layer_params.fill_color,
-                            fill_color_mode: self.layer_params.fill_color_mode,
+                            fill_color: self.layer_params.fill_color.clone(),
                             model_matrix: None,
                             position_x0: NumericData::Float32(Arc::new(position_x0)),
                             position_y0: NumericData::Float32(Arc::new(position_y0)),
                             position_x1: NumericData::Float32(Arc::new(position_x1)),
                             position_y1: NumericData::Float32(Arc::new(position_y1)),
-                            labels_vec: Arc::new(labels_vec),
                         }
                     )),
                     Box::new(AxisLinearLayer::new(

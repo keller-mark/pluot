@@ -71,6 +71,35 @@ pub mod common {
     /// `fn rotate_z(angle_deg) -> mat4x4<f32>` — builds a rotation matrix about
     /// the Z axis (angle in degrees).
     pub const ROTATE_Z: &str = include_str!("wgsl_functions/rotate_z.wgsl");
+
+    /// `fn flat_texel_coord(idx, width) -> vec2<u32>` — maps a flat element
+    /// index to 2D texel coordinates for a single-channel data texture (see
+    /// [`crate::numeric_data::NumericData::create_data_texture`]).
+    pub const FLAT_TEXEL_COORD: &str = include_str!("wgsl_functions/flat_texel_coord.wgsl");
+}
+
+/// Per-[`ColorMode`](crate::render_traits::ColorMode) WGSL snippets, each
+/// defining `fn get_fill_color(instance_index: u32) -> vec3<f32>` (plus any
+/// texture bindings the mode needs). These are templates: the color-mode value
+/// texture bindings, sampled types and colormap function are filled in at
+/// runtime by [`crate::color_mode::prepare_color_mode`]. All variants that read
+/// a value texture assume [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod color {
+    /// Static color shared by every element.
+    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/color/uniform_rgb.wgsl");
+
+    /// Per-element RGB from three parallel value textures.
+    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/color/instanced_rgb.wgsl");
+
+    /// Per-element RGB from one interleaved value texture.
+    pub const INSTANCED_RGB_INTERLEAVED: &str =
+        include_str!("wgsl_functions/color/instanced_rgb_interleaved.wgsl");
+
+    /// Per-element integer labels indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/color/categorical.wgsl");
+
+    /// Per-element scalar values mapped through a continuous colormap.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/color/quantitative.wgsl");
 }
 
 /// Colormap WGSL functions, embedded at compile time from
@@ -125,6 +154,32 @@ pub mod colormaps {
 
     /// `fn winter(x: f32) -> vec4<f32>`
     pub const WINTER: &str = include_str!("wgsl_functions/colormaps/winter.wgsl");
+
+    use crate::render_traits::QuantitativeColormap;
+
+    /// The embedded WGSL source and the name of the `fn <name>(x: f32) ->
+    /// vec4<f32>` it defines, for a given [`QuantitativeColormap`]. Inject the
+    /// source with [`super::ShaderBuilder::inject_function`] and call the named
+    /// function to sample the colormap on the GPU.
+    pub fn wgsl_source_and_name(colormap: QuantitativeColormap) -> (&'static str, &'static str) {
+        match colormap {
+            QuantitativeColormap::Plasma => (PLASMA, "plasma"),
+            QuantitativeColormap::Viridis => (VIRIDIS, "viridis"),
+            QuantitativeColormap::Greys => (GREYS, "greys"),
+            QuantitativeColormap::Magma => (MAGMA, "magma"),
+            QuantitativeColormap::Jet => (JET, "jet"),
+            QuantitativeColormap::Bone => (BONE, "bone"),
+            QuantitativeColormap::Copper => (COPPER, "copper"),
+            QuantitativeColormap::Density => (DENSITY, "density"),
+            QuantitativeColormap::Inferno => (INFERNO, "inferno"),
+            QuantitativeColormap::Cool => (COOL, "cool"),
+            QuantitativeColormap::Hot => (HOT, "hot"),
+            QuantitativeColormap::Spring => (SPRING, "spring"),
+            QuantitativeColormap::Summer => (SUMMER, "summer"),
+            QuantitativeColormap::Autumn => (AUTUMN, "autumn"),
+            QuantitativeColormap::Winter => (WINTER, "winter"),
+        }
+    }
 }
 
 /// A WGSL scalar type usable as the element type of a storage array.
@@ -254,10 +309,27 @@ impl<'a> ShaderBuilder<'a> {
         self
     }
 
+    /// Replace every occurrence of `{{name}}` with the decimal spelling of an
+    /// unsigned integer. Handy for binding indices and array lengths chosen at
+    /// runtime, avoiding a `.to_string()` at the call site.
+    pub fn define_u32(self, name: &str, value: u32) -> Self {
+        self.define(name, &value.to_string())
+    }
+
     /// Inject a reusable WGSL function (a compile-time snippet, e.g. from
     /// [`common`]) at `{{name}}`.
     pub fn inject_function(self, name: &str, source: &str) -> Self {
         self.define(name, source)
+    }
+
+    /// Inject a reusable WGSL function (from [`common`]) only when `source` is
+    /// `Some`; otherwise leave the template untouched. Useful for dependencies
+    /// that are only needed by some runtime configurations.
+    pub fn inject_optional_function(self, name: &str, source: Option<&str>) -> Self {
+        match source {
+            Some(source) => self.define(name, source),
+            None => self,
+        }
     }
 
     /// Inject a storage-array element dtype at `{{name}}` (chosen at runtime).

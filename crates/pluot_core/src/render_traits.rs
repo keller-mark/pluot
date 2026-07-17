@@ -1,4 +1,5 @@
 use crate::picking::LayerPickingResult;
+use crate::numeric_data::NumericData;
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
@@ -101,42 +102,74 @@ pub enum QuantitativeColormap {
     Winter,
 }
 
-type UniformRgbParams = Option<(u8, u8, u8)>;
+/// Static color shared by every element. `None` renders as opaque black.
+///
+/// Kept as a bare type alias (rather than a struct) so the `UniformRgb` variant
+/// can carry the existing `Option<(u8, u8, u8)>` shape unchanged.
+pub type UniformRgbParams = Option<(u8, u8, u8)>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum InstancedRgbParams {
+/// Per-element RGB stored as three parallel arrays (one per channel). Each
+/// value is interpreted on a 0–255 scale (matching the `(u8, u8, u8)` used by
+/// the static modes) and normalized to 0–1 before shading.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedRgbParams {
     pub r_values: NumericData,
     pub g_values: NumericData,
     pub b_values: NumericData,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum InstancedRgbInterleavedParams {
+/// Per-element RGB stored as a single interleaved array: element `i` occupies
+/// indices `3*i`, `3*i + 1`, `3*i + 2`. Values use the same 0–255 scale as
+/// [`InstancedRgbParams`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedRgbInterleavedParams {
     pub rgb_values: NumericData,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum CategoricalParams {
+/// Categorical color: per-element integer class labels sampled against a named
+/// categorical palette. The label wraps around (modulo) the palette length.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CategoricalParams {
     pub values: NumericData,
     pub colormap: CategoricalColormap,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum CategoricalCustomParams {
+/// Categorical color against a caller-supplied palette (rather than a named
+/// scheme). Otherwise identical to [`CategoricalParams`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CategoricalCustomParams {
     pub values: NumericData,
     pub colormap: Vec<(u8, u8, u8)>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum QuantitativeParams {
+fn default_false() -> bool {
+    false
+}
+
+/// Quantitative color: per-element scalar values mapped through a named
+/// continuous colormap. Values are normalized into 0–1 using `domain` (or the
+/// data's own min/max when `domain` is `None`) before sampling; `reverse` flips
+/// the colormap direction.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuantitativeParams {
     pub values: NumericData,
     pub colormap: QuantitativeColormap,
-    // TODO: implement a serde default for this struct that specifies `reverse: false`
+    #[serde(default = "default_false")]
     pub reverse: bool,
+    // Optional (min, max) normalization domain. When `None`, the domain is
+    // derived from the data's own minimum and maximum.
+    #[serde(default)]
+    pub domain: Option<(f32, f32)>,
 }
 
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// How the fill color of each element in a layer is determined.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"color_mode": "UniformRgb", "color_params": [255, 0, 0]}`. Variants that
+/// carry [`NumericData`] describe per-element color, and the layer uploads that
+/// data to the GPU as one or more textures (see `RectLayer`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "color_mode", content = "color_params")]
 pub enum ColorMode {
     // 0: static color (e.g., same RGB color for all elements)
@@ -151,6 +184,21 @@ pub enum ColorMode {
     CategoricalCustom(CategoricalCustomParams),
     // 5: quantitative color based on N float values. plus a known named quantiative colormap function.
     Quantitative(QuantitativeParams),
+}
+
+impl ColorMode {
+    /// The integer discriminant handed to the shader's `fill_color_mode`
+    /// uniform. Must stay in sync with the branch values in `rect_layer.wgsl`.
+    pub fn shader_mode(&self) -> u32 {
+        match self {
+            ColorMode::UniformRgb(_) => 0,
+            ColorMode::InstancedRgb(_) => 1,
+            ColorMode::InstancedRgbInterleaved(_) => 2,
+            ColorMode::Categorical(_) => 3,
+            ColorMode::CategoricalCustom(_) => 4,
+            ColorMode::Quantitative(_) => 5,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

@@ -28,13 +28,17 @@ async fn test_render_triangle() {
             "data_unit_mode_y": "Pixels",
             "stroke_width_unit_mode": "Pixels",
             "stroke_width": 2.0,
-            "fill_color": null,
-            "fill_color_mode": "Categorical",
+            "fill_color": {
+                "color_mode": "Categorical",
+                "color_params": {
+                    "values": {"dtype": "Int32", "values": [4]},
+                    "colormap": "Tableau10"
+                }
+            },
             "position_x0": {"dtype": "Float32", "values": [2.0]},
             "position_y0": {"dtype": "Float32", "values": [4.0]},
             "position_x1": {"dtype": "Float32", "values": [16.0]},
             "position_y1": {"dtype": "Float32", "values": [8.0]},
-            "labels_vec": [4],
         }
     });
 

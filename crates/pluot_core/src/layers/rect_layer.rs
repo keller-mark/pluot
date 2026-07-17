@@ -11,6 +11,7 @@ use crate::render_traits::{
 };
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
+use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
@@ -35,9 +36,10 @@ pub struct RectLayerParams {
 
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
-    // TODO: combine these params so that only sensible states are representable.
-    pub fill_color_mode: ColorMode,
-    pub fill_color: Option<(u8, u8, u8)>,
+    // How to color each rect. See [`ColorMode`]: modes carrying `NumericData`
+    // (instanced/categorical/quantitative) supply one or more per-element value
+    // arrays, which are uploaded to the GPU as textures at draw time.
+    pub fill_color: ColorMode,
 
     // TODO: improve naming here - should these be "source_x", "source_y", etc?
     // Each may be any supported numeric dtype (8-64 bit int/uint, or 32/64-bit
@@ -49,7 +51,6 @@ pub struct RectLayerParams {
     // TODO: accept x/y/width/height instead?
     pub position_x1: NumericData,
     pub position_y1: NumericData,
-    pub labels_vec: Arc<Vec<i32>>,
 }
 
 impl Default for RectLayerParams {
@@ -62,13 +63,11 @@ impl Default for RectLayerParams {
             stroke_width: None,
             stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            fill_color_mode: ColorMode::Static,
-            fill_color: None,
+            fill_color: ColorMode::UniformRgb(None),
             position_x0: NumericData::Float32(Arc::new(vec![])),
             position_y0: NumericData::Float32(Arc::new(vec![])),
             position_x1: NumericData::Float32(Arc::new(vec![])),
             position_y1: NumericData::Float32(Arc::new(vec![])),
-            labels_vec: Arc::new(vec![]),
         }
     }
 }
@@ -124,9 +123,15 @@ struct RectLayerUniforms {
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
-    fill_color_mode: u32,
-    fill_color: Vec4,                      // rgba color for points
+    fill_color_mode: u32,             // see ColorMode::shader_mode()
+    fill_color: Vec4,                 // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,          // 1 = reverse the quantitative colormap
+    fill_color_domain: Vec2,          // (min, max) normalization domain for quantitative mode
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-4 are the uniforms buffer and the four position textures.
+const COLOR_BINDING_START: u32 = 5;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -150,20 +155,14 @@ impl DrawToRasterGpu for RectLayer {
         let (position_y1_texture_view, position_y1_dtype) =
             layer_params.position_y1.create_data_texture(device, queue, "y1 Coordinates Texture");
 
-        // More efficient version that eliminates intermediate vectors and redundant operations
-        let n = layer_params.labels_vec.len();
+        // Number of rects to draw: one instance per element of the position arrays.
+        let n = layer_params.position_x0.len();
 
-        // Convert to f32 and cast to bytes directly - no for loop needed
-        // let labels_i32: Vec<i32> = layer_params.labels_vec.iter().map(|&c| c as i32).collect();
-        let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-        let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Class labels Storage Buffer"),
-            size: labels_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&labels_buffer, 0, labels_bytes);
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_fill_color` function injected into the shader below.
+        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -236,21 +235,10 @@ impl DrawToRasterGpu for RectLayer {
                 0.0, 0.0, 1.0, 0.0, // Column 3
                 0.0, 0.0, 0.0, 1.0,
             ])),
-            fill_color_mode: match layer_params.fill_color_mode {
-                ColorMode::Static => 0,
-                ColorMode::Explicit => 1,
-                ColorMode::Categorical => 2,
-                ColorMode::Quantitative => 3,
-            },
-            fill_color: match layer_params.fill_color {
-                Some(color) => Vec4::from_array([
-                    color.0 as f32 / 255.0,
-                    color.1 as f32 / 255.0,
-                    color.2 as f32 / 255.0,
-                    1.0
-                ]),
-                None => Vec4::from_array([0.0, 0.0, 0.0, 1.0])
-            },
+            fill_color_mode: color.mode,
+            fill_color: Vec4::from_array(color.static_color),
+            fill_color_reverse: color.reverse,
+            fill_color_domain: Vec2::from_array(color.domain),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -265,111 +253,121 @@ impl DrawToRasterGpu for RectLayer {
         });
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
-        // Create bind group layout and bind group for positions + uniforms
+        // Create bind group layout and bind group for positions + uniforms.
+        // Bindings 0-4 are fixed (uniforms + the four position textures); the
+        // color-mode textures follow at binding `COLOR_BINDING_START` onward,
+        // matching the WGSL declarations injected below.
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                // The uniforms buffer.
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The x0 coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: position_x0_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The y0 coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: position_y0_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The x1 coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: position_x1_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The y1 coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: position_y1_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("RectLayer BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    // The uniforms buffer.
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The x0 coordinates texture. Its sample type must match
-                    // the dtype-specific texture format chosen above.
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: position_x0_dtype.binding_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The y0 coordinates texture. Its sample type must match
-                    // the dtype-specific texture format chosen above.
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: position_y0_dtype.binding_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The x1 coordinates texture. Its sample type must match
-                    // the dtype-specific texture format chosen above.
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: position_x1_dtype.binding_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The y1 coordinates texture. Its sample type must match
-                    // the dtype-specific texture format chosen above.
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: position_y1_dtype.binding_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The class labels coordinates buffer.
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &bgl_entries,
         });
+
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&position_x0_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&position_y0_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(&position_x1_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(&position_y1_texture_view),
+            },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("RectLayer BG"),
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&position_x0_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&position_y0_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&position_x1_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&position_y1_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: labels_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &bg_entries,
         });
 
         // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
@@ -381,6 +379,10 @@ impl DrawToRasterGpu for RectLayer {
             .inject_texture_sample_type("position_y0_dtype", position_y0_dtype)
             .inject_texture_sample_type("position_x1_dtype", position_x1_dtype)
             .inject_texture_sample_type("position_y1_dtype", position_y1_dtype)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_fill_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect_layer.wgsl"),
@@ -481,25 +483,6 @@ impl DrawToRasterCpu for RectLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
-// Matches get_categorical_color in rect_layer.wgsl (Tableau 10 palette).
-// TODO: remove once more color encoding modes are implemented.
-const CATEGORICAL_COLORS: [(u8, u8, u8); 10] = [
-    (31, 119, 180),
-    (255, 127, 14),
-    (44, 160, 44),
-    (214, 39, 40),
-    (148, 103, 189),
-    (227, 119, 194),
-    (127, 127, 127),
-    (188, 189, 34),
-    (23, 190, 207),
-    (219, 219, 219),
-];
-
-fn get_categorical_color(index: i32) -> (u8, u8, u8) {
-    CATEGORICAL_COLORS[index.rem_euclid(10) as usize]
-}
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for RectLayer {
@@ -507,7 +490,13 @@ impl DrawToSvg for RectLayer {
         let Self { layer_params, view_params } = self;
 
         // Iterate over the data points and create SVG elements.
-        let n = layer_params.labels_vec.len();
+        let n = layer_params.position_x0.len();
+
+        // Quantitative normalization domain, computed once for the whole layer.
+        let quant_domain = match &layer_params.fill_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
 
         // TODO: reduce code reuse here
         let camera_view = view_params.camera_view.unwrap_or([
@@ -559,7 +548,6 @@ impl DrawToSvg for RectLayer {
             let source_y = layer_params.position_y0.get_f32(i);
             let target_x = layer_params.position_x1.get_f32(i);
             let target_y = layer_params.position_y1.get_f32(i);
-            let label = layer_params.labels_vec[i];
 
             // Convert data coordinates to pixel coordinates within the layer area.
             let (source_x_px, source_y_px) = get_point_position(
@@ -589,10 +577,7 @@ impl DrawToSvg for RectLayer {
 
             let rect_height = (target_y_px - source_y_px).abs();
 
-            let color = TwoColor::Rgb(match layer_params.fill_color_mode {
-                ColorMode::Categorical => get_categorical_color(label),
-                _ => layer_params.fill_color.unwrap_or((0, 0, 0)),
-            });
+            let color = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, i, quant_domain));
 
             svg_elements.push(TwoElement::Rectangle(TwoRectangle {
                 x: source_x_px.min(target_x_px) as f64,

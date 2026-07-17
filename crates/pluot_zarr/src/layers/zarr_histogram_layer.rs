@@ -185,11 +185,9 @@ impl PreparedLayer for ZarrHistogramLayer {
                 orientation: self.layer_params.orientation.clone(),
                 identifier: Arc::new(labels),
                 quantity: hist_arr,
-                fill_color_mode: ColorMode::Static,
-                fill_color: match self.layer_params.fill_color {
-                    Some(color) => Some(color),
-                    None => Some((76, 120, 168)),
-                },
+                fill_color: ColorMode::UniformRgb(Some(
+                    self.layer_params.fill_color.unwrap_or((76, 120, 168)),
+                )),
             },
         );
 

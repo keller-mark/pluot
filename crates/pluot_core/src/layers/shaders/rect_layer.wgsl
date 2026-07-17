@@ -6,6 +6,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 
 struct RectLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
@@ -18,8 +22,10 @@ struct RectLayerUniforms {
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
-    fill_color_mode: u32,
-    fill_color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // see ColorMode::shader_mode()
+    fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32, // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
 };
 
 struct VSOut {
@@ -49,7 +55,11 @@ struct FSOut {
 @group(0) @binding(2) var position_y0_coords: texture_2d<{{position_y0_dtype}}>;
 @group(0) @binding(3) var position_x1_coords: texture_2d<{{position_x1_dtype}}>;
 @group(0) @binding(4) var position_y1_coords: texture_2d<{{position_y1_dtype}}>;
-@group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 5 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_color_mode`.
+{{color_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -244,24 +254,6 @@ fn vs_main(
     return out;
 }
 
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
-}
-
-
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
@@ -294,10 +286,9 @@ fn fs_main(
         // TODO: render using the fill color as opposed to the stroke color.
     }
 
-    var out_color = u.fill_color.rgb;
-    if(u.fill_color_mode == 2u) {
-        out_color = get_categorical_color(labels_coords[instance_index]).rgb;
-    }
+    // The color module's get_fill_color resolves the per-instance color for the
+    // active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_fill_color(instance_index);
 
     var out: FSOut;
     out.color = vec4<f32>(out_color, 1.0);
