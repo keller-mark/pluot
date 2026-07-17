@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
-use pluot_core::{LayerPickingResult, ViewParams};
+use pluot_core::{LayerPickingResult, ViewParams, NumericData};
 
 fn make_layer(model_matrix: Option<[f32; 16]>) -> PointLayer {
     PointLayer::new(
@@ -11,8 +11,8 @@ fn make_layer(model_matrix: Option<[f32; 16]>) -> PointLayer {
         PointLayerParams {
             layer_id: "test_point".to_string(),
             model_matrix,
-            position_x: Arc::new(vec![0.0, 10.0]),
-            position_y: Arc::new(vec![0.0, 10.0]),
+            position_x: NumericData::Float32(Arc::new(vec![0.0, 10.0])),
+            position_y: NumericData::Float32(Arc::new(vec![0.0, 10.0])),
             labels_vec: Arc::new(vec![100, 200]),
             ..PointLayerParams::default()
         },
