@@ -73,6 +73,60 @@ pub mod common {
     pub const ROTATE_Z: &str = include_str!("wgsl_functions/rotate_z.wgsl");
 }
 
+/// Colormap WGSL functions, embedded at compile time from
+/// `wgsl_functions/colormaps/`.
+///
+/// Each constant is a single self-contained WGSL function `fn name(x: f32) ->
+/// vec4<f32>` mapping a normalized scalar to an RGBA color, ported from
+/// [Vitessce's GLSL colormaps](https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/index.js).
+/// Inject one into a template with [`ShaderBuilder::inject_function`].
+pub mod colormaps {
+    /// `fn autumn(x: f32) -> vec4<f32>`
+    pub const AUTUMN: &str = include_str!("wgsl_functions/colormaps/autumn.wgsl");
+
+    /// `fn bone(x: f32) -> vec4<f32>`
+    pub const BONE: &str = include_str!("wgsl_functions/colormaps/bone.wgsl");
+
+    /// `fn cool(x: f32) -> vec4<f32>`
+    pub const COOL: &str = include_str!("wgsl_functions/colormaps/cool.wgsl");
+
+    /// `fn copper(x: f32) -> vec4<f32>`
+    pub const COPPER: &str = include_str!("wgsl_functions/colormaps/copper.wgsl");
+
+    /// `fn density(x: f32) -> vec4<f32>`
+    pub const DENSITY: &str = include_str!("wgsl_functions/colormaps/density.wgsl");
+
+    /// `fn greys(x: f32) -> vec4<f32>`
+    pub const GREYS: &str = include_str!("wgsl_functions/colormaps/greys.wgsl");
+
+    /// `fn hot(x: f32) -> vec4<f32>`
+    pub const HOT: &str = include_str!("wgsl_functions/colormaps/hot.wgsl");
+
+    /// `fn inferno(x: f32) -> vec4<f32>`
+    pub const INFERNO: &str = include_str!("wgsl_functions/colormaps/inferno.wgsl");
+
+    /// `fn jet(x: f32) -> vec4<f32>`
+    pub const JET: &str = include_str!("wgsl_functions/colormaps/jet.wgsl");
+
+    /// `fn magma(x: f32) -> vec4<f32>`
+    pub const MAGMA: &str = include_str!("wgsl_functions/colormaps/magma.wgsl");
+
+    /// `fn plasma(x: f32) -> vec4<f32>`
+    pub const PLASMA: &str = include_str!("wgsl_functions/colormaps/plasma.wgsl");
+
+    /// `fn spring(x: f32) -> vec4<f32>`
+    pub const SPRING: &str = include_str!("wgsl_functions/colormaps/spring.wgsl");
+
+    /// `fn summer(x: f32) -> vec4<f32>`
+    pub const SUMMER: &str = include_str!("wgsl_functions/colormaps/summer.wgsl");
+
+    /// `fn viridis(x: f32) -> vec4<f32>`
+    pub const VIRIDIS: &str = include_str!("wgsl_functions/colormaps/viridis.wgsl");
+
+    /// `fn winter(x: f32) -> vec4<f32>`
+    pub const WINTER: &str = include_str!("wgsl_functions/colormaps/winter.wgsl");
+}
+
 /// A WGSL scalar type usable as the element type of a storage array.
 ///
 /// WGSL storage buffers only support 32-bit host-shareable scalars, so this is

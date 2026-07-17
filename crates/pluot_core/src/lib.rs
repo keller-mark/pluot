@@ -4,6 +4,7 @@ pub mod params;
 pub mod render_types;
 pub mod cache;
 pub mod render_traits;
+pub mod colormaps;
 mod render;
 mod render_post;
 pub mod positioning;

@@ -62,16 +62,95 @@ pub enum UnitsMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CategoricalColormap {
+    // Reference: https://vega.github.io/vega/docs/schemes/
+    Accent,
+    Category10,
+    Category20,
+    Category20b,
+    Category20c,
+    Observable10,
+    Dark2,
+    Paired,
+    Pastel1,
+    Pastel2,
+    Set1,
+    Set2,
+    Set3,
+    Tableau10,
+    Tableau20,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum QuantitativeColormap {
+    // Reference: https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/colormaps.in.glsl
+    Plasma,
+    Viridis,
+    Greys,
+    Magma,
+    Jet,
+    Bone,
+    Copper,
+    Density,
+    Inferno,
+    Cool,
+    Hot,
+    Spring,
+    Summer,
+    Autumn,
+    Winter,
+}
+
+type UniformRgbParams = Option<(u8, u8, u8)>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum InstancedRgbParams {
+    pub r_values: NumericData,
+    pub g_values: NumericData,
+    pub b_values: NumericData,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum InstancedRgbInterleavedParams {
+    pub rgb_values: NumericData,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CategoricalParams {
+    pub values: NumericData,
+    pub colormap: CategoricalColormap,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CategoricalCustomParams {
+    pub values: NumericData,
+    pub colormap: Vec<(u8, u8, u8)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum QuantitativeParams {
+    pub values: NumericData,
+    pub colormap: QuantitativeColormap,
+    // TODO: implement a serde default for this struct that specifies `reverse: false`
+    pub reverse: bool,
+}
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "color_mode", content = "color_params")]
 pub enum ColorMode {
-    // TODO: expand this enum type so that it also represents the required values in each case.
     // 0: static color (e.g., same RGB color for all elements)
-    Static,
-    // 1: explicit colors (e.g., for N elements, N individual RGB colors, either 3 N-length vecs or N 3-length vecs (interleaved))
-    Explicit,
-    // 2: categorical color based on N integer class labels. either known named colormap or custom user-defined color array.
-    Categorical,
-    // 3: quantitative color based on N float values. plus a known named quantiative colormap function.
-    Quantitative,
+    UniformRgb(UniformRgbParams),
+    // 1: explicit colors (e.g., for N elements, N individual RGB colors, as 3 N-length vecs)
+    InstancedRgb(InstancedRgbParams),
+    // 2: explicit colors (e.g., for N elements, N individual RGB colors, as N 3-length vecs (interleaved))
+    InstancedRgbInterleaved(InstancedRgbInterleavedParams),
+    // 3: instanced categorical color based on K integer class labels, via a known named colormap
+    Categorical(CategoricalParams),
+    // 4: instanced categorical color based on K integer class labels, via a special "Custom" categorical colormap type accompanied by a list of RGB values per item
+    CategoricalCustom(CategoricalCustomParams),
+    // 5: quantitative color based on N float values. plus a known named quantiative colormap function.
+    Quantitative(QuantitativeParams),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
