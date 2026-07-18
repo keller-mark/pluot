@@ -7,8 +7,8 @@
 </defs>
 <g height="100" width="200">
 <g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="50" x2="150" y1="100" y2="0"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="150" x2="50" y1="100" y2="0"/>
+<line opacity="1" stroke="rgb(76, 120, 168)" stroke-width="2" x1="50" x2="150" y1="100" y2="0"/>
+<line opacity="1" stroke="rgb(245, 133, 24)" stroke-width="2" x1="150" x2="50" y1="100" y2="0"/>
 </g>
 <g clip-path="url(#lines_clip_path)" transform="translate(0,0)">
 <rect fill="rgb(31, 119, 180)" height="16" opacity="1" width="16" x="42" y="92"/>
