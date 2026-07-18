@@ -8,10 +8,11 @@ use std::sync::{Arc};
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
+use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -44,6 +45,11 @@ pub struct PointLayerParams {
 
     pub point_opacity: f32, // TODO: support per-point opacity as well?
 
+    // How to color each point. See [`ColorMode`]: modes carrying `NumericData`
+    // (instanced/categorical/quantitative) supply one or more per-element value
+    // arrays, which are uploaded to the GPU as textures at draw time.
+    pub fill_color: ColorMode,
+
     // Per-point X/Y coordinates. Each may be any supported numeric dtype
     // (8–64 bit int/uint, or 32/64-bit float), and X and Y may differ. The
     // data is uploaded to the GPU as a texture at its native width wherever
@@ -67,6 +73,7 @@ impl Default for PointLayerParams {
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
             point_opacity: 1.0,
+            fill_color: ColorMode::UniformRgb(None),
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             labels_vec: Arc::new(vec![]),
@@ -90,6 +97,7 @@ impl PointLayer {
             // See https://github.com/keller-mark/pluot-private/blob/main/point_layer.wgsl
             panic!("point_radius_unit_mode must be the same for X and Y axes. Please reach out if you need ellipse support");
         }
+        // TODO: validate the length of the colorMode values when instanced
         Self {
             view_params,
             layer_params,
@@ -129,9 +137,15 @@ struct PointLayerUniforms {
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
-    fill_color_mode: u32,
-    fill_color: Vec4,         // rgba color for points. TODO: split into separate RGB + opacity?
+    fill_color_mode: u32,     // see ColorMode::shader_mode()
+    fill_color: Vec4,         // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
+    fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-2 are the uniforms buffer and the X/Y position textures.
+const COLOR_BINDING_START: u32 = 3;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -140,7 +154,7 @@ impl DrawToRasterGpu for PointLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        let n = layer_params.labels_vec.len();
+        let n = layer_params.position_x.len();
 
         // Upload the X and Y coordinate arrays into single-channel 2D textures,
         // each at its native byte width wherever possible (8/16/32-bit are
@@ -153,20 +167,11 @@ impl DrawToRasterGpu for PointLayer {
         let (y_texture_view, y_dtype) =
             layer_params.position_y.create_data_texture(device, queue, "Y Coordinates Texture");
 
-        // Convert to f32 and cast to bytes directly - no for loop needed
-        //let labels_i32: Vec<i32> = data.labels_arr.iter().map(|&c| c as i32).collect();
-        let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-        // TODO: can more of this be memoized/cached?
-        // Which parts need to be re-executed every draw call? Which parts have high overhead?
-
-        let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Class labels Storage Buffer"),
-            size: labels_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&labels_buffer, 0, labels_bytes);
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_fill_color` function injected into the shader below.
+        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -247,8 +252,10 @@ impl DrawToRasterGpu for PointLayer {
                 0.0, 0.0, 1.0, 0.0, // Column 3
                 0.0, 0.0, 0.0, 1.0,
             ])),
-            fill_color_mode: 2, // TODO: use ColorMode here.
-            fill_color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            fill_color_mode: color.mode,
+            fill_color: Vec4::from_array(color.static_color),
+            fill_color_reverse: color.reverse,
+            fill_color_domain: Vec2::from_array(color.domain),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -264,82 +271,90 @@ impl DrawToRasterGpu for PointLayer {
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
 
-        // Create bind group layout and bind group for positions + uniforms
-        let bind_group_layout = device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("PointLayer BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        // The uniforms buffer.
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The X coordinates texture. Its sample type must match
-                        // the dtype-specific texture format chosen above.
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: x_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The Y coordinates texture. Its sample type must match
-                        // the dtype-specific texture format chosen above.
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: y_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The class labels coordinates buffer.
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
+        // Create bind group layout and bind group for positions + uniforms.
+        // Bindings 0-2 are fixed (uniforms + the two position textures); the
+        // color-mode textures follow at binding `COLOR_BINDING_START` onward,
+        // matching the WGSL declarations injected below.
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                // The uniforms buffer.
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The X coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: x_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Y coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: y_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
             });
-        let bind_group = device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("PointLayer BG"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&x_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&y_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: labels_buffer.as_entire_binding(),
-                    },
-                ],
+        }
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("PointLayer BGL"),
+            entries: &bgl_entries,
+        });
+
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&x_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&y_texture_view),
+            },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
             });
+        }
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("PointLayer BG"),
+            layout: &bind_group_layout,
+            entries: &bg_entries,
+        });
 
         // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
         let shader_source = ShaderBuilder::new(include_str!("shaders/point_layer.wgsl"))
@@ -348,6 +363,10 @@ impl DrawToRasterGpu for PointLayer {
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
             .inject_texture_sample_type("x_coords", x_dtype)
             .inject_texture_sample_type("y_coords", y_dtype)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_fill_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -450,25 +469,6 @@ impl DrawToRasterCpu for PointLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
-// Matches get_categorical_color in point_layer.wgsl (Tableau 10 palette).
-// Reference: https://github.com/pyapp-kit/cmap/blob/954b1ca093d14b6c3214524c69974986a6446d1c/src/cmap/data/tableau/__init__.py#L15
-const CATEGORICAL_COLORS: [(u8, u8, u8); 10] = [
-    (31, 119, 180),
-    (255, 127, 14),
-    (44, 160, 44),
-    (214, 39, 40),
-    (148, 103, 189),
-    (227, 119, 194),
-    (127, 127, 127),
-    (188, 189, 34),
-    (23, 190, 207),
-    (219, 219, 219),
-];
-
-fn get_categorical_color(index: i32) -> (u8, u8, u8) {
-    CATEGORICAL_COLORS[index.rem_euclid(10) as usize]
-}
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for PointLayer {
@@ -476,7 +476,13 @@ impl DrawToSvg for PointLayer {
         let Self { layer_params, view_params } = self;
 
         // Iterate over the data points and create SVG elements.
-        let n = layer_params.labels_vec.len();
+        let n = layer_params.position_x.len();
+
+        // Quantitative normalization domain, computed once for the whole layer.
+        let quant_domain = match &layer_params.fill_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
 
         // TODO: reduce code reuse here
         let camera_view = view_params.camera_view.unwrap_or([
@@ -560,9 +566,7 @@ impl DrawToSvg for PointLayer {
                 layer_params.point_radius
             };
 
-            let label = layer_params.labels_vec[i];
-            let (r, g, b) = get_categorical_color(label);
-            let fill = Some(TwoColor::Rgb((r, g, b)));
+            let fill = Some(TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, i, quant_domain)));
 
             // Create a circle or square element based on point_shape_mode.
             svg_elements.push(match layer_params.point_shape_mode {
@@ -618,7 +622,7 @@ impl PickableLayer for PointLayer {
             return None;
         };
 
-        let n = self.layer_params.labels_vec.len();
+        let n = self.layer_params.position_x.len();
         if n == 0 {
             return None;
         }
@@ -662,7 +666,9 @@ impl PickableLayer for PointLayer {
 
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
+        if let Some(label) = self.layer_params.labels_vec.get(closest_idx) {
+            info.insert("label".to_string(), label.to_string());
+        }
         // Format in the coordinate's native dtype (integers without a decimal point).
         info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
         info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
@@ -673,4 +679,3 @@ impl PickableLayer for PointLayer {
         })
     }
 }
-

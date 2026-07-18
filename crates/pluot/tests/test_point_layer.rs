@@ -9,6 +9,7 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     PointLayerParams, PointShapeMode,
+    CategoricalColormap, CategoricalParams, ColorMode,
     NumericData,
 };
 
@@ -38,6 +39,10 @@ fn corner_points_data() -> PointLayerParams {
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        fill_color: ColorMode::Categorical(CategoricalParams {
+            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        }),
         ..Default::default()
     }
 }
@@ -57,6 +62,10 @@ fn corner_points_pixels() -> PointLayerParams {
         position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        fill_color: ColorMode::Categorical(CategoricalParams {
+            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        }),
         ..Default::default()
     }
 }
