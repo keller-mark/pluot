@@ -8,6 +8,7 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
+    CategoricalColormap, CategoricalParams, ColorMode,
     LineLayerParams, NumericData,
 };
 
@@ -31,11 +32,14 @@ fn cross_lines_data() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
+        stroke_color: ColorMode::Categorical(CategoricalParams {
+            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+            colormap: CategoricalColormap::Tableau10,
+        }),
         source_position_x: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70])),
         source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.75, 0.50, 1.00])),
         target_position_x: NumericData::Float32(Arc::new(vec![1.0, 0.0, 1.0, 0.5, 0.5, 0.70, 1.00, 1.00])),
         target_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.5, 0.5, 1.0, 1.0, 1.00, 1.00, 1.00])),
-        labels_vec: Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7]),
     }
 }
 
@@ -49,11 +53,14 @@ fn cross_lines_pixels() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
+        stroke_color: ColorMode::Categorical(CategoricalParams {
+            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+            colormap: CategoricalColormap::Tableau10,
+        }),
         source_position_x: NumericData::Float32(Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0])),
         source_position_y: NumericData::Float32(Arc::new(vec![  0.0,  0.0,   0.0, 50.0,  50.0,  75.0,  50.0, 100.0])),
         target_position_x: NumericData::Float32(Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0])),
         target_position_y: NumericData::Float32(Arc::new(vec![  0.0, 50.0,  50.0,100.0, 100.0, 100.0, 100.0, 100.0])),
-        labels_vec: Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7]),
     }
 }
 

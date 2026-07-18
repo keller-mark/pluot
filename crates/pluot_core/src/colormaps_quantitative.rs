@@ -1,11 +1,16 @@
 //! Rust-native equivalents of the WGSL colormap functions in
-//! `wgsl_functions/colormaps/`, for sampling colormaps on the CPU (e.g. for
+//! `wgsl_functions/colormap_quantitative/`, for sampling colormaps on the CPU (e.g. for
 //! legends or the `lacks_gpu` render path) without needing a GPU context.
 //!
 //! Each function here is a direct port of its WGSL counterpart, keeping the
 //! same piecewise `smoothstep`/`mix` structure so the two stay in sync.
 //!
-//! Reference: <https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/index.js>
+
+// References:
+// - https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/index.js
+// - https://github.com/vitessce/vitessce/blob/main/packages/legend/src/legend-utils.ts
+// - https://github.com/vitessce/vitessce/blob/main/packages/utils/sets-utils/src/interpolate-colors.js
+// - https://unpkg.com/colormap@2.3.2/colorScale.js
 
 use crate::render_traits::QuantitativeColormap;
 

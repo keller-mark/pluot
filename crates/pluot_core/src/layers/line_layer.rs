@@ -6,13 +6,14 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
+use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::numeric_data::NumericData;
 use crate::wgpu;
-use crate::two::shapes::{TwoCircle, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
+use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::get_point_position;
 
@@ -29,6 +30,13 @@ pub struct LineLayerParams {
     pub line_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
+    // How to color each line. See [`ColorMode`]: modes carrying `NumericData`
+    // (instanced/categorical/quantitative) supply one or more per-element value
+    // arrays, which are uploaded to the GPU as textures at draw time. Named
+    // `stroke_color` (lines are stroked, not filled); it drives the shared color
+    // machinery via `prepare_stroke_color` / `get_stroke_color`.
+    pub stroke_color: ColorMode,
+
     // Per-line source/target X/Y coordinates. Each may be any supported numeric
     // dtype (8-64 bit int/uint, or 32/64-bit float), and may differ across the
     // four arrays. The data is uploaded to the GPU as a texture at its native
@@ -37,8 +45,6 @@ pub struct LineLayerParams {
     pub source_position_y: NumericData,
     pub target_position_x: NumericData,
     pub target_position_y: NumericData,
-    // TODO: improve naming here
-    pub labels_vec: Arc<Vec<i32>>,
 }
 
 impl Default for LineLayerParams {
@@ -51,11 +57,11 @@ impl Default for LineLayerParams {
             line_width: 1.0,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
+            stroke_color: ColorMode::UniformRgb(None),
             source_position_x: NumericData::Float32(Arc::new(vec![])),
             source_position_y: NumericData::Float32(Arc::new(vec![])),
             target_position_x: NumericData::Float32(Arc::new(vec![])),
             target_position_y: NumericData::Float32(Arc::new(vec![])),
-            labels_vec: Arc::new(vec![]),
         }
     }
 }
@@ -112,8 +118,15 @@ struct LineLayerUniforms {
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
-    color: Vec4,         // rgba color for points
+    stroke_color_mode: u32,      // see ColorMode::shader_mode()
+    stroke_color: Vec4,          // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
+    stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-4 are the uniforms buffer and the four position textures.
+const COLOR_BINDING_START: u32 = 5;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -137,20 +150,14 @@ impl DrawToRasterGpu for LineLayer {
         let (target_y_texture_view, target_y_dtype) =
             layer_params.target_position_y.create_data_texture(device, queue, "Target Y Coordinates Texture");
 
-        // More efficient version that eliminates intermediate vectors and redundant operations
-        let n = layer_params.labels_vec.len();
+        // Number of lines to draw: one instance per element of the position arrays.
+        let n = layer_params.source_position_x.len();
 
-        // Convert to f32 and cast to bytes directly - no for loop needed
-        //let labels_i32: Vec<i32> = layer_params.labels_vec.iter().map(|&c| c as i32).collect();
-        let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-        let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Class labels Storage Buffer"),
-            size: labels_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&labels_buffer, 0, labels_bytes);
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_stroke_color` function injected into the shader below.
+        let color = prepare_stroke_color(device, queue, &layer_params.stroke_color, COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -222,7 +229,10 @@ impl DrawToRasterGpu for LineLayer {
                 0.0, 0.0, 1.0, 0.0, // Column 3
                 0.0, 0.0, 0.0, 1.0,
             ])),
-            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            stroke_color_mode: color.mode,
+            stroke_color: Vec4::from_array(color.static_color),
+            stroke_color_reverse: color.reverse,
+            stroke_color_domain: Vec2::from_array(color.domain),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -238,113 +248,123 @@ impl DrawToRasterGpu for LineLayer {
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
 
-        // Create bind group layout and bind group for positions + uniforms
+        // Create bind group layout and bind group for positions + uniforms.
+        // Bindings 0-4 are fixed (uniforms + the four position textures); the
+        // color-mode textures follow at binding `COLOR_BINDING_START` onward,
+        // matching the WGSL declarations injected below.
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                // The uniforms buffer.
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Source X coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: source_x_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Source Y coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: source_y_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Target X coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: target_x_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The Target Y coordinates texture. Its sample type must match
+                // the dtype-specific texture format chosen above.
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: target_y_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("LineLayer BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        // The uniforms buffer.
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The Source X coordinates texture. Its sample type must match
-                        // the dtype-specific texture format chosen above.
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: source_x_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The Source Y coordinates texture. Its sample type must match
-                        // the dtype-specific texture format chosen above.
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: source_y_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The Target X coordinates texture. Its sample type must match
-                        // the dtype-specific texture format chosen above.
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: target_x_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The Target Y coordinates texture. Its sample type must match
-                        // the dtype-specific texture format chosen above.
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: target_y_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        // The class labels coordinates buffer.
-                        binding: 5,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
+                entries: &bgl_entries,
             });
+
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&source_x_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&source_y_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(&target_x_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(&target_y_texture_view),
+            },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("LineLayer BG"),
                 layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&source_x_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&source_y_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(&target_x_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&target_y_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: labels_buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &bg_entries,
             });
 
         // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
@@ -356,6 +376,10 @@ impl DrawToRasterGpu for LineLayer {
             .inject_texture_sample_type("source_y_dtype", source_y_dtype)
             .inject_texture_sample_type("target_x_dtype", target_x_dtype)
             .inject_texture_sample_type("target_y_dtype", target_y_dtype)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_stroke_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -466,7 +490,13 @@ impl DrawToSvg for LineLayer {
         let Self { layer_params, view_params } = self;
 
         // Iterate over the data points and create SVG elements.
-        let n = layer_params.labels_vec.len();
+        let n = layer_params.source_position_x.len();
+
+        // Quantitative normalization domain, computed once for the whole layer.
+        let quant_domain = match &layer_params.stroke_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
 
         // TODO: reduce code reuse here
         let camera_view = view_params.camera_view.unwrap_or([
@@ -545,12 +575,14 @@ impl DrawToSvg for LineLayer {
                 Some(&model_matrix_raw),
             );
 
-            // Create a circle or square element based on point_shape_mode.
+            let color = TwoColor::Rgb(cpu_fill_color(&layer_params.stroke_color, i, quant_domain));
+
             svg_elements.push(TwoElement::Line(TwoLine {
                 x1: source_x_px as f64,
                 y1: (layer_h - source_y_px) as f64,
                 x2: target_x_px as f64,
                 y2: (layer_h - target_y_px) as f64,
+                stroke: Some(color),
                 linewidth: layer_params.line_width as f64,
                 // TODO: more params
                 ..Default::default()

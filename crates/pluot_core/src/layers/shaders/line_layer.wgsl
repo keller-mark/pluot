@@ -6,6 +6,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 // Computes the final vertex position for a line quad.
 // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/line-layer/line-layer-vertex.glsl.h#L56
 fn extrude_line(
@@ -50,13 +54,15 @@ struct LineLayerUniforms {
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
-    color: vec4<f32>,     // rgba color for points
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) @interpolate(flat) instance_index: u32,
+    @location(0) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -78,7 +84,11 @@ struct FSOut {
 @group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_dtype}}>;
 @group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_dtype}}>;
 @group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_dtype}}>;
-@group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 5 onward) plus `fn get_stroke_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
+{{color_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -187,7 +197,6 @@ fn vs_main(
 
             var out: VSOut;
             out.position = pos;
-            out.color = u.color;
             out.instance_index = instance_index;
             return out;
         }
@@ -246,41 +255,22 @@ fn vs_main(
 
     var out: VSOut;
     out.position = pos;
-    out.color = u.color;
     out.instance_index = instance_index;
     return out;
-}
-
-
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
 }
 
 
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) @interpolate(flat) instance_index: u32,
+    @location(0) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
-    let category_color = get_categorical_color(labels_coords[instance_index]);
+    // The color module's get_stroke_color resolves the per-instance color for the
+    // active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_stroke_color(instance_index);
 
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, 1.0);
+    out.color = vec4<f32>(out_color, 1.0);
     return out;
 }

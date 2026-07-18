@@ -102,6 +102,28 @@ pub mod color {
     pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_fill_color/quantitative.wgsl");
 }
 
+/// Stroke-color counterpart of [`color`], for layers that stroke rather than
+/// fill (e.g. `LineLayer`). Each snippet defines `fn get_stroke_color(...)` and
+/// reads the `stroke_color*` uniforms. Otherwise identical to [`color`];
+/// assembled at runtime by [`crate::color_mode::prepare_stroke_color`].
+pub mod stroke_color {
+    /// Static color shared by every element.
+    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/get_stroke_color/uniform_rgb.wgsl");
+
+    /// Per-element RGB from three parallel value textures.
+    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/get_stroke_color/instanced_rgb.wgsl");
+
+    /// Per-element RGB from one interleaved value texture.
+    pub const INSTANCED_RGB_INTERLEAVED: &str =
+        include_str!("wgsl_functions/get_stroke_color/instanced_rgb_interleaved.wgsl");
+
+    /// Per-element integer labels indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_stroke_color/categorical.wgsl");
+
+    /// Per-element scalar values mapped through a continuous colormap.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_stroke_color/quantitative.wgsl");
+}
+
 /// Colormap WGSL functions, embedded at compile time from
 /// `wgsl_functions/colormaps/`.
 ///
@@ -318,6 +340,7 @@ impl<'a> ShaderBuilder<'a> {
 
     /// Inject a reusable WGSL function (a compile-time snippet, e.g. from
     /// [`common`]) at `{{name}}`.
+    // TODO: use a special prefix for injected functions to make the shaders more clear/readable.
     pub fn inject_function(self, name: &str, source: &str) -> Self {
         self.define(name, source)
     }
@@ -333,6 +356,7 @@ impl<'a> ShaderBuilder<'a> {
     }
 
     /// Inject a storage-array element dtype at `{{name}}` (chosen at runtime).
+    // TODO: when injecting dtypes for variables, the dtype name should be `{{var_name}}_dtype`
     pub fn inject_dtype(self, name: &str, dtype: WgslScalar) -> Self {
         self.define(name, dtype.as_wgsl())
     }

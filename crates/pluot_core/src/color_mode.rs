@@ -14,7 +14,7 @@ use crate::colormaps_quantitative;
 use crate::colormaps_categorical;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{ColorMode, QuantitativeParams};
-use crate::shader_modules::{color as color_wgsl, colormaps as wgsl_colormaps, ShaderBuilder, TextureDtype};
+use crate::shader_modules::{color as color_wgsl, stroke_color as stroke_color_wgsl, colormaps as wgsl_colormaps, ShaderBuilder, TextureDtype};
 use crate::wgpu;
 
 /// A texture bound for a color mode, paired with the sample type its bind-group
@@ -154,6 +154,119 @@ pub fn prepare_color_mode(
 /// labels texture at `first_binding`, the palette texture at `first_binding + 1`.
 fn categorical_wgsl(first_binding: u32, labels_dtype: TextureDtype) -> String {
     ShaderBuilder::new(color_wgsl::CATEGORICAL)
+        .define_u32("color_binding_0", first_binding)
+        .define_u32("color_binding_1", first_binding + 1)
+        .inject_texture_sample_type("color_labels_dtype", labels_dtype)
+        .build()
+}
+
+/// Stroke-color counterpart of [`prepare_color_mode`], for layers that stroke
+/// rather than fill (e.g. `LineLayer`). Identical logic, but assembles the
+/// `stroke_color` WGSL variants (defining `get_stroke_color` and reading the
+/// `stroke_color*` uniforms). Value texture(s) are bound consecutively starting
+/// at `first_binding`.
+pub fn prepare_stroke_color(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    color: &ColorMode,
+    first_binding: u32,
+) -> PreparedColorMode {
+    let mut static_color = [0.0f32, 0.0, 0.0, 1.0];
+    let mut reverse = 0u32;
+    let mut domain = [0.0f32, 1.0];
+    let mut textures: Vec<PreparedColorTexture> = Vec::new();
+
+    let wgsl = match color {
+        ColorMode::UniformRgb(opt) => {
+            if let Some((r, g, b)) = opt {
+                static_color = [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0];
+            }
+            stroke_color_wgsl::UNIFORM_RGB.to_string()
+        }
+        ColorMode::InstancedRgb(params) => {
+            let (r_view, r_dtype) =
+                params.r_values.create_data_texture(device, queue, "stroke_color r Texture");
+            let (g_view, g_dtype) =
+                params.g_values.create_data_texture(device, queue, "stroke_color g Texture");
+            let (b_view, b_dtype) =
+                params.b_values.create_data_texture(device, queue, "stroke_color b Texture");
+            let wgsl = ShaderBuilder::new(stroke_color_wgsl::INSTANCED_RGB)
+                .define_u32("color_binding_0", first_binding)
+                .define_u32("color_binding_1", first_binding + 1)
+                .define_u32("color_binding_2", first_binding + 2)
+                .inject_texture_sample_type("color_r_dtype", r_dtype)
+                .inject_texture_sample_type("color_g_dtype", g_dtype)
+                .inject_texture_sample_type("color_b_dtype", b_dtype)
+                .build();
+            textures.push(value_texture(r_view, r_dtype));
+            textures.push(value_texture(g_view, g_dtype));
+            textures.push(value_texture(b_view, b_dtype));
+            wgsl
+        }
+        ColorMode::InstancedRgbInterleaved(params) => {
+            let (view, dtype) =
+                params.rgb_values.create_data_texture(device, queue, "stroke_color rgb Texture");
+            let wgsl = ShaderBuilder::new(stroke_color_wgsl::INSTANCED_RGB_INTERLEAVED)
+                .define_u32("color_binding_0", first_binding)
+                .inject_texture_sample_type("color_rgb_dtype", dtype)
+                .build();
+            textures.push(value_texture(view, dtype));
+            wgsl
+        }
+        ColorMode::Categorical(params) => {
+            let (view, dtype) =
+                params.values.create_data_texture(device, queue, "stroke_color labels Texture");
+            let palette: Vec<[f32; 4]> = colormaps_categorical::palette(params.colormap).to_vec();
+            let palette_view = create_palette_texture(device, queue, &palette);
+            let wgsl = categorical_stroke_wgsl(first_binding, dtype);
+            textures.push(value_texture(view, dtype));
+            textures.push(palette_texture(palette_view));
+            wgsl
+        }
+        ColorMode::CategoricalCustom(params) => {
+            let (view, dtype) =
+                params.values.create_data_texture(device, queue, "stroke_color labels Texture");
+            let palette: Vec<[f32; 4]> = params
+                .colormap
+                .iter()
+                .map(|(r, g, b)| [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0])
+                .collect();
+            let palette_view = create_palette_texture(device, queue, &palette);
+            let wgsl = categorical_stroke_wgsl(first_binding, dtype);
+            textures.push(value_texture(view, dtype));
+            textures.push(palette_texture(palette_view));
+            wgsl
+        }
+        ColorMode::Quantitative(params) => {
+            let (view, dtype) =
+                params.values.create_data_texture(device, queue, "stroke_color values Texture");
+            reverse = if params.reverse { 1 } else { 0 };
+            domain = quantitative_domain(params);
+            let (cmap_src, cmap_name) = wgsl_colormaps::wgsl_source_and_name(params.colormap);
+            let wgsl = ShaderBuilder::new(stroke_color_wgsl::QUANTITATIVE)
+                .define_u32("color_binding_0", first_binding)
+                .inject_texture_sample_type("color_values_dtype", dtype)
+                .inject_function("colormap_fn_source", cmap_src)
+                .define("colormap_fn_name", cmap_name)
+                .build();
+            textures.push(value_texture(view, dtype));
+            wgsl
+        }
+    };
+
+    PreparedColorMode {
+        mode: color.shader_mode(),
+        static_color,
+        reverse,
+        domain,
+        textures,
+        wgsl,
+    }
+}
+
+/// Stroke-color counterpart of [`categorical_wgsl`].
+fn categorical_stroke_wgsl(first_binding: u32, labels_dtype: TextureDtype) -> String {
+    ShaderBuilder::new(stroke_color_wgsl::CATEGORICAL)
         .define_u32("color_binding_0", first_binding)
         .define_u32("color_binding_1", first_binding + 1)
         .inject_texture_sample_type("color_labels_dtype", labels_dtype)

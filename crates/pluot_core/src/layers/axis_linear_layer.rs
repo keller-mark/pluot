@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, FontWeight, FontStyle};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, UnitsMode, FontWeight, FontStyle};
 use crate::viewport::get_bounds;
 use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::two::svg::SvgContext;
@@ -228,8 +228,6 @@ impl AxisLinearLayer {
         let line_target_position_x = line_target_positions.iter().map(|pos| pos[0]).collect();
         let line_target_position_y = line_target_positions.iter().map(|pos| pos[1]).collect();
 
-        let line_labels_vec: Vec<i32> = line_source_positions.iter().map(|_| 0_i32).collect();
-
         // Create LineLayer for axis line and ticks
         let line_params = LineLayerParams {
             layer_id: format!("{}_axis_layer_line_sublayer", self.layer_params.layer_id),
@@ -239,11 +237,11 @@ impl AxisLinearLayer {
             line_width: DEFAULT_LINE_WIDTH,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
+            stroke_color: ColorMode::UniformRgb(None),
             source_position_x: NumericData::Float32(Arc::new(line_source_position_x)),
             source_position_y: NumericData::Float32(Arc::new(line_source_position_y)),
             target_position_x: NumericData::Float32(Arc::new(line_target_position_x)),
             target_position_y: NumericData::Float32(Arc::new(line_target_position_y)),
-            labels_vec: Arc::new(line_labels_vec), // TODO: make this optional in LineLayerParams
         };
         sublayers.push(Box::new(LineLayer::new(
             self.view_params.clone(),
