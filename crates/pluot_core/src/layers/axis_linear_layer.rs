@@ -267,6 +267,7 @@ impl AxisLinearLayer {
                 font_weight: FontWeight::Normal,
                 font_style: FontStyle::Normal,
                 model_matrix: None,
+                fill_color: ColorMode::UniformRgb(None),
                 position_x: NumericData::Float32(Arc::new(text_position_x)),
                 position_y: NumericData::Float32(Arc::new(text_position_y)),
                 text_vec: Arc::new(text_strings),

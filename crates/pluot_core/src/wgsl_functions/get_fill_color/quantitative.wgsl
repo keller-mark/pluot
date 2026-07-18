@@ -1,7 +1,9 @@
 // ColorMode::Quantitative — per-element scalar values normalized into 0-1 using
 // the (min, max) domain uniform, then mapped through a continuous colormap. The
-// colormap function's source is injected at `{{colormap_fn_source}}` and called
-// by name at `{{colormap_fn_name}}`. Depends on `flat_texel_coord` being injected.
+// colormap function's source and name are injected by ShaderBuilder as
+// placeholders below (not spelled out here, to avoid the literal placeholder
+// text itself being matched and substituted). Depends on `flat_texel_coord`
+// being injected.
 {{colormap_fn_source}}
 
 @group(0) @binding({{fill_color_values_bidx}}) var fill_color_values: texture_2d<{{fill_color_values_dtype}}>;

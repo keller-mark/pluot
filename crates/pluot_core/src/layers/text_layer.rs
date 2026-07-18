@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
+use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
 use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
@@ -356,6 +357,7 @@ fn build_internal_text_layer_data(
                     text_x_pos, text_y_pos, // NOTE: these values can be in either data units or pixel units.
                     x_px, y_px, w_px, h_px, // NOTE: these values are always in pixel units.
                     u0, v0, u1, v1, // NOTE: these values are always indices into the atlas texture.
+                    elem_i as f32, // Index of the text element this glyph belongs to, for per-element color lookups.
                 ]);
             }
 
@@ -411,6 +413,13 @@ pub struct TextLayerParams {
     pub font_weight: FontWeight,
     pub font_style: FontStyle,
 
+    // How to color each text element. See [`ColorMode`]: modes carrying
+    // `NumericData` (instanced/categorical/quantitative) supply one value per
+    // text element (i.e. per entry of `text_vec`/`position_x`/`position_y`,
+    // not per glyph), uploaded to the GPU as textures at draw time. Drives the
+    // shared color machinery via `prepare_color_mode` / `get_fill_color`.
+    pub fill_color: ColorMode,
+
     // Per-element X/Y coordinates. Each may be any supported numeric dtype
     // (8-64 bit int/uint, or 32/64-bit float), and X and Y may differ.
     pub position_x: NumericData,
@@ -434,6 +443,7 @@ impl Default for TextLayerParams {
             font_family: None,
             font_weight: FontWeight::Normal,
             font_style: FontStyle::Normal,
+            fill_color: ColorMode::UniformRgb(None),
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             text_vec: Arc::new(vec![]),
@@ -615,7 +625,6 @@ impl PreparedLayer for TextLayer {
     }
 }
 
-// TODO: update this to allow for a color per text element.
 #[derive(ShaderType, Debug)]
 struct TextLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
@@ -628,8 +637,15 @@ struct TextLayerUniforms {
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
     text_rotation: f32, // Rotation in degrees
-    color: Vec4,
+    fill_color_mode: u32,     // see ColorMode::shader_mode()
+    fill_color: Vec4,         // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
+    fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-2 are the uniforms buffer, the glyph atlas texture, and its sampler.
+const COLOR_BINDING_START: u32 = 3;
 
 // We extract this function for reuse in derived scatterplot layers (e.g., ZarrTextLayer).
 // TODO: is this the best way to share this logic?
@@ -687,8 +703,17 @@ pub async fn base_draw_text_layer(
     let atlas_width = internal_data.atlas_width;
     let atlas_height = internal_data.atlas_height;
     // Number of emitted instances (skip zero-sized glyphs)
-    const NUM_VALUES_PER_INSTANCE: usize = 10;
+    const NUM_VALUES_PER_INSTANCE: usize = 11;
     let instance_count: u32 = (all_instance_data.len() / NUM_VALUES_PER_INSTANCE) as u32;
+
+    // Build the GPU-side color resources for the configured color mode. Modes
+    // that carry per-element `NumericData` upload it as one or more textures
+    // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+    // `get_fill_color` function injected into the shader below. Per-element
+    // here means per text element (matching `position_x`/`position_y`), not
+    // per glyph; the vertex shader resolves the owning element index from the
+    // instance data before looking up the color.
+    let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
 
 
     // Upload atlas as a single-channel R8Unorm texture
@@ -777,10 +802,10 @@ pub async fn base_draw_text_layer(
             0.0, 0.0, 0.0, 1.0,
         ])),
         text_rotation: layer_params.text_rotation.unwrap_or(0.0),
-        // TODO: then, update the WGSL shader to match.
-        // TODO: then, update the shader logic so that it does similar positioning logic
-        // as done by the PointLayer vertex shader, using these uniform values.
-        color: Vec4::from([0.0, 0.0, 0.0, 1.0]), // TODO: support per-element colors.
+        fill_color_mode: color.mode,
+        fill_color: Vec4::from_array(color.static_color),
+        fill_color_reverse: color.reverse,
+        fill_color_domain: Vec2::from_array(color.domain),
     };
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -794,58 +819,79 @@ pub async fn base_draw_text_layer(
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
-    // 5) Bind group layout: texture + sampler + uniforms
+    // 5) Bind group layout: texture + sampler + uniforms + color-mode texture(s)
+    let mut bgl_entries = vec![
+        wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 2,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        },
+    ];
+    // One fragment-visible texture per color value / palette array.
+    for (i, tex) in color.textures.iter().enumerate() {
+        bgl_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: COLOR_BINDING_START + i as u32,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: tex.sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+    }
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Text BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
+            entries: &bgl_entries,
         });
 
+    let mut bg_entries = vec![
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform_buffer.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::TextureView(&atlas_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+        },
+    ];
+    for (i, tex) in color.textures.iter().enumerate() {
+        bg_entries.push(wgpu::BindGroupEntry {
+            binding: COLOR_BINDING_START + i as u32,
+            resource: wgpu::BindingResource::TextureView(&tex.view),
+        });
+    }
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Text BG"),
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
-                },
-            ],
+            entries: &bg_entries,
         });
 
     // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
@@ -854,6 +900,10 @@ pub async fn base_draw_text_layer(
         .inject_function("scale", common::SCALE)
         .inject_function("translate", common::TRANSLATE)
         .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+        // Color-mode specialization: the flat-index texel helper plus the
+        // assembled color module (bindings + `get_fill_color`).
+        .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+        .define("color_module", &color.wgsl)
         .build();
     let shader = device
         .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -868,7 +918,7 @@ pub async fn base_draw_text_layer(
             immediate_size: 0,
         });
 
-    // Vertex buffer layout: two vec4<f32> per instance
+    // Vertex buffer layout: two vec4<f32> plus a scalar element index per instance
     let vertex_buffers = [
         Some(wgpu::VertexBufferLayout {
             array_stride: (NUM_VALUES_PER_INSTANCE * std::mem::size_of::<f32>()) as u64,
@@ -888,6 +938,13 @@ pub async fn base_draw_text_layer(
                     offset: (6 * std::mem::size_of::<f32>()) as u64,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    // Index of the text element this glyph belongs to (see
+                    // `build_internal_text_layer_data`), used to look up its color.
+                    offset: (10 * std::mem::size_of::<f32>()) as u64,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         })
@@ -1004,6 +1061,12 @@ pub fn base_draw_text_layer_svg(
     // Iterate over the data points and create SVG elements.
     let n = layer_params.text_vec.len();
 
+    // Quantitative normalization domain, computed once for the whole layer.
+    let quant_domain = match &layer_params.fill_color {
+        ColorMode::Quantitative(params) => quantitative_domain(params),
+        _ => [0.0, 1.0],
+    };
+
     // TODO: reduce code reuse here
     let camera_view = view_params.camera_view.unwrap_or([
         // Column 0
@@ -1067,11 +1130,13 @@ pub fn base_draw_text_layer_svg(
             Some(&model_matrix_raw),
         );
 
-        // Create a circle or square element based on point_shape_mode.
+        let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, i, quant_domain));
+
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
             y: (layer_h - py) as f64,
             text: layer_params.text_vec[i].clone(),
+            fill,
             font_family: layer_params.font_family.clone().unwrap_or_else(|| "Helvetica".to_string()),
             font_weight: match layer_params.font_weight {
                 FontWeight::Normal => "normal".to_string(),

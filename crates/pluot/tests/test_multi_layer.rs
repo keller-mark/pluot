@@ -79,6 +79,7 @@ fn corner_labels() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
+        fill_color: ColorMode::UniformRgb(None),
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
         text_vec: Arc::new(vec![
