@@ -11,7 +11,7 @@ use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams};
+use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams};
 use pluot_core::layers::point_layer::PointShapeMode;
 use pluot_core::layers::point_3d_layer::{Point3dLayer, Point3dLayerParams};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
@@ -174,6 +174,10 @@ impl PreparedLayer for ZarrPoint3dLayer {
                 bounds: self.layer_params.bounds.clone(),
                 point_radius: self.layer_params.point_radius,
                 point_shape_mode: self.layer_params.point_shape_mode,
+                fill_color: ColorMode::Categorical(CategoricalParams {
+                    values: NumericData::Int32(l_i32.clone()),
+                    colormap: CategoricalColormap::Tableau10,
+                }),
                 position_x: NumericData::Float32(x_f32.clone()),
                 position_y: NumericData::Float32(y_f32.clone()),
                 position_z: NumericData::Float32(z_f32.clone()),

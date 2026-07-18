@@ -1,16 +1,22 @@
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct Point3dLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     point_radius: f32,
     point_shape_mode: u32, // 0: square; 1: circle
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // see ColorMode::shader_mode()
+    fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32, // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -29,7 +35,11 @@ struct FSOut {
 @group(0) @binding(1) var x_coords: texture_2d<{{x_coords_dtype}}>;
 @group(0) @binding(2) var y_coords: texture_2d<{{y_coords_dtype}}>;
 @group(0) @binding(3) var z_coords: texture_2d<{{z_coords_dtype}}>;
-@group(0) @binding(4) var<storage, read> labels_coords: array<i32>;
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 4 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_color_mode`.
+{{color_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -100,28 +110,9 @@ fn vs_main(
         clip_space_position.w
     );
 
-    out.color = u.color;
     out.corner = corner;
     out.instance_index = instance_index;
     return out;
-}
-
-
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
 }
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -131,9 +122,8 @@ fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) corner: vec2<f32>,
-    @location(2) @interpolate(flat) instance_index: u32,
+    @location(0) corner: vec2<f32>,
+    @location(1) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
     // Handling of circle point shape mode
@@ -149,9 +139,11 @@ fn fs_main(
         }
     }
 
-    let category_color = get_categorical_color(labels_coords[instance_index]);
+    // The color module's get_fill_color resolves the per-instance color for the
+    // active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_fill_color(instance_index);
 
     var out: FSOut;
-    out.color = vec4<f32>(category_color.rgb, alpha);
+    out.color = vec4<f32>(out_color, alpha);
     return out;
 }
