@@ -529,7 +529,7 @@ impl DrawToRasterGpu for BitmapLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-            .inject_texture_sample_type("img_data_dtype", img_data_dtype)
+            .inject_texture_sample_type("img_data", img_data_dtype)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {

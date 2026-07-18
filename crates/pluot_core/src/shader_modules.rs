@@ -37,7 +37,7 @@
 //!     .inject_function("scale", common::SCALE)
 //!     .inject_function("translate", common::TRANSLATE)
 //!     .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-//!     .inject_dtype("img_data_dtype", WgslScalar::F32)
+//!     .inject_dtype("img_data", WgslScalar::F32)
 //!     .build();
 //!
 //! let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -355,17 +355,17 @@ impl<'a> ShaderBuilder<'a> {
         }
     }
 
-    /// Inject a storage-array element dtype at `{{name}}` (chosen at runtime).
-    // TODO: when injecting dtypes for variables, the dtype name should be `{{var_name}}_dtype`
-    pub fn inject_dtype(self, name: &str, dtype: WgslScalar) -> Self {
-        self.define(name, dtype.as_wgsl())
+    /// Inject a storage-array element dtype at `{{var_name}}_dtype` (chosen at
+    /// runtime).
+    pub fn inject_dtype(self, var_name: &str, dtype: WgslScalar) -> Self {
+        self.define(&format!("{var_name}_dtype"), dtype.as_wgsl())
     }
 
-    /// Inject a texture sampled type at `{{name}}`, i.e. the `T` in
+    /// Inject a texture sampled type at `{{var_name}}_dtype`, i.e. the `T` in
     /// `texture_2d<T>` / `texture_2d_array<T>`, chosen at runtime from a
     /// [`TextureDtype`].
-    pub fn inject_texture_sample_type(self, name: &str, dtype: TextureDtype) -> Self {
-        self.inject_dtype(name, dtype.sample_type())
+    pub fn inject_texture_sample_type(self, var_name: &str, dtype: TextureDtype) -> Self {
+        self.inject_dtype(var_name, dtype.sample_type())
     }
 
     /// Finish building and return the WGSL source string.
@@ -393,10 +393,10 @@ mod tests {
 
     #[test]
     fn injects_functions_and_dtype() {
-        let template = "{{fn}}\nvar<storage, read> d: array<{{dtype}}>;";
+        let template = "{{fn}}\nvar<storage, read> d: array<{{d_dtype}}>;";
         let out = ShaderBuilder::new(template)
             .inject_function("fn", "fn foo() {}")
-            .inject_dtype("dtype", WgslScalar::U32)
+            .inject_dtype("d", WgslScalar::U32)
             .build();
         assert_eq!(out, "fn foo() {}\nvar<storage, read> d: array<u32>;");
     }
@@ -411,7 +411,9 @@ mod tests {
 
     #[test]
     fn replaces_all_occurrences() {
-        let out = ShaderBuilder::new("{{t}} and {{t}}").inject_dtype("t", WgslScalar::F32).build();
+        let out = ShaderBuilder::new("{{t_dtype}} and {{t_dtype}}")
+            .inject_dtype("t", WgslScalar::F32)
+            .build();
         assert_eq!(out, "f32 and f32");
     }
 }

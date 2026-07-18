@@ -143,7 +143,7 @@ pub async fn compute_reduce(
 
     // Assemble the shader with the texture's sampled type injected at runtime.
     let shader_source = ShaderBuilder::new(include_str!("shaders/reduce.wgsl"))
-        .inject_texture_sample_type("input_dtype", input_dtype)
+        .inject_texture_sample_type("input", input_dtype)
         .build();
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("reduce.wgsl"),

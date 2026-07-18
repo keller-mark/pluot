@@ -375,10 +375,10 @@ impl DrawToRasterGpu for RectLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-            .inject_texture_sample_type("position_x0_dtype", position_x0_dtype)
-            .inject_texture_sample_type("position_y0_dtype", position_y0_dtype)
-            .inject_texture_sample_type("position_x1_dtype", position_x1_dtype)
-            .inject_texture_sample_type("position_y1_dtype", position_y1_dtype)
+            .inject_texture_sample_type("position_x0_coords", position_x0_dtype)
+            .inject_texture_sample_type("position_y0_coords", position_y0_dtype)
+            .inject_texture_sample_type("position_x1_coords", position_x1_dtype)
+            .inject_texture_sample_type("position_y1_coords", position_y1_dtype)
             // Color-mode specialization: the flat-index texel helper plus the
             // assembled color module (bindings + `get_fill_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)

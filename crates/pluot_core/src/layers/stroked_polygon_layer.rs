@@ -248,7 +248,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-            .inject_texture_sample_type("points_dtype", points_dtype)
+            .inject_texture_sample_type("points", points_dtype)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stroked_polygon_layer.wgsl"),

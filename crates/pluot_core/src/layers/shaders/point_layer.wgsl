@@ -43,8 +43,8 @@ struct FSOut {
 // shader-module system (see `crate::shader_modules`) so that 8/16/32-bit data
 // lives on the GPU at native width: `f32` for floating-point data, `u32` for
 // unsigned, `i32` for signed. X and Y are independent and may differ in dtype.
-@group(0) @binding(1) var x_coords: texture_2d<{{x_dtype}}>;
-@group(0) @binding(2) var y_coords: texture_2d<{{y_dtype}}>;
+@group(0) @binding(1) var x_coords: texture_2d<{{x_coords_dtype}}>;
+@group(0) @binding(2) var y_coords: texture_2d<{{y_coords_dtype}}>;
 @group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
 
 

@@ -346,8 +346,8 @@ impl DrawToRasterGpu for PointLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-            .inject_texture_sample_type("x_dtype", x_dtype)
-            .inject_texture_sample_type("y_dtype", y_dtype)
+            .inject_texture_sample_type("x_coords", x_dtype)
+            .inject_texture_sample_type("y_coords", y_dtype)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {

@@ -372,10 +372,10 @@ impl DrawToRasterGpu for LineLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-            .inject_texture_sample_type("source_x_dtype", source_x_dtype)
-            .inject_texture_sample_type("source_y_dtype", source_y_dtype)
-            .inject_texture_sample_type("target_x_dtype", target_x_dtype)
-            .inject_texture_sample_type("target_y_dtype", target_y_dtype)
+            .inject_texture_sample_type("source_x_coords", source_x_dtype)
+            .inject_texture_sample_type("source_y_coords", source_y_dtype)
+            .inject_texture_sample_type("target_x_coords", target_x_dtype)
+            .inject_texture_sample_type("target_y_coords", target_y_dtype)
             // Color-mode specialization: the flat-index texel helper plus the
             // assembled color module (bindings + `get_stroke_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)

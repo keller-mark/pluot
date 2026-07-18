@@ -80,10 +80,10 @@ struct FSOut {
 // 8/16/32-bit data lives on the GPU at native width: `f32` for floating-point
 // data, `u32` for unsigned, `i32` for signed. Each array is independent and
 // may differ in dtype.
-@group(0) @binding(1) var source_x_coords: texture_2d<{{source_x_dtype}}>;
-@group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_dtype}}>;
-@group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_dtype}}>;
-@group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_dtype}}>;
+@group(0) @binding(1) var source_x_coords: texture_2d<{{source_x_coords_dtype}}>;
+@group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_coords_dtype}}>;
+@group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_coords_dtype}}>;
+@group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_coords_dtype}}>;
 
 // Color module: any per-element color value/palette texture bindings (from
 // binding 5 onward) plus `fn get_stroke_color(instance_index: u32) -> vec3<f32>`.

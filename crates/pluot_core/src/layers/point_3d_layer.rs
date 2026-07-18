@@ -263,9 +263,9 @@ impl DrawToRasterGpu for Point3dLayer {
             });
 
         let shader_source = ShaderBuilder::new(include_str!("shaders/point_3d_layer.wgsl"))
-            .inject_texture_sample_type("x_dtype", x_dtype)
-            .inject_texture_sample_type("y_dtype", y_dtype)
-            .inject_texture_sample_type("z_dtype", z_dtype)
+            .inject_texture_sample_type("x_coords", x_dtype)
+            .inject_texture_sample_type("y_coords", y_dtype)
+            .inject_texture_sample_type("z_coords", z_dtype)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {

@@ -80,9 +80,9 @@ pub fn prepare_color_mode(
                 .define_u32("color_binding_0", first_binding)
                 .define_u32("color_binding_1", first_binding + 1)
                 .define_u32("color_binding_2", first_binding + 2)
-                .inject_texture_sample_type("color_r_dtype", r_dtype)
-                .inject_texture_sample_type("color_g_dtype", g_dtype)
-                .inject_texture_sample_type("color_b_dtype", b_dtype)
+                .inject_texture_sample_type("color_r", r_dtype)
+                .inject_texture_sample_type("color_g", g_dtype)
+                .inject_texture_sample_type("color_b", b_dtype)
                 .build();
             textures.push(value_texture(r_view, r_dtype));
             textures.push(value_texture(g_view, g_dtype));
@@ -94,7 +94,7 @@ pub fn prepare_color_mode(
                 params.rgb_values.create_data_texture(device, queue, "fill_color rgb Texture");
             let wgsl = ShaderBuilder::new(color_wgsl::INSTANCED_RGB_INTERLEAVED)
                 .define_u32("color_binding_0", first_binding)
-                .inject_texture_sample_type("color_rgb_dtype", dtype)
+                .inject_texture_sample_type("color_rgb", dtype)
                 .build();
             textures.push(value_texture(view, dtype));
             wgsl
@@ -131,7 +131,7 @@ pub fn prepare_color_mode(
             let (cmap_src, cmap_name) = wgsl_colormaps::wgsl_source_and_name(params.colormap);
             let wgsl = ShaderBuilder::new(color_wgsl::QUANTITATIVE)
                 .define_u32("color_binding_0", first_binding)
-                .inject_texture_sample_type("color_values_dtype", dtype)
+                .inject_texture_sample_type("color_values", dtype)
                 .inject_function("colormap_fn_source", cmap_src)
                 .define("colormap_fn_name", cmap_name)
                 .build();
@@ -156,7 +156,7 @@ fn categorical_wgsl(first_binding: u32, labels_dtype: TextureDtype) -> String {
     ShaderBuilder::new(color_wgsl::CATEGORICAL)
         .define_u32("color_binding_0", first_binding)
         .define_u32("color_binding_1", first_binding + 1)
-        .inject_texture_sample_type("color_labels_dtype", labels_dtype)
+        .inject_texture_sample_type("color_labels", labels_dtype)
         .build()
 }
 
@@ -194,9 +194,9 @@ pub fn prepare_stroke_color(
                 .define_u32("color_binding_0", first_binding)
                 .define_u32("color_binding_1", first_binding + 1)
                 .define_u32("color_binding_2", first_binding + 2)
-                .inject_texture_sample_type("color_r_dtype", r_dtype)
-                .inject_texture_sample_type("color_g_dtype", g_dtype)
-                .inject_texture_sample_type("color_b_dtype", b_dtype)
+                .inject_texture_sample_type("color_r", r_dtype)
+                .inject_texture_sample_type("color_g", g_dtype)
+                .inject_texture_sample_type("color_b", b_dtype)
                 .build();
             textures.push(value_texture(r_view, r_dtype));
             textures.push(value_texture(g_view, g_dtype));
@@ -208,7 +208,7 @@ pub fn prepare_stroke_color(
                 params.rgb_values.create_data_texture(device, queue, "stroke_color rgb Texture");
             let wgsl = ShaderBuilder::new(stroke_color_wgsl::INSTANCED_RGB_INTERLEAVED)
                 .define_u32("color_binding_0", first_binding)
-                .inject_texture_sample_type("color_rgb_dtype", dtype)
+                .inject_texture_sample_type("color_rgb", dtype)
                 .build();
             textures.push(value_texture(view, dtype));
             wgsl
@@ -245,7 +245,7 @@ pub fn prepare_stroke_color(
             let (cmap_src, cmap_name) = wgsl_colormaps::wgsl_source_and_name(params.colormap);
             let wgsl = ShaderBuilder::new(stroke_color_wgsl::QUANTITATIVE)
                 .define_u32("color_binding_0", first_binding)
-                .inject_texture_sample_type("color_values_dtype", dtype)
+                .inject_texture_sample_type("color_values", dtype)
                 .inject_function("colormap_fn_source", cmap_src)
                 .define("colormap_fn_name", cmap_name)
                 .build();
@@ -269,7 +269,7 @@ fn categorical_stroke_wgsl(first_binding: u32, labels_dtype: TextureDtype) -> St
     ShaderBuilder::new(stroke_color_wgsl::CATEGORICAL)
         .define_u32("color_binding_0", first_binding)
         .define_u32("color_binding_1", first_binding + 1)
-        .inject_texture_sample_type("color_labels_dtype", labels_dtype)
+        .inject_texture_sample_type("color_labels", labels_dtype)
         .build()
 }
 
