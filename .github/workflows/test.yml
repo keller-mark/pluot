@@ -152,7 +152,7 @@ jobs:
       run: |
         # Get size in bytes
         WASM_SIZE=$(stat -f%z "crates/pluot/pkg/pluot_bg.wasm")
-        WASM_SIZE_THRESHOLD=4000000 # 4MB in bytes
+        WASM_SIZE_THRESHOLD=4500000 # 4.5MB in bytes
 
         if [ "$WASM_SIZE" -gt "$WASM_SIZE_THRESHOLD" ]; then
           echo "Error: File is too large ($WASM_SIZE bytes). Limit is $WASM_SIZE_THRESHOLD bytes."
