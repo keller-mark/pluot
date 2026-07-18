@@ -9,7 +9,8 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     PointLayerParams, PointShapeMode,
-    CategoricalColormap, CategoricalParams, ColorMode,
+    CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
+    QuantitativeParams, QuantitativeColormap,
     NumericData,
 };
 
@@ -782,6 +783,51 @@ async fn test_point_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// ── Fill color modes ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_units_quantitative_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            fill_color: ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 0.33, 0.67, 1.0])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: None,
+            }),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_quantitative_color").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_units_categorical_custom_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            fill_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+                values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                colormap: vec![
+                    (255, 0, 0),
+                    (0, 200, 0),
+                    (0, 0, 255),
+                    (200, 200, 0),
+                ],
+            }),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_categorical_custom_color").await;
 }
 
 // TODO: performance tests with many elements, both raster and svg formats

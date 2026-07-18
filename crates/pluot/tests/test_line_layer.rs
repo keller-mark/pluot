@@ -8,7 +8,8 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
-    CategoricalColormap, CategoricalParams, ColorMode,
+    CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
+    QuantitativeParams, QuantitativeColormap,
     LineLayerParams, NumericData,
 };
 
@@ -503,4 +504,49 @@ async fn test_line_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// ── Stroke color modes ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_line_layer_square_contain_data_units_quantitative_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            stroke_color: ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 0.14, 0.28, 0.43, 0.57, 0.71, 0.85, 1.0])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: None,
+            }),
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_quantitative_color").await;
+}
+
+#[tokio::test]
+async fn test_line_layer_square_contain_data_units_categorical_custom_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            stroke_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+                values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 0, 1, 2, 3])),
+                colormap: vec![
+                    (255, 0, 0),
+                    (0, 200, 0),
+                    (0, 0, 255),
+                    (200, 200, 0),
+                ],
+            }),
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_categorical_custom_color").await;
 }
