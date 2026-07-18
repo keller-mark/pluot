@@ -338,6 +338,11 @@ impl<'a> ShaderBuilder<'a> {
         self.define(name, &value.to_string())
     }
 
+    /// Inject a `@binding` index at `{{var_name}}_bidx` (chosen at runtime).
+    pub fn define_bidx(self, var_name: &str, binding_index: u32) -> Self {
+        self.define_u32(&format!("{var_name}_bidx"), binding_index)
+    }
+
     /// Inject a reusable WGSL function (a compile-time snippet, e.g. from
     /// [`common`]) at `{{name}}`.
     // TODO: use a special prefix for injected functions to make the shaders more clear/readable.
