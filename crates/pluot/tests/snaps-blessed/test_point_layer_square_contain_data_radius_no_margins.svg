@@ -7,10 +7,10 @@
 </defs>
 <g height="100" width="100">
 <g clip-path="url(#my_point_layer_clip_path)" transform="translate(0,0)">
-<rect fill="rgb(31, 119, 180)" height="50" opacity="0.5" width="50" x="-25" y="75"/>
-<rect fill="rgb(255, 127, 14)" height="50" opacity="0.5" width="50" x="75" y="75"/>
-<rect fill="rgb(44, 160, 44)" height="50" opacity="0.5" width="50" x="75" y="-25"/>
-<rect fill="rgb(214, 39, 40)" height="50" opacity="0.5" width="50" x="-25" y="-25"/>
+<rect fill="rgb(76, 120, 168)" height="50" opacity="0.5" width="50" x="-25" y="75"/>
+<rect fill="rgb(245, 133, 24)" height="50" opacity="0.5" width="50" x="75" y="75"/>
+<rect fill="rgb(228, 87, 86)" height="50" opacity="0.5" width="50" x="75" y="-25"/>
+<rect fill="rgb(114, 183, 178)" height="50" opacity="0.5" width="50" x="-25" y="-25"/>
 </g>
 </g>
 </g>
