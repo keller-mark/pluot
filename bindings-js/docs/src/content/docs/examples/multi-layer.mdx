@@ -63,7 +63,7 @@ The additional layers demonstrate pixel-based positioning of points, lines, and 
             point_radius_unit_mode_x: "Pixels",
             point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Square",
-            point_radius: 10.0,
+            point_radius: { size_mode: "UniformSize", size_params: 10.0 },
             bounds: {
               margin_top: 0,
               margin_right: 0,
@@ -72,7 +72,6 @@ The additional layers demonstrate pixel-based positioning of points, lines, and 
             },
             position_x: { dtype: "Float32", values: [15, 15] },
             position_y: { dtype: "Float32", values: [100, 200] },
-            labels_vec: [0, 1],
           }
         },
         {
