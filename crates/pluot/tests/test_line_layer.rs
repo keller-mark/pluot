@@ -415,6 +415,42 @@ async fn test_line_layer_wide_contain_data_units_thick_line_width() {
     render_and_check_both_snapshots(params, "test_line_layer_wide_contain_data_units_thick_line_width").await;
 }
 
+// Line width expressed in data-coordinate units: the width scales with the
+// camera / aspect-ratio transform, unlike the pixel-unit default.
+#[tokio::test]
+async fn test_line_layer_square_contain_data_units_data_line_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            line_width: 0.05,
+            line_width_unit_mode: UnitsMode::Data,
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_data_line_width").await;
+}
+
+// Same data-unit line width on a wide canvas: with Contain the data axes scale
+// uniformly, so the line width remains visually consistent.
+#[tokio::test]
+async fn test_line_layer_wide_contain_data_units_data_line_width() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            line_width: 0.05,
+            line_width_unit_mode: UnitsMode::Data,
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_wide_contain_data_units_data_line_width").await;
+}
+
 // ── Mixed unit modes (data_unit_mode_x ≠ data_unit_mode_y) ───────────────────
 
 #[tokio::test]

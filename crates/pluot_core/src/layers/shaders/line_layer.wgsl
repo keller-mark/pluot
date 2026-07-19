@@ -50,7 +50,7 @@ struct LineLayerUniforms {
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
     line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -218,9 +218,26 @@ fn vs_main(
     let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
     let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
-    // TODO: Handle line_width_unit_mode == 1 (data coordinates)
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let line_width_ndc = u.line_width / layer_height_px * 2.0;
+    // --- Line width in NDC space ---
+    //
+    // extrude_line() expects a height-relative NDC scalar (line_width_ndc is
+    // defined relative to the layer height / Y axis).
+    //
+    // Pixel-mode width (line_width_unit_mode == 0):
+    //   line_width is in screen pixels; convert directly to an NDC-Y offset.
+    var line_width_ndc = u.line_width / layer_height_px * 2.0;
+
+    // Data-coordinate width (line_width_unit_mode == 1):
+    //   line_width is in data coordinate system units. Transform it through the
+    //   same pipeline as positions, but with w=0 so translations cancel out (it
+    //   is a delta/size, not a position). This mirrors the radius handling in
+    //   point_layer.wgsl. Since line_width_ndc is height-relative, use the Y
+    //   component of the transformed delta.
+    if (u.line_width_unit_mode == 1u) {
+        let width_orig_data = u.model_matrix * vec4f(u.line_width, u.line_width, 0.0, 0.0);
+        let width_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig_data;
+        line_width_ndc = abs(width_norm_data.y) * 2.0;
+    }
 
     result_source_position_data = source_pos_ndc;
     result_target_position_data = target_pos_ndc;

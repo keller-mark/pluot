@@ -15,7 +15,7 @@ use crate::numeric_data::NumericData;
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -543,6 +543,28 @@ impl DrawToSvg for LineLayer {
         ]);
         // End TODO
 
+        // Line width in pixels. In pixel mode it is used directly; in data mode
+        // it is transformed through the same pipeline as positions (with w=0, so
+        // translations cancel out), mirroring the GPU shader. line_width is
+        // measured relative to the Y axis, so use the Y screen extent.
+        let line_width_px = if layer_params.line_width_unit_mode == UnitsMode::Data {
+            let (_sx, sy) = get_point_size(
+                layer_params.line_width,
+                layer_params.line_width,
+                layer_w,
+                layer_h,
+                &camera_view,
+                layer_params.data_unit_mode_x,
+                layer_params.data_unit_mode_y,
+                view_params.aspect_ratio_mode,
+                view_params.aspect_ratio_alignment_mode,
+                Some(&model_matrix_raw),
+            );
+            sy.abs()
+        } else {
+            layer_params.line_width
+        };
+
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
             let source_x = layer_params.source_position_x.get_f32(i);
@@ -584,7 +606,7 @@ impl DrawToSvg for LineLayer {
                 x2: target_x_px as f64,
                 y2: (layer_h - target_y_px) as f64,
                 stroke: Some(color),
-                linewidth: layer_params.line_width as f64,
+                linewidth: line_width_px as f64,
                 // TODO: more params
                 ..Default::default()
             }));

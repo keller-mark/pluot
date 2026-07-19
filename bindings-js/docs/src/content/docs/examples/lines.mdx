@@ -1,0 +1,81 @@
+---
+title: Lines
+description: Line layer example.
+sidebar:
+    order: 40
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+
+Example usage of the LineLayer with two different `line_width_unit_mode` values.
+
+Both layers draw the same set of parallel lines in data coordinates. The layer on
+the left (blue) uses `line_width_unit_mode: "Data"`, so its line width is expressed
+in data-coordinate units and scales with the camera as you zoom. The layer on the
+right (orange) uses `line_width_unit_mode: "Pixels"`, so its line width stays
+constant on screen regardless of zoom level.
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"lines-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "LineLayer",
+          layer_params: {
+            layer_id: "data_width_lines",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            line_width_unit_mode: "Data",
+            line_width: 0.02,
+            bounds: null,
+            stroke_color: { color_mode: "UniformRgb", color_params: [31, 119, 180] },
+            source_position_x: { dtype: "Float32", values: [0.1, 0.2, 0.3, 0.4] },
+            source_position_y: { dtype: "Float32", values: [0.1, 0.1, 0.1, 0.1] },
+            target_position_x: { dtype: "Float32", values: [0.1, 0.2, 0.3, 0.4] },
+            target_position_y: { dtype: "Float32", values: [0.9, 0.9, 0.9, 0.9] },
+          }
+        },
+        {
+          layer_type: "LineLayer",
+          layer_params: {
+            layer_id: "pixel_width_lines",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            line_width_unit_mode: "Pixels",
+            line_width: 8.0,
+            bounds: null,
+            stroke_color: { color_mode: "UniformRgb", color_params: [255, 127, 14] },
+            source_position_x: { dtype: "Float32", values: [0.6, 0.7, 0.8, 0.9] },
+            source_position_y: { dtype: "Float32", values: [0.1, 0.1, 0.1, 0.1] },
+            target_position_x: { dtype: "Float32", values: [0.6, 0.7, 0.8, 0.9] },
+            target_position_y: { dtype: "Float32", values: [0.9, 0.9, 0.9, 0.9] },
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={50}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={50}
+/>
