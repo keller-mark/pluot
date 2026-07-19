@@ -6,12 +6,13 @@ use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, MarginParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::numeric_data::NumericData;
+use crate::scalar_mode::{cpu_line_opacity, cpu_line_width, prepare_line_opacity_mode, prepare_line_width_mode};
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
@@ -26,7 +27,6 @@ pub struct LineLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
-    pub line_width: f32,
     pub line_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
@@ -36,6 +36,13 @@ pub struct LineLayerParams {
     // `stroke_color` (lines are stroked, not filled); it drives the shared color
     // machinery via `prepare_stroke_color` / `get_stroke_color`.
     pub stroke_color: Option<ColorMode>,
+
+    // How wide / opaque each line is. See [`SizeMode`] / [`OpacityMode`]: modes
+    // carrying `NumericData` (instanced) supply one per-element value array,
+    // uploaded to the GPU as a texture at draw time, mirroring PointLayer's
+    // `point_radius` / `point_opacity`.
+    pub line_width: Option<SizeMode>,
+    pub line_opacity: Option<OpacityMode>,
 
     // Per-line source/target X/Y coordinates. Each may be any supported numeric
     // dtype (8-64 bit int/uint, or 32/64-bit float), and may differ across the
@@ -54,10 +61,11 @@ impl Default for LineLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            line_width: 1.0,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
             stroke_color: None,
+            line_width: Some(SizeMode::UniformSize(1.0)),
+            line_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             source_position_x: NumericData::Float32(Arc::new(vec![])),
             source_position_y: NumericData::Float32(Arc::new(vec![])),
             target_position_x: NumericData::Float32(Arc::new(vec![])),
@@ -116,6 +124,7 @@ struct LineLayerUniforms {
     data_unit_mode_y: u32, // 0 = pixels, 1 = data units
     line_width: f32,  // width of each line
     line_width_unit_mode: u32, // 0 = pixels, 1 = data units
+    line_opacity: f32, // opacity of each line
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
@@ -159,6 +168,15 @@ impl DrawToRasterGpu for LineLayer {
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_stroke_color` function injected into the shader below.
         let color = prepare_stroke_color(device, queue, layer_params.stroke_color.as_ref(), COLOR_BINDING_START);
+
+        // Build the GPU-side width and opacity resources. Like the color mode,
+        // the instanced variants upload a per-element value texture; those
+        // bindings follow the color textures. The width texture is read in the
+        // vertex stage, the opacity texture in the fragment stage.
+        let width_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
+        let width = prepare_line_width_mode(device, queue, layer_params.line_width.as_ref(), width_binding_start);
+        let opacity_binding_start = width_binding_start + width.texture.is_some() as u32;
+        let opacity = prepare_line_opacity_mode(device, queue, layer_params.line_opacity.as_ref(), opacity_binding_start);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -208,11 +226,12 @@ impl DrawToRasterGpu for LineLayer {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
             },
-            line_width: layer_params.line_width,
+            line_width: width.static_value,
             line_width_unit_mode: match layer_params.line_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
             },
+            line_opacity: opacity.static_value,
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
                 AspectRatioMode::Contain => 1,
@@ -327,6 +346,33 @@ impl DrawToRasterGpu for LineLayer {
                 count: None,
             });
         }
+        // Instanced width texture (read in the vertex stage) and instanced
+        // opacity texture (read in the fragment stage), each present only when
+        // the corresponding mode is instanced.
+        if let Some(tex) = &width.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: width_binding_start,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: opacity_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("LineLayer BGL"),
@@ -361,6 +407,18 @@ impl DrawToRasterGpu for LineLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        if let Some(tex) = &width.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: width_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("LineLayer BG"),
@@ -381,6 +439,11 @@ impl DrawToRasterGpu for LineLayer {
             // assembled color module (bindings + `get_stroke_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
             .define("color_module", &color.wgsl)
+            // Width- and opacity-mode specialization: each contributes its
+            // `get_line_width` / `get_line_opacity` function (plus a value
+            // texture binding when instanced).
+            .define("line_width_module", &width.wgsl)
+            .define("line_opacity_module", &opacity.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -543,28 +606,6 @@ impl DrawToSvg for LineLayer {
         ]);
         // End TODO
 
-        // Line width in pixels. In pixel mode it is used directly; in data mode
-        // it is transformed through the same pipeline as positions (with w=0, so
-        // translations cancel out), mirroring the GPU shader. line_width is
-        // measured relative to the Y axis, so use the Y screen extent.
-        let line_width_px = if layer_params.line_width_unit_mode == UnitsMode::Data {
-            let (_sx, sy) = get_point_size(
-                layer_params.line_width,
-                layer_params.line_width,
-                layer_w,
-                layer_h,
-                &camera_view,
-                layer_params.data_unit_mode_x,
-                layer_params.data_unit_mode_y,
-                view_params.aspect_ratio_mode,
-                view_params.aspect_ratio_alignment_mode,
-                Some(&model_matrix_raw),
-            );
-            sy.abs()
-        } else {
-            layer_params.line_width
-        };
-
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
             let source_x = layer_params.source_position_x.get_f32(i);
@@ -600,6 +641,34 @@ impl DrawToSvg for LineLayer {
 
             let color = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), i, quant_domain));
 
+            // Per-line width / opacity (uniform or instanced), matching the GPU
+            // width/opacity modes.
+            let width_value = cpu_line_width(layer_params.line_width.as_ref(), i);
+            let line_opacity = cpu_line_opacity(layer_params.line_opacity.as_ref(), i) as f64;
+
+            // Line width in pixels. In pixel mode it is used directly; in data
+            // mode it is transformed through the same pipeline as positions
+            // (with w=0, so translations cancel out), mirroring the GPU shader.
+            // line_width is measured relative to the Y axis, so use the Y
+            // screen extent.
+            let line_width_px = if layer_params.line_width_unit_mode == UnitsMode::Data {
+                let (_sx, sy) = get_point_size(
+                    width_value,
+                    width_value,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    layer_params.data_unit_mode_x,
+                    layer_params.data_unit_mode_y,
+                    view_params.aspect_ratio_mode,
+                    view_params.aspect_ratio_alignment_mode,
+                    Some(&model_matrix_raw),
+                );
+                sy.abs()
+            } else {
+                width_value
+            };
+
             svg_elements.push(TwoElement::Line(TwoLine {
                 x1: source_x_px as f64,
                 y1: (layer_h - source_y_px) as f64,
@@ -607,6 +676,7 @@ impl DrawToSvg for LineLayer {
                 y2: (layer_h - target_y_px) as f64,
                 stroke: Some(color),
                 linewidth: line_width_px as f64,
+                opacity: line_opacity,
                 // TODO: more params
                 ..Default::default()
             }));

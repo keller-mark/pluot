@@ -49,8 +49,9 @@ fn cross_lines() -> LineLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        line_width: 2.0,
+        line_width: Some(SizeMode::UniformSize(2.0)),
         line_width_unit_mode: UnitsMode::Pixels,
+        line_opacity: None,
         model_matrix: None,
         stroke_color: Some(ColorMode::Categorical(CategoricalParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1])),

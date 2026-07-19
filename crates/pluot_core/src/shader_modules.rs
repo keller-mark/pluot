@@ -152,6 +152,34 @@ pub mod opacity {
     pub const INSTANCED: &str = include_str!("wgsl_functions/get_point_opacity/instanced.wgsl");
 }
 
+/// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
+/// `fn get_line_width(instance_index: u32) -> f32`. The uniform variant reads
+/// the `line_width` uniform; the instanced variant reads a per-element value
+/// texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_line_width_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod line_width {
+    /// Static width shared by every line.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_line_width/uniform.wgsl");
+
+    /// Per-element width from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_line_width/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_line_opacity(instance_index: u32) -> f32`. The uniform
+/// variant reads the `line_opacity` uniform; the instanced variant reads a
+/// per-element value texture (its binding index and sampled type filled in at
+/// runtime by [`crate::scalar_mode::prepare_line_opacity_mode`]). The instanced
+/// variant assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod line_opacity {
+    /// Static opacity shared by every line.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_line_opacity/uniform.wgsl");
+
+    /// Per-element opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_line_opacity/instanced.wgsl");
+}
+
 /// Colormap WGSL functions, embedded at compile time from
 /// `wgsl_functions/colormaps/`.
 ///

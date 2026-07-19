@@ -10,7 +10,7 @@ use pluot::{
     AspectRatioMode, UnitsMode, MarginParams,
     CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
     QuantitativeParams, QuantitativeColormap,
-    LineLayerParams, NumericData,
+    LineLayerParams, NumericData, SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -30,8 +30,9 @@ fn cross_lines_data() -> LineLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        line_width: 2.0,
+        line_width: Some(SizeMode::UniformSize(2.0)),
         line_width_unit_mode: UnitsMode::Pixels,
+        line_opacity: None,
         model_matrix: None,
         stroke_color: Some(ColorMode::Categorical(CategoricalParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
@@ -51,8 +52,9 @@ fn cross_lines_pixels() -> LineLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Pixels,
-        line_width: 2.0,
+        line_width: Some(SizeMode::UniformSize(2.0)),
         line_width_unit_mode: UnitsMode::Pixels,
+        line_opacity: None,
         model_matrix: None,
         stroke_color: Some(ColorMode::Categorical(CategoricalParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
@@ -406,7 +408,7 @@ async fn test_line_layer_wide_contain_data_units_thick_line_width() {
         width: 200,
         height: 100,
         layers: layer_params(LineLayerParams {
-            line_width: 10.0,
+            line_width: Some(SizeMode::UniformSize(10.0)),
             ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -423,7 +425,7 @@ async fn test_line_layer_square_contain_data_units_data_line_width() {
         width: 100,
         height: 100,
         layers: layer_params(LineLayerParams {
-            line_width: 0.05,
+            line_width: Some(SizeMode::UniformSize(0.05)),
             line_width_unit_mode: UnitsMode::Data,
             ..cross_lines_data()
         }),
@@ -441,7 +443,7 @@ async fn test_line_layer_wide_contain_data_units_data_line_width() {
         width: 200,
         height: 100,
         layers: layer_params(LineLayerParams {
-            line_width: 0.05,
+            line_width: Some(SizeMode::UniformSize(0.05)),
             line_width_unit_mode: UnitsMode::Data,
             ..cross_lines_data()
         }),
@@ -585,4 +587,48 @@ async fn test_line_layer_square_contain_data_units_categorical_custom_color() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_units_categorical_custom_color").await;
+}
+
+// ── Instanced line width (SizeMode) ───────────────────────────────────────────
+// SizeMode::InstancedSize supplies one width per line (uploaded to the GPU as
+// a value texture), rather than a single UniformSize shared by all lines.
+
+#[tokio::test]
+async fn test_line_layer_square_contain_pixel_units_instanced_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            // One distinct width (in pixels) per line.
+            line_width: Some(SizeMode::InstancedSize(InstancedSizeParams {
+                values: NumericData::Float32(Arc::new(vec![1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0])),
+            })),
+            ..cross_lines_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_units_instanced_width").await;
+}
+
+// ── Instanced line opacity (OpacityMode) ──────────────────────────────────────
+// OpacityMode::InstancedOpacity supplies one opacity per line (uploaded to the
+// GPU as a value texture), rather than a single UniformOpacity shared by all.
+
+#[tokio::test]
+async fn test_line_layer_square_contain_pixel_units_instanced_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            // One distinct opacity per line.
+            line_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 0.9, 1.0])),
+            })),
+            ..cross_lines_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_units_instanced_opacity").await;
 }
