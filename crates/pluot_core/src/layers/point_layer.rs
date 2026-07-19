@@ -8,11 +8,12 @@ use std::sync::{Arc};
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
+use crate::scalar_mode::{cpu_point_opacity, cpu_point_radius, prepare_opacity_mode, prepare_size_mode};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -37,13 +38,15 @@ pub struct PointLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
-    pub point_radius: f32,
+
     pub point_radius_unit_mode_x: UnitsMode,
     pub point_radius_unit_mode_y: UnitsMode,
     pub point_shape_mode: PointShapeMode,
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
-    pub point_opacity: f32, // TODO: support per-point opacity as well?
+    pub point_radius: Option<SizeMode>,
+    pub point_opacity: Option<OpacityMode>,
+
 
     // How to color each point. See [`ColorMode`]: modes carrying `NumericData`
     // (instanced/categorical/quantitative) supply one or more per-element value
@@ -67,12 +70,12 @@ impl Default for PointLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            point_radius: 1.0,
+            point_radius: Some(SizeMode::UniformSize(1.0)),
             point_radius_unit_mode_x: UnitsMode::Pixels,
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
-            point_opacity: 1.0,
+            point_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
@@ -173,6 +176,15 @@ impl DrawToRasterGpu for PointLayer {
         // `get_fill_color` function injected into the shader below.
         let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
+        // Build the GPU-side size and opacity resources. Like the color mode,
+        // the instanced variants upload a per-element value texture; those
+        // bindings follow the color textures. The size texture is read in the
+        // vertex stage (radius), the opacity texture in the fragment stage.
+        let size_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
+        let size = prepare_size_mode(device, queue, layer_params.point_radius.as_ref(), size_binding_start);
+        let opacity_binding_start = size_binding_start + size.texture.is_some() as u32;
+        let opacity = prepare_opacity_mode(device, queue, layer_params.point_opacity.as_ref(), opacity_binding_start);
+
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
             // Column 0
@@ -221,7 +233,7 @@ impl DrawToRasterGpu for PointLayer {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
             },
-            point_radius: layer_params.point_radius,
+            point_radius: size.static_value,
             point_radius_unit_mode_x: match layer_params.point_radius_unit_mode_x {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
@@ -234,7 +246,7 @@ impl DrawToRasterGpu for PointLayer {
                 PointShapeMode::Square => 0,
                 PointShapeMode::Circle => 1,
             },
-            point_opacity: layer_params.point_opacity,
+            point_opacity: opacity.static_value,
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
                 AspectRatioMode::Contain => 1,
@@ -325,6 +337,33 @@ impl DrawToRasterGpu for PointLayer {
                 count: None,
             });
         }
+        // Instanced radius texture (read in the vertex stage) and instanced
+        // opacity texture (read in the fragment stage), each present only when
+        // the corresponding mode is instanced.
+        if let Some(tex) = &size.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: size_binding_start,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: opacity_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("PointLayer BGL"),
             entries: &bgl_entries,
@@ -350,6 +389,18 @@ impl DrawToRasterGpu for PointLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        if let Some(tex) = &size.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: size_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("PointLayer BG"),
             layout: &bind_group_layout,
@@ -367,6 +418,11 @@ impl DrawToRasterGpu for PointLayer {
             // assembled color module (bindings + `get_fill_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
             .define("color_module", &color.wgsl)
+            // Size- and opacity-mode specialization: each contributes its
+            // `get_point_radius` / `get_point_opacity` function (plus a value
+            // texture binding when instanced).
+            .define("size_module", &size.wgsl)
+            .define("opacity_module", &opacity.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -547,10 +603,15 @@ impl DrawToSvg for PointLayer {
                 Some(&model_matrix_raw),
             );
 
+            // Per-point radius / opacity (uniform or instanced), matching the
+            // GPU size/opacity modes.
+            let radius_value = cpu_point_radius(layer_params.point_radius.as_ref(), i);
+            let point_opacity = cpu_point_opacity(layer_params.point_opacity.as_ref(), i) as f64;
+
             let point_radius = if layer_params.point_radius_unit_mode_x == UnitsMode::Data {
                 let (sx, sy) = get_point_size(
-                    layer_params.point_radius,
-                    layer_params.point_radius,
+                    radius_value,
+                    radius_value,
                     layer_w,
                     layer_h,
                     &camera_view,
@@ -563,7 +624,7 @@ impl DrawToSvg for PointLayer {
                 // Note: sx and sy will currently always be the same unless ellipses are supported.
                 (sx.abs() + sy.abs()) * 0.5
             } else {
-                layer_params.point_radius
+                radius_value
             };
 
             let fill = Some(TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain)));
@@ -575,7 +636,7 @@ impl DrawToSvg for PointLayer {
                     y: (layer_h - py) as f64,
                     radius: point_radius as f64,
                     fill,
-                    opacity: layer_params.point_opacity as f64,
+                    opacity: point_opacity,
                     ..Default::default()
                 }),
                 PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
@@ -584,7 +645,7 @@ impl DrawToSvg for PointLayer {
                     width: (point_radius * 2.0) as f64,
                     height: (point_radius * 2.0) as f64,
                     fill,
-                    opacity: layer_params.point_opacity as f64,
+                    opacity: point_opacity,
                     ..Default::default()
                 })
             });

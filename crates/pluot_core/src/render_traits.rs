@@ -183,6 +183,46 @@ pub enum ColorMode {
     Quantitative(QuantitativeParams),
 }
 
+/// Static opacity (0.0–1.0) shared by every element.
+pub type UniformOpacityParams = f32;
+
+/// Per-element opacity, one value (0.0–1.0) per element.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedOpacityParams {
+    pub values: NumericData,
+}
+
+/// How the opacity of each element in a layer is determined.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"opacity_mode": "UniformOpacity", "opacity_params": 1.0}`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "opacity_mode", content = "opacity_params")]
+pub enum OpacityMode {
+    UniformOpacity(UniformOpacityParams),
+    InstancedOpacity(InstancedOpacityParams),
+}
+
+/// Static size (e.g., width or radius) shared by every element.
+pub type UniformSizeParams = f32;
+
+/// Per-element size (e.g., width or radius), one value per element.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedSizeParams {
+    pub values: NumericData,
+}
+
+/// How the size (width or radius) of each element in a layer is determined.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"size_mode": "UniformSize", "size_params": 1.0}`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "size_mode", content = "size_params")]
+pub enum SizeMode {
+    UniformSize(UniformSizeParams),
+    InstancedSize(InstancedSizeParams),
+}
+
 impl ColorMode {
     /// The integer discriminant handed to the shader's `fill_color_mode`
     /// uniform. Must stay in sync with the branch values in `rect_layer.wgsl`.

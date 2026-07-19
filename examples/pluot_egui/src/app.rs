@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use eframe::egui;
 use pluot::{
-    render, GraphicsFormat, LayerParams, PointLayerParams, PointShapeMode, RenderParams, UnitsMode,
+    render, GraphicsFormat, LayerParams, PointLayerParams, PointShapeMode, RenderParams, SizeMode,
+    UnitsMode,
 };
 
 pub struct PluotApp {
@@ -129,7 +130,7 @@ fn build_params(
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            point_radius,
+            point_radius: Some(SizeMode::UniformSize(point_radius)),
             point_radius_unit_mode_x: UnitsMode::Pixels,
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,

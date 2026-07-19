@@ -8,7 +8,7 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
-    PointLayerParams, PointShapeMode,
+    PointLayerParams, PointShapeMode, SizeMode,
     NumericData,
     LineLayerParams,
     CategoricalColormap, CategoricalParams, ColorMode,
@@ -32,7 +32,7 @@ fn corner_points() -> PointLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        point_radius: 8.0,
+        point_radius: Some(SizeMode::UniformSize(8.0)),
         point_radius_unit_mode_x: UnitsMode::Pixels,
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,

@@ -124,6 +124,34 @@ pub mod stroke_color {
     pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_stroke_color/quantitative.wgsl");
 }
 
+/// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
+/// `fn get_point_radius(instance_index: u32) -> f32`. The uniform variant reads
+/// the `point_radius` uniform; the instanced variant reads a per-element value
+/// texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_size_mode`]). The instanced variant assumes
+/// [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod size {
+    /// Static radius shared by every point.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_point_radius/uniform.wgsl");
+
+    /// Per-element radius from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_point_radius/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_point_opacity(instance_index: u32) -> f32`. The uniform
+/// variant reads the `point_opacity` uniform; the instanced variant reads a
+/// per-element value texture (its binding index and sampled type filled in at
+/// runtime by [`crate::scalar_mode::prepare_opacity_mode`]). The instanced
+/// variant assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod opacity {
+    /// Static opacity shared by every point.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_point_opacity/uniform.wgsl");
+
+    /// Per-element opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_point_opacity/instanced.wgsl");
+}
+
 /// Colormap WGSL functions, embedded at compile time from
 /// `wgsl_functions/colormaps/`.
 ///

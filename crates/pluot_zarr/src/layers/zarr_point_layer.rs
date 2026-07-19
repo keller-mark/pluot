@@ -9,7 +9,7 @@ use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, u
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -364,12 +364,12 @@ impl PreparedLayer for ZarrPointLayer {
                 bounds: self.layer_params.bounds.clone(),
                 data_unit_mode_x: self.layer_params.data_unit_mode_x,
                 data_unit_mode_y: self.layer_params.data_unit_mode_y,
-                point_radius,
+                point_radius: Some(SizeMode::UniformSize(point_radius)),
                 // TODO: if point_radius is None, override the point_radius_unit_mode values to always be UnitsMode::Pixels.
                 point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
                 point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
-                point_opacity,
+                point_opacity: Some(OpacityMode::UniformOpacity(point_opacity)),
                 model_matrix: self.layer_params.model_matrix,
                 fill_color: Some(ColorMode::Categorical(CategoricalParams {
                     codes: NumericData::Int32(l_i32.clone()),

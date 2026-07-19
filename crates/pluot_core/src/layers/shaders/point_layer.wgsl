@@ -57,6 +57,16 @@ struct FSOut {
 // Assembled per color mode by `crate::color_mode::prepare_color_mode`.
 {{color_module}}
 
+// Size module: an optional per-element radius value texture (instanced mode)
+// plus `fn get_point_radius(instance_index: u32) -> f32`. Assembled per size
+// mode by `crate::scalar_mode::prepare_size_mode`.
+{{size_module}}
+
+// Opacity module: an optional per-element opacity value texture (instanced
+// mode) plus `fn get_point_opacity(instance_index: u32) -> f32`. Assembled per
+// opacity mode by `crate::scalar_mode::prepare_opacity_mode`.
+{{opacity_module}}
+
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
 const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
@@ -81,6 +91,10 @@ fn vs_main(
     let x_val = f32(textureLoad(x_coords, vec2<u32>(instance_index % x_tex_width, instance_index / x_tex_width), 0).x);
     let y_val = f32(textureLoad(y_coords, vec2<u32>(instance_index % y_tex_width, instance_index / y_tex_width), 0).x);
     let point_pos_orig = u.model_matrix * vec4f(x_val, y_val, 0.0, 1.0);
+
+    // Per-instance radius (uniform or instanced, depending on the injected size
+    // module). Resolved once here and used for all radius computations below.
+    let point_radius = get_point_radius(instance_index);
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
@@ -116,15 +130,15 @@ fn vs_main(
     // Pixel-mode radius (point_radius_unit_mode == 0):
     //   point_radius is in screen pixels; convert directly to NDC offsets.
     let point_radius_ndc_px = vec2f(
-        u.point_radius / layer_width_px * 2.0,
-        u.point_radius / layer_height_px * 2.0
+        point_radius / layer_width_px * 2.0,
+        point_radius / layer_height_px * 2.0
     );
 
     // Data-coordinate radius (point_radius_unit_mode == 1):
     //   point_radius is in data coordinate system units. Transform it through the same
     //   pipeline as positions, but with w=0 so translations cancel out (it is a delta/size,
     //   not a position). This mirrors get_point_size() in positioning.rs.
-    let radius_orig_data = u.model_matrix * vec4f(u.point_radius, u.point_radius, 0.0, 0.0);
+    let radius_orig_data = u.model_matrix * vec4f(point_radius, point_radius, 0.0, 0.0);
     let radius_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * radius_orig_data;
     let point_radius_ndc_data = abs(radius_norm_data.xy) * 2.0;
     // Effective pixel radius for the circle SDF: average of x and y screen extents.
@@ -133,7 +147,7 @@ fn vs_main(
     // Select per-axis NDC radius and the scalar pixel radius passed to the fragment shader.
     var point_radius_ndc_x = point_radius_ndc_px.x;
     var point_radius_ndc_y = point_radius_ndc_px.y;
-    var point_radius_px: f32 = u.point_radius;
+    var point_radius_px: f32 = point_radius;
 
     if (u.point_radius_unit_mode_x == 1u) {
         point_radius_ndc_x = point_radius_ndc_data.x;
@@ -244,11 +258,12 @@ fn fs_main(
 
     // Handling of circle point shape mode
     // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
-    var alpha = u.point_opacity;
+    let point_opacity = get_point_opacity(instance_index);
+    var alpha = point_opacity;
     if(u.point_shape_mode == 1u) {
         // Signed-distance anti-aliasing: linear 1-pixel fade centered on the circle edge.
         let dist_px = length(corner) * point_radius_px;
-        alpha = clamp(point_radius_px - dist_px + 0.475, 0.0, u.point_opacity);
+        alpha = clamp(point_radius_px - dist_px + 0.475, 0.0, point_opacity);
         if (alpha < 0.001) {
             discard;
         }

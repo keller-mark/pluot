@@ -7,6 +7,7 @@ pub mod render_traits;
 pub mod colormaps_quantitative;
 pub mod colormaps_categorical;
 pub mod color_mode;
+pub mod scalar_mode;
 mod render;
 mod render_post;
 pub mod positioning;

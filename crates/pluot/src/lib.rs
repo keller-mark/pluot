@@ -8,6 +8,8 @@ pub use pluot_core::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, U
 pub use pluot_core::render_traits::{
     CategoricalColormap, QuantitativeColormap, UniformRgbParams, InstancedRgbParams,
     InstancedRgbInterleavedParams, CategoricalParams, CategoricalCustomParams, QuantitativeParams,
+    SizeMode, OpacityMode, UniformSizeParams, InstancedSizeParams, UniformOpacityParams,
+    InstancedOpacityParams,
 };
 pub use pluot_core::{RenderParams as RawRenderParams, LayerParams as RawLayerParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams, PlotParams as RawPlotParams};
 pub use pluot_core::{project, unproject, get_bounds};
