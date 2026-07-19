@@ -59,8 +59,6 @@ pub struct PointLayerParams {
     // possible (see `NumericData::create_data_texture`).
     pub position_x: NumericData,
     pub position_y: NumericData,
-    // TODO: improve naming here
-    pub labels_vec: Arc<Vec<i32>>,
 }
 
 impl Default for PointLayerParams {
@@ -79,7 +77,6 @@ impl Default for PointLayerParams {
             fill_color: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
-            labels_vec: Arc::new(vec![]),
         }
     }
 }
@@ -727,9 +724,6 @@ impl PickableLayer for PointLayer {
 
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
-        if let Some(label) = self.layer_params.labels_vec.get(closest_idx) {
-            info.insert("label".to_string(), label.to_string());
-        }
         // Format in the coordinate's native dtype (integers without a decimal point).
         info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
         info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));

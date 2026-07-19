@@ -181,7 +181,6 @@ impl PreparedLayer for ZarrPoint3dLayer {
                 position_x: NumericData::Float32(x_f32.clone()),
                 position_y: NumericData::Float32(y_f32.clone()),
                 position_z: NumericData::Float32(z_f32.clone()),
-                labels_vec: l_i32.clone(),
             }
         );
         sublayer.prepare(gpu_context).await;

@@ -377,7 +377,6 @@ impl PreparedLayer for ZarrPointLayer {
                 })),
                 position_x: x_data.as_ref().clone(),
                 position_y: y_data.as_ref().clone(),
-                labels_vec: l_i32.clone(),
             }
         );
         sublayer.prepare(gpu_context).await;

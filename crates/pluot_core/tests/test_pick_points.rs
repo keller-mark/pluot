@@ -13,7 +13,6 @@ fn make_layer(model_matrix: Option<[f32; 16]>) -> PointLayer {
             model_matrix,
             position_x: NumericData::Float32(Arc::new(vec![0.0, 10.0])),
             position_y: NumericData::Float32(Arc::new(vec![0.0, 10.0])),
-            labels_vec: Arc::new(vec![100, 200]),
             ..PointLayerParams::default()
         },
     )

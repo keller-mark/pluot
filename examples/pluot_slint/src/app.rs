@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, sync::Arc};
+use std::f32::consts::PI;
 
 use pluot::{
     render, GraphicsFormat, LayerParams, PointLayerParams, PointShapeMode, RenderParams, SizeMode,
@@ -85,7 +85,6 @@ impl PluotApp {
                 model_matrix: None,
                 position_x: position_x.into(),
                 position_y: position_y.into(),
-                labels_vec: Arc::new(vec![0; num_points]),
                 ..Default::default()
             })],
             width: self.plot_width,

@@ -41,7 +41,6 @@ pub struct Point3dLayerParams {
     pub position_x: NumericData,
     pub position_y: NumericData,
     pub position_z: NumericData,
-    pub labels_vec: Arc<Vec<i32>>,
 }
 
 impl Default for Point3dLayerParams {
@@ -55,7 +54,6 @@ impl Default for Point3dLayerParams {
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             position_z: NumericData::Float32(Arc::new(vec![])),
-            labels_vec: Arc::new(vec![]),
         }
     }
 }
@@ -110,7 +108,7 @@ impl DrawToRasterGpu for Point3dLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        let n = layer_params.labels_vec.len();
+        let n = layer_params.position_x.len();
 
         // Upload the X, Y, and Z coordinate arrays into single-channel 2D
         // textures, each at its native byte width wherever possible; see
@@ -403,7 +401,7 @@ impl PickableLayer for Point3dLayer {
             return None;
         };
 
-        let n = self.layer_params.labels_vec.len();
+        let n = self.layer_params.position_x.len();
         if n == 0 {
             return None;
         }
@@ -424,7 +422,6 @@ impl PickableLayer for Point3dLayer {
 
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
         info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
         info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
         info.insert("z".to_string(), self.layer_params.position_z.format_element(closest_idx));

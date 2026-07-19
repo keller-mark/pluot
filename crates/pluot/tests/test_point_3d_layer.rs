@@ -28,7 +28,6 @@ fn corner_points_3d() -> Point3dLayerParams {
         position_x: NumericData::Float32(Arc::new(vec![-1.0, 1.0, 1.0, -1.0])),
         position_y: NumericData::Float32(Arc::new(vec![-1.0, -1.0, 1.0, 1.0])),
         position_z: NumericData::Float32(Arc::new(vec![-5.0, -5.0, -5.0, -5.0])),
-        labels_vec: Arc::new(vec![0, 1, 2, 3]),
         ..Default::default()
     }
 }

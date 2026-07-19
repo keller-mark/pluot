@@ -39,7 +39,6 @@ fn corner_points() -> PointLayerParams {
         model_matrix: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
-        labels_vec: Arc::new(vec![0, 1, 2, 3]),
         ..Default::default()
     }
 }
@@ -373,14 +372,12 @@ async fn test_multi_layer_square_contain_two_point_layers() {
                 layer_id: "points_a".to_string(),
                 position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
                 position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0])),
-                labels_vec: Arc::new(vec![0, 1]),
                 ..corner_points()
             }),
             point_layer_params(PointLayerParams {
                 layer_id: "points_b".to_string(),
                 position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
                 position_y: NumericData::Float32(Arc::new(vec![1.0, 1.0])),
-                labels_vec: Arc::new(vec![2, 3]),
                 ..corner_points()
             }),
         ],

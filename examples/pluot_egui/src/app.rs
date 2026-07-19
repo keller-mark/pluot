@@ -1,5 +1,4 @@
 use std::f32::consts::PI;
-use std::sync::Arc;
 
 use eframe::egui;
 use pluot::{
@@ -137,7 +136,6 @@ fn build_params(
             model_matrix: None,
             position_x: position_x.into(),
             position_y: position_y.into(),
-            labels_vec: Arc::new(vec![0; num_points]),
             ..Default::default()
         })],
         width: plot_width,
