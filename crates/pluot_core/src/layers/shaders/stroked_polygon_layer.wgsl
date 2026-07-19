@@ -23,6 +23,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct StrokedPolygonUniforms {
     layer_size: vec2<f32>,
     camera_view: mat4x4<f32>,
@@ -33,21 +37,27 @@ struct StrokedPolygonUniforms {
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
-    color: vec4<f32>,
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,
 };
 
 // Per-edge ring metadata. ring_start and ring_end are absolute vertex indices
 // into `points`; local_idx is the 0-based index of this edge's source vertex
 // within its ring, so the source vertex is at points[ring_start + local_idx].
+// poly_index is the 0-based polygon/ring index, used to resolve stroke_color.
 struct SegmentEntry {
     ring_start: u32,
     ring_end:   u32,
     local_idx:  u32,
+    poly_index: u32,
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
+    @location(0) @interpolate(flat) poly_index: u32,
 };
 
 struct FSOut {
@@ -64,6 +74,11 @@ struct FSOut {
 // width: `f32` for floating-point data, `u32` for unsigned, `i32` for signed.
 @group(0) @binding(1) var points: texture_2d<{{points_dtype}}>;
 @group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 3 onward) plus `fn get_stroke_color(poly_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
+{{color_module}}
 
 // Load the vertex at index `idx` from the interleaved coordinate texture:
 // its x is at flat index 2*idx and its y at 2*idx + 1. `f32(...)` is a no-op
@@ -201,17 +216,21 @@ fn vs_main(
     let pos_ndc = pos_px / u.layer_size * 2.0 - vec2<f32>(1.0, 1.0);
 
     var out: VSOut;
-    out.position = vec4f(pos_ndc, 0.0, 1.0);
-    out.color    = u.color;
+    out.position   = vec4f(pos_ndc, 0.0, 1.0);
+    out.poly_index = seg.poly_index;
     return out;
 }
 
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
+    @location(0) @interpolate(flat) poly_index: u32,
 ) -> FSOut {
+    // The color module's get_stroke_color resolves the per-polygon color for
+    // the active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_stroke_color(poly_index);
+
     var out: FSOut;
-    out.color = color_in;
+    out.color = vec4<f32>(out_color, u.stroke_opacity);
     return out;
 }

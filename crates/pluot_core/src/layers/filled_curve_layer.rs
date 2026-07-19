@@ -9,10 +9,11 @@ use std::sync::Arc;
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
-    DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -32,8 +33,10 @@ pub struct FilledCurveLayerParams {
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
     pub subdivisions: u32,
-    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub fill_color: [u8; 3],
+    /// How to color the fill. See [`ColorMode`]. `FilledCurveLayer` renders a
+    /// single shape, so modes carrying `NumericData` are expected to supply a
+    /// single (length-1) value.
+    pub fill_color: ColorMode,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -48,7 +51,7 @@ impl Default for FilledCurveLayerParams {
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            fill_color: [0, 0, 0],
+            fill_color: ColorMode::UniformRgb(None),
             fill_opacity: 1.0,
         }
     }
@@ -60,6 +63,9 @@ pub struct FilledCurveLayer {
     subpaths: Vec<Vec<CubicBez>>,
     /// Triangulated fill geometry as a flat interleaved [x, y, …] f32 array.
     fill_vertices: NumericData,
+    /// Per-vertex color index (all zero: a single shape uses one color),
+    /// parallel to `fill_vertices`.
+    vertex_color_index: NumericData,
 }
 
 impl FilledCurveLayer {
@@ -68,8 +74,11 @@ impl FilledCurveLayer {
         // TODO: only do the triangulation in the raster drawing case?
         let subpaths = commands_to_subpaths(&layer_params.commands);
         let subdivisions = layer_params.subdivisions.max(1);
-        let fill_vertices = NumericData::Float32(Arc::new(compute_fill_vertices(&subpaths, subdivisions)));
-        Self { view_params, layer_params, subpaths, fill_vertices }
+        let fill_vertices_raw = compute_fill_vertices(&subpaths, subdivisions);
+        let num_vertices = fill_vertices_raw.len() / 2;
+        let fill_vertices = NumericData::Float32(Arc::new(fill_vertices_raw));
+        let vertex_color_index = NumericData::Uint32(Arc::new(vec![0u32; num_vertices]));
+        Self { view_params, layer_params, subpaths, fill_vertices, vertex_color_index }
     }
 }
 
@@ -98,7 +107,8 @@ impl DrawToRasterGpu for FilledCurveLayer {
                 data_unit_mode_y: self.layer_params.data_unit_mode_y.clone(),
                 model_matrix: self.layer_params.model_matrix,
                 vertices: self.fill_vertices.clone(),
-                fill_color: self.layer_params.fill_color,
+                vertex_color_index: self.vertex_color_index.clone(),
+                fill_color: self.layer_params.fill_color.clone(),
                 fill_opacity: self.layer_params.fill_opacity,
             },
         );
@@ -149,8 +159,12 @@ impl DrawToSvg for FilledCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b] = layer_params.fill_color;
-        let fill = TwoColor::Rgb((r, g, b));
+        // A single shape uses one color, resolved from element 0.
+        let quant_domain = match &layer_params.fill_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
+        let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, 0, quant_domain));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {

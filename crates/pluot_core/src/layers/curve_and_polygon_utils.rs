@@ -170,12 +170,16 @@ pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u3
 
 /// Triangulate a collection of polygon rings into a flat, interleaved list of
 /// triangle-vertex coordinates `[x0, y0, x1, y1, …]` (3 consecutive vertices per
-/// triangle). Rings with fewer than 3 points are skipped.
-pub(crate) fn triangulate_polygon_rings(rings: &[Vec<(f32, f32)>]) -> Vec<f32> {
+/// triangle), plus a parallel per-vertex array giving the source ring's index
+/// (into `rings`) for each output vertex. The index array lets a `ColorMode`
+/// resolve one color per polygon even though earcut freely reorders vertices.
+/// Rings with fewer than 3 points are skipped.
+pub(crate) fn triangulate_polygon_rings(rings: &[Vec<(f32, f32)>]) -> (Vec<f32>, Vec<u32>) {
     let mut ec: Earcut<f32> = Earcut::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut verts: Vec<f32> = Vec::new();
-    for ring in rings {
+    let mut vertex_ring_indices: Vec<u32> = Vec::new();
+    for (ring_index, ring) in rings.iter().enumerate() {
         if ring.len() < 3 {
             continue;
         }
@@ -184,9 +188,10 @@ pub(crate) fn triangulate_polygon_rings(rings: &[Vec<(f32, f32)>]) -> Vec<f32> {
             let (x, y) = ring[i as usize];
             verts.push(x);
             verts.push(y);
+            vertex_ring_indices.push(ring_index as u32);
         }
     }
-    verts
+    (verts, vertex_ring_indices)
 }
 
 /// Resolve margins from layer bounds (preferred) or view-level margins.
@@ -290,13 +295,15 @@ pub(crate) fn polygon_rings_from_flat(
 /// Build per-edge segment metadata for stroked polygon rendering with miter joins,
 /// directly from the flat vertex `offsets` (see [`polygon_rings_from_flat`]).
 ///
-/// Returns one `[ring_start, ring_end, local_idx]` u32 triple per edge, where
-/// `ring_start`/`ring_end` are absolute vertex indices into the flat coordinate
-/// array and `local_idx` is the 0-based index of the edge's source vertex within
-/// its ring. The shader uses these to look up prev/src/dst/next with correct
+/// Returns one `[ring_start, ring_end, local_idx, poly_index]` u32 quadruple per
+/// edge, where `ring_start`/`ring_end` are absolute vertex indices into the flat
+/// coordinate array, `local_idx` is the 0-based index of the edge's source vertex
+/// within its ring, and `poly_index` is the 0-based index of the polygon (ring)
+/// itself, used to resolve one `ColorMode` color per polygon. The shader uses
+/// `ring_start`/`ring_end`/`local_idx` to look up prev/src/dst/next with correct
 /// wrap-around via modular arithmetic. Rings with fewer than 2 vertices are skipped.
-pub(crate) fn polygon_segments_from_offsets(offsets: &NumericData) -> Vec<[u32; 3]> {
-    let mut segments: Vec<[u32; 3]> = Vec::new();
+pub(crate) fn polygon_segments_from_offsets(offsets: &NumericData) -> Vec<[u32; 4]> {
+    let mut segments: Vec<[u32; 4]> = Vec::new();
     let num_offsets = offsets.len();
     if num_offsets < 2 {
         return segments;
@@ -310,7 +317,7 @@ pub(crate) fn polygon_segments_from_offsets(offsets: &NumericData) -> Vec<[u32; 
         }
         let ring_end = ring_end_excl - 1;
         for local_idx in 0..ring_size {
-            segments.push([ring_start, ring_end, local_idx]);
+            segments.push([ring_start, ring_end, local_idx, p as u32]);
         }
     }
     segments

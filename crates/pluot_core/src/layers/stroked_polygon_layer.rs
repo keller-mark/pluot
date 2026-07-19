@@ -17,10 +17,11 @@ use super::curve_and_polygon_utils::{
     polygon_rings_from_flat, polygon_segments_from_offsets, resolve_margins,
 };
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -45,8 +46,10 @@ pub struct StrokedPolygonLayerParams {
     /// are silently skipped.
     pub polygon_offsets: NumericData,
 
-    /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub stroke_color: [u8; 3],
+    /// How to color each polygon's outline. See [`ColorMode`]: modes carrying
+    /// `NumericData` (instanced/categorical/quantitative) supply one value per
+    /// polygon.
+    pub stroke_color: ColorMode,
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
 
@@ -66,7 +69,7 @@ impl Default for StrokedPolygonLayerParams {
             model_matrix: None,
             polygons: NumericData::Float32(Arc::new(vec![])),
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
-            stroke_color: [0, 0, 0],
+            stroke_color: ColorMode::UniformRgb(None),
             stroke_width: 1.0,
             stroke_opacity: 1.0,
         }
@@ -76,10 +79,11 @@ impl Default for StrokedPolygonLayerParams {
 pub struct StrokedPolygonLayer {
     view_params: ViewParams,
     layer_params: StrokedPolygonLayerParams,
-    /// Per-edge metadata: [ring_start, ring_end, local_idx] (vertex indices into
-    /// the flat `polygons` coordinate array).
-    segments: Vec<[u32; 3]>,
-    stroke_color: Vec4,
+    /// Per-edge metadata: [ring_start, ring_end, local_idx, poly_index] (the
+    /// first three are vertex indices into the flat `polygons` coordinate
+    /// array; `poly_index` is the 0-based polygon/ring index used to resolve
+    /// `stroke_color`).
+    segments: Vec<[u32; 4]>,
 }
 
 impl StrokedPolygonLayer {
@@ -87,9 +91,7 @@ impl StrokedPolygonLayer {
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?
         let segments = polygon_segments_from_offsets(&layer_params.polygon_offsets);
-        let [r, g, b] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.stroke_opacity);
-        Self { view_params, layer_params, segments, stroke_color }
+        Self { view_params, layer_params, segments }
     }
 }
 
@@ -112,14 +114,22 @@ struct StrokedPolygonLayerUniforms {
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
-    color: Vec4,
+    stroke_color_mode: u32,      // see ColorMode::shader_mode()
+    stroke_color: Vec4,          // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
+    stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-2 are the uniforms buffer, the points texture, and the segments buffer.
+const COLOR_BINDING_START: u32 = 3;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for StrokedPolygonLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, segments, stroke_color } = self;
+        let Self { view_params, layer_params, segments } = self;
 
         let n = segments.len();
         if n == 0 {
@@ -152,6 +162,12 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
 
         let GpuContext { device, queue } = gpu_context;
 
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_stroke_color` function injected into the shader below.
+        let color = prepare_stroke_color(device, queue, &layer_params.stroke_color, COLOR_BINDING_START);
+
         let uniform_struct = StrokedPolygonLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -162,7 +178,11 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             aspect_ratio_mode,
             aspect_ratio_alignment_mode,
             model_matrix,
-            color: *stroke_color,
+            stroke_color_mode: color.mode,
+            stroke_color: Vec4::from_array(color.static_color),
+            stroke_color_reverse: color.reverse,
+            stroke_color_domain: Vec2::from_array(color.domain),
+            stroke_opacity: layer_params.stroke_opacity,
         };
 
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
@@ -195,52 +215,73 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         });
         queue.write_buffer(&segments_buf, 0, segments_bytes);
 
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The interleaved vertex coordinates texture. Its sample type
+                // must match the dtype-specific texture format chosen above.
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: points_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("StrokedPolygon BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The interleaved vertex coordinates texture. Its sample type
-                    // must match the dtype-specific texture format chosen above.
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: points_dtype.binding_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &bgl_entries,
         });
 
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&points_texture_view) },
+            wgpu::BindGroupEntry { binding: 2, resource: segments_buf.as_entire_binding() },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("StrokedPolygon BG"),
             layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&points_texture_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: segments_buf.as_entire_binding() },
-            ],
+            entries: &bg_entries,
         });
 
         // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
@@ -249,6 +290,10 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
             .inject_texture_sample_type("points", points_dtype)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_stroke_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stroked_polygon_layer.wgsl"),
@@ -351,15 +396,19 @@ impl DrawToSvg for StrokedPolygonLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b] = layer_params.stroke_color;
-        let stroke = TwoColor::Rgb((r, g, b));
+        // Quantitative normalization domain, computed once for the whole layer.
+        let quant_domain = match &layer_params.stroke_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
 
         let rings = polygon_rings_from_flat(&layer_params.polygons, &layer_params.polygon_offsets);
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(rings.len());
-        for ring in rings.iter() {
+        for (poly_index, ring) in rings.iter().enumerate() {
             if ring.len() < 3 {
                 continue;
             }
+            let stroke = TwoColor::Rgb(cpu_fill_color(&layer_params.stroke_color, poly_index, quant_domain));
             let mut d = String::new();
             for (i, &(x, y)) in ring.iter().enumerate() {
                 let (px, py) = to_px(x, y);
@@ -372,7 +421,7 @@ impl DrawToSvg for StrokedPolygonLayer {
             d.push_str(" Z");
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
-                stroke: Some(stroke.clone()),
+                stroke: Some(stroke),
                 fill: None,
                 linewidth: layer_params.stroke_width as f64,
                 opacity: 1.0,

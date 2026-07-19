@@ -11,11 +11,12 @@ use std::sync::Arc;
 
 use crate::positioning::get_point_position;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::numeric_data::NumericData;
+use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -38,8 +39,16 @@ pub struct TriangulatedLayerParams {
     // TODO: also support non-interleaved vertices?
     pub vertices: NumericData,
 
-    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub fill_color: [u8; 3],
+    /// Per-vertex index (length `num_vertices`) into the `fill_color` color-mode
+    /// arrays: vertex `i` is colored using element `vertex_color_index[i]`. This
+    /// lets a caller with several source shapes (e.g. `FilledPolygonLayer` with
+    /// multiple polygons) color each one independently even though triangulation
+    /// freely reorders vertices. A caller with a single shape (e.g.
+    /// `FilledCurveLayer`) supplies an all-zero array.
+    pub vertex_color_index: NumericData,
+
+    /// How to color the fill. See [`ColorMode`].
+    pub fill_color: ColorMode,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -53,7 +62,8 @@ impl Default for TriangulatedLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
             vertices: NumericData::Float32(Arc::new(vec![])),
-            fill_color: [0, 0, 0],
+            vertex_color_index: NumericData::Uint32(Arc::new(vec![])),
+            fill_color: ColorMode::UniformRgb(None),
             fill_opacity: 1.0,
         }
     }
@@ -62,14 +72,11 @@ impl Default for TriangulatedLayerParams {
 pub struct TriangulatedLayer {
     view_params: ViewParams,
     layer_params: TriangulatedLayerParams,
-    fill_color: Vec4,
 }
 
 impl TriangulatedLayer {
     pub fn new(view_params: ViewParams, layer_params: TriangulatedLayerParams) -> Self {
-        let [r, g, b] = layer_params.fill_color;
-        let fill_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.fill_opacity);
-        Self { view_params, layer_params, fill_color }
+        Self { view_params, layer_params }
     }
 }
 
@@ -99,14 +106,23 @@ struct TriangulatedLayerUniforms {
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
-    fill_color: Vec4,
+    fill_color_mode: u32,      // see ColorMode::shader_mode()
+    fill_color: Vec4,          // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,   // 1 = reverse the quantitative colormap
+    fill_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
+    fill_opacity: f32,
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-2 are the uniforms buffer, the vertices texture, and the
+// per-vertex color-index texture.
+const COLOR_BINDING_START: u32 = 3;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for TriangulatedLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, fill_color } = self;
+        let Self { view_params, layer_params } = self;
 
         if layer_params.vertices.is_empty() {
             return;
@@ -145,6 +161,18 @@ impl DrawToRasterGpu for TriangulatedLayer {
         let (vertices_texture_view, vertices_dtype) =
             layer_params.vertices.create_data_texture(device, queue, "Triangulated Vertices Texture");
 
+        // Per-vertex index into the fill_color color-mode arrays (see
+        // `TriangulatedLayerParams::vertex_color_index`), uploaded the same way
+        // as the vertex coordinates.
+        let (vertex_color_index_texture_view, vertex_color_index_dtype) =
+            layer_params.vertex_color_index.create_data_texture(device, queue, "Triangulated Vertex Color Index Texture");
+
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_fill_color` function injected into the shader below.
+        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
+
         let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -153,7 +181,11 @@ impl DrawToRasterGpu for TriangulatedLayer {
             aspect_ratio_mode,
             aspect_ratio_alignment_mode,
             model_matrix,
-            fill_color: *fill_color,
+            fill_color_mode: color.mode,
+            fill_color: Vec4::from_array(color.static_color),
+            fill_color_reverse: color.reverse,
+            fill_color_domain: Vec2::from_array(color.domain),
+            fill_opacity: layer_params.fill_opacity,
         };
 
         let mut buf = UniformBuffer::new(Vec::<u8>::new());
@@ -168,32 +200,57 @@ impl DrawToRasterGpu for TriangulatedLayer {
         });
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The interleaved vertex coordinates texture. Its sample type
+                // must match the dtype-specific texture format chosen above.
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: vertices_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                // The per-vertex color-index texture.
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: vertex_color_index_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Triangulated BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    // The interleaved vertex coordinates texture. Its sample type
-                    // must match the dtype-specific texture format chosen above.
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: vertices_dtype.binding_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &bgl_entries,
         });
 
         // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
@@ -202,6 +259,11 @@ impl DrawToRasterGpu for TriangulatedLayer {
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
             .inject_texture_sample_type("vertices", vertices_dtype)
+            .inject_texture_sample_type("vertex_color_index", vertex_color_index_dtype)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_fill_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("triangulated_layer.wgsl"),
@@ -254,19 +316,30 @@ impl DrawToRasterGpu for TriangulatedLayer {
             multiview_mask: None,
         });
 
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&vertices_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&vertex_color_index_texture_view),
+            },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Triangulated BG"),
             layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&vertices_texture_view),
-                },
-            ],
+            entries: &bg_entries,
         });
 
         pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
@@ -321,8 +394,11 @@ impl DrawToSvg for TriangulatedLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b] = layer_params.fill_color;
-        let fill = TwoColor::Rgb((r, g, b));
+        // Quantitative normalization domain, computed once for the whole layer.
+        let quant_domain = match &layer_params.fill_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
 
         let verts = &layer_params.vertices;
         // Flat interleaved [x, y, …]: 2 values per vertex, 3 vertices per triangle.
@@ -338,10 +414,13 @@ impl DrawToSvg for TriangulatedLayer {
             let p1 = to_px(v1x, v1y);
             let p2 = to_px(v2x, v2y);
             let d = format!("M {} {} L {} {} L {} {} Z", p0.0, p0.1, p1.0, p1.1, p2.0, p2.1);
+            // All 3 vertices of a triangle share the same source color index.
+            let color_index = layer_params.vertex_color_index.get_f64(i * 3) as usize;
+            let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, color_index, quant_domain));
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,
-                fill: Some(fill.clone()),
+                fill: Some(fill),
                 linewidth: 0.0,
                 opacity: 1.0,
                 fill_opacity: layer_params.fill_opacity as f64,

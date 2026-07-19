@@ -13,10 +13,11 @@ use std::sync::Arc;
 
 use crate::positioning::get_point_position;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -39,8 +40,10 @@ pub struct StrokedCurveLayerParams {
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
     pub subdivisions: u32,
-    /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub stroke_color: [u8; 3],
+    /// How to color the stroke. See [`ColorMode`]. `StrokedCurveLayer` renders a
+    /// single shape, so modes carrying `NumericData` are expected to supply a
+    /// single (length-1) value.
+    pub stroke_color: ColorMode,
     pub stroke_opacity: f32,
 }
 
@@ -55,7 +58,7 @@ impl Default for StrokedCurveLayerParams {
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            stroke_color: [0, 0, 0],
+            stroke_color: ColorMode::UniformRgb(None),
             stroke_opacity: 1.0,
         }
     }
@@ -66,7 +69,6 @@ pub struct StrokedCurveLayer {
     layer_params: StrokedCurveLayerParams,
     subpaths: Vec<Vec<CubicBez>>,
     polylines: Vec<Vec<(f32, f32)>>,
-    stroke_color: Vec4,
 }
 
 impl StrokedCurveLayer {
@@ -76,9 +78,7 @@ impl StrokedCurveLayer {
         let subpaths = commands_to_subpaths(&layer_params.commands);
         let subdivisions = layer_params.subdivisions.max(1);
         let polylines = subpaths.iter().map(|s| flatten_subpath(s, subdivisions)).collect();
-        let [r, g, b] = layer_params.stroke_color;
-        let stroke_color = Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, layer_params.stroke_opacity);
-        Self { view_params, layer_params, subpaths, polylines, stroke_color }
+        Self { view_params, layer_params, subpaths, polylines }
     }
 }
 
@@ -101,17 +101,25 @@ struct StrokedCurveLayerUniforms {
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
-    stroke_color: Vec4,
+    stroke_color_mode: u32,      // see ColorMode::shader_mode()
+    stroke_color: Vec4,          // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
+    stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,
 
     // TODO: define a stroke_linecap parameter, with either None or Round options,
     // and add support for this configurable property in both the Raster and SVG drawing cases.
 }
 
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-2 are the uniforms buffer, the points buffer, and the segments buffer.
+const COLOR_BINDING_START: u32 = 3;
+
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for StrokedCurveLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
-        let Self { view_params, layer_params, polylines, stroke_color, .. } = self;
+        let Self { view_params, layer_params, polylines, .. } = self;
 
         let has_work = polylines.iter().any(|p| p.len() >= 2);
         if !has_work {
@@ -164,40 +172,60 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             }
         }
 
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_stroke_color` function injected into the shader below.
+        let color = prepare_stroke_color(device, queue, &layer_params.stroke_color, COLOR_BINDING_START);
+
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("StrokedCurve BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+            entries: &bgl_entries,
         });
 
         // Inject the shared WGSL functions at compile time (see `crate::shader_modules`).
@@ -205,6 +233,10 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_stroke_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stroked_curve_layer.wgsl"),
@@ -266,7 +298,11 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             aspect_ratio_mode,
             aspect_ratio_alignment_mode,
             model_matrix,
-            stroke_color: *stroke_color,
+            stroke_color_mode: color.mode,
+            stroke_color: Vec4::from_array(color.static_color),
+            stroke_color_reverse: color.reverse,
+            stroke_color_domain: Vec2::from_array(color.domain),
+            stroke_opacity: layer_params.stroke_opacity,
         };
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
         ub.write(&uniform_struct).unwrap();
@@ -298,23 +334,30 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         });
         queue.write_buffer(&seg_buf, 0, seg_bytes);
 
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: pts_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: seg_buf.as_entire_binding(),
+            },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("StrokedCurve BG"),
             layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: pts_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: seg_buf.as_entire_binding(),
-                },
-            ],
+            entries: &bg_entries,
         });
 
         pass.set_viewport(margin_left as f32, margin_top as f32, layer_w, layer_h, 0.0, 1.0);
@@ -366,8 +409,12 @@ impl DrawToSvg for StrokedCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b] = layer_params.stroke_color;
-        let stroke = TwoColor::Rgb((r, g, b));
+        // A single shape uses one color, resolved from element 0.
+        let quant_domain = match &layer_params.stroke_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
+        let stroke = TwoColor::Rgb(cpu_fill_color(&layer_params.stroke_color, 0, quant_domain));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {

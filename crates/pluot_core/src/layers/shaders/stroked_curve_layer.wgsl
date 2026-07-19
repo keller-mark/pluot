@@ -29,6 +29,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct StrokedCurveLayerUniforms {
     layer_size: vec2<f32>,          // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
@@ -38,7 +42,11 @@ struct StrokedCurveLayerUniforms {
     aspect_ratio_mode: u32,         // 0: ignore, 1: contain, 2: cover
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
-    stroke_color: vec4<f32>,        // rgba (alpha already folded with stroke_opacity)
+    stroke_color_mode: u32,         // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>,        // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32,      // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,
 }
 
 // Per-segment metadata: indices into the flat points buffer.
@@ -53,9 +61,15 @@ struct SegmentEntry {
 @group(0) @binding(1) var<storage, read> points: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
 
+// Color module: any per-element color value/palette texture bindings (from
+// binding 3 onward) plus `fn get_stroke_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_stroke_color`. A
+// `StrokedCurveLayer` renders a single shape, so the shader always resolves
+// element 0.
+{{color_module}}
+
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
 }
 struct FSOut {
     @location(0) color: vec4<f32>,
@@ -120,7 +134,6 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
 ) -> VSOut {
     var out: VSOut;
-    out.color = u.stroke_color;
 
     let seg = segments[instance_index];
     let poly_start = i32(seg.poly_start);
@@ -254,9 +267,11 @@ fn vs_main(
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
 ) -> FSOut {
+    // A single shape shares one color, so this always resolves element 0.
+    let out_color = get_stroke_color(0u);
+
     var out: FSOut;
-    out.color = color_in;
+    out.color = vec4<f32>(out_color, u.stroke_opacity);
     return out;
 }

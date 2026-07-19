@@ -11,10 +11,11 @@ use super::curve_and_polygon_utils::{
     polygon_rings_from_flat, resolve_margins, triangulate_polygon_rings,
 };
 use crate::render_traits::{
-    DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -40,8 +41,9 @@ pub struct FilledPolygonLayerParams {
     /// are silently skipped.
     pub polygon_offsets: NumericData,
 
-    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub fill_color: [u8; 3],
+    /// How to color each polygon. See [`ColorMode`]: modes carrying `NumericData`
+    /// (instanced/categorical/quantitative) supply one value per polygon.
+    pub fill_color: ColorMode,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -56,7 +58,7 @@ impl Default for FilledPolygonLayerParams {
             model_matrix: None,
             polygons: NumericData::Float32(Arc::new(vec![])),
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
-            fill_color: [0, 0, 0],
+            fill_color: ColorMode::UniformRgb(None),
             fill_opacity: 1.0,
         }
     }
@@ -67,6 +69,9 @@ pub struct FilledPolygonLayer {
     layer_params: FilledPolygonLayerParams,
     /// Triangulated fill geometry as a flat interleaved [x, y, …] f32 array.
     fill_vertices: NumericData,
+    /// Per-vertex polygon index (into `fill_color`'s per-element arrays),
+    /// parallel to `fill_vertices`.
+    vertex_color_index: NumericData,
 }
 
 impl FilledPolygonLayer {
@@ -74,11 +79,12 @@ impl FilledPolygonLayer {
         // TODO: move the triangulation into the prepare() function?
         // TODO: only do the triangulation in the raster drawing case?
         let rings = polygon_rings_from_flat(&layer_params.polygons, &layer_params.polygon_offsets);
-        let verts = triangulate_polygon_rings(&rings);
+        let (verts, vertex_ring_indices) = triangulate_polygon_rings(&rings);
         Self {
             view_params,
             layer_params,
             fill_vertices: NumericData::Float32(Arc::new(verts)),
+            vertex_color_index: NumericData::Uint32(Arc::new(vertex_ring_indices)),
         }
     }
 }
@@ -109,7 +115,8 @@ impl DrawToRasterGpu for FilledPolygonLayer {
                 data_unit_mode_y: self.layer_params.data_unit_mode_y.clone(),
                 model_matrix: self.layer_params.model_matrix,
                 vertices: self.fill_vertices.clone(),
-                fill_color: self.layer_params.fill_color,
+                vertex_color_index: self.vertex_color_index.clone(),
+                fill_color: self.layer_params.fill_color.clone(),
                 fill_opacity: self.layer_params.fill_opacity,
             },
         );
@@ -158,12 +165,15 @@ impl DrawToSvg for FilledPolygonLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        let [r, g, b] = layer_params.fill_color;
-        let fill = TwoColor::Rgb((r, g, b));
+        // Quantitative normalization domain, computed once for the whole layer.
+        let quant_domain = match &layer_params.fill_color {
+            ColorMode::Quantitative(params) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
 
         let rings = polygon_rings_from_flat(&layer_params.polygons, &layer_params.polygon_offsets);
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(rings.len());
-        for ring in rings.iter() {
+        for (poly_index, ring) in rings.iter().enumerate() {
             if ring.len() < 3 {
                 continue;
             }
@@ -177,10 +187,11 @@ impl DrawToSvg for FilledPolygonLayer {
                 }
             }
             d.push_str(" Z");
+            let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, poly_index, quant_domain));
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,
-                fill: Some(fill.clone()),
+                fill: Some(fill),
                 linewidth: 0.0,
                 opacity: 1.0,
                 fill_opacity: layer_params.fill_opacity as f64,

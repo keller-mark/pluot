@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, UnitsMode, MarginParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
@@ -29,10 +29,13 @@ pub struct CurveLayerParams {
     pub subdivisions: u32,
     pub stroked: bool,
     pub filled: bool,
-    /// RGB stroke color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub stroke_color: [u8; 3],
-    /// RGB fill color as `[r, g, b]` bytes in `[0, 255]`. Defaults to opaque black.
-    pub fill_color: [u8; 3],
+    /// How to color the stroke. See [`ColorMode`]. `CurveLayer` renders a single
+    /// shape, so modes carrying `NumericData` are expected to supply a single
+    /// (length-1) value.
+    pub stroke_color: ColorMode,
+    /// How to color the fill. See [`ColorMode`]. Same single-shape caveat as
+    /// `stroke_color`.
+    pub fill_color: ColorMode,
     pub stroke_opacity: f32,
     pub fill_opacity: f32,
 }
@@ -51,8 +54,8 @@ impl Default for CurveLayerParams {
             subdivisions: 32,
             stroked: true,
             filled: false,
-            stroke_color: [0, 0, 0],
-            fill_color: [0, 0, 0],
+            stroke_color: ColorMode::UniformRgb(None),
+            fill_color: ColorMode::UniformRgb(None),
             stroke_opacity: 1.0,
             fill_opacity: 1.0,
         }
@@ -84,7 +87,7 @@ impl CurveLayer {
                 model_matrix: layer_params.model_matrix,
                 commands: Arc::clone(&layer_params.commands),
                 subdivisions: layer_params.subdivisions,
-                stroke_color: layer_params.stroke_color,
+                stroke_color: layer_params.stroke_color.clone(),
                 stroke_opacity: layer_params.stroke_opacity,
             }))
         } else {
@@ -100,7 +103,7 @@ impl CurveLayer {
                 model_matrix: layer_params.model_matrix,
                 commands: Arc::clone(&layer_params.commands),
                 subdivisions: layer_params.subdivisions,
-                fill_color: layer_params.fill_color,
+                fill_color: layer_params.fill_color.clone(),
                 fill_opacity: layer_params.fill_opacity,
             }))
         } else {
