@@ -33,10 +33,10 @@ fn cross_lines_data() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
-        stroke_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+        stroke_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
         source_position_x: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 0.0, 1.0, 0.70, 1.00, 0.70])),
         source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.75, 0.50, 1.00])),
         target_position_x: NumericData::Float32(Arc::new(vec![1.0, 0.0, 1.0, 0.5, 0.5, 0.70, 1.00, 1.00])),
@@ -54,10 +54,10 @@ fn cross_lines_pixels() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
-        stroke_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+        stroke_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
         source_position_x: NumericData::Float32(Arc::new(vec![  0.0,  0.0, 100.0,  0.0, 100.0,  70.0, 100.0,  70.0])),
         source_position_y: NumericData::Float32(Arc::new(vec![  0.0,  0.0,   0.0, 50.0,  50.0,  75.0,  50.0, 100.0])),
         target_position_x: NumericData::Float32(Arc::new(vec![100.0,  0.0, 100.0, 50.0,  50.0,  70.0, 100.0, 100.0])),
@@ -514,12 +514,12 @@ async fn test_line_layer_square_contain_data_units_quantitative_color() {
         width: 100,
         height: 100,
         layers: layer_params(LineLayerParams {
-            stroke_color: ColorMode::Quantitative(QuantitativeParams {
+            stroke_color: Some(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 0.14, 0.28, 0.43, 0.57, 0.71, 0.85, 1.0])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
-            }),
+            })),
             ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -534,7 +534,7 @@ async fn test_line_layer_square_contain_data_units_categorical_custom_color() {
         width: 100,
         height: 100,
         layers: layer_params(LineLayerParams {
-            stroke_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+            stroke_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
                 values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 0, 1, 2, 3])),
                 colormap: vec![
                     (255, 0, 0),
@@ -542,7 +542,7 @@ async fn test_line_layer_square_contain_data_units_categorical_custom_color() {
                     (0, 0, 255),
                     (200, 200, 0),
                 ],
-            }),
+            })),
             ..cross_lines_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

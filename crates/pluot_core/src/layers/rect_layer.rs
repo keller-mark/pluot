@@ -39,7 +39,7 @@ pub struct RectLayerParams {
     // How to color each rect. See [`ColorMode`]: modes carrying `NumericData`
     // (instanced/categorical/quantitative) supply one or more per-element value
     // arrays, which are uploaded to the GPU as textures at draw time.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
 
     // TODO: improve naming here - should these be "source_x", "source_y", etc?
     // Each may be any supported numeric dtype (8-64 bit int/uint, or 32/64-bit
@@ -63,7 +63,7 @@ impl Default for RectLayerParams {
             stroke_width: None,
             stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             position_x0: NumericData::Float32(Arc::new(vec![])),
             position_y0: NumericData::Float32(Arc::new(vec![])),
             position_x1: NumericData::Float32(Arc::new(vec![])),
@@ -163,7 +163,7 @@ impl DrawToRasterGpu for RectLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_fill_color` function injected into the shader below.
-        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
+        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -494,8 +494,8 @@ impl DrawToSvg for RectLayer {
         let n = layer_params.position_x0.len();
 
         // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match &layer_params.fill_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
 
@@ -578,7 +578,7 @@ impl DrawToSvg for RectLayer {
 
             let rect_height = (target_y_px - source_y_px).abs();
 
-            let color = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, i, quant_domain));
+            let color = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain));
 
             svg_elements.push(TwoElement::Rectangle(TwoRectangle {
                 x: source_x_px.min(target_x_px) as f64,

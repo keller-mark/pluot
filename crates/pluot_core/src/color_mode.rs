@@ -50,11 +50,12 @@ pub struct PreparedColorMode {
 }
 
 /// Prepare the GPU resources and WGSL for a color mode. Value texture(s) are
-/// bound consecutively starting at `first_binding`.
+/// bound consecutively starting at `first_binding`. `None` renders as opaque
+/// black, same as `Some(ColorMode::UniformRgb((0, 0, 0)))`.
 pub fn prepare_color_mode(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    color: &ColorMode,
+    color: Option<&ColorMode>,
     first_binding: u32,
 ) -> PreparedColorMode {
     let mut static_color = [0.0f32, 0.0, 0.0, 1.0];
@@ -63,13 +64,12 @@ pub fn prepare_color_mode(
     let mut textures: Vec<PreparedColorTexture> = Vec::new();
 
     let wgsl = match color {
-        ColorMode::UniformRgb(opt) => {
-            if let Some((r, g, b)) = opt {
-                static_color = [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0];
-            }
+        None => color_wgsl::UNIFORM_RGB.to_string(),
+        Some(ColorMode::UniformRgb((r, g, b))) => {
+            static_color = [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0];
             color_wgsl::UNIFORM_RGB.to_string()
         }
-        ColorMode::InstancedRgb(params) => {
+        Some(ColorMode::InstancedRgb(params)) => {
             let (r_view, r_dtype) =
                 params.r_values.create_data_texture(device, queue, "fill_color r Texture");
             let (g_view, g_dtype) =
@@ -89,7 +89,7 @@ pub fn prepare_color_mode(
             textures.push(value_texture(b_view, b_dtype));
             wgsl
         }
-        ColorMode::InstancedRgbInterleaved(params) => {
+        Some(ColorMode::InstancedRgbInterleaved(params)) => {
             let (view, dtype) =
                 params.rgb_values.create_data_texture(device, queue, "fill_color rgb Texture");
             let wgsl = ShaderBuilder::new(color_wgsl::INSTANCED_RGB_INTERLEAVED)
@@ -99,9 +99,9 @@ pub fn prepare_color_mode(
             textures.push(value_texture(view, dtype));
             wgsl
         }
-        ColorMode::Categorical(params) => {
+        Some(ColorMode::Categorical(params)) => {
             let (view, dtype) =
-                params.values.create_data_texture(device, queue, "fill_color labels Texture");
+                params.codes.create_data_texture(device, queue, "fill_color labels Texture");
             let palette: Vec<[f32; 4]> = colormaps_categorical::palette(params.colormap).to_vec();
             let palette_view = create_palette_texture(device, queue, &palette);
             let wgsl = categorical_wgsl(first_binding, dtype);
@@ -109,7 +109,7 @@ pub fn prepare_color_mode(
             textures.push(palette_texture(palette_view));
             wgsl
         }
-        ColorMode::CategoricalCustom(params) => {
+        Some(ColorMode::CategoricalCustom(params)) => {
             let (view, dtype) =
                 params.values.create_data_texture(device, queue, "fill_color labels Texture");
             let palette: Vec<[f32; 4]> = params
@@ -123,7 +123,7 @@ pub fn prepare_color_mode(
             textures.push(palette_texture(palette_view));
             wgsl
         }
-        ColorMode::Quantitative(params) => {
+        Some(ColorMode::Quantitative(params)) => {
             let (view, dtype) =
                 params.values.create_data_texture(device, queue, "fill_color values Texture");
             reverse = if params.reverse { 1 } else { 0 };
@@ -141,7 +141,7 @@ pub fn prepare_color_mode(
     };
 
     PreparedColorMode {
-        mode: color.shader_mode(),
+        mode: color.map_or(0, ColorMode::shader_mode),
         static_color,
         reverse,
         domain,
@@ -168,7 +168,7 @@ fn categorical_wgsl(first_binding: u32, labels_dtype: TextureDtype) -> String {
 pub fn prepare_stroke_color(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    color: &ColorMode,
+    color: Option<&ColorMode>,
     first_binding: u32,
 ) -> PreparedColorMode {
     let mut static_color = [0.0f32, 0.0, 0.0, 1.0];
@@ -177,13 +177,12 @@ pub fn prepare_stroke_color(
     let mut textures: Vec<PreparedColorTexture> = Vec::new();
 
     let wgsl = match color {
-        ColorMode::UniformRgb(opt) => {
-            if let Some((r, g, b)) = opt {
-                static_color = [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0];
-            }
+        None => stroke_color_wgsl::UNIFORM_RGB.to_string(),
+        Some(ColorMode::UniformRgb((r, g, b))) => {
+            static_color = [*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0, 1.0];
             stroke_color_wgsl::UNIFORM_RGB.to_string()
         }
-        ColorMode::InstancedRgb(params) => {
+        Some(ColorMode::InstancedRgb(params)) => {
             let (r_view, r_dtype) =
                 params.r_values.create_data_texture(device, queue, "stroke_color r Texture");
             let (g_view, g_dtype) =
@@ -203,7 +202,7 @@ pub fn prepare_stroke_color(
             textures.push(value_texture(b_view, b_dtype));
             wgsl
         }
-        ColorMode::InstancedRgbInterleaved(params) => {
+        Some(ColorMode::InstancedRgbInterleaved(params)) => {
             let (view, dtype) =
                 params.rgb_values.create_data_texture(device, queue, "stroke_color rgb Texture");
             let wgsl = ShaderBuilder::new(stroke_color_wgsl::INSTANCED_RGB_INTERLEAVED)
@@ -213,9 +212,9 @@ pub fn prepare_stroke_color(
             textures.push(value_texture(view, dtype));
             wgsl
         }
-        ColorMode::Categorical(params) => {
+        Some(ColorMode::Categorical(params)) => {
             let (view, dtype) =
-                params.values.create_data_texture(device, queue, "stroke_color labels Texture");
+                params.codes.create_data_texture(device, queue, "stroke_color labels Texture");
             let palette: Vec<[f32; 4]> = colormaps_categorical::palette(params.colormap).to_vec();
             let palette_view = create_palette_texture(device, queue, &palette);
             let wgsl = categorical_stroke_wgsl(first_binding, dtype);
@@ -223,7 +222,7 @@ pub fn prepare_stroke_color(
             textures.push(palette_texture(palette_view));
             wgsl
         }
-        ColorMode::CategoricalCustom(params) => {
+        Some(ColorMode::CategoricalCustom(params)) => {
             let (view, dtype) =
                 params.values.create_data_texture(device, queue, "stroke_color labels Texture");
             let palette: Vec<[f32; 4]> = params
@@ -237,7 +236,7 @@ pub fn prepare_stroke_color(
             textures.push(palette_texture(palette_view));
             wgsl
         }
-        ColorMode::Quantitative(params) => {
+        Some(ColorMode::Quantitative(params)) => {
             let (view, dtype) =
                 params.values.create_data_texture(device, queue, "stroke_color values Texture");
             reverse = if params.reverse { 1 } else { 0 };
@@ -255,7 +254,7 @@ pub fn prepare_stroke_color(
     };
 
     PreparedColorMode {
-        mode: color.shader_mode(),
+        mode: color.map_or(0, ColorMode::shader_mode),
         static_color,
         reverse,
         domain,
@@ -347,16 +346,18 @@ fn label_index(values: &NumericData, index: usize, len: usize) -> usize {
 
 /// Resolve the fill color of element `index` on the CPU, as an `(r, g, b)`
 /// triple. `quant_domain` is the normalization domain for the quantitative mode
-/// (see [`quantitative_domain`]); it is ignored by the other modes.
-pub fn cpu_fill_color(color: &ColorMode, index: usize, quant_domain: [f32; 2]) -> (u8, u8, u8) {
+/// (see [`quantitative_domain`]); it is ignored by the other modes. `None`
+/// resolves to opaque black.
+pub fn cpu_fill_color(color: Option<&ColorMode>, index: usize, quant_domain: [f32; 2]) -> (u8, u8, u8) {
     match color {
-        ColorMode::UniformRgb(opt) => opt.unwrap_or((0, 0, 0)),
-        ColorMode::InstancedRgb(params) => (
+        None => (0, 0, 0),
+        Some(ColorMode::UniformRgb(rgb)) => *rgb,
+        Some(ColorMode::InstancedRgb(params)) => (
             to_u8(params.r_values.get_f32(index) / 255.0),
             to_u8(params.g_values.get_f32(index) / 255.0),
             to_u8(params.b_values.get_f32(index) / 255.0),
         ),
-        ColorMode::InstancedRgbInterleaved(params) => {
+        Some(ColorMode::InstancedRgbInterleaved(params)) => {
             let base = index * 3;
             (
                 to_u8(params.rgb_values.get_f32(base) / 255.0),
@@ -364,18 +365,18 @@ pub fn cpu_fill_color(color: &ColorMode, index: usize, quant_domain: [f32; 2]) -
                 to_u8(params.rgb_values.get_f32(base + 2) / 255.0),
             )
         }
-        ColorMode::Categorical(params) => {
+        Some(ColorMode::Categorical(params)) => {
             let palette = colormaps_categorical::palette(params.colormap);
-            let rgba = palette[label_index(&params.values, index, palette.len())];
+            let rgba = palette[label_index(&params.codes, index, palette.len())];
             (to_u8(rgba[0]), to_u8(rgba[1]), to_u8(rgba[2]))
         }
-        ColorMode::CategoricalCustom(params) => {
+        Some(ColorMode::CategoricalCustom(params)) => {
             if params.colormap.is_empty() {
                 return (0, 0, 0);
             }
             params.colormap[label_index(&params.values, index, params.colormap.len())]
         }
-        ColorMode::Quantitative(params) => {
+        Some(ColorMode::Quantitative(params)) => {
             let [lo, hi] = quant_domain;
             let mut x = ((params.values.get_f32(index) - lo) / (hi - lo).max(1e-20)).clamp(0.0, 1.0);
             if params.reverse {

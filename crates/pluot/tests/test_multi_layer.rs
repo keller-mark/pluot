@@ -53,10 +53,10 @@ fn cross_lines() -> LineLayerParams {
         line_width: 2.0,
         line_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
-        stroke_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1])),
+        stroke_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
         source_position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
         source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0])),
         target_position_x: NumericData::Float32(Arc::new(vec![1.0, 0.0])),
@@ -79,7 +79,7 @@ fn corner_labels() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
-        fill_color: ColorMode::UniformRgb(None),
+        fill_color: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
         text_vec: Arc::new(vec![

@@ -40,10 +40,10 @@ fn corner_points_data() -> PointLayerParams {
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
-        fill_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
         ..Default::default()
     }
 }
@@ -63,10 +63,10 @@ fn corner_points_pixels() -> PointLayerParams {
         position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         labels_vec: Arc::new(vec![0, 1, 2, 3]),
-        fill_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
         ..Default::default()
     }
 }
@@ -793,12 +793,12 @@ async fn test_point_layer_square_contain_data_units_quantitative_color() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            fill_color: ColorMode::Quantitative(QuantitativeParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 0.33, 0.67, 1.0])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
-            }),
+            })),
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -813,7 +813,7 @@ async fn test_point_layer_square_contain_data_units_categorical_custom_color() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            fill_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+            fill_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
                 values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 colormap: vec![
                     (255, 0, 0),
@@ -821,7 +821,7 @@ async fn test_point_layer_square_contain_data_units_categorical_custom_color() {
                     (0, 0, 255),
                     (200, 200, 0),
                 ],
-            }),
+            })),
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

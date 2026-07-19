@@ -371,10 +371,10 @@ impl PreparedLayer for ZarrPointLayer {
                 point_shape_mode: self.layer_params.point_shape_mode,
                 point_opacity,
                 model_matrix: self.layer_params.model_matrix,
-                fill_color: ColorMode::Categorical(CategoricalParams {
-                    values: NumericData::Int32(l_i32.clone()),
+                fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                    codes: NumericData::Int32(l_i32.clone()),
                     colormap: CategoricalColormap::Category10,
-                }),
+                })),
                 position_x: x_data.as_ref().clone(),
                 position_y: y_data.as_ref().clone(),
                 labels_vec: l_i32.clone(),

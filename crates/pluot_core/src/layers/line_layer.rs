@@ -35,7 +35,7 @@ pub struct LineLayerParams {
     // arrays, which are uploaded to the GPU as textures at draw time. Named
     // `stroke_color` (lines are stroked, not filled); it drives the shared color
     // machinery via `prepare_stroke_color` / `get_stroke_color`.
-    pub stroke_color: ColorMode,
+    pub stroke_color: Option<ColorMode>,
 
     // Per-line source/target X/Y coordinates. Each may be any supported numeric
     // dtype (8-64 bit int/uint, or 32/64-bit float), and may differ across the
@@ -57,7 +57,7 @@ impl Default for LineLayerParams {
             line_width: 1.0,
             line_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            stroke_color: ColorMode::UniformRgb(None),
+            stroke_color: None,
             source_position_x: NumericData::Float32(Arc::new(vec![])),
             source_position_y: NumericData::Float32(Arc::new(vec![])),
             target_position_x: NumericData::Float32(Arc::new(vec![])),
@@ -158,7 +158,7 @@ impl DrawToRasterGpu for LineLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_stroke_color` function injected into the shader below.
-        let color = prepare_stroke_color(device, queue, &layer_params.stroke_color, COLOR_BINDING_START);
+        let color = prepare_stroke_color(device, queue, layer_params.stroke_color.as_ref(), COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -494,8 +494,8 @@ impl DrawToSvg for LineLayer {
         let n = layer_params.source_position_x.len();
 
         // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match &layer_params.stroke_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.stroke_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
 
@@ -576,7 +576,7 @@ impl DrawToSvg for LineLayer {
                 Some(&model_matrix_raw),
             );
 
-            let color = TwoColor::Rgb(cpu_fill_color(&layer_params.stroke_color, i, quant_domain));
+            let color = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), i, quant_domain));
 
             svg_elements.push(TwoElement::Line(TwoLine {
                 x1: source_x_px as f64,

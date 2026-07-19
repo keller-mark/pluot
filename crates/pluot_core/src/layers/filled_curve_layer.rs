@@ -36,7 +36,7 @@ pub struct FilledCurveLayerParams {
     /// How to color the fill. See [`ColorMode`]. `FilledCurveLayer` renders a
     /// single shape, so modes carrying `NumericData` are expected to supply a
     /// single (length-1) value.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -51,7 +51,7 @@ impl Default for FilledCurveLayerParams {
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             fill_opacity: 1.0,
         }
     }
@@ -160,11 +160,11 @@ impl DrawToSvg for FilledCurveLayer {
         };
 
         // A single shape uses one color, resolved from element 0.
-        let quant_domain = match &layer_params.fill_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, 0, quant_domain));
+        let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), 0, quant_domain));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {

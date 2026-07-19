@@ -44,7 +44,7 @@ pub struct PolygonLayerParams {
     /// How to color each polygon's outline. See [`ColorMode`]: modes carrying
     /// `NumericData` (instanced/categorical/quantitative) supply one value per
     /// polygon.
-    pub stroke_color: ColorMode,
+    pub stroke_color: Option<ColorMode>,
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
     /// Opacity multiplier for the stroke. Defaults to 1.
@@ -53,7 +53,7 @@ pub struct PolygonLayerParams {
     /// How to color each polygon's interior. See [`ColorMode`]: modes carrying
     /// `NumericData` (instanced/categorical/quantitative) supply one value per
     /// polygon.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -70,10 +70,10 @@ impl Default for PolygonLayerParams {
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             stroked: true,
             filled: false,
-            stroke_color: ColorMode::UniformRgb(None),
+            stroke_color: None,
             stroke_width: 1.0,
             stroke_opacity: 1.0,
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             fill_opacity: 1.0,
         }
     }

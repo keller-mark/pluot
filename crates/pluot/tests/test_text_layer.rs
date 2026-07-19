@@ -46,7 +46,7 @@ fn corner_text_data() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
-        fill_color: ColorMode::UniformRgb(None),
+        fill_color: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5])),
         text_vec: Arc::new(vec![
@@ -75,7 +75,7 @@ fn corner_text_pixels() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
-        fill_color: ColorMode::UniformRgb(None),
+        fill_color: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         text_vec: Arc::new(vec![
@@ -616,10 +616,10 @@ async fn test_text_layer_square_contain_data_units_categorical_color() {
         width: 100,
         height: 100,
         layers: layer_params(TextLayerParams {
-            fill_color: ColorMode::Categorical(CategoricalParams {
-                values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4])),
+            fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4])),
                 colormap: CategoricalColormap::Tableau10,
-            }),
+            })),
             ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -634,12 +634,12 @@ async fn test_text_layer_square_contain_data_units_quantitative_color() {
         width: 100,
         height: 100,
         layers: layer_params(TextLayerParams {
-            fill_color: ColorMode::Quantitative(QuantitativeParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 0.25, 0.5, 0.75, 1.0])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
-            }),
+            })),
             ..corner_text_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

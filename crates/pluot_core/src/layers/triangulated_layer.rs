@@ -48,7 +48,7 @@ pub struct TriangulatedLayerParams {
     pub vertex_color_index: NumericData,
 
     /// How to color the fill. See [`ColorMode`].
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -63,7 +63,7 @@ impl Default for TriangulatedLayerParams {
             model_matrix: None,
             vertices: NumericData::Float32(Arc::new(vec![])),
             vertex_color_index: NumericData::Uint32(Arc::new(vec![])),
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             fill_opacity: 1.0,
         }
     }
@@ -171,7 +171,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_fill_color` function injected into the shader below.
-        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
+        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
         let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
@@ -395,8 +395,8 @@ impl DrawToSvg for TriangulatedLayer {
         };
 
         // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match &layer_params.fill_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
 
@@ -416,7 +416,7 @@ impl DrawToSvg for TriangulatedLayer {
             let d = format!("M {} {} L {} {} L {} {} Z", p0.0, p0.1, p1.0, p1.1, p2.0, p2.1);
             // All 3 vertices of a triangle share the same source color index.
             let color_index = layer_params.vertex_color_index.get_f64(i * 3) as usize;
-            let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, color_index, quant_domain));
+            let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), color_index, quant_domain));
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,

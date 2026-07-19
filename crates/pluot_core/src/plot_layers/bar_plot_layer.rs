@@ -45,7 +45,7 @@ pub struct BarPlotLayerParams {
     pub quantity: Arc<Vec<f32>>, // TODO: generalize to other numeric dtypes?
 
     // How to color the bars. See [`ColorMode`].
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin

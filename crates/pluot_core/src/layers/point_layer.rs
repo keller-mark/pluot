@@ -48,7 +48,7 @@ pub struct PointLayerParams {
     // How to color each point. See [`ColorMode`]: modes carrying `NumericData`
     // (instanced/categorical/quantitative) supply one or more per-element value
     // arrays, which are uploaded to the GPU as textures at draw time.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
 
     // Per-point X/Y coordinates. Each may be any supported numeric dtype
     // (8–64 bit int/uint, or 32/64-bit float), and X and Y may differ. The
@@ -73,7 +73,7 @@ impl Default for PointLayerParams {
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
             point_opacity: 1.0,
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             labels_vec: Arc::new(vec![]),
@@ -171,7 +171,7 @@ impl DrawToRasterGpu for PointLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_fill_color` function injected into the shader below.
-        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
+        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -479,8 +479,8 @@ impl DrawToSvg for PointLayer {
         let n = layer_params.position_x.len();
 
         // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match &layer_params.fill_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
 
@@ -566,7 +566,7 @@ impl DrawToSvg for PointLayer {
                 layer_params.point_radius
             };
 
-            let fill = Some(TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, i, quant_domain)));
+            let fill = Some(TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain)));
 
             // Create a circle or square element based on point_shape_mode.
             svg_elements.push(match layer_params.point_shape_mode {

@@ -88,10 +88,10 @@ impl MultiscaleLayer {
                 data_unit_mode_y: UnitsMode::Data,
                 stroke_width: Some(1.0),
                 stroke_width_unit_mode: UnitsMode::Pixels,
-                fill_color: ColorMode::Categorical(CategoricalParams {
-                    values: NumericData::Int32(Arc::new(labels_vec)),
+                fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                    codes: NumericData::Int32(Arc::new(labels_vec)),
                     colormap: CategoricalColormap::Tableau10,
-                }),
+                })),
                 model_matrix: None,
                 position_x0: NumericData::Float32(Arc::new(x0_vec)),
                 position_y0: NumericData::Float32(Arc::new(y0_vec)),

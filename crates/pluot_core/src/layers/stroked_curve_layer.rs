@@ -43,7 +43,7 @@ pub struct StrokedCurveLayerParams {
     /// How to color the stroke. See [`ColorMode`]. `StrokedCurveLayer` renders a
     /// single shape, so modes carrying `NumericData` are expected to supply a
     /// single (length-1) value.
-    pub stroke_color: ColorMode,
+    pub stroke_color: Option<ColorMode>,
     pub stroke_opacity: f32,
 }
 
@@ -58,7 +58,7 @@ impl Default for StrokedCurveLayerParams {
             model_matrix: None,
             commands: Arc::new(vec![]),
             subdivisions: 32,
-            stroke_color: ColorMode::UniformRgb(None),
+            stroke_color: None,
             stroke_opacity: 1.0,
         }
     }
@@ -176,7 +176,7 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_stroke_color` function injected into the shader below.
-        let color = prepare_stroke_color(device, queue, &layer_params.stroke_color, COLOR_BINDING_START);
+        let color = prepare_stroke_color(device, queue, layer_params.stroke_color.as_ref(), COLOR_BINDING_START);
 
         let mut bgl_entries = vec![
             wgpu::BindGroupLayoutEntry {
@@ -410,11 +410,11 @@ impl DrawToSvg for StrokedCurveLayer {
         };
 
         // A single shape uses one color, resolved from element 0.
-        let quant_domain = match &layer_params.stroke_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.stroke_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let stroke = TwoColor::Rgb(cpu_fill_color(&layer_params.stroke_color, 0, quant_domain));
+        let stroke = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain));
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {

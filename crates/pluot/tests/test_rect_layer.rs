@@ -35,10 +35,10 @@ fn corner_rects_data() -> RectLayerParams {
         position_y0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
         position_x1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
         position_y1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
-        fill_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
     }
 }
 
@@ -56,10 +56,10 @@ fn corner_rects_pixels() -> RectLayerParams {
         position_y0: NumericData::Float32(Arc::new(vec![0.0, 50.0])),
         position_x1: NumericData::Float32(Arc::new(vec![40.0, 100.0])),
         position_y1: NumericData::Float32(Arc::new(vec![40.0, 100.0])),
-        fill_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
     }
 }
 
@@ -77,10 +77,10 @@ fn corner_rects_data_x_pixel_y() -> RectLayerParams {
         position_y0: NumericData::Float32(Arc::new(vec![0.0, 50.0])),
         position_x1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
         position_y1: NumericData::Float32(Arc::new(vec![40.0, 100.0])),
-        fill_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
     }
 }
 
@@ -98,10 +98,10 @@ fn corner_rects_pixel_x_data_y() -> RectLayerParams {
         position_y0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
         position_x1: NumericData::Float32(Arc::new(vec![40.0, 100.0])),
         position_y1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
-        fill_color: ColorMode::Categorical(CategoricalParams {
-            values: NumericData::Int32(Arc::new(vec![0, 1])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
-        }),
+        })),
     }
 }
 
@@ -511,12 +511,12 @@ async fn test_rect_layer_square_contain_data_units_quantitative_color() {
         width: 100,
         height: 100,
         layers: layer_params(RectLayerParams {
-            fill_color: ColorMode::Quantitative(QuantitativeParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
-            }),
+            })),
             ..corner_rects_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -531,13 +531,13 @@ async fn test_rect_layer_square_contain_data_units_categorical_custom_color() {
         width: 100,
         height: 100,
         layers: layer_params(RectLayerParams {
-            fill_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+            fill_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
                 values: NumericData::Int32(Arc::new(vec![0, 1])),
                 colormap: vec![
                     (255, 0, 0),
                     (0, 0, 255),
                 ],
-            }),
+            })),
             ..corner_rects_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

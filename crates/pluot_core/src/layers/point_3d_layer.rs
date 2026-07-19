@@ -32,7 +32,7 @@ pub struct Point3dLayerParams {
     // How to color each point. See [`ColorMode`]: modes carrying `NumericData`
     // (instanced/categorical/quantitative) supply one or more per-element value
     // arrays, which are uploaded to the GPU as textures at draw time.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
 
     // Per-point X/Y/Z coordinates. Each may be any supported numeric dtype
     // (8–64 bit int/uint, or 32/64-bit float), and may differ. The data is
@@ -51,7 +51,7 @@ impl Default for Point3dLayerParams {
             bounds: None,
             point_radius: 1.0,
             point_shape_mode: PointShapeMode::Circle,
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             position_z: NumericData::Float32(Arc::new(vec![])),
@@ -126,7 +126,7 @@ impl DrawToRasterGpu for Point3dLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_fill_color` function injected into the shader below.
-        let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
+        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([

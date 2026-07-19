@@ -102,11 +102,8 @@ pub enum QuantitativeColormap {
     Winter,
 }
 
-/// Static color shared by every element. `None` renders as opaque black.
-///
-/// Kept as a bare type alias (rather than a struct) so the `UniformRgb` variant
-/// can carry the existing `Option<(u8, u8, u8)>` shape unchanged.
-pub type UniformRgbParams = Option<(u8, u8, u8)>;
+/// Static (r, g, b) color shared by every element.
+pub type UniformRgbParams = (u8, u8, u8);
 
 /// Per-element RGB stored as three parallel arrays (one per channel). Each
 /// value is interpreted on a 0–255 scale (matching the `(u8, u8, u8)` used by
@@ -130,7 +127,7 @@ pub struct InstancedRgbInterleavedParams {
 /// categorical palette. The label wraps around (modulo) the palette length.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CategoricalParams {
-    pub values: NumericData,
+    pub codes: NumericData,
     pub colormap: CategoricalColormap,
 }
 

@@ -174,10 +174,10 @@ impl PreparedLayer for ZarrPoint3dLayer {
                 bounds: self.layer_params.bounds.clone(),
                 point_radius: self.layer_params.point_radius,
                 point_shape_mode: self.layer_params.point_shape_mode,
-                fill_color: ColorMode::Categorical(CategoricalParams {
-                    values: NumericData::Int32(l_i32.clone()),
+                fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                    codes: NumericData::Int32(l_i32.clone()),
                     colormap: CategoricalColormap::Tableau10,
-                }),
+                })),
                 position_x: NumericData::Float32(x_f32.clone()),
                 position_y: NumericData::Float32(y_f32.clone()),
                 position_z: NumericData::Float32(z_f32.clone()),

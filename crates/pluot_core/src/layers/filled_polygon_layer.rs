@@ -43,7 +43,7 @@ pub struct FilledPolygonLayerParams {
 
     /// How to color each polygon. See [`ColorMode`]: modes carrying `NumericData`
     /// (instanced/categorical/quantitative) supply one value per polygon.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
     /// Opacity multiplier for the fill. Defaults to 1.
     pub fill_opacity: f32,
 }
@@ -58,7 +58,7 @@ impl Default for FilledPolygonLayerParams {
             model_matrix: None,
             polygons: NumericData::Float32(Arc::new(vec![])),
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             fill_opacity: 1.0,
         }
     }
@@ -166,8 +166,8 @@ impl DrawToSvg for FilledPolygonLayer {
         };
 
         // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match &layer_params.fill_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
 
@@ -187,7 +187,7 @@ impl DrawToSvg for FilledPolygonLayer {
                 }
             }
             d.push_str(" Z");
-            let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, poly_index, quant_domain));
+            let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), poly_index, quant_domain));
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,

@@ -49,7 +49,7 @@ pub struct StrokedPolygonLayerParams {
     /// How to color each polygon's outline. See [`ColorMode`]: modes carrying
     /// `NumericData` (instanced/categorical/quantitative) supply one value per
     /// polygon.
-    pub stroke_color: ColorMode,
+    pub stroke_color: Option<ColorMode>,
     /// Stroke width in pixels. Defaults to 1.
     pub stroke_width: f32,
 
@@ -69,7 +69,7 @@ impl Default for StrokedPolygonLayerParams {
             model_matrix: None,
             polygons: NumericData::Float32(Arc::new(vec![])),
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
-            stroke_color: ColorMode::UniformRgb(None),
+            stroke_color: None,
             stroke_width: 1.0,
             stroke_opacity: 1.0,
         }
@@ -166,7 +166,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         // that carry per-element `NumericData` upload it as one or more textures
         // (bound from COLOR_BINDING_START onward) and contribute the WGSL
         // `get_stroke_color` function injected into the shader below.
-        let color = prepare_stroke_color(device, queue, &layer_params.stroke_color, COLOR_BINDING_START);
+        let color = prepare_stroke_color(device, queue, layer_params.stroke_color.as_ref(), COLOR_BINDING_START);
 
         let uniform_struct = StrokedPolygonLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
@@ -397,8 +397,8 @@ impl DrawToSvg for StrokedPolygonLayer {
         };
 
         // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match &layer_params.stroke_color {
-            ColorMode::Quantitative(params) => quantitative_domain(params),
+        let quant_domain = match layer_params.stroke_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
 
@@ -408,7 +408,7 @@ impl DrawToSvg for StrokedPolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
-            let stroke = TwoColor::Rgb(cpu_fill_color(&layer_params.stroke_color, poly_index, quant_domain));
+            let stroke = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), poly_index, quant_domain));
             let mut d = String::new();
             for (i, &(x, y)) in ring.iter().enumerate() {
                 let (px, py) = to_px(x, y);

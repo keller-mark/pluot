@@ -418,7 +418,7 @@ pub struct TextLayerParams {
     // text element (i.e. per entry of `text_vec`/`position_x`/`position_y`,
     // not per glyph), uploaded to the GPU as textures at draw time. Drives the
     // shared color machinery via `prepare_color_mode` / `get_fill_color`.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
 
     // Per-element X/Y coordinates. Each may be any supported numeric dtype
     // (8-64 bit int/uint, or 32/64-bit float), and X and Y may differ.
@@ -443,7 +443,7 @@ impl Default for TextLayerParams {
             font_family: None,
             font_weight: FontWeight::Normal,
             font_style: FontStyle::Normal,
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             text_vec: Arc::new(vec![]),
@@ -713,7 +713,7 @@ pub async fn base_draw_text_layer(
     // here means per text element (matching `position_x`/`position_y`), not
     // per glyph; the vertex shader resolves the owning element index from the
     // instance data before looking up the color.
-    let color = prepare_color_mode(device, queue, &layer_params.fill_color, COLOR_BINDING_START);
+    let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
 
     // Upload atlas as a single-channel R8Unorm texture
@@ -1062,8 +1062,8 @@ pub fn base_draw_text_layer_svg(
     let n = layer_params.text_vec.len();
 
     // Quantitative normalization domain, computed once for the whole layer.
-    let quant_domain = match &layer_params.fill_color {
-        ColorMode::Quantitative(params) => quantitative_domain(params),
+    let quant_domain = match layer_params.fill_color.as_ref() {
+        Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
         _ => [0.0, 1.0],
     };
 
@@ -1130,7 +1130,7 @@ pub fn base_draw_text_layer_svg(
             Some(&model_matrix_raw),
         );
 
-        let fill = TwoColor::Rgb(cpu_fill_color(&layer_params.fill_color, i, quant_domain));
+        let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain));
 
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,

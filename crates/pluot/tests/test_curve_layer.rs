@@ -40,8 +40,8 @@ fn wave_curve_data() -> CurveLayerParams {
         subdivisions: 32,
         stroked: true,
         filled: false,
-        stroke_color: ColorMode::UniformRgb(Some((255, 0, 0))),
-        fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+        stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+        fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
         stroke_opacity: 1.0,
         fill_opacity: 1.0,
     }
@@ -469,7 +469,7 @@ async fn test_curve_layer_square_contain_closed_curve_filled() {
         layers: layer_params(CurveLayerParams {
             stroked: false,
             filled: true,
-            fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             ..closed_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -488,8 +488,8 @@ async fn test_curve_layer_square_contain_closed_curve_stroke_and_fill() {
             stroked: true,
             filled: true,
             stroke_width: 4.0,
-            stroke_color: ColorMode::UniformRgb(Some((255, 0, 0))),
-            fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             ..closed_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -508,8 +508,8 @@ async fn test_curve_layer_square_contain_closed_curve_fill_opacity() {
             stroked: true,
             filled: true,
             stroke_width: 4.0,
-            stroke_color: ColorMode::UniformRgb(Some((255, 0, 0))),
-            fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             stroke_opacity: 1.0,
             fill_opacity: 0.5,
             ..closed_curve_data()
@@ -530,12 +530,12 @@ async fn test_curve_layer_square_contain_closed_curve_quantitative_fill() {
         layers: layer_params(CurveLayerParams {
             stroked: false,
             filled: true,
-            fill_color: ColorMode::Quantitative(QuantitativeParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.75])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: Some((0.0, 1.0)),
-            }),
+            })),
             ..closed_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

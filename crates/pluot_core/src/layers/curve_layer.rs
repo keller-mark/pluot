@@ -32,10 +32,10 @@ pub struct CurveLayerParams {
     /// How to color the stroke. See [`ColorMode`]. `CurveLayer` renders a single
     /// shape, so modes carrying `NumericData` are expected to supply a single
     /// (length-1) value.
-    pub stroke_color: ColorMode,
+    pub stroke_color: Option<ColorMode>,
     /// How to color the fill. See [`ColorMode`]. Same single-shape caveat as
     /// `stroke_color`.
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
     pub stroke_opacity: f32,
     pub fill_opacity: f32,
 }
@@ -54,8 +54,8 @@ impl Default for CurveLayerParams {
             subdivisions: 32,
             stroked: true,
             filled: false,
-            stroke_color: ColorMode::UniformRgb(None),
-            fill_color: ColorMode::UniformRgb(None),
+            stroke_color: None,
+            fill_color: None,
             stroke_opacity: 1.0,
             fill_opacity: 1.0,
         }

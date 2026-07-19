@@ -54,10 +54,10 @@ async fn test_point_3d_layer_categorical_color() {
         width: 100,
         height: 100,
         layers: layer_params(Point3dLayerParams {
-            fill_color: ColorMode::Categorical(CategoricalParams {
-                values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 colormap: CategoricalColormap::Tableau10,
-            }),
+            })),
             ..corner_points_3d()
         }),
         ..Default::default()
@@ -71,7 +71,7 @@ async fn test_point_3d_layer_categorical_custom_color() {
         width: 100,
         height: 100,
         layers: layer_params(Point3dLayerParams {
-            fill_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+            fill_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
                 values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 colormap: vec![
                     (255, 0, 0),
@@ -79,7 +79,7 @@ async fn test_point_3d_layer_categorical_custom_color() {
                     (0, 0, 255),
                     (200, 200, 0),
                 ],
-            }),
+            })),
             ..corner_points_3d()
         }),
         ..Default::default()
@@ -93,12 +93,12 @@ async fn test_point_3d_layer_quantitative_color() {
         width: 100,
         height: 100,
         layers: layer_params(Point3dLayerParams {
-            fill_color: ColorMode::Quantitative(QuantitativeParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 0.33, 0.67, 1.0])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
-            }),
+            })),
             ..corner_points_3d()
         }),
         ..Default::default()

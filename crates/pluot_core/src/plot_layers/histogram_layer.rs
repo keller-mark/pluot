@@ -124,7 +124,7 @@ impl PreparedLayer for HistogramLayer {
                 orientation: self.layer_params.orientation.clone(),
                 identifier: Arc::new(labels),
                 quantity,
-                fill_color: ColorMode::UniformRgb(Some(
+                fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.fill_color.unwrap_or((76, 120, 168)),
                 )),
             },

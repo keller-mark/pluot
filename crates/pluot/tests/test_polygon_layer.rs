@@ -38,10 +38,10 @@ fn triangle_data() -> PolygonLayerParams {
         polygon_offsets: NumericData::Uint32(Arc::new(vec![0, 3])),
         stroked: true,
         filled: false,
-        stroke_color: ColorMode::UniformRgb(Some((255, 0, 0))),
+        stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
         stroke_width: 2.0,
         stroke_opacity: 1.0,
-        fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+        fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
         fill_opacity: 1.0,
     }
 }
@@ -299,8 +299,8 @@ async fn test_polygon_layer_square_contain_stroke_and_fill() {
             stroked: true,
             filled: true,
             stroke_width: 4.0,
-            stroke_color: ColorMode::UniformRgb(Some((255, 0, 0))),
-            fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             ..triangle_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -318,8 +318,8 @@ async fn test_polygon_layer_square_contain_fill_opacity() {
             stroked: true,
             filled: true,
             stroke_width: 4.0,
-            stroke_color: ColorMode::UniformRgb(Some((255, 0, 0))),
-            fill_color: ColorMode::UniformRgb(Some((0, 0, 255))),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             stroke_opacity: 1.0,
             fill_opacity: 0.5,
             ..triangle_data()
@@ -386,14 +386,14 @@ async fn test_polygon_layer_square_contain_two_polygons_categorical() {
         layers: layer_params(PolygonLayerParams {
             stroked: true,
             filled: true,
-            stroke_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+            stroke_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
                 values: NumericData::Int32(Arc::new(vec![0, 1])),
                 colormap: vec![(255, 0, 0), (0, 0, 255)],
-            }),
-            fill_color: ColorMode::CategoricalCustom(CategoricalCustomParams {
+            })),
+            fill_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
                 values: NumericData::Int32(Arc::new(vec![0, 1])),
                 colormap: vec![(255, 200, 200), (200, 200, 255)],
-            }),
+            })),
             ..two_triangles_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -413,8 +413,8 @@ async fn test_polygon_layer_square_contain_pentagon_stroke_and_fill() {
             stroked: true,
             filled: true,
             stroke_width: 3.0,
-            stroke_color: ColorMode::UniformRgb(Some((0, 128, 0))),
-            fill_color: ColorMode::UniformRgb(Some((0, 204, 0))),
+            stroke_color: Some(ColorMode::UniformRgb((0, 128, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 204, 0))),
             fill_opacity: 0.7,
             ..quad_data()
         }),

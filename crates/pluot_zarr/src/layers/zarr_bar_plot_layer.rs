@@ -29,7 +29,7 @@ pub struct ZarrBarPlotLayerParams {
     pub identifier_key: String,
     pub quantity_key: String,
 
-    pub fill_color: ColorMode,
+    pub fill_color: Option<ColorMode>,
 
     // TODO: see TODOs in bar_plot_layer.rs
 }
@@ -43,7 +43,7 @@ impl Default for ZarrBarPlotLayerParams {
             store_name: None,
             identifier_key: "".to_string(),
             quantity_key: "".to_string(),
-            fill_color: ColorMode::UniformRgb(None),
+            fill_color: None,
         }
     }
 }
