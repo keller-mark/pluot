@@ -203,6 +203,21 @@ pub enum OpacityMode {
     InstancedOpacity(InstancedOpacityParams),
 }
 
+impl OpacityMode {
+    /// Panics if this mode carries per-element [`NumericData`] whose length
+    /// doesn't match `expected` (the layer's element count). `UniformOpacity`
+    /// carries no per-element data and is always valid.
+    pub fn validate_len(&self, expected: usize) {
+        if let OpacityMode::InstancedOpacity(params) = self {
+            assert_eq!(
+                params.values.len(), expected,
+                "OpacityMode values has length {} but layer has {expected} elements",
+                params.values.len(),
+            );
+        }
+    }
+}
+
 /// Static size (e.g., width or radius) shared by every element.
 pub type UniformSizeParams = f32;
 
@@ -221,6 +236,21 @@ pub struct InstancedSizeParams {
 pub enum SizeMode {
     UniformSize(UniformSizeParams),
     InstancedSize(InstancedSizeParams),
+}
+
+impl SizeMode {
+    /// Panics if this mode carries per-element [`NumericData`] whose length
+    /// doesn't match `expected` (the layer's element count). `UniformSize`
+    /// carries no per-element data and is always valid.
+    pub fn validate_len(&self, expected: usize) {
+        if let SizeMode::InstancedSize(params) = self {
+            assert_eq!(
+                params.values.len(), expected,
+                "SizeMode values has length {} but layer has {expected} elements",
+                params.values.len(),
+            );
+        }
+    }
 }
 
 impl ColorMode {

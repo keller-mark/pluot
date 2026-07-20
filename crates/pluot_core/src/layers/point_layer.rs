@@ -45,6 +45,8 @@ pub struct PointLayerParams {
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
     pub point_radius: Option<SizeMode>,
+
+    // TODO: rename to fill_opacity.
     pub point_opacity: Option<OpacityMode>,
 
 
@@ -52,6 +54,8 @@ pub struct PointLayerParams {
     // (instanced/categorical/quantitative) supply one or more per-element value
     // arrays, which are uploaded to the GPU as textures at draw time.
     pub fill_color: Option<ColorMode>,
+
+    // TODO: also support stroke_color, stroke_opacity, and stroke_width
 
     // Per-point X/Y coordinates. Each may be any supported numeric dtype
     // (8–64 bit int/uint, or 32/64-bit float), and X and Y may differ. The
@@ -97,7 +101,25 @@ impl PointLayer {
             // See https://github.com/keller-mark/pluot-private/blob/main/point_layer.wgsl
             panic!("point_radius_unit_mode must be the same for X and Y axes. Please reach out if you need ellipse support");
         }
-        // TODO: validate the length of the colorMode values when instanced
+        // Validate the lengths of things.
+        let n = layer_params.position_x.len();
+        if let Some(fill_color) = &layer_params.fill_color {
+            fill_color.validate_len(n);
+        }
+        if let Some(point_radius) = &layer_params.point_radius {
+            point_radius.validate_len(n);
+        }
+        if let Some(point_opacity) = &layer_params.point_opacity {
+            point_opacity.validate_len(n);
+        }
+        for (name, len) in [
+            ("position_y", layer_params.position_y.len()),
+        ] {
+            assert_eq!(
+                len, n,
+                "{name} has length {len} but position_x has length {n}",
+            );
+        }
         Self {
             view_params,
             layer_params,

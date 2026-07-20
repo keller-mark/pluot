@@ -477,7 +477,22 @@ impl TextLayer {
         if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        // TODO: validate the length of the colorMode values when instanced
+        // Validate the lengths of things. `text_vec` is the authoritative
+        // per-element count (see `base_draw_text_layer_svg`, which indexes
+        // `position_x`/`position_y`/`fill_color` by `text_vec.len()`).
+        let n = layer_params.text_vec.len();
+        if let Some(fill_color) = &layer_params.fill_color {
+            fill_color.validate_len(n);
+        }
+        for (name, len) in [
+            ("position_x", layer_params.position_x.len()),
+            ("position_y", layer_params.position_y.len()),
+        ] {
+            assert_eq!(
+                len, n,
+                "{name} has length {len} but text_vec has length {n}",
+            );
+        }
         Self {
             view_params,
             layer_params,

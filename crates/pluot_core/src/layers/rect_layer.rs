@@ -85,7 +85,21 @@ impl RectLayer {
         if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        // TODO: validate the length of the colorMode values when instanced
+        // Validate the lengths of things.
+        let n = layer_params.position_x0.len();
+        if let Some(fill_color) = &layer_params.fill_color {
+            fill_color.validate_len(n);
+        }
+        for (name, len) in [
+            ("position_y0", layer_params.position_y0.len()),
+            ("position_x1", layer_params.position_x1.len()),
+            ("position_y1", layer_params.position_y1.len()),
+        ] {
+            assert_eq!(
+                len, n,
+                "{name} has length {len} but position_x0 has length {n}",
+            );
+        }
         Self {
             view_params,
             layer_params,

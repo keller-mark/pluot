@@ -93,7 +93,21 @@ pub struct StrokedPolygonLayer {
 
 impl StrokedPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
-        // TODO: validate the length of the colorMode values when instanced
+        // Validate the lengths of things. `polygon_offsets` has `num_polygons + 1`
+        // entries (see `polygon_segments_from_offsets`), so the number of
+        // polygons is one less than its length.
+        let n = layer_params.polygon_offsets.len().saturating_sub(1);
+        if let Some(stroke_color) = &layer_params.stroke_color {
+            stroke_color.validate_len(n);
+        }
+        if let Some(stroke_width) = &layer_params.stroke_width {
+            stroke_width.validate_len(n);
+        }
+        if let Some(stroke_opacity) = &layer_params.stroke_opacity {
+            stroke_opacity.validate_len(n);
+        }
+        // TODO: assert that the polygon vertices array is a multiple of 2?
+        // TODO: assert that the polygon vertices array length is longer than the final offset value?
 
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?

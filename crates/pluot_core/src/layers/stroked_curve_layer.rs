@@ -77,7 +77,19 @@ pub struct StrokedCurveLayer {
 
 impl StrokedCurveLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedCurveLayerParams) -> Self {
-        // TODO: validate the length of the colorMode values when instanced
+        // Validate the lengths of things. StrokedCurveLayer renders a single
+        // shape (see `cpu_fill_color`/`cpu_stroke_width`/`cpu_stroke_opacity`
+        // calls below, which always read index 0), so any instanced values
+        // must have exactly one element.
+        if let Some(stroke_color) = &layer_params.stroke_color {
+            stroke_color.validate_len(1);
+        }
+        if let Some(stroke_width) = &layer_params.stroke_width {
+            stroke_width.validate_len(1);
+        }
+        if let Some(stroke_opacity) = &layer_params.stroke_opacity {
+            stroke_opacity.validate_len(1);
+        }
 
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?

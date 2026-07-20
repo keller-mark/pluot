@@ -91,9 +91,16 @@ impl LineLayer {
         if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
+        // Validate the lengths of things.
         let n = layer_params.source_position_x.len();
         if let Some(stroke_color) = &layer_params.stroke_color {
             stroke_color.validate_len(n);
+        }
+        if let Some(stroke_width) = &layer_params.stroke_width {
+            stroke_width.validate_len(n);
+        }
+        if let Some(stroke_opacity) = &layer_params.stroke_opacity {
+            stroke_opacity.validate_len(n);
         }
         for (name, len) in [
             ("source_position_y", layer_params.source_position_y.len()),

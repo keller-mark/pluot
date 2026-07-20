@@ -68,7 +68,20 @@ impl Point3dLayer {
         view_params: ViewParams,
         layer_params: Point3dLayerParams,
     ) -> Self {
-        // TODO: validate the length of the colorMode values when instanced
+        // Validate the lengths of things.
+        let n = layer_params.position_x.len();
+        if let Some(fill_color) = &layer_params.fill_color {
+            fill_color.validate_len(n);
+        }
+        for (name, len) in [
+            ("position_y", layer_params.position_y.len()),
+            ("position_z", layer_params.position_z.len()),
+        ] {
+            assert_eq!(
+                len, n,
+                "{name} has length {len} but position_x has length {n}",
+            );
+        }
         Self {
             view_params,
             layer_params,
