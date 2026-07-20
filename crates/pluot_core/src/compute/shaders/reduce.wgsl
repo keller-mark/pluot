@@ -67,6 +67,9 @@ struct ReduceUniforms {
 @group(0) @binding(2) var<storage, read_write> output:       array<f32>;
 @group(0) @binding(3) var<storage, read_write> output_hist:  array<atomic<u32>>;
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+{{flat_texel_coord}}
+
 // ── Workgroup-shared memory ───────────────────────────────────────────────────
 
 // Tree-reduction accumulators for scalar modes.
@@ -93,7 +96,7 @@ fn neg_inf() -> f32 { return -0x1.fffffep+127f; }
 // texels to f32 otherwise.
 fn load_input(flat_index: u32) -> f32 {
     let tex_width = textureDimensions(input).x;
-    let coords = vec2<u32>(flat_index % tex_width, flat_index / tex_width);
+    let coords = flat_texel_coord(flat_index, tex_width);
     return f32(textureLoad(input, coords, 0).x);
 }
 

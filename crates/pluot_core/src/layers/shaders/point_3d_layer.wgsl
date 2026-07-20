@@ -64,9 +64,9 @@ fn vs_main(
     let y_tex_width = textureDimensions(y_coords).x;
     let z_tex_width = textureDimensions(z_coords).x;
     let p = vec3<f32>(
-        f32(textureLoad(x_coords, vec2<u32>(instance_index % x_tex_width, instance_index / x_tex_width), 0).x),
-        f32(textureLoad(y_coords, vec2<u32>(instance_index % y_tex_width, instance_index / y_tex_width), 0).x),
-        f32(textureLoad(z_coords, vec2<u32>(instance_index % z_tex_width, instance_index / z_tex_width), 0).x)
+        f32(textureLoad(x_coords, flat_texel_coord(instance_index, x_tex_width), 0).x),
+        f32(textureLoad(y_coords, flat_texel_coord(instance_index, y_tex_width), 0).x),
+        f32(textureLoad(z_coords, flat_texel_coord(instance_index, z_tex_width), 0).x)
     );
 
     // View aspect ratio

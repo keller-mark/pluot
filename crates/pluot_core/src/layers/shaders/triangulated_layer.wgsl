@@ -47,13 +47,13 @@ struct TriangulatedLayerUniforms {
 // `f32(...)` is a no-op when the injected sampled type is already f32.
 fn load_coord(idx: u32) -> f32 {
     let w = textureDimensions(vertices).x;
-    return f32(textureLoad(vertices, vec2<u32>(idx % w, idx / w), 0).x);
+    return f32(textureLoad(vertices, flat_texel_coord(idx, w), 0).x);
 }
 
 // Load the color-mode element index for vertex `idx`, widening it to u32.
 fn load_color_index(idx: u32) -> u32 {
     let w = textureDimensions(vertex_color_index).x;
-    return u32(textureLoad(vertex_color_index, vec2<u32>(idx % w, idx / w), 0).x);
+    return u32(textureLoad(vertex_color_index, flat_texel_coord(idx, w), 0).x);
 }
 
 // Color module: any per-element color value/palette texture bindings (from

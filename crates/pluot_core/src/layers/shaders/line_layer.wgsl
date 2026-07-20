@@ -125,10 +125,10 @@ fn vs_main(
     let source_y_tex_width = textureDimensions(source_y_coords).x;
     let target_x_tex_width = textureDimensions(target_x_coords).x;
     let target_y_tex_width = textureDimensions(target_y_coords).x;
-    let source_x_val = f32(textureLoad(source_x_coords, vec2<u32>(instance_index % source_x_tex_width, instance_index / source_x_tex_width), 0).x);
-    let source_y_val = f32(textureLoad(source_y_coords, vec2<u32>(instance_index % source_y_tex_width, instance_index / source_y_tex_width), 0).x);
-    let target_x_val = f32(textureLoad(target_x_coords, vec2<u32>(instance_index % target_x_tex_width, instance_index / target_x_tex_width), 0).x);
-    let target_y_val = f32(textureLoad(target_y_coords, vec2<u32>(instance_index % target_y_tex_width, instance_index / target_y_tex_width), 0).x);
+    let source_x_val = f32(textureLoad(source_x_coords, flat_texel_coord(instance_index, source_x_tex_width), 0).x);
+    let source_y_val = f32(textureLoad(source_y_coords, flat_texel_coord(instance_index, source_y_tex_width), 0).x);
+    let target_x_val = f32(textureLoad(target_x_coords, flat_texel_coord(instance_index, target_x_tex_width), 0).x);
+    let target_y_val = f32(textureLoad(target_y_coords, flat_texel_coord(instance_index, target_y_tex_width), 0).x);
     let source_point_pos_orig = u.model_matrix * vec4f(source_x_val, source_y_val, 0.0, 1.0);
     let target_point_pos_orig = u.model_matrix * vec4f(target_x_val, target_y_val, 0.0, 1.0);
 

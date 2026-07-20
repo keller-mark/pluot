@@ -97,8 +97,8 @@ fn load_point(idx: u32) -> vec2<f32> {
     let w = textureDimensions(points).x;
     let xi = 2u * idx;
     let yi = xi + 1u;
-    let x = f32(textureLoad(points, vec2<u32>(xi % w, xi / w), 0).x);
-    let y = f32(textureLoad(points, vec2<u32>(yi % w, yi / w), 0).x);
+    let x = f32(textureLoad(points, flat_texel_coord(xi, w), 0).x);
+    let y = f32(textureLoad(points, flat_texel_coord(yi, w), 0).x);
     return vec2<f32>(x, y);
 }
 

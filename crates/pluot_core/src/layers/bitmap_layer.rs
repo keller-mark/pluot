@@ -529,6 +529,7 @@ impl DrawToRasterGpu for BitmapLayer {
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
             .inject_texture_sample_type("img_data", img_data_dtype)
             .build();
         let shader = device

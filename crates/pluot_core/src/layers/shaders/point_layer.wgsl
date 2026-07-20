@@ -88,8 +88,8 @@ fn vs_main(
     // sampled type is already f32, and widens u32/i32 texels to f32 otherwise.
     let x_tex_width = textureDimensions(x_coords).x;
     let y_tex_width = textureDimensions(y_coords).x;
-    let x_val = f32(textureLoad(x_coords, vec2<u32>(instance_index % x_tex_width, instance_index / x_tex_width), 0).x);
-    let y_val = f32(textureLoad(y_coords, vec2<u32>(instance_index % y_tex_width, instance_index / y_tex_width), 0).x);
+    let x_val = f32(textureLoad(x_coords, flat_texel_coord(instance_index, x_tex_width), 0).x);
+    let y_val = f32(textureLoad(y_coords, flat_texel_coord(instance_index, y_tex_width), 0).x);
     let point_pos_orig = u.model_matrix * vec4f(x_val, y_val, 0.0, 1.0);
 
     // Per-instance radius (uniform or instanced, depending on the injected size
