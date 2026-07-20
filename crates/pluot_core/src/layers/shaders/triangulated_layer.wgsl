@@ -61,6 +61,11 @@ fn load_color_index(idx: u32) -> u32 {
 // Assembled per color mode by `crate::color_mode::prepare_color_mode`.
 {{color_module}}
 
+// Fill opacity module: an optional per-element opacity value texture (instanced
+// mode) plus `fn get_fill_opacity(color_index: u32) -> f32`. Assembled per
+// opacity mode by `crate::scalar_mode::prepare_fill_opacity_mode`.
+{{fill_opacity_module}}
+
 struct VSOut {
     @builtin(position) position: vec4<f32>,
     @location(0) @interpolate(flat) color_index: u32,
@@ -125,8 +130,9 @@ fn fs_main(
     // The color module's get_fill_color resolves the per-element color for the
     // active color mode (static, instanced RGB, categorical or quantitative).
     let out_color = get_fill_color(color_index);
+    let fill_opacity = get_fill_opacity(color_index);
 
     var out: FSOut;
-    out.color = vec4<f32>(out_color, u.fill_opacity);
+    out.color = vec4<f32>(out_color, fill_opacity);
     return out;
 }

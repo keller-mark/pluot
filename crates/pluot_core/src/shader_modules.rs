@@ -180,6 +180,48 @@ pub mod line_opacity {
     pub const INSTANCED: &str = include_str!("wgsl_functions/get_line_opacity/instanced.wgsl");
 }
 
+/// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
+/// `fn get_stroke_width(poly_index: u32) -> f32`. The uniform variant reads the
+/// `stroke_width` uniform; the instanced variant reads a per-polygon value
+/// texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_stroke_width_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod stroke_width {
+    /// Static width shared by every polygon stroke.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_stroke_width/uniform.wgsl");
+
+    /// Per-polygon width from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_stroke_width/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_stroke_opacity(poly_index: u32) -> f32`. The uniform variant
+/// reads the `stroke_opacity` uniform; the instanced variant reads a per-polygon
+/// value texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_stroke_opacity_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod stroke_opacity {
+    /// Static opacity shared by every polygon stroke.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_stroke_opacity/uniform.wgsl");
+
+    /// Per-polygon opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_stroke_opacity/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_fill_opacity(color_index: u32) -> f32`. The uniform variant
+/// reads the `fill_opacity` uniform; the instanced variant reads a per-polygon
+/// value texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_fill_opacity_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod fill_opacity {
+    /// Static opacity shared by every polygon fill.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_fill_opacity/uniform.wgsl");
+
+    /// Per-polygon opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_fill_opacity/instanced.wgsl");
+}
+
 /// Colormap WGSL functions, embedded at compile time from
 /// `wgsl_functions/colormaps/`.
 ///

@@ -10,7 +10,7 @@ use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
@@ -109,7 +109,7 @@ impl DrawToRasterGpu for FilledCurveLayer {
                 vertices: self.fill_vertices.clone(),
                 vertex_color_index: self.vertex_color_index.clone(),
                 fill_color: self.layer_params.fill_color.clone(),
-                fill_opacity: self.layer_params.fill_opacity,
+                fill_opacity: Some(OpacityMode::UniformOpacity(self.layer_params.fill_opacity)),
             },
         );
         DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;

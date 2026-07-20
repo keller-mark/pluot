@@ -12,11 +12,12 @@ use std::sync::Arc;
 use crate::positioning::get_point_position;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
+use crate::scalar_mode::{cpu_fill_opacity, prepare_fill_opacity_mode};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -49,8 +50,10 @@ pub struct TriangulatedLayerParams {
 
     /// How to color the fill. See [`ColorMode`].
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the fill. Defaults to 1.
-    pub fill_opacity: f32,
+    /// Opacity multiplier for the fill. See [`OpacityMode`]: `UniformOpacity`
+    /// shares one value across all elements, `InstancedOpacity` supplies one per
+    /// element (indexed by `vertex_color_index`). Defaults to 1.
+    pub fill_opacity: Option<OpacityMode>,
 }
 
 impl Default for TriangulatedLayerParams {
@@ -64,7 +67,7 @@ impl Default for TriangulatedLayerParams {
             vertices: NumericData::Float32(Arc::new(vec![])),
             vertex_color_index: NumericData::Uint32(Arc::new(vec![])),
             fill_color: None,
-            fill_opacity: 1.0,
+            fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
@@ -173,6 +176,13 @@ impl DrawToRasterGpu for TriangulatedLayer {
         // `get_fill_color` function injected into the shader below.
         let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
+        // Build the GPU-side fill opacity resource. Like the color mode, the
+        // instanced variant uploads a per-element value texture (indexed by
+        // color_index, i.e. the per-vertex polygon index); its binding follows
+        // the color textures and it is read in the fragment stage.
+        let opacity_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
+        let opacity = prepare_fill_opacity_mode(device, queue, layer_params.fill_opacity.as_ref(), opacity_binding_start);
+
         let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -185,7 +195,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
             fill_color: Vec4::from_array(color.static_color),
             fill_color_reverse: color.reverse,
             fill_color_domain: Vec2::from_array(color.domain),
-            fill_opacity: layer_params.fill_opacity,
+            fill_opacity: opacity.static_value,
         };
 
         let mut buf = UniformBuffer::new(Vec::<u8>::new());
@@ -248,6 +258,20 @@ impl DrawToRasterGpu for TriangulatedLayer {
                 count: None,
             });
         }
+        // Instanced fill opacity texture (read in the fragment stage), present
+        // only when the opacity mode is instanced.
+        if let Some(tex) = &opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: opacity_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Triangulated BGL"),
             entries: &bgl_entries,
@@ -264,6 +288,9 @@ impl DrawToRasterGpu for TriangulatedLayer {
             // assembled color module (bindings + `get_fill_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
             .define("color_module", &color.wgsl)
+            // Fill opacity-mode specialization: contributes `get_fill_opacity`
+            // (plus a value texture binding when instanced).
+            .define("fill_opacity_module", &opacity.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("triangulated_layer.wgsl"),
@@ -333,6 +360,12 @@ impl DrawToRasterGpu for TriangulatedLayer {
         for (i, tex) in color.textures.iter().enumerate() {
             bg_entries.push(wgpu::BindGroupEntry {
                 binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: opacity_binding_start,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
@@ -417,13 +450,14 @@ impl DrawToSvg for TriangulatedLayer {
             // All 3 vertices of a triangle share the same source color index.
             let color_index = layer_params.vertex_color_index.get_f64(i * 3) as usize;
             let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), color_index, quant_domain));
+            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), color_index) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,
                 fill: Some(fill),
                 linewidth: 0.0,
                 opacity: 1.0,
-                fill_opacity: layer_params.fill_opacity as f64,
+                fill_opacity,
                 stroke_opacity: 1.0,
                 stroke_linejoin: None,
                 stroke_linecap: None,

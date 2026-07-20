@@ -12,10 +12,11 @@ use super::curve_and_polygon_utils::{
 };
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
+use crate::scalar_mode::cpu_fill_opacity;
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -44,8 +45,10 @@ pub struct FilledPolygonLayerParams {
     /// How to color each polygon. See [`ColorMode`]: modes carrying `NumericData`
     /// (instanced/categorical/quantitative) supply one value per polygon.
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the fill. Defaults to 1.
-    pub fill_opacity: f32,
+    /// Opacity multiplier for the fill. See [`OpacityMode`]: `UniformOpacity`
+    /// shares one value across all polygons, `InstancedOpacity` supplies one per
+    /// polygon. Defaults to 1.
+    pub fill_opacity: Option<OpacityMode>,
 }
 
 impl Default for FilledPolygonLayerParams {
@@ -59,7 +62,7 @@ impl Default for FilledPolygonLayerParams {
             polygons: NumericData::Float32(Arc::new(vec![])),
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             fill_color: None,
-            fill_opacity: 1.0,
+            fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
@@ -117,7 +120,7 @@ impl DrawToRasterGpu for FilledPolygonLayer {
                 vertices: self.fill_vertices.clone(),
                 vertex_color_index: self.vertex_color_index.clone(),
                 fill_color: self.layer_params.fill_color.clone(),
-                fill_opacity: self.layer_params.fill_opacity,
+                fill_opacity: self.layer_params.fill_opacity.clone(),
             },
         );
         DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;
@@ -188,13 +191,14 @@ impl DrawToSvg for FilledPolygonLayer {
             }
             d.push_str(" Z");
             let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), poly_index, quant_domain));
+            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), poly_index) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,
                 fill: Some(fill),
                 linewidth: 0.0,
                 opacity: 1.0,
-                fill_opacity: layer_params.fill_opacity as f64,
+                fill_opacity,
                 stroke_opacity: 1.0,
                 stroke_linejoin: None,
                 stroke_linecap: None,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::numeric_data::NumericData;
@@ -24,6 +24,9 @@ pub struct PolygonLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
+    /// Whether `stroke_width` is measured in pixels or in data-coordinate units.
+    /// Defaults to pixels.
+    pub stroke_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
 
     /// All polygon vertices as a flat, interleaved 1D array of model-space
@@ -45,17 +48,23 @@ pub struct PolygonLayerParams {
     /// `NumericData` (instanced/categorical/quantitative) supply one value per
     /// polygon.
     pub stroke_color: Option<ColorMode>,
-    /// Stroke width in pixels. Defaults to 1.
-    pub stroke_width: f32,
-    /// Opacity multiplier for the stroke. Defaults to 1.
-    pub stroke_opacity: f32,
+    /// Stroke width. See [`SizeMode`]: `UniformSize` shares one width across all
+    /// polygons, `InstancedSize` supplies one per polygon. Interpreted in the
+    /// units given by `stroke_width_unit_mode`. Defaults to 1.
+    pub stroke_width: Option<SizeMode>,
+    /// Opacity multiplier for the stroke. See [`OpacityMode`]: `UniformOpacity`
+    /// shares one value across all polygons, `InstancedOpacity` supplies one per
+    /// polygon. Defaults to 1.
+    pub stroke_opacity: Option<OpacityMode>,
 
     /// How to color each polygon's interior. See [`ColorMode`]: modes carrying
     /// `NumericData` (instanced/categorical/quantitative) supply one value per
     /// polygon.
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the fill. Defaults to 1.
-    pub fill_opacity: f32,
+    /// Opacity multiplier for the fill. See [`OpacityMode`]: `UniformOpacity`
+    /// shares one value across all polygons, `InstancedOpacity` supplies one per
+    /// polygon. Defaults to 1.
+    pub fill_opacity: Option<OpacityMode>,
 }
 
 impl Default for PolygonLayerParams {
@@ -65,16 +74,17 @@ impl Default for PolygonLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
+            stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
             polygons: NumericData::Float32(Arc::new(vec![])),
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             stroked: true,
             filled: false,
             stroke_color: None,
-            stroke_width: 1.0,
-            stroke_opacity: 1.0,
+            stroke_width: Some(SizeMode::UniformSize(1.0)),
+            stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: None,
-            fill_opacity: 1.0,
+            fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
@@ -95,12 +105,13 @@ impl PolygonLayer {
                 bounds: layer_params.bounds.clone(),
                 data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
+                stroke_width_unit_mode: layer_params.stroke_width_unit_mode.clone(),
                 model_matrix: layer_params.model_matrix,
                 polygons: layer_params.polygons.clone(),
                 polygon_offsets: layer_params.polygon_offsets.clone(),
                 stroke_color: layer_params.stroke_color.clone(),
-                stroke_width: layer_params.stroke_width,
-                stroke_opacity: layer_params.stroke_opacity,
+                stroke_width: layer_params.stroke_width.clone(),
+                stroke_opacity: layer_params.stroke_opacity.clone(),
             }))
         } else {
             None
@@ -116,7 +127,7 @@ impl PolygonLayer {
                 polygons: layer_params.polygons.clone(),
                 polygon_offsets: layer_params.polygon_offsets.clone(),
                 fill_color: layer_params.fill_color.clone(),
-                fill_opacity: layer_params.fill_opacity,
+                fill_opacity: layer_params.fill_opacity.clone(),
             }))
         } else {
             None
