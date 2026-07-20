@@ -53,3 +53,4 @@ circle_diffs/
 text_diffs/
 
 bindings-js/core/src/vendored-fonts/*.ttf.js
+bindings-r/src/.cargo/

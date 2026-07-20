@@ -21,7 +21,7 @@ basic_layers <- list(
       point_radius_unit_mode_x = "Pixels",
       point_radius_unit_mode_y = "Pixels",
       point_shape_mode      = "Square",
-      point_radius          = 25.0,
+      point_radius          = list(size_mode = "UniformSize", size_params = 25.0),
       bounds                = NULL,
       position_x            = list(dtype = "Float32", values = c(0, 1, 0, 1)),
       position_y            = list(dtype = "Float32", values = c(0, 0, 1, 1)),
