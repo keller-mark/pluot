@@ -62,7 +62,13 @@ const KEY_MAP: Record<string, string> = {
 // --- Aspect ratio helpers ---
 
 function computeAspectRatioFactors(vp: ViewportParams) {
-  const aspectRatio = vp.width / vp.height;
+  const marginLeft = vp.margins?.marginLeft ?? 0;
+  const marginRight = vp.margins?.marginRight ?? 0;
+  const marginTop = vp.margins?.marginTop ?? 0;
+  const marginBottom = vp.margins?.marginBottom ?? 0;
+  const layerW = vp.width - marginLeft - marginRight;
+  const layerH = vp.height - marginTop - marginBottom;
+  const aspectRatio = layerW / layerH;
   let xFactor = 1.0;
   let yFactor = 1.0;
 
