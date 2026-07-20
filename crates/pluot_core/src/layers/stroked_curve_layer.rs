@@ -77,6 +77,8 @@ pub struct StrokedCurveLayer {
 
 impl StrokedCurveLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedCurveLayerParams) -> Self {
+        // TODO: validate the length of the colorMode values when instanced
+
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?
         let subpaths = commands_to_subpaths(&layer_params.commands);

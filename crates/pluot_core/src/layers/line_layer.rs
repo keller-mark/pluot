@@ -91,7 +91,20 @@ impl LineLayer {
         if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        // TODO: validate the length of the colorMode values when instanced
+        let n = layer_params.source_position_x.len();
+        if let Some(stroke_color) = &layer_params.stroke_color {
+            stroke_color.validate_len(n);
+        }
+        for (name, len) in [
+            ("source_position_y", layer_params.source_position_y.len()),
+            ("target_position_x", layer_params.target_position_x.len()),
+            ("target_position_y", layer_params.target_position_y.len()),
+        ] {
+            assert_eq!(
+                len, n,
+                "{name} has length {len} but source_position_x has length {n}",
+            );
+        }
         Self {
             view_params,
             layer_params,

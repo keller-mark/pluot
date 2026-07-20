@@ -236,6 +236,43 @@ impl ColorMode {
             ColorMode::Quantitative(_) => 5,
         }
     }
+
+    /// Panics if this mode carries per-element [`NumericData`] whose length
+    /// doesn't match `expected` (the layer's element count). `UniformRgb`
+    /// carries no per-element data and is always valid.
+    pub fn validate_len(&self, expected: usize) {
+        let check = |name: &str, len: usize| {
+            assert_eq!(
+                len, expected,
+                "ColorMode {name} has length {len} but layer has {expected} elements",
+            );
+        };
+        match self {
+            ColorMode::UniformRgb(_) => {}
+            ColorMode::InstancedRgb(params) => {
+                check("r_values", params.r_values.len());
+                check("g_values", params.g_values.len());
+                check("b_values", params.b_values.len());
+            }
+            ColorMode::InstancedRgbInterleaved(params) => {
+                let expected_len = expected * 3;
+                assert_eq!(
+                    params.rgb_values.len(), expected_len,
+                    "ColorMode rgb_values has length {} but layer has {expected} elements (expected {expected_len})",
+                    params.rgb_values.len(),
+                );
+            }
+            ColorMode::Categorical(params) => {
+                check("codes", params.codes.len());
+            }
+            ColorMode::CategoricalCustom(params) => {
+                check("values", params.values.len());
+            }
+            ColorMode::Quantitative(params) => {
+                check("values", params.values.len());
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

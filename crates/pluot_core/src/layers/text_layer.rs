@@ -420,6 +420,9 @@ pub struct TextLayerParams {
     // shared color machinery via `prepare_color_mode` / `get_fill_color`.
     pub fill_color: Option<ColorMode>,
 
+    // TODO: support instanced+uniform fill_opacity via OpacityMode
+    // TODO: support instanced+uniform text_size via SizeMode
+
     // Per-element X/Y coordinates. Each may be any supported numeric dtype
     // (8-64 bit int/uint, or 32/64-bit float), and X and Y may differ.
     pub position_x: NumericData,
@@ -474,6 +477,7 @@ impl TextLayer {
         if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
             panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
+        // TODO: validate the length of the colorMode values when instanced
         Self {
             view_params,
             layer_params,

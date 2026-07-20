@@ -93,6 +93,8 @@ pub struct StrokedPolygonLayer {
 
 impl StrokedPolygonLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedPolygonLayerParams) -> Self {
+        // TODO: validate the length of the colorMode values when instanced
+
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?
         let segments = polygon_segments_from_offsets(&layer_params.polygon_offsets);

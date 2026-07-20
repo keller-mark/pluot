@@ -68,6 +68,7 @@ impl Point3dLayer {
         view_params: ViewParams,
         layer_params: Point3dLayerParams,
     ) -> Self {
+        // TODO: validate the length of the colorMode values when instanced
         Self {
             view_params,
             layer_params,
