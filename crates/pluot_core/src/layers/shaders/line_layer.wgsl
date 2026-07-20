@@ -49,9 +49,9 @@ struct LineLayerUniforms {
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
-    line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
-    line_opacity: f32,
+    stroke_width: f32,
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    stroke_opacity: f32,
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -91,15 +91,16 @@ struct FSOut {
 // Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
 {{color_module}}
 
-// Line width module: an optional per-element width value texture (instanced
-// mode) plus `fn get_line_width(instance_index: u32) -> f32`. Assembled per
-// size mode by `crate::scalar_mode::prepare_line_width_mode`.
-{{line_width_module}}
+// Stroke width module: an optional per-element width value texture (instanced
+// mode) plus `fn get_stroke_width(poly_index: u32) -> f32`. Assembled per size
+// mode by `crate::scalar_mode::prepare_stroke_width_mode`. (Shared with the
+// polygon/curve layers; `poly_index` is the per-line instance index here.)
+{{stroke_width_module}}
 
-// Line opacity module: an optional per-element opacity value texture
-// (instanced mode) plus `fn get_line_opacity(instance_index: u32) -> f32`.
-// Assembled per opacity mode by `crate::scalar_mode::prepare_line_opacity_mode`.
-{{line_opacity_module}}
+// Stroke opacity module: an optional per-element opacity value texture
+// (instanced mode) plus `fn get_stroke_opacity(poly_index: u32) -> f32`.
+// Assembled per opacity mode by `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -131,9 +132,10 @@ fn vs_main(
     let source_point_pos_orig = u.model_matrix * vec4f(source_x_val, source_y_val, 0.0, 1.0);
     let target_point_pos_orig = u.model_matrix * vec4f(target_x_val, target_y_val, 0.0, 1.0);
 
-    // Per-instance width (uniform or instanced, depending on the injected line
-    // width module). Resolved once here and used for all width computations below.
-    let line_width = get_line_width(instance_index);
+    // Per-instance width (uniform or instanced, depending on the injected
+    // stroke width module). Resolved once here and used for all width
+    // computations below.
+    let stroke_width = get_stroke_width(instance_index);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -190,7 +192,7 @@ fn vs_main(
         result_source_position_px = source_pos_ndc;
         result_target_position_px = target_pos_ndc;
 
-        let line_width_ndc = line_width / layer_height_px * 2.0;
+        let line_width_ndc = stroke_width / layer_height_px * 2.0;
 
         if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
             // Extrude the line to form a quad
@@ -238,18 +240,18 @@ fn vs_main(
     // extrude_line() expects a height-relative NDC scalar (line_width_ndc is
     // defined relative to the layer height / Y axis).
     //
-    // Pixel-mode width (line_width_unit_mode == 0):
-    //   line_width is in screen pixels; convert directly to an NDC-Y offset.
-    var line_width_ndc = line_width / layer_height_px * 2.0;
+    // Pixel-mode width (stroke_width_unit_mode == 0):
+    //   stroke_width is in screen pixels; convert directly to an NDC-Y offset.
+    var line_width_ndc = stroke_width / layer_height_px * 2.0;
 
-    // Data-coordinate width (line_width_unit_mode == 1):
-    //   line_width is in data coordinate system units. Transform it through the
+    // Data-coordinate width (stroke_width_unit_mode == 1):
+    //   stroke_width is in data coordinate system units. Transform it through the
     //   same pipeline as positions, but with w=0 so translations cancel out (it
     //   is a delta/size, not a position). This mirrors the radius handling in
     //   point_layer.wgsl. Since line_width_ndc is height-relative, use the Y
     //   component of the transformed delta.
-    if (u.line_width_unit_mode == 1u) {
-        let width_orig_data = u.model_matrix * vec4f(line_width, line_width, 0.0, 0.0);
+    if (u.stroke_width_unit_mode == 1u) {
+        let width_orig_data = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
         let width_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig_data;
         line_width_ndc = abs(width_norm_data.y) * 2.0;
     }
@@ -301,9 +303,9 @@ fn fs_main(
     // The color module's get_stroke_color resolves the per-instance color for the
     // active color mode (static, instanced RGB, categorical or quantitative).
     let out_color = get_stroke_color(instance_index);
-    let line_opacity = get_line_opacity(instance_index);
+    let stroke_opacity = get_stroke_opacity(instance_index);
 
     var out: FSOut;
-    out.color = vec4<f32>(out_color, line_opacity);
+    out.color = vec4<f32>(out_color, stroke_opacity);
     return out;
 }

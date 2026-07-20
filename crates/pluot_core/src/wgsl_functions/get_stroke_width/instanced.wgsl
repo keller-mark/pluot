@@ -1,4 +1,4 @@
-// SizeMode::InstancedSize — per-polygon stroke width read from a single-channel
+// SizeMode::InstancedSize — per-element stroke width read from a single-channel
 // value texture. Values are in the same units as the uniform width. Depends on
 // `flat_texel_coord` being injected.
 @group(0) @binding({{stroke_width_values_bidx}}) var stroke_width_values: texture_2d<{{stroke_width_values_dtype}}>;

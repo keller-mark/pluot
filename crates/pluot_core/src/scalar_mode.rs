@@ -16,8 +16,7 @@ use crate::color_mode::PreparedColorTexture;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{OpacityMode, SizeMode};
 use crate::shader_modules::{
-    fill_opacity as fill_opacity_wgsl, line_opacity as line_opacity_wgsl,
-    line_width as line_width_wgsl, opacity as opacity_wgsl, size as size_wgsl,
+    fill_opacity as fill_opacity_wgsl, opacity as opacity_wgsl, size as size_wgsl,
     stroke_opacity as stroke_opacity_wgsl, stroke_width as stroke_width_wgsl, ShaderBuilder,
 };
 use crate::wgpu;
@@ -28,19 +27,14 @@ pub const DEFAULT_POINT_RADIUS: f32 = 1.0;
 /// Default point opacity used when no [`OpacityMode`] is configured.
 pub const DEFAULT_POINT_OPACITY: f32 = 1.0;
 
-/// Default line width used when no [`SizeMode`] is configured.
-pub const DEFAULT_LINE_WIDTH: f32 = 1.0;
-
-/// Default line opacity used when no [`OpacityMode`] is configured.
-pub const DEFAULT_LINE_OPACITY: f32 = 1.0;
-
-/// Default polygon stroke width used when no [`SizeMode`] is configured.
+/// Default stroke width used when no [`SizeMode`] is configured (shared by the
+/// line, polygon, and curve layers).
 pub const DEFAULT_STROKE_WIDTH: f32 = 1.0;
 
-/// Default polygon stroke opacity used when no [`OpacityMode`] is configured.
+/// Default stroke opacity used when no [`OpacityMode`] is configured.
 pub const DEFAULT_STROKE_OPACITY: f32 = 1.0;
 
-/// Default polygon fill opacity used when no [`OpacityMode`] is configured.
+/// Default fill opacity used when no [`OpacityMode`] is configured.
 pub const DEFAULT_FILL_OPACITY: f32 = 1.0;
 
 /// Everything a layer needs to render a scalar mode ([`SizeMode`] /
@@ -117,64 +111,11 @@ pub fn prepare_opacity_mode(
     )
 }
 
-/// Prepare the GPU resources and WGSL for the line [`SizeMode`] (line width).
-/// The value texture (instanced mode only) is bound at `first_binding`. `None`
-/// behaves like `Some(SizeMode::UniformSize(DEFAULT_LINE_WIDTH))`.
-pub fn prepare_line_width_mode(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    size: Option<&SizeMode>,
-    first_binding: u32,
-) -> PreparedScalarMode {
-    let (static_value, instanced) = match size {
-        None => (DEFAULT_LINE_WIDTH, None),
-        Some(SizeMode::UniformSize(v)) => (*v, None),
-        Some(SizeMode::InstancedSize(params)) => (DEFAULT_LINE_WIDTH, Some(&params.values)),
-    };
-    prepare_scalar_mode(
-        device,
-        queue,
-        "line_width_values",
-        line_width_wgsl::UNIFORM,
-        line_width_wgsl::INSTANCED,
-        static_value,
-        instanced,
-        first_binding,
-        "line_width values Texture",
-    )
-}
-
-/// Prepare the GPU resources and WGSL for the line [`OpacityMode`]. The value
-/// texture (instanced mode only) is bound at `first_binding`. `None` behaves
-/// like `Some(OpacityMode::UniformOpacity(DEFAULT_LINE_OPACITY))`.
-pub fn prepare_line_opacity_mode(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    opacity: Option<&OpacityMode>,
-    first_binding: u32,
-) -> PreparedScalarMode {
-    let (static_value, instanced) = match opacity {
-        None => (DEFAULT_LINE_OPACITY, None),
-        Some(OpacityMode::UniformOpacity(v)) => (*v, None),
-        Some(OpacityMode::InstancedOpacity(params)) => (DEFAULT_LINE_OPACITY, Some(&params.values)),
-    };
-    prepare_scalar_mode(
-        device,
-        queue,
-        "line_opacity_values",
-        line_opacity_wgsl::UNIFORM,
-        line_opacity_wgsl::INSTANCED,
-        static_value,
-        instanced,
-        first_binding,
-        "line_opacity values Texture",
-    )
-}
-
-/// Prepare the GPU resources and WGSL for the polygon stroke [`SizeMode`]
-/// (stroke width). The value texture (instanced mode only) holds one value per
-/// polygon and is bound at `first_binding`. `None` behaves like
-/// `Some(SizeMode::UniformSize(DEFAULT_STROKE_WIDTH))`.
+/// Prepare the GPU resources and WGSL for the stroke [`SizeMode`] (stroke
+/// width). The value texture (instanced mode only) holds one value per element
+/// and is bound at `first_binding`. `None` behaves like
+/// `Some(SizeMode::UniformSize(DEFAULT_STROKE_WIDTH))`. Shared by the line,
+/// polygon, and curve layers.
 pub fn prepare_stroke_width_mode(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -199,10 +140,11 @@ pub fn prepare_stroke_width_mode(
     )
 }
 
-/// Prepare the GPU resources and WGSL for the polygon stroke [`OpacityMode`]. The
-/// value texture (instanced mode only) holds one value per polygon and is bound
-/// at `first_binding`. `None` behaves like
-/// `Some(OpacityMode::UniformOpacity(DEFAULT_STROKE_OPACITY))`.
+/// Prepare the GPU resources and WGSL for the stroke [`OpacityMode`]. The value
+/// texture (instanced mode only) holds one value per element and is bound at
+/// `first_binding`. `None` behaves like
+/// `Some(OpacityMode::UniformOpacity(DEFAULT_STROKE_OPACITY))`. Shared by the
+/// line, polygon, and curve layers.
 pub fn prepare_stroke_opacity_mode(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -316,27 +258,7 @@ pub fn cpu_point_opacity(opacity: Option<&OpacityMode>, index: usize) -> f32 {
     }
 }
 
-/// Resolve the width of line `index` on the CPU. `None` resolves to
-/// [`DEFAULT_LINE_WIDTH`].
-pub fn cpu_line_width(size: Option<&SizeMode>, index: usize) -> f32 {
-    match size {
-        None => DEFAULT_LINE_WIDTH,
-        Some(SizeMode::UniformSize(v)) => *v,
-        Some(SizeMode::InstancedSize(params)) => params.values.get_f32(index),
-    }
-}
-
-/// Resolve the opacity of line `index` on the CPU. `None` resolves to
-/// [`DEFAULT_LINE_OPACITY`].
-pub fn cpu_line_opacity(opacity: Option<&OpacityMode>, index: usize) -> f32 {
-    match opacity {
-        None => DEFAULT_LINE_OPACITY,
-        Some(OpacityMode::UniformOpacity(v)) => *v,
-        Some(OpacityMode::InstancedOpacity(params)) => params.values.get_f32(index),
-    }
-}
-
-/// Resolve the stroke width of polygon `index` on the CPU. `None` resolves to
+/// Resolve the stroke width of element `index` on the CPU. `None` resolves to
 /// [`DEFAULT_STROKE_WIDTH`].
 pub fn cpu_stroke_width(size: Option<&SizeMode>, index: usize) -> f32 {
     match size {
@@ -346,7 +268,7 @@ pub fn cpu_stroke_width(size: Option<&SizeMode>, index: usize) -> f32 {
     }
 }
 
-/// Resolve the stroke opacity of polygon `index` on the CPU. `None` resolves to
+/// Resolve the stroke opacity of element `index` on the CPU. `None` resolves to
 /// [`DEFAULT_STROKE_OPACITY`].
 pub fn cpu_stroke_opacity(opacity: Option<&OpacityMode>, index: usize) -> f32 {
     match opacity {

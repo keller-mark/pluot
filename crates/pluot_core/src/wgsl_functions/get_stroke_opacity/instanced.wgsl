@@ -1,4 +1,4 @@
-// OpacityMode::InstancedOpacity — per-polygon stroke opacity (0-1) read from a
+// OpacityMode::InstancedOpacity — per-element stroke opacity (0-1) read from a
 // single-channel value texture. Depends on `flat_texel_coord` being injected.
 @group(0) @binding({{stroke_opacity_values_bidx}}) var stroke_opacity_values: texture_2d<{{stroke_opacity_values_dtype}}>;
 

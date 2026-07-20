@@ -7,12 +7,12 @@ sidebar:
 import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
 
 
-Example usage of the LineLayer with two different `line_width_unit_mode` values.
+Example usage of the LineLayer with two different `stroke_width_unit_mode` values.
 
 Both layers draw the same set of parallel lines in data coordinates. The layer on
-the left (blue) uses `line_width_unit_mode: "Data"`, so its line width is expressed
+the left (blue) uses `stroke_width_unit_mode: "Data"`, so its line width is expressed
 in data-coordinate units and scales with the camera as you zoom. The layer on the
-right (orange) uses `line_width_unit_mode: "Pixels"`, so its line width stays
+right (orange) uses `stroke_width_unit_mode: "Pixels"`, so its line width stays
 constant on screen regardless of zoom level.
 
 
@@ -31,8 +31,8 @@ constant on screen regardless of zoom level.
             layer_id: "data_width_lines",
             data_unit_mode_x: "Data",
             data_unit_mode_y: "Data",
-            line_width_unit_mode: "Data",
-            line_width: { size_mode: "UniformSize", size_params: 0.02 },
+            stroke_width_unit_mode: "Data",
+            stroke_width: { size_mode: "UniformSize", size_params: 0.02 },
             bounds: null,
             stroke_color: { color_mode: "UniformRgb", color_params: [31, 119, 180] },
             source_position_x: { dtype: "Float32", values: [0.1, 0.2, 0.3, 0.4] },
@@ -47,8 +47,8 @@ constant on screen regardless of zoom level.
             layer_id: "pixel_width_lines",
             data_unit_mode_x: "Data",
             data_unit_mode_y: "Data",
-            line_width_unit_mode: "Pixels",
-            line_width: { size_mode: "UniformSize", size_params: 8.0 },
+            stroke_width_unit_mode: "Pixels",
+            stroke_width: { size_mode: "UniformSize", size_params: 8.0 },
             bounds: null,
             stroke_color: { color_mode: "UniformRgb", color_params: [255, 127, 14] },
             source_position_x: { dtype: "Float32", values: [0.6, 0.7, 0.8, 0.9] },
