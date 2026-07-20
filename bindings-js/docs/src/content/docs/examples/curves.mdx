@@ -1,0 +1,71 @@
+---
+title: Curves
+description: Curve layer example.
+sidebar:
+    order: 60
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+
+Example usage of the CurveLayer to render a closed shape built from line,
+quadratic Bézier, and elliptical arc commands.
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"scatterplot-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "CurveLayer",
+          layer_params: {
+            layer_id: "closed_curve",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            bounds: null,
+
+            commands: [
+              { type: "move_to", x: 0.2, y: 0.3 },
+              { type: "line_to", x: 0.8, y: 0.3 },
+              { type: "quadratic_to", x1: 0.95, y1: 0.5, x: 0.8, y: 0.7 },
+              { type: "arc_to", rx: 0.35, ry: 0.25, x_axis_rotation: 0.0, large_arc: false, sweep: true, x: 0.2, y: 0.7 },
+              { type: "close" },
+            ],
+            subdivisions: 32,
+
+            stroked: true,
+            filled: true,
+            stroke_color: { color_mode: "UniformRgb", color_params: [0, 90, 160] },
+            stroke_width: { size_mode: "UniformSize", size_params: 0.01 },
+            stroke_width_unit_mode: "Data",
+            stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+            fill_color: { color_mode: "UniformRgb", color_params: [80, 170, 220] },
+            fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 0.7 },
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={50}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={50}
+/>

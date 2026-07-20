@@ -14,6 +14,7 @@ use crate::render_traits::{
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
+use crate::scalar_mode::cpu_fill_opacity;
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -37,8 +38,10 @@ pub struct FilledCurveLayerParams {
     /// single shape, so modes carrying `NumericData` are expected to supply a
     /// single (length-1) value.
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the fill. Defaults to 1.
-    pub fill_opacity: f32,
+    /// Opacity multiplier for the fill. See [`OpacityMode`]. `FilledCurveLayer`
+    /// renders a single shape, so instanced modes supply a single (length-1)
+    /// value. Defaults to 1.
+    pub fill_opacity: Option<OpacityMode>,
 }
 
 impl Default for FilledCurveLayerParams {
@@ -52,7 +55,7 @@ impl Default for FilledCurveLayerParams {
             commands: Arc::new(vec![]),
             subdivisions: 32,
             fill_color: None,
-            fill_opacity: 1.0,
+            fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
@@ -109,7 +112,7 @@ impl DrawToRasterGpu for FilledCurveLayer {
                 vertices: self.fill_vertices.clone(),
                 vertex_color_index: self.vertex_color_index.clone(),
                 fill_color: self.layer_params.fill_color.clone(),
-                fill_opacity: Some(OpacityMode::UniformOpacity(self.layer_params.fill_opacity)),
+                fill_opacity: self.layer_params.fill_opacity.clone(),
             },
         );
         DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;
@@ -165,6 +168,8 @@ impl DrawToSvg for FilledCurveLayer {
             _ => [0.0, 1.0],
         };
         let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), 0, quant_domain));
+        // A single shape uses one fill opacity, resolved from element 0.
+        let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), 0) as f64;
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {
@@ -189,7 +194,7 @@ impl DrawToSvg for FilledCurveLayer {
                 fill: Some(fill.clone()),
                 linewidth: 0.0,
                 opacity: 1.0,
-                fill_opacity: layer_params.fill_opacity as f64,
+                fill_opacity,
                 stroke_opacity: 1.0,
                 stroke_linejoin: None,
                 stroke_linecap: None,

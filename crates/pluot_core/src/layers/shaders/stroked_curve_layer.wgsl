@@ -38,7 +38,8 @@ struct StrokedCurveLayerUniforms {
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32,          // 0: px, 1: data
     data_unit_mode_y: u32,          // 0: px, 1: data
-    stroke_width: f32,              // stroke width in pixels
+    stroke_width: f32,              // stroke width (pixels or data units, per stroke_width_unit_mode)
+    stroke_width_unit_mode: u32,    // 0: px, 1: data coordinate system units
     aspect_ratio_mode: u32,         // 0: ignore, 1: contain, 2: cover
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
@@ -67,6 +68,16 @@ struct SegmentEntry {
 // `StrokedCurveLayer` renders a single shape, so the shader always resolves
 // element 0.
 {{color_module}}
+
+// Stroke width module: an optional value texture (instanced mode) plus
+// `fn get_stroke_width(poly_index: u32) -> f32`. Assembled per size mode by
+// `crate::scalar_mode::prepare_stroke_width_mode`.
+{{stroke_width_module}}
+
+// Stroke opacity module: an optional value texture (instanced mode) plus
+// `fn get_stroke_opacity(poly_index: u32) -> f32`. Assembled per opacity mode by
+// `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
@@ -157,7 +168,27 @@ fn vs_main(
     var pC = ndc_to_px(project_point(points[u32(clamp(C_idx, poly_start, poly_end))], aspect));
     var pD = ndc_to_px(project_point(points[u32(clamp(D_idx, poly_start, poly_end))], aspect));
 
-    let half_width = u.stroke_width * 0.5;
+    // Stroke width (uniform or instanced; a single shape always resolves
+    // element 0), resolved to pixels here.
+    let stroke_width = get_stroke_width(0u);
+    var stroke_width_px = stroke_width;
+    if (u.stroke_width_unit_mode == 1u) {
+        // Data-coordinate width: transform the width delta through the same
+        // pipeline as positions, but with w=0 so translations cancel out (it is
+        // a size, not a position). Stroke width is height-relative, so use the Y
+        // component of the transformed delta and scale it back to pixels.
+        let lw = u.layer_size.x;
+        let lh = u.layer_size.y;
+        let NORM_TO_NDC = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0);
+        let NDC_TO_NORM = translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0);
+        let ASPECT_RATIO_MAT = get_aspect_ratio_mat(aspect, u.aspect_ratio_mode, u.aspect_ratio_alignment_mode);
+        let mvp = ASPECT_RATIO_MAT * u.camera_view;
+        let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
+        let width_norm = (NDC_TO_NORM * mvp * NORM_TO_NDC) * width_orig;
+        stroke_width_px = abs(width_norm.y) * lh;
+    }
+
+    let half_width = stroke_width_px * 0.5;
 
     var aInvalid = aOutOfBounds;
     var dInvalid = dOutOfBounds;
@@ -268,10 +299,11 @@ fn vs_main(
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
 ) -> FSOut {
-    // A single shape shares one color, so this always resolves element 0.
+    // A single shape shares one color / opacity, so this always resolves element 0.
     let out_color = get_stroke_color(0u);
+    let stroke_opacity = get_stroke_opacity(0u);
 
     var out: FSOut;
-    out.color = vec4<f32>(out_color, u.stroke_opacity);
+    out.color = vec4<f32>(out_color, stroke_opacity);
     return out;
 }

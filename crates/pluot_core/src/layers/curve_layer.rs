@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, UnitsMode, MarginParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
@@ -22,7 +22,7 @@ pub struct CurveLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
-    pub stroke_width: f32,
+    /// Whether `stroke_width` is measured in pixels or in data-coordinate units.
     pub stroke_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
@@ -33,11 +33,17 @@ pub struct CurveLayerParams {
     /// shape, so modes carrying `NumericData` are expected to supply a single
     /// (length-1) value.
     pub stroke_color: Option<ColorMode>,
+    /// Stroke width. See [`SizeMode`]: `UniformSize` and `InstancedSize` (a
+    /// single, length-1 value for this single-shape layer) are both accepted.
+    /// Interpreted in the units given by `stroke_width_unit_mode`. Defaults to 1.
+    pub stroke_width: Option<SizeMode>,
     /// How to color the fill. See [`ColorMode`]. Same single-shape caveat as
     /// `stroke_color`.
     pub fill_color: Option<ColorMode>,
-    pub stroke_opacity: f32,
-    pub fill_opacity: f32,
+    /// Opacity multiplier for the stroke. See [`OpacityMode`]. Defaults to 1.
+    pub stroke_opacity: Option<OpacityMode>,
+    /// Opacity multiplier for the fill. See [`OpacityMode`]. Defaults to 1.
+    pub fill_opacity: Option<OpacityMode>,
 }
 
 impl Default for CurveLayerParams {
@@ -47,7 +53,6 @@ impl Default for CurveLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            stroke_width: 1.0,
             stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
             commands: Arc::new(vec![]),
@@ -55,9 +60,10 @@ impl Default for CurveLayerParams {
             stroked: true,
             filled: false,
             stroke_color: None,
+            stroke_width: Some(SizeMode::UniformSize(1.0)),
             fill_color: None,
-            stroke_opacity: 1.0,
-            fill_opacity: 1.0,
+            stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
@@ -83,12 +89,13 @@ impl CurveLayer {
                 bounds: layer_params.bounds.clone(),
                 data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
-                stroke_width: layer_params.stroke_width,
+                stroke_width: layer_params.stroke_width.clone(),
+                stroke_width_unit_mode: layer_params.stroke_width_unit_mode.clone(),
                 model_matrix: layer_params.model_matrix,
                 commands: Arc::clone(&layer_params.commands),
                 subdivisions: layer_params.subdivisions,
                 stroke_color: layer_params.stroke_color.clone(),
-                stroke_opacity: layer_params.stroke_opacity,
+                stroke_opacity: layer_params.stroke_opacity.clone(),
             }))
         } else {
             None
@@ -104,7 +111,7 @@ impl CurveLayer {
                 commands: Arc::clone(&layer_params.commands),
                 subdivisions: layer_params.subdivisions,
                 fill_color: layer_params.fill_color.clone(),
-                fill_opacity: layer_params.fill_opacity,
+                fill_opacity: layer_params.fill_opacity.clone(),
             }))
         } else {
             None
