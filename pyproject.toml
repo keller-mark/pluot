@@ -72,5 +72,7 @@ ignore = [
     # We don't want pytest to execute the files
     # generated via the render-to-code snapshot tests
     "crates/pluot/tests/snaps-blessed",
-    "crates/pluot/tests/snaps-dirty"
+    "crates/pluot/tests/snaps-dirty",
+    # We also want to ignore all of the symlinked crates within bindings-r
+    "bindings-r",
 ]
