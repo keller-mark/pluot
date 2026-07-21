@@ -3,12 +3,19 @@ use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::render_types::GpuContext;
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
 use crate::render_traits::{MarginParams, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
+use crate::render_script::render_to_script;
 use crate::cache::get_or_init_gpu_context;
 use crate::render_post::unpremultiply;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
 pub async fn render(params: RenderParams) -> Vec<u8> {
+    // "Rendering to code" needs no GPU, data loading or layer construction:
+    // it just serializes the params into source code / JSON. Handle it up front.
+    if params.format.is_code() {
+        return render_to_script(&params, &params.format).into_bytes();
+    }
+
     let width = params.width;
     let height = params.height;
 
@@ -230,5 +237,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
             pixels
         }
+        // Script formats are handled by the early return at the top of `render`.
+        _ => unreachable!("script formats are handled before layer rendering"),
     }
 }

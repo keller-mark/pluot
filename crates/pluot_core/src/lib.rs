@@ -9,6 +9,7 @@ pub mod colormaps_categorical;
 pub mod color_mode;
 pub mod scalar_mode;
 mod render;
+pub mod render_script;
 mod render_post;
 pub mod positioning;
 pub mod numeric_data;
@@ -42,6 +43,7 @@ pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, L
 pub use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, ViewParams, MarginParams, FontStyle, FontWeight};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 pub use crate::render::{render};
+pub use crate::render_script::render_to_script;
 pub use crate::picking::{pick, PickingResult, LayerPickingResult};
 pub use crate::viewport::{project, unproject, get_bounds, camera_matrix_to_zoom_and_translation};
 pub use crate::numeric_data::NumericData;
