@@ -37,7 +37,7 @@
   "dependencies": {
     "pluot": "workspace:*",
     "lightua": "0.1.0",
-    "zarrita": "^0.5.3",
+    "zarrita": "^0.7.3",
     "quick-lru": "^7.0.1",
     "d3-zoom": "^3.0.0",
     "d3-selection": "^3.0.0",
