@@ -74,7 +74,7 @@ const DEMOS = {
             point_radius_unit_mode_x: "Pixels",
             point_radius_unit_mode_y: "Pixels",
             point_shape_mode: "Square",
-            point_radius: 15.0,
+            point_radius: { size_mode: "UniformSize", size_params: 15.0 },
             store_name: "gaussian_quantiles_store",
             bounds: {
               margin_top: 0,
@@ -84,7 +84,12 @@ const DEMOS = {
             },
             position_x: { dtype: "Float32", values: [100, 100] },
             position_y: { dtype: "Float32", values: [100, 200] },
-            labels_vec: [0, 1],
+            fill_color: {
+              color_mode: "Categorical", color_params: {
+                codes: { dtype: "Uint8", values: [0, 1] },
+                colormap: "Tableau10",
+              }
+            }
           }
         },
         {
@@ -93,8 +98,8 @@ const DEMOS = {
             layer_id: "layer_3",
             data_unit_mode_x: "Pixels",
             data_unit_mode_y: "Pixels",
-            line_width_unit_mode: "Pixels",
-            line_width: 5.0,
+            stroke_width_unit_mode: "Pixels",
+            stroke_width: { size_mode: "UniformSize", size_params: 5.0 },
             store_name: "gaussian_quantiles_store",
             bounds: {
               margin_top: 0,
@@ -106,7 +111,12 @@ const DEMOS = {
             source_position_y: { dtype: "Float32", values: [10, 110] },
             target_position_x: { dtype: "Float32", values: [100, 210] },
             target_position_y: { dtype: "Float32", values: [100, 210] },
-            labels_vec: [4, 1],
+            stroke_color: {
+              color_mode: "Categorical", color_params: {
+                codes: { dtype: "Uint8", values: [4, 1] },
+                colormap: "Tableau10",
+              }
+            }
           }
         },
         {
@@ -176,13 +186,22 @@ const DEMOS = {
             data_unit_mode_x: "Data",
             data_unit_mode_y: "Data",
             stroke_width_unit_mode: "Pixels",
-            stroke_width: 5.0,
-            fill_color_mode: "Categorical",
+            stroke_width: { size_mode: "UniformSize", size_params: 5.0 },
             position_x0: { dtype: "Float32", values: [1] },
             position_y0: { dtype: "Float32", values: [1] },
             position_x1: { dtype: "Float32", values: [2] },
             position_y1: { dtype: "Float32", values: [3] },
-            labels_vec: [4],
+            fill_color: {
+              color_mode: "Categorical", color_params: {
+                codes: { dtype: "Uint8", values: [4] },
+                colormap: "Tableau10",
+              }
+            },
+            fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 0.5 },
+            stroke_color: {
+              color_mode: "UniformRgb", color_params: [0, 0, 0]
+            },
+            stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 }
           }
         },
         /*{
@@ -192,24 +211,6 @@ const DEMOS = {
             tile_size: 4,
           }
         },*/
-        {
-          layer_type: "MultiscaleLayer",
-          layer_params: {
-            layer_id: "multiscale_layer",
-            resolution_levels: [
-              {
-                shape: [200, 200],
-                chunk_shape: [50, 50],
-                scale: [1.0, 1.0],
-              },
-              {
-                shape: [100, 100],
-                chunk_shape: [50, 50],
-                scale: [2.0, 2.0],
-              }
-            ]
-          }
-        },
         {
           layer_type: "OmeZarrMultiscaleLayer",
           layer_params: {
@@ -236,12 +237,6 @@ const DEMOS = {
             ],
             opacity: 1.0,
           },
-        },
-        {
-          layer_type: "ComputeLayer",
-          layer_params: {
-            layer_id: "compute_layer",
-          }
         }
       ]
     },

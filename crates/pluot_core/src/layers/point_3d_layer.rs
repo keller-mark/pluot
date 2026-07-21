@@ -8,10 +8,11 @@ use std::sync::Arc;
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
-use crate::shader_modules::ShaderBuilder;
+use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
+use crate::color_mode::prepare_color_mode;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -28,6 +29,11 @@ pub struct Point3dLayerParams {
     pub point_radius: f32,
     pub point_shape_mode: PointShapeMode,
 
+    // How to color each point. See [`ColorMode`]: modes carrying `NumericData`
+    // (instanced/categorical/quantitative) supply one or more per-element value
+    // arrays, which are uploaded to the GPU as textures at draw time.
+    pub fill_color: Option<ColorMode>,
+
     // Per-point X/Y/Z coordinates. Each may be any supported numeric dtype
     // (8–64 bit int/uint, or 32/64-bit float), and may differ. The data is
     // uploaded to the GPU as a texture at its native width wherever possible
@@ -35,7 +41,6 @@ pub struct Point3dLayerParams {
     pub position_x: NumericData,
     pub position_y: NumericData,
     pub position_z: NumericData,
-    pub labels_vec: Arc<Vec<i32>>,
 }
 
 impl Default for Point3dLayerParams {
@@ -45,10 +50,10 @@ impl Default for Point3dLayerParams {
             bounds: None,
             point_radius: 1.0,
             point_shape_mode: PointShapeMode::Circle,
+            fill_color: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             position_z: NumericData::Float32(Arc::new(vec![])),
-            labels_vec: Arc::new(vec![]),
         }
     }
 }
@@ -63,6 +68,20 @@ impl Point3dLayer {
         view_params: ViewParams,
         layer_params: Point3dLayerParams,
     ) -> Self {
+        // Validate the lengths of things.
+        let n = layer_params.position_x.len();
+        if let Some(fill_color) = &layer_params.fill_color {
+            fill_color.validate_len(n);
+        }
+        for (name, len) in [
+            ("position_y", layer_params.position_y.len()),
+            ("position_z", layer_params.position_z.len()),
+        ] {
+            assert_eq!(
+                len, n,
+                "{name} has length {len} but position_x has length {n}",
+            );
+        }
         Self {
             view_params,
             layer_params,
@@ -86,8 +105,15 @@ struct Point3dLayerUniforms {
     camera_view: Mat4,   // mat4x4<f32>,
     point_radius: f32,  // radius of each point in pixels
     point_shape_mode: u32, // 0 = square, 1 = circle
-    color: Vec4,         // rgba color for points
+    fill_color_mode: u32,     // see ColorMode::shader_mode()
+    fill_color: Vec4,         // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
+    fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
 }
+
+// First bind-group binding index used for color-mode value/palette texture(s).
+// Bindings 0-3 are the uniforms buffer and the X/Y/Z position textures.
+const COLOR_BINDING_START: u32 = 4;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -96,7 +122,7 @@ impl DrawToRasterGpu for Point3dLayer {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
-        let n = layer_params.labels_vec.len();
+        let n = layer_params.position_x.len();
 
         // Upload the X, Y, and Z coordinate arrays into single-channel 2D
         // textures, each at its native byte width wherever possible; see
@@ -108,15 +134,11 @@ impl DrawToRasterGpu for Point3dLayer {
         let (z_texture_view, z_dtype) =
             layer_params.position_z.create_data_texture(device, queue, "Z Coordinates Texture");
 
-        let labels_bytes: &[u8] = bytemuck::cast_slice(&layer_params.labels_vec);
-
-        let labels_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Class labels Storage Buffer"),
-            size: labels_bytes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&labels_buffer, 0, labels_bytes);
+        // Build the GPU-side color resources for the configured color mode. Modes
+        // that carry per-element `NumericData` upload it as one or more textures
+        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
+        // `get_fill_color` function injected into the shader below.
+        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -162,7 +184,10 @@ impl DrawToRasterGpu for Point3dLayer {
                 PointShapeMode::Square => 0,
                 PointShapeMode::Circle => 1,
             },
-            color: Vec4::from_array([1.0, 0.0, 0.0, 1.0]),
+            fill_color_mode: color.mode,
+            fill_color: Vec4::from_array(color.static_color),
+            fill_color_reverse: color.reverse,
+            fill_color_domain: Vec2::from_array(color.domain),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -177,95 +202,110 @@ impl DrawToRasterGpu for Point3dLayer {
         });
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
-        // Create bind group layout and bind group for positions + uniforms
+        // Create bind group layout and bind group for positions + uniforms.
+        // Bindings 0-3 are fixed (uniforms + the three position textures); the
+        // color-mode textures follow at binding `COLOR_BINDING_START` onward,
+        // matching the WGSL declarations injected below.
+        let mut bgl_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: x_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: y_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: z_dtype.binding_sample_type(),
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ];
+        // One fragment-visible texture per color value / palette array.
+        for (i, tex) in color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Point3dLayer BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: x_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: y_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: z_dtype.binding_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
+                entries: &bgl_entries,
             });
+
+        let mut bg_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&x_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&y_texture_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(&z_texture_view),
+            },
+        ];
+        for (i, tex) in color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Point3dLayer BG"),
                 layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&x_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&y_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(&z_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: labels_buffer.as_entire_binding(),
-                    },
-                ],
+                entries: &bg_entries,
             });
 
         let shader_source = ShaderBuilder::new(include_str!("shaders/point_3d_layer.wgsl"))
-            .inject_texture_sample_type("x_dtype", x_dtype)
-            .inject_texture_sample_type("y_dtype", y_dtype)
-            .inject_texture_sample_type("z_dtype", z_dtype)
+            .inject_texture_sample_type("x_coords", x_dtype)
+            .inject_texture_sample_type("y_coords", y_dtype)
+            .inject_texture_sample_type("z_coords", z_dtype)
+            // Color-mode specialization: the flat-index texel helper plus the
+            // assembled color module (bindings + `get_fill_color`).
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .define("color_module", &color.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -375,7 +415,7 @@ impl PickableLayer for Point3dLayer {
             return None;
         };
 
-        let n = self.layer_params.labels_vec.len();
+        let n = self.layer_params.position_x.len();
         if n == 0 {
             return None;
         }
@@ -396,7 +436,6 @@ impl PickableLayer for Point3dLayer {
 
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("label".to_string(), self.layer_params.labels_vec[closest_idx].to_string());
         info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
         info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
         info.insert("z".to_string(), self.layer_params.position_z.format_element(closest_idx));

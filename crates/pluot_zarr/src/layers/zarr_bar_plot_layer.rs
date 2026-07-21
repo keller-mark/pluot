@@ -29,8 +29,7 @@ pub struct ZarrBarPlotLayerParams {
     pub identifier_key: String,
     pub quantity_key: String,
 
-    pub fill_color: Option<(u8, u8, u8)>,
-    pub fill_color_mode: ColorMode,
+    pub fill_color: Option<ColorMode>,
 
     // TODO: see TODOs in bar_plot_layer.rs
 }
@@ -45,7 +44,6 @@ impl Default for ZarrBarPlotLayerParams {
             identifier_key: "".to_string(),
             quantity_key: "".to_string(),
             fill_color: None,
-            fill_color_mode: ColorMode::Static,
         }
     }
 }
@@ -141,8 +139,7 @@ impl PreparedLayer for ZarrBarPlotLayer {
                 data_unit_mode_for_quantity_dim: UnitsMode::Data,
                 identifier: cat_arr,
                 quantity: quant_arr,
-                fill_color: self.layer_params.fill_color,
-                fill_color_mode: self.layer_params.fill_color_mode,
+                fill_color: self.layer_params.fill_color.clone(),
             }
         );
         sublayer.prepare(gpu_context).await;

@@ -46,6 +46,8 @@ skills-lock.json
 .Rproj.user
 *.o
 AUTHORS
+*.tar.gz
+*.Rcheck
 
 
 autoresearch/
@@ -53,3 +55,4 @@ circle_diffs/
 text_diffs/
 
 bindings-js/core/src/vendored-fonts/*.ttf.js
+bindings-r/src/.cargo/

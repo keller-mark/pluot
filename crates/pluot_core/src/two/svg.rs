@@ -180,12 +180,18 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
 
                 if let Some(fill) = &d.fill {
                     rect = rect.set("fill", fill.to_string());
+                    if d.fill_opacity < 1.0 {
+                        rect = rect.set("fill-opacity", d.fill_opacity);
+                    }
                 }
 
                 if let Some(stroke) = &d.stroke {
                     rect = rect
                         .set("stroke-width", d.linewidth)
                         .set("stroke", stroke.to_string());
+                    if d.stroke_opacity < 1.0 {
+                        rect = rect.set("stroke-opacity", d.stroke_opacity);
+                    }
                 }
 
                 if let Some(rotation) = d.rotation {
@@ -205,12 +211,18 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
 
                 if let Some(fill) = &d.fill {
                     circle = circle.set("fill", fill.to_string());
+                    if d.fill_opacity < 1.0 {
+                        circle = circle.set("fill-opacity", d.fill_opacity);
+                    }
                 }
 
                 if let Some(stroke) = &d.stroke {
                     circle = circle
                         .set("stroke-width", d.linewidth)
                         .set("stroke", stroke.to_string());
+                    if d.stroke_opacity < 1.0 {
+                        circle = circle.set("stroke-opacity", d.stroke_opacity);
+                    }
                 }
                 group.add(circle)
             }
@@ -365,6 +377,7 @@ mod tests {
                 stroke: Some(TwoColor::Rgb((0, 0, 255))),
                 linewidth: 2.0,
                 rotation: Some(std::f64::consts::PI / 4.0),
+                ..Default::default()
             }),
             TwoElement::Circle(TwoCircle {
                 x: 50.0,
@@ -374,6 +387,7 @@ mod tests {
                 fill: Some(TwoColor::Rgb((0, 255, 0))),
                 stroke: None,
                 linewidth: 1.0,
+                ..Default::default()
             }),
             TwoElement::Line(TwoLine {
                 x1: 70.0,

@@ -7,14 +7,14 @@
 </defs>
 <g height="100" width="200">
 <g clip-path="url(#my_line_layer_clip_path)" transform="translate(10,10)">
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="50.000003814697266" x2="130" y1="80" y2="80"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="50.000003814697266" x2="50.000003814697266" y1="80" y2="40"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="130" x2="130" y1="80" y2="40"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="50.000003814697266" x2="90" y1="40" y2="0"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="130" x2="90" y1="40" y2="0"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="106" x2="106" y1="20" y2="0"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="130" x2="130" y1="40" y2="0"/>
-<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" x1="106" x2="130" y1="0" y2="0"/>
+<line opacity="1" stroke="rgb(76, 120, 168)" stroke-width="2" x1="50.000003814697266" x2="130" y1="80" y2="80"/>
+<line opacity="1" stroke="rgb(245, 133, 24)" stroke-width="2" x1="50.000003814697266" x2="50.000003814697266" y1="80" y2="40"/>
+<line opacity="1" stroke="rgb(228, 87, 86)" stroke-width="2" x1="130" x2="130" y1="80" y2="40"/>
+<line opacity="1" stroke="rgb(114, 183, 178)" stroke-width="2" x1="50.000003814697266" x2="90" y1="40" y2="0"/>
+<line opacity="1" stroke="rgb(84, 162, 75)" stroke-width="2" x1="130" x2="90" y1="40" y2="0"/>
+<line opacity="1" stroke="rgb(238, 202, 59)" stroke-width="2" x1="106" x2="106" y1="20" y2="0"/>
+<line opacity="1" stroke="rgb(178, 121, 162)" stroke-width="2" x1="130" x2="130" y1="40" y2="0"/>
+<line opacity="1" stroke="rgb(255, 157, 166)" stroke-width="2" x1="106" x2="130" y1="0" y2="0"/>
 </g>
 </g>
 </g>

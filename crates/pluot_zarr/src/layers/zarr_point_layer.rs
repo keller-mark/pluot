@@ -9,7 +9,7 @@ use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, u
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -43,6 +43,11 @@ pub struct ZarrPointLayerParams {
     pub store_name: Option<String>,
     pub x_key: String,
     pub y_key: String,
+
+    // TODO: need equivalents to the non-Zarr layers' uniform+instanced support for colors, opacities, stroke_widths, etc.
+    // In the zarr case, the instanced mode's values/codes arrays will be a string pointing to an array path, rather than an inlined array/NumericData itself.
+    // We still need the sibling params however, to know things like categorical vs. quantitative, interleaved vs not, and the specified colormap, etc.
+    // We should also make the parameter names here in the zarr layers more consistent with the non-zarr layers', including removing the _key suffices, for consistency.
     pub color_key: Option<String>,
 }
 
@@ -364,16 +369,20 @@ impl PreparedLayer for ZarrPointLayer {
                 bounds: self.layer_params.bounds.clone(),
                 data_unit_mode_x: self.layer_params.data_unit_mode_x,
                 data_unit_mode_y: self.layer_params.data_unit_mode_y,
-                point_radius,
+                point_radius: Some(SizeMode::UniformSize(point_radius)),
                 // TODO: if point_radius is None, override the point_radius_unit_mode values to always be UnitsMode::Pixels.
                 point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
                 point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
-                point_opacity,
+                fill_opacity: Some(OpacityMode::UniformOpacity(point_opacity)),
                 model_matrix: self.layer_params.model_matrix,
+                fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                    codes: NumericData::Int32(l_i32.clone()),
+                    colormap: CategoricalColormap::Category10,
+                })),
                 position_x: x_data.as_ref().clone(),
                 position_y: y_data.as_ref().clone(),
-                labels_vec: l_i32.clone(),
+                ..Default::default()
             }
         );
         sublayer.prepare(gpu_context).await;

@@ -6,55 +6,12 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image, render_to_svg
+    from pluot import render_to_image, render_to_svg, PluotWasmWidget
     import numpy as np
     import marimo as mo
     import json
     import zarr
-    return mo, zarr
-
-
-@app.cell
-def _():
-    from pluot import PluotWasmWidget
-    return (PluotWasmWidget,)
-
-
-@app.cell
-def _(PluotWasmWidget):
-    widget = PluotWasmWidget(
-        width=400,
-        height=400,
-        plot_id="my_plot",
-        plot_type="LayeredPlot",
-        store_name="my_store",
-        plot_params={
-            "layers": [
-                {
-                    "layer_type": "PointLayer",
-                    "layer_params": {
-                        "layer_id": "points",
-                        "data_unit_mode_x": "Data",
-                        "data_unit_mode_y": "Data",
-                        "point_radius_unit_mode_x": "Pixels",
-                        "point_radius_unit_mode_y": "Pixels",
-                        "point_shape_mode": "Circle",
-                        "point_radius": 5.0,
-                        "bounds": None,
-                        "position_x": {"dtype": "Float32", "values": [0.1, 0.3, 0.5, 0.7, 0.9]},
-                        "position_y": {"dtype": "Float32", "values": [0.5, 0.2, 0.8, 0.3, 0.6]},
-                        "labels_vec": [0, 1, 2, 3, 4],
-                    },
-                },
-            ],
-        },
-        margin_top=20,
-        margin_right=20,
-        margin_bottom=40,
-        margin_left=40,
-    )
-    widget  # display in a Jupyter cell
-    return
+    return PluotWasmWidget, mo, zarr
 
 
 @app.cell

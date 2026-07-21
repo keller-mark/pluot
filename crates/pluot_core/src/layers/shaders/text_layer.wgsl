@@ -8,6 +8,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct TextLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
@@ -19,12 +23,16 @@ struct TextLayerUniforms {
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
     text_rotation: f32, // rotation angle in degrees
-    color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // see ColorMode::shader_mode()
+    fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32, // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
 };
 
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) element_index: u32,
 };
 
 struct FSOut {
@@ -34,6 +42,12 @@ struct FSOut {
 @group(0) @binding(0) var<uniform> u: TextLayerUniforms;
 @group(0) @binding(1) var glyph_tex: texture_2d<f32>;
 @group(0) @binding(2) var glyph_sampler: sampler;
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 3 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_color_mode`. Here
+// "instance" means text element (see `element_index` below), not glyph.
+{{color_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -50,11 +64,13 @@ const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
 // Per-instance attributes:
 // @location(0): rect_px = vec4(x, y, w, h)
 // @location(1): uv_rect = vec4(u0, v0, u1, v1)
+// @location(3): index of the text element this glyph belongs to (for color lookups)
 @vertex
 fn vs_main(
     @location(0) elem_pos: vec2<f32>, // X/Y position of the text element, in either data or pixel units.
     @location(1) glyph_px: vec4<f32>, // Glyph offsets and size in pixels: (offset_x, offset_y, width, height)
     @location(2) uv_rect: vec4<f32>,
+    @location(3) elem_index: f32,
     @builtin(vertex_index) vertex_index: u32
 ) -> VSOut {
     // Note: elem_pos is the position for the whole text element, not the individual glyph.
@@ -222,13 +238,21 @@ fn vs_main(
     var out: VSOut;
     out.pos = pos;
     out.uv = uv;
+    out.element_index = u32(elem_index);
     return out;
 }
 
 @fragment
-fn fs_main(@location(0) uv: vec2<f32>) -> FSOut {
+fn fs_main(
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) element_index: u32,
+) -> FSOut {
     let a = textureSample(glyph_tex, glyph_sampler, uv).r;
+    // The color module's get_fill_color resolves the color for the active
+    // color mode (static, instanced RGB, categorical or quantitative), keyed
+    // by the owning text element's index (not the glyph instance).
+    let out_color = get_fill_color(element_index);
     var out: FSOut;
-    out.color = vec4<f32>(u.color.rgb, a);
+    out.color = vec4<f32>(out_color, a);
     return out;
 }

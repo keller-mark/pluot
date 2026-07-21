@@ -23,31 +23,41 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct StrokedPolygonUniforms {
     layer_size: vec2<f32>,
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32,
     data_unit_mode_y: u32,
-    line_width: f32,
-    line_width_unit_mode: u32,
+    stroke_width: f32,
+    stroke_width_unit_mode: u32,
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
-    color: vec4<f32>,
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,
 };
 
 // Per-edge ring metadata. ring_start and ring_end are absolute vertex indices
 // into `points`; local_idx is the 0-based index of this edge's source vertex
 // within its ring, so the source vertex is at points[ring_start + local_idx].
+// poly_index is the 0-based polygon/ring index, used to resolve stroke_color.
 struct SegmentEntry {
     ring_start: u32,
     ring_end:   u32,
     local_idx:  u32,
+    poly_index: u32,
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
+    @location(0) @interpolate(flat) poly_index: u32,
 };
 
 struct FSOut {
@@ -65,6 +75,21 @@ struct FSOut {
 @group(0) @binding(1) var points: texture_2d<{{points_dtype}}>;
 @group(0) @binding(2) var<storage, read> segments: array<SegmentEntry>;
 
+// Color module: any per-element color value/palette texture bindings (from
+// binding 3 onward) plus `fn get_stroke_color(poly_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
+{{stroke_color_module}}
+
+// Stroke width module: an optional per-polygon width value texture (instanced
+// mode) plus `fn get_stroke_width(poly_index: u32) -> f32`. Assembled per size
+// mode by `crate::scalar_mode::prepare_stroke_width_mode`.
+{{stroke_width_module}}
+
+// Stroke opacity module: an optional per-polygon opacity value texture
+// (instanced mode) plus `fn get_stroke_opacity(poly_index: u32) -> f32`.
+// Assembled per opacity mode by `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
+
 // Load the vertex at index `idx` from the interleaved coordinate texture:
 // its x is at flat index 2*idx and its y at 2*idx + 1. `f32(...)` is a no-op
 // when the injected sampled type is already f32, and widens u32/i32 otherwise.
@@ -72,8 +97,8 @@ fn load_point(idx: u32) -> vec2<f32> {
     let w = textureDimensions(points).x;
     let xi = 2u * idx;
     let yi = xi + 1u;
-    let x = f32(textureLoad(points, vec2<u32>(xi % w, xi / w), 0).x);
-    let y = f32(textureLoad(points, vec2<u32>(yi % w, yi / w), 0).x);
+    let x = f32(textureLoad(points, flat_texel_coord(xi, w), 0).x);
+    let y = f32(textureLoad(points, flat_texel_coord(yi, w), 0).x);
     return vec2<f32>(x, y);
 }
 
@@ -185,7 +210,27 @@ fn vs_main(
     let dst_px  = project_to_px(dst_pt);
     let next_px = project_to_px(next_pt);
 
-    let half_width = u.line_width * 0.5;
+    // Per-polygon stroke width (uniform or instanced), resolved to pixels here.
+    let stroke_width = get_stroke_width(seg.poly_index);
+    var stroke_width_px = stroke_width;
+    if (u.stroke_width_unit_mode == 1u) {
+        // Data-coordinate width: transform the width delta through the same
+        // pipeline as positions, but with w=0 so translations cancel out (it is
+        // a size, not a position). Stroke width is height-relative, so use the Y
+        // component of the transformed delta and scale it back to pixels.
+        let layer_w = u.layer_size.x;
+        let layer_h = u.layer_size.y;
+        let aspect  = layer_w / layer_h;
+        let NORM_TO_NDC = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0);
+        let NDC_TO_NORM = translate( 0.5,  0.5, 0.0) * scale(0.5, 0.5, 1.0);
+        let ASPECT_RATIO_MAT = get_aspect_ratio_mat(aspect, u.aspect_ratio_mode, u.aspect_ratio_alignment_mode);
+        let mvp = ASPECT_RATIO_MAT * u.camera_view;
+        let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
+        let width_norm = (NDC_TO_NORM * mvp * NORM_TO_NDC) * width_orig;
+        stroke_width_px = abs(width_norm.y) * layer_h;
+    }
+
+    let half_width = stroke_width_px * 0.5;
     let corner     = QUAD[vertex_index & 3u];
     let side       = corner.y;
 
@@ -201,17 +246,22 @@ fn vs_main(
     let pos_ndc = pos_px / u.layer_size * 2.0 - vec2<f32>(1.0, 1.0);
 
     var out: VSOut;
-    out.position = vec4f(pos_ndc, 0.0, 1.0);
-    out.color    = u.color;
+    out.position   = vec4f(pos_ndc, 0.0, 1.0);
+    out.poly_index = seg.poly_index;
     return out;
 }
 
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
+    @location(0) @interpolate(flat) poly_index: u32,
 ) -> FSOut {
+    // The color module's get_stroke_color resolves the per-polygon color for
+    // the active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_stroke_color(poly_index);
+    let stroke_opacity = get_stroke_opacity(poly_index);
+
     var out: FSOut;
-    out.color = color_in;
+    out.color = vec4<f32>(out_color, stroke_opacity);
     return out;
 }

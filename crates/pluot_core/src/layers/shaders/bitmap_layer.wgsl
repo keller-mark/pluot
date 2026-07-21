@@ -6,6 +6,8 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+{{flat_texel_coord}}
 
 struct Channel {
     window: vec2<f32>, // (min, max) for contrast adjustment
@@ -234,7 +236,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         // Map the flat element index into the 2D texture the data was reshaped
         // into on upload: (idx % width, idx / width).
         let tex_width = textureDimensions(img_data).x;
-        let load_coords = vec2<u32>(idx % tex_width, idx / tex_width);
+        let load_coords = flat_texel_coord(idx, tex_width);
         // `f32(...)` is a no-op when the injected sampled type is already f32,
         // and widens u32/i32 texel values to f32 for the windowing math below.
         let intensity = f32(textureLoad(img_data, load_coords, 0).x);

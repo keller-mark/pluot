@@ -37,7 +37,7 @@
 //!     .inject_function("scale", common::SCALE)
 //!     .inject_function("translate", common::TRANSLATE)
 //!     .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
-//!     .inject_dtype("img_data_dtype", WgslScalar::F32)
+//!     .inject_dtype("img_data", WgslScalar::F32)
 //!     .build();
 //!
 //! let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -71,6 +71,209 @@ pub mod common {
     /// `fn rotate_z(angle_deg) -> mat4x4<f32>` — builds a rotation matrix about
     /// the Z axis (angle in degrees).
     pub const ROTATE_Z: &str = include_str!("wgsl_functions/rotate_z.wgsl");
+
+    /// `fn flat_texel_coord(idx, width) -> vec2<u32>` — maps a flat element
+    /// index to 2D texel coordinates for a single-channel data texture (see
+    /// [`crate::numeric_data::NumericData::create_data_texture`]).
+    pub const FLAT_TEXEL_COORD: &str = include_str!("wgsl_functions/flat_texel_coord.wgsl");
+}
+
+/// Per-[`ColorMode`](crate::render_traits::ColorMode) WGSL snippets, each
+/// defining `fn get_fill_color(instance_index: u32) -> vec3<f32>` (plus any
+/// texture bindings the mode needs). These are templates: the color-mode value
+/// texture bindings, sampled types and colormap function are filled in at
+/// runtime by [`crate::color_mode::prepare_color_mode`]. All variants that read
+/// a value texture assume [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod color {
+    /// Static color shared by every element.
+    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/get_fill_color/uniform_rgb.wgsl");
+
+    /// Per-element RGB from three parallel value textures.
+    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/get_fill_color/instanced_rgb.wgsl");
+
+    /// Per-element RGB from one interleaved value texture.
+    pub const INSTANCED_RGB_INTERLEAVED: &str =
+        include_str!("wgsl_functions/get_fill_color/instanced_rgb_interleaved.wgsl");
+
+    /// Per-element integer labels indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_fill_color/categorical.wgsl");
+
+    /// Per-element scalar values mapped through a continuous colormap.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_fill_color/quantitative.wgsl");
+}
+
+/// Stroke-color counterpart of [`color`], for layers that stroke rather than
+/// fill (e.g. `LineLayer`). Each snippet defines `fn get_stroke_color(...)` and
+/// reads the `stroke_color*` uniforms. Otherwise identical to [`color`];
+/// assembled at runtime by [`crate::color_mode::prepare_stroke_color`].
+pub mod stroke_color {
+    /// Static color shared by every element.
+    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/get_stroke_color/uniform_rgb.wgsl");
+
+    /// Per-element RGB from three parallel value textures.
+    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/get_stroke_color/instanced_rgb.wgsl");
+
+    /// Per-element RGB from one interleaved value texture.
+    pub const INSTANCED_RGB_INTERLEAVED: &str =
+        include_str!("wgsl_functions/get_stroke_color/instanced_rgb_interleaved.wgsl");
+
+    /// Per-element integer labels indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_stroke_color/categorical.wgsl");
+
+    /// Per-element scalar values mapped through a continuous colormap.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_stroke_color/quantitative.wgsl");
+}
+
+/// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
+/// `fn get_point_radius(instance_index: u32) -> f32`. The uniform variant reads
+/// the `point_radius` uniform; the instanced variant reads a per-element value
+/// texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_size_mode`]). The instanced variant assumes
+/// [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod size {
+    /// Static radius shared by every point.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_point_radius/uniform.wgsl");
+
+    /// Per-element radius from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_point_radius/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_point_opacity(instance_index: u32) -> f32`. The uniform
+/// variant reads the `point_opacity` uniform; the instanced variant reads a
+/// per-element value texture (its binding index and sampled type filled in at
+/// runtime by [`crate::scalar_mode::prepare_opacity_mode`]). The instanced
+/// variant assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod opacity {
+    /// Static opacity shared by every point.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_point_opacity/uniform.wgsl");
+
+    /// Per-element opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_point_opacity/instanced.wgsl");
+}
+
+/// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
+/// `fn get_stroke_width(poly_index: u32) -> f32`. The uniform variant reads the
+/// `stroke_width` uniform; the instanced variant reads a per-element value
+/// texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_stroke_width_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected. Shared by the line,
+/// polygon, and curve layers (`poly_index` is the per-element index).
+pub mod stroke_width {
+    /// Static width shared by every stroke.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_stroke_width/uniform.wgsl");
+
+    /// Per-element width from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_stroke_width/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_stroke_opacity(poly_index: u32) -> f32`. The uniform variant
+/// reads the `stroke_opacity` uniform; the instanced variant reads a per-element
+/// value texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_stroke_opacity_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected. Shared by the line,
+/// polygon, and curve layers.
+pub mod stroke_opacity {
+    /// Static opacity shared by every stroke.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_stroke_opacity/uniform.wgsl");
+
+    /// Per-element opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_stroke_opacity/instanced.wgsl");
+}
+
+/// Per-[`OpacityMode`](crate::render_traits::OpacityMode) WGSL snippets, each
+/// defining `fn get_fill_opacity(color_index: u32) -> f32`. The uniform variant
+/// reads the `fill_opacity` uniform; the instanced variant reads a per-polygon
+/// value texture (its binding index and sampled type filled in at runtime by
+/// [`crate::scalar_mode::prepare_fill_opacity_mode`]). The instanced variant
+/// assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod fill_opacity {
+    /// Static opacity shared by every polygon fill.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_fill_opacity/uniform.wgsl");
+
+    /// Per-polygon opacity from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_fill_opacity/instanced.wgsl");
+}
+
+/// Colormap WGSL functions, embedded at compile time from
+/// `wgsl_functions/colormaps/`.
+///
+/// Each constant is a single self-contained WGSL function `fn name(x: f32) ->
+/// vec4<f32>` mapping a normalized scalar to an RGBA color, ported from
+/// [Vitessce's GLSL colormaps](https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/index.js).
+/// Inject one into a template with [`ShaderBuilder::inject_function`].
+pub mod colormaps {
+    /// `fn autumn(x: f32) -> vec4<f32>`
+    pub const AUTUMN: &str = include_str!("wgsl_functions/colormap_quantitative/autumn.wgsl");
+
+    /// `fn bone(x: f32) -> vec4<f32>`
+    pub const BONE: &str = include_str!("wgsl_functions/colormap_quantitative/bone.wgsl");
+
+    /// `fn cool(x: f32) -> vec4<f32>`
+    pub const COOL: &str = include_str!("wgsl_functions/colormap_quantitative/cool.wgsl");
+
+    /// `fn copper(x: f32) -> vec4<f32>`
+    pub const COPPER: &str = include_str!("wgsl_functions/colormap_quantitative/copper.wgsl");
+
+    /// `fn density(x: f32) -> vec4<f32>`
+    pub const DENSITY: &str = include_str!("wgsl_functions/colormap_quantitative/density.wgsl");
+
+    /// `fn greys(x: f32) -> vec4<f32>`
+    pub const GREYS: &str = include_str!("wgsl_functions/colormap_quantitative/greys.wgsl");
+
+    /// `fn hot(x: f32) -> vec4<f32>`
+    pub const HOT: &str = include_str!("wgsl_functions/colormap_quantitative/hot.wgsl");
+
+    /// `fn inferno(x: f32) -> vec4<f32>`
+    pub const INFERNO: &str = include_str!("wgsl_functions/colormap_quantitative/inferno.wgsl");
+
+    /// `fn jet(x: f32) -> vec4<f32>`
+    pub const JET: &str = include_str!("wgsl_functions/colormap_quantitative/jet.wgsl");
+
+    /// `fn magma(x: f32) -> vec4<f32>`
+    pub const MAGMA: &str = include_str!("wgsl_functions/colormap_quantitative/magma.wgsl");
+
+    /// `fn plasma(x: f32) -> vec4<f32>`
+    pub const PLASMA: &str = include_str!("wgsl_functions/colormap_quantitative/plasma.wgsl");
+
+    /// `fn spring(x: f32) -> vec4<f32>`
+    pub const SPRING: &str = include_str!("wgsl_functions/colormap_quantitative/spring.wgsl");
+
+    /// `fn summer(x: f32) -> vec4<f32>`
+    pub const SUMMER: &str = include_str!("wgsl_functions/colormap_quantitative/summer.wgsl");
+
+    /// `fn viridis(x: f32) -> vec4<f32>`
+    pub const VIRIDIS: &str = include_str!("wgsl_functions/colormap_quantitative/viridis.wgsl");
+
+    /// `fn winter(x: f32) -> vec4<f32>`
+    pub const WINTER: &str = include_str!("wgsl_functions/colormap_quantitative/winter.wgsl");
+
+    use crate::render_traits::QuantitativeColormap;
+
+    /// The embedded WGSL source and the name of the `fn <name>(x: f32) ->
+    /// vec4<f32>` it defines, for a given [`QuantitativeColormap`]. Inject the
+    /// source with [`super::ShaderBuilder::inject_function`] and call the named
+    /// function to sample the colormap on the GPU.
+    pub fn wgsl_source_and_name(colormap: QuantitativeColormap) -> (&'static str, &'static str) {
+        match colormap {
+            QuantitativeColormap::Plasma => (PLASMA, "plasma"),
+            QuantitativeColormap::Viridis => (VIRIDIS, "viridis"),
+            QuantitativeColormap::Greys => (GREYS, "greys"),
+            QuantitativeColormap::Magma => (MAGMA, "magma"),
+            QuantitativeColormap::Jet => (JET, "jet"),
+            QuantitativeColormap::Bone => (BONE, "bone"),
+            QuantitativeColormap::Copper => (COPPER, "copper"),
+            QuantitativeColormap::Density => (DENSITY, "density"),
+            QuantitativeColormap::Inferno => (INFERNO, "inferno"),
+            QuantitativeColormap::Cool => (COOL, "cool"),
+            QuantitativeColormap::Hot => (HOT, "hot"),
+            QuantitativeColormap::Spring => (SPRING, "spring"),
+            QuantitativeColormap::Summer => (SUMMER, "summer"),
+            QuantitativeColormap::Autumn => (AUTUMN, "autumn"),
+            QuantitativeColormap::Winter => (WINTER, "winter"),
+        }
+    }
 }
 
 /// A WGSL scalar type usable as the element type of a storage array.
@@ -200,22 +403,46 @@ impl<'a> ShaderBuilder<'a> {
         self
     }
 
+    /// Replace every occurrence of `{{name}}` with the decimal spelling of an
+    /// unsigned integer. Handy for binding indices and array lengths chosen at
+    /// runtime, avoiding a `.to_string()` at the call site.
+    pub fn define_u32(self, name: &str, value: u32) -> Self {
+        self.define(name, &value.to_string())
+    }
+
+    /// Inject a `@binding` index at `{{var_name}}_bidx` (chosen at runtime).
+    pub fn define_bidx(self, var_name: &str, binding_index: u32) -> Self {
+        self.define_u32(&format!("{var_name}_bidx"), binding_index)
+    }
+
     /// Inject a reusable WGSL function (a compile-time snippet, e.g. from
     /// [`common`]) at `{{name}}`.
+    // TODO: use a special prefix for injected functions to make the shaders more clear/readable.
     pub fn inject_function(self, name: &str, source: &str) -> Self {
         self.define(name, source)
     }
 
-    /// Inject a storage-array element dtype at `{{name}}` (chosen at runtime).
-    pub fn inject_dtype(self, name: &str, dtype: WgslScalar) -> Self {
-        self.define(name, dtype.as_wgsl())
+    /// Inject a reusable WGSL function (from [`common`]) only when `source` is
+    /// `Some`; otherwise leave the template untouched. Useful for dependencies
+    /// that are only needed by some runtime configurations.
+    pub fn inject_optional_function(self, name: &str, source: Option<&str>) -> Self {
+        match source {
+            Some(source) => self.define(name, source),
+            None => self,
+        }
     }
 
-    /// Inject a texture sampled type at `{{name}}`, i.e. the `T` in
+    /// Inject a storage-array element dtype at `{{var_name}}_dtype` (chosen at
+    /// runtime).
+    pub fn inject_dtype(self, var_name: &str, dtype: WgslScalar) -> Self {
+        self.define(&format!("{var_name}_dtype"), dtype.as_wgsl())
+    }
+
+    /// Inject a texture sampled type at `{{var_name}}_dtype`, i.e. the `T` in
     /// `texture_2d<T>` / `texture_2d_array<T>`, chosen at runtime from a
     /// [`TextureDtype`].
-    pub fn inject_texture_sample_type(self, name: &str, dtype: TextureDtype) -> Self {
-        self.inject_dtype(name, dtype.sample_type())
+    pub fn inject_texture_sample_type(self, var_name: &str, dtype: TextureDtype) -> Self {
+        self.inject_dtype(var_name, dtype.sample_type())
     }
 
     /// Finish building and return the WGSL source string.
@@ -243,10 +470,10 @@ mod tests {
 
     #[test]
     fn injects_functions_and_dtype() {
-        let template = "{{fn}}\nvar<storage, read> d: array<{{dtype}}>;";
+        let template = "{{fn}}\nvar<storage, read> d: array<{{d_dtype}}>;";
         let out = ShaderBuilder::new(template)
             .inject_function("fn", "fn foo() {}")
-            .inject_dtype("dtype", WgslScalar::U32)
+            .inject_dtype("d", WgslScalar::U32)
             .build();
         assert_eq!(out, "fn foo() {}\nvar<storage, read> d: array<u32>;");
     }
@@ -261,7 +488,9 @@ mod tests {
 
     #[test]
     fn replaces_all_occurrences() {
-        let out = ShaderBuilder::new("{{t}} and {{t}}").inject_dtype("t", WgslScalar::F32).build();
+        let out = ShaderBuilder::new("{{t_dtype}} and {{t_dtype}}")
+            .inject_dtype("t", WgslScalar::F32)
+            .build();
         assert_eq!(out, "f32 and f32");
     }
 }

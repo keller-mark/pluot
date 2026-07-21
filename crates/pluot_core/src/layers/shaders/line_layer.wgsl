@@ -6,6 +6,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 // Computes the final vertex position for a line quad.
 // Reference: https://github.com/UnfoldedInc/deck.gl-native/blob/a8c4f6839c82221765dc7fa48f204e514060dcce/cpp/modules/deck.gl/layers/src/line-layer/line-layer-vertex.glsl.h#L56
 fn extrude_line(
@@ -45,18 +49,21 @@ struct LineLayerUniforms {
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
-    line_width: f32,
-    line_width_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    stroke_width: f32,
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    stroke_opacity: f32,
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
-    color: vec4<f32>,     // rgba color for points
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
 };
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) @interpolate(flat) instance_index: u32,
+    @location(0) @interpolate(flat) instance_index: u32,
 };
 
 struct FSOut {
@@ -74,11 +81,26 @@ struct FSOut {
 // 8/16/32-bit data lives on the GPU at native width: `f32` for floating-point
 // data, `u32` for unsigned, `i32` for signed. Each array is independent and
 // may differ in dtype.
-@group(0) @binding(1) var source_x_coords: texture_2d<{{source_x_dtype}}>;
-@group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_dtype}}>;
-@group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_dtype}}>;
-@group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_dtype}}>;
-@group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
+@group(0) @binding(1) var source_x_coords: texture_2d<{{source_x_coords_dtype}}>;
+@group(0) @binding(2) var source_y_coords: texture_2d<{{source_y_coords_dtype}}>;
+@group(0) @binding(3) var target_x_coords: texture_2d<{{target_x_coords_dtype}}>;
+@group(0) @binding(4) var target_y_coords: texture_2d<{{target_y_coords_dtype}}>;
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 5 onward) plus `fn get_stroke_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
+{{stroke_color_module}}
+
+// Stroke width module: an optional per-element width value texture (instanced
+// mode) plus `fn get_stroke_width(poly_index: u32) -> f32`. Assembled per size
+// mode by `crate::scalar_mode::prepare_stroke_width_mode`. (Shared with the
+// polygon/curve layers; `poly_index` is the per-line instance index here.)
+{{stroke_width_module}}
+
+// Stroke opacity module: an optional per-element opacity value texture
+// (instanced mode) plus `fn get_stroke_opacity(poly_index: u32) -> f32`.
+// Assembled per opacity mode by `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -103,12 +125,17 @@ fn vs_main(
     let source_y_tex_width = textureDimensions(source_y_coords).x;
     let target_x_tex_width = textureDimensions(target_x_coords).x;
     let target_y_tex_width = textureDimensions(target_y_coords).x;
-    let source_x_val = f32(textureLoad(source_x_coords, vec2<u32>(instance_index % source_x_tex_width, instance_index / source_x_tex_width), 0).x);
-    let source_y_val = f32(textureLoad(source_y_coords, vec2<u32>(instance_index % source_y_tex_width, instance_index / source_y_tex_width), 0).x);
-    let target_x_val = f32(textureLoad(target_x_coords, vec2<u32>(instance_index % target_x_tex_width, instance_index / target_x_tex_width), 0).x);
-    let target_y_val = f32(textureLoad(target_y_coords, vec2<u32>(instance_index % target_y_tex_width, instance_index / target_y_tex_width), 0).x);
+    let source_x_val = f32(textureLoad(source_x_coords, flat_texel_coord(instance_index, source_x_tex_width), 0).x);
+    let source_y_val = f32(textureLoad(source_y_coords, flat_texel_coord(instance_index, source_y_tex_width), 0).x);
+    let target_x_val = f32(textureLoad(target_x_coords, flat_texel_coord(instance_index, target_x_tex_width), 0).x);
+    let target_y_val = f32(textureLoad(target_y_coords, flat_texel_coord(instance_index, target_y_tex_width), 0).x);
     let source_point_pos_orig = u.model_matrix * vec4f(source_x_val, source_y_val, 0.0, 1.0);
     let target_point_pos_orig = u.model_matrix * vec4f(target_x_val, target_y_val, 0.0, 1.0);
+
+    // Per-instance width (uniform or instanced, depending on the injected
+    // stroke width module). Resolved once here and used for all width
+    // computations below.
+    let stroke_width = get_stroke_width(instance_index);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -165,7 +192,7 @@ fn vs_main(
         result_source_position_px = source_pos_ndc;
         result_target_position_px = target_pos_ndc;
 
-        let line_width_ndc = u.line_width / layer_height_px * 2.0;
+        let line_width_ndc = stroke_width / layer_height_px * 2.0;
 
         if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
             // Extrude the line to form a quad
@@ -187,7 +214,6 @@ fn vs_main(
 
             var out: VSOut;
             out.position = pos;
-            out.color = u.color;
             out.instance_index = instance_index;
             return out;
         }
@@ -209,9 +235,26 @@ fn vs_main(
     let source_pos_ndc = (NORM_TO_NDC_MAT * vec4f(source_pos_norm.xy, 0.0, 1.0)).xy;
     let target_pos_ndc = (NORM_TO_NDC_MAT * vec4f(target_pos_norm.xy, 0.0, 1.0)).xy;
 
-    // TODO: Handle line_width_unit_mode == 1 (data coordinates)
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let line_width_ndc = u.line_width / layer_height_px * 2.0;
+    // --- Line width in NDC space ---
+    //
+    // extrude_line() expects a height-relative NDC scalar (line_width_ndc is
+    // defined relative to the layer height / Y axis).
+    //
+    // Pixel-mode width (stroke_width_unit_mode == 0):
+    //   stroke_width is in screen pixels; convert directly to an NDC-Y offset.
+    var line_width_ndc = stroke_width / layer_height_px * 2.0;
+
+    // Data-coordinate width (stroke_width_unit_mode == 1):
+    //   stroke_width is in data coordinate system units. Transform it through the
+    //   same pipeline as positions, but with w=0 so translations cancel out (it
+    //   is a delta/size, not a position). This mirrors the radius handling in
+    //   point_layer.wgsl. Since line_width_ndc is height-relative, use the Y
+    //   component of the transformed delta.
+    if (u.stroke_width_unit_mode == 1u) {
+        let width_orig_data = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
+        let width_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig_data;
+        line_width_ndc = abs(width_norm_data.y) * 2.0;
+    }
 
     result_source_position_data = source_pos_ndc;
     result_target_position_data = target_pos_ndc;
@@ -246,41 +289,23 @@ fn vs_main(
 
     var out: VSOut;
     out.position = pos;
-    out.color = u.color;
     out.instance_index = instance_index;
     return out;
-}
-
-
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
 }
 
 
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
-    @location(1) @interpolate(flat) instance_index: u32,
+    @location(0) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
-    let category_color = get_categorical_color(labels_coords[instance_index]);
+    // The color module's get_stroke_color resolves the per-instance color for the
+    // active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_stroke_color(instance_index);
+    let stroke_opacity = get_stroke_opacity(instance_index);
 
     var out: FSOut;
-    // Output premultiplied alpha to work with PREMULTIPLIED_ALPHA blending
-    out.color = vec4<f32>(category_color.rgb, 1.0);
+    out.color = vec4<f32>(out_color, stroke_opacity);
     return out;
 }

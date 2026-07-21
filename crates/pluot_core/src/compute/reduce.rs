@@ -1,6 +1,6 @@
 use crate::{render_types::GpuContext, wgpu};
 use crate::numeric_data::NumericData;
-use crate::shader_modules::ShaderBuilder;
+use crate::shader_modules::{common, ShaderBuilder};
 use std::num::NonZeroU64;
 use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
@@ -143,7 +143,8 @@ pub async fn compute_reduce(
 
     // Assemble the shader with the texture's sampled type injected at runtime.
     let shader_source = ShaderBuilder::new(include_str!("shaders/reduce.wgsl"))
-        .inject_texture_sample_type("input_dtype", input_dtype)
+        .inject_texture_sample_type("input", input_dtype)
+        .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
         .build();
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("reduce.wgsl"),

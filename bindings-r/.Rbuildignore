@@ -8,3 +8,6 @@
 ^.travis.yml$
 ^appveyor.yml$
 ^\.github$
+^src/.cargo/registry/
+^src/crates/pluot/tests/snaps-blessed/
+^src/crates/pluot/tests/snaps-dirty/

@@ -29,3 +29,16 @@ rustflags = [
 # Probably not necessary, as not using wasm-rayon-bindgen, but may use it in the future.
 # Reference: https://github.com/RReverser/wasm-bindgen-rayon?tab=readme-ov-file#using-config-files
 build-std = ["panic_abort", "std"]
+
+
+# Reduce amount of generated debug info
+# Reference: https://doc.rust-lang.org/cargo/guide/build-performance.html#reduce-amount-of-generated-debug-information
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true

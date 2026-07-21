@@ -6,20 +6,31 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 
 struct RectLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
-    filled: u32, // 0: false, 1: true
     stroke_width: f32,
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
-    fill_color_mode: u32,
-    fill_color: vec4<f32>,     // rgba color for points
+    fill_color_mode: u32, // see ColorMode::shader_mode()
+    fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32, // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    fill_opacity: f32, // fill opacity used by the UniformOpacity mode
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32, // stroke opacity used by the UniformOpacity mode
 };
 
 struct VSOut {
@@ -29,6 +40,8 @@ struct VSOut {
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-inter-stage-variables.html#a-interpolate
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
+    // Per-instance stroke width in pixels, resolved from the stroke-width module.
+    @location(3) @interpolate(flat) stroke_width_px: f32,
 };
 
 struct FSOut {
@@ -45,11 +58,35 @@ struct FSOut {
 // shader-module system (see `crate::shader_modules`) so that 8/16/32-bit data
 // lives on the GPU at native width: `f32` for floating-point data, `u32` for
 // unsigned, `i32` for signed. Each array is independent and may differ in dtype.
-@group(0) @binding(1) var position_x0_coords: texture_2d<{{position_x0_dtype}}>;
-@group(0) @binding(2) var position_y0_coords: texture_2d<{{position_y0_dtype}}>;
-@group(0) @binding(3) var position_x1_coords: texture_2d<{{position_x1_dtype}}>;
-@group(0) @binding(4) var position_y1_coords: texture_2d<{{position_y1_dtype}}>;
-@group(0) @binding(5) var<storage, read> labels_coords: array<i32>;
+@group(0) @binding(1) var position_x0_coords: texture_2d<{{position_x0_coords_dtype}}>;
+@group(0) @binding(2) var position_y0_coords: texture_2d<{{position_y0_coords_dtype}}>;
+@group(0) @binding(3) var position_x1_coords: texture_2d<{{position_x1_coords_dtype}}>;
+@group(0) @binding(4) var position_y1_coords: texture_2d<{{position_y1_coords_dtype}}>;
+
+// Fill-color module: any per-element color value/palette texture bindings (from
+// binding 5 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_color_mode`.
+{{fill_color_module}}
+
+// Stroke-color module: the stroke counterpart, defining
+// `fn get_stroke_color(instance_index: u32) -> vec3<f32>`. Assembled by
+// `crate::color_mode::prepare_stroke_color`.
+{{stroke_color_module}}
+
+// Stroke-width module: an optional per-element width value texture (instanced
+// mode, read in the vertex stage) plus `fn get_stroke_width(instance_index: u32)
+// -> f32`. Assembled by `crate::scalar_mode::prepare_stroke_width_mode`.
+{{stroke_width_module}}
+
+// Fill-opacity module: an optional per-element opacity value texture (instanced
+// mode) plus `fn get_fill_opacity(instance_index: u32) -> f32`. Assembled by
+// `crate::scalar_mode::prepare_fill_opacity_mode`.
+{{fill_opacity_module}}
+
+// Stroke-opacity module: an optional per-element opacity value texture
+// (instanced mode) plus `fn get_stroke_opacity(instance_index: u32) -> f32`.
+// Assembled by `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -74,12 +111,17 @@ fn vs_main(
     let position_y0_tex_width = textureDimensions(position_y0_coords).x;
     let position_x1_tex_width = textureDimensions(position_x1_coords).x;
     let position_y1_tex_width = textureDimensions(position_y1_coords).x;
-    let position_x0_val = f32(textureLoad(position_x0_coords, vec2<u32>(instance_index % position_x0_tex_width, instance_index / position_x0_tex_width), 0).x);
-    let position_y0_val = f32(textureLoad(position_y0_coords, vec2<u32>(instance_index % position_y0_tex_width, instance_index / position_y0_tex_width), 0).x);
-    let position_x1_val = f32(textureLoad(position_x1_coords, vec2<u32>(instance_index % position_x1_tex_width, instance_index / position_x1_tex_width), 0).x);
-    let position_y1_val = f32(textureLoad(position_y1_coords, vec2<u32>(instance_index % position_y1_tex_width, instance_index / position_y1_tex_width), 0).x);
+    let position_x0_val = f32(textureLoad(position_x0_coords, flat_texel_coord(instance_index, position_x0_tex_width), 0).x);
+    let position_y0_val = f32(textureLoad(position_y0_coords, flat_texel_coord(instance_index, position_y0_tex_width), 0).x);
+    let position_x1_val = f32(textureLoad(position_x1_coords, flat_texel_coord(instance_index, position_x1_tex_width), 0).x);
+    let position_y1_val = f32(textureLoad(position_y1_coords, flat_texel_coord(instance_index, position_y1_tex_width), 0).x);
     let source_point_pos_orig = u.model_matrix * vec4f(position_x0_val, position_y0_val, 0.0, 1.0);
     let target_point_pos_orig = u.model_matrix * vec4f(position_x1_val, position_y1_val, 0.0, 1.0);
+
+    // Per-instance border width (uniform or instanced, depending on the injected
+    // stroke-width module). Resolved once here and used for quad expansion below,
+    // and passed through to the fragment shader to size the stroke band.
+    let stroke_width = get_stroke_width(instance_index);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -106,20 +148,36 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
-    // TODO: handle stroke width.
-    // We want to handle stroke-width in the same way as an SVG <rect> element would:
-    // If you have a <rect> with a width="100" and a stroke-width="10", the browser calculates it like this:
-    // - The mathematical border (the path) is a line exactly at 100px.
-    // - The stroke is 10px thick.
-    // - The browser draws 5px of that stroke extending outward from the path.
-    // - The browser draws 5px of that stroke extending inward from the path.
-    // Result: the total visual size of the object will be 110px (100 width + 5 left overhang + 5 right overhang).
+    // Model-view-projection matrix
+    // References:
+    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates) (will involve the camera matrix).
-    // Note: data stroke_width units is only supported when also using data units for the positions,
-    // so we do not need to support data stroke width units when using pixel units for the positions.
-    let stroke_width_norm = u.stroke_width / layer_height_px;
-    let stroke_width_half_norm = stroke_width_norm / 2.0;
+    // Resolve the stroke width to pixels, honoring the stroke-width unit mode.
+    // The quad expansion (below) and the fragment stage both work in pixels, so
+    // stroke width is normalized to pixels once here.
+    //
+    // Pixel mode (stroke_width_unit_mode == 0): stroke_width is already in
+    // screen pixels.
+    //
+    // Data-coordinate mode (stroke_width_unit_mode == 1): stroke_width is in data
+    // coordinate system units. Transform it through the same pipeline as
+    // positions, but with w = 0 so translations cancel out (it is a delta/size,
+    // not a position). Stroke width is height-relative, so use the Y component of
+    // the transformed delta and scale it back to pixels. This mirrors LineLayer
+    // and StrokedPolygonLayer. Data stroke width units are only supported when the
+    // positions also use data units.
+    //
+    // We handle stroke-width the same way an SVG <rect> element does: for a
+    // stroke-width of 10px, 5px of the stroke extends outward from the path and
+    // 5px inward, so a 100px-wide rect renders 110px wide overall.
+    var stroke_width_px = stroke_width;
+    if (u.stroke_width_unit_mode == 1u) {
+        let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
+        let width_norm = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig;
+        stroke_width_px = abs(width_norm.y) * layer_height_px;
+    }
 
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var result_size_px = vec2<f32>(0.0, 0.0);
@@ -150,9 +208,9 @@ fn vs_main(
         let half_rect_height_norm = (target_point_pos_norm.y - source_point_pos_norm.y) / 2.0;
 
         // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
-        // stroke_width is in pixels; convert half of it to normalized coords (separate x/y for aspect ratio).
-        let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
-        let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+        // stroke_width_px is in pixels; convert half of it to normalized coords (separate x/y for aspect ratio).
+        let sw_half_norm_x = stroke_width_px / (2.0 * layer_width_px);
+        let sw_half_norm_y = stroke_width_px / (2.0 * layer_height_px);
 
         let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
         let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -178,15 +236,10 @@ fn vs_main(
             out.quad_pos = (corner + 1.0) * 0.5;
             out.instance_index = instance_index;
             out.rect_size_px = result_size_px;
+            out.stroke_width_px = stroke_width_px;
             return out;
         }
     }
-
-    // Model-view-projection matrix
-    // References:
-    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
-    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
-    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
@@ -201,11 +254,10 @@ fn vs_main(
     let half_rect_height_norm = (target_pos_norm.y - source_pos_norm.y) / 2.0;
 
     // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
-    // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
-    let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+    // stroke_width_px was resolved to pixels above (honoring stroke_width_unit_mode),
+    // so convert half of it to normalized coords (separate x/y for aspect ratio).
+    let sw_half_norm_x = stroke_width_px / (2.0 * layer_width_px);
+    let sw_half_norm_y = stroke_width_px / (2.0 * layer_height_px);
 
     let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
     let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -241,26 +293,9 @@ fn vs_main(
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     out.rect_size_px = result_size_data;
+    out.stroke_width_px = stroke_width_px;
     return out;
 }
-
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
-}
-
 
 @fragment
 fn fs_main(
@@ -268,38 +303,43 @@ fn fs_main(
     @location(0) quad_pos: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(3) @interpolate(flat) stroke_width_px: f32,
 ) -> FSOut {
 
     // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
     // The stroke band is stroke_width thick from the outer edge inward
     // (stroke_width/2 was added outward + stroke_width/2 extends inward from the original boundary).
-    let expanded_w = rect_size_px.x + u.stroke_width;
-    let expanded_h = rect_size_px.y + u.stroke_width;
+    let expanded_w = rect_size_px.x + stroke_width_px;
+    let expanded_h = rect_size_px.y + stroke_width_px;
 
-    let stroke_frac_x = u.stroke_width / expanded_w;
-    let stroke_frac_y = u.stroke_width / expanded_h;
+    let stroke_frac_x = stroke_width_px / expanded_w;
+    let stroke_frac_y = stroke_width_px / expanded_h;
 
     // quad_pos ranges from (0,0) to (1,1) across the expanded quad.
-    // If the fragment is beyond the stroke band on ALL four sides, it's interior; discard.
+    // A fragment beyond the stroke band on ALL four sides is interior (fill);
+    // otherwise it lies within the border band (stroke). With a zero stroke
+    // width the band collapses and every fragment is interior.
     let inside_left   = quad_pos.x > stroke_frac_x;
     let inside_right  = quad_pos.x < (1.0 - stroke_frac_x);
     let inside_bottom = quad_pos.y > stroke_frac_y;
     let inside_top    = quad_pos.y < (1.0 - stroke_frac_y);
+    let is_interior = inside_left && inside_right && inside_bottom && inside_top;
 
-    if (inside_left && inside_right && inside_bottom && inside_top) {
-        if(u.filled == 0u) {
-            // Completely discard if in "stroked" mode (i.e., not filled).
-            discard;
-        }
-        // TODO: render using the fill color as opposed to the stroke color.
-    }
-
-    var out_color = u.fill_color.rgb;
-    if(u.fill_color_mode == 2u) {
-        out_color = get_categorical_color(labels_coords[instance_index]).rgb;
+    // The color / opacity modules resolve the per-instance value for the active
+    // mode (static, instanced RGB, categorical or quantitative for color; static
+    // or instanced for opacity). Interior fragments use the fill; border
+    // fragments use the stroke.
+    var out_color: vec3<f32>;
+    var alpha: f32;
+    if (is_interior) {
+        out_color = get_fill_color(instance_index);
+        alpha = get_fill_opacity(instance_index);
+    } else {
+        out_color = get_stroke_color(instance_index);
+        alpha = get_stroke_opacity(instance_index);
     }
 
     var out: FSOut;
-    out.color = vec4<f32>(out_color, 1.0);
+    out.color = vec4<f32>(out_color, alpha);
     return out;
 }

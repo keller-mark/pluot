@@ -53,11 +53,12 @@ Example usage of the PolygonLayer to render a star and a triangle.
 
             stroked: true,
             filled: true,
-            stroke_color: [200, 120, 0],
-            stroke_width: 3.0,
-            stroke_opacity: 1.0,
-            fill_color: [255, 200, 0],
-            fill_opacity: 0.8,
+            stroke_color: { color_mode: "UniformRgb", color_params: [200, 120, 0] },
+            stroke_width: { size_mode: "UniformSize", size_params: 0.01 },
+            stroke_width_unit_mode: "Data",
+            stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+            fill_color: { color_mode: "UniformRgb", color_params: [255, 200, 0] },
+            fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 0.8 },
           }
         },
         {

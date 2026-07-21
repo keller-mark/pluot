@@ -9,7 +9,8 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     TextLayerParams, TextAlignMode, TextBaselineMode,
-    FontWeight, FontStyle, NumericData,
+    FontWeight, FontStyle, NumericData, ColorMode,
+    CategoricalColormap, CategoricalParams, QuantitativeParams, QuantitativeColormap,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -45,6 +46,7 @@ fn corner_text_data() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
+        fill_color: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0, 0.5])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0, 0.5])),
         text_vec: Arc::new(vec![
@@ -73,6 +75,7 @@ fn corner_text_pixels() -> TextLayerParams {
         font_family: None,
         font_weight: FontWeight::Normal,
         font_style: FontStyle::Normal,
+        fill_color: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
         text_vec: Arc::new(vec![
@@ -603,6 +606,46 @@ async fn test_text_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// ── Fill color modes ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_text_layer_square_contain_data_units_categorical_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            fill_color: Some(ColorMode::Categorical(CategoricalParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4])),
+                colormap: CategoricalColormap::Tableau10,
+            })),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_categorical_color").await;
+}
+
+#[tokio::test]
+async fn test_text_layer_square_contain_data_units_quantitative_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 0.25, 0.5, 0.75, 1.0])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: None,
+            })),
+            ..corner_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_units_quantitative_color").await;
 }
 
 /*

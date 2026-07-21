@@ -1,7 +1,8 @@
-use std::{f32::consts::PI, sync::Arc};
+use std::f32::consts::PI;
 
 use pluot::{
-    render, GraphicsFormat, LayerParams, PointLayerParams, PointShapeMode, RenderParams, UnitsMode,
+    render, GraphicsFormat, LayerParams, PointLayerParams, PointShapeMode, RenderParams, SizeMode,
+    UnitsMode,
 };
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer, Weak};
 use tokio::sync::mpsc::Receiver;
@@ -77,14 +78,13 @@ impl PluotApp {
                 bounds: None,
                 data_unit_mode_x: UnitsMode::Data,
                 data_unit_mode_y: UnitsMode::Data,
-                point_radius: self.point_radius,
+                point_radius: Some(SizeMode::UniformSize(self.point_radius)),
                 point_radius_unit_mode_x: UnitsMode::Pixels,
                 point_radius_unit_mode_y: UnitsMode::Pixels,
                 point_shape_mode: PointShapeMode::Circle,
                 model_matrix: None,
                 position_x: position_x.into(),
                 position_y: position_y.into(),
-                labels_vec: Arc::new(vec![0; num_points]),
                 ..Default::default()
             })],
             width: self.plot_width,

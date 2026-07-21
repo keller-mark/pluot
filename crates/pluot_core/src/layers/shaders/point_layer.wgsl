@@ -6,6 +6,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct PointLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
@@ -15,12 +19,21 @@ struct PointLayerUniforms {
     point_radius_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     point_radius_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
     point_shape_mode: u32, // 0: square; 1: circle
-    point_opacity: f32,
+    fill_opacity: f32,
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
-    fill_color_mode: u32, // 0: static color for all points; 1: categorical // TODO: expand this, remove hard-coded categorical logic
-    fill_color: vec4<f32>, // rgba color
+    fill_color_mode: u32, // see ColorMode::shader_mode()
+    fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32, // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_width: f32,
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32, // stroke opacity used by the UniformOpacity mode
 };
 
 struct VSOut {
@@ -28,6 +41,8 @@ struct VSOut {
     @location(0) corner: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) point_radius_px: f32,
+    // Per-instance stroke width in pixels, resolved from the stroke-width module.
+    @location(3) @interpolate(flat) stroke_width_px: f32,
 };
 
 struct FSOut {
@@ -43,9 +58,38 @@ struct FSOut {
 // shader-module system (see `crate::shader_modules`) so that 8/16/32-bit data
 // lives on the GPU at native width: `f32` for floating-point data, `u32` for
 // unsigned, `i32` for signed. X and Y are independent and may differ in dtype.
-@group(0) @binding(1) var x_coords: texture_2d<{{x_dtype}}>;
-@group(0) @binding(2) var y_coords: texture_2d<{{y_dtype}}>;
-@group(0) @binding(3) var<storage, read> labels_coords: array<i32>;
+@group(0) @binding(1) var x_coords: texture_2d<{{x_coords_dtype}}>;
+@group(0) @binding(2) var y_coords: texture_2d<{{y_coords_dtype}}>;
+
+// Fill-color module: any per-element color value/palette texture bindings (from
+// binding 3 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_color_mode`.
+{{fill_color_module}}
+
+// Stroke-color module: the stroke counterpart, defining
+// `fn get_stroke_color(instance_index: u32) -> vec3<f32>`. Assembled by
+// `crate::color_mode::prepare_stroke_color`.
+{{stroke_color_module}}
+
+// Size module: an optional per-element radius value texture (instanced mode)
+// plus `fn get_point_radius(instance_index: u32) -> f32`. Assembled per size
+// mode by `crate::scalar_mode::prepare_size_mode`.
+{{size_module}}
+
+// Stroke-width module: an optional per-element width value texture (instanced
+// mode, read in the vertex stage) plus `fn get_stroke_width(instance_index: u32)
+// -> f32`. Assembled by `crate::scalar_mode::prepare_stroke_width_mode`.
+{{stroke_width_module}}
+
+// Fill-opacity module: an optional per-element opacity value texture (instanced
+// mode) plus `fn get_fill_opacity(instance_index: u32) -> f32`. Assembled by
+// `crate::scalar_mode::prepare_fill_opacity_mode`.
+{{fill_opacity_module}}
+
+// Stroke-opacity module: an optional per-element opacity value texture
+// (instanced mode) plus `fn get_stroke_opacity(instance_index: u32) -> f32`.
+// Assembled by `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -68,9 +112,13 @@ fn vs_main(
     // sampled type is already f32, and widens u32/i32 texels to f32 otherwise.
     let x_tex_width = textureDimensions(x_coords).x;
     let y_tex_width = textureDimensions(y_coords).x;
-    let x_val = f32(textureLoad(x_coords, vec2<u32>(instance_index % x_tex_width, instance_index / x_tex_width), 0).x);
-    let y_val = f32(textureLoad(y_coords, vec2<u32>(instance_index % y_tex_width, instance_index / y_tex_width), 0).x);
+    let x_val = f32(textureLoad(x_coords, flat_texel_coord(instance_index, x_tex_width), 0).x);
+    let y_val = f32(textureLoad(y_coords, flat_texel_coord(instance_index, y_tex_width), 0).x);
     let point_pos_orig = u.model_matrix * vec4f(x_val, y_val, 0.0, 1.0);
+
+    // Per-instance radius (uniform or instanced, depending on the injected size
+    // module). Resolved once here and used for all radius computations below.
+    let point_radius = get_point_radius(instance_index);
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
@@ -106,24 +154,41 @@ fn vs_main(
     // Pixel-mode radius (point_radius_unit_mode == 0):
     //   point_radius is in screen pixels; convert directly to NDC offsets.
     let point_radius_ndc_px = vec2f(
-        u.point_radius / layer_width_px * 2.0,
-        u.point_radius / layer_height_px * 2.0
+        point_radius / layer_width_px * 2.0,
+        point_radius / layer_height_px * 2.0
     );
 
     // Data-coordinate radius (point_radius_unit_mode == 1):
     //   point_radius is in data coordinate system units. Transform it through the same
     //   pipeline as positions, but with w=0 so translations cancel out (it is a delta/size,
     //   not a position). This mirrors get_point_size() in positioning.rs.
-    let radius_orig_data = u.model_matrix * vec4f(u.point_radius, u.point_radius, 0.0, 0.0);
+    let radius_orig_data = u.model_matrix * vec4f(point_radius, point_radius, 0.0, 0.0);
     let radius_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * radius_orig_data;
     let point_radius_ndc_data = abs(radius_norm_data.xy) * 2.0;
     // Effective pixel radius for the circle SDF: average of x and y screen extents.
     let point_radius_px_data = (abs(radius_norm_data.x) * layer_width_px + abs(radius_norm_data.y) * layer_height_px) * 0.5;
 
+    // --- Stroke width in pixels ---
+    // The stroke is drawn inward from the point edge, so it does not expand the
+    // quad; we only need its pixel width for the fragment stage.
+    //
+    // Pixel mode (stroke_width_unit_mode == 0): stroke_width is already in pixels.
+    //
+    // Data-coordinate mode (== 1): transform it through the same pipeline as the
+    // radius, with w = 0 so translations cancel (it is a delta/size, not a
+    // position), and take the average of the x/y screen extents.
+    let stroke_width = get_stroke_width(instance_index);
+    var stroke_width_px: f32 = stroke_width;
+    if (u.stroke_width_unit_mode == 1u) {
+        let sw_orig_data = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
+        let sw_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * sw_orig_data;
+        stroke_width_px = (abs(sw_norm_data.x) * layer_width_px + abs(sw_norm_data.y) * layer_height_px) * 0.5;
+    }
+
     // Select per-axis NDC radius and the scalar pixel radius passed to the fragment shader.
     var point_radius_ndc_x = point_radius_ndc_px.x;
     var point_radius_ndc_y = point_radius_ndc_px.y;
-    var point_radius_px: f32 = u.point_radius;
+    var point_radius_px: f32 = point_radius;
 
     if (u.point_radius_unit_mode_x == 1u) {
         point_radius_ndc_x = point_radius_ndc_data.x;
@@ -160,6 +225,7 @@ fn vs_main(
             out.corner = corner;
             out.instance_index = instance_index;
             out.point_radius_px = point_radius_px;
+            out.stroke_width_px = stroke_width_px;
             return out;
         }
     }
@@ -216,26 +282,10 @@ fn vs_main(
     out.corner = corner;
     out.instance_index = instance_index;
     out.point_radius_px = point_radius_px;
+    out.stroke_width_px = stroke_width_px;
     return out;
 }
 
-
-fn get_categorical_color(index: i32) -> vec4<f32> {
-    // Simple categorical colormap (Tableau 10)
-    const colors: array<vec4<f32>, 10> = array<vec4<f32>, 10>(
-        vec4<f32>(31.0, 119.0, 180.0, 255.0) / 255.0,
-        vec4<f32>(255.0, 127.0, 14.0, 255.0) / 255.0,
-        vec4<f32>(44.0, 160.0, 44.0, 255.0) / 255.0,
-        vec4<f32>(214.0, 39.0, 40.0, 255.0) / 255.0,
-        vec4<f32>(148.0, 103.0, 189.0, 255.0) / 255.0,
-        vec4<f32>(227.0, 119.0, 194.0, 255.0) / 255.0,
-        vec4<f32>(127.0, 127.0, 127.0, 255.0) / 255.0,
-        vec4<f32>(188.0, 189.0, 34.0, 255.0) / 255.0,
-        vec4<f32>(23.0, 190.0, 207.0, 255.0) / 255.0,
-        vec4<f32>(219.0, 219.0, 219.0, 255.0) / 255.0
-    );
-    return colors[index % 10];
-}
 
 fn linearstep(edge0: f32, edge1: f32, x: f32) -> f32 {
   return clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -247,24 +297,59 @@ fn fs_main(
     @location(0) corner: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) point_radius_px: f32,
+    @location(3) @interpolate(flat) stroke_width_px: f32,
 ) -> FSOut {
+
+    // The color / opacity modules resolve the per-instance value for the active
+    // mode (static, instanced RGB, categorical or quantitative for color; static
+    // or instanced for opacity). Interior fragments use the fill; fragments within
+    // the stroke band (the outermost `stroke_width_px` of the point) use the
+    // stroke. The stroke is drawn inward, so the point's outer bound stays at
+    // `point_radius_px` regardless of stroke width.
+    let fill_color = get_fill_color(instance_index);
+    let fill_opacity = get_fill_opacity(instance_index);
+    let stroke_color = get_stroke_color(instance_index);
+    let stroke_opacity = get_stroke_opacity(instance_index);
+
+    // Radius of the inner boundary between fill and stroke.
+    let inner_radius_px = point_radius_px - stroke_width_px;
+
+    var out_color: vec3<f32>;
+    var alpha: f32;
 
     // Handling of circle point shape mode
     // TODO: see https://github.com/visgl/deck.gl/blob/6149b4c4ca5e33397d697c21d6729cb2cf8e4c89/modules/layers/src/scatterplot-layer/scatterplot-layer.wgsl.ts#L157
-    var alpha = u.point_opacity;
     if(u.point_shape_mode == 1u) {
-        // Signed-distance anti-aliasing: linear 1-pixel fade centered on the circle edge.
+        // Signed-distance anti-aliasing: linear 1-pixel coverage fade centered on
+        // the circle edge (independent of opacity).
         let dist_px = length(corner) * point_radius_px;
-        alpha = clamp(point_radius_px - dist_px + 0.475, 0.0, u.point_opacity);
-        if (alpha < 0.001) {
+        let coverage = clamp(point_radius_px - dist_px + 0.475, 0.0, 1.0);
+        if (coverage < 0.001) {
             discard;
+        }
+        // Interior (fill) vs. the outer stroke band.
+        if (stroke_width_px > 0.0 && dist_px > inner_radius_px) {
+            out_color = stroke_color;
+            alpha = coverage * stroke_opacity;
+        } else {
+            out_color = fill_color;
+            alpha = coverage * fill_opacity;
+        }
+    } else {
+        // Square shape: the stroke band is the outermost `stroke_width_px` of the
+        // square along either axis. corner is in [-1, 1]; scale to pixels.
+        let px = abs(corner.x) * point_radius_px;
+        let py = abs(corner.y) * point_radius_px;
+        if (stroke_width_px > 0.0 && (px > inner_radius_px || py > inner_radius_px)) {
+            out_color = stroke_color;
+            alpha = stroke_opacity;
+        } else {
+            out_color = fill_color;
+            alpha = fill_opacity;
         }
     }
 
-
-    let category_color = get_categorical_color(labels_coords[instance_index]);
-
     var out: FSOut;
-    out.color = vec4<f32>(category_color.rgb, alpha);
+    out.color = vec4<f32>(out_color, alpha);
     return out;
 }

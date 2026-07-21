@@ -9,6 +9,9 @@ use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
     PointLayerParams, PointShapeMode,
+    CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
+    QuantitativeParams, QuantitativeColormap,
+    SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
     NumericData,
 };
 
@@ -30,14 +33,17 @@ fn corner_points_data() -> PointLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        point_radius: 10.0,
+        point_radius: Some(SizeMode::UniformSize(10.0)),
         point_radius_unit_mode_x: UnitsMode::Pixels,
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
         model_matrix: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
-        labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
         ..Default::default()
     }
 }
@@ -49,14 +55,17 @@ fn corner_points_pixels() -> PointLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Pixels,
-        point_radius: 10.0,
+        point_radius: Some(SizeMode::UniformSize(10.0)),
         point_radius_unit_mode_x: UnitsMode::Pixels,
         point_radius_unit_mode_y: UnitsMode::Pixels,
         point_shape_mode: PointShapeMode::Square,
         model_matrix: None,
         position_x: NumericData::Float32(Arc::new(vec![0.0, 100.0, 100.0, 0.0])),
         position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 100.0])),
-        labels_vec: Arc::new(vec![0, 1, 2, 3]),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
         ..Default::default()
     }
 }
@@ -558,10 +567,10 @@ async fn test_point_layer_tall_ignore_circle_no_margins() {
 // units (0.1 data units == 10% of the [0,1] data extent in both axes).
 fn corner_points_data_radius() -> PointLayerParams {
     PointLayerParams {
-        point_radius: 0.25,
+        point_radius: Some(SizeMode::UniformSize(0.25)),
         point_radius_unit_mode_x: UnitsMode::Data,
         point_radius_unit_mode_y: UnitsMode::Data,
-        point_opacity: 0.5,
+        fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
         ..corner_points_data()
     }
 }
@@ -773,6 +782,95 @@ async fn test_point_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// ── Fill color modes ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_units_quantitative_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 0.33, 0.67, 1.0])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: None,
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_quantitative_color").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_units_categorical_custom_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            fill_color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
+                values: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                colormap: vec![
+                    (255, 0, 0),
+                    (0, 200, 0),
+                    (0, 0, 255),
+                    (200, 200, 0),
+                ],
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_units_categorical_custom_color").await;
+}
+
+// ── Instanced point radius (SizeMode) ─────────────────────────────────────────
+// SizeMode::InstancedSize supplies one radius per point (uploaded to the GPU as
+// a value texture), rather than a single UniformSize shared by all points.
+
+#[tokio::test]
+async fn test_point_layer_square_contain_pixel_units_instanced_radius() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            // One distinct radius (in pixels) per corner point.
+            point_radius: Some(SizeMode::InstancedSize(InstancedSizeParams {
+                values: NumericData::Float32(Arc::new(vec![5.0, 10.0, 15.0, 20.0])),
+            })),
+            ..corner_points_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_instanced_radius").await;
+}
+
+// ── Instanced point opacity (OpacityMode) ─────────────────────────────────────
+// OpacityMode::InstancedOpacity supplies one opacity per point (uploaded to the
+// GPU as a value texture), rather than a single UniformOpacity shared by all.
+
+#[tokio::test]
+async fn test_point_layer_square_contain_pixel_units_instanced_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            // One distinct opacity per corner point.
+            fill_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![0.25, 0.5, 0.75, 1.0])),
+            })),
+            ..corner_points_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_instanced_opacity").await;
 }
 
 // TODO: performance tests with many elements, both raster and svg formats

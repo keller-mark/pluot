@@ -11,6 +11,10 @@
 
 {{get_aspect_ratio_mat}}
 
+// flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
+// Used by the color module below to read per-element color value textures.
+{{flat_texel_coord}}
+
 struct TriangulatedLayerUniforms {
     layer_size: vec2<f32>,
     camera_view: mat4x4<f32>,
@@ -19,7 +23,11 @@ struct TriangulatedLayerUniforms {
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
-    fill_color: vec4<f32>,
+    fill_color_mode: u32, // see ColorMode::shader_mode()
+    fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32, // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    fill_opacity: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: TriangulatedLayerUniforms;
@@ -31,17 +39,36 @@ struct TriangulatedLayerUniforms {
 // `crate::shader_modules`) so that 8/16/32-bit data lives on the GPU at native
 // width: `f32` for floating-point data, `u32` for unsigned, `i32` for signed.
 @group(0) @binding(1) var vertices: texture_2d<{{vertices_dtype}}>;
+// Per-vertex index into the fill_color color-mode arrays (see
+// `TriangulatedLayerParams::vertex_color_index`), uploaded the same way.
+@group(0) @binding(2) var vertex_color_index: texture_2d<{{vertex_color_index_dtype}}>;
 
 // Load the flat coordinate value at index `idx`, widening it to f32.
 // `f32(...)` is a no-op when the injected sampled type is already f32.
 fn load_coord(idx: u32) -> f32 {
     let w = textureDimensions(vertices).x;
-    return f32(textureLoad(vertices, vec2<u32>(idx % w, idx / w), 0).x);
+    return f32(textureLoad(vertices, flat_texel_coord(idx, w), 0).x);
 }
+
+// Load the color-mode element index for vertex `idx`, widening it to u32.
+fn load_color_index(idx: u32) -> u32 {
+    let w = textureDimensions(vertex_color_index).x;
+    return u32(textureLoad(vertex_color_index, flat_texel_coord(idx, w), 0).x);
+}
+
+// Color module: any per-element color value/palette texture bindings (from
+// binding 3 onward) plus `fn get_fill_color(color_index: u32) -> vec3<f32>`.
+// Assembled per color mode by `crate::color_mode::prepare_color_mode`.
+{{fill_color_module}}
+
+// Fill opacity module: an optional per-element opacity value texture (instanced
+// mode) plus `fn get_fill_opacity(color_index: u32) -> f32`. Assembled per
+// opacity mode by `crate::scalar_mode::prepare_fill_opacity_mode`.
+{{fill_opacity_module}}
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
+    @location(0) @interpolate(flat) color_index: u32,
 }
 
 struct FSOut {
@@ -91,16 +118,21 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VSOut {
 
     var out: VSOut;
     out.position = vec4f(pos_ndc.x, pos_ndc.y, 0.0, 1.0);
-    out.color = u.fill_color;
+    out.color_index = load_color_index(vertex_index);
     return out;
 }
 
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) color_in: vec4<f32>,
+    @location(0) @interpolate(flat) color_index: u32,
 ) -> FSOut {
+    // The color module's get_fill_color resolves the per-element color for the
+    // active color mode (static, instanced RGB, categorical or quantitative).
+    let out_color = get_fill_color(color_index);
+    let fill_opacity = get_fill_opacity(color_index);
+
     var out: FSOut;
-    out.color = color_in;
+    out.color = vec4<f32>(out_color, fill_opacity);
     return out;
 }

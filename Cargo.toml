@@ -18,6 +18,8 @@ exclude = [
     "examples/pluot_xilem",
     "examples/pluot_egui",
     "examples/pluot_slint",
+    # Avoid confusing tooling due to the nested symbolic links.
+    "bindings-r",
 ]
 
 [workspace.package]

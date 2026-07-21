@@ -29,6 +29,10 @@ pub struct TwoRectangle {
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
+    // Opacity of the fill / stroke independently (multiplied with `opacity`).
+    // TODO: only support fill-opacity and stroke-opacity, not plain opacity?
+    pub fill_opacity: f64,
+    pub stroke_opacity: f64,
     pub rotation: Option<f64>,
 }
 
@@ -43,6 +47,8 @@ impl Default for TwoRectangle {
             fill: Some(TwoColor::Rgb((0, 0, 0))),
             linewidth: 1.0,
             opacity: 1.0,
+            fill_opacity: 1.0,
+            stroke_opacity: 1.0,
             rotation: None,
         }
     }
@@ -58,6 +64,10 @@ pub struct TwoCircle {
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
+    // Opacity of the fill / stroke independently (multiplied with `opacity`).
+    // TODO: only support fill-opacity and stroke-opacity, not plain opacity?
+    pub fill_opacity: f64,
+    pub stroke_opacity: f64,
 }
 
 impl Default for TwoCircle {
@@ -70,6 +80,8 @@ impl Default for TwoCircle {
             fill: Some(TwoColor::Rgb((0, 0, 0))),
             linewidth: 1.0,
             opacity: 1.0,
+            fill_opacity: 1.0,
+            stroke_opacity: 1.0,
         }
     }
 }
@@ -108,6 +120,7 @@ pub struct TwoPath {
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
+    // TODO: only support fill-opacity and stroke-opacity, not plain opacity?
     pub fill_opacity: f64,
     pub stroke_opacity: f64,
     pub stroke_linejoin: Option<String>,

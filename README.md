@@ -36,10 +36,11 @@ If you found this useful, please cite our [preprint](https://doi.org/10.48550/ar
 - __Bitmap or Vector Outputs__: Plotting functions can implement bitmap and vector equivalent drawing logic, to support publication-quality graphics export.
 - __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported (regardless of whether bitmap or vector output format).
 
-⚠️ Pluot does not yet implement very many "chart types". Thus, expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, you will be able to **render the plot whereever Pluot rendering works**: from Rust, Python, R, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future.
+
+⚠️ Currently focusing on 2D, before eventually supporting polar, ternary, and [3D](https://pluot.dev/examples/scatterplot-3d/) plotting.
 
 
-
+⚠️ Expect it to currently take some effort to build things using Pluot (similar to using a low-level visualization toolkit such as D3). However, _if you do put in such effort_, you will be able to **render the plot whereever Pluot rendering works**: from Rust, Python, R, JavaScript, a web application, a rust-based desktop GUI, or additional language bindings developed in the future.
 
 
 ## How it works
@@ -243,6 +244,17 @@ open bindings-r/pluotr.Rproj
 
 ```r
 devtools::install()
+
+devtools::load_all()
+# and/or
+devtools::test()
+```
+
+Or, entirely via the command-line:
+
+```sh
+R CMD build bindings-r --no-build-vignettes
+R CMD check pluotr_1.2.3.tar.gz --no-vignettes --no-build-vignettes --ignore-vignettes --no-manual
 ```
 
 

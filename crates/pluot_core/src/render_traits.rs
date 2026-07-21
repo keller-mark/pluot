@@ -1,4 +1,5 @@
 use crate::picking::LayerPickingResult;
+use crate::numeric_data::NumericData;
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
@@ -62,16 +63,246 @@ pub enum UnitsMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CategoricalColormap {
+    // Reference: https://vega.github.io/vega/docs/schemes/
+    Accent,
+    Category10,
+    Category20,
+    Category20b,
+    Category20c,
+    Observable10,
+    Dark2,
+    Paired,
+    Pastel1,
+    Pastel2,
+    Set1,
+    Set2,
+    Set3,
+    Tableau10,
+    Tableau20,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum QuantitativeColormap {
+    // Reference: https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/colormaps.in.glsl
+    Plasma,
+    Viridis,
+    Greys,
+    Magma,
+    Jet,
+    Bone,
+    Copper,
+    Density,
+    Inferno,
+    Cool,
+    Hot,
+    Spring,
+    Summer,
+    Autumn,
+    Winter,
+}
+
+/// Static (r, g, b) color shared by every element.
+pub type UniformRgbParams = (u8, u8, u8);
+
+/// Per-element RGB stored as three parallel arrays (one per channel). Each
+/// value is interpreted on a 0–255 scale (matching the `(u8, u8, u8)` used by
+/// the static modes) and normalized to 0–1 before shading.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedRgbParams {
+    pub r_values: NumericData,
+    pub g_values: NumericData,
+    pub b_values: NumericData,
+}
+
+/// Per-element RGB stored as a single interleaved array: element `i` occupies
+/// indices `3*i`, `3*i + 1`, `3*i + 2`. Values use the same 0–255 scale as
+/// [`InstancedRgbParams`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedRgbInterleavedParams {
+    pub rgb_values: NumericData,
+}
+
+/// Categorical color: per-element integer class labels sampled against a named
+/// categorical palette. The label wraps around (modulo) the palette length.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CategoricalParams {
+    pub codes: NumericData,
+    pub colormap: CategoricalColormap,
+}
+
+/// Categorical color against a caller-supplied palette (rather than a named
+/// scheme). Otherwise identical to [`CategoricalParams`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CategoricalCustomParams {
+    pub values: NumericData,
+    pub colormap: Vec<(u8, u8, u8)>,
+}
+
+fn default_false() -> bool {
+    false
+}
+
+/// Quantitative color: per-element scalar values mapped through a named
+/// continuous colormap. Values are normalized into 0–1 using `domain` (or the
+/// data's own min/max when `domain` is `None`) before sampling; `reverse` flips
+/// the colormap direction.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuantitativeParams {
+    pub values: NumericData,
+    pub colormap: QuantitativeColormap,
+    #[serde(default = "default_false")]
+    pub reverse: bool,
+    // Optional (min, max) normalization domain. When `None`, the domain is
+    // derived from the data's own minimum and maximum.
+    #[serde(default)]
+    pub domain: Option<(f32, f32)>,
+}
+
+
+/// How the fill color of each element in a layer is determined.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"color_mode": "UniformRgb", "color_params": [255, 0, 0]}`. Variants that
+/// carry [`NumericData`] describe per-element color, and the layer uploads that
+/// data to the GPU as one or more textures (see `RectLayer`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "color_mode", content = "color_params")]
 pub enum ColorMode {
-    // TODO: expand this enum type so that it also represents the required values in each case.
     // 0: static color (e.g., same RGB color for all elements)
-    Static,
-    // 1: explicit colors (e.g., for N elements, N individual RGB colors, either 3 N-length vecs or N 3-length vecs (interleaved))
-    Explicit,
-    // 2: categorical color based on N integer class labels. either known named colormap or custom user-defined color array.
-    Categorical,
-    // 3: quantitative color based on N float values. plus a known named quantiative colormap function.
-    Quantitative,
+    UniformRgb(UniformRgbParams),
+    // 1: explicit colors (e.g., for N elements, N individual RGB colors, as 3 N-length vecs)
+    InstancedRgb(InstancedRgbParams),
+    // 2: explicit colors (e.g., for N elements, N individual RGB colors, as N 3-length vecs (interleaved))
+    InstancedRgbInterleaved(InstancedRgbInterleavedParams),
+    // 3: instanced categorical color based on K integer class labels, via a known named colormap
+    Categorical(CategoricalParams),
+    // 4: instanced categorical color based on K integer class labels, via a special "Custom" categorical colormap type accompanied by a list of RGB values per item
+    CategoricalCustom(CategoricalCustomParams),
+    // 5: quantitative color based on N float values. plus a known named quantiative colormap function.
+    Quantitative(QuantitativeParams),
+}
+
+/// Static opacity (0.0–1.0) shared by every element.
+pub type UniformOpacityParams = f32;
+
+/// Per-element opacity, one value (0.0–1.0) per element.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedOpacityParams {
+    pub values: NumericData,
+}
+
+/// How the opacity of each element in a layer is determined.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"opacity_mode": "UniformOpacity", "opacity_params": 1.0}`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "opacity_mode", content = "opacity_params")]
+pub enum OpacityMode {
+    UniformOpacity(UniformOpacityParams),
+    InstancedOpacity(InstancedOpacityParams),
+}
+
+impl OpacityMode {
+    /// Panics if this mode carries per-element [`NumericData`] whose length
+    /// doesn't match `expected` (the layer's element count). `UniformOpacity`
+    /// carries no per-element data and is always valid.
+    pub fn validate_len(&self, expected: usize) {
+        if let OpacityMode::InstancedOpacity(params) = self {
+            assert_eq!(
+                params.values.len(), expected,
+                "OpacityMode values has length {} but layer has {expected} elements",
+                params.values.len(),
+            );
+        }
+    }
+}
+
+/// Static size (e.g., width or radius) shared by every element.
+pub type UniformSizeParams = f32;
+
+/// Per-element size (e.g., width or radius), one value per element.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InstancedSizeParams {
+    pub values: NumericData,
+}
+
+/// How the size (width or radius) of each element in a layer is determined.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"size_mode": "UniformSize", "size_params": 1.0}`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "size_mode", content = "size_params")]
+pub enum SizeMode {
+    UniformSize(UniformSizeParams),
+    InstancedSize(InstancedSizeParams),
+}
+
+impl SizeMode {
+    /// Panics if this mode carries per-element [`NumericData`] whose length
+    /// doesn't match `expected` (the layer's element count). `UniformSize`
+    /// carries no per-element data and is always valid.
+    pub fn validate_len(&self, expected: usize) {
+        if let SizeMode::InstancedSize(params) = self {
+            assert_eq!(
+                params.values.len(), expected,
+                "SizeMode values has length {} but layer has {expected} elements",
+                params.values.len(),
+            );
+        }
+    }
+}
+
+impl ColorMode {
+    /// The integer discriminant handed to the shader's `fill_color_mode`
+    /// uniform. Must stay in sync with the branch values in `rect_layer.wgsl`.
+    pub fn shader_mode(&self) -> u32 {
+        match self {
+            ColorMode::UniformRgb(_) => 0,
+            ColorMode::InstancedRgb(_) => 1,
+            ColorMode::InstancedRgbInterleaved(_) => 2,
+            ColorMode::Categorical(_) => 3,
+            ColorMode::CategoricalCustom(_) => 4,
+            ColorMode::Quantitative(_) => 5,
+        }
+    }
+
+    /// Panics if this mode carries per-element [`NumericData`] whose length
+    /// doesn't match `expected` (the layer's element count). `UniformRgb`
+    /// carries no per-element data and is always valid.
+    pub fn validate_len(&self, expected: usize) {
+        let check = |name: &str, len: usize| {
+            assert_eq!(
+                len, expected,
+                "ColorMode {name} has length {len} but layer has {expected} elements",
+            );
+        };
+        match self {
+            ColorMode::UniformRgb(_) => {}
+            ColorMode::InstancedRgb(params) => {
+                check("r_values", params.r_values.len());
+                check("g_values", params.g_values.len());
+                check("b_values", params.b_values.len());
+            }
+            ColorMode::InstancedRgbInterleaved(params) => {
+                let expected_len = expected * 3;
+                assert_eq!(
+                    params.rgb_values.len(), expected_len,
+                    "ColorMode rgb_values has length {} but layer has {expected} elements (expected {expected_len})",
+                    params.rgb_values.len(),
+                );
+            }
+            ColorMode::Categorical(params) => {
+                check("codes", params.codes.len());
+            }
+            ColorMode::CategoricalCustom(params) => {
+                check("values", params.values.len());
+            }
+            ColorMode::Quantitative(params) => {
+                check("values", params.values.len());
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

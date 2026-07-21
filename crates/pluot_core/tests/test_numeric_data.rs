@@ -14,8 +14,7 @@ fn deserializes_tagged_numeric_positions_with_differing_dtypes() {
     let json = r#"{
         "layer_id": "pts",
         "position_x": {"dtype": "Float32", "values": [0.0, 1.0, 2.0]},
-        "position_y": {"dtype": "Uint16", "values": [10, 20, 30]},
-        "labels_vec": [0, 1, 2]
+        "position_y": {"dtype": "Uint16", "values": [10, 20, 30]}
     }"#;
     let params: PointLayerParams = serde_json::from_str(json).unwrap();
     assert!(matches!(params.position_x, NumericData::Float32(_)));

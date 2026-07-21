@@ -8,7 +8,8 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
-    CurveLayerParams, PathCommand,
+    ColorMode, CurveLayerParams, NumericData, PathCommand, QuantitativeColormap, QuantitativeParams,
+    SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -29,7 +30,7 @@ fn wave_curve_data() -> CurveLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        stroke_width: 2.0,
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
         stroke_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
         commands: Arc::new(vec![
@@ -40,10 +41,10 @@ fn wave_curve_data() -> CurveLayerParams {
         subdivisions: 32,
         stroked: true,
         filled: false,
-        stroke_color: [255, 0, 0],
-        fill_color: [0, 0, 255],
-        stroke_opacity: 1.0,
-        fill_opacity: 1.0,
+        stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+        fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
+        stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+        fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
     }
 }
 
@@ -361,13 +362,107 @@ async fn test_curve_layer_wide_contain_data_units_thick_line_width() {
         width: 200,
         height: 100,
         layers: layer_params(CurveLayerParams {
-            stroke_width: 10.0,
+            stroke_width: Some(SizeMode::UniformSize(10.0)),
             ..wave_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_wide_contain_data_units_thick_line_width").await;
+}
+
+// Stroke width measured in data-coordinate units (rather than pixels): the
+// stroke scales with the view/aspect-ratio transform.
+#[tokio::test]
+async fn test_curve_layer_square_contain_data_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.05)),
+            stroke_width_unit_mode: UnitsMode::Data,
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_data_units_stroke_width").await;
+}
+
+#[tokio::test]
+async fn test_curve_layer_wide_contain_data_units_stroke_width() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.05)),
+            stroke_width_unit_mode: UnitsMode::Data,
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_wide_contain_data_units_stroke_width").await;
+}
+
+// ── Instanced stroke width / opacity, fill opacity ──────────────────────────────
+// `CurveLayer` renders a single shape, so the instanced modes supply a single
+// (length-1) value — but still exercise the GPU value-texture code path rather
+// than the uniform path.
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_instanced_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::InstancedSize(InstancedSizeParams {
+                values: NumericData::Float32(Arc::new(vec![6.0])),
+            })),
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_instanced_stroke_width").await;
+}
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_instanced_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(6.0)),
+            stroke_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![0.4])),
+            })),
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_instanced_stroke_opacity").await;
+}
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_instanced_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: false,
+            filled: true,
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
+            fill_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![0.4])),
+            })),
+            ..closed_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_instanced_fill_opacity").await;
 }
 
 // ── Subdivisions ─────────────────────────────────────────────────────────────
@@ -469,7 +564,7 @@ async fn test_curve_layer_square_contain_closed_curve_filled() {
         layers: layer_params(CurveLayerParams {
             stroked: false,
             filled: true,
-            fill_color: [0, 0, 255],
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             ..closed_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -487,9 +582,9 @@ async fn test_curve_layer_square_contain_closed_curve_stroke_and_fill() {
         layers: layer_params(CurveLayerParams {
             stroked: true,
             filled: true,
-            stroke_width: 4.0,
-            stroke_color: [255, 0, 0],
-            fill_color: [0, 0, 255],
+            stroke_width: Some(SizeMode::UniformSize(4.0)),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
             ..closed_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -507,15 +602,39 @@ async fn test_curve_layer_square_contain_closed_curve_fill_opacity() {
         layers: layer_params(CurveLayerParams {
             stroked: true,
             filled: true,
-            stroke_width: 4.0,
-            stroke_color: [255, 0, 0],
-            fill_color: [0, 0, 255],
-            stroke_opacity: 1.0,
-            fill_opacity: 0.5,
+            stroke_width: Some(SizeMode::UniformSize(4.0)),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
+            stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
             ..closed_curve_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_closed_curve_fill_opacity").await;
+}
+
+// `CurveLayer` renders a single shape, so a `ColorMode::Quantitative` fill
+// resolves against a length-1 value array (always element 0).
+#[tokio::test]
+async fn test_curve_layer_square_contain_closed_curve_quantitative_fill() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: false,
+            filled: true,
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.75])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: Some((0.0, 1.0)),
+            })),
+            ..closed_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_closed_curve_quantitative_fill").await;
 }

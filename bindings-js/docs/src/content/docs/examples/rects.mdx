@@ -1,0 +1,104 @@
+---
+title: Rects
+description: Rect layer example.
+sidebar:
+    order: 40
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+
+Example usage of `RectLayer` with different unit modes for both the rect
+size (`data_unit_mode_x`/`data_unit_mode_y`) and the border stroke width
+(`stroke_width_unit_mode`). The first rect has its size and stroke width
+both defined in data units, so the border scales with the rect when zoomed.
+The second rect has its size in data units but a stroke width fixed in
+pixels, so the border stays a constant width on screen. The third rect has
+its size and stroke width both defined in pixels, so the whole rect stays a
+fixed size on screen regardless of the data domain.
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"rects-example-unit-modes"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "RectLayer",
+          layer_params: {
+            layer_id: "data_size_data_stroke",
+            bounds: null,
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            stroke_width_unit_mode: "Data",
+            stroke_width: { size_mode: "UniformSize", size_params: 0.05 },
+            fill_color: { color_mode: "UniformRgb", color_params: [31, 119, 180] },
+            fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 0.4 },
+            stroke_color: { color_mode: "UniformRgb", color_params: [31, 119, 180] },
+            position_x0: { dtype: "Float32", values: [0.05] },
+            position_y0: { dtype: "Float32", values: [0.1] },
+            position_x1: { dtype: "Float32", values: [0.3] },
+            position_y1: { dtype: "Float32", values: [0.4] },
+          }
+        },
+        {
+          layer_type: "RectLayer",
+          layer_params: {
+            layer_id: "data_size_pixel_stroke",
+            bounds: null,
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            stroke_width_unit_mode: "Pixels",
+            stroke_width: { size_mode: "UniformSize", size_params: 6.0 },
+            fill_color: { color_mode: "UniformRgb", color_params: [255, 127, 14] },
+            fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 0.4 },
+            stroke_color: { color_mode: "UniformRgb", color_params: [255, 127, 14] },
+            position_x0: { dtype: "Float32", values: [0.4] },
+            position_y0: { dtype: "Float32", values: [0.1] },
+            position_x1: { dtype: "Float32", values: [0.65] },
+            position_y1: { dtype: "Float32", values: [0.4] },
+          }
+        },
+        {
+          layer_type: "RectLayer",
+          layer_params: {
+            layer_id: "pixel_size_pixel_stroke",
+            bounds: null,
+            data_unit_mode_x: "Pixels",
+            data_unit_mode_y: "Pixels",
+            stroke_width_unit_mode: "Pixels",
+            stroke_width: { size_mode: "UniformSize", size_params: 2.0 },
+            fill_color: { color_mode: "UniformRgb", color_params: [44, 160, 44] },
+            fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 0.4 },
+            stroke_color: { color_mode: "UniformRgb", color_params: [44, 160, 44] },
+            position_x0: { dtype: "Float32", values: [20] },
+            position_y0: { dtype: "Float32", values: [20] },
+            position_x1: { dtype: "Float32", values: [80] },
+            position_y1: { dtype: "Float32", values: [80] },
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={50}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={50}
+/>
