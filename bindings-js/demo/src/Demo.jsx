@@ -212,24 +212,6 @@ const DEMOS = {
           }
         },*/
         {
-          layer_type: "MultiscaleLayer",
-          layer_params: {
-            layer_id: "multiscale_layer",
-            resolution_levels: [
-              {
-                shape: [200, 200],
-                chunk_shape: [50, 50],
-                scale: [1.0, 1.0],
-              },
-              {
-                shape: [100, 100],
-                chunk_shape: [50, 50],
-                scale: [2.0, 2.0],
-              }
-            ]
-          }
-        },
-        {
           layer_type: "OmeZarrMultiscaleLayer",
           layer_params: {
             layer_id: "ome_zarr_multiscale_layer",
@@ -255,12 +237,6 @@ const DEMOS = {
             ],
             opacity: 1.0,
           },
-        },
-        {
-          layer_type: "ComputeLayer",
-          layer_params: {
-            layer_id: "compute_layer",
-          }
         }
       ]
     },
