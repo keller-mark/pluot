@@ -43,6 +43,11 @@ pub struct ZarrPointLayerParams {
     pub store_name: Option<String>,
     pub x_key: String,
     pub y_key: String,
+
+    // TODO: need equivalents to the non-Zarr layers' uniform+instanced support for colors, opacities, stroke_widths, etc.
+    // In the zarr case, the instanced mode's values/codes arrays will be a string pointing to an array path, rather than an inlined array/NumericData itself.
+    // We still need the sibling params however, to know things like categorical vs. quantitative, interleaved vs not, and the specified colormap, etc.
+    // We should also make the parameter names here in the zarr layers more consistent with the non-zarr layers', including removing the _key suffices, for consistency.
     pub color_key: Option<String>,
 }
 
