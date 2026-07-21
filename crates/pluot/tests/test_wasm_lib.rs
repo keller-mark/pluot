@@ -20,30 +20,29 @@ async fn test_render_triangle() {
     let height = 32;
 
     let raw_layer_params = json!({
-        "layer_type": "RectLayer",
+        "layer_type": "PointLayer",
         "layer_params": {
-            "layer_id": "rect_layer",
+            "layer_id": "point_layer",
             "bounds": null,
             "data_unit_mode_x": "Pixels",
             "data_unit_mode_y": "Pixels",
+            "point_shape_mode": "Circle",
+            "point_radius_unit_mode_x": "Pixels",
+            "point_radius_unit_mode_y": "Pixels",
+            "point_radius": {"size_mode": "UniformSize", "size_params": 10.0},
             "stroke_width_unit_mode": "Pixels",
-            "stroke_width": 2.0,
-            "fill_color": {
-                "color_mode": "Categorical",
-                "color_params": {
-                    "values": {"dtype": "Int32", "values": [4]},
-                    "colormap": "Tableau10"
-                }
-            },
-            "position_x0": {"dtype": "Float32", "values": [2.0]},
-            "position_y0": {"dtype": "Float32", "values": [4.0]},
-            "position_x1": {"dtype": "Float32", "values": [16.0]},
-            "position_y1": {"dtype": "Float32", "values": [8.0]},
+            "stroke_width": {"size_mode": "UniformSize", "size_params": 2.0},
+            "fill_color": {"color_mode": "UniformRgb", "color_params": [255, 0, 0]},
+            "fill_opacity": {"opacity_mode": "UniformOpacity", "opacity_params": 0.5},
+            "stroke_color": {"color_mode": "UniformRgb", "color_params": [0, 0, 255]},
+            "stroke_opacity": {"opacity_mode": "UniformOpacity", "opacity_params": 1.0},
+            "position_x": {"dtype": "Float32", "values": [16.0]},
+            "position_y": {"dtype": "Float32", "values": [16.0]},
         }
     });
 
     let layer_params: RawLayerParams = serde_json::from_value(raw_layer_params)
-        .expect("Deserialize json-based RectLayerParams");
+        .expect("Deserialize json-based PointLayerParams");
 
     let params: JsValue = serde_wasm_bindgen::to_value(&RawRenderParams {
         width,

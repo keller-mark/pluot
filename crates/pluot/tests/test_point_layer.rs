@@ -570,7 +570,7 @@ fn corner_points_data_radius() -> PointLayerParams {
         point_radius: Some(SizeMode::UniformSize(0.25)),
         point_radius_unit_mode_x: UnitsMode::Data,
         point_radius_unit_mode_y: UnitsMode::Data,
-        point_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+        fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
         ..corner_points_data()
     }
 }
@@ -862,7 +862,7 @@ async fn test_point_layer_square_contain_pixel_units_instanced_opacity() {
         height: 100,
         layers: layer_params(PointLayerParams {
             // One distinct opacity per corner point.
-            point_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+            fill_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
                 values: NumericData::Float32(Arc::new(vec![0.25, 0.5, 0.75, 1.0])),
             })),
             ..corner_points_pixels()
