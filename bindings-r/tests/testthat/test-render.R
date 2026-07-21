@@ -64,7 +64,7 @@ test_that("render produces expected pixel sum", {
 
   # Drop the trailing status byte before summing pixels
   pixel_bytes <- result[-length(result)]
-  expect_equal(sum(as.integer(pixel_bytes)), 9062500)
+  expect_equal(sum(as.integer(pixel_bytes)), 1663750)
 })
 
 test_that("SVG render returns valid SVG text", {

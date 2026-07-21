@@ -121,7 +121,7 @@ cargo publish
 pnpm run build
 pnpm run bundle
 npm login
-pnpm publish --filter='./bindings-js/**' --no-git-checks --provenance --access public
+pnpm publish --filter='./bindings-js/**' --filter='./crates/pluot/pkg' --no-git-checks --provenance --access public
 
 # Python
 uv run maturin build --release
