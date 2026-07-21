@@ -4,7 +4,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{DMat4, DVec4, Mat4, Vec2, Vec3, Vec4};
-use image::{codecs::bmp::BmpEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
+use image::{codecs::png::PngEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -628,16 +628,14 @@ impl DrawToRasterCpu for BitmapLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
-/// Encode raw RGBA pixels as a BMP byte stream using the `image` crate.
-/// TODO: it seems this is not supported in all environments (e.g., macOS Preview),
-/// so we may want to switch to a different encoding approach.
-fn encode_bmp_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+/// Encode raw RGBA pixels as a PNG byte stream using the `image` crate.
+fn encode_png_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     let img: ImageBuffer<Rgba<u8>, _> =
         ImageBuffer::from_raw(width, height, rgba.to_vec()).expect("valid dimensions");
     let mut buf = Vec::new();
-    BmpEncoder::new(&mut buf)
+    PngEncoder::new(&mut buf)
         .write_image(img.as_raw(), width, height, ExtendedColorType::Rgba8)
-        .expect("BMP encode");
+        .expect("PNG encode");
     buf
 }
 
@@ -696,8 +694,8 @@ impl DrawToSvg for BitmapLayer {
             }
         }
 
-        let bmp = encode_bmp_rgba(img_w, img_h, &rgba);
-        let href = format!("data:image/bmp;base64,{}", base64_encode(&bmp));
+        let png = encode_png_rgba(img_w, img_h, &rgba);
+        let href = format!("data:image/png;base64,{}", base64_encode(&png));
 
         // TODO: reduce code reuse here
         let camera_view = view_params.camera_view.unwrap_or([

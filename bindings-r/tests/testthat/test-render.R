@@ -25,7 +25,10 @@ basic_layers <- list(
       bounds                = NULL,
       position_x            = list(dtype = "Float32", values = c(0, 1, 0, 1)),
       position_y            = list(dtype = "Float32", values = c(0, 0, 1, 1)),
-      labels_vec            = c(0L, 1L, 2L, 3L)
+      fill_color            = list(color_mode = "Categorical", color_params = list(
+        codes = list(dtype = "Uint8", values = c(0L, 1L, 2L, 3L)),
+        colormap = "Tableau10"
+      ))
     )
   )
 )
@@ -75,5 +78,5 @@ test_that("SVG render returns valid SVG text", {
   )
 
   expect_true(startsWith(svg_str, "<"))
-  expect_equal(nchar(svg_str), 635)
+  expect_equal(nchar(svg_str), 637)
 })

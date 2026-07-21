@@ -31,7 +31,10 @@ basic_plot_kwargs = dict(
                     bounds=None,
                     position_x={"dtype": "Float32", "values": [0, 1, 0, 1]},
                     position_y={"dtype": "Float32", "values": [0, 0, 1, 1]},
-                    labels_vec=[0, 1, 2, 3],
+                    fill_color={"color_mode": "Categorical", "color_params": {
+                        "codes": {"dtype": "Uint8", "values": [0, 1, 2, 3] },
+                        "colormap": "Tableau10"
+                    }},
                 )
             ),
         ]
@@ -43,16 +46,16 @@ async def test_render_triangle():
     result = await render(**basic_plot_kwargs)
     assert result is not None
     assert len(result) == (100 * 100 * 4) + 1  # RGBA for each pixel, plus one extra value
-    assert sum(result) == 1429375  # Expected sum for a triangle rendering
+    assert sum(result) == 1663750  # Expected sum for a triangle rendering
 
 @pytest.mark.asyncio
 async def test_render_to_array():
     arr = await render_to_array(**basic_plot_kwargs)
     assert arr.shape == (100, 100, 4)
     assert arr.dtype == 'uint8'
-    assert arr.sum() == 1429375
+    assert arr.sum() == 1663750
 
 @pytest.mark.asyncio
 async def test_render_to_svg():
     svg_str = await render_to_svg(**basic_plot_kwargs)
-    assert len(svg_str) == 635
+    assert len(svg_str) == 637
