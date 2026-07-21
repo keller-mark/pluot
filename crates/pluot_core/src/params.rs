@@ -38,7 +38,7 @@ pub enum GraphicsFormat {
     ExpressionRust,
     ScriptRust,
     ExpressionPython,
-    // TODO: the python scripts should include PEP 723 inline script metadata for dependencies
+    // The python script should include PEP 723 inline script metadata for dependencies
     ScriptPython,
     ExpressionR,
     ScriptR,
@@ -46,6 +46,7 @@ pub enum GraphicsFormat {
     ScriptJs,
     ExpressionJsx,
     ScriptReact,
+    // TODO: use dynamic-importmap in the generated HTML?
     ScriptHtml,
     Json,
 

@@ -412,9 +412,7 @@ fn html_script(value: &Value) -> String {
          \x20 <body>\n\
          \x20   <canvas id=\"pluot-canvas\" width=\"{width}\" height=\"{height}\"></canvas>\n\
          \x20   <script type=\"module\">\n\
-         \x20     // Dynamic import so this file works when opened directly.\n\
-         \x20     const {{ initialize, render_wasm, setStoreByName }} =\n\
-         \x20       await import(\"https://esm.sh/@pluot/core\");\n\
+         \x20     import {{ initialize, render_wasm, setStoreByName }} from \"https://esm.sh/@pluot/core\";\n\
          \n\
          \x20     await initialize();\n\
          \x20     // Register your Zarr store(s) before rendering if any layers read\n\

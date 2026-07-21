@@ -7,9 +7,7 @@
   <body>
     <canvas id="pluot-canvas" width="640" height="480"></canvas>
     <script type="module">
-      // Dynamic import so this file works when opened directly.
-      const { initialize, render_wasm, setStoreByName } =
-        await import("https://esm.sh/@pluot/core");
+      import { initialize, render_wasm, setStoreByName } from "https://esm.sh/@pluot/core";
 
       await initialize();
       // Register your Zarr store(s) before rendering if any layers read
