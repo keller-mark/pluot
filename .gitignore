@@ -46,6 +46,8 @@ skills-lock.json
 .Rproj.user
 *.o
 AUTHORS
+*.tar.gz
+*.Rcheck
 
 
 autoresearch/

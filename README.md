@@ -245,6 +245,13 @@ open bindings-r/pluotr.Rproj
 devtools::install()
 ```
 
+Or, entirely via the command-line:
+
+```sh
+R CMD build bindings-r --no-build-vignettes
+R CMD check pluotr_1.2.3.tar.gz --no-vignettes --no-build-vignettes --ignore-vignettes --no-manual
+```
+
 
 
 ## Inspired by
