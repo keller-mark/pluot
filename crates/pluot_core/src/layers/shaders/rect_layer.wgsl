@@ -148,20 +148,36 @@ fn vs_main(
     // And the inverse, to convert back from NDC (-1 to 1) to normalized (0 to 1) space.
     let NDC_TO_NORM_MAT =  translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0); // Scale down by 0.5, THEN translate by 0.5 (i.e., translating in the scaled-down space)
 
-    // TODO: handle stroke width.
-    // We want to handle stroke-width in the same way as an SVG <rect> element would:
-    // If you have a <rect> with a width="100" and a stroke-width="10", the browser calculates it like this:
-    // - The mathematical border (the path) is a line exactly at 100px.
-    // - The stroke is 10px thick.
-    // - The browser draws 5px of that stroke extending outward from the path.
-    // - The browser draws 5px of that stroke extending inward from the path.
-    // Result: the total visual size of the object will be 110px (100 width + 5 left overhang + 5 right overhang).
+    // Model-view-projection matrix
+    // References:
+    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
+    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
+    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates) (will involve the camera matrix).
-    // Note: data stroke_width units is only supported when also using data units for the positions,
-    // so we do not need to support data stroke width units when using pixel units for the positions.
-    let stroke_width_norm = stroke_width / layer_height_px;
-    let stroke_width_half_norm = stroke_width_norm / 2.0;
+    // Resolve the stroke width to pixels, honoring the stroke-width unit mode.
+    // The quad expansion (below) and the fragment stage both work in pixels, so
+    // stroke width is normalized to pixels once here.
+    //
+    // Pixel mode (stroke_width_unit_mode == 0): stroke_width is already in
+    // screen pixels.
+    //
+    // Data-coordinate mode (stroke_width_unit_mode == 1): stroke_width is in data
+    // coordinate system units. Transform it through the same pipeline as
+    // positions, but with w = 0 so translations cancel out (it is a delta/size,
+    // not a position). Stroke width is height-relative, so use the Y component of
+    // the transformed delta and scale it back to pixels. This mirrors LineLayer
+    // and StrokedPolygonLayer. Data stroke width units are only supported when the
+    // positions also use data units.
+    //
+    // We handle stroke-width the same way an SVG <rect> element does: for a
+    // stroke-width of 10px, 5px of the stroke extends outward from the path and
+    // 5px inward, so a 100px-wide rect renders 110px wide overall.
+    var stroke_width_px = stroke_width;
+    if (u.stroke_width_unit_mode == 1u) {
+        let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
+        let width_norm = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig;
+        stroke_width_px = abs(width_norm.y) * layer_height_px;
+    }
 
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var result_size_px = vec2<f32>(0.0, 0.0);
@@ -192,9 +208,9 @@ fn vs_main(
         let half_rect_height_norm = (target_point_pos_norm.y - source_point_pos_norm.y) / 2.0;
 
         // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
-        // stroke_width is in pixels; convert half of it to normalized coords (separate x/y for aspect ratio).
-        let sw_half_norm_x = stroke_width / (2.0 * layer_width_px);
-        let sw_half_norm_y = stroke_width / (2.0 * layer_height_px);
+        // stroke_width_px is in pixels; convert half of it to normalized coords (separate x/y for aspect ratio).
+        let sw_half_norm_x = stroke_width_px / (2.0 * layer_width_px);
+        let sw_half_norm_y = stroke_width_px / (2.0 * layer_height_px);
 
         let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
         let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -220,16 +236,10 @@ fn vs_main(
             out.quad_pos = (corner + 1.0) * 0.5;
             out.instance_index = instance_index;
             out.rect_size_px = result_size_px;
-            out.stroke_width_px = stroke_width;
+            out.stroke_width_px = stroke_width_px;
             return out;
         }
     }
-
-    // Model-view-projection matrix
-    // References:
-    // - https://github.com/flekschas/regl-scatterplot/blob/17a650c352fad313d1574472b2fdc5f58b9e1eca/src/index.js#L1582
-    // - https://nalgebra.rs/docs/user_guide/cg_recipes#build-a-mvp-matrix
-    let model_view_projection = ASPECT_RATIO_MAT * u.camera_view;
 
     let transform_mat = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT);
 
@@ -244,11 +254,10 @@ fn vs_main(
     let half_rect_height_norm = (target_pos_norm.y - source_pos_norm.y) / 2.0;
 
     // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
-    // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
-    // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
-    // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let sw_half_norm_x = stroke_width / (2.0 * layer_width_px);
-    let sw_half_norm_y = stroke_width / (2.0 * layer_height_px);
+    // stroke_width_px was resolved to pixels above (honoring stroke_width_unit_mode),
+    // so convert half of it to normalized coords (separate x/y for aspect ratio).
+    let sw_half_norm_x = stroke_width_px / (2.0 * layer_width_px);
+    let sw_half_norm_y = stroke_width_px / (2.0 * layer_height_px);
 
     let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
     let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -284,7 +293,7 @@ fn vs_main(
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     out.rect_size_px = result_size_data;
-    out.stroke_width_px = stroke_width;
+    out.stroke_width_px = stroke_width_px;
     return out;
 }
 
