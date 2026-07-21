@@ -49,7 +49,7 @@ async def _(camera_view, render_to_image):
                         point_radius_unit_mode_x="Pixels",
                         point_radius_unit_mode_y="Pixels",
                         point_shape_mode="Square",
-                        point_radius=15.0,
+                        point_radius={ "size_mode": "UniformSize", "size_params": 15.0 },
                         store_name="my_store",
                         bounds=dict(
                           margin_top= 0,
@@ -59,7 +59,10 @@ async def _(camera_view, render_to_image):
                         ),
                         position_x={"dtype": "Float32", "values": [100, 100, 400, 400]},
                         position_y={"dtype": "Float32", "values": [100, 400, 100, 400]},
-                        labels_vec=[0, 1, 2, 3],
+                        fill_color={ "color_mode": "Categorical", "color_params": {
+                            "codes": { "dtype": "Uint8", "values": [0, 1, 2, 3] },
+                            "colormap": "Tableau10"
+                        } },
                       )
                 ),
                 dict(
