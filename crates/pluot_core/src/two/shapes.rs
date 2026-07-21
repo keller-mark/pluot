@@ -30,6 +30,7 @@ pub struct TwoRectangle {
     pub linewidth: f64,
     pub opacity: f64,
     // Opacity of the fill / stroke independently (multiplied with `opacity`).
+    // TODO: only support fill-opacity and stroke-opacity, not plain opacity?
     pub fill_opacity: f64,
     pub stroke_opacity: f64,
     pub rotation: Option<f64>,
@@ -64,6 +65,7 @@ pub struct TwoCircle {
     pub linewidth: f64,
     pub opacity: f64,
     // Opacity of the fill / stroke independently (multiplied with `opacity`).
+    // TODO: only support fill-opacity and stroke-opacity, not plain opacity?
     pub fill_opacity: f64,
     pub stroke_opacity: f64,
 }
@@ -118,6 +120,7 @@ pub struct TwoPath {
     // Width of the stroke line if stroke is not null.
     pub linewidth: f64,
     pub opacity: f64,
+    // TODO: only support fill-opacity and stroke-opacity, not plain opacity?
     pub fill_opacity: f64,
     pub stroke_opacity: f64,
     pub stroke_linejoin: Option<String>,
