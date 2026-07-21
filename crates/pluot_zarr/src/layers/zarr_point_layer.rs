@@ -369,7 +369,7 @@ impl PreparedLayer for ZarrPointLayer {
                 point_radius_unit_mode_x: self.layer_params.point_radius_unit_mode_x,
                 point_radius_unit_mode_y: self.layer_params.point_radius_unit_mode_y,
                 point_shape_mode: self.layer_params.point_shape_mode,
-                point_opacity: Some(OpacityMode::UniformOpacity(point_opacity)),
+                fill_opacity: Some(OpacityMode::UniformOpacity(point_opacity)),
                 model_matrix: self.layer_params.model_matrix,
                 fill_color: Some(ColorMode::Categorical(CategoricalParams {
                     codes: NumericData::Int32(l_i32.clone()),
@@ -377,6 +377,7 @@ impl PreparedLayer for ZarrPointLayer {
                 })),
                 position_x: x_data.as_ref().clone(),
                 position_y: y_data.as_ref().clone(),
+                ..Default::default()
             }
         );
         sublayer.prepare(gpu_context).await;

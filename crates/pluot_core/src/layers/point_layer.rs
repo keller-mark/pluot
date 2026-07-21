@@ -12,8 +12,12 @@ use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode,
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
-use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
-use crate::scalar_mode::{cpu_point_opacity, cpu_point_radius, prepare_opacity_mode, prepare_size_mode};
+use crate::color_mode::{cpu_fill_color, prepare_color_mode, prepare_stroke_color, quantitative_domain};
+use crate::scalar_mode::{
+    cpu_fill_opacity, cpu_point_radius, cpu_stroke_opacity, cpu_stroke_width,
+    prepare_fill_opacity_mode, prepare_size_mode, prepare_stroke_opacity_mode,
+    prepare_stroke_width_mode,
+};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -46,16 +50,19 @@ pub struct PointLayerParams {
 
     pub point_radius: Option<SizeMode>,
 
-    // TODO: rename to fill_opacity.
-    pub point_opacity: Option<OpacityMode>,
-
-
     // How to color each point. See [`ColorMode`]: modes carrying `NumericData`
     // (instanced/categorical/quantitative) supply one or more per-element value
     // arrays, which are uploaded to the GPU as textures at draw time.
     pub fill_color: Option<ColorMode>,
 
-    // TODO: also support stroke_color, stroke_opacity, and stroke_width
+    // Note: Renamed from point_opacity.
+    pub fill_opacity: Option<OpacityMode>,
+
+    pub stroke_width_unit_mode: UnitsMode,
+
+    pub stroke_color: Option<ColorMode>,
+    pub stroke_opacity: Option<OpacityMode>,
+    pub stroke_width: Option<SizeMode>,
 
     // Per-point X/Y coordinates. Each may be any supported numeric dtype
     // (8–64 bit int/uint, or 32/64-bit float), and X and Y may differ. The
@@ -77,8 +84,12 @@ impl Default for PointLayerParams {
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
-            point_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: None,
+            fill_opacity: None,
+            stroke_width_unit_mode: UnitsMode::Pixels,
+            stroke_color: None,
+            stroke_opacity: None,
+            stroke_width: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
         }
@@ -106,11 +117,20 @@ impl PointLayer {
         if let Some(fill_color) = &layer_params.fill_color {
             fill_color.validate_len(n);
         }
+        if let Some(fill_opacity) = &layer_params.fill_opacity {
+            fill_opacity.validate_len(n);
+        }
         if let Some(point_radius) = &layer_params.point_radius {
             point_radius.validate_len(n);
         }
-        if let Some(point_opacity) = &layer_params.point_opacity {
-            point_opacity.validate_len(n);
+        if let Some(stroke_color) = &layer_params.stroke_color {
+            stroke_color.validate_len(n);
+        }
+        if let Some(stroke_width) = &layer_params.stroke_width {
+            stroke_width.validate_len(n);
+        }
+        if let Some(stroke_opacity) = &layer_params.stroke_opacity {
+            stroke_opacity.validate_len(n);
         }
         for (name, len) in [
             ("position_y", layer_params.position_y.len()),
@@ -155,7 +175,7 @@ struct PointLayerUniforms {
     point_radius_unit_mode_x: u32, // 0 = pixels, 1 = data units
     point_radius_unit_mode_y: u32, // 0 = pixels, 1 = data units
     point_shape_mode: u32, // 0 = square, 1 = circle
-    point_opacity: f32,
+    fill_opacity: f32,
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
@@ -163,11 +183,21 @@ struct PointLayerUniforms {
     fill_color: Vec4,         // rgba color used by the UniformRgb mode
     fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
+    stroke_width: f32,            // border width (UniformSize fallback)
+    stroke_width_unit_mode: u32,  // 0 = pixels, 1 = data units
+    stroke_color_mode: u32,       // see ColorMode::shader_mode()
+    stroke_color: Vec4,           // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32,    // 1 = reverse the quantitative colormap
+    stroke_color_domain: Vec2,    // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,          // stroke opacity (UniformOpacity fallback)
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
-// Bindings 0-2 are the uniforms buffer and the X/Y position textures.
-const COLOR_BINDING_START: u32 = 3;
+// Bindings 0-2 are the uniforms buffer and the X/Y position textures. The
+// fill-color textures come first (from here), then the stroke-color, radius,
+// stroke-width, fill-opacity and stroke-opacity textures, each present only when
+// instanced.
+const FILL_COLOR_BINDING_START: u32 = 3;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -189,20 +219,35 @@ impl DrawToRasterGpu for PointLayer {
         let (y_texture_view, y_dtype) =
             layer_params.position_y.create_data_texture(device, queue, "Y Coordinates Texture");
 
-        // Build the GPU-side color resources for the configured color mode. Modes
-        // that carry per-element `NumericData` upload it as one or more textures
-        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
-        // `get_fill_color` function injected into the shader below.
-        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
+        // Build the GPU-side resources for each fill/stroke mode. Modes that carry
+        // per-element `NumericData` upload it as one or more textures and
+        // contribute a WGSL getter function injected into the shader below. The
+        // texture bindings are assigned sequentially: fill color first (from
+        // FILL_COLOR_BINDING_START), then stroke color, radius, stroke width, fill
+        // opacity and stroke opacity, each consuming binding slots only when
+        // instanced.
+        let fill_color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), FILL_COLOR_BINDING_START);
 
-        // Build the GPU-side size and opacity resources. Like the color mode,
-        // the instanced variants upload a per-element value texture; those
-        // bindings follow the color textures. The size texture is read in the
-        // vertex stage (radius), the opacity texture in the fragment stage.
-        let size_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
+        let stroke_color_binding_start = FILL_COLOR_BINDING_START + fill_color.textures.len() as u32;
+        let stroke_color = prepare_stroke_color(device, queue, layer_params.stroke_color.as_ref(), stroke_color_binding_start);
+
+        // Point radius (read in the vertex stage to expand the quad).
+        let size_binding_start = stroke_color_binding_start + stroke_color.textures.len() as u32;
         let size = prepare_size_mode(device, queue, layer_params.point_radius.as_ref(), size_binding_start);
-        let opacity_binding_start = size_binding_start + size.texture.is_some() as u32;
-        let opacity = prepare_opacity_mode(device, queue, layer_params.point_opacity.as_ref(), opacity_binding_start);
+
+        // When `stroke_width` is None, treat it as a zero-width (no) border so no
+        // stroke band is drawn. `prepare_stroke_width_mode` otherwise defaults a
+        // missing width to 1px, which is not what we want here.
+        let no_stroke_width = SizeMode::UniformSize(0.0);
+        let stroke_width_mode = layer_params.stroke_width.as_ref().unwrap_or(&no_stroke_width);
+        let stroke_width_binding_start = size_binding_start + size.texture.is_some() as u32;
+        let width = prepare_stroke_width_mode(device, queue, Some(stroke_width_mode), stroke_width_binding_start);
+
+        // Fill opacity (fragment stage) and stroke opacity (fragment stage).
+        let fill_opacity_binding_start = stroke_width_binding_start + width.texture.is_some() as u32;
+        let fill_opacity = prepare_fill_opacity_mode(device, queue, layer_params.fill_opacity.as_ref(), fill_opacity_binding_start);
+        let stroke_opacity_binding_start = fill_opacity_binding_start + fill_opacity.texture.is_some() as u32;
+        let stroke_opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), stroke_opacity_binding_start);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -265,7 +310,7 @@ impl DrawToRasterGpu for PointLayer {
                 PointShapeMode::Square => 0,
                 PointShapeMode::Circle => 1,
             },
-            point_opacity: opacity.static_value,
+            fill_opacity: fill_opacity.static_value,
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
                 AspectRatioMode::Contain => 1,
@@ -283,10 +328,20 @@ impl DrawToRasterGpu for PointLayer {
                 0.0, 0.0, 1.0, 0.0, // Column 3
                 0.0, 0.0, 0.0, 1.0,
             ])),
-            fill_color_mode: color.mode,
-            fill_color: Vec4::from_array(color.static_color),
-            fill_color_reverse: color.reverse,
-            fill_color_domain: Vec2::from_array(color.domain),
+            fill_color_mode: fill_color.mode,
+            fill_color: Vec4::from_array(fill_color.static_color),
+            fill_color_reverse: fill_color.reverse,
+            fill_color_domain: Vec2::from_array(fill_color.domain),
+            stroke_width: width.static_value,
+            stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
+                UnitsMode::Pixels => 0,
+                UnitsMode::Data => 1,
+            },
+            stroke_color_mode: stroke_color.mode,
+            stroke_color: Vec4::from_array(stroke_color.static_color),
+            stroke_color_reverse: stroke_color.reverse,
+            stroke_color_domain: Vec2::from_array(stroke_color.domain),
+            stroke_opacity: stroke_opacity.static_value,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -343,10 +398,11 @@ impl DrawToRasterGpu for PointLayer {
                 count: None,
             },
         ];
-        // One fragment-visible texture per color value / palette array.
-        for (i, tex) in color.textures.iter().enumerate() {
+        // One fragment-visible texture per fill-color value / palette array,
+        // followed by the same for the stroke color.
+        for (i, tex) in fill_color.textures.iter().enumerate() {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: COLOR_BINDING_START + i as u32,
+                binding: FILL_COLOR_BINDING_START + i as u32,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: tex.sample_type,
@@ -356,9 +412,22 @@ impl DrawToRasterGpu for PointLayer {
                 count: None,
             });
         }
-        // Instanced radius texture (read in the vertex stage) and instanced
-        // opacity texture (read in the fragment stage), each present only when
-        // the corresponding mode is instanced.
+        for (i, tex) in stroke_color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: stroke_color_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        // Instanced radius and stroke-width textures (read in the vertex stage to
+        // expand / band the quad) and instanced fill-/stroke-opacity textures
+        // (read in the fragment stage), each present only when the corresponding
+        // mode is instanced.
         if let Some(tex) = &size.texture {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
                 binding: size_binding_start,
@@ -371,9 +440,33 @@ impl DrawToRasterGpu for PointLayer {
                 count: None,
             });
         }
-        if let Some(tex) = &opacity.texture {
+        if let Some(tex) = &width.texture {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: opacity_binding_start,
+                binding: stroke_width_binding_start,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &fill_opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: fill_opacity_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &stroke_opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: stroke_opacity_binding_start,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: tex.sample_type,
@@ -402,9 +495,15 @@ impl DrawToRasterGpu for PointLayer {
                 resource: wgpu::BindingResource::TextureView(&y_texture_view),
             },
         ];
-        for (i, tex) in color.textures.iter().enumerate() {
+        for (i, tex) in fill_color.textures.iter().enumerate() {
             bg_entries.push(wgpu::BindGroupEntry {
-                binding: COLOR_BINDING_START + i as u32,
+                binding: FILL_COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in stroke_color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: stroke_color_binding_start + i as u32,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
@@ -414,9 +513,21 @@ impl DrawToRasterGpu for PointLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
-        if let Some(tex) = &opacity.texture {
+        if let Some(tex) = &width.texture {
             bg_entries.push(wgpu::BindGroupEntry {
-                binding: opacity_binding_start,
+                binding: stroke_width_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &fill_opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: fill_opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &stroke_opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: stroke_opacity_binding_start,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
@@ -436,12 +547,16 @@ impl DrawToRasterGpu for PointLayer {
             // Color-mode specialization: the flat-index texel helper plus the
             // assembled color module (bindings + `get_fill_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-            .define("color_module", &color.wgsl)
-            // Size- and opacity-mode specialization: each contributes its
-            // `get_point_radius` / `get_point_opacity` function (plus a value
-            // texture binding when instanced).
+            .define("fill_color_module", &fill_color.wgsl)
+            .define("stroke_color_module", &stroke_color.wgsl)
+            // Size-, width- and opacity-mode specialization: each contributes its
+            // `get_point_radius` / `get_stroke_width` / `get_fill_opacity` /
+            // `get_stroke_opacity` function (plus a value texture binding when
+            // instanced).
             .define("size_module", &size.wgsl)
-            .define("opacity_module", &opacity.wgsl)
+            .define("stroke_width_module", &width.wgsl)
+            .define("fill_opacity_module", &fill_opacity.wgsl)
+            .define("stroke_opacity_module", &stroke_opacity.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -553,8 +668,13 @@ impl DrawToSvg for PointLayer {
         // Iterate over the data points and create SVG elements.
         let n = layer_params.position_x.len();
 
-        // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match layer_params.fill_color.as_ref() {
+        // Quantitative normalization domains, computed once for the whole layer
+        // (one for the fill color, one for the stroke color).
+        let fill_quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
+        let stroke_quant_domain = match layer_params.stroke_color.as_ref() {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
@@ -622,10 +742,10 @@ impl DrawToSvg for PointLayer {
                 Some(&model_matrix_raw),
             );
 
-            // Per-point radius / opacity (uniform or instanced), matching the
+            // Per-point radius / fill opacity (uniform or instanced), matching the
             // GPU size/opacity modes.
             let radius_value = cpu_point_radius(layer_params.point_radius.as_ref(), i);
-            let point_opacity = cpu_point_opacity(layer_params.point_opacity.as_ref(), i) as f64;
+            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i) as f64;
 
             let point_radius = if layer_params.point_radius_unit_mode_x == UnitsMode::Data {
                 let (sx, sy) = get_point_size(
@@ -646,25 +766,72 @@ impl DrawToSvg for PointLayer {
                 radius_value
             };
 
-            let fill = Some(TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain)));
+            let fill = Some(TwoColor::Rgb(cpu_fill_color(
+                layer_params.fill_color.as_ref(), i, fill_quant_domain,
+            )));
+
+            // Stroke: only drawn when a stroke width is configured. Uses the
+            // stroke color mode, opacity and per-point width. The stroke is drawn
+            // inward from `point_radius` (the point's outer bound stays fixed), so
+            // the SVG stroke — which is centered on the path — is placed on a
+            // boundary inset by half the stroke width.
+            let (stroke, stroke_opacity, stroke_width_px) = if layer_params.stroke_width.is_some() {
+                let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), i);
+                let width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
+                    let (sx, sy) = get_point_size(
+                        width_value,
+                        width_value,
+                        layer_w,
+                        layer_h,
+                        &camera_view,
+                        layer_params.data_unit_mode_x,
+                        layer_params.data_unit_mode_y,
+                        view_params.aspect_ratio_mode,
+                        view_params.aspect_ratio_alignment_mode,
+                        Some(&model_matrix_raw),
+                    );
+                    (sx.abs() + sy.abs()) * 0.5
+                } else {
+                    width_value
+                };
+                (
+                    Some(TwoColor::Rgb(cpu_fill_color(
+                        layer_params.stroke_color.as_ref(), i, stroke_quant_domain,
+                    ))),
+                    cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
+                    width_px as f64,
+                )
+            } else {
+                (None, 1.0, 0.0)
+            };
 
             // Create a circle or square element based on point_shape_mode.
             svg_elements.push(match layer_params.point_shape_mode {
                 PointShapeMode::Circle => TwoElement::Circle(TwoCircle {
                     x: px as f64,
+                    // Inset the drawn radius by half the stroke width so the
+                    // centered SVG stroke's outer edge lands at `point_radius`.
+                    radius: (point_radius as f64 - stroke_width_px / 2.0).max(0.0),
                     y: (layer_h - py) as f64,
-                    radius: point_radius as f64,
                     fill,
-                    opacity: point_opacity,
+                    stroke,
+                    linewidth: stroke_width_px,
+                    fill_opacity,
+                    stroke_opacity,
                     ..Default::default()
                 }),
                 PointShapeMode::Square => TwoElement::Rectangle(TwoRectangle {
-                    x: (px - point_radius) as f64,
-                    y: ((layer_h - py) - point_radius) as f64,
-                    width: (point_radius * 2.0) as f64,
-                    height: (point_radius * 2.0) as f64,
+                    // Inset the drawn square by half the stroke width, so the
+                    // centered SVG stroke stays within `point_radius` of center.
+                    x: (px as f64 - point_radius as f64) + stroke_width_px / 2.0,
+                    y: ((layer_h - py) as f64 - point_radius as f64) + stroke_width_px / 2.0,
+                    width: (point_radius as f64 * 2.0 - stroke_width_px).max(0.0),
+                    height: (point_radius as f64 * 2.0 - stroke_width_px).max(0.0),
                     fill,
-                    opacity: point_opacity,
+                    stroke,
+                    linewidth: stroke_width_px,
+                    fill_opacity,
+                    stroke_opacity,
                     ..Default::default()
                 })
             });

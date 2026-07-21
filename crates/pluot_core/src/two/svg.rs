@@ -211,12 +211,18 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
 
                 if let Some(fill) = &d.fill {
                     circle = circle.set("fill", fill.to_string());
+                    if d.fill_opacity < 1.0 {
+                        circle = circle.set("fill-opacity", d.fill_opacity);
+                    }
                 }
 
                 if let Some(stroke) = &d.stroke {
                     circle = circle
                         .set("stroke-width", d.linewidth)
                         .set("stroke", stroke.to_string());
+                    if d.stroke_opacity < 1.0 {
+                        circle = circle.set("stroke-opacity", d.stroke_opacity);
+                    }
                 }
                 group.add(circle)
             }
@@ -381,6 +387,7 @@ mod tests {
                 fill: Some(TwoColor::Rgb((0, 255, 0))),
                 stroke: None,
                 linewidth: 1.0,
+                ..Default::default()
             }),
             TwoElement::Line(TwoLine {
                 x1: 70.0,

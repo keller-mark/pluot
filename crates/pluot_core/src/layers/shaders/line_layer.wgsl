@@ -89,7 +89,7 @@ struct FSOut {
 // Color module: any per-element color value/palette texture bindings (from
 // binding 5 onward) plus `fn get_stroke_color(instance_index: u32) -> vec3<f32>`.
 // Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
-{{color_module}}
+{{stroke_color_module}}
 
 // Stroke width module: an optional per-element width value texture (instanced
 // mode) plus `fn get_stroke_width(poly_index: u32) -> f32`. Assembled per size

@@ -59,7 +59,7 @@ fn load_color_index(idx: u32) -> u32 {
 // Color module: any per-element color value/palette texture bindings (from
 // binding 3 onward) plus `fn get_fill_color(color_index: u32) -> vec3<f32>`.
 // Assembled per color mode by `crate::color_mode::prepare_color_mode`.
-{{color_module}}
+{{fill_color_module}}
 
 // Fill opacity module: an optional per-element opacity value texture (instanced
 // mode) plus `fn get_fill_opacity(color_index: u32) -> f32`. Assembled per

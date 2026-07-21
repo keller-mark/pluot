@@ -287,7 +287,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
             // Color-mode specialization: the flat-index texel helper plus the
             // assembled color module (bindings + `get_fill_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-            .define("color_module", &color.wgsl)
+            .define("fill_color_module", &color.wgsl)
             // Fill opacity-mode specialization: contributes `get_fill_opacity`
             // (plus a value texture binding when instanced).
             .define("fill_opacity_module", &opacity.wgsl)

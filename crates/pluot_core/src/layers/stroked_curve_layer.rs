@@ -292,7 +292,7 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             // Color-mode specialization: the flat-index texel helper plus the
             // assembled color module (bindings + `get_stroke_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-            .define("color_module", &color.wgsl)
+            .define("stroke_color_module", &color.wgsl)
             // Width- and opacity-mode specialization: each contributes its
             // `get_stroke_width` / `get_stroke_opacity` function (plus a value
             // texture binding when instanced).

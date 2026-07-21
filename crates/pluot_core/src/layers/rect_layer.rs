@@ -539,7 +539,7 @@ impl DrawToRasterGpu for RectLayer {
             // assembled fill/stroke color modules (bindings + `get_fill_color` /
             // `get_stroke_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-            .define("color_module", &fill_color.wgsl)
+            .define("fill_color_module", &fill_color.wgsl)
             .define("stroke_color_module", &stroke_color.wgsl)
             // Width- and opacity-mode specialization: each contributes its
             // `get_stroke_width` / `get_fill_opacity` / `get_stroke_opacity`

@@ -66,7 +66,7 @@ struct FSOut {
 // Fill-color module: any per-element color value/palette texture bindings (from
 // binding 5 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
 // Assembled per color mode by `crate::color_mode::prepare_color_mode`.
-{{color_module}}
+{{fill_color_module}}
 
 // Stroke-color module: the stroke counterpart, defining
 // `fn get_stroke_color(instance_index: u32) -> vec3<f32>`. Assembled by

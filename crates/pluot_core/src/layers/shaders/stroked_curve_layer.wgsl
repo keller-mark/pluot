@@ -67,7 +67,7 @@ struct SegmentEntry {
 // Assembled per color mode by `crate::color_mode::prepare_stroke_color`. A
 // `StrokedCurveLayer` renders a single shape, so the shader always resolves
 // element 0.
-{{color_module}}
+{{stroke_color_module}}
 
 // Stroke width module: an optional value texture (instanced mode) plus
 // `fn get_stroke_width(poly_index: u32) -> f32`. Assembled per size mode by
