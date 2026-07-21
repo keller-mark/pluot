@@ -16,7 +16,6 @@ struct RectLayerUniforms {
     camera_view: mat4x4<f32>,
     data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
     data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
-    filled: u32, // 0: false, 1: true
     stroke_width: f32,
     stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
@@ -26,6 +25,12 @@ struct RectLayerUniforms {
     fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
     fill_color_reverse: u32, // 1 = reverse the quantitative colormap
     fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    fill_opacity: f32, // fill opacity used by the UniformOpacity mode
+    stroke_color_mode: u32, // see ColorMode::shader_mode()
+    stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
+    stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32, // stroke opacity used by the UniformOpacity mode
 };
 
 struct VSOut {
@@ -35,6 +40,8 @@ struct VSOut {
     // Reference: https://webgpufundamentals.org/webgpu/lessons/webgpu-inter-stage-variables.html#a-interpolate
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
+    // Per-instance stroke width in pixels, resolved from the stroke-width module.
+    @location(3) @interpolate(flat) stroke_width_px: f32,
 };
 
 struct FSOut {
@@ -56,10 +63,30 @@ struct FSOut {
 @group(0) @binding(3) var position_x1_coords: texture_2d<{{position_x1_coords_dtype}}>;
 @group(0) @binding(4) var position_y1_coords: texture_2d<{{position_y1_coords_dtype}}>;
 
-// Color module: any per-element color value/palette texture bindings (from
+// Fill-color module: any per-element color value/palette texture bindings (from
 // binding 5 onward) plus `fn get_fill_color(instance_index: u32) -> vec3<f32>`.
 // Assembled per color mode by `crate::color_mode::prepare_color_mode`.
 {{color_module}}
+
+// Stroke-color module: the stroke counterpart, defining
+// `fn get_stroke_color(instance_index: u32) -> vec3<f32>`. Assembled by
+// `crate::color_mode::prepare_stroke_color`.
+{{stroke_color_module}}
+
+// Stroke-width module: an optional per-element width value texture (instanced
+// mode, read in the vertex stage) plus `fn get_stroke_width(instance_index: u32)
+// -> f32`. Assembled by `crate::scalar_mode::prepare_stroke_width_mode`.
+{{stroke_width_module}}
+
+// Fill-opacity module: an optional per-element opacity value texture (instanced
+// mode) plus `fn get_fill_opacity(instance_index: u32) -> f32`. Assembled by
+// `crate::scalar_mode::prepare_fill_opacity_mode`.
+{{fill_opacity_module}}
+
+// Stroke-opacity module: an optional per-element opacity value texture
+// (instanced mode) plus `fn get_stroke_opacity(instance_index: u32) -> f32`.
+// Assembled by `crate::scalar_mode::prepare_stroke_opacity_mode`.
+{{stroke_opacity_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -90,6 +117,11 @@ fn vs_main(
     let position_y1_val = f32(textureLoad(position_y1_coords, flat_texel_coord(instance_index, position_y1_tex_width), 0).x);
     let source_point_pos_orig = u.model_matrix * vec4f(position_x0_val, position_y0_val, 0.0, 1.0);
     let target_point_pos_orig = u.model_matrix * vec4f(position_x1_val, position_y1_val, 0.0, 1.0);
+
+    // Per-instance border width (uniform or instanced, depending on the injected
+    // stroke-width module). Resolved once here and used for quad expansion below,
+    // and passed through to the fragment shader to size the stroke band.
+    let stroke_width = get_stroke_width(instance_index);
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -128,7 +160,7 @@ fn vs_main(
     // TODO: Handle stroke_width_unit_mode == 1 (data coordinates) (will involve the camera matrix).
     // Note: data stroke_width units is only supported when also using data units for the positions,
     // so we do not need to support data stroke width units when using pixel units for the positions.
-    let stroke_width_norm = u.stroke_width / layer_height_px;
+    let stroke_width_norm = stroke_width / layer_height_px;
     let stroke_width_half_norm = stroke_width_norm / 2.0;
 
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
@@ -161,8 +193,8 @@ fn vs_main(
 
         // SVG-style stroke: expand the quad outward by stroke_width/2 on each side.
         // stroke_width is in pixels; convert half of it to normalized coords (separate x/y for aspect ratio).
-        let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
-        let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+        let sw_half_norm_x = stroke_width / (2.0 * layer_width_px);
+        let sw_half_norm_y = stroke_width / (2.0 * layer_height_px);
 
         let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
         let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -188,6 +220,7 @@ fn vs_main(
             out.quad_pos = (corner + 1.0) * 0.5;
             out.instance_index = instance_index;
             out.rect_size_px = result_size_px;
+            out.stroke_width_px = stroke_width;
             return out;
         }
     }
@@ -214,8 +247,8 @@ fn vs_main(
     // For stroke_width_unit_mode == 0 (pixels), convert to normalized coords.
     // TODO: Handle stroke_width_unit_mode == 1 (data coordinates).
     // TODO: once supporting data unit sizing, apply the model_matrix to the size as needed.
-    let sw_half_norm_x = u.stroke_width / (2.0 * layer_width_px);
-    let sw_half_norm_y = u.stroke_width / (2.0 * layer_height_px);
+    let sw_half_norm_x = stroke_width / (2.0 * layer_width_px);
+    let sw_half_norm_y = stroke_width / (2.0 * layer_height_px);
 
     let expanded_half_w = half_rect_width_norm + sign(half_rect_width_norm) * sw_half_norm_x;
     let expanded_half_h = half_rect_height_norm + sign(half_rect_height_norm) * sw_half_norm_y;
@@ -251,6 +284,7 @@ fn vs_main(
     out.quad_pos = (corner + 1.0) * 0.5;
     out.instance_index = instance_index;
     out.rect_size_px = result_size_data;
+    out.stroke_width_px = stroke_width;
     return out;
 }
 
@@ -260,37 +294,43 @@ fn fs_main(
     @location(0) quad_pos: vec2<f32>,
     @location(1) @interpolate(flat) instance_index: u32,
     @location(2) @interpolate(flat) rect_size_px: vec2<f32>,
+    @location(3) @interpolate(flat) stroke_width_px: f32,
 ) -> FSOut {
 
     // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
     // The stroke band is stroke_width thick from the outer edge inward
     // (stroke_width/2 was added outward + stroke_width/2 extends inward from the original boundary).
-    let expanded_w = rect_size_px.x + u.stroke_width;
-    let expanded_h = rect_size_px.y + u.stroke_width;
+    let expanded_w = rect_size_px.x + stroke_width_px;
+    let expanded_h = rect_size_px.y + stroke_width_px;
 
-    let stroke_frac_x = u.stroke_width / expanded_w;
-    let stroke_frac_y = u.stroke_width / expanded_h;
+    let stroke_frac_x = stroke_width_px / expanded_w;
+    let stroke_frac_y = stroke_width_px / expanded_h;
 
     // quad_pos ranges from (0,0) to (1,1) across the expanded quad.
-    // If the fragment is beyond the stroke band on ALL four sides, it's interior; discard.
+    // A fragment beyond the stroke band on ALL four sides is interior (fill);
+    // otherwise it lies within the border band (stroke). With a zero stroke
+    // width the band collapses and every fragment is interior.
     let inside_left   = quad_pos.x > stroke_frac_x;
     let inside_right  = quad_pos.x < (1.0 - stroke_frac_x);
     let inside_bottom = quad_pos.y > stroke_frac_y;
     let inside_top    = quad_pos.y < (1.0 - stroke_frac_y);
+    let is_interior = inside_left && inside_right && inside_bottom && inside_top;
 
-    if (inside_left && inside_right && inside_bottom && inside_top) {
-        if(u.filled == 0u) {
-            // Completely discard if in "stroked" mode (i.e., not filled).
-            discard;
-        }
-        // TODO: render using the fill color as opposed to the stroke color.
+    // The color / opacity modules resolve the per-instance value for the active
+    // mode (static, instanced RGB, categorical or quantitative for color; static
+    // or instanced for opacity). Interior fragments use the fill; border
+    // fragments use the stroke.
+    var out_color: vec3<f32>;
+    var alpha: f32;
+    if (is_interior) {
+        out_color = get_fill_color(instance_index);
+        alpha = get_fill_opacity(instance_index);
+    } else {
+        out_color = get_stroke_color(instance_index);
+        alpha = get_stroke_opacity(instance_index);
     }
 
-    // The color module's get_fill_color resolves the per-instance color for the
-    // active color mode (static, instanced RGB, categorical or quantitative).
-    let out_color = get_fill_color(instance_index);
-
     var out: FSOut;
-    out.color = vec4<f32>(out_color, 1.0);
+    out.color = vec4<f32>(out_color, alpha);
     return out;
 }

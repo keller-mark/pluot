@@ -7,8 +7,9 @@ use test_utils::render_and_check_both_snapshots;
 
 use pluot::{
     AspectRatioMode, CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
-    LayerParams, MarginParams, QuantitativeParams, QuantitativeColormap,
-    RectLayerParams, RenderParams, UnitsMode, NumericData
+    InstancedOpacityParams, InstancedSizeParams, LayerParams, MarginParams, OpacityMode,
+    QuantitativeParams, QuantitativeColormap,
+    RectLayerParams, RenderParams, SizeMode, UnitsMode, NumericData
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -28,7 +29,7 @@ fn corner_rects_data() -> RectLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        stroke_width: Some(2.0),
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
         stroke_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
         position_x0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
@@ -39,6 +40,7 @@ fn corner_rects_data() -> RectLayerParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
         })),
+        ..Default::default()
     }
 }
 
@@ -49,7 +51,7 @@ fn corner_rects_pixels() -> RectLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Pixels,
-        stroke_width: Some(2.0),
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
         stroke_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
         position_x0: NumericData::Float32(Arc::new(vec![0.0, 50.0])),
@@ -60,6 +62,7 @@ fn corner_rects_pixels() -> RectLayerParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
         })),
+        ..Default::default()
     }
 }
 
@@ -70,7 +73,7 @@ fn corner_rects_data_x_pixel_y() -> RectLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Pixels,
-        stroke_width: Some(2.0),
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
         stroke_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
         position_x0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
@@ -81,6 +84,7 @@ fn corner_rects_data_x_pixel_y() -> RectLayerParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
         })),
+        ..Default::default()
     }
 }
 
@@ -91,7 +95,7 @@ fn corner_rects_pixel_x_data_y() -> RectLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Data,
-        stroke_width: Some(2.0),
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
         stroke_width_unit_mode: UnitsMode::Pixels,
         model_matrix: None,
         position_x0: NumericData::Float32(Arc::new(vec![0.0, 50.0])),
@@ -102,6 +106,7 @@ fn corner_rects_pixel_x_data_y() -> RectLayerParams {
             codes: NumericData::Int32(Arc::new(vec![0, 1])),
             colormap: CategoricalColormap::Tableau10,
         })),
+        ..Default::default()
     }
 }
 
@@ -544,4 +549,117 @@ async fn test_rect_layer_square_contain_data_units_categorical_custom_color() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_categorical_custom_color").await;
+}
+
+// ── Stroke color / width and fill/stroke opacity ──────────────────────────────
+
+// Uniform stroke color: filled rects with a solid red border.
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_units_stroke_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(4.0)),
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            ..corner_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_stroke_color").await;
+}
+
+// Instanced stroke color: each rect's border is colored from a categorical
+// palette, independent of its fill.
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_units_stroke_color_categorical() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(4.0)),
+            fill_color: Some(ColorMode::UniformRgb((200, 200, 200))),
+            stroke_color: Some(ColorMode::Categorical(CategoricalParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                colormap: CategoricalColormap::Tableau10,
+            })),
+            ..corner_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_stroke_color_categorical").await;
+}
+
+// Uniform fill opacity: the fill is drawn at 50% while the border stays opaque.
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_units_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(4.0)),
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..corner_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_fill_opacity").await;
+}
+
+// Uniform stroke opacity: the border is drawn at 50% while the fill stays opaque.
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_units_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(6.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            stroke_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..corner_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_stroke_opacity").await;
+}
+
+// Instanced stroke width: each rect gets its own border thickness.
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_units_instanced_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::InstancedSize(InstancedSizeParams {
+                values: NumericData::Float32(Arc::new(vec![2.0, 8.0])),
+            })),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            ..corner_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_instanced_stroke_width").await;
+}
+
+// Instanced fill opacity: each rect's fill uses its own opacity value.
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_units_instanced_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            fill_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![0.25, 1.0])),
+            })),
+            ..corner_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_instanced_fill_opacity").await;
 }

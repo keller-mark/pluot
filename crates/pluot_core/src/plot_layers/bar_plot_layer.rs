@@ -124,6 +124,7 @@ impl BarPlotLayer {
                             position_y0: NumericData::Float32(Arc::new(position_y0)),
                             position_x1: NumericData::Float32(Arc::new(position_x1)),
                             position_y1: NumericData::Float32(Arc::new(position_y1)),
+                            ..Default::default()
                         }
                     )),
                     Box::new(AxisLinearLayer::new(
@@ -172,6 +173,7 @@ impl BarPlotLayer {
                             position_y0: NumericData::Float32(Arc::new(position_y0)),
                             position_x1: NumericData::Float32(Arc::new(position_x1)),
                             position_y1: NumericData::Float32(Arc::new(position_y1)),
+                            ..Default::default()
                         }
                     )),
                     Box::new(AxisLinearLayer::new(

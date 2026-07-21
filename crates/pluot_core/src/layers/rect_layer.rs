@@ -7,11 +7,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
-use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
+use crate::color_mode::{cpu_fill_color, prepare_color_mode, prepare_stroke_color, quantitative_domain};
+use crate::scalar_mode::{
+    cpu_fill_opacity, cpu_stroke_opacity, cpu_stroke_width, prepare_fill_opacity_mode,
+    prepare_stroke_opacity_mode, prepare_stroke_width_mode,
+};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
@@ -30,16 +34,31 @@ pub struct RectLayerParams {
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
 
-    // If None, assume filled
-    pub stroke_width: Option<f32>,
+    // Width of the border stroke. See [`SizeMode`]: `UniformSize` shares one
+    // width across all rects, `InstancedSize` supplies one per rect. When
+    // `None`, no border is drawn (the rect is filled only).
+    pub stroke_width: Option<SizeMode>,
     pub stroke_width_unit_mode: UnitsMode, // TODO: split into X and Y parts?
 
     pub model_matrix: Option<[f32; 16]>, // Column-major 4x4 matrix
 
-    // How to color each rect. See [`ColorMode`]: modes carrying `NumericData`
-    // (instanced/categorical/quantitative) supply one or more per-element value
-    // arrays, which are uploaded to the GPU as textures at draw time.
+    // How to color each rect's fill (interior). See [`ColorMode`]: modes carrying
+    // `NumericData` (instanced/categorical/quantitative) supply one or more
+    // per-element value arrays, which are uploaded to the GPU as textures at
+    // draw time.
     pub fill_color: Option<ColorMode>,
+
+    // Opacity multiplier for the fill. See [`OpacityMode`]: `UniformOpacity`
+    // shares one value across all rects, `InstancedOpacity` supplies one per
+    // rect. Defaults to 1.
+    pub fill_opacity: Option<OpacityMode>,
+
+    // How to color each rect's border stroke. See [`ColorMode`]; only drawn when
+    // `stroke_width` is set. Defaults to opaque black.
+    pub stroke_color: Option<ColorMode>,
+
+    // Opacity multiplier for the stroke. See [`OpacityMode`]. Defaults to 1.
+    pub stroke_opacity: Option<OpacityMode>,
 
     // TODO: improve naming here - should these be "source_x", "source_y", etc?
     // Each may be any supported numeric dtype (8-64 bit int/uint, or 32/64-bit
@@ -64,6 +83,9 @@ impl Default for RectLayerParams {
             stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
             fill_color: None,
+            fill_opacity: None,
+            stroke_color: None,
+            stroke_opacity: None,
             position_x0: NumericData::Float32(Arc::new(vec![])),
             position_y0: NumericData::Float32(Arc::new(vec![])),
             position_x1: NumericData::Float32(Arc::new(vec![])),
@@ -89,6 +111,18 @@ impl RectLayer {
         let n = layer_params.position_x0.len();
         if let Some(fill_color) = &layer_params.fill_color {
             fill_color.validate_len(n);
+        }
+        if let Some(fill_opacity) = &layer_params.fill_opacity {
+            fill_opacity.validate_len(n);
+        }
+        if let Some(stroke_color) = &layer_params.stroke_color {
+            stroke_color.validate_len(n);
+        }
+        if let Some(stroke_width) = &layer_params.stroke_width {
+            stroke_width.validate_len(n);
+        }
+        if let Some(stroke_opacity) = &layer_params.stroke_opacity {
+            stroke_opacity.validate_len(n);
         }
         for (name, len) in [
             ("position_y0", layer_params.position_y0.len()),
@@ -132,8 +166,7 @@ struct RectLayerUniforms {
     camera_view: Mat4,                // mat4x4<f32>,
     data_unit_mode_x: u32,            // 0 = pixels, 1 = data units
     data_unit_mode_y: u32,            // 0 = pixels, 1 = data units
-    filled: u32,                      // 0: false, 1: true
-    stroke_width: f32,                // width of each line
+    stroke_width: f32,                // border width (UniformSize fallback)
     stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
@@ -142,11 +175,19 @@ struct RectLayerUniforms {
     fill_color: Vec4,                 // rgba color used by the UniformRgb mode
     fill_color_reverse: u32,          // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,          // (min, max) normalization domain for quantitative mode
+    fill_opacity: f32,                // fill opacity (UniformOpacity fallback)
+    stroke_color_mode: u32,           // see ColorMode::shader_mode()
+    stroke_color: Vec4,               // rgba color used by the UniformRgb mode
+    stroke_color_reverse: u32,        // 1 = reverse the quantitative colormap
+    stroke_color_domain: Vec2,        // (min, max) normalization domain for quantitative mode
+    stroke_opacity: f32,              // stroke opacity (UniformOpacity fallback)
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
-// Bindings 0-4 are the uniforms buffer and the four position textures.
-const COLOR_BINDING_START: u32 = 5;
+// Bindings 0-4 are the uniforms buffer and the four position textures. The
+// fill-color textures come first (from here), then the stroke-color, stroke-width,
+// fill-opacity and stroke-opacity textures, each present only when instanced.
+const FILL_COLOR_BINDING_START: u32 = 5;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -173,11 +214,30 @@ impl DrawToRasterGpu for RectLayer {
         // Number of rects to draw: one instance per element of the position arrays.
         let n = layer_params.position_x0.len();
 
-        // Build the GPU-side color resources for the configured color mode. Modes
-        // that carry per-element `NumericData` upload it as one or more textures
-        // (bound from COLOR_BINDING_START onward) and contribute the WGSL
-        // `get_fill_color` function injected into the shader below.
-        let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
+        // Build the GPU-side resources for each fill/stroke mode. Modes that carry
+        // per-element `NumericData` upload it as one or more textures and
+        // contribute a WGSL getter function injected into the shader below. The
+        // texture bindings are assigned sequentially: fill color first (from
+        // FILL_COLOR_BINDING_START), then stroke color, stroke width, fill opacity
+        // and stroke opacity, each consuming binding slots only when instanced.
+        let fill_color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), FILL_COLOR_BINDING_START);
+
+        let stroke_color_binding_start = FILL_COLOR_BINDING_START + fill_color.textures.len() as u32;
+        let stroke_color = prepare_stroke_color(device, queue, layer_params.stroke_color.as_ref(), stroke_color_binding_start);
+
+        // When `stroke_width` is None, treat it as a zero-width (no) border so no
+        // stroke band is drawn. `prepare_stroke_width_mode` otherwise defaults a
+        // missing width to 1px, which is not what we want here.
+        let no_stroke_width = SizeMode::UniformSize(0.0);
+        let stroke_width_mode = layer_params.stroke_width.as_ref().unwrap_or(&no_stroke_width);
+        let stroke_width_binding_start = stroke_color_binding_start + stroke_color.textures.len() as u32;
+        let width = prepare_stroke_width_mode(device, queue, Some(stroke_width_mode), stroke_width_binding_start);
+
+        let fill_opacity_binding_start = stroke_width_binding_start + width.texture.is_some() as u32;
+        let fill_opacity = prepare_fill_opacity_mode(device, queue, layer_params.fill_opacity.as_ref(), fill_opacity_binding_start);
+
+        let stroke_opacity_binding_start = fill_opacity_binding_start + fill_opacity.texture.is_some() as u32;
+        let stroke_opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), stroke_opacity_binding_start);
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -227,8 +287,7 @@ impl DrawToRasterGpu for RectLayer {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
             },
-            filled: if layer_params.stroke_width.is_none() { 1 } else { 0 },
-            stroke_width: layer_params.stroke_width.unwrap_or(0.0),
+            stroke_width: width.static_value,
             stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
@@ -250,10 +309,16 @@ impl DrawToRasterGpu for RectLayer {
                 0.0, 0.0, 1.0, 0.0, // Column 3
                 0.0, 0.0, 0.0, 1.0,
             ])),
-            fill_color_mode: color.mode,
-            fill_color: Vec4::from_array(color.static_color),
-            fill_color_reverse: color.reverse,
-            fill_color_domain: Vec2::from_array(color.domain),
+            fill_color_mode: fill_color.mode,
+            fill_color: Vec4::from_array(fill_color.static_color),
+            fill_color_reverse: fill_color.reverse,
+            fill_color_domain: Vec2::from_array(fill_color.domain),
+            fill_opacity: fill_opacity.static_value,
+            stroke_color_mode: stroke_color.mode,
+            stroke_color: Vec4::from_array(stroke_color.static_color),
+            stroke_color_reverse: stroke_color.reverse,
+            stroke_color_domain: Vec2::from_array(stroke_color.domain),
+            stroke_opacity: stroke_opacity.static_value,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -333,10 +398,62 @@ impl DrawToRasterGpu for RectLayer {
                 count: None,
             },
         ];
-        // One fragment-visible texture per color value / palette array.
-        for (i, tex) in color.textures.iter().enumerate() {
+        // One fragment-visible texture per fill-color value / palette array,
+        // followed by the same for the stroke color.
+        for (i, tex) in fill_color.textures.iter().enumerate() {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: COLOR_BINDING_START + i as u32,
+                binding: FILL_COLOR_BINDING_START + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for (i, tex) in stroke_color.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: stroke_color_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        // Instanced stroke-width texture (read in the vertex stage to expand the
+        // quad) and instanced fill-/stroke-opacity textures (read in the fragment
+        // stage), each present only when the corresponding mode is instanced.
+        if let Some(tex) = &width.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: stroke_width_binding_start,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &fill_opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: fill_opacity_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &stroke_opacity.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: stroke_opacity_binding_start,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: tex.sample_type,
@@ -373,9 +490,33 @@ impl DrawToRasterGpu for RectLayer {
                 resource: wgpu::BindingResource::TextureView(&position_y1_texture_view),
             },
         ];
-        for (i, tex) in color.textures.iter().enumerate() {
+        for (i, tex) in fill_color.textures.iter().enumerate() {
             bg_entries.push(wgpu::BindGroupEntry {
-                binding: COLOR_BINDING_START + i as u32,
+                binding: FILL_COLOR_BINDING_START + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in stroke_color.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: stroke_color_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &width.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: stroke_width_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &fill_opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: fill_opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &stroke_opacity.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: stroke_opacity_binding_start,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
@@ -395,9 +536,17 @@ impl DrawToRasterGpu for RectLayer {
             .inject_texture_sample_type("position_x1_coords", position_x1_dtype)
             .inject_texture_sample_type("position_y1_coords", position_y1_dtype)
             // Color-mode specialization: the flat-index texel helper plus the
-            // assembled color module (bindings + `get_fill_color`).
+            // assembled fill/stroke color modules (bindings + `get_fill_color` /
+            // `get_stroke_color`).
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-            .define("color_module", &color.wgsl)
+            .define("color_module", &fill_color.wgsl)
+            .define("stroke_color_module", &stroke_color.wgsl)
+            // Width- and opacity-mode specialization: each contributes its
+            // `get_stroke_width` / `get_fill_opacity` / `get_stroke_opacity`
+            // function (plus a value texture binding when instanced).
+            .define("stroke_width_module", &width.wgsl)
+            .define("fill_opacity_module", &fill_opacity.wgsl)
+            .define("stroke_opacity_module", &stroke_opacity.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect_layer.wgsl"),
@@ -507,8 +656,13 @@ impl DrawToSvg for RectLayer {
         // Iterate over the data points and create SVG elements.
         let n = layer_params.position_x0.len();
 
-        // Quantitative normalization domain, computed once for the whole layer.
-        let quant_domain = match layer_params.fill_color.as_ref() {
+        // Quantitative normalization domains, computed once for the whole layer
+        // (one for the fill color, one for the stroke color).
+        let fill_quant_domain = match layer_params.fill_color.as_ref() {
+            Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
+            _ => [0.0, 1.0],
+        };
+        let stroke_quant_domain = match layer_params.stroke_color.as_ref() {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
@@ -592,20 +746,36 @@ impl DrawToSvg for RectLayer {
 
             let rect_height = (target_y_px - source_y_px).abs();
 
-            let color = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain));
+            // Fill: color + opacity, matching the GPU fill color/opacity modes.
+            let fill = Some(TwoColor::Rgb(cpu_fill_color(
+                layer_params.fill_color.as_ref(), i, fill_quant_domain,
+            )));
+            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i) as f64;
+
+            // Stroke: only drawn when a stroke width is configured. Uses the
+            // stroke color mode, opacity and per-rect width.
+            let (stroke, stroke_opacity, linewidth) = if layer_params.stroke_width.is_some() {
+                (
+                    Some(TwoColor::Rgb(cpu_fill_color(
+                        layer_params.stroke_color.as_ref(), i, stroke_quant_domain,
+                    ))),
+                    cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
+                    cpu_stroke_width(layer_params.stroke_width.as_ref(), i) as f64,
+                )
+            } else {
+                (None, 1.0, 0.0)
+            };
 
             svg_elements.push(TwoElement::Rectangle(TwoRectangle {
                 x: source_x_px.min(target_x_px) as f64,
                 y: ((layer_h - source_y_px.min(target_y_px)) - rect_height) as f64,
                 width: (target_x_px - source_x_px).abs() as f64,
                 height: rect_height as f64,
-                fill: if layer_params.stroke_width.is_none() {
-                    Some(color.clone())
-                } else { None },
-                stroke: if layer_params.stroke_width.is_some() {
-                    Some(color)
-                } else { None },
-                linewidth: layer_params.stroke_width.unwrap_or(0.0) as f64,
+                fill,
+                stroke,
+                linewidth,
+                fill_opacity,
+                stroke_opacity,
                 ..Default::default()
             }));
         }
