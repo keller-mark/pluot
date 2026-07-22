@@ -25,7 +25,7 @@
     "react-dom": "^19.2.0",
     "sharp": "^0.34.2",
     "use-coordination": "^1.0.1",
-    "zarrita": "^0.5.3",
+    "zarrita": "^0.7.3",
     "zod-ome-ngff": "0.3.0"
   }
 }

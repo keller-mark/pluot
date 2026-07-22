@@ -1,7 +1,12 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use image::{save_buffer_with_format, ColorType, ImageFormat};
-use pluot::{render, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams, ViewMode};
+use std::collections::HashMap;
+
+use pluot::{
+    render, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams, ViewMode,
+    ZarrStoreInfo, ZarrStoreParams, MemoryStoreParams,
+};
 use resvg::usvg;
 use tiny_skia;
 use std::fs;
@@ -263,7 +268,20 @@ async fn main() {
         aspect_ratio_mode,
         view_mode,
         plot_id: args.plot_id,
-        store_name: args.store_name,
+        // Declare the single backing store under the provided name. Zarr data
+        // loading is not implemented in plain-Rust mode, so a MemoryStore
+        // descriptor is used as a placeholder; layers reference it by name (or
+        // fall back to it as the only store).
+        stores: Some(HashMap::from([(
+            args.store_name.clone(),
+            ZarrStoreInfo {
+                store_params: ZarrStoreParams::MemoryStore(MemoryStoreParams {
+                    message: "pluot_cli store (zarr loading unimplemented in plain-Rust mode)"
+                        .to_string(),
+                }),
+                store_extensions: None,
+            },
+        )])),
         margin_left: args.margin_left,
         margin_right: args.margin_right,
         margin_top: args.margin_top,

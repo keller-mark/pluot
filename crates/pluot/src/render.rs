@@ -1,5 +1,5 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams};
-use pluot_core::{render as raw_render};
+use pluot_core::{render as raw_render, stores_from_params};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
 use crate::render_params::{LayerParams, RenderParams};
 
@@ -30,7 +30,7 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
         aspect_ratio_alignment_mode: render_params.aspect_ratio_alignment_mode,
         view_mode: render_params.view_mode,
         plot_id: render_params.plot_id,
-        store_name: render_params.store_name,
+        stores: render_params.stores,
         wait_for_store_gets: render_params.wait_for_store_gets,
         timeout: render_params.timeout,
         cache_enabled: render_params.cache_enabled,
@@ -47,5 +47,8 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
             layers: raw_layers,
         }),
     };
-    raw_render(raw_params).await
+    // Construct the store objects from the store metadata and pass them in,
+    // rather than registering them in the global store registry.
+    let stores = stores_from_params(&raw_params);
+    raw_render(raw_params, stores).await
 }

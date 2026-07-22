@@ -15,7 +15,6 @@ basic_plot_kwargs = dict(
     height=100,
     plot_id="test",
     plot_type="LayeredPlot",
-    store_name="my_store",
     plot_params=dict(
         layers=[
             dict(

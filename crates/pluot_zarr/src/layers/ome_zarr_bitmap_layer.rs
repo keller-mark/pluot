@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use pluot_core::log;
 use pluot_core::wgpu;
-use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_numeric_data};
+use pluot_core::cache::use_memo_numeric_data;
 use pluot_core::zarr::is_timed_out_zarrs_error;
+use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmap_layer::{
@@ -28,7 +28,8 @@ use pluot_core::layers::multiscale_utils::to_y_slice;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct OmeZarrBitmapLayerParams {
-    /// Zarr store name. Falls back to view_params.store_name if None.
+    /// Name of the top-level store to read from (a key in `RenderParams::stores`).
+    /// May be omitted when exactly one top-level store is defined.
     pub store_name: Option<String>,
 
     /// Path to the zarr array (e.g., "/0/0" for the first dataset at the first level).
@@ -106,7 +107,7 @@ impl Default for OmeZarrBitmapLayerParams {
 pub struct OmeZarrBitmapLayer {
     view_params: ViewParams,
     layer_params: OmeZarrBitmapLayerParams,
-    store: Arc<AsyncZarritaStore>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: String,
 
     /// The inner BitmapLayer, constructed during `prepare()`.
@@ -118,17 +119,9 @@ impl OmeZarrBitmapLayer {
         view_params: ViewParams,
         layer_params: OmeZarrBitmapLayerParams,
     ) -> Self {
-        let store_name = match &layer_params.store_name {
-            Some(name) => name.clone(),
-            None => match &view_params.store_name {
-                Some(name) => name.clone(),
-                None => panic!(
-                    "store_name must be specified either in layer_params or view_params for Zarr-based layers."
-                ),
-            },
-        };
+        let store_name = resolve_store_name(&layer_params.store_name, &view_params);
 
-        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
+        let store = view_params.get_store(&store_name);
 
         Self {
             view_params,

@@ -41,8 +41,7 @@ test_that("render returns a raw vector of the correct length", {
     width       = 100L,
     height      = 100L,
     camera_view = camera_view,
-    plot_id     = "test",
-    store_name  = "my_store"
+    plot_id     = "test"
   )
 
   expect_type(result, "raw")
@@ -58,8 +57,7 @@ test_that("render produces expected pixel sum", {
     width       = 100L,
     height      = 100L,
     camera_view = camera_view,
-    plot_id     = "test",
-    store_name  = "my_store"
+    plot_id     = "test"
   )
 
   # Drop the trailing status byte before summing pixels
@@ -73,8 +71,7 @@ test_that("SVG render returns valid SVG text", {
     width       = 100L,
     height      = 100L,
     camera_view = camera_view,
-    plot_id     = "test",
-    store_name  = "my_store",
+    plot_id     = "test"
   )
 
   expect_true(startsWith(svg_str, "<"))

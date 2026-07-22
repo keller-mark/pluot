@@ -7,6 +7,21 @@ export {
   setStoreByName,
   getStore,
 } from './core.js';
+export {
+  storeInstanceToMetadata,
+  storeMetadataToInstance,
+  withStoreMetadata,
+  registerStoreExtension,
+} from './store-metadata.js';
+export type {
+  ZarrStoreInfo,
+  ZarrStoreExtension,
+  HttpStoreParams,
+  LocalStoreParams,
+  MemoryStoreParams,
+  StoreWithMetadata,
+  StoreExtensionApplier,
+} from './store-metadata.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
 export { getBounds, getCameraMatrixFromBounds } from './viewport.js';
 export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';

@@ -7,6 +7,7 @@ import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
   setStore, getStore,
+  storeInstanceToMetadata,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
@@ -121,6 +122,27 @@ export function Pluot(props) {
     throw new Error("Either storeName or store must be provided.");
   }, [storeNameProp, store]);
 
+  // Build the top-level `stores` map that RenderParams expects: a mapping from
+  // store name to its derived `ZarrStoreInfo` metadata. Store instances were
+  // registered by name (via setStore/setStoreByName); here we derive each one's
+  // portable metadata from the registered instance. We collect every store
+  // referenced by the layers (via their `store_name`) plus the default
+  // `storeName`, so that multi-store plots resolve correctly.
+  const stores = useMemo(() => {
+    const names = new Set();
+    if (storeName) names.add(storeName);
+    for (const layer of plotParams?.layers ?? []) {
+      const layerStoreName = layer?.layer_params?.store_name;
+      if (layerStoreName) names.add(layerStoreName);
+    }
+    const result = {};
+    for (const name of names) {
+      const instance = getStore(name);
+      if (instance) result[name] = storeInstanceToMetadata(instance);
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  }, [storeName, plotParams]);
+
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
   const svgRef = useRef(null);
@@ -204,7 +226,7 @@ export function Pluot(props) {
       camera_view: cameraMatrix,
       plot_id: plotId,
       plot_type: plotType,
-      store_name: storeName,
+      stores,
       plot_params: plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
@@ -279,7 +301,7 @@ export function Pluot(props) {
       camera_view: cameraMatrix,
       plot_id: plotId,
       plot_type: plotType,
-      store_name: storeName,
+      stores,
       plot_params: plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
@@ -348,7 +370,7 @@ export function Pluot(props) {
         setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-        const storeUsed = getStore(renderParams.store_name);
+        const storeUsed = getStore(storeName);
         if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
           storeUsed.clearCache();
         }

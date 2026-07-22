@@ -41,7 +41,6 @@ def _text_layer_kwargs(font_family: str | None = None) -> dict:
         height=100,
         plot_id="font_test",
         plot_type="LayeredPlot",
-        store_name="__fonts__",
         plot_params=dict(
             layers=[dict(layer_type="TextLayer", layer_params=layer_params)]
         ),

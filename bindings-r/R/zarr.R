@@ -11,6 +11,169 @@ pluot_register_store <- function(name, store) {
   invisible(NULL)
 }
 
+# Best-effort extraction of a URL / path from a pizzarr store instance.
+.pluot_store_url <- function(store) {
+  url <- tryCatch(store[["url"]], error = function(e) NULL)
+  if (is.character(url) && length(url) == 1) return(url)
+  NULL
+}
+
+.pluot_store_path <- function(store) {
+  for (field in c("root", "path", "dir")) {
+    val <- tryCatch(store[[field]], error = function(e) NULL)
+    if (is.character(val) && length(val) == 1) return(val)
+  }
+  NULL
+}
+
+#' Derive portable ZarrStoreInfo metadata from a pizzarr store instance.
+#'
+#' Mirrors the Rust `ZarrStoreInfo` JSON (see
+#' `crates/pluot_core/src/params.rs`): a `store_type` / `store_params` pair plus
+#' an optional `store_extensions` list.
+#'
+#' Resolution order: a wrapper store may declare its own metadata via a
+#' `store_metadata` field (which passes the inner store's metadata through and
+#' layers on any extension); otherwise a URL yields an `HttpStore`, a
+#' filesystem path yields a `LocalStore`, and anything else falls back to a
+#' `MemoryStore` descriptor (the instance is still usable at render time because
+#' it is registered by name).
+#'
+#' @param store A pizzarr store object.
+#' @return A named list matching the `ZarrStoreInfo` JSON shape.
+#' @export
+store_instance_to_metadata <- function(store) {
+  declared <- tryCatch(store[["store_metadata"]], error = function(e) NULL)
+  if (is.list(declared) && !is.null(declared[["store_type"]])) {
+    return(declared)
+  }
+
+  url <- .pluot_store_url(store)
+  if (!is.null(url)) {
+    return(list(
+      store_type = "HttpStore",
+      store_params = list(url = url),
+      store_extensions = NULL
+    ))
+  }
+
+  path <- .pluot_store_path(store)
+  if (!is.null(path)) {
+    return(list(
+      store_type = "LocalStore",
+      store_params = list(path = path),
+      store_extensions = NULL
+    ))
+  }
+
+  list(
+    store_type = "MemoryStore",
+    store_params = list(
+      message = paste0("In-memory or custom store (", class(store)[1], ")")
+    ),
+    store_extensions = NULL
+  )
+}
+
+# Registry of store-extension appliers used by store_metadata_to_instance to
+# reconstruct virtual-zarr wrapper stores (inverse of the store_extensions
+# recorded by store_instance_to_metadata).
+.pluot_store_ext_appliers <- new.env(parent = emptyenv())
+
+#' Register the applier used to reconstruct a `ZarrStoreExtension` wrapper.
+#'
+#' @param extension Character string naming the extension (e.g.
+#'   "OmeTiffAsVirtualZarr").
+#' @param applier A function taking a base pizzarr store and returning a wrapped
+#'   store.
+#' @export
+pluot_register_store_extension <- function(extension, applier) {
+  assign(extension, applier, envir = .pluot_store_ext_appliers)
+  invisible(NULL)
+}
+
+#' Construct a pizzarr store instance from ZarrStoreInfo metadata.
+#'
+#' The inverse of [store_instance_to_metadata()]:
+#' \itemize{
+#'   \item `HttpStore` -> a pizzarr `HttpStore` for the URL;
+#'   \item `LocalStore` -> a pizzarr `DirectoryStore` for the path;
+#'   \item `MemoryStore` -> errors (an in-memory store has no portable
+#'     representation and must be provided directly).
+#' }
+#' Any `store_extensions` are then applied outermost-last using appliers
+#' registered via [pluot_register_store_extension()].
+#'
+#' @param info A named list matching the `ZarrStoreInfo` JSON shape.
+#' @return A pizzarr store object.
+#' @export
+store_metadata_to_instance <- function(info) {
+  store_type <- info[["store_type"]]
+  params <- info[["store_params"]]
+
+  store <- if (identical(store_type, "HttpStore")) {
+    pizzarr::HttpStore$new(params[["url"]])
+  } else if (identical(store_type, "LocalStore")) {
+    pizzarr::DirectoryStore$new(params[["path"]])
+  } else if (identical(store_type, "MemoryStore")) {
+    stop(
+      "Cannot reconstruct an in-memory store from metadata (",
+      params[["message"]], "); provide the store instance directly."
+    )
+  } else {
+    stop("Unknown store_type: ", store_type)
+  }
+
+  for (ext in info[["store_extensions"]]) {
+    if (!exists(ext, envir = .pluot_store_ext_appliers, inherits = FALSE)) {
+      stop(
+        "No applier registered for store extension '", ext,
+        "'. Register one via pluot_register_store_extension()."
+      )
+    }
+    applier <- get(ext, envir = .pluot_store_ext_appliers, inherits = FALSE)
+    store <- applier(store)
+  }
+  store
+}
+
+# Build the top-level `stores` metadata map that RenderParams expects.
+#
+# Accepts either an explicit `stores` named list (each value a pizzarr store
+# instance or an already-derived metadata list) or a `store_name` referencing a
+# store previously registered via `pluot_register_store()`. Store instances are
+# registered (so the bound functions can reach them) and their metadata derived.
+.pluot_build_stores <- function(stores = NULL, store_name = NULL) {
+  if (!is.null(stores)) {
+    stores_meta <- list()
+    for (nm in names(stores)) {
+      val <- stores[[nm]]
+      if (is.list(val) && !is.null(val[["store_type"]])) {
+        # Already-derived ZarrStoreInfo metadata.
+        stores_meta[[nm]] <- val
+      } else {
+        pluot_register_store(nm, val)
+        stores_meta[[nm]] <- store_instance_to_metadata(val)
+      }
+    }
+    return(stores_meta)
+  }
+
+  if (!is.null(store_name)) {
+    registered <- tryCatch(
+      get(store_name, envir = .pluot_stores, inherits = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(registered)) {
+      stores_meta <- list()
+      stores_meta[[store_name]] <- store_instance_to_metadata(registered)
+      return(stores_meta)
+    }
+  }
+
+  NULL
+}
+
 # Cache-key helpers (same scheme as Python zarr.py)
 .has_cache_key <- function(store_name, key) {
   paste0("has:", store_name, ":", key)

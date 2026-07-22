@@ -198,8 +198,9 @@ fn python_script(value: &Value) -> String {
          # ///\n\
          from pluot import render_to_image\n\
          \n\
-         # Register your Zarr store(s) (e.g. via a `store=` argument) before\n\
-         # rendering if any layers read from `store_name`.\n\
+         # Zarr store(s) are declared in the `stores` map below and constructed\n\
+         # from their metadata; pass `store=`/`stores=` to override with your own\n\
+         # store object(s).\n\
          img = await {}\n",
         python_call(value),
     )
@@ -280,8 +281,9 @@ fn r_script(value: &Value) -> String {
     format!(
         "library(pluotr)\n\
          \n\
-         # Register your Zarr store(s) before rendering if any layers read from\n\
-         # `store_name`.\n\
+         # Zarr store(s) are declared in the `stores` list below and constructed\n\
+         # from their metadata; use `pluot_register_store()` to override with your\n\
+         # own store object(s).\n\
          img <- {}\n",
         r_call(value),
     )
@@ -303,8 +305,9 @@ fn js_script(value: &Value) -> String {
         "import {{ initialize, render_wasm, setStoreByName }} from \"@pluot/core\";\n\
          \n\
          await initialize();\n\
-         // Register your Zarr store(s) before rendering if any layers read from\n\
-         // `store_name`, e.g. `setStoreByName(\"my_store\", store)`.\n\
+         // Zarr store(s) are declared in the `stores` map below and constructed\n\
+         // from their metadata; call `setStoreByName(\"my_store\", store)` before\n\
+         // rendering to override with your own store object.\n\
          \n\
          const renderParams = {params};\n\
          \n\
@@ -323,7 +326,7 @@ fn jsx_prop_name(key: &str) -> Option<&'static str> {
         "height" => "height",
         "plot_id" => "plotId",
         "plot_type" => "plotType",
-        "store_name" => "storeName",
+        "stores" => "stores",
         "plot_params" => "plotParams",
         "view_mode" => "viewMode",
         "camera_view" => "cameraMatrix",
@@ -383,8 +386,8 @@ fn react_script(value: &Value) -> String {
         "import React from \"react\";\n\
          import {{ Pluot }} from \"@pluot/react\";\n\
          \n\
-         // Pass a `store` or `storeName` prop referencing your Zarr store if any\n\
-         // layers read from `store_name`.\n\
+         // Zarr store(s) are declared via the `stores` prop and constructed from\n\
+         // their metadata; pass a `store` prop to override with your own object.\n\
          export function PluotPlot() {{\n\
          \x20 return (\n\
          {element}\n\
@@ -415,8 +418,8 @@ fn html_script(value: &Value) -> String {
          \x20     import {{ initialize, render_wasm, setStoreByName }} from \"https://esm.sh/@pluot/core\";\n\
          \n\
          \x20     await initialize();\n\
-         \x20     // Register your Zarr store(s) before rendering if any layers read\n\
-         \x20     // from `store_name`, e.g. `setStoreByName(\"my_store\", store)`.\n\
+         \x20     // Zarr store(s) are declared in the `stores` map below and built from\n\
+         \x20     // their metadata; call `setStoreByName(\"my_store\", store)` to override.\n\
          \n\
          \x20     const renderParams = {params};\n\
          \n\
@@ -503,11 +506,23 @@ mod tests {
                 }
             }
         ]);
+        let stores = std::collections::HashMap::from([(
+            "my_store".to_string(),
+            crate::params::ZarrStoreInfo {
+                store_params: crate::params::ZarrStoreParams::HttpStore(
+                    crate::params::HttpStoreParams {
+                        url: "https://example.com/my_store.zarr".to_string(),
+                        options: None,
+                    },
+                ),
+                store_extensions: None,
+            },
+        )]);
         RenderParams {
             width: 640,
             height: 480,
             format,
-            store_name: "my_store".to_string(),
+            stores: Some(stores),
             plot_id: "plot_1".to_string(),
             plot_params: serde_json::from_value(serde_json::json!({ "layers": layers }))
                 .map(crate::params::PlotParams::LayeredPlot)
@@ -524,6 +539,30 @@ mod tests {
         assert_eq!(parsed["format"], Value::String("Raster".to_string()));
         assert_eq!(parsed["width"], Value::Number(640.into()));
         assert_eq!(parsed["plot_type"], Value::String("LayeredPlot".to_string()));
+    }
+
+    #[test]
+    fn stores_round_trip_through_json() {
+        // The top-level `stores` map uses a flattened, adjacently-tagged
+        // ZarrStoreParams enum; make sure it survives a serialize -> JSON ->
+        // deserialize round trip (and appears in the emitted JSON).
+        let params = sample_params(GraphicsFormat::Json);
+        let out = render_to_script(&params, &GraphicsFormat::Json);
+
+        let parsed: Value = serde_json::from_str(&out).expect("valid JSON");
+        assert_eq!(
+            parsed["stores"]["my_store"]["store_type"],
+            Value::String("HttpStore".to_string())
+        );
+        assert_eq!(
+            parsed["stores"]["my_store"]["store_params"]["url"],
+            Value::String("https://example.com/my_store.zarr".to_string())
+        );
+
+        let round_tripped: RenderParams =
+            serde_json::from_str(&out).expect("stores should deserialize back into RenderParams");
+        let stores = round_tripped.stores.expect("stores present");
+        assert!(stores.contains_key("my_store"));
     }
 
     #[test]

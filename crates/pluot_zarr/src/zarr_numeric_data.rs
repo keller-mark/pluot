@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use pluot_core::zarr::AsyncZarritaStore;
 use pluot_core::numeric_data::NumericData;
+use zarrs::storage::AsyncReadableStorageTraits;
 
 
 /// Load a zarr array from the zarr store into a [`NumericData`] in the
@@ -12,7 +12,7 @@ use pluot_core::numeric_data::NumericData;
 /// width.
 /// TODO: extend to support loading partial slices and ND arrs as well?
 pub async fn load_arr_as_numeric_data(
-    store: Arc<AsyncZarritaStore>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
     array_path: &str,
 ) -> Result<NumericData, zarrs::array::ArrayError> {
     let array = zarrs::array::Array::async_open(store, array_path)

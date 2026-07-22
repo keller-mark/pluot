@@ -93,6 +93,31 @@ pub fn is_timed_out_zarrs_error(err: &zarrs::array::ArrayError) -> bool {
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_storage/src/store_test.rs#L238
 // - https://github.com/zarrs/zarrs/blob/3f7eb5a466e1ef613ecc620125b0df70b72f42f2/zarrs_object_store/src/lib.rs
 
+/// A collection of Zarr stores keyed by store name.
+///
+/// Each value is any store implementing zarrs' [`AsyncReadableStorageTraits`]
+/// (e.g. an [`AsyncZarritaStore`] that dispatches to the bound `zarr_*`
+/// functions, or a native zarrs store such as a filesystem store). This lets
+/// callers render plots from Rust by passing store objects directly to
+/// [`crate::render::render`], rather than registering them in the global store
+/// registry (see [`crate::cache::get_or_init_store`]).
+///
+/// It is a thin newtype so it can be carried inside
+/// [`crate::render_traits::ViewParams`] (which derives `Debug`) even though
+/// `dyn AsyncReadableStorageTraits` is not itself `Debug`.
+#[derive(Clone, Default)]
+pub struct StoreMap(pub HashMap<String, Arc<dyn AsyncReadableStorageTraits>>);
+
+impl std::fmt::Debug for StoreMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Avoid requiring `Debug` on `dyn AsyncReadableStorageTraits`; the store
+        // names are the only useful thing to print anyway.
+        f.debug_struct("StoreMap")
+            .field("store_names", &self.0.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
 /// An asynchronous store that calls bound functions.
 pub struct AsyncZarritaStore {
     store_name: String,

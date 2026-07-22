@@ -25,7 +25,7 @@ fn make_view_params(
         wait_for_store_gets: true,
         cache_enabled: false,
         margins: None,
-        store_name: None,
+        stores: None,
     }
 }
 
@@ -294,7 +294,7 @@ fn test_get_bounds_with_margins() {
             margin_top: None,
             margin_bottom: Some(20.0),
         }),
-        store_name: None,
+        stores: None,
     };
     let b = get_bounds(&view_params);
     assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, 0.0, 1.0));
@@ -321,7 +321,7 @@ fn test_get_bounds_get_camera_matrix_from_bounds_roundtrip_1() {
             margin_top: None,
             margin_bottom: Some(20.0),
         }),
-        store_name: None,
+        stores: None,
     };
     let b = get_bounds(&view_params);
     assert_eq!((b.x_min, b.x_max, b.y_min, b.y_max), (0.0, 1.0, 0.0, 1.0));

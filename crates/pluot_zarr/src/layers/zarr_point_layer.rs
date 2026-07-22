@@ -4,12 +4,12 @@ use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
 use pluot_core::wgpu;
-use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
+use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
+use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams};
+use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -82,7 +82,7 @@ pub struct ZarrPointLayer {
     view_params: ViewParams,
     layer_params: ZarrPointLayerParams,
     // TODO: do we want the store or just the store_name here?
-    store: Arc<AsyncZarritaStore>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: String,
 
     /// The inner BarPlotLayer, constructed during `prepare()`.
@@ -101,18 +101,9 @@ impl ZarrPointLayer {
         if layer_params.point_radius_unit_mode_y == UnitsMode::Data && layer_params.data_unit_mode_y == UnitsMode::Pixels {
             panic!("point_radius_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
         }
-        // If store_name is None, use the store name from view_params.
-        let store_name = match &layer_params.store_name {
-            Some(layer_store_name) => layer_store_name.clone(),
-            None => {
-                match &view_params.store_name {
-                    Some(view_store_name) => view_store_name.clone(),
-                    None => panic!("store_name must be specified either in layer_params or view_params for Zarr-based layers."),
-                }
-            }
-        };
+        let store_name = resolve_store_name(&layer_params.store_name, &view_params);
 
-        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
+        let store = view_params.get_store(&store_name);
         Self {
             view_params,
             layer_params,

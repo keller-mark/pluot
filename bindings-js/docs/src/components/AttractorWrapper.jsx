@@ -119,9 +119,9 @@ async function fillAttractorStore(store, attractorType, N) {
   const h = zarr.root(store);
 	const xArr = await zarr.create(h.resolve(`/${attractorType}/${N}/X`), {
     shape: [N],
-		chunk_shape: [N],
-		data_type: "float64",
-    fill_value: 0,
+		chunkShape: [N],
+		dtype: "float64",
+    fillValue: 0,
     codecs: [
       {
   			"name": "bytes",
@@ -133,9 +133,9 @@ async function fillAttractorStore(store, attractorType, N) {
   });
 	const yArr = await zarr.create(h.resolve(`/${attractorType}/${N}/Y`), {
     shape: [N],
-		chunk_shape: [N],
-		data_type: "float64",
-    fill_value: 0,
+		chunkShape: [N],
+		dtype: "float64",
+    fillValue: 0,
     codecs: [
       {
   			"name": "bytes",
@@ -147,9 +147,9 @@ async function fillAttractorStore(store, attractorType, N) {
   });
 	const colorArr = await zarr.create(h.resolve(`/${attractorType}/${N}/color`), {
     shape: [N],
-		chunk_shape: [N],
-		data_type: "int64",
-    fill_value: 0,
+		chunkShape: [N],
+		dtype: "int64",
+    fillValue: 0,
     codecs: [
       {
   			"name": "bytes",
