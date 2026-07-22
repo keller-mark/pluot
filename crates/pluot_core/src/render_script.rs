@@ -495,8 +495,11 @@ fn rust_script(value: &Value) -> String {
 
 // === Bash ===
 
-/// The JSON body accepted by `pluot_cli`'s `--input` (or stdin): just the
-/// adjacently-tagged `plot_type` + `plot_params` pair. Every other field is
+/// The JSON body accepted by `pluot_cli`'s `--input` (or stdin): the
+/// adjacently-tagged `plot_type` + `plot_params` pair, plus `stores` (`Http`/
+/// `LocalStore` entries are backed by real `zarrs_http`/`zarrs_filesystem`
+/// instances by the CLI; `MemoryStore` entries are rejected, since the CLI
+/// has no generic byte payload to construct one from). Every other field is
 /// passed to the CLI as a flag instead (see [`bash_script`]).
 fn bash_input_json(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
@@ -507,14 +510,17 @@ fn bash_input_json(value: &Value) -> String {
     if let Some(plot_params) = obj.get("plot_params") {
         input.insert("plot_params".to_string(), plot_params.clone());
     }
+    if let Some(stores) = obj.get("stores").filter(|v| !v.is_null()) {
+        input.insert("stores".to_string(), stores.clone());
+    }
     serde_json::to_string_pretty(&Value::Object(input))
-        .expect("plot_type/plot_params should pretty-print")
+        .expect("plot_type/plot_params/stores should pretty-print")
 }
 
 /// A self-contained shell script that builds and runs the `pluot_cli`
-/// example (`examples/pluot_cli`), piping the plot/layer params to it as JSON
-/// on stdin and passing every other rendering parameter as a CLI flag,
-/// mirroring the `Args` struct in `examples/pluot_cli/src/main.rs`.
+/// example (`examples/pluot_cli`), piping the plot/layer params (and `stores`)
+/// to it as JSON on stdin and passing every other rendering parameter as a
+/// CLI flag, mirroring the `Args` struct in `examples/pluot_cli/src/main.rs`.
 fn bash_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
@@ -544,17 +550,6 @@ fn bash_script(value: &Value) -> String {
         flags.push(format!("--plot_id {}", quoted(plot_id)));
     }
 
-    // `pluot_cli` only supports a single named store (registered as a
-    // placeholder MemoryStore; Zarr data loading is unimplemented in
-    // plain-Rust mode), so pass along the first declared store name, if any.
-    let store_name = obj
-        .get("stores")
-        .and_then(Value::as_object)
-        .and_then(|stores| stores.keys().next());
-    if let Some(store_name) = store_name {
-        flags.push(format!("--store_name {}", quoted(store_name)));
-    }
-
     for (key, flag) in [
         ("margin_left", "--margin_left"),
         ("margin_right", "--margin_right"),
@@ -574,13 +569,14 @@ fn bash_script(value: &Value) -> String {
          set -euo pipefail\n\
          \n\
          # Renders this plot via the `pluot_cli` example (examples/pluot_cli),\n\
-         # which reads the plot/layer params as JSON (piped below via a heredoc\n\
-         # on stdin) and every other rendering parameter as a CLI flag.\n\
+         # which reads the plot/layer params (and any `stores`) as JSON (piped\n\
+         # below via a heredoc on stdin) and every other rendering parameter\n\
+         # as a CLI flag.\n\
          #\n\
-         # `pluot_cli` only supports a single named Zarr store (registered as a\n\
-         # placeholder MemoryStore; Zarr data loading is unimplemented in\n\
-         # plain-Rust mode), so only the first declared store, if any, is\n\
-         # passed via `--store_name`.\n\
+         # `HttpStore`/`LocalStore` entries in `stores` are backed by real\n\
+         # `zarrs_http`/`zarrs_filesystem` instances; `MemoryStore` entries are\n\
+         # rejected, since the CLI has no generic byte payload to construct\n\
+         # one from.\n\
          \n\
          # Build the CLI once (run from the root of the pluot repository).\n\
          cargo build --release -p pluot_cli\n\

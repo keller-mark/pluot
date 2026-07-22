@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useCallback, useEffect, useEffectEvent, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Pluot } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
@@ -43,29 +43,35 @@ export function PluotWrapper(props) {
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
   };
 
-  const [isFullwindow, setIsFullwindow] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // 'none' | 'fullwindow' | 'fullscreen'
+  const [mode, setMode] = useState('none');
   const [fsWidth, setFsWidth] = useState(null);
   const [fsHeight, setFsHeight] = useState(null);
 
   const divRef = useRef(null);
 
-  const isFullscreenOrWindow = isFullwindow || isFullscreen;
+  const isFullwindow = mode === 'fullwindow';
+  const isFullscreen = mode === 'fullscreen';
+  const isFullscreenOrWindow = mode !== 'none';
 
-  // Handling of fullscreenchange event.
+  // Handling of fullscreenchange event. This fires both when we request
+  // fullscreen ourselves, and when the browser exits it natively (Escape,
+  // browser/OS chrome, etc.). Registered once; reads the latest `mode` via
+  // useEffectEvent instead of a stale closure.
+  const onFSChange = useEffectEvent(() => {
+    if (document.fullscreenElement) {
+      setMode('fullscreen');
+    } else if (mode !== 'fullwindow') {
+      // A real exit back to neither mode. If mode is already 'fullwindow',
+      // this exit is instead part of a controlled fullscreen -> full-window
+      // transition (see onFullwindow below), so leave it alone.
+      setMode('none');
+      setFsWidth(null);
+      setFsHeight(null);
+    }
+  });
+
   useEffect(() => {
-    const onFSChange = () => {
-      if (document.fullscreenElement) {
-        setIsFullscreen(true);
-        setIsFullwindow(false);
-      } else {
-        // Exiting
-        setFsHeight(null);
-        setFsWidth(null);
-        setIsFullscreen(false);
-        setIsFullwindow(false);
-      }
-    };
     document.addEventListener("fullscreenchange", onFSChange);
 
     return () => {
@@ -102,21 +108,34 @@ export function PluotWrapper(props) {
   }, [isFullscreenOrWindow]);
 
   const onFullscreen = useCallback(() => {
-    const divEl = divRef.current;
-
     if (!document.fullscreenElement) {
-        // If the document is not in full screen mode
-        // make the video full screen
-        divEl.requestFullscreen();
-      } else {
-        // Otherwise exit the full screen mode.
-        document.exitFullscreen?.();
-      }
+      // Enter full-screen mode, whether we were previously in full-window
+      // mode or in neither mode.
+      document.body?.requestFullscreen();
+    } else {
+      // Otherwise exit full-screen mode.
+      document.exitFullscreen?.();
+    }
   }, []);
 
-  const onFullwindow = useCallback(() => {
-    setIsFullwindow(true);
-    setIsFullscreen(false);
+  const onFullwindow = useEffectEvent(() => {
+    if (mode !== 'fullwindow') {
+      // Set mode first: if we're currently in native full-screen, exiting it
+      // below fires fullscreenchange, whose handler checks this ref/state and
+      // leaves 'fullwindow' alone instead of resetting to 'none'.
+      setMode('fullwindow');
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      }
+    } else {
+      // Otherwise exit.
+      setMode('none');
+      setFsWidth(null);
+      setFsHeight(null);
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -126,10 +145,15 @@ export function PluotWrapper(props) {
       function onKeypress(event) {
         const isEscape = ["Escape", "Esc"].includes(event.key) || event.keyCode === 27;
         if (isEscape) {
-          setIsFullwindow(false);
-          setIsFullscreen(false);
+          setMode('none');
           setFsHeight(null);
           setFsWidth(null);
+          if (document.fullscreenElement) {
+            // Guard against the (transient) case where full-window mode was
+            // entered directly from full-screen mode and the native exit is
+            // still in flight; make sure we always fully exit too.
+            document.exitFullscreen?.();
+          }
         }
       }
 
@@ -170,14 +194,14 @@ export function PluotWrapper(props) {
   console.log(cameraMatrix)
 
   const content = (
-    <div ref={divRef} style={(isFullwindow ? ({
+    <div ref={divRef} style={(isFullscreenOrWindow ? ({
       position: 'fixed',
       zIndex: 11,
       top: 0,
       bottom: 0,
       left: 0,
       right: 0,
-      width: '100%',
+      width: '100wh',
       height: '100vh',
       overflow: 'hidden',
     }) : {})}>
@@ -211,5 +235,5 @@ export function PluotWrapper(props) {
     </div>
   );
 
-  return isFullwindow ? createPortal(content, document.body) : content;
+  return isFullscreenOrWindow ? createPortal(content, document.body) : content;
 }

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 # Renders this plot via the `pluot_cli` example (examples/pluot_cli),
-# which reads the plot/layer params as JSON (piped below via a heredoc
-# on stdin) and every other rendering parameter as a CLI flag.
+# which reads the plot/layer params (and any `stores`) as JSON (piped
+# below via a heredoc on stdin) and every other rendering parameter
+# as a CLI flag.
 #
-# `pluot_cli` only supports a single named Zarr store (registered as a
-# placeholder MemoryStore; Zarr data loading is unimplemented in
-# plain-Rust mode), so only the first declared store, if any, is
-# passed via `--store_name`.
+# `HttpStore`/`LocalStore` entries in `stores` are backed by real
+# `zarrs_http`/`zarrs_filesystem` instances; `MemoryStore` entries are
+# rejected, since the CLI has no generic byte payload to construct
+# one from.
 
 # Build the CLI once (run from the root of the pluot repository).
 cargo build --release -p pluot_cli
@@ -25,7 +26,6 @@ PLUOT_CLI="$(dirname "$0")/target/release/pluot_cli"
   --view_mode 2d \
   --camera_view "0.15000000596046448,0.0,0.0,0.0,0.0,0.15000000596046448,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0" \
   --plot_id "plot_1" \
-  --store_name "my_store" \
   --margin_left 60.0 \
   <<'JSON'
 {
@@ -95,6 +95,16 @@ PLUOT_CLI="$(dirname "$0")/target/release/pluot_cli"
         }
       }
     ]
+  },
+  "stores": {
+    "my_store": {
+      "store_type": "HttpStore",
+      "store_params": {
+        "url": "https://example.com/my_store.zarr",
+        "options": null
+      },
+      "store_extensions": null
+    }
   }
 }
 JSON
