@@ -91,7 +91,16 @@ render_to_image(
         ]
     },
     plot_id="plot_1",
-    store_name="my_store",
+    stores={
+        "my_store": {
+            "store_type": "HttpStore",
+            "store_params": {
+                "url": "https://example.com/my_store.zarr",
+                "options": None
+            },
+            "store_extensions": None
+        }
+    },
     wait_for_store_gets=True,
     timeout=None,
     cache_enabled=True,

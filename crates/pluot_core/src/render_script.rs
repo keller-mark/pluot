@@ -21,6 +21,7 @@
 //! - JSX / React (`@pluot/react`): a `<Pluot />` element / component.
 //! - HTML: a standalone page that loads `@pluot/core` and renders to a canvas.
 //! - Rust: a `pluot_core::render(...)` call.
+//! - Bash: a shell script invoking the `pluot_cli` example binary.
 
 use crate::params::{GraphicsFormat, RenderParams};
 use serde_json::Value;
@@ -51,6 +52,8 @@ pub fn render_to_script(params: &RenderParams, format: &GraphicsFormat) -> Strin
 
         GraphicsFormat::ExpressionRust => format!("{}\n", rust_expr(&value)),
         GraphicsFormat::ScriptRust => rust_script(&value),
+
+        GraphicsFormat::ScriptBash => bash_script(&value),
 
         other => panic!("render_to_script called with a non-code format: {other:?}"),
     }
@@ -487,6 +490,109 @@ fn rust_script(value: &Value) -> String {
          // Returns a Vec<u8> of RGBA bytes (plus one trailing status byte).\n\
          let pixels = render(params).await;\n",
         rust_raw_string(&json),
+    )
+}
+
+// === Bash ===
+
+/// The JSON body accepted by `pluot_cli`'s `--input` (or stdin): just the
+/// adjacently-tagged `plot_type` + `plot_params` pair. Every other field is
+/// passed to the CLI as a flag instead (see [`bash_script`]).
+fn bash_input_json(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+    let mut input = serde_json::Map::new();
+    if let Some(plot_type) = obj.get("plot_type") {
+        input.insert("plot_type".to_string(), plot_type.clone());
+    }
+    if let Some(plot_params) = obj.get("plot_params") {
+        input.insert("plot_params".to_string(), plot_params.clone());
+    }
+    serde_json::to_string_pretty(&Value::Object(input))
+        .expect("plot_type/plot_params should pretty-print")
+}
+
+/// A self-contained shell script that builds and runs the `pluot_cli`
+/// example (`examples/pluot_cli`), piping the plot/layer params to it as JSON
+/// on stdin and passing every other rendering parameter as a CLI flag,
+/// mirroring the `Args` struct in `examples/pluot_cli/src/main.rs`.
+fn bash_script(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+
+    let mut flags: Vec<String> = vec!["--output plot.png".to_string()];
+
+    let width = obj.get("width").and_then(Value::as_u64).unwrap_or(100);
+    let height = obj.get("height").and_then(Value::as_u64).unwrap_or(100);
+    flags.push(format!("--width {width}"));
+    flags.push(format!("--height {height}"));
+
+    if let Some(Value::Number(dpr)) = obj.get("device_pixel_ratio") {
+        flags.push(format!("--device_pixel_ratio {dpr}"));
+    }
+    // `AspectRatioMode`/`ViewMode` serialize as their (capitalized, for
+    // `AspectRatioMode`) variant names; `pluot_cli` matches case-insensitively.
+    if let Some(mode) = obj.get("aspect_ratio_mode").and_then(Value::as_str) {
+        flags.push(format!("--aspect_ratio_mode {}", mode.to_ascii_lowercase()));
+    }
+    if let Some(mode) = obj.get("view_mode").and_then(Value::as_str) {
+        flags.push(format!("--view_mode {mode}"));
+    }
+    if let Some(camera) = obj.get("camera_view").and_then(Value::as_array) {
+        let floats: Vec<String> = camera.iter().map(|v| v.to_string()).collect();
+        flags.push(format!("--camera_view \"{}\"", floats.join(",")));
+    }
+    if let Some(plot_id) = obj.get("plot_id").and_then(Value::as_str) {
+        flags.push(format!("--plot_id {}", quoted(plot_id)));
+    }
+
+    // `pluot_cli` only supports a single named store (registered as a
+    // placeholder MemoryStore; Zarr data loading is unimplemented in
+    // plain-Rust mode), so pass along the first declared store name, if any.
+    let store_name = obj
+        .get("stores")
+        .and_then(Value::as_object)
+        .and_then(|stores| stores.keys().next());
+    if let Some(store_name) = store_name {
+        flags.push(format!("--store_name {}", quoted(store_name)));
+    }
+
+    for (key, flag) in [
+        ("margin_left", "--margin_left"),
+        ("margin_right", "--margin_right"),
+        ("margin_top", "--margin_top"),
+        ("margin_bottom", "--margin_bottom"),
+    ] {
+        if let Some(Value::Number(n)) = obj.get(key) {
+            flags.push(format!("{flag} {n}"));
+        }
+    }
+
+    let flags_str: String = flags.iter().map(|f| format!("  {f} \\\n")).collect();
+    let input_json = bash_input_json(value);
+
+    format!(
+        "#!/usr/bin/env bash\n\
+         set -euo pipefail\n\
+         \n\
+         # Renders this plot via the `pluot_cli` example (examples/pluot_cli),\n\
+         # which reads the plot/layer params as JSON (piped below via a heredoc\n\
+         # on stdin) and every other rendering parameter as a CLI flag.\n\
+         #\n\
+         # `pluot_cli` only supports a single named Zarr store (registered as a\n\
+         # placeholder MemoryStore; Zarr data loading is unimplemented in\n\
+         # plain-Rust mode), so only the first declared store, if any, is\n\
+         # passed via `--store_name`.\n\
+         \n\
+         # Build the CLI once (run from the root of the pluot repository).\n\
+         cargo build --release -p pluot_cli\n\
+         PLUOT_CLI=\"$(dirname \"$0\")/target/release/pluot_cli\"\n\
+         \n\
+         # `--output`'s extension selects the backend: .svg (vector), .png\n\
+         # (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).\n\
+         \"$PLUOT_CLI\" \\\n\
+         {flags_str}\
+         \x20 <<'JSON'\n\
+         {input_json}\n\
+         JSON\n",
     )
 }
 

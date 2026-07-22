@@ -1,32 +1,34 @@
-use pluot_core::{render, RenderParams};
+#!/usr/bin/env bash
+set -euo pipefail
 
-// The plot parameters, as JSON.
-let params_json = r#"{
-  "width": 640,
-  "height": 480,
-  "format": "Raster",
-  "device_pixel_ratio": 1.0,
-  "camera_view": [
-    0.15000000596046448,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.15000000596046448,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    1.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    1.0
-  ],
-  "aspect_ratio_mode": "Contain",
-  "aspect_ratio_alignment_mode": "Center",
-  "view_mode": "2d",
+# Renders this plot via the `pluot_cli` example (examples/pluot_cli),
+# which reads the plot/layer params as JSON (piped below via a heredoc
+# on stdin) and every other rendering parameter as a CLI flag.
+#
+# `pluot_cli` only supports a single named Zarr store (registered as a
+# placeholder MemoryStore; Zarr data loading is unimplemented in
+# plain-Rust mode), so only the first declared store, if any, is
+# passed via `--store_name`.
+
+# Build the CLI once (run from the root of the pluot repository).
+cargo build --release -p pluot_cli
+PLUOT_CLI="$(dirname "$0")/target/release/pluot_cli"
+
+# `--output`'s extension selects the backend: .svg (vector), .png
+# (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).
+"$PLUOT_CLI" \
+  --output plot.png \
+  --width 640 \
+  --height 480 \
+  --device_pixel_ratio 1.0 \
+  --aspect_ratio_mode contain \
+  --view_mode 2d \
+  --camera_view "0.15000000596046448,0.0,0.0,0.0,0.0,0.15000000596046448,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0" \
+  --plot_id "plot_1" \
+  --store_name "my_store" \
+  --margin_left 60.0 \
+  <<'JSON'
+{
   "plot_type": "LayeredPlot",
   "plot_params": {
     "layers": [
@@ -93,34 +95,6 @@ let params_json = r#"{
         }
       }
     ]
-  },
-  "plot_id": "plot_1",
-  "stores": {
-    "my_store": {
-      "store_type": "HttpStore",
-      "store_params": {
-        "url": "https://example.com/my_store.zarr",
-        "options": null
-      },
-      "store_extensions": null
-    }
-  },
-  "wait_for_store_gets": true,
-  "timeout": null,
-  "cache_enabled": true,
-  "svg_compression_enabled": false,
-  "svg_include_document": true,
-  "margin_left": 60.0,
-  "margin_right": null,
-  "margin_top": null,
-  "margin_bottom": null,
-  "pickable": false,
-  "render_backend": null,
-  "compute_backend": null
-}"#;
-let params: RenderParams =
-    serde_json::from_str(params_json).expect("valid RenderParams JSON");
-
-// `render` is async; `.await` it inside an async runtime.
-// Returns a Vec<u8> of RGBA bytes (plus one trailing status byte).
-let pixels = render(params).await;
+  }
+}
+JSON

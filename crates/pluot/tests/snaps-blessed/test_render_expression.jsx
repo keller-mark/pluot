@@ -91,7 +91,16 @@
     ]
   }}
   plotId="plot_1"
-  storeName="my_store"
+  stores={{
+    my_store: {
+      store_type: "HttpStore",
+      store_params: {
+        url: "https://example.com/my_store.zarr",
+        options: null
+      },
+      store_extensions: null
+    }
+  }}
   marginLeft={60.0}
   enablePicking={false}
 />

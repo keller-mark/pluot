@@ -120,12 +120,15 @@ def store_metadata_to_instance(info: dict):
 
 def _http_store_from_url(url: str):
     """Construct a remote (fsspec-backed) zarr store from a URL."""
-    from zarr.storage import FsspecStore
-    return FsspecStore.from_url(url, read_only=True)
+    from obstore.store import HTTPStore
+    from zarr.storage import ObjectStore
+
+    obs_store = HTTPStore.from_url(url)
+    return ObjectStore(obs_store, read_only=True)
 
 
 def _derive_store_url(store):
-    """Best-effort extraction of a URL from a remote/fsspec-backed zarr store."""
+    """Best-effort extraction of a URL from a remote obstore-backed zarr store."""
     # zarr.storage.FsspecStore exposes an fsspec filesystem `.fs` and a `.path`.
     fs = getattr(store, "fs", None)
     path = getattr(store, "path", None)

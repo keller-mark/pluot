@@ -1,4 +1,4 @@
-use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams};
+use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
 use pluot_core::{render as raw_render, stores_from_params};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
 use crate::render_params::{LayerParams, RenderParams};
@@ -16,11 +16,9 @@ fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
     }).collect()
 }
 
-// TODO: nicer return type. wrap with raster/vector variants?
-
-pub async fn render(render_params: RenderParams) -> Vec<u8> {
+fn to_raw_render_params(render_params: RenderParams) -> RawRenderParams {
     let raw_layers = to_raw_layer_params(&render_params.layers);
-    let raw_params = RawRenderParams {
+    RawRenderParams {
         width: render_params.width,
         height: render_params.height,
         format: render_params.format,
@@ -46,9 +44,25 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
         plot_params: PlotParams::LayeredPlot(RawLayeredPlotRenderParams {
             layers: raw_layers,
         }),
-    };
+    }
+}
+
+// TODO: nicer return type. wrap with raster/vector variants?
+
+pub async fn render(render_params: RenderParams) -> Vec<u8> {
+    let raw_params = to_raw_render_params(render_params);
     // Construct the store objects from the store metadata and pass them in,
     // rather than registering them in the global store registry.
     let stores = stores_from_params(&raw_params);
+    raw_render(raw_params, stores).await
+}
+
+/// Like [`render`], but lets the caller pass the [`StoreMap`] of store objects
+/// directly instead of having them constructed from `render_params.stores`
+/// metadata. Useful for Rust callers that already have store objects on hand
+/// (e.g. native zarrs stores) rather than the `zarr_*` binding functions that
+/// [`stores_from_params`] dispatches to.
+pub async fn render_with_stores(render_params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
+    let raw_params = to_raw_render_params(render_params);
     raw_render(raw_params, stores).await
 }

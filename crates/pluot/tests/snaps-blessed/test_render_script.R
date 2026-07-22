@@ -1,7 +1,8 @@
 library(pluotr)
 
-# Register your Zarr store(s) before rendering if any layers read from
-# `store_name`.
+# Zarr store(s) are declared in the `stores` list below and constructed
+# from their metadata; use `pluot_register_store()` to override with your
+# own store object(s).
 img <- render_to_raster(
   layers = list(
     list(
@@ -92,7 +93,16 @@ img <- render_to_raster(
   aspect_ratio_alignment_mode = "Center",
   view_mode = "2d",
   plot_id = "plot_1",
-  store_name = "my_store",
+  stores = list(
+    my_store = list(
+      store_type = "HttpStore",
+      store_params = list(
+        url = "https://example.com/my_store.zarr",
+        options = NULL
+      ),
+      store_extensions = NULL
+    )
+  ),
   wait_for_store_gets = TRUE,
   timeout = NULL,
   cache_enabled = TRUE,

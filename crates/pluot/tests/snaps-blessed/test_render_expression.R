@@ -88,7 +88,16 @@ render_to_raster(
   aspect_ratio_alignment_mode = "Center",
   view_mode = "2d",
   plot_id = "plot_1",
-  store_name = "my_store",
+  stores = list(
+    my_store = list(
+      store_type = "HttpStore",
+      store_params = list(
+        url = "https://example.com/my_store.zarr",
+        options = NULL
+      ),
+      store_extensions = NULL
+    )
+  ),
   wait_for_store_gets = TRUE,
   timeout = NULL,
   cache_enabled = TRUE,

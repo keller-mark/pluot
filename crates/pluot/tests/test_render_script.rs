@@ -7,6 +7,7 @@
 // element); the `Script*` formats emit a self-contained script with imports.
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 mod test_utils;
@@ -19,6 +20,7 @@ use pluot::{
     CategoricalColormap, CategoricalParams, ColorMode,
     SizeMode, UnitsMode,
     NumericData,
+    ZarrStoreInfo, ZarrStoreParams, HttpStoreParams,
 };
 
 // A representative plot exercising the interesting parts of the serializer:
@@ -31,7 +33,16 @@ fn sample_params(format: GraphicsFormat) -> RenderParams {
         height: 480,
         format,
         plot_id: "plot_1".to_string(),
-        store_name: "my_store".to_string(),
+        stores: Some(HashMap::from([(
+            "my_store".to_string(),
+            ZarrStoreInfo {
+                store_params: ZarrStoreParams::HttpStore(HttpStoreParams {
+                    url: "https://example.com/my_store.zarr".to_string(),
+                    options: None,
+                }),
+                store_extensions: None,
+            },
+        )])),
         camera_view: Some([
             0.15, 0.0, 0.0, 0.0,
             0.0, 0.15, 0.0, 0.0,
@@ -177,6 +188,17 @@ async fn test_render_script_rust() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::ScriptRust),
         "test_render_script.rs.txt",
+    )
+    .await;
+}
+
+// ── Bash ──────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_render_script_bash() {
+    render_and_check_script_snapshot(
+        sample_params(GraphicsFormat::ScriptBash),
+        "test_render_script.sh",
     )
     .await;
 }

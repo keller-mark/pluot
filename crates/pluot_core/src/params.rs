@@ -51,6 +51,9 @@ pub enum GraphicsFormat {
     ScriptHtml,
     Json,
 
+    // Use the pluot_cli from examples/pluot_cli
+    ScriptBash,
+
     // TODO: support ScriptHtmlReact which uses the react component in a standalone HTML file?
     // TODO: jupyter nb?
     // TODO: marimo nb?
@@ -82,6 +85,7 @@ impl GraphicsFormat {
                 | GraphicsFormat::ScriptReact
                 | GraphicsFormat::ScriptHtml
                 | GraphicsFormat::Json
+                | GraphicsFormat::ScriptBash
         )
     }
 }

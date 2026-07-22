@@ -1,8 +1,9 @@
 import { initialize, render_wasm, setStoreByName } from "@pluot/core";
 
 await initialize();
-// Register your Zarr store(s) before rendering if any layers read from
-// `store_name`, e.g. `setStoreByName("my_store", store)`.
+// Zarr store(s) are declared in the `stores` map below and constructed
+// from their metadata; call `setStoreByName("my_store", store)` before
+// rendering to override with your own store object.
 
 const renderParams = {
   width: 640,
@@ -98,7 +99,16 @@ const renderParams = {
     ]
   },
   plot_id: "plot_1",
-  store_name: "my_store",
+  stores: {
+    my_store: {
+      store_type: "HttpStore",
+      store_params: {
+        url: "https://example.com/my_store.zarr",
+        options: null
+      },
+      store_extensions: null
+    }
+  },
   wait_for_store_gets: true,
   timeout: null,
   cache_enabled: true,

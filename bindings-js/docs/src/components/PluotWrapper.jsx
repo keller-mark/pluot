@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Pluot } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
@@ -42,6 +43,8 @@ export function PluotWrapper(props) {
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
   };
 
+  const [isFullwindow, setIsFullwindow] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [fsWidth, setFsWidth] = useState(null);
   const [fsHeight, setFsHeight] = useState(null);
 
@@ -54,6 +57,8 @@ export function PluotWrapper(props) {
       console.log(event);
 
       if (document.fullscreenElement) {
+        setIsFullscreen(true);
+        setIsFullwindow(false);
         // Entering
         setTimeout(() => {
           // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
@@ -70,6 +75,8 @@ export function PluotWrapper(props) {
         // Exiting
         setFsHeight(null);
         setFsWidth(null);
+        setIsFullscreen(false);
+        setIsFullwindow(false);
       }
     };
     document.addEventListener("fullscreenchange", onFSChange);
@@ -93,7 +100,49 @@ export function PluotWrapper(props) {
       }
   }, []);
 
-  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen });
+  const onFullwindow = useCallback(() => {
+
+    setIsFullwindow(true);
+    setIsFullscreen(false);
+    setTimeout(() => {
+      // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
+      // returns a value that seems to correspond to the size of the Chrome window,
+      // rather than the full screen size.
+      const divEl = divRef.current;
+      const windowSize = divEl.getBoundingClientRect();
+
+      setFsHeight(windowSize.height);
+      setFsWidth(windowSize.width);
+
+    }, 100);
+
+  }, []);
+
+  useEffect(() => {
+    // If in full window mode, listen for escape keypresses to exit this mode.
+
+    if (isFullwindow) {
+      function onKeypress(event) {
+        const isEscape = ["Escape", "Esc"].includes(event.key) || event.keyCode === 27;
+        if (isEscape) {
+          setIsFullwindow(false);
+          setIsFullscreen(false);
+          setFsHeight(null);
+          setFsWidth(null);
+        }
+      }
+
+      document.addEventListener("keydown", onKeypress);
+
+      return () => {
+        document.removeEventListener("keydown", onKeypress);
+      }
+    }
+
+    return () => { };
+  }, [isFullwindow]);
+
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow });
   console.log(controlValues);
 
   const derivedPlotParams = useMemo(() => {
@@ -119,9 +168,21 @@ export function PluotWrapper(props) {
 
   console.log(cameraMatrix)
 
-  return (
-    <>
-      <div ref={divRef}>
+  const isFullscreenOrWindow = isFullwindow || isFullscreen;
+
+  const content = (
+    <div ref={divRef} style={(isFullwindow ? ({
+      position: 'fixed',
+      zIndex: 11,
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      width: '100%',
+      height: '100vh',
+      overflow: 'hidden',
+    }) : {})}>
+      <div>
         <Pluot
           store={storeUrl}
           width={fsWidth ?? width}
@@ -145,8 +206,11 @@ export function PluotWrapper(props) {
       </div>
       <PlotControls
         showControls={showControls}
+        float={isFullscreenOrWindow}
       />
 
-    </>
+    </div>
   );
+
+  return isFullwindow ? createPortal(content, document.body) : content;
 }
