@@ -50,27 +50,14 @@ export function PluotWrapper(props) {
 
   const divRef = useRef(null);
 
+  const isFullscreenOrWindow = isFullwindow || isFullscreen;
+
   // Handling of fullscreenchange event.
   useEffect(() => {
-    let discarded = false;
-    const onFSChange = (event) => {
-      console.log(event);
-
+    const onFSChange = () => {
       if (document.fullscreenElement) {
         setIsFullscreen(true);
         setIsFullwindow(false);
-        // Entering
-        setTimeout(() => {
-          // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
-          // returns a value that seems to correspond to the size of the Chrome window,
-          // rather than the full screen size.
-          const fullscreenSize = document.fullscreenElement.getBoundingClientRect();
-
-          if(!discarded) {
-            setFsHeight(fullscreenSize.height);
-            setFsWidth(fullscreenSize.width);
-          }
-        }, 100);
       } else {
         // Exiting
         setFsHeight(null);
@@ -82,10 +69,37 @@ export function PluotWrapper(props) {
     document.addEventListener("fullscreenchange", onFSChange);
 
     return () => {
-      discarded = true;
       document.removeEventListener("fullscreenchange", onFSChange);
     };
   }, []);
+
+  // While in full-window or full-screen mode, the parent div is resized
+  // (either by our own fixed-position styles, or by the browser's native
+  // fullscreen layout), so observe it and keep fsWidth/fsHeight in sync.
+  useEffect(() => {
+    if (!isFullscreenOrWindow) {
+      return undefined;
+    }
+    const divEl = divRef.current;
+    if (!divEl) {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      const { width, height } = entry.contentRect;
+      setFsWidth(width);
+      setFsHeight(height);
+    });
+    observer.observe(divEl);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isFullscreenOrWindow]);
 
   const onFullscreen = useCallback(() => {
     const divEl = divRef.current;
@@ -101,21 +115,8 @@ export function PluotWrapper(props) {
   }, []);
 
   const onFullwindow = useCallback(() => {
-
     setIsFullwindow(true);
     setIsFullscreen(false);
-    setTimeout(() => {
-      // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
-      // returns a value that seems to correspond to the size of the Chrome window,
-      // rather than the full screen size.
-      const divEl = divRef.current;
-      const windowSize = divEl.getBoundingClientRect();
-
-      setFsHeight(windowSize.height);
-      setFsWidth(windowSize.width);
-
-    }, 100);
-
   }, []);
 
   useEffect(() => {
@@ -167,8 +168,6 @@ export function PluotWrapper(props) {
   // TODO: render the Loading indicator over the plot in Fullscreen mode
 
   console.log(cameraMatrix)
-
-  const isFullscreenOrWindow = isFullwindow || isFullscreen;
 
   const content = (
     <div ref={divRef} style={(isFullwindow ? ({

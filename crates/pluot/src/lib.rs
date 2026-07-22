@@ -17,6 +17,7 @@ pub use pluot_core::render_traits::{
 };
 pub use pluot_core::{RenderParams as RawRenderParams, LayerParams as RawLayerParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams, PlotParams as RawPlotParams};
 pub use pluot_core::{project, unproject, get_bounds};
+pub use pluot_core::StoreMap;
 
 // Re-export layer param types for convenience.
 pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
@@ -51,7 +52,7 @@ pub use crate::render_params::{RenderParams, LayerParams};
 
 // Unified exports.
 mod render;
-pub use crate::render::{render};
+pub use crate::render::{render, render_with_stores};
 
 // Exports for WASM bindings.
 #[cfg(target_arch = "wasm32")]
