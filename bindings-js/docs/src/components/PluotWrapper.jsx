@@ -185,18 +185,17 @@ export function PluotWrapper(props) {
       aspect_ratio_alignment_mode: controlValuesRef.current.aspectRatioAlignmentMode,
       view_mode: viewMode,
       pickable: false,
-      // TODO: lift up camera matrix state management into this PluotWrapper component, then pass latest here
-      camera_view: cameraMatrix,
+      camera_view: cameraMatrix, // TODO: lift up camera matrix state management into this PluotWrapper component, then pass latest here
       plot_id: plotId,
       plot_type: plotType,
-      stores: null, // TODO: pass stores object
+      stores: null, // TODO: pass stores object. lift up construction of stores object from within Pluot.jsx to here?
       plot_params: plotParams, // TODO: pass derivedPlotParams here via a ref?
-      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
-      timeout: null, // in ms // Note: will not have any effect when wait_for_store_gets is false.
-      wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
+      // Note: the below settings are optimized for static plotting.
+      timeout: null, // Note: will not have any effect when wait_for_store_gets is false.
+      wait_for_store_gets: true,
       cache_enabled: true,
-      svg_compression_enabled: true,
-      svg_include_document: false,
+      svg_compression_enabled: false,
+      svg_include_document: true,
     };
 
     // Wrap render_wasm in try/catch, to handle Rust panics.
