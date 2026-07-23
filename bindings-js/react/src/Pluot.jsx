@@ -5,13 +5,20 @@ import { FetchStore } from 'zarrita';
 import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
-  setStore, getStore,
+  setStore, setStoreByName, getStore,
   storeInstanceToMetadata,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
+  storeMetadataToInstance,
 } from '@pluot/core';
+
+// A store value is either a live zarrita store instance or already-derived
+// `ZarrStoreInfo` metadata (see `@pluot/core`'s `store-metadata.ts`).
+function isZarrStoreInfo(value) {
+  return value != null && typeof value === 'object' && 'store_type' in value;
+}
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -55,6 +62,7 @@ export function Pluot(props) {
     plotType,
     store,
     storeName: storeNameProp,
+    stores: storesProp,
     plotParams,
     viewMode = "2d",
     marginBottom = 100.0,
@@ -107,40 +115,47 @@ export function Pluot(props) {
 
   const isVector = format === "Vector";
 
-  const storeName = useMemo(() => {
-    if (storeNameProp) {
-      return storeNameProp;
-    }
-    // If store is a string, assume it is a URL and initialize a FetchStore here.
-    if (store) {
-      if (typeof store === 'string') {
-        return setStore(new FetchStore(store), plotId);
-      }
-      return setStore(store, plotId);
-    }
-    throw new Error("Either storeName or store must be provided.");
-  }, [storeNameProp, store]);
-
   // Build the top-level `stores` map that RenderParams expects: a mapping from
-  // store name to its derived `ZarrStoreInfo` metadata. Store instances were
-  // registered by name (via setStore/setStoreByName); here we derive each one's
-  // portable metadata from the registered instance. We collect every store
-  // referenced by the layers (via their `store_name`) plus the default
-  // `storeName`, so that multi-store plots resolve correctly.
+  // store name to its derived `ZarrStoreInfo` metadata.
   const stores = useMemo(() => {
-    const names = new Set();
-    if (storeName) names.add(storeName);
-    for (const layer of plotParams?.layers ?? []) {
-      const layerStoreName = layer?.layer_params?.store_name;
-      if (layerStoreName) names.add(layerStoreName);
-    }
     const result = {};
-    for (const name of names) {
-      const instance = getStore(name);
-      if (instance) result[name] = storeInstanceToMetadata(instance);
+
+    if ((store || storeNameProp) && storesProp) {
+      throw new Error('store/storeName (singular) are mutually exclusive with stores (plural).');
     }
+    const singleStoreName = storeNameProp ?? plotId;
+
+    if (typeof store === 'string') {
+      // If store is a string, assume it is a URL and initialize a FetchStore here.
+      setStoreByName(singleStoreName, new FetchStore(store));
+      const storeByUrl = getStore(singleStoreName);
+      result[singleStoreName] = storeInstanceToMetadata(storeByUrl);
+    } else if (typeof store !== 'string' && !isZarrStoreInfo(store)) {
+      // Assume `store` is a zarrita Store instance.
+      setStoreByName(singleStoreName, store);
+      result[singleStoreName] = storeInstanceToMetadata(store);
+    } else if (typeof store !== 'string' && isZarrStoreInfo(store)) {
+      // Assume `store` is a ZarrStoreInfo dict/JSON object.
+      const storeByInfo = storeMetadataToInstance(store);
+      setStoreByName(singleStoreName, storeByInfo);
+      result[singleStoreName] = store;
+    }
+
+    // The plural `stores` prop: each value is either a live store instance
+    // (registered by name) or an already-derived `ZarrStoreInfo` object.
+    if (storesProp) {
+      for (const [name, value] of Object.entries(storesProp)) {
+        if (isZarrStoreInfo(value)) {
+          result[name] = value;
+        } else {
+          setStoreByName(name, value);
+          result[name] = storeInstanceToMetadata(value);
+        }
+      }
+    }
+
     return Object.keys(result).length > 0 ? result : undefined;
-  }, [storeName, plotParams]);
+  }, [storeNameProp, store, storesProp]);
 
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
@@ -370,10 +385,13 @@ export function Pluot(props) {
         setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-        const storeUsed = getStore(storeName);
-        if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
-          storeUsed.clearCache();
-        }
+        Object.keys(stores).forEach(storeName => {
+          const storeUsed = getStore(storeName);
+          if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
+            storeUsed.clearCache();
+          }
+        });
+
       }
     }
     setDidFirstRender(true);
@@ -401,7 +419,7 @@ export function Pluot(props) {
   // sequence of bailed-early renders starts from the minimum again.
   useEffect(() => {
     currentTimeout.current = minTimeout;
-  }, [plotId, plotType, plotParams, storeName, format,
+  }, [plotId, plotType, plotParams, stores, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode,
     marginLeft, marginRight, marginTop, marginBottom,
     cameraMatrix,
@@ -424,7 +442,7 @@ export function Pluot(props) {
 
     // Render on the next animation frame.
     throttledRender();
-  }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format,
+  }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, stores, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode, marginLeft, marginRight, marginTop, marginBottom]);
 
   return (
@@ -465,8 +483,8 @@ export function Pluot(props) {
             viewBox={`0 0 ${width} ${height}`}
             xmlns="http://www.w3.org/2000/svg"
             {...(bailedEarly ? ({
-              ariaBusy: true,
-              ariaDescribedby: progressBarId,
+              ['aria-busy']: true,
+              ['aria-describedby']: progressBarId,
             }) : {})}
           >
           </svg>
@@ -477,8 +495,8 @@ export function Pluot(props) {
             width={width}
             height={height}
             {...(bailedEarly ? ({
-              ariaBusy: true,
-              ariaDescribedby: progressBarId,
+              ['aria-busy']: true,
+              ['aria-describedby']: progressBarId,
             }) : {})}
 
           />

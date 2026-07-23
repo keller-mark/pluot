@@ -24,9 +24,13 @@
 #'   `"End"`.
 #' @param view_mode `"2d"` (default) or `"3d"`.
 #' @param plot_id Identifier string used as a cache key (default `""`).
-#' @param store_name Name of a Zarr store previously registered via
+#' @param store Optional single Zarr store, as either a pizzarr store instance
+#'   or an already-derived `ZarrStoreInfo` metadata list (default `NULL`). Named
+#'   via `store_name`, or `"default"` if `store_name` is not given.
+#' @param store_name Name for the single `store` argument, or (when `store` is
+#'   not given) the name of a Zarr store previously registered via
 #'   [pluot_register_store()]. Its metadata is derived and passed as a
-#'   single-entry `stores` map (default `NULL`). Ignored when `stores` is given.
+#'   single-entry `stores` map (default `NULL`).
 #' @param stores Optional named list mapping store names to either a pizzarr
 #'   store instance or an already-derived `ZarrStoreInfo` metadata list. Store
 #'   instances are registered automatically and their metadata derived. Layers
@@ -61,6 +65,7 @@ pluot_render <- function(
   aspect_ratio_alignment_mode = "Center",
   view_mode = "2d",
   plot_id = "",
+  store = NULL,
   store_name = NULL,
   stores = NULL,
   wait_for_store_gets = TRUE,
@@ -78,7 +83,7 @@ pluot_render <- function(
 ) {
   # Build the top-level `stores` metadata map (store name -> ZarrStoreInfo),
   # registering any store instances so the bound functions can reach them.
-  stores_meta <- .pluot_build_stores(stores = stores, store_name = store_name)
+  stores_meta <- .pluot_build_stores(stores = stores, store = store, store_name = store_name)
 
   params <- list(
     layers = layers,

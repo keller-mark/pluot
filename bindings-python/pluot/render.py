@@ -15,12 +15,14 @@ def parse_kwargs(kwargs):
 
       - ``stores={name: store_instance_or_metadata, ...}`` for one or more
         named stores (layers reference them by ``store_name``); or
-      - ``store=store_instance`` (optionally with ``store_name=...``) for a
-        single store.
+      - ``store=store_instance_or_metadata`` (optionally with
+        ``store_name=...``) for a single store.
 
-    In every case we register the concrete store instance(s) in
-    ``GLOBAL_STORES`` (so the ``zarr_``-prefixed bound functions can reach them)
-    and derive each store's portable metadata for the ``stores`` field.
+    ``store``/each value of ``stores`` may be either a live
+    ``zarr.abc.store.Store`` instance or an already-derived ``ZarrStoreInfo``
+    dict. Live instances are registered in ``GLOBAL_STORES`` (so the
+    ``zarr_``-prefixed bound functions can reach them) and their portable
+    metadata is derived for the ``stores`` field; dicts pass through as-is.
     """
     new_kwargs = dict(kwargs)
 
@@ -48,13 +50,20 @@ def parse_kwargs(kwargs):
 
     # 2. Single-store convenience argument.
     if store_arg is not None:
-        if not isinstance(store_arg, Store):
-            raise ValueError("Expected `store` value to be an instance of zarr.abc.store.Store")
-        # Use a deterministic name so the Rust-side cache key is stable across
-        # re-renders (id(store) is stable for a given Python instance).
-        name = single_store_name if single_store_name is not None else str(id(store_arg))
-        GLOBAL_STORES[name] = store_arg
-        stores_meta[name] = store_instance_to_metadata(store_arg)
+        if isinstance(store_arg, Store):
+            # Use a deterministic name so the Rust-side cache key is stable across
+            # re-renders (id(store) is stable for a given Python instance).
+            name = single_store_name if single_store_name is not None else str(id(store_arg))
+            GLOBAL_STORES[name] = store_arg
+            stores_meta[name] = store_instance_to_metadata(store_arg)
+        elif isinstance(store_arg, dict):
+            # Already-derived ZarrStoreInfo metadata; no live instance to register.
+            name = single_store_name if single_store_name is not None else "default"
+            stores_meta[name] = store_arg
+        else:
+            raise ValueError(
+                "Expected `store` value to be an instance of zarr.abc.store.Store or a ZarrStoreInfo dict."
+            )
 
     if stores_meta:
         new_kwargs["stores"] = stores_meta

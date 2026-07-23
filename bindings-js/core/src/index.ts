@@ -7,6 +7,8 @@ export {
   setStoreByName,
   getStore,
 } from './core.js';
+export { render } from './render.js';
+export type { RenderOptions, StoreValue } from './render.js';
 export {
   storeInstanceToMetadata,
   storeMetadataToInstance,

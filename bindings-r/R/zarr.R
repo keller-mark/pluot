@@ -139,13 +139,19 @@ store_metadata_to_instance <- function(info) {
 
 # Build the top-level `stores` metadata map that RenderParams expects.
 #
-# Accepts either an explicit `stores` named list (each value a pizzarr store
-# instance or an already-derived metadata list) or a `store_name` referencing a
-# store previously registered via `pluot_register_store()`. Store instances are
-# registered (so the bound functions can reach them) and their metadata derived.
-.pluot_build_stores <- function(stores = NULL, store_name = NULL) {
+# Accepts any combination of:
+#   - `stores`, a named list mapping store names to either a pizzarr store
+#     instance or an already-derived `ZarrStoreInfo` metadata list; and/or
+#   - `store` (optionally named via `store_name`), a single pizzarr store
+#     instance or `ZarrStoreInfo` list; and/or
+#   - `store_name` alone, referencing a store previously registered via
+#     `pluot_register_store()`.
+# Store instances are registered (so the bound functions can reach them) and
+# their metadata derived; `ZarrStoreInfo` lists pass through as-is.
+.pluot_build_stores <- function(stores = NULL, store = NULL, store_name = NULL) {
+  stores_meta <- list()
+
   if (!is.null(stores)) {
-    stores_meta <- list()
     for (nm in names(stores)) {
       val <- stores[[nm]]
       if (is.list(val) && !is.null(val[["store_type"]])) {
@@ -156,22 +162,31 @@ store_metadata_to_instance <- function(info) {
         stores_meta[[nm]] <- store_instance_to_metadata(val)
       }
     }
-    return(stores_meta)
   }
 
-  if (!is.null(store_name)) {
+  if (!is.null(store)) {
+    name <- if (!is.null(store_name)) store_name else "default"
+    if (is.list(store) && !is.null(store[["store_type"]])) {
+      # Already-derived ZarrStoreInfo metadata; no live instance to register.
+      stores_meta[[name]] <- store
+    } else {
+      pluot_register_store(name, store)
+      stores_meta[[name]] <- store_instance_to_metadata(store)
+    }
+  } else if (!is.null(store_name)) {
+    # No `store` instance/metadata given: treat `store_name` as referencing a
+    # store already registered via `pluot_register_store()`.
     registered <- tryCatch(
       get(store_name, envir = .pluot_stores, inherits = FALSE),
       error = function(e) NULL
     )
     if (!is.null(registered)) {
-      stores_meta <- list()
       stores_meta[[store_name]] <- store_instance_to_metadata(registered)
-      return(stores_meta)
     }
   }
 
-  NULL
+  if (length(stores_meta) == 0) return(NULL)
+  stores_meta
 }
 
 # Cache-key helpers (same scheme as Python zarr.py)
