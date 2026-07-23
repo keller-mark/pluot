@@ -22,7 +22,7 @@ jobs:
       run: cargo build --verbose
     - name: Run Rust unit tests
       # Rendering tests do not work on non-macos runners since they lack GPUs.
-      run: cargo test --verbose --features lacks_gpu
+      run: cargo test --verbose --features "lacks_gpu,lacks_rlang_env,lacks_python_env"
 
   plain_rust_check_examples:
     runs-on: ubuntu-latest
@@ -67,6 +67,8 @@ jobs:
       run: uv sync --extra dev
     - name: Compile Rust code
       run: uv run maturin develop --features python
+    - name: Run python-via-render-to-script integration test
+      run: cargo test --verbose --features "lacks_gpu,lacks_rlang_env"
 
   rlang_compile:
     runs-on: ubuntu-latest
@@ -95,7 +97,8 @@ jobs:
         error-on: '"error"'
         build_args: 'c("--no-build-vignettes")'
         args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes", "--no-manual")'
-
+    - name: Run python-via-render-to-script integration test
+      run: cargo test --verbose --features "lacks_gpu,lacks_python_env"
 
   py_and_wasm_unit_tests:
     # We use a macOS runner for tests that rely on the GPU.

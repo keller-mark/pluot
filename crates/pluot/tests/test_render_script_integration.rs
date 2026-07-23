@@ -1,191 +1,34 @@
 // Integration tests for the code-based GraphicsFormats: rather than just
 // snapshotting the generated *source text* (see test_render_script.rs), these
-// tests actually execute the generated Python/R/Rust/Bash code in its own
-// language runtime and check that the resulting SVG matches a shared
-// reference snapshot. JS/HTML are intentionally not covered here: the compiled
+// tests actually execute the generated code in its own language runtime and
+// check that the resulting SVG matches a shared reference snapshot.
+//
+// Python and R get their own files (test_render_script_integration_python.rs,
+// test_render_script_integration_r.rs), each gated behind the corresponding
+// `python` / `rlang` crate feature, since they require that language's
+// runtime to be installed. Bash and Rust have no such runtime dependency
+// beyond what's already required to build/test this crate, so they stay
+// here, ungated. JS/HTML are intentionally not covered here: the compiled
 // wasm module touches WebGPU even for `Vector` (SVG) output, which has no
 // headless equivalent in this test environment (would require a real browser).
 //
 // Calling `render_to_script` directly (rather than going through `render()`)
 // lets `RenderParams.format` carry the *real* desired output (`Vector`, i.e.
 // SVG) while the second argument independently selects the code target
-// (`ScriptPython`, `ScriptR`, ...). See `resolved_format` in
+// (`ScriptBash`, `ScriptRust`, ...). See `resolved_format` in
 // `pluot_core::render_script` for how the generators pick this up.
 #![cfg(not(target_arch = "wasm32"))]
 
-// TODO: split these tests into separate files and use feature-gating to only run python in python env, and only run R in R env,
-// and then run them in CI / GH actions.
-
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::sync::Arc;
 
 mod test_utils;
-use test_utils::{check_svg_snapshot, render_and_check_svg_snapshot};
-
-use pluot::{
-    render_to_script, AxisLinearLayerParams, AxisPosition, CategoricalColormap,
-    CategoricalParams, ColorMode, GraphicsFormat, LayerParams, NumericData, PointLayerParams,
-    PointShapeMode, RenderParams, SizeMode, UnitsMode,
+use test_utils::{
+    check_svg_snapshot, fresh_scratch_dir, panic_on_failure, plot_params,
+    render_and_check_svg_snapshot, repo_root, CANONICAL_SVG_SNAPSHOT,
 };
 
-/// The shared SVG snapshot every language's executed output is compared
-/// against. Produced directly (not via code generation) by
-/// `test_render_script_integration_canonical_svg`.
-const CANONICAL_SVG_SNAPSHOT: &str = "test_render_script_integration.svg";
-
-/// The same point + axis plot used by `test_render_script.rs`'s
-/// `sample_params`, minus the (here, unused) Zarr store, with `format` left
-/// for the caller to set.
-fn plot_params(format: GraphicsFormat) -> RenderParams {
-    RenderParams {
-        width: 640,
-        height: 480,
-        format,
-        plot_id: "plot_1".to_string(),
-        camera_view: Some([
-            0.15, 0.0, 0.0, 0.0, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ]),
-        margin_left: Some(60.0),
-        layers: vec![
-            LayerParams::PointLayer(PointLayerParams {
-                layer_id: "pts".to_string(),
-                data_unit_mode_x: UnitsMode::Data,
-                data_unit_mode_y: UnitsMode::Data,
-                point_shape_mode: PointShapeMode::Circle,
-                point_radius: Some(SizeMode::UniformSize(5.0)),
-                position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
-                position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
-                fill_color: Some(ColorMode::Categorical(CategoricalParams {
-                    codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
-                    colormap: CategoricalColormap::Tableau10,
-                })),
-                ..Default::default()
-            }),
-            LayerParams::AxisLinearLayer(AxisLinearLayerParams {
-                layer_id: "left_axis".to_string(),
-                position: AxisPosition::Left,
-            }),
-        ],
-        ..Default::default()
-    }
-}
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .canonicalize()
-        .expect("repo root should exist")
-}
-
-/// A fresh, empty scratch directory under the system temp dir, unique to this
-/// test's name and the current process (so parallel test runs don't collide).
-fn fresh_scratch_dir(test_name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "pluot_integration_{test_name}_{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create scratch dir");
-    dir
-}
-
-fn panic_on_failure(label: &str, output: &std::process::Output) {
-    if !output.status.success() {
-        panic!(
-            "{label} exited with {status}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
-            status = output.status,
-            stdout = String::from_utf8_lossy(&output.stdout),
-            stderr = String::from_utf8_lossy(&output.stderr),
-        );
-    }
-}
-
-// ── Python ──────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_render_script_integration_python() {
-    let script = render_to_script(plot_params(GraphicsFormat::Vector), &GraphicsFormat::ScriptPython);
-
-    let scratch = fresh_scratch_dir("python");
-    let output_path = scratch.join("out.svg");
-
-    // The generated script uses top-level `await`, which is only valid inside
-    // an async context (e.g. a notebook cell, which is its intended target;
-    // see the module docs in `render_script.rs`). Wrap it in an `async def` so
-    // it can run under plain CPython, and write out the resulting `img`
-    // variable (an SVG string) so this harness can read it back.
-    let indented: String = script
-        .lines()
-        .map(|line| format!("    {line}\n"))
-        .collect();
-    let driver = format!(
-        "import asyncio, os\n\
-         \n\
-         async def _pluot_integration_main():\n\
-         {indented}\
-         \n\
-         \x20   with open(os.environ[\"PLUOT_TEST_OUTPUT\"], \"w\", encoding=\"utf-8\") as f:\n\
-         \x20       f.write(img)\n\
-         \n\
-         asyncio.run(_pluot_integration_main())\n",
-    );
-    let driver_path = scratch.join("render.py");
-    std::fs::write(&driver_path, &driver).expect("write python driver");
-
-    let python_bin = repo_root().join(".venv").join("bin").join("python3");
-    assert!(
-        python_bin.exists(),
-        "expected a project virtualenv at {python_bin:?}; run `uv sync` (or equivalent) first",
-    );
-
-    let output = Command::new(&python_bin)
-        .arg(&driver_path)
-        .env("PLUOT_TEST_OUTPUT", &output_path)
-        .current_dir(&scratch)
-        .output()
-        .expect("failed to spawn python3");
-    panic_on_failure("python3", &output);
-
-    let svg = std::fs::read_to_string(&output_path).expect("read python SVG output");
-    check_svg_snapshot(&svg, CANONICAL_SVG_SNAPSHOT);
-
-    let _ = std::fs::remove_dir_all(&scratch);
-}
-
-// ── R ─────────────────────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_render_script_integration_r() {
-    let script = render_to_script(plot_params(GraphicsFormat::Vector), &GraphicsFormat::ScriptR);
-
-    let scratch = fresh_scratch_dir("r");
-    let output_path = scratch.join("out.svg");
-    let script_path = scratch.join("render.R");
-    std::fs::write(&script_path, &script).expect("write R script");
-
-    // `render.R` assigns its result to `img` (an SVG string) but doesn't write
-    // it anywhere; `source()` it into the driver's global environment (the
-    // default for `local`) and write `img` out ourselves.
-    let driver = format!(
-        "source({script_path:?})\n\
-         writeLines(img, {output_path:?})\n",
-    );
-
-    let output = Command::new("Rscript")
-        .arg("-e")
-        .arg(&driver)
-        .current_dir(&scratch)
-        .output()
-        .expect("failed to spawn Rscript");
-    panic_on_failure("Rscript", &output);
-
-    let svg = std::fs::read_to_string(&output_path).expect("read R SVG output");
-    check_svg_snapshot(&svg, CANONICAL_SVG_SNAPSHOT);
-
-    let _ = std::fs::remove_dir_all(&scratch);
-}
+use pluot::{render_to_script, GraphicsFormat};
 
 // ── Bash / pluot_cli ────────────────────────────────────────────────────────
 
