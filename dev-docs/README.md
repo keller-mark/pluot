@@ -17,7 +17,7 @@ Rendering operations:
   - Vector: Check per-layer graphics output format
     - Layer specifies bitmap rendering: Has GPU?
       - Yes: Perform bitmap rendering operations on GPU via WGPU
-    - No: Perform bitmap rendering operations on CPU via CPU fallbacks
+      - No: Perform bitmap rendering operations on CPU via CPU fallbacks
     - Layer specifies vector rendering: Perform vector rendering operations on CPU
   - Bitmap: Has GPU?
     - Yes: Perform bitmap rendering operations on GPU via WGPU
