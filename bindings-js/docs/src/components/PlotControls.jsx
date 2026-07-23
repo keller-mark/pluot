@@ -25,7 +25,7 @@ const theme = {
 };
 
 export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
-  const { onFullscreen, onFullwindow } = callbacks ?? {};
+  const { onFullscreen, onFullwindow, onRenderToScript } = callbacks ?? {};
   // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
@@ -130,6 +130,25 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
     ...(typeof onFullscreen === 'function' ? ({
       'Full Screen': button(
         onFullscreen,
+        { disabled: false }
+      ),
+    }) : {}),
+    renderToScriptType: {
+      value: defaultOptions.renderToScriptType ?? 'Json',
+      options: {
+        'JSON': 'Json',
+        'Shell script': 'ScriptBash',
+        'Rust script': 'ScriptRust',
+        'Python script': 'ScriptPython',
+        'R script': 'ScriptR',
+        'React (JSX) script': 'ScriptReact',
+        // TODO: add more options here
+      },
+      label: 'Render-to-Script Type'
+    },
+    ...(typeof onRenderToScript === 'function' ? ({
+      'Render to Script': button(
+        onRenderToScript,
         { disabled: false }
       ),
     }) : {}),

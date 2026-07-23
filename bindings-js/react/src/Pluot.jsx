@@ -166,7 +166,6 @@ export function Pluot(props) {
   const [bailedEarly, setBailedEarly] = useState(true);
 
   const [pickingResult, setPickingResult] = useState(null);
-  const [scriptResult, setScriptResult] = useState(null);
 
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
@@ -275,55 +274,6 @@ export function Pluot(props) {
       cameraEl.removeEventListener("click", clickHandler);
     };
   }, [viewMode, enablePicking]);
-
-
-  const renderToScript = useEffectEvent(async () => {
-    isRenderingRef.current = true;
-
-    const renderParams = {
-      width,
-      height,
-      format: "ScriptRust",
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
-      device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
-      view_mode: viewMode,
-      pickable: false,
-      // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
-      camera_view: cameraMatrix,
-      plot_id: plotId,
-      plot_type: plotType,
-      stores,
-      plot_params: plotParams,
-      // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
-      timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
-      wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
-      cache_enabled: true,
-      svg_compression_enabled: true,
-      svg_include_document: false,
-    };
-
-    // Wrap render_wasm in try/catch, to handle Rust panics.
-    let arr;
-    try {
-      arr = await render_wasm(renderParams);
-
-      isRenderingRef.current = false;
-    } catch (error) {
-      console.error("Error during wasm.render_wasm (rendering to script):", error);
-      // Cleanup
-      isRenderingRef.current = false;
-      return;
-    }
-
-    const scriptContents = (new TextDecoder()).decode(arr);
-    console.log(scriptContents);
-
-  });
 
 
   // The renderFrame callback.
@@ -518,10 +468,6 @@ export function Pluot(props) {
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
       {pickingResult ? (
         <pre>{JSON.stringify(pickingResult, null, 2)}</pre>
-      ) : null}
-      <button onClick={renderToScript}>Render to script</button>
-      {scriptResult ? (
-        <pre>{scriptResult}</pre>
       ) : null}
     </>
   );
