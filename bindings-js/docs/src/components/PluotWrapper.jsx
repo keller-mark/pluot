@@ -236,7 +236,6 @@ export function PluotWrapper(props) {
 
   controlValuesRef.current = { ...controlValues };
 
-  // TODO: render the PlotControls over the plot in Fullscreen mode
   // TODO: render the Loading indicator over the plot in Fullscreen mode
 
   console.log(cameraMatrix);

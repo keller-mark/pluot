@@ -67,7 +67,7 @@ jobs:
       run: uv sync --extra dev
     - name: Compile Rust code
       run: uv run maturin develop --features python
-    - name: Run python-via-render-to-script integration test
+    - name: Run Python-via-render-to-script integration test
       run: cargo test --verbose --features "lacks_gpu,lacks_rlang_env"
 
   rlang_compile:
@@ -97,7 +97,7 @@ jobs:
         error-on: '"error"'
         build_args: 'c("--no-build-vignettes")'
         args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes", "--no-manual")'
-    - name: Run python-via-render-to-script integration test
+    - name: Run R-via-render-to-script integration test
       run: cargo test --verbose --features "lacks_gpu,lacks_python_env"
 
   py_and_wasm_unit_tests:
