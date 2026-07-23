@@ -268,7 +268,7 @@ async def _(
         plot_params=dict(
             layers=[
                 dict(
-                  layer_type="ZarrPointLayer",
+                  layer_type="PointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
                     data_unit_mode_x="Data",
@@ -276,10 +276,13 @@ async def _(
                     point_radius_unit_mode_x="Pixels",
                     point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
-                    x_arr=x_arr,
-                    y_arr=y_arr,
-                    color_arr=color_arr,
-                    point_radius=point_radius_slider.value,
+                    point_radius={ "size_mode": "UniformSize", "size_params": point_radius_slider.value },
+                    position_x={"dtype": "Float32", "values": x_arr.tolist() },
+                    position_y={"dtype": "Float32", "values": y_arr.tolist()},
+                    fill_color={ "color_mode": "Categorical", "color_params": {
+                        "codes": { "dtype": "Uint8", "values": color_arr.tolist() },
+                        "colormap": "Tableau10"
+                    } },
                   )
                 ),
                 dict(
@@ -327,7 +330,7 @@ async def _(
         plot_params=dict(
             layers=[
                 dict(
-                  layer_type="ZarrPointLayer",
+                  layer_type="PointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
                     data_unit_mode_x="Data",
@@ -335,10 +338,13 @@ async def _(
                     point_radius_unit_mode_x="Pixels",
                     point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
-                    x_arr=x_arr,
-                    y_arr=y_arr,
-                    color_arr=color_arr,
-                    point_radius=point_radius_slider.value,
+                    point_radius={ "size_mode": "UniformSize", "size_params": point_radius_slider.value },
+                    position_x={"dtype": "Float32", "values": x_arr.tolist() },
+                    position_y={"dtype": "Float32", "values": y_arr.tolist()},
+                    fill_color={ "color_mode": "Categorical", "color_params": {
+                        "codes": { "dtype": "Uint8", "values": color_arr.tolist() },
+                        "colormap": "Tableau10"
+                    } },
                   )
                 ),
                 dict(

@@ -129,19 +129,11 @@ def _http_store_from_url(url: str):
 
 def _derive_store_url(store):
     """Best-effort extraction of a URL from a remote obstore-backed zarr store."""
-    # zarr.storage.FsspecStore exposes an fsspec filesystem `.fs` and a `.path`.
-    fs = getattr(store, "fs", None)
-    path = getattr(store, "path", None)
-    if fs is not None and path is not None:
-        try:
-            return fs.unstrip_protocol(path)
-        except Exception:
-            pass
-    # Some stores expose a direct URL/path string.
-    for attr in ("url", "path"):
-        val = getattr(store, attr, None)
-        if isinstance(val, str) and "://" in val:
-            return val
+    # zarr.storage.ObjectStore's .store should contain an obstore HTTPStore.
+    obs_store = getattr(store, "store", None)
+    url = getattr(obs_store, "url", None)
+    if isinstance(url, str) and "://" in url:
+        return url
     return None
 
 

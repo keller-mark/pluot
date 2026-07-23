@@ -68,7 +68,7 @@ async def _(camera_view, render_to_image, umap_df):
         plot_params=dict(
             layers=[
                 dict(
-                  layer_type="ZarrPointLayer",
+                  layer_type="PointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
                     data_unit_mode_x="Data",
@@ -76,10 +76,13 @@ async def _(camera_view, render_to_image, umap_df):
                     point_radius_unit_mode_x="Pixels",
                     point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
-                    x_arr=umap_df["X"].values.astype('<f8'),
-                    y_arr=umap_df["Y"].values.astype('<f8'),
-                    color_arr=umap_df["Targets"].values.astype('<i8'),
-                    point_radius=2.0,
+                    point_radius={ "size_mode": "UniformSize", "size_params": 2.0 },
+                    position_x={"dtype": "Float32", "values": umap_df["X"].values.tolist() },
+                    position_y={"dtype": "Float32", "values": umap_df["Y"].values.tolist()},
+                    fill_color={ "color_mode": "Categorical", "color_params": {
+                        "codes": { "dtype": "Uint8", "values": umap_df["Targets"].values.tolist() },
+                        "colormap": "Tableau10"
+                    } },
                   )
                 ),
                 dict(
@@ -152,7 +155,7 @@ async def _(camera_view, render_to_svg, umap_df):
         plot_params=dict(
             layers=[
                 dict(
-                  layer_type="ZarrPointLayer",
+                  layer_type="PointLayer",
                   layer_params=dict(
                     layer_id="zarr_layer",
                     data_unit_mode_x="Data",
@@ -160,10 +163,13 @@ async def _(camera_view, render_to_svg, umap_df):
                     point_radius_unit_mode_x="Pixels",
                     point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
-                    x_arr=umap_df["X"].values.astype('<f8'),
-                    y_arr=umap_df["Y"].values.astype('<f8'),
-                    color_arr=umap_df["Targets"].values.astype('<i8'),
-                    point_radius=2.0,
+                    point_radius={ "size_mode": "UniformSize", "size_params": 2.0 },
+                    position_x={"dtype": "Float32", "values": umap_df["X"].values.tolist() },
+                    position_y={"dtype": "Float32", "values": umap_df["Y"].values.tolist()},
+                    fill_color={ "color_mode": "Categorical", "color_params": {
+                        "codes": { "dtype": "Uint8", "values": umap_df["Targets"].values.tolist() },
+                        "colormap": "Tableau10"
+                    } },
                   )
                 ),
                 dict(
