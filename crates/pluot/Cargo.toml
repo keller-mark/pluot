@@ -36,11 +36,6 @@ python = ["pluot_core/python", "pyo3"]
 rlang = ["pluot_core/rlang"]
 # Define a feature for running unit tests in GPU-less environments
 lacks_gpu = ["pluot_core/lacks_gpu"]
-# Define a feature for running render_script tests in CI envs that lack Python envs.
-lacks_python_env = []
-# Define a feature for running render_script tests in CI envs that lack Python envs.
-lacks_rlang_env = []
-
 
 
 

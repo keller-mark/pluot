@@ -3,12 +3,15 @@
 // tests actually execute the generated code in its own language runtime and
 // check that the resulting SVG matches a shared reference snapshot.
 //
-// Python and R get their own files (test_render_script_integration_python.rs,
-// test_render_script_integration_r.rs), each gated behind the corresponding
-// `python` / `rlang` crate feature, since they require that language's
-// runtime to be installed. Bash and Rust have no such runtime dependency
+// Python and R are intentionally not covered here: rather than have Rust
+// shell out to `python3`/`Rscript` to execute code generated in-process,
+// those two get real tests in their own language's suite -
+// bindings-python/tests/test_render_script_integration.py and
+// bindings-r/tests/testthat/test-render-script-integration.R - fed by a
+// `pluot_cli`-based code-gen step (see scripts/gen_render_script_fixtures.sh
+// and scripts/README.md). Bash and Rust have no such runtime dependency
 // beyond what's already required to build/test this crate, so they stay
-// here, ungated. JS/HTML are intentionally not covered here: the compiled
+// here. JS/HTML are intentionally not covered here either: the compiled
 // wasm module touches WebGPU even for `Vector` (SVG) output, which has no
 // headless equivalent in this test environment (would require a real browser).
 //

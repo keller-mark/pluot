@@ -5,8 +5,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use pluot::{
-    render, render_with_stores, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams, ViewMode,
-    ZarrStoreInfo, ZarrStoreParams, HttpStoreParams, LocalStoreParams, MemoryStoreParams, StoreMap,
+    render, render_to_script, render_with_stores, AspectRatioMode, GraphicsFormat, LayerParams,
+    RenderParams, ViewMode, ZarrStoreInfo, ZarrStoreParams, HttpStoreParams, LocalStoreParams,
+    MemoryStoreParams, StoreMap,
 };
 use zarrs_storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter};
 use zarrs_storage::AsyncReadableStorageTraits;
@@ -211,6 +212,23 @@ fn infer_format(path: &PathBuf) -> GraphicsFormat {
         .unwrap_or(GraphicsFormat::Raster)
 }
 
+/// If `--output` names a `.py` or `.R` file (case-insensitive), return the
+/// matching code-generation target instead of a real render format. Used to
+/// let `pluot_cli` double as a code-gen step for the Python/R
+/// render-to-script integration tests (see `scripts/gen_render_script_fixtures.sh`).
+fn script_format_for_output(path: &PathBuf) -> Option<GraphicsFormat> {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("py") => Some(GraphicsFormat::ScriptPython),
+        Some("r") => Some(GraphicsFormat::ScriptR),
+        _ => None,
+    }
+}
+
 /// Parse an aspect ratio mode string.
 fn parse_aspect_ratio_mode(s: &str) -> Result<AspectRatioMode, String> {
     match s.to_ascii_lowercase().as_str() {
@@ -369,6 +387,38 @@ async fn main() {
         pickable: false,
         ..Default::default()
     };
+
+    // --- Code-generation shortcut ---
+    //
+    // `--output foo.py` / `foo.R` skip real rendering entirely and instead
+    // emit the equivalent Python/R source via `render_to_script`, for use as
+    // an integration-test fixture (see `scripts/gen_render_script_fixtures.sh`).
+    if let Some(script_format) = script_format_for_output(&args.output) {
+        let script_params = RenderParams {
+            format: GraphicsFormat::Vector,
+            // Passed through verbatim (`None` if the input JSON declared no
+            // stores) rather than the synthetic MemoryStore placeholder above,
+            // which is a `pluot_cli`-only bookkeeping detail that has no
+            // business leaking into generated source.
+            stores: stores_input.clone(),
+            ..params.clone()
+        };
+        let script = render_to_script(script_params, &script_format);
+        match fs::write(&args.output, &script) {
+            Ok(_) => {
+                eprintln!(
+                    "Wrote {script_format:?} script ({} bytes) to {}",
+                    script.len(),
+                    args.output.display()
+                );
+            }
+            Err(e) => {
+                eprintln!("Error writing script output: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
 
     let width = params.width;
     let height = params.height;

@@ -1,5 +1,4 @@
-import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
-import { mat4, vec4 } from "gl-matrix";
+import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback, useId } from "react";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
 import { FetchStore } from 'zarrita';
@@ -166,6 +165,8 @@ export function Pluot(props) {
   const [bailedEarly, setBailedEarly] = useState(true);
 
   const [pickingResult, setPickingResult] = useState(null);
+
+  const progressBarId = useId();
 
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
@@ -443,6 +444,18 @@ export function Pluot(props) {
             border: `${debugMargins ? 1 : 0}px solid red`,
           }}
         />
+        {bailedEarly ? (
+          <progress
+            id={progressBarId}
+            aria-label="Loading..."
+            style={{
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              position: 'absolute'
+            }}
+          />
+        ) : null}
         {isVector ? (
           <svg
             ref={svgRef}
@@ -451,6 +464,10 @@ export function Pluot(props) {
             height={height}
             viewBox={`0 0 ${width} ${height}`}
             xmlns="http://www.w3.org/2000/svg"
+            {...(bailedEarly ? ({
+              ariaBusy: true,
+              ariaDescribedby: progressBarId,
+            }) : {})}
           >
           </svg>
         ) : (
@@ -459,12 +476,15 @@ export function Pluot(props) {
             style={{ width, height, border: `${debugMargins ? 1 : 0}px solid black` }}
             width={width}
             height={height}
+            {...(bailedEarly ? ({
+              ariaBusy: true,
+              ariaDescribedby: progressBarId,
+            }) : {})}
+
           />
         )}
+
       </div>
-      {bailedEarly ? (
-          <p>Loading...</p>
-        ) : null}
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
       {pickingResult ? (
         <pre>{JSON.stringify(pickingResult, null, 2)}</pre>

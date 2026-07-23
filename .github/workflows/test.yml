@@ -22,7 +22,7 @@ jobs:
       run: cargo build --verbose
     - name: Run Rust unit tests
       # Rendering tests do not work on non-macos runners since they lack GPUs.
-      run: cargo test --verbose --features "lacks_gpu,lacks_rlang_env,lacks_python_env"
+      run: cargo test --verbose --features "lacks_gpu"
 
   plain_rust_check_examples:
     runs-on: ubuntu-latest
@@ -67,8 +67,6 @@ jobs:
       run: uv sync --extra dev
     - name: Compile Rust code
       run: uv run maturin develop --features python
-    - name: Run Python-via-render-to-script integration test
-      run: cargo test --verbose --features "lacks_gpu,lacks_rlang_env"
 
   rlang_compile:
     runs-on: ubuntu-latest
@@ -91,14 +89,16 @@ jobs:
         extra-packages: any::rcmdcheck
         needs: check
         working-directory: bindings-r
+    - name: Generate render-script integration fixtures
+      # Populates bindings-r/tests/testthat/test-render-script-integration.R's
+      # PLUOT_RENDER_SCRIPT_FIXTURES_DIR for the check-r-package step below.
+      run: echo "PLUOT_RENDER_SCRIPT_FIXTURES_DIR=$(scripts/gen_render_script_fixtures.sh)" >> "$GITHUB_ENV"
     - uses: r-lib/actions/check-r-package@v2
       with:
         working-directory: bindings-r
         error-on: '"error"'
         build_args: 'c("--no-build-vignettes")'
         args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes", "--no-manual")'
-    - name: Run R-via-render-to-script integration test
-      run: cargo test --verbose --features "lacks_gpu,lacks_python_env"
 
   py_and_wasm_unit_tests:
     # We use a macOS runner for tests that rely on the GPU.
@@ -133,7 +133,7 @@ jobs:
     - name: Compile Rust code
       run: uv run maturin develop --features python
     - name: Run Python unit tests
-      run: uv run pytest
+      run: scripts/test_python_render_script_integration.sh
     # End Python-specific stuff
     # Start WASM-specific stuff
     - uses: nanasess/setup-chromedriver@master
