@@ -20,7 +20,7 @@
 //! - JS (`bindings-js`): a `render_wasm(...)` call.
 //! - JSX / React (`@pluot/react`): a `<Pluot />` element / component.
 //! - HTML: a standalone page that loads `@pluot/core` and renders to a canvas.
-//! - Rust: a `pluot_core::render(...)` call.
+//! - Rust: a `pluot::render(...)` call.
 //! - Bash: a shell script invoking the `pluot_cli` example binary.
 
 use crate::params::{GraphicsFormat, RenderParams};
@@ -500,24 +500,45 @@ fn rust_raw_string(content: &str) -> String {
     format!("r{hashes}\"{content}\"{hashes}")
 }
 
+/// Reshape `value` (a serialized `pluot_core::RenderParams`) into the flat
+/// shape accepted by the ergonomic `pluot::RenderParams` wrapper: `layers` is
+/// pulled up from `plot_params.layers` to a top-level key, with `plot_type`/
+/// `plot_params` dropped. The Rust generator targets the `pluot` crate (the
+/// same ergonomic, typed API a Rust user would reach for) rather than the
+/// lower-level `pluot_core`.
+fn ergonomic_render_params(value: &Value) -> Value {
+    let mut value = with_resolved_format(value);
+    if let Some(obj) = value.as_object_mut() {
+        let layers = obj
+            .get("plot_params")
+            .and_then(|p| p.get("layers"))
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
+        obj.remove("plot_type");
+        obj.remove("plot_params");
+        obj.insert("layers".to_string(), layers);
+    }
+    value
+}
+
 /// A single `render(...)` expression that deserializes compact JSON at runtime.
 /// Reconstructing the fully-typed `RenderParams` struct literal (nested enums,
 /// `Option`s, layer params) would be far more brittle than round-tripping
 /// through JSON.
 fn rust_expr(value: &Value) -> String {
-    let json = serde_json::to_string(&with_resolved_format(value))
+    let json = serde_json::to_string(&ergonomic_render_params(value))
         .expect("RenderParams JSON should serialize");
     format!(
-        "pluot_core::render(serde_json::from_str::<pluot_core::RenderParams>({}).unwrap())",
+        "pluot::render(serde_json::from_str::<pluot::RenderParams>({}).unwrap())",
         rust_raw_string(&json),
     )
 }
 
 fn rust_script(value: &Value) -> String {
-    let json = serde_json::to_string_pretty(&with_resolved_format(value))
+    let json = serde_json::to_string_pretty(&ergonomic_render_params(value))
         .expect("RenderParams JSON should pretty-print");
     format!(
-        "use pluot_core::{{render, RenderParams}};\n\
+        "use pluot::{{render, RenderParams}};\n\
          \n\
          // The plot parameters, as JSON.\n\
          let params_json = {};\n\
@@ -836,15 +857,15 @@ mod tests {
             &sample_params(GraphicsFormat::ExpressionRust),
             &GraphicsFormat::ExpressionRust,
         );
-        assert!(expr.starts_with("pluot_core::render("));
-        assert!(expr.contains("serde_json::from_str::<pluot_core::RenderParams>"));
-        assert!(!expr.contains("use pluot_core"));
+        assert!(expr.starts_with("pluot::render("));
+        assert!(expr.contains("serde_json::from_str::<pluot::RenderParams>"));
+        assert!(!expr.contains("use pluot"));
 
         let script = render_to_script(
             &sample_params(GraphicsFormat::ScriptRust),
             &GraphicsFormat::ScriptRust,
         );
-        assert!(script.contains("use pluot_core::{render, RenderParams}"));
+        assert!(script.contains("use pluot::{render, RenderParams}"));
         assert!(script.contains("render(params).await"));
     }
 

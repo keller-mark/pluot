@@ -228,11 +228,9 @@ async fn test_render_script_integration_rust() {
     let scratch = fresh_scratch_dir("rust");
     std::fs::create_dir_all(scratch.join("src")).expect("create src dir");
 
-    let pluot_core_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("pluot_core")
+    let pluot_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .canonicalize()
-        .expect("pluot_core crate should exist");
+        .expect("pluot crate should exist");
 
     let cargo_toml = format!(
         "[workspace]\n\
@@ -248,9 +246,14 @@ async fn test_render_script_integration_rust() {
          path = \"src/main.rs\"\n\
          \n\
          [dependencies]\n\
-         pluot_core = {{ path = {pluot_core_path:?} }}\n\
-         serde_json = \"1\"\n\
-         tokio = {{ version = \"1\", features = [\"full\"] }}\n",
+         pluot = {{ path = {pluot_path:?} }}\n\
+         # Pinned to the exact versions in the workspace's `Cargo.lock`: a looser\n\
+         # requirement can resolve a newer `serde_json` pulling in a different\n\
+         # `serde_core`, which breaks the `Deserialize` trait bound on `pluot`'s\n\
+         # `RenderParams` (a duplicate-crate-version error, not a real bug).\n\
+         serde_core = \"=1.0.228\"\n\
+         serde_json = \"=1.0.143\"\n\
+         tokio = {{ version = \"=1.49.0\", features = [\"full\"] }}\n",
     );
     std::fs::write(scratch.join("Cargo.toml"), cargo_toml).expect("write Cargo.toml");
 
