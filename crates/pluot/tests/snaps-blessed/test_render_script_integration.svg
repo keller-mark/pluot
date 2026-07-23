@@ -1,0 +1,77 @@
+<svg height="480" width="640" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="pts_clip_path">
+<rect height="480" width="580" x="0" y="0"/>
+</clipPath>
+<clipPath id="left_axis_axis_layer_line_sublayer_clip_path">
+<rect height="480" width="640" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="480" width="640">
+<g clip-path="url(#pts_clip_path)" transform="translate(60,0)">
+<circle cx="254" cy="276" fill="rgb(76, 120, 168)" opacity="1" r="5"/>
+<circle cx="326" cy="276" fill="rgb(245, 133, 24)" opacity="1" r="5"/>
+<circle cx="326" cy="203.99996948242188" fill="rgb(228, 87, 86)" opacity="1" r="5"/>
+<circle cx="254" cy="203.99996948242188" fill="rgb(114, 183, 178)" opacity="1" r="5"/>
+</g>
+<g clip-path="url(#left_axis_axis_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="60" y1="480" y2="0"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="456" y2="456"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="420" y2="420"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="384" y2="384"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="348" y2="348"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="312" y2="312"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="276" y2="276"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="240" y2="240"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="204" y2="204"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="168" y2="168"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="132" y2="132"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="96" y2="96"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="60" y2="60"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="60" x2="54" y1="24" y2="24"/>
+</g>
+<g clip-path="url(#left_axis_axis_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 456)" x="51" y="456">
+-2.50
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 420)" x="51" y="420">
+-2
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 384)" x="51" y="384">
+-1.50
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 348)" x="51" y="348">
+-1
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 312)" x="51" y="312">
+-0.50
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 276)" x="51" y="276">
+0
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 240)" x="51" y="240">
+0.50
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 204)" x="51" y="204">
+1
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 168)" x="51" y="168">
+1.50
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 132)" x="51" y="132">
+2
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 96)" x="51" y="96">
+2.50
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 60)" x="51" y="60">
+3
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 51 24)" x="51" y="24">
+3.50
+</text>
+</g>
+</g>
+</g>
+</svg>

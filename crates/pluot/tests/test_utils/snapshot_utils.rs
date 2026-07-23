@@ -154,7 +154,12 @@ pub async fn render_and_check_svg_snapshot(params: RenderParams, name: &str) {
 /// Writes current output to `tests/current/<name>`, compares against
 /// `tests/snapshots/<name>`, panics with instructions on mismatch.
 /// Comparison ignores leading/trailing whitespace per line and blank lines.
-fn check_svg_snapshot(svg: &str, name: &str) {
+///
+/// Public so callers can compare SVG text obtained some other way than
+/// [`render_and_check_svg_snapshot`] (e.g. by executing a generated
+/// `Script*`/`Expression*` snippet in its own language runtime; see
+/// `test_render_script_integration.rs`).
+pub fn check_svg_snapshot(svg: &str, name: &str) {
     let snapshot_path = snapshots_dir().join(name);
     let current_path = current_dir().join(name);
 

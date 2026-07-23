@@ -59,16 +59,33 @@ pub fn render_to_script(params: &RenderParams, format: &GraphicsFormat) -> Strin
     }
 }
 
-/// Return a clone of `value` with its `format` field forced to `"Raster"`.
+/// Resolve the underlying rendering target (`"Raster"` or `"Vector"`) that the
+/// generated code should produce.
 ///
-/// The serialized params carry the `Expression*`/`Script*` format that requested
-/// code generation, which would be nonsensical (and circular) inside the emitted
-/// code. Generated code describes how to produce the *plot*, so it defaults to
-/// raster output.
-fn with_format_raster(value: &Value) -> Value {
+/// `RenderParams.format` normally carries the `Expression*`/`Script*` value that
+/// requested code generation (e.g. `ScriptPython`), which would be nonsensical
+/// (and circular) inside the emitted code. But a caller invoking
+/// [`render_to_script`] directly (rather than through [`crate::render::render`])
+/// can set `params.format` to `Raster` or `Vector` to request that the generated
+/// code itself produce raster or vector (SVG) output; any other value (including
+/// every code-target variant, which is what `params.format` holds when reached
+/// via `render()`) falls back to `Raster`, matching generated code's historical
+/// default.
+fn resolved_format(value: &Value) -> &'static str {
+    match value.get("format").and_then(Value::as_str) {
+        Some("Vector") => "Vector",
+        _ => "Raster",
+    }
+}
+
+/// Return a clone of `value` with its `format` field set to the resolved
+/// output format (see [`resolved_format`]), so the embedded JSON is always a
+/// valid `RenderParams` regardless of which code target was requested.
+fn with_resolved_format(value: &Value) -> Value {
+    let resolved = resolved_format(value);
     let mut value = value.clone();
     if let Some(obj) = value.as_object_mut() {
-        obj.insert("format".to_string(), Value::String("Raster".to_string()));
+        obj.insert("format".to_string(), Value::String(resolved.to_string()));
     }
     value
 }
@@ -83,7 +100,7 @@ fn quoted(s: &str) -> String {
 // === JSON ===
 
 fn to_json(value: &Value) -> String {
-    serde_json::to_string_pretty(&with_format_raster(value))
+    serde_json::to_string_pretty(&with_resolved_format(value))
         .expect("RenderParams JSON should pretty-print")
 }
 
@@ -176,10 +193,20 @@ fn emit_curly(value: &Value, level: usize, syn: &CurlySyntax) -> String {
 
 // === Python ===
 
-/// The `render_to_image(...)` call expression. `render_to_image` forces raster
-/// output, so `format` is omitted; every other top-level field maps directly to
-/// a keyword argument (`plot_type` and `plot_params` are already separate keys
-/// thanks to the flattened enum).
+/// The name of the `pluot` Python function that produces the resolved output
+/// format (see [`resolved_format`]): `render_to_image` for `Raster`,
+/// `render_to_svg` for `Vector`.
+fn python_render_func(value: &Value) -> &'static str {
+    match resolved_format(value) {
+        "Vector" => "render_to_svg",
+        _ => "render_to_image",
+    }
+}
+
+/// The `render_to_image(...)`/`render_to_svg(...)` call expression. Both
+/// functions force their own output format internally, so `format` is omitted;
+/// every other top-level field maps directly to a keyword argument (`plot_type`
+/// and `plot_params` are already separate keys thanks to the flattened enum).
 fn python_call(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
     let args: Vec<String> = obj
@@ -187,10 +214,11 @@ fn python_call(value: &Value) -> String {
         .filter(|(k, _)| k.as_str() != "format")
         .map(|(k, v)| format!("    {k}={},", emit_curly(v, 1, &PYTHON_SYNTAX)))
         .collect();
-    format!("render_to_image(\n{}\n)", args.join("\n"))
+    format!("{}(\n{}\n)", python_render_func(value), args.join("\n"))
 }
 
 fn python_script(value: &Value) -> String {
+    let func = python_render_func(value);
     // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
     format!(
         "# /// script\n\
@@ -199,7 +227,7 @@ fn python_script(value: &Value) -> String {
          #     \"pluot\",\n\
          # ]\n\
          # ///\n\
-         from pluot import render_to_image\n\
+         from pluot import {func}\n\
          \n\
          # Zarr store(s) are declared in the `stores` map below and constructed\n\
          # from their metadata; pass `store=`/`stores=` to override with your own\n\
@@ -255,9 +283,19 @@ fn emit_r(value: &Value, level: usize) -> String {
     }
 }
 
-/// The `render_to_raster(...)` call expression. The R API takes the layer list
-/// directly (rather than a nested plot_type/plot_params object) and
-/// `render_to_raster` forces raster output.
+/// The name of the `pluotr` R function that produces the resolved output
+/// format (see [`resolved_format`]): `render_to_raster` for `Raster`,
+/// `render_to_svg` for `Vector`.
+fn r_render_func(value: &Value) -> &'static str {
+    match resolved_format(value) {
+        "Vector" => "render_to_svg",
+        _ => "render_to_raster",
+    }
+}
+
+/// The `render_to_raster(...)`/`render_to_svg(...)` call expression. The R API
+/// takes the layer list directly (rather than a nested plot_type/plot_params
+/// object) and both functions force their own output format internally.
 fn r_call(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
@@ -277,7 +315,7 @@ fn r_call(value: &Value) -> String {
         args.push(format!("  {k} = {}", emit_r(v, 1)));
     }
 
-    format!("render_to_raster(\n{}\n)", args.join(",\n"))
+    format!("{}(\n{}\n)", r_render_func(value), args.join(",\n"))
 }
 
 fn r_script(value: &Value) -> String {
@@ -298,12 +336,12 @@ fn r_script(value: &Value) -> String {
 fn js_call(value: &Value) -> String {
     format!(
         "render_wasm({})",
-        emit_curly(&with_format_raster(value), 0, &JS_SYNTAX)
+        emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX)
     )
 }
 
 fn js_script(value: &Value) -> String {
-    let params = emit_curly(&with_format_raster(value), 0, &JS_SYNTAX);
+    let params = emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX);
     format!(
         "import {{ initialize, render_wasm, setStoreByName }} from \"@pluot/core\";\n\
          \n\
@@ -361,9 +399,9 @@ fn jsx_element(value: &Value, base: usize) -> String {
             continue;
         };
         if k == "format" {
-            // Default the component to raster output regardless of the requested
-            // code format.
-            props.push(format!("{prop_pad}format=\"Raster\""));
+            // Resolve to the underlying Raster/Vector output the component should
+            // produce (see `resolved_format`), regardless of the requested code format.
+            props.push(format!("{prop_pad}format=\"{}\"", resolved_format(value)));
             continue;
         }
         // The component supplies its own defaults, so drop absent optional
@@ -406,7 +444,7 @@ fn html_script(value: &Value) -> String {
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(0);
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
     // Indent the params object to sit under the module script (6 spaces).
-    let params = emit_curly(&with_format_raster(value), 3, &JS_SYNTAX);
+    let params = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
 
     format!(
         "<!DOCTYPE html>\n\
@@ -467,7 +505,7 @@ fn rust_raw_string(content: &str) -> String {
 /// `Option`s, layer params) would be far more brittle than round-tripping
 /// through JSON.
 fn rust_expr(value: &Value) -> String {
-    let json = serde_json::to_string(&with_format_raster(value))
+    let json = serde_json::to_string(&with_resolved_format(value))
         .expect("RenderParams JSON should serialize");
     format!(
         "pluot_core::render(serde_json::from_str::<pluot_core::RenderParams>({}).unwrap())",
@@ -476,7 +514,7 @@ fn rust_expr(value: &Value) -> String {
 }
 
 fn rust_script(value: &Value) -> String {
-    let json = serde_json::to_string_pretty(&with_format_raster(value))
+    let json = serde_json::to_string_pretty(&with_resolved_format(value))
         .expect("RenderParams JSON should pretty-print");
     format!(
         "use pluot_core::{{render, RenderParams}};\n\
@@ -524,37 +562,46 @@ fn bash_input_json(value: &Value) -> String {
 fn bash_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
-    let mut flags: Vec<String> = vec!["--output plot.png".to_string()];
+    // The output extension selects `pluot_cli`'s backend (see `infer_format` in
+    // `examples/pluot_cli/src/main.rs`); pick it from the resolved output format
+    // (see `resolved_format`) so a `Vector`-requesting caller gets real SVG.
+    let output_file = match resolved_format(value) {
+        "Vector" => "plot.svg",
+        _ => "plot.png",
+    };
+    let mut flags: Vec<String> = vec![format!("--output {output_file}")];
 
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(100);
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(100);
     flags.push(format!("--width {width}"));
     flags.push(format!("--height {height}"));
 
+    // `pluot_cli`'s flags use clap's default kebab-case long names (e.g.
+    // `--device-pixel-ratio`), not the snake_case `RenderParams` field names.
     if let Some(Value::Number(dpr)) = obj.get("device_pixel_ratio") {
-        flags.push(format!("--device_pixel_ratio {dpr}"));
+        flags.push(format!("--device-pixel-ratio {dpr}"));
     }
     // `AspectRatioMode`/`ViewMode` serialize as their (capitalized, for
     // `AspectRatioMode`) variant names; `pluot_cli` matches case-insensitively.
     if let Some(mode) = obj.get("aspect_ratio_mode").and_then(Value::as_str) {
-        flags.push(format!("--aspect_ratio_mode {}", mode.to_ascii_lowercase()));
+        flags.push(format!("--aspect-ratio-mode {}", mode.to_ascii_lowercase()));
     }
     if let Some(mode) = obj.get("view_mode").and_then(Value::as_str) {
-        flags.push(format!("--view_mode {mode}"));
+        flags.push(format!("--view-mode {mode}"));
     }
     if let Some(camera) = obj.get("camera_view").and_then(Value::as_array) {
         let floats: Vec<String> = camera.iter().map(|v| v.to_string()).collect();
-        flags.push(format!("--camera_view \"{}\"", floats.join(",")));
+        flags.push(format!("--camera-view \"{}\"", floats.join(",")));
     }
     if let Some(plot_id) = obj.get("plot_id").and_then(Value::as_str) {
-        flags.push(format!("--plot_id {}", quoted(plot_id)));
+        flags.push(format!("--plot-id {}", quoted(plot_id)));
     }
 
     for (key, flag) in [
-        ("margin_left", "--margin_left"),
-        ("margin_right", "--margin_right"),
-        ("margin_top", "--margin_top"),
-        ("margin_bottom", "--margin_bottom"),
+        ("margin_left", "--margin-left"),
+        ("margin_right", "--margin-right"),
+        ("margin_top", "--margin-top"),
+        ("margin_bottom", "--margin-bottom"),
     ] {
         if let Some(Value::Number(n)) = obj.get(key) {
             flags.push(format!("{flag} {n}"));
@@ -578,9 +625,12 @@ fn bash_script(value: &Value) -> String {
          # rejected, since the CLI has no generic byte payload to construct\n\
          # one from.\n\
          \n\
-         # Build the CLI once (run from the root of the pluot repository).\n\
-         cargo build --release -p pluot_cli\n\
-         PLUOT_CLI=\"$(dirname \"$0\")/target/release/pluot_cli\"\n\
+         # Build the CLI once. `examples/pluot_cli` has its own `Cargo.lock` and\n\
+         # is excluded from the workspace (see the root `Cargo.toml`), so it's\n\
+         # built via `--manifest-path` rather than `-p pluot_cli` (run this\n\
+         # script from the root of the pluot repository).\n\
+         cargo build --release --manifest-path \"$(dirname \"$0\")/examples/pluot_cli/Cargo.toml\"\n\
+         PLUOT_CLI=\"$(dirname \"$0\")/examples/pluot_cli/target/release/pluot_cli\"\n\
          \n\
          # `--output`'s extension selects the backend: .svg (vector), .png\n\
          # (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).\n\
@@ -687,6 +737,19 @@ mod tests {
     }
 
     #[test]
+    fn python_script_uses_render_to_svg_when_format_is_vector() {
+        // Calling `render_to_script` directly (rather than through `render()`)
+        // lets a caller set `params.format` to the real desired output
+        // (`Vector`) while requesting a specific code target via the explicit
+        // second argument.
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptPython);
+        assert!(out.contains("from pluot import render_to_svg"));
+        assert!(out.contains("img = await render_to_svg("));
+        assert!(!out.contains("render_to_image"));
+    }
+
+    #[test]
     fn r_expression_and_script() {
         let expr = render_to_script(
             &sample_params(GraphicsFormat::ExpressionR),
@@ -702,6 +765,14 @@ mod tests {
         );
         assert!(script.contains("library(pluotr)"));
         assert!(script.contains("img <- render_to_raster("));
+    }
+
+    #[test]
+    fn r_script_uses_render_to_svg_when_format_is_vector() {
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptR);
+        assert!(out.contains("img <- render_to_svg("));
+        assert!(!out.contains("render_to_raster"));
     }
 
     #[test]
@@ -775,5 +846,36 @@ mod tests {
         );
         assert!(script.contains("use pluot_core::{render, RenderParams}"));
         assert!(script.contains("render(params).await"));
+    }
+
+    #[test]
+    fn rust_script_embeds_vector_format_when_requested() {
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptRust);
+        assert!(out.contains("\"format\": \"Vector\""));
+    }
+
+    #[test]
+    fn bash_script_uses_kebab_case_flags_and_manifest_path_build() {
+        // `pluot_cli` (built via clap) uses kebab-case long flag names, and
+        // lives outside the workspace (its own `Cargo.lock`), so it must be
+        // built via `--manifest-path` rather than `-p pluot_cli`.
+        let params = sample_params(GraphicsFormat::ScriptBash);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
+        assert!(out.contains("--plot-id"));
+        assert!(!out.contains("--plot_id"));
+        assert!(out.contains("--device-pixel-ratio"));
+        assert!(!out.contains("--device_pixel_ratio"));
+        assert!(out.contains("--manifest-path"));
+        assert!(out.contains("examples/pluot_cli/target/release/pluot_cli"));
+        assert!(out.contains("--output plot.png"));
+    }
+
+    #[test]
+    fn bash_script_targets_svg_output_when_format_is_vector() {
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
+        assert!(out.contains("--output plot.svg"));
+        assert!(!out.contains("plot.png"));
     }
 }

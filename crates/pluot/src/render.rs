@@ -1,6 +1,6 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
 use pluot_core::{render as raw_render, stores_from_params};
-use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
+use pluot_core::params::{GraphicsFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
 use crate::render_params::{LayerParams, RenderParams};
 
 fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
@@ -65,4 +65,17 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
 pub async fn render_with_stores(render_params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
     let raw_params = to_raw_render_params(render_params);
     raw_render(raw_params, stores).await
+}
+
+/// Serialize `render_params` into code (source or JSON) in the language and
+/// flavor implied by `format`, decoupled from `render_params.format`.
+///
+/// [`render`]/[`render_with_stores`] always pass `render_params.format` as both
+/// the params and the code target, so a request for e.g. `ScriptPython` can
+/// only ever describe raster output. Calling this function directly instead
+/// lets `render_params.format` carry the *real* desired output (`Raster` or
+/// `Vector`) while `format` independently selects the code target.
+pub fn render_to_script(render_params: RenderParams, format: &GraphicsFormat) -> String {
+    let raw_params = to_raw_render_params(render_params);
+    pluot_core::render_to_script(&raw_params, format)
 }

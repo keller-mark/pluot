@@ -52,7 +52,7 @@ pub use crate::render_params::{RenderParams, LayerParams};
 
 // Unified exports.
 mod render;
-pub use crate::render::{render, render_with_stores};
+pub use crate::render::{render, render_with_stores, render_to_script};
 
 // Exports for WASM bindings.
 #[cfg(target_arch = "wasm32")]

@@ -49,7 +49,6 @@ async fn test_render_triangle() {
         height,
         camera_view: None,
         plot_id: "my_plot".to_string(),
-        store_name: "my_store".to_string(),
         plot_params: RawPlotParams::LayeredPlot(RawLayeredPlotRenderParams {
             layers: vec![
                 layer_params,

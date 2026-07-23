@@ -11,9 +11,12 @@ set -euo pipefail
 # rejected, since the CLI has no generic byte payload to construct
 # one from.
 
-# Build the CLI once (run from the root of the pluot repository).
-cargo build --release -p pluot_cli
-PLUOT_CLI="$(dirname "$0")/target/release/pluot_cli"
+# Build the CLI once. `examples/pluot_cli` has its own `Cargo.lock` and
+# is excluded from the workspace (see the root `Cargo.toml`), so it's
+# built via `--manifest-path` rather than `-p pluot_cli` (run this
+# script from the root of the pluot repository).
+cargo build --release --manifest-path "$(dirname "$0")/examples/pluot_cli/Cargo.toml"
+PLUOT_CLI="$(dirname "$0")/examples/pluot_cli/target/release/pluot_cli"
 
 # `--output`'s extension selects the backend: .svg (vector), .png
 # (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).
@@ -21,12 +24,12 @@ PLUOT_CLI="$(dirname "$0")/target/release/pluot_cli"
   --output plot.png \
   --width 640 \
   --height 480 \
-  --device_pixel_ratio 1.0 \
-  --aspect_ratio_mode contain \
-  --view_mode 2d \
-  --camera_view "0.15000000596046448,0.0,0.0,0.0,0.0,0.15000000596046448,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0" \
-  --plot_id "plot_1" \
-  --margin_left 60.0 \
+  --device-pixel-ratio 1.0 \
+  --aspect-ratio-mode contain \
+  --view-mode 2d \
+  --camera-view "0.15000000596046448,0.0,0.0,0.0,0.0,0.15000000596046448,0.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0" \
+  --plot-id "plot_1" \
+  --margin-left 60.0 \
   <<'JSON'
 {
   "plot_type": "LayeredPlot",
