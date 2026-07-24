@@ -46,6 +46,8 @@ pub enum GraphicsFormat {
     ExpressionJs,
     ScriptJs,
     ExpressionJsx,
+    // TODO: when rendering to React, do not inline dict values (e.g., stores, plotParams). Construct useMemos
+    // which memoize any objects, to prevent construction of new variable references on every rerender.
     ScriptReact,
     // TODO: use dynamic-importmap in the generated HTML?
     ScriptHtml,

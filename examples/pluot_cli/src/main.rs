@@ -9,7 +9,12 @@ use pluot::{
     RenderParams, ViewMode, ZarrStoreInfo, ZarrStoreParams, HttpStoreParams, LocalStoreParams,
     MemoryStoreParams, StoreMap,
 };
-use zarrs_storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter};
+use zarrs_storage::storage_adapter::async_to_sync::{
+    AsyncToSyncBlockOn, AsyncToSyncStorageAdapter,
+};
+use zarrs_storage::storage_adapter::sync_to_async::{
+    SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter
+};
 use zarrs_storage::AsyncReadableStorageTraits;
 use resvg::usvg;
 use tiny_skia;
@@ -31,6 +36,14 @@ impl SyncToAsyncSpawnBlocking for TokioSpawnBlocking {
         R: Send + 'static,
     {
         async move { tokio::task::spawn_blocking(f).await.unwrap() }
+    }
+}
+
+struct TokioBlockOn(tokio::runtime::Runtime);
+
+impl AsyncToSyncBlockOn for TokioBlockOn {
+    fn block_on<F: core::future::Future>(&self, future: F) -> F::Output {
+        self.0.block_on(future)
     }
 }
 
@@ -430,7 +443,21 @@ async fn main() {
     // otherwise fall back to plain `render` (the placeholder MemoryStore
     // above is only used for `store_name` bookkeeping, never actually read).
     let result = match &stores_input {
-        Some(stores) => render_with_stores(params, Some(build_store_map(stores))).await,
+        Some(stores) => {
+            // `build_store_map` constructs a `reqwest::blocking::Client` (via
+            // `zarrs_http::HTTPStore::new`), which spins up its own private
+            // Tokio runtime internally. Doing that directly on a worker thread
+            // of the outer `#[tokio::main]` runtime panics ("Cannot drop a
+            // runtime in a context where blocking is not allowed"), since that
+            // worker thread disallows blocking. Running it via `spawn_blocking`
+            // moves it onto Tokio's blocking thread pool, where blocking is
+            // permitted.
+            let stores = stores.clone();
+            let store_map = tokio::task::spawn_blocking(move || build_store_map(&stores))
+                .await
+                .unwrap();
+            render_with_stores(params, Some(store_map)).await
+        }
         None => render(params).await,
     };
 
