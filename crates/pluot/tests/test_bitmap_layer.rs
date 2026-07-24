@@ -79,6 +79,51 @@ fn bitmap_cyx_pixel_x_data_y() -> BitmapLayerParams {
     }
 }
 
+// Helper: same image in Normalized unit mode. Unlike RectLayer's explicit
+// position fields (which can just be re-expressed as 0-1 fractions), the
+// bitmap layer's position/size come from `pixel_offset` and the image's
+// `shape` (always in native image-pixel units), and bitmap_layer.wgsl does
+// NOT divide these by the layer size in Normalized mode (it only skips that
+// division, unlike Pixels mode) -- so a raw img_size of 4x4 would be
+// interpreted as 4x the layer's normalized (0,1) extent, way off-canvas.
+// A model_matrix scale is the mechanism to bring it into (0,1) space.
+// Scaling by 0.01 shrinks the 4x4 image to a 0.04x0.04 normalized extent,
+// which matches bitmap_cyx_pixels()'s 4px / 100px layer size exactly on a
+// 100x100 canvas, so this renders identically to bitmap_cyx_pixels() there.
+// Unlike Pixels mode (whose apparent size is a fraction of the *canvas'*
+// absolute pixel dimensions), this stays at exactly 4% of the layer's width
+// and height on any canvas size, since Normalized mode is not divided by
+// layer size at all.
+fn bitmap_cyx_normalized() -> BitmapLayerParams {
+    BitmapLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        model_matrix: Some([
+            0.01, 0.0, 0.0, 0.0,
+            0.0, 0.01, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]),
+        ..bitmap_cyx_data()
+    }
+}
+
+fn bitmap_cyx_data_x_normalized_y() -> BitmapLayerParams {
+    BitmapLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        ..bitmap_cyx_data()
+    }
+}
+
+fn bitmap_cyx_normalized_x_data_y() -> BitmapLayerParams {
+    BitmapLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        ..bitmap_cyx_data()
+    }
+}
+
 fn layer_params(bitmap_params: BitmapLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::BitmapLayer(bitmap_params)]
 }

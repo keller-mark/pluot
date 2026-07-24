@@ -79,6 +79,26 @@ fn triangle_pixels() -> PolygonLayerParams {
     }
 }
 
+/// Triangle in normalized [0,1] space (bottom-left=0, top-right=1). Uses the
+/// same fractions as triangle_pixels()'s pixel coordinates divided by the
+/// 100x100 canvas triangle_pixels() assumes, so on a 100x100 canvas this
+/// renders identically to triangle_pixels() while remaining agnostic to the
+/// layer's actual pixel dimensions (unlike Pixels mode, the same params
+/// render the same *proportions* on any canvas size).
+fn triangle_normalized() -> PolygonLayerParams {
+    PolygonLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        polygons: NumericData::Float32(Arc::new(vec![
+            0.1, 0.1,
+            0.9, 0.1,
+            0.5, 0.9,
+        ])),
+        polygon_offsets: NumericData::Uint32(Arc::new(vec![0, 3])),
+        ..triangle_data()
+    }
+}
+
 /// Two non-overlapping triangles in data space.
 fn two_triangles_data() -> PolygonLayerParams {
     PolygonLayerParams {

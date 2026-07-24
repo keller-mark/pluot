@@ -1,54 +1,75 @@
-// CurveLayer renders SVG-like vector paths as stroked and/or filled curves,
-// delegating to StrokedCurveLayer and FilledCurveLayer sublayers.
+// PolygonLayer renders a collection of polygons as stroked outlines, filled
+// interiors, or both, by delegating to StrokedPolygonLayer and FilledPolygonLayer.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
-use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
-use crate::render_types::GpuContext;
+use crate::render_traits::{
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
+    MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+};
+use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use crate::numeric_data::NumericData;
 use crate::two::svg::SvgContext;
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
-use super::stroked_curve_layer::{StrokedCurveLayer, StrokedCurveLayerParams};
-use super::filled_curve_layer::{FilledCurveLayer, FilledCurveLayerParams};
-
-pub use super::curve_and_polygon_utils::PathCommand;
+use crate::layers::stroked_polygon_layer::{StrokedPolygonLayer, StrokedPolygonLayerParams};
+use crate::layers::filled_polygon_layer::{FilledPolygonLayer, FilledPolygonLayerParams};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct CurveLayerParams {
+pub struct PolygonLayerParams {
     pub layer_id: String,
+    /// If `None`, the view-level margins are used.
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
     /// Whether `stroke_width` is measured in pixels or in data-coordinate units.
+    /// Defaults to pixels.
     pub stroke_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
-    pub commands: Arc<Vec<PathCommand>>,
-    pub subdivisions: u32,
+
+    /// All polygon vertices as a flat, interleaved 1D array of model-space
+    /// coordinates `[x0, y0, x1, y1, …]`, with each polygon's ring concatenated
+    /// after the previous one. Any supported numeric dtype is accepted.
+    pub polygons: NumericData,
+    /// Arrow-style vertex offsets with `num_polygons + 1` entries: polygon `p`
+    /// occupies vertex indices `polygon_offsets[p]..polygon_offsets[p + 1]`.
+    /// Any supported numeric dtype is accepted. Rings with fewer than 3 vertices
+    /// are silently skipped.
+    pub polygon_offsets: NumericData,
+
+    /// Whether to stroke the polygon outlines. Defaults to `true`.
     pub stroked: bool,
+    /// Whether to fill the polygon interiors. Defaults to `false`.
     pub filled: bool,
-    /// How to color the stroke. See [`ColorMode`]. `CurveLayer` renders a single
-    /// shape, so modes carrying `NumericData` are expected to supply a single
-    /// (length-1) value.
+
+    /// How to color each polygon's outline. See [`ColorMode`]: modes carrying
+    /// `NumericData` (instanced/categorical/quantitative) supply one value per
+    /// polygon.
     pub stroke_color: Option<ColorMode>,
-    /// Stroke width. See [`SizeMode`]: `UniformSize` and `InstancedSize` (a
-    /// single, length-1 value for this single-shape layer) are both accepted.
-    /// Interpreted in the units given by `stroke_width_unit_mode`. Defaults to 1.
+    /// Stroke width. See [`SizeMode`]: `UniformSize` shares one width across all
+    /// polygons, `InstancedSize` supplies one per polygon. Interpreted in the
+    /// units given by `stroke_width_unit_mode`. Defaults to 1.
     pub stroke_width: Option<SizeMode>,
-    /// How to color the fill. See [`ColorMode`]. Same single-shape caveat as
-    /// `stroke_color`.
-    pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the stroke. See [`OpacityMode`]. Defaults to 1.
+    /// Opacity multiplier for the stroke. See [`OpacityMode`]: `UniformOpacity`
+    /// shares one value across all polygons, `InstancedOpacity` supplies one per
+    /// polygon. Defaults to 1.
     pub stroke_opacity: Option<OpacityMode>,
-    /// Opacity multiplier for the fill. See [`OpacityMode`]. Defaults to 1.
+
+    /// How to color each polygon's interior. See [`ColorMode`]: modes carrying
+    /// `NumericData` (instanced/categorical/quantitative) supply one value per
+    /// polygon.
+    pub fill_color: Option<ColorMode>,
+    /// Opacity multiplier for the fill. See [`OpacityMode`]: `UniformOpacity`
+    /// shares one value across all polygons, `InstancedOpacity` supplies one per
+    /// polygon. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
 }
 
-impl Default for CurveLayerParams {
+impl Default for PolygonLayerParams {
     fn default() -> Self {
         Self {
             layer_id: "".to_string(),
@@ -57,46 +78,41 @@ impl Default for CurveLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
-            commands: Arc::new(vec![]),
-            subdivisions: 32,
+            polygons: NumericData::Float32(Arc::new(vec![])),
+            polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             stroked: true,
             filled: false,
             stroke_color: None,
             stroke_width: Some(SizeMode::UniformSize(1.0)),
-            fill_color: None,
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
 
-pub struct CurveLayer {
-    layer_params: CurveLayerParams,
-    stroke_sublayer: Option<StrokedCurveLayer>,
-    fill_sublayer: Option<FilledCurveLayer>,
+pub struct PolygonLayer {
+    stroke_sublayer: Option<StrokedPolygonLayer>,
+    fill_sublayer: Option<FilledPolygonLayer>,
 }
 
-impl CurveLayer {
-    pub fn new(view_params: ViewParams, layer_params: CurveLayerParams) -> Self {
-        if layer_params.stroke_width_unit_mode == UnitsMode::Data
-            && (layer_params.data_unit_mode_x != UnitsMode::Data
-                || layer_params.data_unit_mode_y != UnitsMode::Data)
-        {
-            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
-        }
-
+impl PolygonLayer {
+    pub fn new(view_params: ViewParams, layer_params: PolygonLayerParams) -> Self {
+        // The flat interleaved coordinate array + vertex offsets are passed
+        // straight through to the sub-layers, sharing the underlying buffers
+        // (cloning a `NumericData` only bumps its inner `Arc`).
         let stroke_sublayer = if layer_params.stroked {
-            Some(StrokedCurveLayer::new(view_params.clone(), StrokedCurveLayerParams {
+            Some(StrokedPolygonLayer::new(view_params.clone(), StrokedPolygonLayerParams {
                 layer_id: format!("{}_stroked", layer_params.layer_id),
                 bounds: layer_params.bounds.clone(),
                 data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
-                stroke_width: layer_params.stroke_width.clone(),
                 stroke_width_unit_mode: layer_params.stroke_width_unit_mode.clone(),
                 model_matrix: layer_params.model_matrix,
-                commands: Arc::clone(&layer_params.commands),
-                subdivisions: layer_params.subdivisions,
+                polygons: layer_params.polygons.clone(),
+                polygon_offsets: layer_params.polygon_offsets.clone(),
                 stroke_color: layer_params.stroke_color.clone(),
+                stroke_width: layer_params.stroke_width.clone(),
                 stroke_opacity: layer_params.stroke_opacity.clone(),
             }))
         } else {
@@ -104,14 +120,14 @@ impl CurveLayer {
         };
 
         let fill_sublayer = if layer_params.filled {
-            Some(FilledCurveLayer::new(view_params.clone(), FilledCurveLayerParams {
+            Some(FilledPolygonLayer::new(view_params.clone(), FilledPolygonLayerParams {
                 layer_id: format!("{}_filled", layer_params.layer_id),
                 bounds: layer_params.bounds.clone(),
                 data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
                 data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
                 model_matrix: layer_params.model_matrix,
-                commands: Arc::clone(&layer_params.commands),
-                subdivisions: layer_params.subdivisions,
+                polygons: layer_params.polygons.clone(),
+                polygon_offsets: layer_params.polygon_offsets.clone(),
                 fill_color: layer_params.fill_color.clone(),
                 fill_opacity: layer_params.fill_opacity.clone(),
             }))
@@ -119,13 +135,13 @@ impl CurveLayer {
             None
         };
 
-        Self { layer_params, stroke_sublayer, fill_sublayer }
+        Self { stroke_sublayer, fill_sublayer }
     }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for CurveLayer {
+impl PreparedLayer for PolygonLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // TODO: run the sub-layers' prepare() functions here
         PrepareResult { bailed_early: false }
@@ -134,7 +150,7 @@ impl PreparedLayer for CurveLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for CurveLayer {
+impl DrawToRasterGpu for PolygonLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         // Fill first so stroke renders on top.
         if let Some(fill) = &self.fill_sublayer {
@@ -148,13 +164,13 @@ impl DrawToRasterGpu for CurveLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for CurveLayer {
+impl DrawToRasterCpu for PolygonLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for CurveLayer {
+impl DrawToSvg for PolygonLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         // Fill first so stroke renders on top.
         if let Some(fill) = &self.fill_sublayer {
@@ -168,18 +184,18 @@ impl DrawToSvg for CurveLayer {
 
 inventory::submit! {
     crate::registry::LayerRegistration {
-        layer_type_name: "CurveLayer",
+        layer_type_name: "PolygonLayer",
         create_layer: |value, view_params| {
-            let params: CurveLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(CurveLayer::new(view_params.clone(), params))
+            let params: PolygonLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(PolygonLayer::new(view_params.clone(), params))
         },
     }
 }
 
-impl PickableLayer for CurveLayer {
-    // Delegate to the sub-layers, which own the actual curve geometry. The
-    // fill (an area) takes priority over the stroke (a thin outline band,
-    // always "hit" by the sub-layer's nearest-segment search), mirroring
+impl PickableLayer for PolygonLayer {
+    // Delegate to the sub-layers, which own the actual polygon geometry.
+    // The fill (an area) takes priority over the stroke (a thin outline
+    // band, always "hit" by the sub-layer's nearest-edge search), mirroring
     // fill-then-stroke draw order.
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         if let Some(fill) = &self.fill_sublayer {

@@ -22,7 +22,7 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use crate::layers::ome_zarr_utils::{OmeDim, OmeDimensionOrder, OmeZarrChannelSetting};
-use pluot_core::layers::multiscale_utils::to_y_slice;
+use pluot_core::multiscale_utils::to_y_slice;
 
 /// Parameters for constructing an `OmeZarrBitmapLayer`.
 #[derive(Serialize, Deserialize, Debug, Clone)]
