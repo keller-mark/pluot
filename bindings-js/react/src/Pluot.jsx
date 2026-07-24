@@ -1,12 +1,10 @@
-import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback } from "react";
-import { mat4, vec4 } from "gl-matrix";
+import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback, useId } from "react";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
-import { FetchStore } from 'zarrita';
 import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
-  setStore, getStore,
+  normalizeStores, getStore,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
@@ -53,8 +51,9 @@ export function Pluot(props) {
     height: heightProp,
     plotId,
     plotType,
-    store,
+    store: storeProp,
     storeName: storeNameProp,
+    stores: storesProp,
     plotParams,
     viewMode = "2d",
     marginBottom = 100.0,
@@ -107,19 +106,15 @@ export function Pluot(props) {
 
   const isVector = format === "Vector";
 
-  const storeName = useMemo(() => {
-    if (storeNameProp) {
-      return storeNameProp;
-    }
-    // If store is a string, assume it is a URL and initialize a FetchStore here.
-    if (store) {
-      if (typeof store === 'string') {
-        return setStore(new FetchStore(store), plotId);
-      }
-      return setStore(store, plotId);
-    }
-    throw new Error("Either storeName or store must be provided.");
-  }, [storeNameProp, store]);
+  // Build the top-level `stores` map that RenderParams expects: a mapping from
+  // store name to its derived `ZarrStoreInfo` metadata.
+  const stores = useMemo(() => normalizeStores({
+    stores: storesProp,
+    store: storeProp,
+    storeName: storeNameProp,
+    plotId,
+    register: true,
+  }), [storeNameProp, storeProp, storesProp, plotId]);
 
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
@@ -145,11 +140,11 @@ export function Pluot(props) {
 
   const [pickingResult, setPickingResult] = useState(null);
 
+  const progressBarId = useId();
 
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
-
 
   const wheelHandler = useEffectEvent((event) => {
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
@@ -204,7 +199,7 @@ export function Pluot(props) {
       camera_view: cameraMatrix,
       plot_id: plotId,
       plot_type: plotType,
-      store_name: storeName,
+      stores,
       plot_params: plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
@@ -215,6 +210,8 @@ export function Pluot(props) {
     };
 
     const layerHeight = height - marginTop - marginBottom;
+
+    // TODO: wrap pick_wasm in a try/catch
 
     setPickingResult(normalizePickingResult(await pick_wasm(
       renderParams,
@@ -253,8 +250,6 @@ export function Pluot(props) {
   }, [viewMode, enablePicking]);
 
 
-
-
   // The renderFrame callback.
   // We use useEffectEvent because we want to "see"
   // the latest values of viewMatrix, plotProps, etc.
@@ -279,7 +274,7 @@ export function Pluot(props) {
       camera_view: cameraMatrix,
       plot_id: plotId,
       plot_type: plotType,
-      store_name: storeName,
+      stores,
       plot_params: plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
@@ -348,14 +343,20 @@ export function Pluot(props) {
         setBailedEarly(false); // Update this to hide the loading indicator.
 
         // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-        const storeUsed = getStore(renderParams.store_name);
-        if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
-          storeUsed.clearCache();
-        }
+        Object.keys(stores).forEach(storeName => {
+          const storeUsed = getStore(storeName);
+          if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
+            storeUsed.clearCache();
+          }
+        });
+
       }
     }
     setDidFirstRender(true);
   });
+
+
+
 
   const throttledRender = useMemo(
     () => throttle(
@@ -376,7 +377,7 @@ export function Pluot(props) {
   // sequence of bailed-early renders starts from the minimum again.
   useEffect(() => {
     currentTimeout.current = minTimeout;
-  }, [plotId, plotType, plotParams, storeName, format,
+  }, [plotId, plotType, plotParams, stores, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode,
     marginLeft, marginRight, marginTop, marginBottom,
     cameraMatrix,
@@ -399,7 +400,7 @@ export function Pluot(props) {
 
     // Render on the next animation frame.
     throttledRender();
-  }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, storeName, format,
+  }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, stores, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode, marginLeft, marginRight, marginTop, marginBottom]);
 
   return (
@@ -419,28 +420,47 @@ export function Pluot(props) {
             border: `${debugMargins ? 1 : 0}px solid red`,
           }}
         />
+        {bailedEarly ? (
+          <progress
+            id={progressBarId}
+            aria-label="Loading..."
+            style={{
+              bottom: 0,
+              left: 0,
+              width: '100%',
+              position: 'absolute'
+            }}
+          />
+        ) : null}
         {isVector ? (
           <svg
             ref={svgRef}
-            style={{ width, height, border: "1px solid black" }}
+            style={{ width, height, border: `${debugMargins ? 1 : 0}px solid black` }}
             width={width}
             height={height}
             viewBox={`0 0 ${width} ${height}`}
             xmlns="http://www.w3.org/2000/svg"
+            {...(bailedEarly ? ({
+              ['aria-busy']: true,
+              ['aria-describedby']: progressBarId,
+            }) : {})}
           >
           </svg>
         ) : (
           <canvas
             ref={canvasRef}
-            style={{ width, height, border: "1px solid black" }}
+            style={{ width, height, border: `${debugMargins ? 1 : 0}px solid black` }}
             width={width}
             height={height}
+            {...(bailedEarly ? ({
+              ['aria-busy']: true,
+              ['aria-describedby']: progressBarId,
+            }) : {})}
+
           />
         )}
+
       </div>
-      {bailedEarly ? (
-          <p>Loading...</p>
-        ) : null}
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
       {pickingResult ? (
         <pre>{JSON.stringify(pickingResult, null, 2)}</pre>

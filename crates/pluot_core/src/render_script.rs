@@ -1,0 +1,902 @@
+//! "Rendering to code": rather than rasterizing to pixels or an SVG, turn a
+//! [`RenderParams`] into a string of source code (or JSON) that reproduces the
+//! same plot when run against one of the language bindings.
+//!
+//! Each generator serializes the params to a `serde_json::Value` once and then
+//! walks that value, emitting language-specific literal syntax. Two flavors are
+//! produced per language:
+//!
+//! - **`Expression*`** — a single expression (a function call, or a JSX element)
+//!   with no imports or surrounding statements, suitable for embedding.
+//! - **`Script*`** — a self-contained script including the imports, variable
+//!   definitions and library initialization needed to run standalone.
+//!
+//! Targets:
+//!
+//! - [`GraphicsFormat::Json`]: the params as pretty-printed JSON (the wire
+//!   format accepted by every binding's `render` entry point).
+//! - Python (`bindings-python`): a `pluot.render_to_image(...)` call.
+//! - R (`bindings-r`): a `render_to_raster(...)` call.
+//! - JS (`bindings-js`): a `render_wasm(...)` call.
+//! - JSX / React (`@pluot/react`): a `<Pluot />` element / component.
+//! - HTML: a standalone page that loads `@pluot/core` and renders to a canvas.
+//! - Rust: a `pluot::render(...)` call.
+//! - Bash: a shell script invoking the `pluot_cli` example binary.
+
+use crate::params::{GraphicsFormat, RenderParams};
+use serde_json::Value;
+
+/// Serialize `params` into code (source or JSON) in the language and flavor
+/// implied by `format`.
+///
+/// Panics if `format` is not a code format (see [`GraphicsFormat::is_code`]).
+pub fn render_to_script(params: &RenderParams, format: &GraphicsFormat) -> String {
+    // Serialize once; every generator walks this JSON value.
+    let value = serde_json::to_value(params).expect("RenderParams should serialize to JSON");
+
+    match format {
+        GraphicsFormat::Json => to_json(&value),
+
+        GraphicsFormat::ExpressionPython => format!("{}\n", python_call(&value)),
+        GraphicsFormat::ScriptPython => python_script(&value),
+
+        GraphicsFormat::ExpressionR => format!("{}\n", r_call(&value)),
+        GraphicsFormat::ScriptR => r_script(&value),
+
+        GraphicsFormat::ExpressionJs => format!("{}\n", js_call(&value)),
+        GraphicsFormat::ScriptJs => js_script(&value),
+
+        GraphicsFormat::ExpressionJsx => format!("{}\n", jsx_element(&value, 0)),
+        GraphicsFormat::ScriptReact => react_script(&value),
+        GraphicsFormat::ScriptHtml => html_script(&value),
+
+        GraphicsFormat::ExpressionRust => format!("{}\n", rust_expr(&value)),
+        GraphicsFormat::ScriptRust => rust_script(&value),
+
+        GraphicsFormat::ScriptBash => bash_script(&value),
+
+        other => panic!("render_to_script called with a non-code format: {other:?}"),
+    }
+}
+
+/// Resolve the underlying rendering target (`"Raster"` or `"Vector"`) that the
+/// generated code should produce.
+///
+/// `RenderParams.format` normally carries the `Expression*`/`Script*` value that
+/// requested code generation (e.g. `ScriptPython`), which would be nonsensical
+/// (and circular) inside the emitted code. But a caller invoking
+/// [`render_to_script`] directly (rather than through [`crate::render::render`])
+/// can set `params.format` to `Raster` or `Vector` to request that the generated
+/// code itself produce raster or vector (SVG) output; any other value (including
+/// every code-target variant, which is what `params.format` holds when reached
+/// via `render()`) falls back to `Raster`, matching generated code's historical
+/// default.
+fn resolved_format(value: &Value) -> &'static str {
+    match value.get("format").and_then(Value::as_str) {
+        Some("Vector") => "Vector",
+        _ => "Raster",
+    }
+}
+
+/// Return a clone of `value` with its `format` field set to the resolved
+/// output format (see [`resolved_format`]), so the embedded JSON is always a
+/// valid `RenderParams` regardless of which code target was requested.
+fn with_resolved_format(value: &Value) -> Value {
+    let resolved = resolved_format(value);
+    let mut value = value.clone();
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("format".to_string(), Value::String(resolved.to_string()));
+    }
+    value
+}
+
+/// A JSON-escaped, double-quoted string literal. JSON string escaping (`\"`,
+/// `\\`, `\n`, `\uXXXX`, …) is a valid subset of the string syntax of Python,
+/// JavaScript and R, so this is reused across those generators.
+fn quoted(s: &str) -> String {
+    serde_json::to_string(s).expect("string should serialize to JSON")
+}
+
+// === JSON ===
+
+fn to_json(value: &Value) -> String {
+    serde_json::to_string_pretty(&with_resolved_format(value))
+        .expect("RenderParams JSON should pretty-print")
+}
+
+// === Generic curly-brace literal emitter (Python / JavaScript) ===
+
+/// Per-language tokens for the curly-brace literal emitter shared by Python and
+/// JavaScript (and the object/array subtrees embedded in JSX props / HTML).
+struct CurlySyntax {
+    /// One indentation level.
+    indent: &'static str,
+    null: &'static str,
+    true_: &'static str,
+    false_: &'static str,
+    /// When `true`, object keys are emitted as quoted strings (Python dict
+    /// literals). When `false`, bare identifiers are used where valid, quoting
+    /// only keys that are not valid identifiers (JavaScript object literals).
+    quote_keys: bool,
+}
+
+const PYTHON_SYNTAX: CurlySyntax = CurlySyntax {
+    indent: "    ",
+    null: "None",
+    true_: "True",
+    false_: "False",
+    quote_keys: true,
+};
+
+const JS_SYNTAX: CurlySyntax = CurlySyntax {
+    indent: "  ",
+    null: "null",
+    true_: "true",
+    false_: "false",
+    quote_keys: false,
+};
+
+/// Whether `s` is a valid identifier in Python/JavaScript (ASCII subset), so it
+/// can be used as an unquoted object key.
+fn is_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '$' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// Emit `value` as a curly-brace-language literal (dict/object + list/array),
+/// indented so that the opening token sits at the current column and the closing
+/// token aligns to `level`.
+fn emit_curly(value: &Value, level: usize, syn: &CurlySyntax) -> String {
+    match value {
+        Value::Null => syn.null.to_string(),
+        Value::Bool(true) => syn.true_.to_string(),
+        Value::Bool(false) => syn.false_.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => quoted(s),
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                return "[]".to_string();
+            }
+            let inner = syn.indent.repeat(level + 1);
+            let close = syn.indent.repeat(level);
+            let items: Vec<String> = arr
+                .iter()
+                .map(|item| format!("{inner}{}", emit_curly(item, level + 1, syn)))
+                .collect();
+            format!("[\n{}\n{close}]", items.join(",\n"))
+        }
+        Value::Object(map) => {
+            if map.is_empty() {
+                return "{}".to_string();
+            }
+            let inner = syn.indent.repeat(level + 1);
+            let close = syn.indent.repeat(level);
+            let items: Vec<String> = map
+                .iter()
+                .map(|(k, v)| {
+                    let key = if syn.quote_keys || !is_identifier(k) {
+                        quoted(k)
+                    } else {
+                        k.clone()
+                    };
+                    format!("{inner}{key}: {}", emit_curly(v, level + 1, syn))
+                })
+                .collect();
+            format!("{{\n{}\n{close}}}", items.join(",\n"))
+        }
+    }
+}
+
+// === Python ===
+
+/// The name of the `pluot` Python function that produces the resolved output
+/// format (see [`resolved_format`]): `render_to_image` for `Raster`,
+/// `render_to_svg` for `Vector`.
+fn python_render_func(value: &Value) -> &'static str {
+    match resolved_format(value) {
+        "Vector" => "render_to_svg",
+        _ => "render_to_image",
+    }
+}
+
+/// The `render_to_image(...)`/`render_to_svg(...)` call expression. Both
+/// functions force their own output format internally, so `format` is omitted;
+/// every other top-level field maps directly to a keyword argument (`plot_type`
+/// and `plot_params` are already separate keys thanks to the flattened enum).
+fn python_call(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+    let args: Vec<String> = obj
+        .iter()
+        .filter(|(k, _)| k.as_str() != "format")
+        .map(|(k, v)| format!("    {k}={},", emit_curly(v, 1, &PYTHON_SYNTAX)))
+        .collect();
+    format!("{}(\n{}\n)", python_render_func(value), args.join("\n"))
+}
+
+fn python_script(value: &Value) -> String {
+    let func = python_render_func(value);
+    // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
+    format!(
+        "# /// script\n\
+         # requires-python = \">=3.9\"\n\
+         # dependencies = [\n\
+         #     \"pluot\",\n\
+         # ]\n\
+         # ///\n\
+         from pluot import {func}\n\
+         \n\
+         # Zarr store(s) are declared in the `stores` map below and constructed\n\
+         # from their metadata; pass `store=`/`stores=` to override with your own\n\
+         # store object(s).\n\
+         img = await {}\n",
+        python_call(value),
+    )
+}
+
+// === R ===
+
+/// Emit `value` as an R literal. Objects become named `list(...)`s; arrays of
+/// scalars become `c(...)` vectors while arrays containing objects/arrays become
+/// `list(...)`s.
+fn emit_r(value: &Value, level: usize) -> String {
+    const INDENT: &str = "  ";
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(true) => "TRUE".to_string(),
+        Value::Bool(false) => "FALSE".to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => quoted(s),
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                return "list()".to_string();
+            }
+            // A flat vector of scalars maps most naturally onto an R atomic
+            // vector; anything with nested structure needs a list.
+            let all_scalars = arr
+                .iter()
+                .all(|v| matches!(v, Value::Number(_) | Value::String(_) | Value::Bool(_)));
+            let ctor = if all_scalars { "c" } else { "list" };
+            let inner = INDENT.repeat(level + 1);
+            let close = INDENT.repeat(level);
+            let items: Vec<String> = arr
+                .iter()
+                .map(|item| format!("{inner}{}", emit_r(item, level + 1)))
+                .collect();
+            format!("{ctor}(\n{}\n{close})", items.join(",\n"))
+        }
+        Value::Object(map) => {
+            if map.is_empty() {
+                return "list()".to_string();
+            }
+            let inner = INDENT.repeat(level + 1);
+            let close = INDENT.repeat(level);
+            let items: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{inner}{k} = {}", emit_r(v, level + 1)))
+                .collect();
+            format!("list(\n{}\n{close})", items.join(",\n"))
+        }
+    }
+}
+
+/// The name of the `pluotr` R function that produces the resolved output
+/// format (see [`resolved_format`]): `render_to_raster` for `Raster`,
+/// `render_to_svg` for `Vector`.
+fn r_render_func(value: &Value) -> &'static str {
+    match resolved_format(value) {
+        "Vector" => "render_to_svg",
+        _ => "render_to_raster",
+    }
+}
+
+/// The `render_to_raster(...)`/`render_to_svg(...)` call expression. The R API
+/// takes the layer list directly (rather than a nested plot_type/plot_params
+/// object) and both functions force their own output format internally.
+fn r_call(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+
+    let mut args: Vec<String> = Vec::new();
+
+    let layers = obj
+        .get("plot_params")
+        .and_then(|p| p.get("layers"))
+        .cloned()
+        .unwrap_or_else(|| Value::Array(vec![]));
+    args.push(format!("  layers = {}", emit_r(&layers, 1)));
+
+    for (k, v) in obj {
+        if matches!(k.as_str(), "format" | "plot_type" | "plot_params") {
+            continue;
+        }
+        args.push(format!("  {k} = {}", emit_r(v, 1)));
+    }
+
+    format!("{}(\n{}\n)", r_render_func(value), args.join(",\n"))
+}
+
+fn r_script(value: &Value) -> String {
+    format!(
+        "library(pluotr)\n\
+         \n\
+         # Zarr store(s) are declared in the `stores` list below and constructed\n\
+         # from their metadata; use `pluot_register_store()` to override with your\n\
+         # own store object(s).\n\
+         img <- {}\n",
+        r_call(value),
+    )
+}
+
+// === JavaScript ===
+
+/// The `render_wasm({...})` call expression, with the params object inlined.
+fn js_call(value: &Value) -> String {
+    format!(
+        "render_wasm({})",
+        emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX)
+    )
+}
+
+fn js_script(value: &Value) -> String {
+    let params = emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX);
+    format!(
+        "import {{ initialize, render_wasm, setStoreByName }} from \"@pluot/core\";\n\
+         \n\
+         await initialize();\n\
+         // Zarr store(s) are declared in the `stores` map below and constructed\n\
+         // from their metadata; call `setStoreByName(\"my_store\", store)` before\n\
+         // rendering to override with your own store object.\n\
+         \n\
+         const renderParams = {params};\n\
+         \n\
+         // Returns a Uint8Array of RGBA bytes (plus one trailing status byte).\n\
+         const result = await render_wasm(renderParams);\n",
+    )
+}
+
+// === JSX / React ===
+
+/// Map a top-level `RenderParams` (snake_case) key to the corresponding camelCase
+/// `<Pluot />` prop name, or `None` if the component does not expose that param.
+fn jsx_prop_name(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "width" => "width",
+        "height" => "height",
+        "plot_id" => "plotId",
+        "plot_type" => "plotType",
+        "stores" => "stores",
+        "plot_params" => "plotParams",
+        "view_mode" => "viewMode",
+        "camera_view" => "cameraMatrix",
+        "aspect_ratio_mode" => "aspectRatioMode",
+        "aspect_ratio_alignment_mode" => "aspectRatioAlignmentMode",
+        "margin_left" => "marginLeft",
+        "margin_right" => "marginRight",
+        "margin_top" => "marginTop",
+        "margin_bottom" => "marginBottom",
+        "pickable" => "enablePicking",
+        "format" => "format",
+        // Props not exposed by the <Pluot /> component (device_pixel_ratio,
+        // timeout, cache_enabled, svg_*, wait_for_store_gets, render_backend,
+        // compute_backend) are skipped.
+        _ => return None,
+    })
+}
+
+/// A `<Pluot ... />` element, with the `<Pluot` / `/>` lines indented `base`
+/// levels (two spaces per level) and props one level deeper.
+fn jsx_element(value: &Value, base: usize) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+    let pad = "  ".repeat(base);
+    let prop_pad = "  ".repeat(base + 1);
+
+    let mut props: Vec<String> = Vec::new();
+    for (k, v) in obj {
+        let Some(name) = jsx_prop_name(k) else {
+            continue;
+        };
+        if k == "format" {
+            // Resolve to the underlying Raster/Vector output the component should
+            // produce (see `resolved_format`), regardless of the requested code format.
+            props.push(format!("{prop_pad}format=\"{}\"", resolved_format(value)));
+            continue;
+        }
+        // The component supplies its own defaults, so drop absent optional
+        // values (e.g. a null camera matrix or unset margins).
+        if v.is_null() {
+            continue;
+        }
+        // JSX: string props use `name="..."`; everything else is a `{expr}`.
+        let rendered = match v {
+            Value::String(s) => format!("{prop_pad}{name}={}", quoted(s)),
+            _ => format!("{prop_pad}{name}={{{}}}", emit_curly(v, base + 1, &JS_SYNTAX)),
+        };
+        props.push(rendered);
+    }
+
+    format!("{pad}<Pluot\n{}\n{pad}/>", props.join("\n"))
+}
+
+fn react_script(value: &Value) -> String {
+    // The element is nested inside `return ( ... )` in the component body.
+    let element = jsx_element(value, 2);
+    format!(
+        "import React from \"react\";\n\
+         import {{ Pluot }} from \"@pluot/react\";\n\
+         \n\
+         // Zarr store(s) are declared via the `stores` prop and constructed from\n\
+         // their metadata; pass a `store` prop to override with your own object.\n\
+         export function PluotPlot() {{\n\
+         \x20 return (\n\
+         {element}\n\
+         \x20 );\n\
+         }}\n",
+    )
+}
+
+// === HTML ===
+
+fn html_script(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+    let width = obj.get("width").and_then(Value::as_u64).unwrap_or(0);
+    let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
+    // Indent the params object to sit under the module script (6 spaces).
+    let params = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
+
+    format!(
+        "<!DOCTYPE html>\n\
+         <html lang=\"en\">\n\
+         \x20 <head>\n\
+         \x20   <meta charset=\"utf-8\" />\n\
+         \x20   <title>Pluot plot</title>\n\
+         \x20 </head>\n\
+         \x20 <body>\n\
+         \x20   <canvas id=\"pluot-canvas\" width=\"{width}\" height=\"{height}\"></canvas>\n\
+         \x20   <script type=\"module\">\n\
+         \x20     import {{ initialize, render_wasm, setStoreByName }} from \"https://esm.sh/@pluot/core\";\n\
+         \n\
+         \x20     await initialize();\n\
+         \x20     // Zarr store(s) are declared in the `stores` map below and built from\n\
+         \x20     // their metadata; call `setStoreByName(\"my_store\", store)` to override.\n\
+         \n\
+         \x20     const renderParams = {params};\n\
+         \n\
+         \x20     const result = await render_wasm(renderParams);\n\
+         \n\
+         \x20     // Draw the RGBA bytes (minus the trailing status byte) to the canvas.\n\
+         \x20     const canvas = document.getElementById(\"pluot-canvas\");\n\
+         \x20     const ctx = canvas.getContext(\"2d\");\n\
+         \x20     const imageData = new ImageData(\n\
+         \x20       new Uint8ClampedArray(result.subarray(0, -1)),\n\
+         \x20       renderParams.width,\n\
+         \x20       renderParams.height,\n\
+         \x20     );\n\
+         \x20     ctx.putImageData(imageData, 0, 0);\n\
+         \x20   </script>\n\
+         \x20 </body>\n\
+         </html>\n",
+    )
+}
+
+// === Rust ===
+
+/// Wrap `content` in a Rust raw string literal using enough `#` delimiters that
+/// the terminator cannot appear inside the content.
+fn rust_raw_string(content: &str) -> String {
+    let mut longest = 0usize;
+    let mut current = 0usize;
+    for ch in content.chars() {
+        if ch == '#' {
+            current += 1;
+            longest = longest.max(current);
+        } else {
+            current = 0;
+        }
+    }
+    let hashes = "#".repeat(longest + 1);
+    format!("r{hashes}\"{content}\"{hashes}")
+}
+
+/// Reshape `value` (a serialized `pluot_core::RenderParams`) into the flat
+/// shape accepted by the ergonomic `pluot::RenderParams` wrapper: `layers` is
+/// pulled up from `plot_params.layers` to a top-level key, with `plot_type`/
+/// `plot_params` dropped. The Rust generator targets the `pluot` crate (the
+/// same ergonomic, typed API a Rust user would reach for) rather than the
+/// lower-level `pluot_core`.
+fn ergonomic_render_params(value: &Value) -> Value {
+    let mut value = with_resolved_format(value);
+    if let Some(obj) = value.as_object_mut() {
+        let layers = obj
+            .get("plot_params")
+            .and_then(|p| p.get("layers"))
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
+        obj.remove("plot_type");
+        obj.remove("plot_params");
+        obj.insert("layers".to_string(), layers);
+    }
+    value
+}
+
+/// A single `render(...)` expression that deserializes compact JSON at runtime.
+/// Reconstructing the fully-typed `RenderParams` struct literal (nested enums,
+/// `Option`s, layer params) would be far more brittle than round-tripping
+/// through JSON.
+fn rust_expr(value: &Value) -> String {
+    let json = serde_json::to_string(&ergonomic_render_params(value))
+        .expect("RenderParams JSON should serialize");
+    format!(
+        "pluot::render(serde_json::from_str::<pluot::RenderParams>({}).unwrap())",
+        rust_raw_string(&json),
+    )
+}
+
+fn rust_script(value: &Value) -> String {
+    let json = serde_json::to_string_pretty(&ergonomic_render_params(value))
+        .expect("RenderParams JSON should pretty-print");
+    format!(
+        "use pluot::{{render, RenderParams}};\n\
+         \n\
+         // The plot parameters, as JSON.\n\
+         let params_json = {};\n\
+         let params: RenderParams =\n\
+         \x20   serde_json::from_str(params_json).expect(\"valid RenderParams JSON\");\n\
+         \n\
+         // `render` is async; `.await` it inside an async runtime.\n\
+         // Returns a Vec<u8> of RGBA bytes (plus one trailing status byte).\n\
+         let pixels = render(params).await;\n",
+        rust_raw_string(&json),
+    )
+}
+
+// === Bash ===
+
+/// The JSON body accepted by `pluot_cli`'s `--input` (or stdin): the
+/// adjacently-tagged `plot_type` + `plot_params` pair, plus `stores` (`Http`/
+/// `LocalStore` entries are backed by real `zarrs_http`/`zarrs_filesystem`
+/// instances by the CLI; `MemoryStore` entries are rejected, since the CLI
+/// has no generic byte payload to construct one from). Every other field is
+/// passed to the CLI as a flag instead (see [`bash_script`]).
+fn bash_input_json(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+    let mut input = serde_json::Map::new();
+    if let Some(plot_type) = obj.get("plot_type") {
+        input.insert("plot_type".to_string(), plot_type.clone());
+    }
+    if let Some(plot_params) = obj.get("plot_params") {
+        input.insert("plot_params".to_string(), plot_params.clone());
+    }
+    if let Some(stores) = obj.get("stores").filter(|v| !v.is_null()) {
+        input.insert("stores".to_string(), stores.clone());
+    }
+    serde_json::to_string_pretty(&Value::Object(input))
+        .expect("plot_type/plot_params/stores should pretty-print")
+}
+
+/// A self-contained shell script that builds and runs the `pluot_cli`
+/// example (`examples/pluot_cli`), piping the plot/layer params (and `stores`)
+/// to it as JSON on stdin and passing every other rendering parameter as a
+/// CLI flag, mirroring the `Args` struct in `examples/pluot_cli/src/main.rs`.
+fn bash_script(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+
+    // The output extension selects `pluot_cli`'s backend (see `infer_format` in
+    // `examples/pluot_cli/src/main.rs`); pick it from the resolved output format
+    // (see `resolved_format`) so a `Vector`-requesting caller gets real SVG.
+    let output_file = match resolved_format(value) {
+        "Vector" => "plot.svg",
+        _ => "plot.png",
+    };
+    let mut flags: Vec<String> = vec![format!("--output {output_file}")];
+
+    let width = obj.get("width").and_then(Value::as_u64).unwrap_or(100);
+    let height = obj.get("height").and_then(Value::as_u64).unwrap_or(100);
+    flags.push(format!("--width {width}"));
+    flags.push(format!("--height {height}"));
+
+    // `pluot_cli`'s flags use clap's default kebab-case long names (e.g.
+    // `--device-pixel-ratio`), not the snake_case `RenderParams` field names.
+    if let Some(Value::Number(dpr)) = obj.get("device_pixel_ratio") {
+        flags.push(format!("--device-pixel-ratio {dpr}"));
+    }
+    // `AspectRatioMode`/`ViewMode` serialize as their (capitalized, for
+    // `AspectRatioMode`) variant names; `pluot_cli` matches case-insensitively.
+    if let Some(mode) = obj.get("aspect_ratio_mode").and_then(Value::as_str) {
+        flags.push(format!("--aspect-ratio-mode {}", mode.to_ascii_lowercase()));
+    }
+    if let Some(mode) = obj.get("view_mode").and_then(Value::as_str) {
+        flags.push(format!("--view-mode {mode}"));
+    }
+    if let Some(camera) = obj.get("camera_view").and_then(Value::as_array) {
+        let floats: Vec<String> = camera.iter().map(|v| v.to_string()).collect();
+        flags.push(format!("--camera-view \"{}\"", floats.join(",")));
+    }
+    if let Some(plot_id) = obj.get("plot_id").and_then(Value::as_str) {
+        flags.push(format!("--plot-id {}", quoted(plot_id)));
+    }
+
+    for (key, flag) in [
+        ("margin_left", "--margin-left"),
+        ("margin_right", "--margin-right"),
+        ("margin_top", "--margin-top"),
+        ("margin_bottom", "--margin-bottom"),
+    ] {
+        if let Some(Value::Number(n)) = obj.get(key) {
+            flags.push(format!("{flag} {n}"));
+        }
+    }
+
+    let flags_str: String = flags.iter().map(|f| format!("  {f} \\\n")).collect();
+    let input_json = bash_input_json(value);
+
+    format!(
+        "#!/usr/bin/env bash\n\
+         set -euo pipefail\n\
+         \n\
+         # Renders this plot via the `pluot_cli` example (examples/pluot_cli),\n\
+         # which reads the plot/layer params (and any `stores`) as JSON (piped\n\
+         # below via a heredoc on stdin) and every other rendering parameter\n\
+         # as a CLI flag.\n\
+         #\n\
+         # `HttpStore`/`LocalStore` entries in `stores` are backed by real\n\
+         # `zarrs_http`/`zarrs_filesystem` instances; `MemoryStore` entries are\n\
+         # rejected, since the CLI has no generic byte payload to construct\n\
+         # one from.\n\
+         \n\
+         # Build the CLI once. `examples/pluot_cli` has its own `Cargo.lock` and\n\
+         # is excluded from the workspace (see the root `Cargo.toml`), so it's\n\
+         # built via `--manifest-path` rather than `-p pluot_cli` (run this\n\
+         # script from the root of the pluot repository).\n\
+         cargo build --release --manifest-path \"$(dirname \"$0\")/examples/pluot_cli/Cargo.toml\"\n\
+         PLUOT_CLI=\"$(dirname \"$0\")/examples/pluot_cli/target/release/pluot_cli\"\n\
+         \n\
+         # `--output`'s extension selects the backend: .svg (vector), .png\n\
+         # (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).\n\
+         \"$PLUOT_CLI\" \\\n\
+         {flags_str}\
+         \x20 <<'JSON'\n\
+         {input_json}\n\
+         JSON\n",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::params::RenderParams;
+
+    fn sample_params(format: GraphicsFormat) -> RenderParams {
+        let layers = serde_json::json!([
+            {
+                "layer_type": "PointLayer",
+                "layer_params": {
+                    "layer_id": "pts",
+                    "position_x": { "dtype": "Float32", "values": [1.0, 2.0] },
+                    "position_y": { "dtype": "Float32", "values": [3.0, 4.0] }
+                }
+            }
+        ]);
+        let stores = std::collections::HashMap::from([(
+            "my_store".to_string(),
+            crate::params::ZarrStoreInfo {
+                store_params: crate::params::ZarrStoreParams::HttpStore(
+                    crate::params::HttpStoreParams {
+                        url: "https://example.com/my_store.zarr".to_string(),
+                        options: None,
+                    },
+                ),
+                store_extensions: None,
+            },
+        )]);
+        RenderParams {
+            width: 640,
+            height: 480,
+            format,
+            stores: Some(stores),
+            plot_id: "plot_1".to_string(),
+            plot_params: serde_json::from_value(serde_json::json!({ "layers": layers }))
+                .map(crate::params::PlotParams::LayeredPlot)
+                .unwrap(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn json_is_valid_and_format_reset() {
+        let params = sample_params(GraphicsFormat::Json);
+        let out = render_to_script(&params, &GraphicsFormat::Json);
+        let parsed: Value = serde_json::from_str(&out).expect("output should be valid JSON");
+        assert_eq!(parsed["format"], Value::String("Raster".to_string()));
+        assert_eq!(parsed["width"], Value::Number(640.into()));
+        assert_eq!(parsed["plot_type"], Value::String("LayeredPlot".to_string()));
+    }
+
+    #[test]
+    fn stores_round_trip_through_json() {
+        // The top-level `stores` map uses a flattened, adjacently-tagged
+        // ZarrStoreParams enum; make sure it survives a serialize -> JSON ->
+        // deserialize round trip (and appears in the emitted JSON).
+        let params = sample_params(GraphicsFormat::Json);
+        let out = render_to_script(&params, &GraphicsFormat::Json);
+
+        let parsed: Value = serde_json::from_str(&out).expect("valid JSON");
+        assert_eq!(
+            parsed["stores"]["my_store"]["store_type"],
+            Value::String("HttpStore".to_string())
+        );
+        assert_eq!(
+            parsed["stores"]["my_store"]["store_params"]["url"],
+            Value::String("https://example.com/my_store.zarr".to_string())
+        );
+
+        let round_tripped: RenderParams =
+            serde_json::from_str(&out).expect("stores should deserialize back into RenderParams");
+        let stores = round_tripped.stores.expect("stores present");
+        assert!(stores.contains_key("my_store"));
+    }
+
+    #[test]
+    fn python_expression_is_a_bare_call() {
+        let params = sample_params(GraphicsFormat::ExpressionPython);
+        let out = render_to_script(&params, &GraphicsFormat::ExpressionPython);
+        assert!(out.starts_with("render_to_image("));
+        // An expression carries no imports.
+        assert!(!out.contains("from pluot import"));
+        assert!(out.contains("width=640"));
+        assert!(!out.contains("format="));
+    }
+
+    #[test]
+    fn python_script_has_imports() {
+        let params = sample_params(GraphicsFormat::ScriptPython);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptPython);
+        assert!(out.contains("from pluot import render_to_image"));
+        assert!(out.contains("img = await render_to_image("));
+    }
+
+    #[test]
+    fn python_script_uses_render_to_svg_when_format_is_vector() {
+        // Calling `render_to_script` directly (rather than through `render()`)
+        // lets a caller set `params.format` to the real desired output
+        // (`Vector`) while requesting a specific code target via the explicit
+        // second argument.
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptPython);
+        assert!(out.contains("from pluot import render_to_svg"));
+        assert!(out.contains("img = await render_to_svg("));
+        assert!(!out.contains("render_to_image"));
+    }
+
+    #[test]
+    fn r_expression_and_script() {
+        let expr = render_to_script(
+            &sample_params(GraphicsFormat::ExpressionR),
+            &GraphicsFormat::ExpressionR,
+        );
+        assert!(expr.starts_with("render_to_raster("));
+        assert!(expr.contains("layers = list("));
+        assert!(!expr.contains("library(pluotr)"));
+
+        let script = render_to_script(
+            &sample_params(GraphicsFormat::ScriptR),
+            &GraphicsFormat::ScriptR,
+        );
+        assert!(script.contains("library(pluotr)"));
+        assert!(script.contains("img <- render_to_raster("));
+    }
+
+    #[test]
+    fn r_script_uses_render_to_svg_when_format_is_vector() {
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptR);
+        assert!(out.contains("img <- render_to_svg("));
+        assert!(!out.contains("render_to_raster"));
+    }
+
+    #[test]
+    fn js_expression_and_script() {
+        let expr = render_to_script(
+            &sample_params(GraphicsFormat::ExpressionJs),
+            &GraphicsFormat::ExpressionJs,
+        );
+        assert!(expr.starts_with("render_wasm({"));
+        assert!(!expr.contains("import"));
+
+        let script = render_to_script(
+            &sample_params(GraphicsFormat::ScriptJs),
+            &GraphicsFormat::ScriptJs,
+        );
+        assert!(script.contains("from \"@pluot/core\""));
+        assert!(script.contains("const renderParams = {"));
+        assert!(script.contains("await render_wasm(renderParams)"));
+    }
+
+    #[test]
+    fn jsx_expression_is_single_element() {
+        let out = render_to_script(
+            &sample_params(GraphicsFormat::ExpressionJsx),
+            &GraphicsFormat::ExpressionJsx,
+        );
+        assert!(out.starts_with("<Pluot"));
+        assert!(out.contains("width={640}"));
+        assert!(out.contains("plotId=\"plot_1\""));
+        assert!(out.contains("format=\"Raster\""));
+        assert!(!out.contains("import"));
+        assert!(!out.contains("plot_id="));
+    }
+
+    #[test]
+    fn react_script_defines_component() {
+        let out = render_to_script(
+            &sample_params(GraphicsFormat::ScriptReact),
+            &GraphicsFormat::ScriptReact,
+        );
+        assert!(out.contains("import { Pluot } from \"@pluot/react\""));
+        assert!(out.contains("export function PluotPlot()"));
+        assert!(out.contains("<Pluot"));
+    }
+
+    #[test]
+    fn html_script_is_a_page() {
+        let out = render_to_script(
+            &sample_params(GraphicsFormat::ScriptHtml),
+            &GraphicsFormat::ScriptHtml,
+        );
+        assert!(out.starts_with("<!DOCTYPE html>"));
+        assert!(out.contains("<canvas id=\"pluot-canvas\" width=\"640\" height=\"480\">"));
+        assert!(out.contains("render_wasm(renderParams)"));
+        assert!(out.contains("esm.sh/@pluot/core"));
+    }
+
+    #[test]
+    fn rust_expression_and_script() {
+        let expr = render_to_script(
+            &sample_params(GraphicsFormat::ExpressionRust),
+            &GraphicsFormat::ExpressionRust,
+        );
+        assert!(expr.starts_with("pluot::render("));
+        assert!(expr.contains("serde_json::from_str::<pluot::RenderParams>"));
+        assert!(!expr.contains("use pluot"));
+
+        let script = render_to_script(
+            &sample_params(GraphicsFormat::ScriptRust),
+            &GraphicsFormat::ScriptRust,
+        );
+        assert!(script.contains("use pluot::{render, RenderParams}"));
+        assert!(script.contains("render(params).await"));
+    }
+
+    #[test]
+    fn rust_script_embeds_vector_format_when_requested() {
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptRust);
+        assert!(out.contains("\"format\": \"Vector\""));
+    }
+
+    #[test]
+    fn bash_script_uses_kebab_case_flags_and_manifest_path_build() {
+        // `pluot_cli` (built via clap) uses kebab-case long flag names, and
+        // lives outside the workspace (its own `Cargo.lock`), so it must be
+        // built via `--manifest-path` rather than `-p pluot_cli`.
+        let params = sample_params(GraphicsFormat::ScriptBash);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
+        assert!(out.contains("--plot-id"));
+        assert!(!out.contains("--plot_id"));
+        assert!(out.contains("--device-pixel-ratio"));
+        assert!(!out.contains("--device_pixel_ratio"));
+        assert!(out.contains("--manifest-path"));
+        assert!(out.contains("examples/pluot_cli/target/release/pluot_cli"));
+        assert!(out.contains("--output plot.png"));
+    }
+
+    #[test]
+    fn bash_script_targets_svg_output_when_format_is_vector() {
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
+        assert!(out.contains("--output plot.svg"));
+        assert!(!out.contains("plot.png"));
+    }
+}

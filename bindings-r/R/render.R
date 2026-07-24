@@ -24,7 +24,18 @@
 #'   `"End"`.
 #' @param view_mode `"2d"` (default) or `"3d"`.
 #' @param plot_id Identifier string used as a cache key (default `""`).
-#' @param store_name Name of a registered Zarr store (default `""`).
+#' @param store Optional single Zarr store, as either a pizzarr store instance
+#'   or an already-derived `ZarrStoreInfo` metadata list (default `NULL`). Named
+#'   via `store_name`, or `"default"` if `store_name` is not given.
+#' @param store_name Name for the single `store` argument, or (when `store` is
+#'   not given) the name of a Zarr store previously registered via
+#'   [pluot_register_store()]. Its metadata is derived and passed as a
+#'   single-entry `stores` map (default `NULL`).
+#' @param stores Optional named list mapping store names to either a pizzarr
+#'   store instance or an already-derived `ZarrStoreInfo` metadata list. Store
+#'   instances are registered automatically and their metadata derived. Layers
+#'   reference a store by `store_name` (or fall back to it when it is the only
+#'   store). (default `NULL`).
 #' @param wait_for_store_gets Wait for in-flight store requests (default `TRUE`).
 #' @param timeout Optional render timeout in milliseconds. `NULL` means no
 #'   timeout.
@@ -54,7 +65,9 @@ pluot_render <- function(
   aspect_ratio_alignment_mode = "Center",
   view_mode = "2d",
   plot_id = "",
-  store_name = "",
+  store = NULL,
+  store_name = NULL,
+  stores = NULL,
   wait_for_store_gets = TRUE,
   timeout = NULL,
   cache_enabled = TRUE,
@@ -68,6 +81,10 @@ pluot_render <- function(
   render_backend = NULL,
   compute_backend = NULL
 ) {
+  # Build the top-level `stores` metadata map (store name -> ZarrStoreInfo),
+  # registering any store instances so the bound functions can reach them.
+  stores_meta <- .pluot_build_stores(stores = stores, store = store, store_name = store_name)
+
   params <- list(
     layers = layers,
     width = as.integer(width),
@@ -79,7 +96,7 @@ pluot_render <- function(
     aspect_ratio_alignment_mode = aspect_ratio_alignment_mode,
     view_mode = view_mode,
     plot_id = plot_id,
-    store_name = store_name,
+    stores = stores_meta,
     wait_for_store_gets = wait_for_store_gets,
     timeout = timeout,
     cache_enabled = cache_enabled,

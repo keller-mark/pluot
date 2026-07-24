@@ -179,8 +179,8 @@ importers:
         specifier: ^1.0.1
         version: 1.0.1(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       zarrita:
-        specifier: ^0.5.3
-        version: 0.5.3
+        specifier: ^0.7.3
+        version: 0.7.3
       zod-ome-ngff:
         specifier: 0.3.0
         version: 0.3.0(zod@4.4.3)
@@ -245,8 +245,8 @@ importers:
         specifier: ^19.0.0
         version: 19.2.4
       zarrita:
-        specifier: ^0.5.3
-        version: 0.5.3
+        specifier: ^0.7.3
+        version: 0.7.3
     devDependencies:
       '@vitejs/plugin-react':
         specifier: ^5.0.0
@@ -1599,9 +1599,6 @@ packages:
 
   '@webgpu/types@0.1.69':
     resolution: {integrity: sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ==}
-
-  '@zarrita/storage@0.1.2':
-    resolution: {integrity: sha512-zUi3CqeEU6avbE104qm5y4MGZbyxmqxXBIh3jyAJgQ4eQRG7KJ6cCmoD7wS7y/uCTl6nUiG7QU6k8QbyfrFjyg==}
 
   '@zarrita/storage@0.2.0':
     resolution: {integrity: sha512-855ZXqtnds7spnT8vNvD+MXa3QExP1m2GqShe8yt7uZXHnQLgJHgkpVwFjE1B0KDDRO0ki09hmk6OboTaIfPsQ==}
@@ -3394,10 +3391,6 @@ packages:
       uploadthing:
         optional: true
 
-  unzipit@1.4.3:
-    resolution: {integrity: sha512-gsq2PdJIWWGhx5kcdWStvNWit9FVdTewm4SEG7gFskWs+XCVaULt9+BwuoBtJiRE8eo3L1IPAOrbByNLtLtIlg==}
-    engines: {node: '>=12'}
-
   unzipit@2.0.0:
     resolution: {integrity: sha512-DVeVIWUZCAQPNzm5sB0hpsG1GygTTdBnzNtYYEpInkttx5evkyqRgZi6rTczoySqp8hO5jHVKzrH0f23X8FZLg==}
     engines: {node: '>=18'}
@@ -3416,9 +3409,6 @@ packages:
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
-
-  uzip-module@1.0.3:
-    resolution: {integrity: sha512-AMqwWZaknLM77G+VPYNZLEruMGWGzyigPK3/Whg99B3S6vGHuqsyl5ZrOv1UUF3paGK1U6PM0cnayioaryg/fA==}
 
   v8n@1.5.1:
     resolution: {integrity: sha512-LdabyT4OffkyXFCe9UT+uMkxNBs5rcTVuZClvxQr08D5TUgo1OFKkoT65qYRCsiKBl/usHjpXvP4hHMzzDRj3A==}
@@ -3668,9 +3658,6 @@ packages:
   yocto-queue@1.2.2:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
     engines: {node: '>=12.20'}
-
-  zarrita@0.5.3:
-    resolution: {integrity: sha512-to2JRq9nHwYdhWEwJwytHYdMYC6I0f2vKUAQfYkgrwwy8OjShhwmv4sH9drzyV3sLzdy7XS9N1ipdMA/Qjspow==}
 
   zarrita@0.7.3:
     resolution: {integrity: sha512-wChTQ1Ox75INoQCzKAfLWAfB70JJ4KjdW8Sz5x4ZWrFB4Dw+YZdnxHTL0xSdsrB9EmKSeK7fS1Y+I2ibhfGbkw==}
@@ -5038,11 +5025,6 @@ snapshots:
       tinyrainbow: 2.0.0
 
   '@webgpu/types@0.1.69': {}
-
-  '@zarrita/storage@0.1.2':
-    dependencies:
-      reference-spec-reader: 0.2.0
-      unzipit: 1.4.3
 
   '@zarrita/storage@0.2.0':
     dependencies:
@@ -7411,10 +7393,6 @@ snapshots:
       ofetch: 1.5.1
       ufo: 1.6.3
 
-  unzipit@1.4.3:
-    dependencies:
-      uzip-module: 1.0.3
-
   unzipit@2.0.0: {}
 
   update-browserslist-db@1.1.3(browserslist@4.25.2):
@@ -7434,8 +7412,6 @@ snapshots:
       - use-sync-external-store
 
   util-deprecate@1.0.2: {}
-
-  uzip-module@1.0.3: {}
 
   v8n@1.5.1: {}
 
@@ -7606,11 +7582,6 @@ snapshots:
   yargs-parser@22.0.0: {}
 
   yocto-queue@1.2.2: {}
-
-  zarrita@0.5.3:
-    dependencies:
-      '@zarrita/storage': 0.1.2
-      numcodecs: 0.3.2
 
   zarrita@0.7.3:
     dependencies:

@@ -25,7 +25,7 @@ const theme = {
 };
 
 export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
-  const { onFullscreen } = callbacks ?? {};
+  const { onFullscreen, onFullwindow, onRenderToScript } = callbacks ?? {};
   // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
@@ -121,9 +121,34 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
     ),
     // TODO: download button
     */
+    ...(typeof onFullwindow === 'function' ? ({
+      'Full Window': button(
+        onFullwindow,
+        { disabled: false }
+      ),
+    }) : {}),
     ...(typeof onFullscreen === 'function' ? ({
       'Full Screen': button(
         onFullscreen,
+        { disabled: false }
+      ),
+    }) : {}),
+    renderToScriptType: {
+      value: defaultOptions.renderToScriptType ?? 'Json',
+      options: {
+        'JSON': 'Json',
+        'Shell script': 'ScriptBash',
+        'Rust script': 'ScriptRust',
+        'Python script': 'ScriptPython',
+        'R script': 'ScriptR',
+        'React (JSX) script': 'ScriptReact',
+        // TODO: add more options here
+      },
+      label: 'Render-to-Script Type'
+    },
+    ...(typeof onRenderToScript === 'function' ? ({
+      'Render to Script': button(
+        onRenderToScript,
         { disabled: false }
       ),
     }) : {}),
@@ -139,9 +164,10 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
 export function PlotControls(props) {
   const {
     showControls = true,
+    float = false,
   } = props;
   return (
-    <div className="plot-controls-container" style={{ margin: '10px 0' }}>
+    <div className="plot-controls-container" style={{ ...(float ? {} : { margin: '10px 0' }) }}>
       <style>{`
         .plot-controls-container {
           /* We need to override this Starlight CSS property to prevent it from applying margins within the Leva children divs */
@@ -150,7 +176,7 @@ export function PlotControls(props) {
       `}</style>
       <Leva
         collapsed={true}
-        fill={true}
+        fill={!float}
         titleBar={titleBar}
         hideCopyButton={true}
         theme={theme}

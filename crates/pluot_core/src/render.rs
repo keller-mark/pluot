@@ -3,12 +3,47 @@ use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::render_types::GpuContext;
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
 use crate::render_traits::{MarginParams, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
+use crate::render_script::render_to_script;
 use crate::cache::get_or_init_gpu_context;
 use crate::render_post::unpremultiply;
+use crate::zarr::{AsyncZarritaStore, StoreMap};
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
-pub async fn render(params: RenderParams) -> Vec<u8> {
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// Build a [`StoreMap`] of [`AsyncZarritaStore`]s from the store metadata in
+/// `params`, one per entry in [`RenderParams::stores`].
+///
+/// This reproduces what the global store registry
+/// ([`crate::cache::get_or_init_store`]) previously constructed lazily: an
+/// [`AsyncZarritaStore`] per named store, each dispatching to the bound `zarr_*`
+/// functions registered by the language bindings. The language bindings call
+/// this to pass their stores explicitly to [`render`], so plots can be rendered
+/// without relying on the global store registry. Returns `None` when `params`
+/// declares no stores.
+pub fn stores_from_params(params: &RenderParams) -> Option<StoreMap> {
+    let stores = params.stores.as_ref()?;
+    let mut map: HashMap<String, Arc<dyn zarrs::storage::AsyncReadableStorageTraits>> =
+        HashMap::with_capacity(stores.len());
+    for name in stores.keys() {
+        let store: Arc<dyn zarrs::storage::AsyncReadableStorageTraits> =
+            Arc::new(AsyncZarritaStore::new(name.clone(), params.wait_for_store_gets));
+        map.insert(name.clone(), store);
+    }
+    Some(StoreMap(map))
+}
+
+pub async fn render(params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
+    // "Rendering to code" needs no GPU, data loading or layer construction:
+    // it just serializes the params into source code / JSON. Handle it up front.
+    // TODO: separate the render-to-graphics and render-to-script bound functions,
+    // so that render-to-script can specify `format` as either image/svg?
+    if params.format.is_code() {
+        return render_to_script(&params, &params.format).into_bytes();
+    }
+
     let width = params.width;
     let height = params.height;
 
@@ -29,7 +64,10 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
         cache_enabled: params.cache_enabled,
         aspect_ratio_mode: params.aspect_ratio_mode,
         aspect_ratio_alignment_mode: params.aspect_ratio_alignment_mode,
-        store_name: Some(params.store_name.clone()),
+        stores: params.stores.clone(),
+        // Thread the concrete store objects down so layer constructors read from
+        // them directly instead of the global store registry.
+        store_objects: stores,
     };
 
     #[allow(irrefutable_let_patterns)]
@@ -230,5 +268,7 @@ pub async fn render(params: RenderParams) -> Vec<u8> {
 
             pixels
         }
+        // Script formats are handled by the early return at the top of `render`.
+        _ => unreachable!("script formats are handled before layer rendering"),
     }
 }

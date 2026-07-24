@@ -4,6 +4,7 @@ use crate::render_traits::AspectRatioMode;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 
 /// Select whether to use GPU or CPU for graphics rendering.
@@ -33,7 +34,66 @@ pub enum GraphicsFormat {
     Vector,
 
     // TODO: add AccessKit as a GraphicsFormat?
+
+    // When "rendering to a script", specify the output format.
+    // TODO: add a `version` parameter to RenderParams, to facilitate forwards/backwards compatibility.
+    // TODO: add better comments to script outputs, so that it is clear how to run them.
+    ExpressionRust,
+    ScriptRust,
+    ExpressionPython,
+    // The python script should include PEP 723 inline script metadata for dependencies
+    ScriptPython,
+    ExpressionR,
+    ScriptR,
+    ExpressionJs,
+    ScriptJs,
+    ExpressionJsx,
+    // TODO: when rendering to React, do not inline dict values (e.g., stores, plotParams). Construct useMemos
+    // which memoize any objects, to prevent construction of new variable references on every rerender.
+    ScriptReact,
+    // TODO: use dynamic-importmap in the generated HTML?
+    ScriptHtml,
+    Json,
+
+    // Use the pluot_cli from examples/pluot_cli
+    ScriptBash,
+
+    // TODO: support ScriptHtmlReact which uses the react component in a standalone HTML file?
+    // TODO: jupyter nb?
+    // TODO: marimo nb?
+    // TODO: rmarkdown?
 }
+
+impl GraphicsFormat {
+    /// Whether this format is a "code" output: rather than rendering pixels or an
+    /// SVG, [`crate::render::render`] serializes the [`RenderParams`] into a
+    /// string of source code (or JSON) that reproduces the plot using one of the
+    /// language bindings (`bindings-js`, `bindings-r`, `bindings-python`) or the
+    /// Rust API. See [`crate::render_script`].
+    ///
+    /// The `Expression*` variants emit a single expression (e.g. a function call
+    /// or JSX element), whereas the `Script*` variants emit a self-contained
+    /// script including imports, variable definitions and library initialization.
+    pub fn is_code(&self) -> bool {
+        matches!(
+            self,
+            GraphicsFormat::ExpressionRust
+                | GraphicsFormat::ScriptRust
+                | GraphicsFormat::ExpressionPython
+                | GraphicsFormat::ScriptPython
+                | GraphicsFormat::ExpressionR
+                | GraphicsFormat::ScriptR
+                | GraphicsFormat::ExpressionJs
+                | GraphicsFormat::ScriptJs
+                | GraphicsFormat::ExpressionJsx
+                | GraphicsFormat::ScriptReact
+                | GraphicsFormat::ScriptHtml
+                | GraphicsFormat::Json
+                | GraphicsFormat::ScriptBash
+        )
+    }
+}
+
 
 /// Whether displaying 2D versus 3D graphics.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -86,6 +146,83 @@ pub enum PlotParams {
     LayeredPlot(LayeredPlotRenderParams),
 }
 
+/// Path to the local Zarr store directory on disk.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LocalStoreParams {
+    pub path: String
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MemoryStoreParams {
+    // For memory stores, they are not really portable in the same way as the other store types,
+    // but perhaps we can show a custom message related to how the data originates.
+    pub message: String
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RequestInit {
+     pub method: Option<String>,
+     pub headers: Option<HashMap<String, String>>,
+     pub body: Option<String>,
+     pub mode: Option<String>,
+     pub credentials: Option<String>,
+     pub cache: Option<String>,
+     pub redirect: Option<String>,
+     pub referrer: Option<String>,
+     pub integrity: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HttpStoreParams {
+    // Absolute URL to the root of the zarr store directory.
+    pub url: String,
+    pub options: Option<RequestInit>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "store_type", content = "store_params")]
+pub enum ZarrStoreParams {
+    HttpStore(HttpStoreParams),
+    LocalStore(LocalStoreParams), // TODO: rename to FileSystemStore?
+    MemoryStore(MemoryStoreParams),
+    // TODO: ObjectStore(ObjectStoreParams),
+    // TODO: WebFileSystemStore(WebFileSystemStoreParams),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ZarrStoreExtension {
+    TiffAsVirtualZarr,
+    OmeTiffAsVirtualZarr,
+    Hdf5AsVirtualZarr,
+    ParquetAsVirtualZarr,
+    ZipAsVirtualZarr,
+}
+
+
+// We want to define sufficient info.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ZarrStoreInfo {
+
+    #[serde(flatten)]
+    pub store_params: ZarrStoreParams,
+
+    // Used when one or more WrapperStores is needed "in front of" the store specified via store_params.
+    // E.g., store_params may point to a non-zarr file or directory, requiring an extension mechanism
+    // to interpret this file/directory as a zarr store.
+    // See https://zarrita.dev/store-extensions.html for more information.
+    // A given "primitive" store that points to a file/folder/dictionary may
+    // require one or more wrapper store layers, to "virtualize" data for zarr compatibility.
+    // For example, we can use a store extension to interpret OME-TIFF data as OME-Zarr,
+    // or HDF5 as Zarr, agnostic to whether the original HDF5 file lives on HTTP or a local directory.
+    // See https://github.com/keller-mark/hdf5-as-virtual-zarr.js
+    // or https://github.com/keller-mark/tiff-as-virtual-zarr.js
+    // or https://github.com/keller-mark/parquet-as-virtual-zarr.js
+    pub store_extensions: Option<Vec<ZarrStoreExtension>>,
+
+    // TODO: Should we define options like supports_writes, supports_deletes, supports_listing, etc.?
+}
+
 /// The params that are passed to the [`crate::render::render`] function.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -128,8 +265,21 @@ pub struct RenderParams {
     /// and should therefore be unique among plots in the same application.
     pub plot_id: String,
 
-    /// The name of the Zarr store, used when calling the `zarr_`-prefixed bound functions.
-    pub store_name: String,
+    /// Zarr stores, keyed by store name, defined once at the top level so that
+    /// multiple layers can refer to the same store (and its metadata, such as
+    /// which URL/path it points at and any store extensions it requires).
+    ///
+    /// Every Zarr-based layer identifies the store it reads from via a
+    /// `store_name` field, which must be present in the keys of this map. As an
+    /// ergonomic shortcut, a layer may omit `store_name` when exactly one store
+    /// is defined here, in which case that single store is used. See
+    /// [`crate::render_traits::resolve_store_name`].
+    ///
+    /// The language bindings (`bindings-js`, `bindings-python`, `bindings-r`)
+    /// use each [`ZarrStoreInfo`] to construct the concrete store object and
+    /// register it under its name before rendering, so that Rust's
+    /// `zarr_`-prefixed bound functions can resolve `(store_name, key)` lookups.
+    pub stores: Option<HashMap<String, ZarrStoreInfo>>,
 
     /// Whether to wait for store.get and store.getRange async calls to resolve.
     /// If true, we will try to wait for .get/.getRange async calls to resolve (BUT we will still bail early if `timeout` elapses first).
@@ -188,7 +338,7 @@ impl Default for RenderParams {
             //target_y: None,
             camera_view: None,
             plot_id: "default_plot".to_string(),
-            store_name: "default_store".to_string(),
+            stores: None,
             plot_params: PlotParams::LayeredPlot(LayeredPlotRenderParams {
                 layers: vec![],
             }),

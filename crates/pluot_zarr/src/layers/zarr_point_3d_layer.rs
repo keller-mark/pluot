@@ -7,11 +7,11 @@ use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::wgpu;
-use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32};
+use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
+use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams};
+use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams, resolve_store_name};
 use pluot_core::layers::point_layer::PointShapeMode;
 use pluot_core::layers::point_3d_layer::{Point3dLayer, Point3dLayerParams};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
@@ -60,7 +60,7 @@ pub struct ZarrPoint3dLayerData {
 pub struct ZarrPoint3dLayer {
     view_params: ViewParams,
     layer_params: ZarrPoint3dLayerParams,
-    store: Arc<AsyncZarritaStore>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: String,
 
     inner: Option<Point3dLayer>,
@@ -71,17 +71,9 @@ impl ZarrPoint3dLayer {
         view_params: ViewParams,
         layer_params: ZarrPoint3dLayerParams,
     ) -> Self {
-        let store_name = match &layer_params.store_name {
-            Some(layer_store_name) => layer_store_name.clone(),
-            None => {
-                match &view_params.store_name {
-                    Some(view_store_name) => view_store_name.clone(),
-                    None => panic!("store_name must be specified either in layer_params or view_params for Zarr-based layers."),
-                }
-            }
-        };
+        let store_name = resolve_store_name(&layer_params.store_name, &view_params);
 
-        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
+        let store = view_params.get_store(&store_name);
         Self {
             view_params,
             layer_params,

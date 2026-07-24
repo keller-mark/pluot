@@ -7,6 +7,27 @@ export {
   setStoreByName,
   getStore,
 } from './core.js';
+export { render } from './render.js';
+export type { RenderOptions, StoreValue } from './render.js';
+export {
+  storeInstanceToMetadata,
+  storeMetadataToInstance,
+  withStoreMetadata,
+  registerStoreExtension,
+} from './store-metadata.js';
+export type {
+  ZarrStoreInfo,
+  ZarrStoreExtension,
+  HttpStoreParams,
+  LocalStoreParams,
+  MemoryStoreParams,
+  StoreWithMetadata,
+  StoreExtensionApplier,
+} from './store-metadata.js';
+export {
+  isZarrStoreInfo,
+  normalizeStores,
+} from './store-normalization.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
 export { getBounds, getCameraMatrixFromBounds } from './viewport.js';
 export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';

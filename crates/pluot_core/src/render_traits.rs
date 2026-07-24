@@ -5,9 +5,13 @@ use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::maybe::{MaybeSend, MaybeSync};
-use crate::params::LayerParams;
+use crate::params::{LayerParams, ZarrStoreInfo};
 use crate::registry::get_layer_from_registry;
+use crate::zarr::StoreMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use zarrs::storage::AsyncReadableStorageTraits;
 
 // TODO: use From and Into to define the integer conversions, rather than manually defining in comments?
 
@@ -355,11 +359,45 @@ pub struct ViewParams {
     // Margins for plots that need them (e.g. scatterplot axes).
     pub margins: Option<MarginParams>,
 
-    pub store_name: Option<String>,
+    /// Zarr store metadata keyed by name, forwarded from
+    /// [`crate::params::RenderParams::stores`]. Zarr-based layers resolve the
+    /// store they read from against these keys (see [`resolve_store_name`]).
+    pub stores: Option<HashMap<String, ZarrStoreInfo>>,
+
+    /// Concrete Zarr store objects keyed by name, threaded down from
+    /// [`crate::render::render`]'s `stores` argument so that layer constructors
+    /// can read from them directly rather than looking a store up in (or
+    /// inserting one into) the global store registry. When present, the keys
+    /// mirror those of [`ViewParams::stores`]. When `None`, layers fall back to
+    /// [`crate::cache::get_or_init_store`]. Resolved per layer via
+    /// [`ViewParams::get_store`].
+    ///
+    /// Not serialized: store objects are runtime handles, not plot parameters.
+    #[serde(skip)]
+    pub store_objects: Option<StoreMap>,
 
     // Note: Views should have margins, but these should be translated to "bounds" for layers.
     // This is because we may want to render certain layers in the margins
     // (e.g., text/line layers for axes/titles/etc).
+}
+
+impl ViewParams {
+    /// Resolve the concrete Zarr store a layer should read from.
+    ///
+    /// When explicit store objects were threaded in (via
+    /// [`crate::render::render`]'s `stores` argument and [`ViewParams::store_objects`]),
+    /// the matching one is returned. Otherwise this falls back to the global
+    /// store registry ([`crate::cache::get_or_init_store`]), which constructs an
+    /// [`crate::zarr::AsyncZarritaStore`] dispatching to the globally registered
+    /// bound functions.
+    pub fn get_store(&self, store_name: &str) -> Arc<dyn AsyncReadableStorageTraits> {
+        if let Some(store_objects) = &self.store_objects {
+            if let Some(store) = store_objects.0.get(store_name) {
+                return store.clone();
+            }
+        }
+        crate::cache::get_or_init_store(store_name, self.wait_for_store_gets)
+    }
 }
 
 impl Default for ViewParams {
@@ -376,8 +414,61 @@ impl Default for ViewParams {
             wait_for_store_gets: true,
             cache_enabled: true,
             margins: None,
-            store_name: None,
+            stores: None,
+            store_objects: None,
         }
+    }
+}
+
+/// Resolve which top-level store a Zarr-based layer reads from.
+///
+/// The layer may specify a `store_name` directly (via its `layer_params`).
+/// The resolved name must be present in the keys of the top-level
+/// [`ViewParams::stores`] map (forwarded from
+/// [`crate::params::RenderParams::stores`]); it identifies the store that the
+/// language bindings registered so that the `zarr_`-prefixed bound functions
+/// can resolve `(store_name, key)` lookups.
+///
+/// As an ergonomic shortcut, when the layer omits `store_name` and exactly one
+/// store is defined at the top level, that single store is used.
+///
+/// # Panics
+///
+/// Panics when no `store_name` can be resolved, or when the resolved
+/// `store_name` is not one of the keys of the top-level `stores` map.
+pub fn resolve_store_name(
+    layer_store_name: &Option<String>,
+    view_params: &ViewParams,
+) -> String {
+    let stores = view_params.stores.as_ref();
+    match layer_store_name {
+        Some(name) => {
+            if let Some(stores) = stores {
+                if !stores.contains_key(name) {
+                    let keys: Vec<&String> = stores.keys().collect();
+                    panic!(
+                        "Zarr layer store_name {name:?} is not present in the top-level \
+                         `stores` map (available store names: {keys:?})."
+                    );
+                }
+            }
+            name.clone()
+        }
+        None => match stores {
+            // Ergonomic shortcut: a single top-level store needs no explicit name.
+            Some(stores) if stores.len() == 1 => stores.keys().next().unwrap().clone(),
+            Some(stores) if stores.is_empty() => panic!(
+                "A Zarr layer requires a `store_name`, but the top-level `stores` map is empty."
+            ),
+            Some(_) => panic!(
+                "A Zarr layer must specify a `store_name` when multiple stores are defined \
+                 in the top-level `stores` map."
+            ),
+            None => panic!(
+                "A Zarr layer requires a `store_name` present in the top-level `stores` map, \
+                 but no `stores` were provided."
+            ),
+        },
     }
 }
 

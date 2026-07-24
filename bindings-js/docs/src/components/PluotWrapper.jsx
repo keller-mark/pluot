@@ -1,5 +1,6 @@
-import React, { useMemo, useRef, useCallback, useEffect, useState } from 'react';
-import { Pluot } from '@pluot/react';
+import React, { useMemo, useRef, useCallback, useEffect, useEffectEvent, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Pluot, render_wasm, normalizeStores } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
 
@@ -27,7 +28,7 @@ export function PluotWrapper(props) {
     // Option to provide "plot-specific" options objects for plot types that need them
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
-    cameraMatrix = null,
+    cameraMatrix: cameraMatrixProp = null,
     enablePicking = true,
   } = props;
 
@@ -42,58 +43,180 @@ export function PluotWrapper(props) {
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
   };
 
+  // 'none' | 'fullwindow' | 'fullscreen'
+  const [mode, setMode] = useState('none');
   const [fsWidth, setFsWidth] = useState(null);
   const [fsHeight, setFsHeight] = useState(null);
 
+  const [cameraMatrix, setCameraMatrix] = useState(cameraMatrixProp);
+
   const divRef = useRef(null);
 
-  // Handling of fullscreenchange event.
+  const isFullwindow = mode === 'fullwindow';
+  const isFullscreen = mode === 'fullscreen';
+  const isFullscreenOrWindow = mode !== 'none';
+
+  // Handling of fullscreenchange event. This fires both when we request
+  // fullscreen ourselves, and when the browser exits it natively (Escape,
+  // browser/OS chrome, etc.). Registered once; reads the latest `mode` via
+  // useEffectEvent instead of a stale closure.
+  const onFSChange = useEffectEvent(() => {
+    if (document.fullscreenElement) {
+      setMode('fullscreen');
+    } else if (mode !== 'fullwindow') {
+      // A real exit back to neither mode. If mode is already 'fullwindow',
+      // this exit is instead part of a controlled fullscreen -> full-window
+      // transition (see onFullwindow below), so leave it alone.
+      setMode('none');
+      setFsWidth(null);
+      setFsHeight(null);
+    }
+  });
+
   useEffect(() => {
-    let discarded = false;
-    const onFSChange = (event) => {
-      console.log(event);
-
-      if (document.fullscreenElement) {
-        // Entering
-        setTimeout(() => {
-          // We need to delay this a tiny bit. In Chrome, getBoundingClientRect initially
-          // returns a value that seems to correspond to the size of the Chrome window,
-          // rather than the full screen size.
-          const fullscreenSize = document.fullscreenElement.getBoundingClientRect();
-
-          if(!discarded) {
-            setFsHeight(fullscreenSize.height);
-            setFsWidth(fullscreenSize.width);
-          }
-        }, 100);
-      } else {
-        // Exiting
-        setFsHeight(null);
-        setFsWidth(null);
-      }
-    };
     document.addEventListener("fullscreenchange", onFSChange);
 
     return () => {
-      discarded = true;
       document.removeEventListener("fullscreenchange", onFSChange);
     };
   }, []);
 
-  const onFullscreen = useCallback(() => {
+  // While in full-window or full-screen mode, the parent div is resized
+  // (either by our own fixed-position styles, or by the browser's native
+  // fullscreen layout), so observe it and keep fsWidth/fsHeight in sync.
+  useEffect(() => {
+    if (!isFullscreenOrWindow) {
+      return undefined;
+    }
     const divEl = divRef.current;
+    if (!divEl) {
+      return undefined;
+    }
 
-    if (!document.fullscreenElement) {
-        // If the document is not in full screen mode
-        // make the video full screen
-        divEl.requestFullscreen();
-      } else {
-        // Otherwise exit the full screen mode.
-        document.exitFullscreen?.();
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
       }
+      const { width, height } = entry.contentRect;
+      setFsWidth(width);
+      setFsHeight(height);
+    });
+    observer.observe(divEl);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isFullscreenOrWindow]);
+
+  const onFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      // Enter full-screen mode, whether we were previously in full-window
+      // mode or in neither mode.
+      document.body?.requestFullscreen();
+    } else {
+      // Otherwise exit full-screen mode.
+      document.exitFullscreen?.();
+    }
   }, []);
 
-  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen });
+  const onFullwindow = useEffectEvent(() => {
+    if (mode !== 'fullwindow') {
+      // Set mode first: if we're currently in native full-screen, exiting it
+      // below fires fullscreenchange, whose handler checks this ref/state and
+      // leaves 'fullwindow' alone instead of resetting to 'none'.
+      setMode('fullwindow');
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      }
+    } else {
+      // Otherwise exit.
+      setMode('none');
+      setFsWidth(null);
+      setFsHeight(null);
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // If in full window mode, listen for escape keypresses to exit this mode.
+
+    if (isFullwindow) {
+      function onKeypress(event) {
+        const isEscape = ["Escape", "Esc"].includes(event.key) || event.keyCode === 27;
+        if (isEscape) {
+          setMode('none');
+          setFsHeight(null);
+          setFsWidth(null);
+          if (document.fullscreenElement) {
+            // Guard against the (transient) case where full-window mode was
+            // entered directly from full-screen mode and the native exit is
+            // still in flight; make sure we always fully exit too.
+            document.exitFullscreen?.();
+          }
+        }
+      }
+
+      document.addEventListener("keydown", onKeypress);
+
+      return () => {
+        document.removeEventListener("keydown", onKeypress);
+      }
+    }
+
+    return () => { };
+  }, [isFullwindow]);
+
+  const controlValuesRef = useRef(null);
+  const derivedPlotParamsRef = useRef(null);
+  const [scriptResult, setScriptResult] = useState(null);
+  const onRenderToScript = useEffectEvent(async () => {
+    const renderParams = {
+      format: controlValuesRef.current.renderToScriptType,
+
+      stores: normalizeStores({ store: storeUrl, plotId, register: false }),
+      plot_params: derivedPlotParamsRef.current,
+      camera_view: cameraMatrix,
+
+      width: controlValuesRef.current.size.width,
+      height: controlValuesRef.current.size.height,
+      margin_left: controlValuesRef.current.horizontalMargins.left,
+      margin_right: controlValuesRef.current.horizontalMargins.right,
+      margin_top: controlValuesRef.current.verticalMargins.top,
+      margin_bottom: controlValuesRef.current.verticalMargins.bottom,
+      aspect_ratio_mode: controlValuesRef.current.aspectRatioMode,
+      aspect_ratio_alignment_mode: controlValuesRef.current.aspectRatioAlignmentMode,
+
+      device_pixel_ratio: window.devicePixelRatio,
+      view_mode: viewMode,
+      pickable: false,
+      plot_id: plotId,
+      plot_type: plotType,
+      // Note: the below settings are optimized for static plotting.
+      timeout: null, // Note: will not have any effect when wait_for_store_gets is false.
+      wait_for_store_gets: true,
+      cache_enabled: true,
+      svg_compression_enabled: false,
+      svg_include_document: true,
+    };
+
+    // Wrap render_wasm in try/catch, to handle Rust panics.
+    let arr;
+    try {
+      arr = await render_wasm(renderParams);
+
+    } catch (error) {
+      console.error("Error during wasm.render_wasm (rendering to script):", error);
+      return;
+    }
+
+    const scriptContents = (new TextDecoder()).decode(arr);
+    setScriptResult(scriptContents);
+  });
+
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onRenderToScript });
   console.log(controlValues);
 
   const derivedPlotParams = useMemo(() => {
@@ -114,14 +237,24 @@ export function PluotWrapper(props) {
   const marginTop = controlValues.verticalMargins.top;
   const marginBottom = controlValues.verticalMargins.bottom;
 
-  // TODO: render the PlotControls over the plot in Fullscreen mode
-  // TODO: render the Loading indicator over the plot in Fullscreen mode
+  controlValuesRef.current = { ...controlValues };
+  derivedPlotParamsRef.current = { ...derivedPlotParams };
 
-  console.log(cameraMatrix)
+  console.log(cameraMatrix);
 
-  return (
-    <>
-      <div ref={divRef}>
+  const content = (
+    <div ref={divRef} style={(isFullscreenOrWindow ? ({
+      position: 'fixed',
+      zIndex: 11,
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      width: '100wh',
+      height: '100vh',
+      overflow: 'hidden',
+    }) : {})}>
+      <div>
         <Pluot
           store={storeUrl}
           width={fsWidth ?? width}
@@ -139,14 +272,22 @@ export function PluotWrapper(props) {
           format={format}
           debugMargins={debugMargins}
           cameraMatrix={cameraMatrix}
+          setCameraMatrix={setCameraMatrix}
           enablePicking={enablePicking}
           backgroundColor={"#fff"}
         />
       </div>
       <PlotControls
         showControls={showControls}
+        float={isFullscreenOrWindow}
       />
-
-    </>
+      {scriptResult !== null ? (
+        <pre>
+          {scriptResult}
+        </pre>
+      ) : null}
+    </div>
   );
+
+  return isFullscreenOrWindow ? createPortal(content, document.body) : content;
 }

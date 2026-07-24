@@ -1,6 +1,6 @@
 # Snapshot Tests
 
-Rendering tests use snapshot comparison: pixel-exact for raster (via [kompari](https://github.com/linebender/kompari)) and whitespace-normalized text for SVG.
+Rendering tests use snapshot comparison: pixel-exact for raster (via [kompari](https://github.com/linebender/kompari)), whitespace-normalized text for SVG, and near-exact text (trailing whitespace and final newline ignored) for the code outputs (the `Expression*` / `Script*` / `Json` `GraphicsFormat`s).
 
 ## Directory Layout
 
@@ -10,6 +10,7 @@ tests/
   snaps-dirty/     # Test-generated outputs (gitignored)
   snapshot_utils.rs  # Helpers functions
   test_rect_layer.rs  # Raster + vector rendering tests
+  test_render_script.rs  # Code (expression/script/JSON) rendering tests
 ```
 
 ## Taking Initial Snapshots
@@ -19,6 +20,7 @@ When you add a new test:
 1. Call the appropriate helper at the end of the test:
    - Raster: `check_snapshot(&image, "my_test.png")`
    - SVG: `check_svg_snapshot(&svg_string, "my_test.svg")`
+   - Code: `render_and_check_script_snapshot(params, "my_test.py")` (extension per target: `.py`, `.R`, `.js`, `.jsx`, `.html`, `.rs.txt`, `.json`)
 2. Run the test. It will **fail** because no reference snapshot exists yet:
    ```
    cargo test -p pluot test_name

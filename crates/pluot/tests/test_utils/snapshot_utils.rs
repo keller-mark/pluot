@@ -82,6 +82,63 @@ pub async fn render_and_check_both_snapshots(base_params: RenderParams, base_nam
     render_and_check_svg_snapshot(vector_params, &format!("{base_name}.svg")).await;
 }
 
+/// Render with the given params (which must use a `Script*` [`GraphicsFormat`])
+/// and compare the generated code / JSON against a text snapshot named `name`.
+///
+/// Unlike the raster/vector snapshots, script rendering needs no GPU, so this
+/// runs on every target/feature combination.
+pub async fn render_and_check_script_snapshot(params: RenderParams, name: &str) {
+    let result_vec = render(params).await;
+    let script = String::from_utf8(result_vec).expect("Invalid UTF-8 in script output");
+    check_text_snapshot(&script, name);
+}
+
+/// Compare a text string (generated source code / JSON) against a reference
+/// snapshot named `name`.
+///
+/// Writes the current output to `tests/snaps-dirty/<name>`, compares against
+/// `tests/snaps-blessed/<name>`, and panics with blessing instructions on
+/// mismatch. Comparison trims trailing whitespace per line and ignores the
+/// trailing newline, but preserves indentation and blank lines (which are
+/// meaningful in generated code).
+fn check_text_snapshot(text: &str, name: &str) {
+    let snapshot_path = snapshots_dir().join(name);
+    let current_path = current_dir().join(name);
+
+    // Ensure snaps-dirty/ directory exists.
+    std::fs::create_dir_all(current_dir()).unwrap();
+
+    // Always write the current output so it can be inspected / blessed.
+    std::fs::write(&current_path, text).unwrap();
+
+    if !snapshot_path.exists() {
+        panic!(
+            "No script snapshot found at {path}.\n\
+             A new file has been written to {current}.\n\
+             Inspect it and bless with:\n  cp {current} {path}",
+            path = snapshot_path.display(),
+            current = current_path.display(),
+        );
+    }
+    let reference = std::fs::read_to_string(&snapshot_path).unwrap();
+
+    let normalize = |s: &str| -> String {
+        s.lines().map(|l| l.trim_end()).collect::<Vec<_>>().join("\n")
+    };
+
+    if normalize(text) != normalize(&reference) {
+        panic!(
+            "Script snapshot mismatch for '{name}'.\n\
+             Current output: {current}\n\
+             Reference snapshot: {snap}\n\
+             To accept the new output:\n  cp {current} {snap}",
+            name = name,
+            current = current_path.display(),
+            snap = snapshot_path.display(),
+        );
+    }
+}
+
 /// Render with the given params and compare the SVG output against a text snapshot.
 pub async fn render_and_check_svg_snapshot(params: RenderParams, name: &str) {
     let result_vec = render(params).await;
@@ -97,7 +154,12 @@ pub async fn render_and_check_svg_snapshot(params: RenderParams, name: &str) {
 /// Writes current output to `tests/current/<name>`, compares against
 /// `tests/snapshots/<name>`, panics with instructions on mismatch.
 /// Comparison ignores leading/trailing whitespace per line and blank lines.
-fn check_svg_snapshot(svg: &str, name: &str) {
+///
+/// Public so callers can compare SVG text obtained some other way than
+/// [`render_and_check_svg_snapshot`] (e.g. by executing a generated
+/// `Script*`/`Expression*` snippet in its own language runtime; see
+/// `test_render_script_integration.rs`).
+pub fn check_svg_snapshot(svg: &str, name: &str) {
     let snapshot_path = snapshots_dir().join(name);
     let current_path = current_dir().join(name);
 

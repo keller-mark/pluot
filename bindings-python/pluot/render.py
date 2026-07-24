@@ -1,87 +1,90 @@
-import uuid
 from PIL import Image
 import numpy as np
-import zarr
-from zarr.storage import MemoryStore
 from zarr.abc.store import Store
-from .zarr import GLOBAL_STORES
+from .zarr import GLOBAL_STORES, store_instance_to_metadata, store_metadata_to_instance, _http_store_from_url
 from ._internal import render_py
 
 NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
 
-# Disable compression until Zarrs-via-WASM supports Blosc and Zstd.
-# TODO: remove this now that it is no longer needed?
-# Reference: https://github.com/zarr-developers/zarr-python/issues/3389
-no_compression = dict(filters=None, compressors=None, serializer="auto")
-
-def replace_arr_with_key(d, store):
-    """Replace _arr keys with _key keys in a dict, inserting NumPy array data into a Zarr store."""
-
-    if isinstance(d, list):
-        return [
-            replace_arr_with_key(item, store)
-            for item in d
-        ]
-    elif not isinstance(d, dict):
-        return d  # Base case: not a dict, return as is.
-
-    # D is a dict.
-    new_d = {}
-    for key, val in d.items():
-        if key.endswith("_arr") and isinstance(val, np.ndarray):
-            new_key = key.replace("_arr", "_key")
-            new_val = f"/{new_key}_arr"
-            zarr.create_array(
-                store=store,
-                data=val,
-                name=new_val,
-                **no_compression
-            )
-            new_d[new_key] = new_val
-        else:
-            # Recursively handle nested dicts
-            new_d[key] = replace_arr_with_key(val, store)
-    return new_d
-
-# Helper function to convert _arr params to _key params,
-# inserting NumPy array data into an in-memory Zarr store.
 def parse_kwargs(kwargs):
-    """Parse kwargs for render functions."""
-    kwargs_has_store = "store" in kwargs
-    kwargs_has_plot_params = "plot_params" in kwargs
-    new_kwargs = kwargs
+    """Parse kwargs for render functions.
 
-    if kwargs_has_store:
-        store = kwargs["store"]
-        if not isinstance(store, Store):
-            raise ValueError("Expected store value to be an instance of zarr.abc.store.Store")
+    Zarr stores are declared via the top-level ``stores`` map that
+    ``RenderParams`` expects (store name -> ``ZarrStoreInfo`` metadata). Mirrors
+    the `stores` useMemo in the JS/React binding (Pluot.jsx): callers supply
+    stores in two mutually exclusive ways:
 
-        # The user provided a Store instance directly.
-        # We assign this a name and register to GLOBAL_STORES.
-        # We could use uuid4 here to generate a unique ID, but then the name is re-generated
-        # on each re-render, preventing proper cacheing on the Rust side. Instead,
-        # we want the store name to be deterministic based on the Python store instance.
-        store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
-        new_kwargs = {
-            "store_name": store_name,
-            **kwargs,
-        }
+      - ``store=store_url_or_instance_or_metadata`` (optionally with
+        ``store_name=...``) for a single store; or
+      - ``stores={name: store_instance_or_metadata, ...}`` for one or more
+        named stores (layers reference them by ``store_name``).
 
-        GLOBAL_STORES[store_name] = store
-        # Do not pass the actual Store instance to rust.
-        del new_kwargs["store"]
-    elif kwargs_has_plot_params:
-        # Always check whether a user has provided Numpy arrays directly that should be inserted into a Zarr store.
-        # TODO: remove this code path - force users to use one of the non-Zarr layers in this case?
-        memory_store_name = str(uuid.uuid4())
-        new_kwargs = {
-            "store_name": memory_store_name,
-            **kwargs,
-            "plot_params": {},
-        }
-        GLOBAL_STORES[memory_store_name] = MemoryStore()
-        # recursively traverse to find _keys
-        new_kwargs["plot_params"] = replace_arr_with_key(kwargs["plot_params"], GLOBAL_STORES[memory_store_name])
+    ``store`` may be a URL string, a live ``zarr.abc.store.Store`` instance, or
+    an already-derived ``ZarrStoreInfo`` dict; each value of ``stores`` may be
+    a live instance or a dict. Live instances (including ones constructed from
+    a URL string or reconstructed from a ``store=`` dict) are registered in
+    ``GLOBAL_STORES`` (so the ``zarr_``-prefixed bound functions can reach
+    them) and their portable metadata is derived for the ``stores`` field;
+    dicts passed via ``stores=`` pass through as-is with no instance
+    registered (the concrete instance, if any, must be registered separately).
+    """
+    new_kwargs = dict(kwargs)
+
+    stores_arg = new_kwargs.pop("stores", None)
+    store_arg = new_kwargs.pop("store", None)
+    # Optional explicit name for the single-store `store=` argument.
+    single_store_name = new_kwargs.pop("store_name", None)
+
+    if (store_arg is not None or single_store_name is not None) and stores_arg is not None:
+        raise ValueError("`store`/`store_name` (singular) are mutually exclusive with `stores` (plural).")
+
+    stores_meta = {}
+
+    # 1. Single-store convenience argument.
+    if store_arg is not None:
+        if isinstance(store_arg, str):
+            # Assume `store_arg` is a URL; construct a remote store for it.
+            name = single_store_name if single_store_name is not None else store_arg
+            instance = _http_store_from_url(store_arg)
+            GLOBAL_STORES[name] = instance
+            stores_meta[name] = store_instance_to_metadata(instance)
+        elif isinstance(store_arg, dict):
+            # Already-derived ZarrStoreInfo metadata; reconstruct and register
+            # a usable instance, but pass the given metadata through as-is.
+            name = single_store_name if single_store_name is not None else "default"
+            instance = store_metadata_to_instance(store_arg)
+            GLOBAL_STORES[name] = instance
+            stores_meta[name] = store_arg
+        elif isinstance(store_arg, Store):
+            # Use a deterministic name so the Rust-side cache key is stable across
+            # re-renders (id(store) is stable for a given Python instance).
+            name = single_store_name if single_store_name is not None else str(id(store_arg))
+            GLOBAL_STORES[name] = store_arg
+            stores_meta[name] = store_instance_to_metadata(store_arg)
+        else:
+            raise ValueError(
+                "Expected `store` value to be a URL string, an instance of zarr.abc.store.Store, or a ZarrStoreInfo dict."
+            )
+
+    # 2. Explicit multi-store map.
+    if stores_arg is not None:
+        for name, value in stores_arg.items():
+            if isinstance(value, Store):
+                GLOBAL_STORES[name] = value
+                stores_meta[name] = store_instance_to_metadata(value)
+            elif isinstance(value, dict):
+                # Already-derived ZarrStoreInfo metadata.
+                instance = store_metadata_to_instance(value)
+                GLOBAL_STORES[name] = instance
+                stores_meta[name] = value
+            else:
+                raise ValueError(
+                    "Each `stores` value must be a zarr Store instance or a ZarrStoreInfo dict."
+                )
+
+    if stores_meta:
+        new_kwargs["stores"] = stores_meta
+
     return new_kwargs
 
 _RENDER_DEFAULTS = dict(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, format="Raster", aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True)
@@ -99,8 +102,9 @@ async def render(**kwargs):
 async def render_raw(**kwargs):
     """Render to raw bytes, bypassing parse_kwargs.
 
-    The caller is responsible for ensuring ``store_name`` is already registered
-    in ``GLOBAL_STORES`` before calling this function.
+    The caller is responsible for passing a ready ``stores`` metadata map and for
+    ensuring each referenced store name is already registered in
+    ``GLOBAL_STORES`` before calling this function.
     """
     merged_params = {**_RENDER_DEFAULTS, **kwargs}
     return await render_py(**merged_params)

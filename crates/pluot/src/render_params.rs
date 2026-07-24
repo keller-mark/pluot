@@ -20,9 +20,11 @@ use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
+use std::collections::HashMap;
+
 use pluot_core::{AspectRatioAlignmentMode, LayerParams as RawLayerParams, RenderParams as RawRenderParams};
 use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
-use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend};
+use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend, ZarrStoreInfo};
 use pluot_core::render_traits::AspectRatioMode;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -78,7 +80,7 @@ pub struct RenderParams {
     pub aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
     pub view_mode: ViewMode,
     pub plot_id: String,
-    pub store_name: String,
+    pub stores: Option<HashMap<String, ZarrStoreInfo>>,
     pub wait_for_store_gets: bool,
     pub timeout: Option<u32>,
     pub cache_enabled: bool,
@@ -107,7 +109,7 @@ impl Default for RenderParams {
             aspect_ratio_alignment_mode: raw.aspect_ratio_alignment_mode,
             view_mode: raw.view_mode,
             plot_id: raw.plot_id,
-            store_name: raw.store_name,
+            stores: raw.stores,
             wait_for_store_gets: raw.wait_for_store_gets,
             timeout: raw.timeout,
             cache_enabled: raw.cache_enabled,

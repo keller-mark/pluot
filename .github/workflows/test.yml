@@ -89,13 +89,20 @@ jobs:
         extra-packages: any::rcmdcheck
         needs: check
         working-directory: bindings-r
+    - name: Reinstall RcppParallel, stringfish, and qs2
+      # The pak-installed binaries of stringfish/qs2 (via RcppParallel's bundled TBB) are
+      # sometimes built with a TBB ABI incompatible with the ubuntu-latest runner.
+      run: Rscript -e 'install.packages(c("RcppParallel", "stringfish", "qs2"), repos = "https://cran.r-project.org")'
+    - name: Generate render-script integration fixtures
+      # Populates bindings-r/tests/testthat/test-render-script-integration.R's
+      # PLUOT_RENDER_SCRIPT_FIXTURES_DIR for the check-r-package step below.
+      run: echo "PLUOT_RENDER_SCRIPT_FIXTURES_DIR=$(scripts/gen_render_script_fixtures.sh)" >> "$GITHUB_ENV"
     - uses: r-lib/actions/check-r-package@v2
       with:
         working-directory: bindings-r
         error-on: '"error"'
         build_args: 'c("--no-build-vignettes")'
         args: 'c("--no-vignettes", "--no-build-vignettes", "--ignore-vignettes", "--no-manual")'
-
 
   py_and_wasm_unit_tests:
     # We use a macOS runner for tests that rely on the GPU.
@@ -130,7 +137,7 @@ jobs:
     - name: Compile Rust code
       run: uv run maturin develop --features python
     - name: Run Python unit tests
-      run: uv run pytest
+      run: scripts/test_python_render_script_integration.sh
     # End Python-specific stuff
     # Start WASM-specific stuff
     - uses: nanasess/setup-chromedriver@master

@@ -1,5 +1,5 @@
 pub use crate::params::RenderParams;
-pub use crate::render::render;
+pub use crate::render::{render, stores_from_params};
 pub use crate::picking::{pick, PickingResult};
 pub use crate::viewport::ScreenCoord;
 pub use crate::zarr_types::ZarrPeekResult;
@@ -8,7 +8,7 @@ pub use crate::zarr_types::ZarrPeekResult;
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, pick, RenderParams, ScreenCoord, ZarrPeekResult};
+    use super::{render, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -236,7 +236,11 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
         let params: RenderParams =
             serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
 
-        let pixels = render(params).await;
+        // Construct the store objects (which dispatch to the JS-bound `zarr_*`
+        // functions) up front and pass them in, rather than registering them
+        // globally.
+        let stores = stores_from_params(&params);
+        let pixels = render(params, stores).await;
 
         // Return a Uint8Array of RGBA bytes
         js_sys::Uint8Array::from(pixels.as_slice())
@@ -247,8 +251,9 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
         let params: RenderParams =
             serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
 
+        let stores = stores_from_params(&params);
         let screen_coord = ScreenCoord { x: screen_x, y: screen_y };
-        let result = pick(params, screen_coord).await;
+        let result = pick(params, stores, screen_coord).await;
 
         serde_wasm_bindgen::to_value(&result).expect("Failed to serialize PickingResult")
     }
@@ -265,7 +270,7 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, pick, RenderParams, ScreenCoord, ZarrPeekResult};
+    use super::{render, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
@@ -434,10 +439,11 @@ pub mod python {
             RenderParams::default()
         };
 
+        let stores = stores_from_params(&params);
         let screen_coord = ScreenCoord { x: screen_x, y: screen_y };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = pick(params, screen_coord).await;
+            let result = pick(params, stores, screen_coord).await;
             Python::attach(|py| {
                 pythonize::pythonize(py, &result)
                     .map(|v| v.unbind())
@@ -456,8 +462,12 @@ pub mod python {
             RenderParams::default()
         };
 
+        // Construct the store objects (which dispatch to the Python-bound
+        // `zarr_*` functions) up front and pass them in, rather than registering
+        // them globally.
+        let stores = stores_from_params(&params);
         pyo3_async_runtimes::tokio::future_into_py(py, async {
-            let pixels = render(params).await;
+            let pixels = render(params, stores).await;
             Ok(pixels)
         })
     }

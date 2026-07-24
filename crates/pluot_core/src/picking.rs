@@ -7,6 +7,7 @@ use crate::render_types::GpuContext;
 use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
 use crate::render_traits::{MarginParams, PickableLayer, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
+use crate::zarr::StoreMap;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
@@ -25,7 +26,7 @@ pub struct PickingResult {
     pub layer_results: Vec<LayerPickingResult>,
 }
 
-pub async fn pick(params: RenderParams, screen_coord: ScreenCoord) -> PickingResult {
+pub async fn pick(params: RenderParams, stores: Option<StoreMap>, screen_coord: ScreenCoord) -> PickingResult {
     // TODO: the stuff up to layer.prepare is duplicated from render(). Refactor to avoid duplication.
     let width = params.width;
     let height = params.height;
@@ -47,7 +48,10 @@ pub async fn pick(params: RenderParams, screen_coord: ScreenCoord) -> PickingRes
         cache_enabled: params.cache_enabled,
         aspect_ratio_mode: params.aspect_ratio_mode,
         aspect_ratio_alignment_mode: params.aspect_ratio_alignment_mode,
-        store_name: Some(params.store_name.clone()),
+        stores: params.stores.clone(),
+        // Thread the concrete store objects down so layer constructors read from
+        // them directly instead of the global store registry.
+        store_objects: stores,
     };
 
     #[allow(irrefutable_let_patterns)]

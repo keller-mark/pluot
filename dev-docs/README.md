@@ -1,5 +1,31 @@
 # Developer docs
 
+## Decision trees
+
+Compute operations:
+- Has GPU?
+  - Yes: Perform compute operations on GPU via WGPU
+  - No: Perform compute operations on CPU via CPU fallbacks
+
+Picking operations:
+- Has GPU?
+  - Yes: Perform picking operations on GPU via WGPU. May require a bitmap-based render pass to obtain the picking buffer.
+  - No: Perform picking operations on CPU via CPU fallbacks
+
+Rendering operations:
+- Graphics output format?
+  - Vector: Check per-layer graphics output format
+    - Layer specifies bitmap rendering: Has GPU?
+      - Yes: Perform bitmap rendering operations on GPU via WGPU
+      - No: Perform bitmap rendering operations on CPU via CPU fallbacks
+    - Layer specifies vector rendering: Perform vector rendering operations on CPU
+  - Bitmap: Has GPU?
+    - Yes: Perform bitmap rendering operations on GPU via WGPU
+    - No: Perform bitmap rendering operations on CPU via CPU fallbacks
+
+
+
+
 ## Repository organization
 
 This repository is organized as a monorepo.

@@ -68,3 +68,8 @@ cache-keys = [
 [tool.pytest.ini_options]
 pythonpath = ["bindings-python"]
 asyncio_mode = "auto"
+testpaths = [
+    # We don't want pytest to execute the files
+    # generated via the render-to-code snapshot tests
+    "bindings-python/tests",
+]

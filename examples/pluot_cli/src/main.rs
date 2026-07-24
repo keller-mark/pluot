@@ -1,13 +1,96 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use image::{save_buffer_with_format, ColorType, ImageFormat};
-use pluot::{render, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams, ViewMode};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use pluot::{
+    render, render_to_script, render_with_stores, AspectRatioMode, GraphicsFormat, LayerParams,
+    RenderParams, ViewMode, ZarrStoreInfo, ZarrStoreParams, HttpStoreParams, LocalStoreParams,
+    MemoryStoreParams, StoreMap,
+};
+use zarrs_storage::storage_adapter::async_to_sync::{
+    AsyncToSyncBlockOn, AsyncToSyncStorageAdapter,
+};
+use zarrs_storage::storage_adapter::sync_to_async::{
+    SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter
+};
+use zarrs_storage::AsyncReadableStorageTraits;
 use resvg::usvg;
 use tiny_skia;
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
+
+/// Runs blocking `zarrs_filesystem`/`zarrs_http` store calls on Tokio's
+/// blocking thread pool, so they can back the `async` store trait that
+/// `render_with_stores` expects. Mirrors the example in
+/// [`SyncToAsyncSpawnBlocking`]'s docs.
+struct TokioSpawnBlocking;
+
+impl SyncToAsyncSpawnBlocking for TokioSpawnBlocking {
+    fn spawn_blocking<F, R>(&self, f: F) -> impl std::future::Future<Output = R> + Send
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        async move { tokio::task::spawn_blocking(f).await.unwrap() }
+    }
+}
+
+struct TokioBlockOn(tokio::runtime::Runtime);
+
+impl AsyncToSyncBlockOn for TokioBlockOn {
+    fn block_on<F: core::future::Future>(&self, future: F) -> F::Output {
+        self.0.block_on(future)
+    }
+}
+
+/// Construct the real Zarr store instances declared in `stores` (an `HttpStore`
+/// or `LocalStore` per entry), wrapping each synchronous `zarrs_http`/
+/// `zarrs_filesystem` store so it satisfies the async store trait that
+/// `render_with_stores` expects.
+///
+/// `MemoryStore` entries are rejected: unlike the JS/Python bindings, `pluot_cli`
+/// has no generic byte payload to construct one from JSON.
+fn build_store_map(stores: &HashMap<String, ZarrStoreInfo>) -> StoreMap {
+    let mut map: HashMap<String, Arc<dyn AsyncReadableStorageTraits>> =
+        HashMap::with_capacity(stores.len());
+    for (name, info) in stores {
+        let store: Arc<dyn AsyncReadableStorageTraits> = match &info.store_params {
+            ZarrStoreParams::HttpStore(HttpStoreParams { url, .. }) => {
+                let sync_store = zarrs_http::HTTPStore::new(url).unwrap_or_else(|e| {
+                    eprintln!("Error constructing HTTP store '{name}' at '{url}': {e}");
+                    process::exit(1);
+                });
+                Arc::new(SyncToAsyncStorageAdapter::new(
+                    Arc::new(sync_store),
+                    TokioSpawnBlocking,
+                ))
+            }
+            ZarrStoreParams::LocalStore(LocalStoreParams { path }) => {
+                let sync_store = zarrs_filesystem::FilesystemStore::new(path).unwrap_or_else(|e| {
+                    eprintln!("Error constructing local store '{name}' at '{path}': {e}");
+                    process::exit(1);
+                });
+                Arc::new(SyncToAsyncStorageAdapter::new(
+                    Arc::new(sync_store),
+                    TokioSpawnBlocking,
+                ))
+            }
+            ZarrStoreParams::MemoryStore(_) => {
+                eprintln!(
+                    "Error: store '{name}' is a MemoryStore, which pluot_cli cannot construct \
+                     from JSON input (no generic byte payload). Use HttpStore or LocalStore."
+                );
+                process::exit(1);
+            }
+        };
+        map.insert(name.clone(), store);
+    }
+    StoreMap(map)
+}
 
 /// Pluot CLI. Render plots to SVG or PNG.
 ///
@@ -110,6 +193,12 @@ pub enum JsonPlotParams {
 pub struct JsonRenderParams {
     #[serde(flatten)]
     pub plot_params: JsonPlotParams,
+
+    /// Zarr stores, keyed by store name, that layers can refer to via their
+    /// `store_name` field. `HttpStore` and `LocalStore` entries are backed by
+    /// real `zarrs_http`/`zarrs_filesystem` store instances (see
+    /// `build_store_map`); `MemoryStore` is not supported here.
+    pub stores: Option<HashMap<String, ZarrStoreInfo>>,
 }
 
 /// Return true when the output path ends with `.via_svg.png`.
@@ -134,6 +223,23 @@ fn infer_format(path: &PathBuf) -> GraphicsFormat {
             _ => GraphicsFormat::Raster,
         })
         .unwrap_or(GraphicsFormat::Raster)
+}
+
+/// If `--output` names a `.py` or `.R` file (case-insensitive), return the
+/// matching code-generation target instead of a real render format. Used to
+/// let `pluot_cli` double as a code-gen step for the Python/R
+/// render-to-script integration tests (see `scripts/gen_render_script_fixtures.sh`).
+fn script_format_for_output(path: &PathBuf) -> Option<GraphicsFormat> {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("py") => Some(GraphicsFormat::ScriptPython),
+        Some("r") => Some(GraphicsFormat::ScriptR),
+        _ => None,
+    }
 }
 
 /// Parse an aspect ratio mode string.
@@ -247,6 +353,8 @@ async fn main() {
         }
     };
 
+    let stores_input = render_params.stores.clone();
+
     let layers = match render_params.plot_params {
         JsonPlotParams::LayeredPlot(layer_params) => layer_params.layers,
     };
@@ -263,7 +371,23 @@ async fn main() {
         aspect_ratio_mode,
         view_mode,
         plot_id: args.plot_id,
-        store_name: args.store_name,
+        stores: Some(stores_input.clone().unwrap_or_else(|| {
+            // No `stores` declared in the input JSON: declare a single backing
+            // store under the provided name. Zarr data loading has no generic
+            // source in this fallback, so a MemoryStore descriptor is used as
+            // a placeholder; layers reference it by name (or fall back to it
+            // as the only store).
+            HashMap::from([(
+                args.store_name.clone(),
+                ZarrStoreInfo {
+                    store_params: ZarrStoreParams::MemoryStore(MemoryStoreParams {
+                        message: "pluot_cli store (zarr loading unimplemented in plain-Rust mode)"
+                            .to_string(),
+                    }),
+                    store_extensions: None,
+                },
+            )])
+        })),
         margin_left: args.margin_left,
         margin_right: args.margin_right,
         margin_top: args.margin_top,
@@ -277,13 +401,65 @@ async fn main() {
         ..Default::default()
     };
 
+    // --- Code-generation shortcut ---
+    //
+    // `--output foo.py` / `foo.R` skip real rendering entirely and instead
+    // emit the equivalent Python/R source via `render_to_script`, for use as
+    // an integration-test fixture (see `scripts/gen_render_script_fixtures.sh`).
+    if let Some(script_format) = script_format_for_output(&args.output) {
+        let script_params = RenderParams {
+            format: GraphicsFormat::Vector,
+            // Passed through verbatim (`None` if the input JSON declared no
+            // stores) rather than the synthetic MemoryStore placeholder above,
+            // which is a `pluot_cli`-only bookkeeping detail that has no
+            // business leaking into generated source.
+            stores: stores_input.clone(),
+            ..params.clone()
+        };
+        let script = render_to_script(script_params, &script_format);
+        match fs::write(&args.output, &script) {
+            Ok(_) => {
+                eprintln!(
+                    "Wrote {script_format:?} script ({} bytes) to {}",
+                    script.len(),
+                    args.output.display()
+                );
+            }
+            Err(e) => {
+                eprintln!("Error writing script output: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
     let width = params.width;
     let height = params.height;
     let via_svg_png = is_via_svg_png(&args.output);
     let is_vector = params.format == GraphicsFormat::Vector;
 
-    // Render the plot.
-    let result = render(params).await;
+    // Render the plot. When the input JSON declares `stores`, construct real
+    // Zarr store instances for them and render via `render_with_stores`;
+    // otherwise fall back to plain `render` (the placeholder MemoryStore
+    // above is only used for `store_name` bookkeeping, never actually read).
+    let result = match &stores_input {
+        Some(stores) => {
+            // `build_store_map` constructs a `reqwest::blocking::Client` (via
+            // `zarrs_http::HTTPStore::new`), which spins up its own private
+            // Tokio runtime internally. Doing that directly on a worker thread
+            // of the outer `#[tokio::main]` runtime panics ("Cannot drop a
+            // runtime in a context where blocking is not allowed"), since that
+            // worker thread disallows blocking. Running it via `spawn_blocking`
+            // moves it onto Tokio's blocking thread pool, where blocking is
+            // permitted.
+            let stores = stores.clone();
+            let store_map = tokio::task::spawn_blocking(move || build_store_map(&stores))
+                .await
+                .unwrap();
+            render_with_stores(params, Some(store_map)).await
+        }
+        None => render(params).await,
+    };
 
     // Write the output.
     if via_svg_png {

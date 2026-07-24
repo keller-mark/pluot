@@ -9,10 +9,6 @@ publish = false
 name = "pluot_cli"
 path = "src/main.rs"
 
-[[bin]]
-name = "img_diff"
-path = "src/img_diff.rs"
-
 [dependencies]
 pluot = { path = "../../crates/pluot" }
 clap = { version = "4.5", features = ["derive"] }
@@ -23,3 +19,10 @@ image = { version = "0.25.9", default-features = false, features = ["bmp", "png"
 resvg = "0.46.0"
 tiny-skia = "0.11.4"
 kompari = { git = "https://github.com/linebender/kompari", rev = "63476ab" }
+
+# For constructing real Zarr store instances (HttpStore/LocalStore) from the
+# `stores` input, to pass to `render_with_stores` rather than relying on the
+# global store registry / bound `zarr_*` functions used by the JS/Python bindings.
+zarrs_storage = { version = "0.4", features = ["async"] }
+zarrs_filesystem = "0.3"
+zarrs_http = "0.3"

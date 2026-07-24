@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use pluot_core::{maybe_timeout, FutureExt, Duration, log};
 
 use pluot_core::wgpu;
-use pluot_core::zarr::AsyncZarritaStore;
-use pluot_core::cache::{get_or_init_store, use_memo_vec_f32};
+use pluot_core::cache::use_memo_vec_f32;
 use pluot_core::zarr::is_timed_out_zarrs_error;
+use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams};
+use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
@@ -54,7 +54,7 @@ impl Default for ZarrHistogramLayerParams {
 pub struct ZarrHistogramLayer {
     view_params: ViewParams,
     layer_params: ZarrHistogramLayerParams,
-    store: Arc<AsyncZarritaStore>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: String,
 
     // TODO: switch to `inner: Option<BarPlotLayer>`?
@@ -63,17 +63,9 @@ pub struct ZarrHistogramLayer {
 
 impl ZarrHistogramLayer {
     pub fn new(view_params: ViewParams, layer_params: ZarrHistogramLayerParams) -> Self {
-        let store_name = match &layer_params.store_name {
-            Some(layer_store_name) => layer_store_name.clone(),
-            None => {
-                match &view_params.store_name {
-                    Some(view_store_name) => view_store_name.clone(),
-                    None => panic!("store_name must be specified either in layer_params or view_params for Zarr-based layers."),
-                }
-            }
-        };
+        let store_name = resolve_store_name(&layer_params.store_name, &view_params);
 
-        let store = get_or_init_store(&store_name, view_params.wait_for_store_gets);
+        let store = view_params.get_store(&store_name);
         Self {
             view_params,
             layer_params,
