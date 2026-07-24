@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pluot_core::layers::curve_layer::{CurveLayer, CurveLayerParams, PathCommand};
+use pluot_core::composite_layers::curve_layer::{CurveLayer, CurveLayerParams, PathCommand};
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams};

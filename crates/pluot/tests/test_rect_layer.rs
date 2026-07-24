@@ -88,6 +88,76 @@ fn corner_rects_data_x_pixel_y() -> RectLayerParams {
     }
 }
 
+// Helper: 2 rects within a [0,1]x[0,1] normalized space. Uses the same
+// fractions as corner_rects_pixels() (0.0/0.4 and 0.5/1.0), so on a 100x100
+// canvas this renders identically to corner_rects_pixels() while remaining
+// agnostic to the layer's actual pixel dimensions (unlike Pixels mode, the
+// same params render the same *proportions* on any canvas size).
+fn corner_rects_normalized() -> RectLayerParams {
+    RectLayerParams {
+        layer_id: "my_rect_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
+        stroke_width_unit_mode: UnitsMode::Pixels,
+        model_matrix: None,
+        position_x0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
+        position_y0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
+        position_x1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
+        position_y1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..Default::default()
+    }
+}
+
+// Helper: 2 rects. x in [0,1] data space, y in [0,1] normalized space
+fn corner_rects_data_x_normalized_y() -> RectLayerParams {
+    RectLayerParams {
+        layer_id: "my_rect_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
+        stroke_width_unit_mode: UnitsMode::Pixels,
+        model_matrix: None,
+        position_x0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
+        position_y0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
+        position_x1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
+        position_y1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..Default::default()
+    }
+}
+
+// Helper: 2 rects. x in [0,1] normalized space, y in [0,1] data space
+fn corner_rects_normalized_x_data_y() -> RectLayerParams {
+    RectLayerParams {
+        layer_id: "my_rect_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        stroke_width: Some(SizeMode::UniformSize(2.0)),
+        stroke_width_unit_mode: UnitsMode::Pixels,
+        model_matrix: None,
+        position_x0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
+        position_y0: NumericData::Float32(Arc::new(vec![0.0, 0.5])),
+        position_x1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
+        position_y1: NumericData::Float32(Arc::new(vec![0.4, 1.0])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..Default::default()
+    }
+}
+
 // Helper: 2 rects. x in 100px pixel space, y in [0,1] data space
 fn corner_rects_pixel_x_data_y() -> RectLayerParams {
     RectLayerParams {
@@ -170,6 +240,21 @@ async fn test_rect_layer_square_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_pixel_units_no_margins").await;
+}
+
+// Normalized units: on a 100x100 canvas this renders identically to the Pixels
+// test above, since corner_rects_normalized() uses the same fractions (0.0/0.4,
+// 0.5/1.0) that corner_rects_pixels() uses as absolute pixel values out of 100.
+#[tokio::test]
+async fn test_rect_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_rects_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]
@@ -289,6 +374,22 @@ async fn test_rect_layer_wide_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_rect_layer_wide_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a wide canvas: unlike the Pixels test above (which needs
+// its own position overrides rescaled to the 200px width), corner_rects_normalized()
+// is reused completely unchanged from the square-canvas test, since its 0-1
+// fractions are agnostic to the layer's actual pixel dimensions.
+#[tokio::test]
+async fn test_rect_layer_wide_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(corner_rects_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_wide_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_rect_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -381,6 +482,20 @@ async fn test_rect_layer_tall_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_rect_layer_tall_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a tall canvas: again reusing corner_rects_normalized()
+// unchanged, demonstrating pixel-dimension independence.
+#[tokio::test]
+async fn test_rect_layer_tall_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_rects_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_tall_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_rect_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -441,6 +556,30 @@ async fn test_rect_layer_square_contain_pixel_x_data_y_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_pixel_x_data_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_rect_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_rects_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_rect_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_rects_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_normalized_x_data_y_no_margins").await;
 }
 
 // model_matrix
@@ -506,6 +645,29 @@ async fn test_rect_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// Scale 0.5 in normalized mode: like pixel mode, model_matrix operates in
+// normalized [0,1] space, so this should render identically to the pixel-mode
+// model-matrix-scale test above (on a 100x100 canvas, where they coincide).
+#[tokio::test]
+async fn test_rect_layer_square_contain_normalized_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_rects_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_normalized_units_model_matrix_scale").await;
 }
 
 // ── Fill color modes ──────────────────────────────────────────────────────────
@@ -662,4 +824,46 @@ async fn test_rect_layer_square_contain_data_units_instanced_fill_opacity() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_data_units_instanced_fill_opacity").await;
+}
+
+// ── stroke_width_unit_mode: Normalized ────────────────────────────────────────
+//
+// Normalized stroke width is a fraction (0 to 1) of the layer height,
+// independent of the camera. 0.02 * 100px == 2px, matching the 2px border
+// used by corner_rects_normalized()'s default (Pixels) stroke width above.
+#[tokio::test]
+async fn test_rect_layer_square_contain_normalized_units_stroke_width_normalized_mode() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            ..corner_rects_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_normalized_units_stroke_width_normalized_mode").await;
+}
+
+// Same normalized stroke width (0.02) on a taller (100x200) canvas: since it is
+// height-relative, the border renders at 0.02 * 200px == 4px, twice as thick as
+// the square-canvas test above, demonstrating the height-relative scaling.
+#[tokio::test]
+async fn test_rect_layer_tall_contain_normalized_units_stroke_width_normalized_mode() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            ..corner_rects_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_tall_contain_normalized_units_stroke_width_normalized_mode").await;
 }

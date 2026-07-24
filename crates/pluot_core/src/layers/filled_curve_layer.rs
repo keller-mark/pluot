@@ -22,10 +22,10 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
-use super::curve_and_polygon_utils::{
+use crate::curve_and_polygon_utils::{
     commands_to_subpaths, compute_fill_vertices, flatten_subpath, resolve_margins, PathCommand,
 };
-use super::picking_geometry::{point_in_polygon, unapply_model_matrix};
+use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

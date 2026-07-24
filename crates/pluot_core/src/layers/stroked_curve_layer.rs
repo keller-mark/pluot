@@ -27,8 +27,8 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
-use super::curve_and_polygon_utils::{commands_to_subpaths, flatten_subpath, resolve_margins, PathCommand};
-use super::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
+use crate::curve_and_polygon_utils::{commands_to_subpaths, flatten_subpath, resolve_margins, PathCommand};
+use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 
 // Must match VERTS_PER_INSTANCE_F = 38 in stroked_curve_layer.wgsl.
 // With JOIN_RESOLUTION=8: (8*2 + 3) * 2 = 38.

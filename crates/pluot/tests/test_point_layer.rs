@@ -92,6 +92,54 @@ fn corner_points_pixel_x_data_y() -> PointLayerParams {
     }
 }
 
+// Helper: 4 points at the corners of a [0,1]x[0,1] normalized space. Uses the
+// same fractions as corner_points_pixels() (divided by 100), so on a 100x100
+// canvas this renders identically to corner_points_pixels() while remaining
+// agnostic to the layer's actual pixel dimensions (unlike Pixels mode, the
+// same params render the same *proportions* on any canvas size).
+fn corner_points_normalized() -> PointLayerParams {
+    PointLayerParams {
+        layer_id: "my_point_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        point_radius: Some(SizeMode::UniformSize(10.0)),
+        point_radius_unit_mode_x: UnitsMode::Pixels,
+        point_radius_unit_mode_y: UnitsMode::Pixels,
+        point_shape_mode: PointShapeMode::Square,
+        model_matrix: None,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..Default::default()
+    }
+}
+
+// Helper: 4 points with x in [0,1] data space, y in [0,1] normalized space
+fn corner_points_data_x_normalized_y() -> PointLayerParams {
+    PointLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 0.5, 0.5, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
+        ..corner_points_data()
+    }
+}
+
+// Helper: 4 points with x in [0,1] normalized space, y in [0,1] data space
+fn corner_points_normalized_x_data_y() -> PointLayerParams {
+    PointLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.5, 0.5])),
+        ..corner_points_data()
+    }
+}
+
 fn layer_params(point_params: PointLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::PointLayer(point_params)]
 }

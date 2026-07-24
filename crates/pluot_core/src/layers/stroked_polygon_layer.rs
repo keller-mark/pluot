@@ -15,10 +15,10 @@ use std::sync::Arc;
 use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::numeric_data::NumericData;
-use super::curve_and_polygon_utils::{
+use crate::curve_and_polygon_utils::{
     polygon_rings_from_flat, polygon_segments_from_offsets, resolve_margins,
 };
-use super::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
+use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,

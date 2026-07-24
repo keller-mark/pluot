@@ -10,9 +10,9 @@ use pluot_core::two::svg::SvgContext;
 use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
-use pluot_core::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
-use pluot_core::plot_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
+use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]

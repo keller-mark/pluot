@@ -32,7 +32,7 @@ use crate::log;
 use crate::{zarr_get, zarr_get_status, FutureExt, Duration};
 use crate::zarr_types::ZarrPeekResult;
 
-use super::picking_geometry::unapply_model_matrix;
+use crate::picking_geometry::unapply_model_matrix;
 
 const FONT_BYTES: &[u8] = include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf").as_slice();
 

@@ -13,7 +13,7 @@ use pluot_core::render_traits::{
     DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
-use pluot_core::layers::multiscale_utils::{
+use pluot_core::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, pick_visible_tile, select_resolution_level,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
