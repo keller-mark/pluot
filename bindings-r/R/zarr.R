@@ -139,37 +139,42 @@ store_metadata_to_instance <- function(info) {
 
 # Build the top-level `stores` metadata map that RenderParams expects.
 #
-# Accepts any combination of:
-#   - `stores`, a named list mapping store names to either a pizzarr store
-#     instance or an already-derived `ZarrStoreInfo` metadata list; and/or
-#   - `store` (optionally named via `store_name`), a single pizzarr store
-#     instance or `ZarrStoreInfo` list; and/or
-#   - `store_name` alone, referencing a store previously registered via
-#     `pluot_register_store()`.
+# Mirrors the `stores` useMemo in the JS/React binding (Pluot.jsx): `store`
+# (optionally named via `store_name`) and `stores` (plural) are mutually
+# exclusive. `store` may be a URL string, a pizzarr store instance, or an
+# already-derived `ZarrStoreInfo` list; `stores` maps names to either a
+# pizzarr store instance or a `ZarrStoreInfo` list. There is no per-component
+# id to fall back on here (unlike the JS `plotId`), so an unnamed `store`
+# defaults to "default".
+#
 # Store instances are registered (so the bound functions can reach them) and
-# their metadata derived; `ZarrStoreInfo` lists pass through as-is.
+# their metadata derived; `ZarrStoreInfo` lists otherwise pass through as-is,
+# except for a singular `store` given as `ZarrStoreInfo`, which is also
+# reconstructed into a registered instance (matching the JS behavior) while
+# the given metadata is still what is returned.
 .pluot_build_stores <- function(stores = NULL, store = NULL, store_name = NULL) {
-  stores_meta <- list()
-
-  if (!is.null(stores)) {
-    for (nm in names(stores)) {
-      val <- stores[[nm]]
-      if (is.list(val) && !is.null(val[["store_type"]])) {
-        # Already-derived ZarrStoreInfo metadata.
-        stores_meta[[nm]] <- val
-      } else {
-        pluot_register_store(nm, val)
-        stores_meta[[nm]] <- store_instance_to_metadata(val)
-      }
-    }
+  if (!is.null(stores) && (!is.null(store) || !is.null(store_name))) {
+    stop("store/store_name (singular) are mutually exclusive with stores (plural).")
   }
+
+  stores_meta <- list()
 
   if (!is.null(store)) {
     name <- if (!is.null(store_name)) store_name else "default"
-    if (is.list(store) && !is.null(store[["store_type"]])) {
-      # Already-derived ZarrStoreInfo metadata; no live instance to register.
+
+    if (is.character(store) && length(store) == 1) {
+      # Assume `store` is a URL; construct an HttpStore.
+      instance <- pizzarr::HttpStore$new(store)
+      pluot_register_store(name, instance)
+      stores_meta[[name]] <- store_instance_to_metadata(instance)
+    } else if (is.list(store) && !is.null(store[["store_type"]])) {
+      # Already-derived ZarrStoreInfo metadata; reconstruct and register a
+      # usable instance, but pass the given metadata through as-is.
+      instance <- store_metadata_to_instance(store)
+      pluot_register_store(name, instance)
       stores_meta[[name]] <- store
     } else {
+      # Assume `store` is a pizzarr store instance.
       pluot_register_store(name, store)
       stores_meta[[name]] <- store_instance_to_metadata(store)
     }
@@ -185,9 +190,25 @@ store_metadata_to_instance <- function(info) {
     }
   }
 
+  if (!is.null(stores)) {
+    for (nm in names(stores)) {
+      val <- stores[[nm]]
+      if (is.list(val) && !is.null(val[["store_type"]])) {
+        # Already-derived ZarrStoreInfo metadata.
+        instance <- store_metadata_to_instance(val)
+        pluot_register_store(nm, instance)
+        stores_meta[[nm]] <- val
+      } else {
+        pluot_register_store(nm, val)
+        stores_meta[[nm]] <- store_instance_to_metadata(val)
+      }
+    }
+  }
+
   if (length(stores_meta) == 0) return(NULL)
   stores_meta
 }
+
 
 # Cache-key helpers (same scheme as Python zarr.py)
 .has_cache_key <- function(store_name, key) {
@@ -232,6 +253,11 @@ pluot_zarr_get_status <- function(store_name, key) {
     assign(cache_key, result, envir = .pluot_cache)
   }
   .peek_status(cache_key)
+}
+
+pluot_get_store <- function(store_name) {
+  store  <- get(store_name, envir = .pluot_stores, inherits = FALSE)
+  return(store)
 }
 
 pluot_zarr_get_range_from_offset_status <- function(store_name, key,

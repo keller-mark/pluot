@@ -146,6 +146,8 @@ export function Pluot(props) {
     if (storesProp) {
       for (const [name, value] of Object.entries(storesProp)) {
         if (isZarrStoreInfo(value)) {
+          const storeByInfo = storeMetadataToInstance(value);
+          setStoreByName(name, storeByInfo);
           result[name] = value;
         } else {
           setStoreByName(name, value);

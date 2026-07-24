@@ -116,6 +116,7 @@ display_svg(
       layer_type   = "ZarrBarPlotLayer",
       layer_params = list(
         layer_id        = "barplot_layer",
+        store_name = "my_store",
         bounds          = NULL,
         orientation     = "Vertical",
         identifier_key  = "/year",
@@ -132,7 +133,13 @@ display_svg(
   margin_top          = 10L,
   margin_right        = 10L,
   plot_id             = "wheat_barplot_svg",
-  store_name          = "wheat_store",
+  stores = list(
+    my_store = list(
+      store_type = "HttpStore",
+      store_params = list(url = "https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/wheat.zarr"),
+      store_extensions = NULL
+    )
+  ),
   wait_for_store_gets = TRUE,
   cache_enabled       = FALSE
 )
