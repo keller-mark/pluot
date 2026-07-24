@@ -56,11 +56,14 @@ display_raster(
         point_radius_unit_mode_x = "Pixels",
         point_radius_unit_mode_y = "Pixels",
         point_shape_mode         = "Circle",
-        point_radius             = 5.0,
+        point_radius          = list(size_mode = "UniformSize", size_params = 5.0),
         bounds                   = NULL,
         position_x               = list(dtype = "Float32", values = x_px),
         position_y               = list(dtype = "Float32", values = y_px),
-        labels_vec               = groups
+        fill_color            = list(color_mode = "Categorical", color_params = list(
+          codes = list(dtype = "Uint8", values = groups),
+          colormap = "Tableau10"
+        ))
       )
     ),
     list(
@@ -100,11 +103,14 @@ display_svg(
         point_radius_unit_mode_x = "Pixels",
         point_radius_unit_mode_y = "Pixels",
         point_shape_mode         = "Circle",
-        point_radius             = 5.0,
+        point_radius          = list(size_mode = "UniformSize", size_params = 5.0),
         bounds                   = NULL,
         position_x               = list(dtype = "Float32", values = x_px),
         position_y               = list(dtype = "Float32", values = y_px),
-        labels_vec               = groups
+        fill_color            = list(color_mode = "Categorical", color_params = list(
+          codes = list(dtype = "Uint8", values = groups),
+          colormap = "Tableau10"
+        ))
       )
     ),
     list(

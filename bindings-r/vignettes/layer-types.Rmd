@@ -51,11 +51,14 @@ display_raster(
         point_radius_unit_mode_x = "Pixels",
         point_radius_unit_mode_y = "Pixels",
         point_shape_mode         = "Circle",
-        point_radius             = 18.0,
         bounds                   = NULL,
-        position_x               = list(dtype = "Float32", values = c(50, 100, 150, 50, 150)),
-        position_y               = list(dtype = "Float32", values = c(50,  50,  50, 150, 150)),
-        labels_vec               = c(0L, 1L, 2L, 3L, 4L)
+        point_radius          = list(size_mode = "UniformSize", size_params = 18.0),
+        position_x            = list(dtype = "Float32", values = c(50, 100, 150, 50, 150)),
+        position_y            = list(dtype = "Float32", values = c(50,  50,  50, 150, 150)),
+        fill_color            = list(color_mode = "Categorical", color_params = list(
+          codes = list(dtype = "Uint8", values = c(0L, 1L, 2L, 3L, 4L)),
+          colormap = "Tableau10"
+        ))
       )
     )
   ),
@@ -84,11 +87,14 @@ display_raster(
         point_radius_unit_mode_x = "Pixels",
         point_radius_unit_mode_y = "Pixels",
         point_shape_mode         = "Circle",
-        point_radius             = 8.0,
+        point_radius          = list(size_mode = "UniformSize", size_params = 8.0),
         bounds                   = NULL,
-        position_x               = list(dtype = "Float32", values = c(100, 160, 220, 280, 340)),
-        position_y               = list(dtype = "Float32", values = c(200, 140,  80, 200, 120)),
-        labels_vec               = c(0L, 1L, 2L, 3L, 4L)
+        position_x            = list(dtype = "Float32", values = c(100, 160, 220, 280, 340)),
+        position_y            = list(dtype = "Float32", values = c(200, 140,  80, 200, 120)),
+        fill_color            = list(color_mode = "Categorical", color_params = list(
+          codes = list(dtype = "Uint8", values = c(0L, 1L, 2L, 3L, 4L)),
+          colormap = "Tableau10"
+        ))
       )
     ),
     list(
@@ -133,11 +139,14 @@ display_svg(
         point_radius_unit_mode_x = "Pixels",
         point_radius_unit_mode_y = "Pixels",
         point_shape_mode         = "Circle",
-        point_radius             = 8.0,
+        point_radius          = list(size_mode = "UniformSize", size_params = 8.0),
         bounds                   = NULL,
-        position_x               = list(dtype = "Float32", values = c(100, 160, 220, 280, 340)),
-        position_y               = list(dtype = "Float32", values = c(180, 130,  80, 200, 110)),
-        labels_vec               = c(0L, 1L, 2L, 3L, 4L)
+        position_x            = list(dtype = "Float32", values = c(100, 160, 220, 280, 340)),
+        position_y            = list(dtype = "Float32", values = c(180, 130,  80, 200, 110)),
+        fill_color            = list(color_mode = "Categorical", color_params = list(
+          codes = list(dtype = "Uint8", values = c(0L, 1L, 2L, 3L, 4L)),
+          colormap = "Tableau10"
+        ))
       )
     ),
     list(
@@ -229,11 +238,14 @@ display_svg(
         point_radius_unit_mode_x = "Pixels",
         point_radius_unit_mode_y = "Pixels",
         point_shape_mode         = "Circle",
-        point_radius             = 4.0,
+        point_radius          = list(size_mode = "UniformSize", size_params = 4.0),
         bounds                   = NULL,
-        position_x               = list(dtype = "Float32", values = xs),
-        position_y               = list(dtype = "Float32", values = ys),
-        labels_vec               = as.integer(rep_len(0L:4L, n))
+        position_x            = list(dtype = "Float32", values = xs),
+        position_y            = list(dtype = "Float32", values = ys),
+        fill_color            = list(color_mode = "Categorical", color_params = list(
+          codes = list(dtype = "Uint8", values = as.integer(rep_len(0L:4L, n))),
+          colormap = "Tableau10"
+        ))
       )
     ),
     list(

@@ -89,6 +89,10 @@ jobs:
         extra-packages: any::rcmdcheck
         needs: check
         working-directory: bindings-r
+    - name: Reinstall RcppParallel, stringfish, and qs2
+      # The pak-installed binaries of stringfish/qs2 (via RcppParallel's bundled TBB) are
+      # sometimes built with a TBB ABI incompatible with the ubuntu-latest runner.
+      run: Rscript -e 'install.packages(c("RcppParallel", "stringfish", "qs2"), repos = "https://cran.r-project.org")'
     - name: Generate render-script integration fixtures
       # Populates bindings-r/tests/testthat/test-render-script-integration.R's
       # PLUOT_RENDER_SCRIPT_FIXTURES_DIR for the check-r-package step below.
