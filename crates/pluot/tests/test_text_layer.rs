@@ -109,6 +109,56 @@ fn corner_text_pixel_x_data_y() -> TextLayerParams {
     }
 }
 
+// Helper: 4 text labels within a [0,1]x[0,1] normalized space. Uses the same
+// fractions as corner_text_pixels() (0.0/100.0 divided down to 0.0/1.0), so on
+// a 100x100 canvas this renders identically to corner_text_pixels() while
+// remaining agnostic to the layer's actual pixel dimensions (unlike Pixels
+// mode, the same params render the same *proportions* on any canvas size).
+fn corner_text_normalized() -> TextLayerParams {
+    TextLayerParams {
+        layer_id: "my_text_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        text_size: 12.0,
+        text_size_unit_mode: UnitsMode::Pixels,
+        text_align_mode: TextAlignMode::Middle,
+        text_baseline_mode: TextBaselineMode::Middle,
+        model_matrix: None,
+        text_rotation: None,
+        font_family: None,
+        font_weight: FontWeight::Normal,
+        font_style: FontStyle::Normal,
+        fill_color: None,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
+        text_vec: Arc::new(vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ]),
+    }
+}
+
+// Helper: text labels with x in [0,1] data space, y in [0,1] normalized space
+fn corner_text_data_x_normalized_y() -> TextLayerParams {
+    TextLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        ..corner_text_data()
+    }
+}
+
+// Helper: text labels with x in [0,1] normalized space, y in [0,1] data space
+fn corner_text_normalized_x_data_y() -> TextLayerParams {
+    TextLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        ..corner_text_data()
+    }
+}
+
 fn layer_params(text_params: TextLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::TextLayer(text_params)]
 }
@@ -169,6 +219,21 @@ async fn test_text_layer_square_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_units_no_margins").await;
+}
+
+// Normalized units: on a 100x100 canvas this renders identically to the Pixels
+// test above, since corner_text_normalized() uses the same fractions (0.0/1.0)
+// that corner_text_pixels() uses as absolute pixel values out of 100.
+#[tokio::test]
+async fn test_text_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_text_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]
@@ -334,6 +399,22 @@ async fn test_text_layer_wide_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_text_layer_wide_contain_pixel_units_no_margins").await;
+}
+
+// Normalized units on a wide canvas: unlike the Pixels test above (which needs
+// its own position overrides rescaled to the 200px width), corner_text_normalized()
+// is reused completely unchanged from the square-canvas test, since its 0-1
+// fractions are agnostic to the layer's actual pixel dimensions.
+#[tokio::test]
+async fn test_text_layer_wide_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(corner_text_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_wide_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]

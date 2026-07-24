@@ -202,6 +202,21 @@ async fn test_point_layer_square_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units: on a 100x100 canvas this renders identically to the Pixels
+// test above, since corner_points_normalized() uses the same fractions (0.0/1.0)
+// that corner_points_pixels() uses as absolute pixel values out of 100.
+#[tokio::test]
+async fn test_point_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_point_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {

@@ -90,6 +90,52 @@ fn wave_curve_pixel_x_data_y() -> CurveLayerParams {
     }
 }
 
+// Helper: the same wave in a [0,1]x[0,1] normalized space. Uses the same
+// fractions as wave_curve_pixels() (divided by 100), so on a 100x100 canvas
+// this renders identically to wave_curve_pixels() while remaining agnostic to
+// the layer's actual pixel dimensions (unlike Pixels mode, the same params
+// render the same *proportions* on any canvas size).
+fn wave_curve_normalized() -> CurveLayerParams {
+    CurveLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        commands: Arc::new(vec![
+            PathCommand::MoveTo { x: 0.1, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.3, y1: 0.9, x2: 0.4, y2: 0.9, x: 0.5, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
+        ]),
+        ..wave_curve_data()
+    }
+}
+
+// Helper: wave with x in [0,1] data space, y in [0,1] normalized space.
+fn wave_curve_data_x_normalized_y() -> CurveLayerParams {
+    CurveLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        commands: Arc::new(vec![
+            PathCommand::MoveTo { x: 0.1, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.3, y1: 0.9, x2: 0.4, y2: 0.9, x: 0.5, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
+        ]),
+        ..wave_curve_data()
+    }
+}
+
+// Helper: wave with x in [0,1] normalized space, y in [0,1] data space.
+fn wave_curve_normalized_x_data_y() -> CurveLayerParams {
+    CurveLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        commands: Arc::new(vec![
+            PathCommand::MoveTo { x: 0.1, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.3, y1: 0.9, x2: 0.4, y2: 0.9, x: 0.5, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
+        ]),
+        ..wave_curve_data()
+    }
+}
+
 // Helper: a closed shape exercising line, quadratic Bezier, elliptical arc, and
 // close commands, in 1x1 data space.
 fn closed_curve_data() -> CurveLayerParams {
