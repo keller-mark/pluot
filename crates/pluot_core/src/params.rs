@@ -36,6 +36,8 @@ pub enum GraphicsFormat {
     // TODO: add AccessKit as a GraphicsFormat?
 
     // When "rendering to a script", specify the output format.
+    // TODO: add a `version` parameter to RenderParams, to facilitate forwards/backwards compatibility.
+    // TODO: add better comments to script outputs, so that it is clear how to run them.
     ExpressionRust,
     ScriptRust,
     ExpressionPython,
