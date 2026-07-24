@@ -4,10 +4,12 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
 use super::stroked_curve_layer::{StrokedCurveLayer, StrokedCurveLayerParams};
@@ -77,10 +79,10 @@ pub struct CurveLayer {
 impl CurveLayer {
     pub fn new(view_params: ViewParams, layer_params: CurveLayerParams) -> Self {
         if layer_params.stroke_width_unit_mode == UnitsMode::Data
-            && (layer_params.data_unit_mode_x == UnitsMode::Pixels
-                || layer_params.data_unit_mode_y == UnitsMode::Pixels)
+            && (layer_params.data_unit_mode_x != UnitsMode::Data
+                || layer_params.data_unit_mode_y != UnitsMode::Data)
         {
-            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
         }
 
         let stroke_sublayer = if layer_params.stroked {
@@ -174,4 +176,22 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for CurveLayer {}
+impl PickableLayer for CurveLayer {
+    // Delegate to the sub-layers, which own the actual curve geometry. The
+    // fill (an area) takes priority over the stroke (a thin outline band,
+    // always "hit" by the sub-layer's nearest-segment search), mirroring
+    // fill-then-stroke draw order.
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        if let Some(fill) = &self.fill_sublayer {
+            if let Some(result) = fill.pick(screen_coord, data_coord) {
+                return Some(result);
+            }
+        }
+        if let Some(stroke) = &self.stroke_sublayer {
+            if let Some(result) = stroke.pick(screen_coord, data_coord) {
+                return Some(result);
+            }
+        }
+        None
+    }
+}

@@ -104,8 +104,8 @@ impl PreparedLayer for TriangulatedLayer {
 struct TriangulatedLayerUniforms {
     layer_size: Vec2,
     camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units, 2 = normalized
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
@@ -144,8 +144,8 @@ impl DrawToRasterGpu for TriangulatedLayer {
         let layer_w = view_params.width as f32 - (margin_left + margin_right) as f32;
         let layer_h = view_params.height as f32 - (margin_top + margin_bottom) as f32;
 
-        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
-        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1, UnitsMode::Normalized => 2 };
+        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1, UnitsMode::Normalized => 2 };
         let aspect_ratio_mode = match view_params.aspect_ratio_mode { AspectRatioMode::Ignore => 0, AspectRatioMode::Contain => 1, AspectRatioMode::Cover => 2 };
         let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode { AspectRatioAlignmentMode::Center => 0, AspectRatioAlignmentMode::Start => 1, AspectRatioAlignmentMode::End => 2 };
         let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([

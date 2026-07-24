@@ -13,6 +13,7 @@ use fontdue::{Font, FontSettings};
 
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::numeric_data::NumericData;
+use crate::picking::LayerPickingResult;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
@@ -26,9 +27,12 @@ use crate::two::shapes::{
 };
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::get_point_position;
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::log;
 use crate::{zarr_get, zarr_get_status, FutureExt, Duration};
 use crate::zarr_types::ZarrPeekResult;
+
+use super::picking_geometry::unapply_model_matrix;
 
 const FONT_BYTES: &[u8] = include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf").as_slice();
 
@@ -473,9 +477,10 @@ impl TextLayer {
         view_params: ViewParams,
         layer_params: TextLayerParams,
     ) -> Self {
-        // Error if point_radius_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
-            panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        // Error if text_size_unit_mode is "data" when data_unit_mode is "pixels" or "normalized"
+        // (both of which are camera-independent, so there is no data-to-pixel scale to apply).
+        if layer_params.text_size_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x != UnitsMode::Data || layer_params.data_unit_mode_y != UnitsMode::Data) {
+            panic!("text_size_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
         }
         // Validate the lengths of things. `text_vec` is the authoritative
         // per-element count (see `base_draw_text_layer_svg`, which indexes
@@ -648,10 +653,10 @@ impl PreparedLayer for TextLayer {
 struct TextLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
-    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units, 2 = normalized
     text_size: f32,
-    text_size_unit_mode: u32, // 0 = pixels, 1 = data units
+    text_size_unit_mode: u32, // 0 = pixels, 1 = data units, 2 = normalized
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
@@ -793,16 +798,19 @@ pub async fn base_draw_text_layer(
         data_unit_mode_x: match layer_params.data_unit_mode_x {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
+            UnitsMode::Normalized => 2,
         },
         data_unit_mode_y: match layer_params.data_unit_mode_y {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
+            UnitsMode::Normalized => 2,
         },
         text_size: layer_params.text_size,
         text_size_unit_mode: match layer_params.text_size_unit_mode {
             UnitsMode::Pixels => 0,
             UnitsMode::Data => 1,
-        }, // 0 = pixels, 1 = data units
+            UnitsMode::Normalized => 2,
+        }, // 0 = pixels, 1 = data units, 2 = normalized
         aspect_ratio_mode: match view_params.aspect_ratio_mode {
             AspectRatioMode::Ignore => 0,
             AspectRatioMode::Contain => 1,
@@ -1224,4 +1232,54 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for TextLayer {}
+impl PickableLayer for TextLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places text anchors relative to
+        // the layer bounds rather than in data space, so a data-space
+        // nearest-neighbor test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        let n = self.layer_params.position_x.len();
+        if n == 0 {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        // Naive picking: iterate over every text anchor, keeping the one
+        // closest to the picked point (no distance threshold, and ignoring
+        // per-glyph text metrics), mirroring PointLayer's nearest-neighbor
+        // approach.
+        let mut min_dist_sq = f32::MAX;
+        let mut closest_idx = 0usize;
+        for i in 0..n {
+            let dx = self.layer_params.position_x.get_f32(i) - cx;
+            let dy = self.layer_params.position_y.get_f32(i) - cy;
+            let dist_sq = dx * dx + dy * dy;
+            if dist_sq < min_dist_sq {
+                min_dist_sq = dist_sq;
+                closest_idx = i;
+            }
+        }
+
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), closest_idx.to_string());
+        info.insert("text".to_string(), self.layer_params.text_vec[closest_idx].clone());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

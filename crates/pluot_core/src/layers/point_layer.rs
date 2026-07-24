@@ -169,11 +169,11 @@ impl PreparedLayer for PointLayer {
 struct PointLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
-    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units, 2 = normalized
     point_radius: f32,  // radius of each point
-    point_radius_unit_mode_x: u32, // 0 = pixels, 1 = data units
-    point_radius_unit_mode_y: u32, // 0 = pixels, 1 = data units
+    point_radius_unit_mode_x: u32, // 0 = pixels, 1 = data units, 2 = normalized
+    point_radius_unit_mode_y: u32, // 0 = pixels, 1 = data units, 2 = normalized
     point_shape_mode: u32, // 0 = square, 1 = circle
     fill_opacity: f32,
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
@@ -184,7 +184,7 @@ struct PointLayerUniforms {
     fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
     stroke_width: f32,            // border width (UniformSize fallback)
-    stroke_width_unit_mode: u32,  // 0 = pixels, 1 = data units
+    stroke_width_unit_mode: u32,  // 0 = pixels, 1 = data units, 2 = normalized
     stroke_color_mode: u32,       // see ColorMode::shader_mode()
     stroke_color: Vec4,           // rgba color used by the UniformRgb mode
     stroke_color_reverse: u32,    // 1 = reverse the quantitative colormap
@@ -292,19 +292,23 @@ impl DrawToRasterGpu for PointLayer {
             data_unit_mode_x: match layer_params.data_unit_mode_x {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             data_unit_mode_y: match layer_params.data_unit_mode_y {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             point_radius: size.static_value,
             point_radius_unit_mode_x: match layer_params.point_radius_unit_mode_x {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             point_radius_unit_mode_y: match layer_params.point_radius_unit_mode_y {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             point_shape_mode: match layer_params.point_shape_mode {
                 PointShapeMode::Square => 0,
@@ -336,6 +340,7 @@ impl DrawToRasterGpu for PointLayer {
             stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             stroke_color_mode: stroke_color.mode,
             stroke_color: Vec4::from_array(stroke_color.static_color),
@@ -762,6 +767,11 @@ impl DrawToSvg for PointLayer {
                 );
                 // Note: sx and sy will currently always be the same unless ellipses are supported.
                 (sx.abs() + sy.abs()) * 0.5
+            } else if layer_params.point_radius_unit_mode_x == UnitsMode::Normalized {
+                // Normalized mode: radius_value is a fraction (0 to 1) of the layer
+                // size, independent of the camera. Height-relative, mirroring the
+                // GPU shader's point_radius_px_normalized convention.
+                radius_value * layer_h
             } else {
                 radius_value
             };
@@ -791,6 +801,11 @@ impl DrawToSvg for PointLayer {
                         Some(&model_matrix_raw),
                     );
                     (sx.abs() + sy.abs()) * 0.5
+                } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
+                    // Normalized mode: width_value is a fraction (0 to 1) of the
+                    // layer size, independent of the camera. Height-relative,
+                    // mirroring the GPU shader's stroke_width_px convention.
+                    width_value * layer_h
                 } else {
                     width_value
                 };

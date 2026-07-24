@@ -293,6 +293,9 @@ impl PickableLayer for BarPlotLayer {
                         let bandwidth = layer_w / n as f64;
                         bar_idx = (layer_x / bandwidth as f32).floor() as usize;
                     }
+                    UnitsMode::Normalized => {
+                        todo!("Not yet implemented");
+                    }
                 };
             }
             BarOrientation::Horizontal => {
@@ -304,6 +307,9 @@ impl PickableLayer for BarPlotLayer {
                     }
                     UnitsMode::Pixels => {
                         // Use screen_coord.y (layer_y) if Pixels.
+                        todo!("Not yet implemented");
+                    }
+                    UnitsMode::Normalized => {
                         todo!("Not yet implemented");
                     }
                 };

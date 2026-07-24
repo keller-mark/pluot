@@ -4,10 +4,14 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc};
 
+use crate::picking::LayerPickingResult;
 use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::viewport::{DataCoord, ScreenCoord};
+use super::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
@@ -87,9 +91,10 @@ impl LineLayer {
         view_params: ViewParams,
         layer_params: LineLayerParams,
     ) -> Self {
-        // Error if stroke_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
-            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        // Error if stroke_width_unit_mode is "data" when data_unit_mode is "pixels" or "normalized"
+        // (both of which are camera-independent, so there is no data-to-pixel scale to apply).
+        if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x != UnitsMode::Data || layer_params.data_unit_mode_y != UnitsMode::Data) {
+            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
         }
         // Validate the lengths of things.
         let n = layer_params.source_position_x.len();
@@ -142,10 +147,10 @@ impl PreparedLayer for LineLayer {
 struct LineLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
-    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units, 2 = normalized
     stroke_width: f32,  // width of each line
-    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units
+    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units, 2 = normalized
     stroke_opacity: f32, // opacity of each line
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
@@ -243,15 +248,18 @@ impl DrawToRasterGpu for LineLayer {
             data_unit_mode_x: match layer_params.data_unit_mode_x {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             data_unit_mode_y: match layer_params.data_unit_mode_y {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             stroke_width: width.static_value,
             stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             stroke_opacity: opacity.static_value,
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
@@ -672,7 +680,8 @@ impl DrawToSvg for LineLayer {
             // mode it is transformed through the same pipeline as positions
             // (with w=0, so translations cancel out), mirroring the GPU shader.
             // stroke_width is measured relative to the Y axis, so use the Y
-            // screen extent.
+            // screen extent. In normalized mode it is a fraction (0 to 1) of the
+            // layer size, also treated as height-relative.
             let stroke_width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
                 let (_sx, sy) = get_point_size(
                     width_value,
@@ -687,6 +696,8 @@ impl DrawToSvg for LineLayer {
                     Some(&model_matrix_raw),
                 );
                 sy.abs()
+            } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
+                width_value * layer_h
             } else {
                 width_value
             };
@@ -731,4 +742,58 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for LineLayer {}
+impl PickableLayer for LineLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places lines relative to the
+        // layer bounds rather than in data space, so a data-space distance
+        // test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        let n = self.layer_params.source_position_x.len();
+        if n == 0 {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        // Naive picking: iterate over every line segment, keeping the one
+        // closest to the picked point (no distance threshold), mirroring
+        // PointLayer's nearest-neighbor approach.
+        let mut min_dist_sq = f32::MAX;
+        let mut closest_idx = 0usize;
+        for i in 0..n {
+            let ax = self.layer_params.source_position_x.get_f32(i);
+            let ay = self.layer_params.source_position_y.get_f32(i);
+            let bx = self.layer_params.target_position_x.get_f32(i);
+            let by = self.layer_params.target_position_y.get_f32(i);
+            let dist_sq = dist_sq_to_segment(cx, cy, ax, ay, bx, by);
+            if dist_sq < min_dist_sq {
+                min_dist_sq = dist_sq;
+                closest_idx = i;
+            }
+        }
+
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), closest_idx.to_string());
+        info.insert("source_x".to_string(), self.layer_params.source_position_x.format_element(closest_idx));
+        info.insert("source_y".to_string(), self.layer_params.source_position_y.format_element(closest_idx));
+        info.insert("target_x".to_string(), self.layer_params.target_position_x.format_element(closest_idx));
+        info.insert("target_y".to_string(), self.layer_params.target_position_y.format_element(closest_idx));
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

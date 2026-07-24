@@ -14,10 +14,10 @@
 struct RectLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
-    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
+    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
+    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     stroke_width: f32,
-    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -169,6 +169,10 @@ fn vs_main(
     // and StrokedPolygonLayer. Data stroke width units are only supported when the
     // positions also use data units.
     //
+    // Normalized mode (stroke_width_unit_mode == 2): stroke_width is a fraction
+    // (0 to 1) of the layer size, independent of the camera. Like data mode, it
+    // is treated as height-relative.
+    //
     // We handle stroke-width the same way an SVG <rect> element does: for a
     // stroke-width of 10px, 5px of the stroke extends outward from the path and
     // 5px inward, so a 100px-wide rect renders 110px wide overall.
@@ -177,6 +181,8 @@ fn vs_main(
         let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
         let width_norm = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig;
         stroke_width_px = abs(width_norm.y) * layer_height_px;
+    } else if (u.stroke_width_unit_mode == 2u) {
+        stroke_width_px = stroke_width * layer_height_px;
     }
 
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
@@ -185,20 +191,22 @@ fn vs_main(
     var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var result_size_data = vec2<f32>(0.0, 0.0);
 
-    // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
-        // Both source and target points are in pixel coordinates.
-        // Convert them to normalized (0 to 1) coordinates within the layer.
+    // Handle data_unit_mode == "pixels" or "normalized" (we do not care about the
+    // camera or aspect_ratio_mode in either case; they are both camera-independent).
+    if(u.data_unit_mode_x != 1u || u.data_unit_mode_y != 1u) {
+        // Pixel-mode points are in pixel coordinates and are converted to normalized
+        // (0 to 1) coordinates within the layer by dividing by the layer size.
+        // Normalized-mode points are already in (0 to 1) coordinates, so are used as-is.
         let source_point_pos_px = source_point_pos_orig;
         let target_point_pos_px = target_point_pos_orig;
 
         let source_point_pos_norm = vec2<f32>(
-            source_point_pos_px.x / layer_width_px,
-            source_point_pos_px.y / layer_height_px
+            select(source_point_pos_px.x / layer_width_px, source_point_pos_px.x, u.data_unit_mode_x == 2u),
+            select(source_point_pos_px.y / layer_height_px, source_point_pos_px.y, u.data_unit_mode_y == 2u)
         );
         let target_point_pos_norm = vec2<f32>(
-            target_point_pos_px.x / layer_width_px,
-            target_point_pos_px.y / layer_height_px
+            select(target_point_pos_px.x / layer_width_px, target_point_pos_px.x, u.data_unit_mode_x == 2u),
+            select(target_point_pos_px.y / layer_height_px, target_point_pos_px.y, u.data_unit_mode_y == 2u)
         );
 
         // Compute the center point in normalized coordinates, to use as the origin for rotation and scaling.
@@ -224,13 +232,15 @@ fn vs_main(
         let point_pos_ndc = (NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0)).xy;
 
         // Original rect size in pixels (before stroke expansion), for the fragment shader.
-        let rect_w_px = abs(target_point_pos_px.x - source_point_pos_px.x);
-        let rect_h_px = abs(target_point_pos_px.y - source_point_pos_px.y);
+        // Computed from the normalized deltas (rather than the raw px values) so this is
+        // correct for both pixel mode (norm = px / layer_size) and normalized mode.
+        let rect_w_px = abs(target_point_pos_norm.x - source_point_pos_norm.x) * layer_width_px;
+        let rect_h_px = abs(target_point_pos_norm.y - source_point_pos_norm.y) * layer_height_px;
 
         result_position_px = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
         result_size_px = vec2f(rect_w_px, rect_h_px);
 
-        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+        if(u.data_unit_mode_x != 1u && u.data_unit_mode_y != 1u) {
             var out: VSOut;
             out.position = result_position_px;
             out.quad_pos = (corner + 1.0) * 0.5;
@@ -277,13 +287,13 @@ fn vs_main(
     result_position_data = vec4f(point_pos_ndc.x, point_pos_ndc.y, 0.0, 1.0);
     result_size_data = vec2f(rect_w_px, rect_h_px);
 
-    if(u.data_unit_mode_x == 0u) {
-        // Want to use pixel-based positioning, but only along X direction.
+    if(u.data_unit_mode_x != 1u) {
+        // Want to use pixel/normalized-based positioning, but only along X direction.
         result_position_data.x = result_position_px.x;
         result_size_data.x = result_size_px.x;
     }
-    if(u.data_unit_mode_y == 0u) {
-        // Want to use pixel-based positioning, but only along Y direction.
+    if(u.data_unit_mode_y != 1u) {
+        // Want to use pixel/normalized-based positioning, but only along Y direction.
         result_position_data.y = result_position_px.y;
         result_size_data.y = result_size_px.y;
     }

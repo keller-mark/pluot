@@ -62,8 +62,10 @@ pub enum AspectRatioAlignmentMode {
 pub enum UnitsMode {
     // 0: pixels (e.g., for fixed pixel-unit sizes).
     Pixels,
-    // 1: data units (e.g., for physical sizes).
+    // 1: data ("world") units (e.g., for physical sizes).
     Data,
+    // 2: normalized: similar to pixel-based but values are between 0 and 1, so they are agnostic to the pixel dimensions of the plot. Similar to Pixels UnitMode, does not depend on the camera state.
+    Normalized,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

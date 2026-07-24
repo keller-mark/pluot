@@ -47,10 +47,10 @@ fn extrude_line(
 struct LineLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units
-    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units
+    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
+    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     stroke_width: f32,
-    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     stroke_opacity: f32,
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
@@ -169,20 +169,22 @@ fn vs_main(
     var result_source_position_data = vec2<f32>(0.0, 0.0);
     var result_target_position_data = vec2<f32>(0.0, 0.0);
 
-    // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
-        // Both source and target points are in pixel coordinates.
-        // Convert them to normalized (0 to 1) coordinates within the layer.
+    // Handle data_unit_mode == "pixels" or "normalized" (we do not care about the
+    // camera or aspect_ratio_mode in either case; they are both camera-independent).
+    if(u.data_unit_mode_x != 1u || u.data_unit_mode_y != 1u) {
+        // Pixel-mode points are in pixel coordinates and are converted to normalized
+        // (0 to 1) coordinates within the layer by dividing by the layer size.
+        // Normalized-mode points are already in (0 to 1) coordinates, so are used as-is.
         let source_point_pos_px = source_point_pos_orig;
         let target_point_pos_px = target_point_pos_orig;
 
         let source_point_pos_norm = vec2<f32>(
-            source_point_pos_px.x / layer_width_px,
-            source_point_pos_px.y / layer_height_px
+            select(source_point_pos_px.x / layer_width_px, source_point_pos_px.x, u.data_unit_mode_x == 2u),
+            select(source_point_pos_px.y / layer_height_px, source_point_pos_px.y, u.data_unit_mode_y == 2u)
         );
         let target_point_pos_norm = vec2<f32>(
-            target_point_pos_px.x / layer_width_px,
-            target_point_pos_px.y / layer_height_px
+            select(target_point_pos_px.x / layer_width_px, target_point_pos_px.x, u.data_unit_mode_x == 2u),
+            select(target_point_pos_px.y / layer_height_px, target_point_pos_px.y, u.data_unit_mode_y == 2u)
         );
 
         // Convert to NDC for extrusion calculation
@@ -192,9 +194,12 @@ fn vs_main(
         result_source_position_px = source_pos_ndc;
         result_target_position_px = target_pos_ndc;
 
-        let line_width_ndc = stroke_width / layer_height_px * 2.0;
+        var line_width_ndc = stroke_width / layer_height_px * 2.0;
+        if (u.stroke_width_unit_mode == 2u) {
+            line_width_ndc = stroke_width * 2.0;
+        }
 
-        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+        if(u.data_unit_mode_x != 1u && u.data_unit_mode_y != 1u) {
             // Extrude the line to form a quad
             let point_pos_ndc = extrude_line(
                 result_source_position_px,
@@ -254,18 +259,22 @@ fn vs_main(
         let width_orig_data = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
         let width_norm_data = (NDC_TO_NORM_MAT * model_view_projection * NORM_TO_NDC_MAT) * width_orig_data;
         line_width_ndc = abs(width_norm_data.y) * 2.0;
+    } else if (u.stroke_width_unit_mode == 2u) {
+        // Normalized-mode width (stroke_width_unit_mode == 2): stroke_width is a
+        // fraction (0 to 1) of the layer height, independent of the camera.
+        line_width_ndc = stroke_width * 2.0;
     }
 
     result_source_position_data = source_pos_ndc;
     result_target_position_data = target_pos_ndc;
 
-    if(u.data_unit_mode_x == 0u) {
-        // Want to use pixel-based positioning, but only along X direction.
+    if(u.data_unit_mode_x != 1u) {
+        // Want to use pixel/normalized-based positioning, but only along X direction.
         result_source_position_data.x = result_source_position_px.x;
         result_target_position_data.x = result_target_position_px.x;
     }
-    if(u.data_unit_mode_y == 0u) {
-        // Want to use pixel-based positioning, but only along Y direction.
+    if(u.data_unit_mode_y != 1u) {
+        // Want to use pixel/normalized-based positioning, but only along Y direction.
         result_source_position_data.y = result_source_position_px.y;
         result_target_position_data.y = result_target_position_px.y;
     }

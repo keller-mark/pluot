@@ -3,6 +3,15 @@ use nalgebra_glm::{Vec2, Vec4, Mat4};
 
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode};
 
+// Pixels and Normalized units are both independent of the camera view and
+// aspect ratio mode (unlike Data units). They differ only in whether the
+// value must first be divided by the layer size to land in the (0, 1)
+// normalized space that the camera/aspect-ratio pipeline (and the model
+// matrix) operates in: Pixels values are in screen pixels, so they are
+// divided by the layer size; Normalized values are already in (0, 1) space.
+fn is_camera_independent_mode(mode: UnitsMode) -> bool {
+    matches!(mode, UnitsMode::Pixels | UnitsMode::Normalized)
+}
 
 pub fn get_scale_mat(x: f32, y: f32, z: f32) -> Mat4 {
   return Mat4::from_columns(&[
@@ -118,19 +127,19 @@ pub fn get_point_position(
 
 
     let mut pixel_output: (f32, f32) = (0.0, 0.0);
-    if data_unit_mode_x == UnitsMode::Pixels || data_unit_mode_y == UnitsMode::Pixels {
-        // Pixel units mode: model_matrix is applied in normalized (0,1) space.
+    if is_camera_independent_mode(data_unit_mode_x) || is_camera_independent_mode(data_unit_mode_y) {
+        // Pixel/Normalized units mode: model_matrix is applied in normalized (0,1) space.
         // Matches the shader logic:
-        //   point_pos_norm = vertex_pos_px / layer_size
+        //   point_pos_norm = vertex_pos_px / layer_size (Pixels) or vertex_pos (Normalized, already 0-1)
         //   point_pos_ndc = NORM_TO_NDC_MAT * model_matrix * vec4(point_pos_norm, 0, 1)
         let pos_norm = Vec4::new(
-            pos_x / layer_width_px,
-            pos_y / layer_height_px,
+            if data_unit_mode_x == UnitsMode::Normalized { pos_x } else { pos_x / layer_width_px },
+            if data_unit_mode_y == UnitsMode::Normalized { pos_y } else { pos_y / layer_height_px },
             0.0, 1.0
         );
         let pos_transformed = model_matrix * pos_norm;
         pixel_output = (pos_transformed.x * layer_width_px, pos_transformed.y * layer_height_px);
-        if data_unit_mode_x == UnitsMode::Pixels && data_unit_mode_y == UnitsMode::Pixels {
+        if is_camera_independent_mode(data_unit_mode_x) && is_camera_independent_mode(data_unit_mode_y) {
             return pixel_output;
         }
     }
@@ -196,8 +205,8 @@ pub fn get_point_position(
     );
     let point_pos_px = NORM_TO_PX_MAT * Vec4::new(point_pos_norm.x, point_pos_norm.y, 0.0, 1.0);
 
-    let output_x = if data_unit_mode_x == UnitsMode::Pixels { pixel_output.0 } else { point_pos_px.x };
-    let output_y = if data_unit_mode_y == UnitsMode::Pixels { pixel_output.1 } else { point_pos_px.y };
+    let output_x = if is_camera_independent_mode(data_unit_mode_x) { pixel_output.0 } else { point_pos_px.x };
+    let output_y = if is_camera_independent_mode(data_unit_mode_y) { pixel_output.1 } else { point_pos_px.y };
 
     // Don't flip the Y coordinate here, and instead delegate to the caller if flipping is required.
     return (output_x, output_y);
@@ -225,16 +234,16 @@ pub fn get_point_size(
         .unwrap_or(Mat4::identity());
 
     let mut pixel_output = (0.0_f32, 0.0_f32);
-    if data_unit_mode_x == UnitsMode::Pixels || data_unit_mode_y == UnitsMode::Pixels {
-        // Pixel mode: model_matrix applied in normalized space (w=0 for size).
+    if is_camera_independent_mode(data_unit_mode_x) || is_camera_independent_mode(data_unit_mode_y) {
+        // Pixel/Normalized mode: model_matrix applied in normalized space (w=0 for size).
         let size_norm = Vec4::new(
-            size_x / layer_width_px,
-            size_y / layer_height_px,
+            if data_unit_mode_x == UnitsMode::Normalized { size_x } else { size_x / layer_width_px },
+            if data_unit_mode_y == UnitsMode::Normalized { size_y } else { size_y / layer_height_px },
             0.0, 0.0
         );
         let size_transformed = model_matrix * size_norm;
         pixel_output = (size_transformed.x * layer_width_px, size_transformed.y * layer_height_px);
-        if data_unit_mode_x == UnitsMode::Pixels && data_unit_mode_y == UnitsMode::Pixels {
+        if is_camera_independent_mode(data_unit_mode_x) && is_camera_independent_mode(data_unit_mode_y) {
             return pixel_output;
         }
     }
@@ -265,8 +274,8 @@ pub fn get_point_size(
     );
     let size_px = NORM_TO_PX_MAT * Vec4::new(size_norm.x, size_norm.y, 0.0, 0.0);
 
-    let output_x = if data_unit_mode_x == UnitsMode::Pixels { pixel_output.0 } else { size_px.x };
-    let output_y = if data_unit_mode_y == UnitsMode::Pixels { pixel_output.1 } else { size_px.y };
+    let output_x = if is_camera_independent_mode(data_unit_mode_x) { pixel_output.0 } else { size_px.x };
+    let output_y = if is_camera_independent_mode(data_unit_mode_y) { pixel_output.1 } else { size_px.y };
 
     return (output_x, output_y);
 }

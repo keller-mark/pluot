@@ -98,6 +98,10 @@ pub struct BitmapLayerParams {
     // with the origin at the bottom left of the layer's bounds (i.e., margins).
     // If data_unit_mode = Data, then the image is positioned in data units,
     // with the origin at (0,0) in data space, and pixels extending positively in x and y directions.
+    // If data_unit_mode = Normalized, then the image is positioned in normalized (0 to 1) space
+    // relative to the layer's bounds (i.e., margins), with the origin at the bottom left, like
+    // Pixels mode; unlike Pixels mode, values are not divided by the layer size since they are
+    // already in (0, 1) space, so this mode is agnostic to the pixel dimensions of the plot.
 
     // The model_matrix can be used to apply additional affine transformations
     // to the physical dimensions of the image (XYZ),
@@ -242,8 +246,8 @@ struct ChannelUniforms {
 struct BitmapLayerUniforms {
     layer_size: Vec2, // (layer_width, layer_height) in pixels
     camera_view: Mat4,   // mat4x4<f32>,
-    data_unit_mode_x: u32, // 0 = pixels, 1 = data units
-    data_unit_mode_y: u32, // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32, // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32, // 0 = pixels, 1 = data units, 2 = normalized
     aspect_ratio_mode: u32, // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
 
@@ -426,10 +430,12 @@ impl DrawToRasterGpu for BitmapLayer {
             data_unit_mode_x: match layer_params.data_unit_mode_x {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             data_unit_mode_y: match layer_params.data_unit_mode_y {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
@@ -822,11 +828,11 @@ impl PickableLayer for BitmapLayer {
             return None;
         };
 
-        // Pixel-units positioning places the image relative to the layer
-        // bounds rather than in data space, so a data-space containment test
-        // does not apply.
-        if self.layer_params.data_unit_mode_x == UnitsMode::Pixels
-            || self.layer_params.data_unit_mode_y == UnitsMode::Pixels
+        // Pixel/normalized-units positioning places the image relative to the
+        // layer bounds rather than in data space, so a data-space containment
+        // test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
         {
             return None;
         }

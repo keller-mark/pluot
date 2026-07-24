@@ -5,6 +5,7 @@ pub mod curve_layer;
 pub mod stroked_curve_layer;
 pub mod filled_curve_layer;
 pub(crate) mod curve_and_polygon_utils;
+pub(crate) mod picking_geometry;
 pub mod polygon_layer;
 pub mod filled_polygon_layer;
 pub mod stroked_polygon_layer;

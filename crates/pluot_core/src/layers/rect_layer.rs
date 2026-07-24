@@ -4,13 +4,17 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc};
 
+use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
+use crate::viewport::{DataCoord, ScreenCoord};
+use super::picking_geometry::unapply_model_matrix;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{
     cpu_fill_opacity, cpu_stroke_opacity, cpu_stroke_width, prepare_fill_opacity_mode,
@@ -103,9 +107,10 @@ pub struct RectLayer {
 
 impl RectLayer {
     pub fn new(view_params: ViewParams, layer_params: RectLayerParams) -> Self {
-        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels".
-        if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x == UnitsMode::Pixels || layer_params.data_unit_mode_y == UnitsMode::Pixels) {
-            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels'");
+        // Error if line_width_unit_mode is "data" when data_unit_mode is "pixels" or "normalized"
+        // (both of which are camera-independent, so there is no data-to-pixel scale to apply).
+        if layer_params.stroke_width_unit_mode == UnitsMode::Data && (layer_params.data_unit_mode_x != UnitsMode::Data || layer_params.data_unit_mode_y != UnitsMode::Data) {
+            panic!("line_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
         }
         // Validate the lengths of things.
         let n = layer_params.position_x0.len();
@@ -164,10 +169,10 @@ impl PreparedLayer for RectLayer {
 struct RectLayerUniforms {
     layer_size: Vec2,                 // (layer_width, layer_height) in pixels
     camera_view: Mat4,                // mat4x4<f32>,
-    data_unit_mode_x: u32,            // 0 = pixels, 1 = data units
-    data_unit_mode_y: u32,            // 0 = pixels, 1 = data units
+    data_unit_mode_x: u32,            // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32,            // 0 = pixels, 1 = data units, 2 = normalized
     stroke_width: f32,                // border width (UniformSize fallback)
-    stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units
+    stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units, 2 = normalized
     aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
     aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4, // mat4x4<f32> for affine transformations of the image.
@@ -282,15 +287,18 @@ impl DrawToRasterGpu for RectLayer {
             data_unit_mode_x: match layer_params.data_unit_mode_x {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             data_unit_mode_y: match layer_params.data_unit_mode_y {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             stroke_width: width.static_value,
             stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             aspect_ratio_mode: match view_params.aspect_ratio_mode {
                 AspectRatioMode::Ignore => 0,
@@ -805,4 +813,57 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for RectLayer {}
+impl PickableLayer for RectLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places rects relative to the
+        // layer bounds rather than in data space, so a data-space
+        // containment test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        let n = self.layer_params.position_x0.len();
+        if n == 0 {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        // Naive containment test: iterate over every rect, keeping the
+        // last (topmost, since later instances draw on top) match.
+        let mut hit_idx: Option<usize> = None;
+        for i in 0..n {
+            let x0 = self.layer_params.position_x0.get_f32(i);
+            let y0 = self.layer_params.position_y0.get_f32(i);
+            let x1 = self.layer_params.position_x1.get_f32(i);
+            let y1 = self.layer_params.position_y1.get_f32(i);
+            let (x_min, x_max) = (x0.min(x1), x0.max(x1));
+            let (y_min, y_max) = (y0.min(y1), y0.max(y1));
+            if cx >= x_min && cx <= x_max && cy >= y_min && cy <= y_max {
+                hit_idx = Some(i);
+            }
+        }
+
+        let idx = hit_idx?;
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), idx.to_string());
+        info.insert("x0".to_string(), self.layer_params.position_x0.format_element(idx));
+        info.insert("y0".to_string(), self.layer_params.position_y0.format_element(idx));
+        info.insert("x1".to_string(), self.layer_params.position_x1.format_element(idx));
+        info.insert("y1".to_string(), self.layer_params.position_y1.format_element(idx));
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

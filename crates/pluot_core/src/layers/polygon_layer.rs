@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
@@ -11,6 +12,7 @@ use crate::render_traits::{
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::numeric_data::NumericData;
 use crate::two::svg::SvgContext;
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
 use super::stroked_polygon_layer::{StrokedPolygonLayer, StrokedPolygonLayerParams};
@@ -190,4 +192,22 @@ inventory::submit! {
     }
 }
 
-impl PickableLayer for PolygonLayer {}
+impl PickableLayer for PolygonLayer {
+    // Delegate to the sub-layers, which own the actual polygon geometry.
+    // The fill (an area) takes priority over the stroke (a thin outline
+    // band, always "hit" by the sub-layer's nearest-edge search), mirroring
+    // fill-then-stroke draw order.
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        if let Some(fill) = &self.fill_sublayer {
+            if let Some(result) = fill.pick(screen_coord, data_coord) {
+                return Some(result);
+            }
+        }
+        if let Some(stroke) = &self.stroke_sublayer {
+            if let Some(result) = stroke.pick(screen_coord, data_coord) {
+                return Some(result);
+            }
+        }
+        None
+    }
+}

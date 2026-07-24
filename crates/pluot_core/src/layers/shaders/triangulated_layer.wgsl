@@ -18,8 +18,8 @@
 struct TriangulatedLayerUniforms {
     layer_size: vec2<f32>,
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
+    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
+    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
@@ -85,10 +85,16 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
     let NORM_TO_NDC_MAT = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0);
     let NDC_TO_NORM_MAT = translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0);
 
-    let point_pos_norm_px = vec2<f32>(point_pos_orig.x / layer_width_px, point_pos_orig.y / layer_height_px);
+    // Pixel-mode points are in pixel coordinates and are converted to normalized
+    // (0 to 1) coordinates within the layer by dividing by the layer size.
+    // Normalized-mode points are already in (0 to 1) coordinates, so are used as-is.
+    let point_pos_norm_px = vec2<f32>(
+        select(point_pos_orig.x / layer_width_px, point_pos_orig.x, u.data_unit_mode_x == 2u),
+        select(point_pos_orig.y / layer_height_px, point_pos_orig.y, u.data_unit_mode_y == 2u)
+    );
     let pos_ndc_px = (NORM_TO_NDC_MAT * vec4f(point_pos_norm_px.xy, 0.0, 1.0)).xy;
 
-    if (u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+    if (u.data_unit_mode_x != 1u && u.data_unit_mode_y != 1u) {
         return pos_ndc_px;
     }
 
@@ -97,10 +103,10 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
     let pos_norm = transform_mat * point_pos_orig;
     var pos_ndc_data = (NORM_TO_NDC_MAT * vec4f(pos_norm.xy, 0.0, 1.0)).xy;
 
-    if (u.data_unit_mode_x == 0u) {
+    if (u.data_unit_mode_x != 1u) {
         pos_ndc_data.x = pos_ndc_px.x;
     }
-    if (u.data_unit_mode_y == 0u) {
+    if (u.data_unit_mode_y != 1u) {
         pos_ndc_data.y = pos_ndc_px.y;
     }
     return pos_ndc_data;

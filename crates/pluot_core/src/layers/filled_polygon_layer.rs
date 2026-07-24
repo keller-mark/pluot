@@ -3,18 +3,22 @@
 // This layer is intended to be used as a sub-layer of PolygonLayer.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use super::curve_and_polygon_utils::{
     polygon_rings_from_flat, resolve_margins, triangulate_polygon_rings,
 };
+use super::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
@@ -217,4 +221,44 @@ impl DrawToSvg for FilledPolygonLayer {
     }
 }
 
-impl PickableLayer for FilledPolygonLayer {}
+impl PickableLayer for FilledPolygonLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places polygons relative to the
+        // layer bounds rather than in data space, so a data-space
+        // containment test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        let rings = polygon_rings_from_flat(&self.layer_params.polygons, &self.layer_params.polygon_offsets);
+
+        // Naive containment test: iterate over every polygon ring, keeping
+        // the last (topmost, since later polygons draw on top) match.
+        let mut hit_idx: Option<usize> = None;
+        for (i, ring) in rings.iter().enumerate() {
+            if point_in_polygon(cx, cy, ring) {
+                hit_idx = Some(i);
+            }
+        }
+
+        let idx = hit_idx?;
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), idx.to_string());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

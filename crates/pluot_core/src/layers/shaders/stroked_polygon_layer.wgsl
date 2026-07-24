@@ -30,10 +30,10 @@
 struct StrokedPolygonUniforms {
     layer_size: vec2<f32>,
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
+    data_unit_mode_x: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
+    data_unit_mode_y: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     stroke_width: f32,
-    stroke_width_unit_mode: u32,
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
@@ -125,11 +125,17 @@ fn project_to_px(pt: vec2<f32>) -> vec2<f32> {
     let NORM_TO_NDC = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0);
     let NDC_TO_NORM = translate( 0.5,  0.5, 0.0) * scale(0.5, 0.5, 1.0);
 
-    let norm_px = vec2<f32>(orig.x / layer_w, orig.y / layer_h);
+    // Pixel-mode coordinates are converted to normalized (0 to 1) coordinates
+    // within the layer by dividing by the layer size. Normalized-mode
+    // coordinates are already in (0 to 1) coordinates, so are used as-is.
+    let norm_px = vec2<f32>(
+        select(orig.x / layer_w, orig.x, u.data_unit_mode_x == 2u),
+        select(orig.y / layer_h, orig.y, u.data_unit_mode_y == 2u)
+    );
     let ndc_px  = (NORM_TO_NDC * vec4f(norm_px, 0.0, 1.0)).xy;
 
     var ndc: vec2<f32>;
-    if (u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+    if (u.data_unit_mode_x != 1u && u.data_unit_mode_y != 1u) {
         ndc = ndc_px;
     } else {
         let ASPECT_RATIO_MAT = get_aspect_ratio_mat(aspect, u.aspect_ratio_mode, u.aspect_ratio_alignment_mode);
@@ -137,8 +143,8 @@ fn project_to_px(pt: vec2<f32>) -> vec2<f32> {
         let transform = NDC_TO_NORM * mvp * NORM_TO_NDC;
         var ndc_data  = (NORM_TO_NDC * vec4f((transform * orig).xy, 0.0, 1.0)).xy;
 
-        if (u.data_unit_mode_x == 0u) { ndc_data.x = ndc_px.x; }
-        if (u.data_unit_mode_y == 0u) { ndc_data.y = ndc_px.y; }
+        if (u.data_unit_mode_x != 1u) { ndc_data.x = ndc_px.x; }
+        if (u.data_unit_mode_y != 1u) { ndc_data.y = ndc_px.y; }
         ndc = ndc_data;
     }
 
@@ -228,6 +234,10 @@ fn vs_main(
         let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
         let width_norm = (NDC_TO_NORM * mvp * NORM_TO_NDC) * width_orig;
         stroke_width_px = abs(width_norm.y) * layer_h;
+    } else if (u.stroke_width_unit_mode == 2u) {
+        // Normalized-mode width: stroke_width is a fraction (0 to 1) of the
+        // layer height, independent of the camera.
+        stroke_width_px = stroke_width * u.layer_size.y;
     }
 
     let half_width = stroke_width_px * 0.5;

@@ -9,8 +9,10 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use kurbo::{CubicBez, ParamCurve};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
@@ -22,9 +24,11 @@ use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_op
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
 use super::curve_and_polygon_utils::{commands_to_subpaths, flatten_subpath, resolve_margins, PathCommand};
+use super::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 
 // Must match VERTS_PER_INSTANCE_F = 38 in stroked_curve_layer.wgsl.
 // With JOIN_RESOLUTION=8: (8*2 + 3) * 2 = 38.
@@ -111,14 +115,14 @@ impl PreparedLayer for StrokedCurveLayer {
 
 #[derive(ShaderType, Debug)]
 struct StrokedCurveLayerUniforms {
-    layer_size: Vec2,
-    camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
+    layer_size: Vec2,                 // (layer_width, layer_height) in pixels
+    camera_view: Mat4,                // mat4x4<f32>,
+    data_unit_mode_x: u32,            // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32,            // 0 = pixels, 1 = data units, 2 = normalized
     stroke_width: f32,
-    stroke_width_unit_mode: u32,
-    aspect_ratio_mode: u32,
-    aspect_ratio_alignment_mode: u32,
+    stroke_width_unit_mode: u32,      // 0 = pixels, 1 = data units, 2 = normalized
+    aspect_ratio_mode: u32,           // 0 = ignore, 1 = contain, 2 = cover
+    aspect_ratio_alignment_mode: u32, // 0 = center, 1 = start, 2 = end
     model_matrix: Mat4,
     stroke_color_mode: u32,      // see ColorMode::shader_mode()
     stroke_color: Vec4,          // rgba color used by the UniformRgb mode
@@ -158,8 +162,8 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         let layer_w = view_params.width as f32 - (margin_left + margin_right) as f32;
         let layer_h = view_params.height as f32 - (margin_top + margin_bottom) as f32;
 
-        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
-        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1, UnitsMode::Normalized => 2 };
+        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1, UnitsMode::Normalized => 2 };
         let aspect_ratio_mode = match view_params.aspect_ratio_mode { AspectRatioMode::Ignore => 0, AspectRatioMode::Contain => 1, AspectRatioMode::Cover => 2 };
         let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode { AspectRatioAlignmentMode::Center => 0, AspectRatioAlignmentMode::Start => 1, AspectRatioAlignmentMode::End => 2 };
         let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
@@ -359,6 +363,7 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             aspect_ratio_mode,
             aspect_ratio_alignment_mode,
@@ -500,7 +505,9 @@ impl DrawToSvg for StrokedCurveLayer {
         // Stroke width in pixels. In pixel mode it is used directly; in data mode
         // it is transformed through the same pipeline as positions (with w=0, so
         // translations cancel out), mirroring the GPU shader. Stroke width is
-        // measured relative to the Y axis, so use the Y screen extent.
+        // measured relative to the Y axis, so use the Y screen extent. In
+        // normalized mode it is a fraction (0 to 1) of the layer size, also
+        // treated as height-relative.
         let stroke_width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
             let (_sx, sy) = get_point_size(
                 width_value,
@@ -515,6 +522,8 @@ impl DrawToSvg for StrokedCurveLayer {
                 layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
             );
             sy.abs()
+        } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
+            width_value * layer_h
         } else {
             width_value
         };
@@ -561,4 +570,51 @@ impl DrawToSvg for StrokedCurveLayer {
     }
 }
 
-impl PickableLayer for StrokedCurveLayer {}
+impl PickableLayer for StrokedCurveLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places the curve relative to
+        // the layer bounds rather than in data space, so a data-space
+        // distance test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        // Naive picking: iterate over every segment of every sub-path,
+        // keeping the one closest to the picked point (no distance
+        // threshold), mirroring PointLayer's nearest-neighbor approach.
+        let mut min_dist_sq = f32::MAX;
+        let mut closest: Option<(usize, usize)> = None;
+        for (subpath_idx, points) in self.polylines.iter().enumerate() {
+            for i in 0..points.len().saturating_sub(1) {
+                let (ax, ay) = points[i];
+                let (bx, by) = points[i + 1];
+                let dist_sq = dist_sq_to_segment(cx, cy, ax, ay, bx, by);
+                if dist_sq < min_dist_sq {
+                    min_dist_sq = dist_sq;
+                    closest = Some((subpath_idx, i));
+                }
+            }
+        }
+
+        let (subpath_idx, segment_idx) = closest?;
+        let mut info = HashMap::new();
+        info.insert("subpath_index".to_string(), subpath_idx.to_string());
+        info.insert("segment_index".to_string(), segment_idx.to_string());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

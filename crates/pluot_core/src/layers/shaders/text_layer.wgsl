@@ -15,10 +15,10 @@
 struct TextLayerUniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32, // 0: pixel units, 1: data units
-    data_unit_mode_y: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units, 2: normalized (0-1) units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units, 2: normalized (0-1) units
     text_size: f32,
-    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units // TODO: use this
+    text_size_unit_mode: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units // TODO: use this
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
     model_matrix: mat4x4<f32>,
@@ -127,11 +127,14 @@ fn vs_main(
 
     // Use mutable variables for elem_pos_norm.
 
-    // Initially compute elem_pos_norm for data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    // Convert text element position from pixel space to normalized space (0 to 1)
+    // Initially compute elem_pos_norm for data_unit_mode == "pixels" or "normalized" (we do not
+    // care about the camera or aspect_ratio_mode in either case; they are both camera-independent).
+    // Pixel-mode positions are in pixel coordinates and are converted to normalized (0 to 1)
+    // coordinates within the layer by dividing by the layer size. Normalized-mode positions are
+    // already in (0 to 1) coordinates, so are used as-is.
     var elem_pos_norm = vec2<f32>(
-        elem_pos_orig.x / layer_width_px,
-        elem_pos_orig.y / layer_height_px
+        select(elem_pos_orig.x / layer_width_px, elem_pos_orig.x, u.data_unit_mode_x == 2u),
+        select(elem_pos_orig.y / layer_height_px, elem_pos_orig.y, u.data_unit_mode_y == 2u)
     );
 
     // Now check if we actually need to compute elem_pos_norm (x or y coords) for data_unit_mode == "data".

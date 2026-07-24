@@ -36,10 +36,10 @@
 struct StrokedCurveLayerUniforms {
     layer_size: vec2<f32>,          // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32,          // 0: px, 1: data
-    data_unit_mode_y: u32,          // 0: px, 1: data
-    stroke_width: f32,              // stroke width (pixels or data units, per stroke_width_unit_mode)
-    stroke_width_unit_mode: u32,    // 0: px, 1: data coordinate system units
+    data_unit_mode_x: u32,          // 0: px, 1: data, 2: normalized
+    data_unit_mode_y: u32,          // 0: px, 1: data, 2: normalized
+    stroke_width: f32,              // stroke width (pixels, data units, or normalized fraction, per stroke_width_unit_mode)
+    stroke_width_unit_mode: u32,    // 0: px, 1: data coordinate system units, 2: normalized (0-1) units
     aspect_ratio_mode: u32,         // 0: ignore, 1: contain, 2: cover
     aspect_ratio_alignment_mode: u32,
     model_matrix: mat4x4<f32>,
@@ -110,10 +110,16 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
     let NORM_TO_NDC = translate(-1.0, -1.0, 0.0) * scale(2.0, 2.0, 1.0);
     let NDC_TO_NORM = translate(0.5, 0.5, 0.0) * scale(0.5, 0.5, 1.0);
 
-    let pos_norm_px = vec2<f32>(point_pos_orig.x / lw, point_pos_orig.y / lh);
+    // Pixel-mode points are in pixel coordinates and are converted to normalized
+    // (0 to 1) coordinates within the layer by dividing by the layer size.
+    // Normalized-mode points are already in (0 to 1) coordinates, so are used as-is.
+    let pos_norm_px = vec2<f32>(
+        select(point_pos_orig.x / lw, point_pos_orig.x, u.data_unit_mode_x == 2u),
+        select(point_pos_orig.y / lh, point_pos_orig.y, u.data_unit_mode_y == 2u)
+    );
     let pos_ndc_px = (NORM_TO_NDC * vec4f(pos_norm_px, 0.0, 1.0)).xy;
 
-    if (u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+    if (u.data_unit_mode_x != 1u && u.data_unit_mode_y != 1u) {
         return pos_ndc_px;
     }
 
@@ -122,8 +128,8 @@ fn project_point(model_point: vec2<f32>, layer_aspect_ratio: f32) -> vec2<f32> {
     let pos_norm_data = t * point_pos_orig;
     var pos_ndc_data = (NORM_TO_NDC * vec4f(pos_norm_data.xy, 0.0, 1.0)).xy;
 
-    if (u.data_unit_mode_x == 0u) { pos_ndc_data.x = pos_ndc_px.x; }
-    if (u.data_unit_mode_y == 0u) { pos_ndc_data.y = pos_ndc_px.y; }
+    if (u.data_unit_mode_x != 1u) { pos_ndc_data.x = pos_ndc_px.x; }
+    if (u.data_unit_mode_y != 1u) { pos_ndc_data.y = pos_ndc_px.y; }
     return pos_ndc_data;
 }
 
@@ -186,6 +192,10 @@ fn vs_main(
         let width_orig = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
         let width_norm = (NDC_TO_NORM * mvp * NORM_TO_NDC) * width_orig;
         stroke_width_px = abs(width_norm.y) * lh;
+    } else if (u.stroke_width_unit_mode == 2u) {
+        // Normalized-mode width: stroke_width is a fraction (0 to 1) of the
+        // layer height, independent of the camera.
+        stroke_width_px = stroke_width * u.layer_size.y;
     }
 
     let half_width = stroke_width_px * 0.5;

@@ -17,8 +17,8 @@ struct Channel {
 struct Uniforms {
     layer_size: vec2<f32>, // (layer_width, layer_height) in pixels
     camera_view: mat4x4<f32>,
-    data_unit_mode_x: u32, // 0: pixel units, 1: data units
-    data_unit_mode_y: u32, // 0: pixel units, 1: data units
+    data_unit_mode_x: u32, // 0: pixel units, 1: data units, 2: normalized (0-1) units
+    data_unit_mode_y: u32, // 0: pixel units, 1: data units, 2: normalized (0-1) units
     aspect_ratio_mode: u32, // 0: ignore/squeeze, 1: fit/contain, 2: fill/cover.
     aspect_ratio_alignment_mode: u32, // 0: center, 1: start, 2: end
 
@@ -104,6 +104,10 @@ fn vs_main(
     // with the origin at the bottom left of the layer's bounds (i.e., margins).
     // If data_unit_mode = Data, then the image is positioned in data units,
     // with the origin at (0,0) in data space, and pixels extending positively in x and y directions.
+    // If data_unit_mode = Normalized, then the image is positioned in normalized (0 to 1) space
+    // relative to the layer's bounds (i.e., margins), with the origin at the bottom left, like
+    // Pixels mode; unlike Pixels mode, values are not divided by the layer size since they are
+    // already in (0, 1) space, so this mode is agnostic to the pixel dimensions of the plot.
 
     // The model_matrix can be used to apply additional affine transformations
     // to the physical dimensions of the image (XYZ),
@@ -138,18 +142,21 @@ fn vs_main(
     var result_position_px = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     var result_position_data = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
-    // Handle data_unit_mode == "pixels" (we do not care about the camera or aspect_ratio_mode in this case).
-    if(u.data_unit_mode_x == 0u || u.data_unit_mode_y == 0u) {
-        // Convert point position from pixel space to normalized space (0 to 1)
+    // Handle data_unit_mode == "pixels" or "normalized" (we do not care about the
+    // camera or aspect_ratio_mode in either case; they are both camera-independent).
+    if(u.data_unit_mode_x != 1u || u.data_unit_mode_y != 1u) {
+        // Pixel-mode positions are in pixel coordinates and are converted to normalized
+        // (0 to 1) coordinates within the layer by dividing by the layer size.
+        // Normalized-mode positions are already in (0 to 1) coordinates, so are used as-is.
         let point_pos_norm = vec2<f32>(
-            vertex_pos_px.x / layer_width_px,
-            vertex_pos_px.y / layer_height_px
+            select(vertex_pos_px.x / layer_width_px, vertex_pos_px.x, u.data_unit_mode_x == 2u),
+            select(vertex_pos_px.y / layer_height_px, vertex_pos_px.y, u.data_unit_mode_y == 2u)
         );
         let point_pos_ndc = NORM_TO_NDC_MAT * vec4f(point_pos_norm.xy, 0.0, 1.0);
 
         result_position_px = point_pos_ndc;
 
-        if(u.data_unit_mode_x == 0u && u.data_unit_mode_y == 0u) {
+        if(u.data_unit_mode_x != 1u && u.data_unit_mode_y != 1u) {
             var out: VSOut;
             out.position = result_position_px;
             out.tex_coord = uv;
@@ -197,12 +204,12 @@ fn vs_main(
 
     result_position_data = point_pos_ndc;
 
-    if(u.data_unit_mode_x == 0u) {
-        // Want to use pixel-based positioning, but only along X direction.
+    if(u.data_unit_mode_x != 1u) {
+        // Want to use pixel/normalized-based positioning, but only along X direction.
         result_position_data.x = result_position_px.x;
     }
-    if(u.data_unit_mode_y == 0u) {
-        // Want to use pixel-based positioning, but only along Y direction.
+    if(u.data_unit_mode_y != 1u) {
+        // Want to use pixel/normalized-based positioning, but only along Y direction.
         result_position_data.y = result_position_px.y;
     }
 

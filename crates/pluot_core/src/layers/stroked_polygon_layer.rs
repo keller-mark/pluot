@@ -9,18 +9,22 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::numeric_data::NumericData;
 use super::curve_and_polygon_utils::{
     polygon_rings_from_flat, polygon_segments_from_offsets, resolve_margins,
 };
+use super::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
 use crate::shader_modules::{common, ShaderBuilder};
@@ -128,10 +132,10 @@ impl PreparedLayer for StrokedPolygonLayer {
 struct StrokedPolygonLayerUniforms {
     layer_size: Vec2,
     camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
+    data_unit_mode_x: u32,       // 0 = pixels, 1 = data units, 2 = normalized
+    data_unit_mode_y: u32,       // 0 = pixels, 1 = data units, 2 = normalized
     stroke_width: f32,
-    stroke_width_unit_mode: u32,
+    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units, 2 = normalized
     aspect_ratio_mode: u32,
     aspect_ratio_alignment_mode: u32,
     model_matrix: Mat4,
@@ -170,8 +174,8 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         let layer_w = view_params.width as f32 - (margin_left + margin_right) as f32;
         let layer_h = view_params.height as f32 - (margin_top + margin_bottom) as f32;
 
-        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
-        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1 };
+        let data_unit_mode_x = match layer_params.data_unit_mode_x { UnitsMode::Pixels => 0, UnitsMode::Data => 1, UnitsMode::Normalized => 2 };
+        let data_unit_mode_y = match layer_params.data_unit_mode_y { UnitsMode::Pixels => 0, UnitsMode::Data => 1, UnitsMode::Normalized => 2 };
         let aspect_ratio_mode = match view_params.aspect_ratio_mode { AspectRatioMode::Ignore => 0, AspectRatioMode::Contain => 1, AspectRatioMode::Cover => 2 };
         let aspect_ratio_alignment_mode = match view_params.aspect_ratio_alignment_mode { AspectRatioAlignmentMode::Center => 0, AspectRatioAlignmentMode::Start => 1, AspectRatioAlignmentMode::End => 2 };
         let model_matrix = Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or([
@@ -208,6 +212,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
                 UnitsMode::Pixels => 0,
                 UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
             },
             aspect_ratio_mode,
             aspect_ratio_alignment_mode,
@@ -497,6 +502,8 @@ impl DrawToSvg for StrokedPolygonLayer {
             // mode it is transformed through the same pipeline as positions (with
             // w=0, so translations cancel out), mirroring the GPU shader. Stroke
             // width is measured relative to the Y axis, so use the Y screen extent.
+            // In normalized mode it is a fraction (0 to 1) of the layer size, also
+            // treated as height-relative.
             let stroke_width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
                 let (_sx, sy) = get_point_size(
                     width_value,
@@ -511,6 +518,8 @@ impl DrawToSvg for StrokedPolygonLayer {
                     layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
                 );
                 sy.abs()
+            } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
+                width_value * layer_h
             } else {
                 width_value
             };
@@ -550,4 +559,57 @@ impl DrawToSvg for StrokedPolygonLayer {
     }
 }
 
-impl PickableLayer for StrokedPolygonLayer {}
+impl PickableLayer for StrokedPolygonLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places polygons relative to the
+        // layer bounds rather than in data space, so a data-space distance
+        // test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        let rings = polygon_rings_from_flat(&self.layer_params.polygons, &self.layer_params.polygon_offsets);
+
+        // Naive picking: iterate over every ring edge (including the
+        // closing edge back to the first vertex), keeping the one closest
+        // to the picked point (no distance threshold), mirroring
+        // PointLayer's nearest-neighbor approach.
+        let mut min_dist_sq = f32::MAX;
+        let mut closest: Option<usize> = None;
+        for (ring_idx, ring) in rings.iter().enumerate() {
+            let n = ring.len();
+            if n < 2 {
+                continue;
+            }
+            for i in 0..n {
+                let (ax, ay) = ring[i];
+                let (bx, by) = ring[(i + 1) % n];
+                let dist_sq = dist_sq_to_segment(cx, cy, ax, ay, bx, by);
+                if dist_sq < min_dist_sq {
+                    min_dist_sq = dist_sq;
+                    closest = Some(ring_idx);
+                }
+            }
+        }
+
+        let idx = closest?;
+        let mut info = HashMap::new();
+        info.insert("index".to_string(), idx.to_string());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}

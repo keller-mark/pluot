@@ -4,8 +4,10 @@
 
 use kurbo::{CubicBez, ParamCurve};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::picking::LayerPickingResult;
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
@@ -17,11 +19,13 @@ use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
 use super::curve_and_polygon_utils::{
-    commands_to_subpaths, compute_fill_vertices, resolve_margins, PathCommand,
+    commands_to_subpaths, compute_fill_vertices, flatten_subpath, resolve_margins, PathCommand,
 };
+use super::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -213,4 +217,44 @@ impl DrawToSvg for FilledCurveLayer {
     }
 }
 
-impl PickableLayer for FilledCurveLayer {}
+impl PickableLayer for FilledCurveLayer {
+    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
+            return None;
+        };
+
+        // Pixel/normalized-units positioning places the curve relative to
+        // the layer bounds rather than in data space, so a data-space
+        // containment test does not apply.
+        if self.layer_params.data_unit_mode_x != UnitsMode::Data
+            || self.layer_params.data_unit_mode_y != UnitsMode::Data
+        {
+            return None;
+        }
+
+        // Map the world coordinate into model space by inverting the
+        // model_matrix; the vertex shader computes
+        // world = model_matrix * vec4(position, 0, 1).
+        let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, wx, wy)?;
+
+        // Naive containment test: iterate over every sub-path ring, keeping
+        // the last (topmost, since later sub-paths draw on top) match.
+        let subdivisions = self.layer_params.subdivisions.max(1);
+        let mut hit_idx: Option<usize> = None;
+        for (i, subpath) in self.subpaths.iter().enumerate() {
+            let ring = flatten_subpath(subpath, subdivisions);
+            if point_in_polygon(cx, cy, &ring) {
+                hit_idx = Some(i);
+            }
+        }
+
+        let idx = hit_idx?;
+        let mut info = HashMap::new();
+        info.insert("subpath_index".to_string(), idx.to_string());
+
+        Some(LayerPickingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+        })
+    }
+}
