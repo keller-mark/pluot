@@ -1,24 +1,15 @@
 import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback, useId } from "react";
 import lzs from "lz-string";
 import { isEqual, throttle } from "lodash-es";
-import { FetchStore } from 'zarrita';
 import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
-  setStore, setStoreByName, getStore,
-  storeInstanceToMetadata,
+  normalizeStores, getStore,
   getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
-  storeMetadataToInstance,
 } from '@pluot/core';
-
-// A store value is either a live zarrita store instance or already-derived
-// `ZarrStoreInfo` metadata (see `@pluot/core`'s `store-metadata.ts`).
-function isZarrStoreInfo(value) {
-  return value != null && typeof value === 'object' && 'store_type' in value;
-}
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -60,7 +51,7 @@ export function Pluot(props) {
     height: heightProp,
     plotId,
     plotType,
-    store,
+    store: storeProp,
     storeName: storeNameProp,
     stores: storesProp,
     plotParams,
@@ -117,47 +108,13 @@ export function Pluot(props) {
 
   // Build the top-level `stores` map that RenderParams expects: a mapping from
   // store name to its derived `ZarrStoreInfo` metadata.
-  const stores = useMemo(() => {
-    const result = {};
-
-    if ((store || storeNameProp) && storesProp) {
-      throw new Error('store/storeName (singular) are mutually exclusive with stores (plural).');
-    }
-    const singleStoreName = storeNameProp ?? plotId;
-
-    if (typeof store === 'string') {
-      // If store is a string, assume it is a URL and initialize a FetchStore here.
-      setStoreByName(singleStoreName, new FetchStore(store));
-      const storeByUrl = getStore(singleStoreName);
-      result[singleStoreName] = storeInstanceToMetadata(storeByUrl);
-    } else if (typeof store !== 'string' && !isZarrStoreInfo(store)) {
-      // Assume `store` is a zarrita Store instance.
-      setStoreByName(singleStoreName, store);
-      result[singleStoreName] = storeInstanceToMetadata(store);
-    } else if (typeof store !== 'string' && isZarrStoreInfo(store)) {
-      // Assume `store` is a ZarrStoreInfo dict/JSON object.
-      const storeByInfo = storeMetadataToInstance(store);
-      setStoreByName(singleStoreName, storeByInfo);
-      result[singleStoreName] = store;
-    }
-
-    // The plural `stores` prop: each value is either a live store instance
-    // (registered by name) or an already-derived `ZarrStoreInfo` object.
-    if (storesProp) {
-      for (const [name, value] of Object.entries(storesProp)) {
-        if (isZarrStoreInfo(value)) {
-          const storeByInfo = storeMetadataToInstance(value);
-          setStoreByName(name, storeByInfo);
-          result[name] = value;
-        } else {
-          setStoreByName(name, value);
-          result[name] = storeInstanceToMetadata(value);
-        }
-      }
-    }
-
-    return Object.keys(result).length > 0 ? result : undefined;
-  }, [storeNameProp, store, storesProp]);
+  const stores = useMemo(() => normalizeStores({
+    stores: storesProp,
+    store: storeProp,
+    storeName: storeNameProp,
+    plotId,
+    register: true,
+  }), [storeNameProp, storeProp, storesProp, plotId]);
 
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
@@ -188,7 +145,6 @@ export function Pluot(props) {
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
-
 
   const wheelHandler = useEffectEvent((event) => {
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;

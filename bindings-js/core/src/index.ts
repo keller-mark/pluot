@@ -24,6 +24,10 @@ export type {
   StoreWithMetadata,
   StoreExtensionApplier,
 } from './store-metadata.js';
+export {
+  isZarrStoreInfo,
+  normalizeStores,
+} from './store-normalization.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
 export { getBounds, getCameraMatrixFromBounds } from './viewport.js';
 export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';

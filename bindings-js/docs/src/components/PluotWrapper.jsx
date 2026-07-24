@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useCallback, useEffect, useEffectEvent, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Pluot, render_wasm } from '@pluot/react';
+import { Pluot, render_wasm, normalizeStores } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
 
@@ -168,10 +168,14 @@ export function PluotWrapper(props) {
   }, [isFullwindow]);
 
   const controlValuesRef = useRef(null);
+  const derivedPlotParamsRef = useRef(null);
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
       format: controlValuesRef.current.renderToScriptType,
+
+      stores: normalizeStores({ store: storeUrl, plotId, register: false }),
+      plot_params: derivedPlotParamsRef.current,
 
       width: controlValuesRef.current.size.width,
       height: controlValuesRef.current.size.height,
@@ -179,17 +183,15 @@ export function PluotWrapper(props) {
       margin_right: controlValuesRef.current.horizontalMargins.right,
       margin_top: controlValuesRef.current.verticalMargins.top,
       margin_bottom: controlValuesRef.current.verticalMargins.bottom,
-
-      device_pixel_ratio: window.devicePixelRatio,
       aspect_ratio_mode: controlValuesRef.current.aspectRatioMode,
       aspect_ratio_alignment_mode: controlValuesRef.current.aspectRatioAlignmentMode,
+
+      device_pixel_ratio: window.devicePixelRatio,
       view_mode: viewMode,
       pickable: false,
       camera_view: cameraMatrix, // TODO: lift up camera matrix state management into this PluotWrapper component, then pass latest here
       plot_id: plotId,
       plot_type: plotType,
-      stores: null, // TODO: pass stores object. lift up construction of stores object from within Pluot.jsx to here?
-      plot_params: plotParams, // TODO: pass derivedPlotParams here via a ref?
       // Note: the below settings are optimized for static plotting.
       timeout: null, // Note: will not have any effect when wait_for_store_gets is false.
       wait_for_store_gets: true,
@@ -234,8 +236,7 @@ export function PluotWrapper(props) {
   const marginBottom = controlValues.verticalMargins.bottom;
 
   controlValuesRef.current = { ...controlValues };
-
-  // TODO: render the Loading indicator over the plot in Fullscreen mode
+  derivedPlotParamsRef.current = { ...derivedPlotParams };
 
   console.log(cameraMatrix);
 

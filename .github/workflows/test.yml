@@ -22,7 +22,7 @@ jobs:
       run: cargo build --verbose
     - name: Run Rust unit tests
       # Rendering tests do not work on non-macos runners since they lack GPUs.
-      run: cargo test --verbose --features "lacks_gpu"
+      run: cargo test --verbose --features lacks_gpu
 
   plain_rust_check_examples:
     runs-on: ubuntu-latest

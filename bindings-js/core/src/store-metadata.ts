@@ -171,7 +171,7 @@ export function withStoreMetadata(extension: ZarrStoreExtension) {
  */
 export type StoreExtensionApplier = (
   store: AsyncReadable,
-) => AsyncReadable | Promise<AsyncReadable>;
+) => AsyncReadable;
 
 const storeExtensionAppliers: Record<string, StoreExtensionApplier> = {};
 
@@ -200,9 +200,9 @@ export function registerStoreExtension(
  * Any `store_extensions` are then applied outermost-last using the appliers
  * registered via {@link registerStoreExtension}.
  */
-export async function storeMetadataToInstance(
+export function storeMetadataToInstance(
   info: ZarrStoreInfo,
-): Promise<AsyncReadable> {
+): AsyncReadable {
   let store: AsyncReadable;
   switch (info.store_type) {
     case "HttpStore":
@@ -236,7 +236,8 @@ export async function storeMetadataToInstance(
           `Register one via registerStoreExtension("${ext}", applier).`,
       );
     }
-    store = await applier(store);
+    // TODO: support async applier functions? but that will require many changes downstream
+    store = applier(store);
   }
   return store;
 }
