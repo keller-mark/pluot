@@ -28,7 +28,7 @@ export function PluotWrapper(props) {
     // Option to provide "plot-specific" options objects for plot types that need them
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
-    cameraMatrix = null,
+    cameraMatrix: cameraMatrixProp = null,
     enablePicking = true,
   } = props;
 
@@ -47,6 +47,8 @@ export function PluotWrapper(props) {
   const [mode, setMode] = useState('none');
   const [fsWidth, setFsWidth] = useState(null);
   const [fsHeight, setFsHeight] = useState(null);
+
+  const [cameraMatrix, setCameraMatrix] = useState(cameraMatrixProp);
 
   const divRef = useRef(null);
 
@@ -176,6 +178,7 @@ export function PluotWrapper(props) {
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,
+      camera_view: cameraMatrix,
 
       width: controlValuesRef.current.size.width,
       height: controlValuesRef.current.size.height,
@@ -189,7 +192,6 @@ export function PluotWrapper(props) {
       device_pixel_ratio: window.devicePixelRatio,
       view_mode: viewMode,
       pickable: false,
-      camera_view: cameraMatrix, // TODO: lift up camera matrix state management into this PluotWrapper component, then pass latest here
       plot_id: plotId,
       plot_type: plotType,
       // Note: the below settings are optimized for static plotting.
@@ -270,6 +272,7 @@ export function PluotWrapper(props) {
           format={format}
           debugMargins={debugMargins}
           cameraMatrix={cameraMatrix}
+          setCameraMatrix={setCameraMatrix}
           enablePicking={enablePicking}
           backgroundColor={"#fff"}
         />
