@@ -11,7 +11,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
 use crate::wgpu;
-use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::cache::use_memo_vec_f32;
 use crate::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 

@@ -8,12 +8,12 @@ use crate::render_traits::{
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
 use crate::viewport::{get_bounds, DataCoord, ScreenCoord};
-use crate::layers::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::numeric_data::NumericData;
-use crate::layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
-use crate::layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
+use crate::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
+use crate::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::{log, wgpu};

@@ -90,6 +90,52 @@ fn wave_curve_pixel_x_data_y() -> CurveLayerParams {
     }
 }
 
+// Helper: the same wave in a [0,1]x[0,1] normalized space. Uses the same
+// fractions as wave_curve_pixels() (divided by 100), so on a 100x100 canvas
+// this renders identically to wave_curve_pixels() while remaining agnostic to
+// the layer's actual pixel dimensions (unlike Pixels mode, the same params
+// render the same *proportions* on any canvas size).
+fn wave_curve_normalized() -> CurveLayerParams {
+    CurveLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        commands: Arc::new(vec![
+            PathCommand::MoveTo { x: 0.1, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.3, y1: 0.9, x2: 0.4, y2: 0.9, x: 0.5, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
+        ]),
+        ..wave_curve_data()
+    }
+}
+
+// Helper: wave with x in [0,1] data space, y in [0,1] normalized space.
+fn wave_curve_data_x_normalized_y() -> CurveLayerParams {
+    CurveLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        commands: Arc::new(vec![
+            PathCommand::MoveTo { x: 0.1, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.3, y1: 0.9, x2: 0.4, y2: 0.9, x: 0.5, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
+        ]),
+        ..wave_curve_data()
+    }
+}
+
+// Helper: wave with x in [0,1] normalized space, y in [0,1] data space.
+fn wave_curve_normalized_x_data_y() -> CurveLayerParams {
+    CurveLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        commands: Arc::new(vec![
+            PathCommand::MoveTo { x: 0.1, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.3, y1: 0.9, x2: 0.4, y2: 0.9, x: 0.5, y: 0.5 },
+            PathCommand::CubicTo { x1: 0.6, y1: 0.1, x2: 0.7, y2: 0.1, x: 0.9, y: 0.5 },
+        ]),
+        ..wave_curve_data()
+    }
+}
+
 // Helper: a closed shape exercising line, quadratic Bezier, elliptical arc, and
 // close commands, in 1x1 data space.
 fn closed_curve_data() -> CurveLayerParams {
@@ -173,6 +219,18 @@ async fn test_curve_layer_square_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_pixel_units_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(wave_curve_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]
@@ -354,6 +412,30 @@ async fn test_curve_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
+#[tokio::test]
+async fn test_curve_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(wave_curve_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(wave_curve_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_normalized_x_data_y_no_margins").await;
+}
+
 // ── Line width ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -403,6 +485,46 @@ async fn test_curve_layer_wide_contain_data_units_stroke_width() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_wide_contain_data_units_stroke_width").await;
+}
+
+// Stroke width measured as a fraction (0 to 1) of the layer height, independent
+// of the camera. Unlike the "wide" canvas used for the Data-units pair above
+// (which keeps the same 100px height as the square canvas and so wouldn't show
+// any scaling), this pair uses a "tall" (100x200) canvas so the height actually
+// changes between the two tests, demonstrating height-relative scaling.
+#[tokio::test]
+async fn test_curve_layer_square_contain_normalized_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.03)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_normalized_units_stroke_width").await;
+}
+
+// Same normalized stroke width (0.03) on a taller (100x200) canvas: since it is
+// height-relative, the stroke renders at 0.03 * 200px == 6px, twice as thick as
+// the square-canvas test above.
+#[tokio::test]
+async fn test_curve_layer_tall_contain_normalized_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.03)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_tall_contain_normalized_units_stroke_width").await;
 }
 
 // ── Instanced stroke width / opacity, fill opacity ──────────────────────────────

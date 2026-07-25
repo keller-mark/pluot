@@ -14,7 +14,7 @@ use crate::render_traits::{
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::viewport::{DataCoord, ScreenCoord};
-use super::picking_geometry::unapply_model_matrix;
+use crate::picking_geometry::unapply_model_matrix;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{
     cpu_fill_opacity, cpu_stroke_opacity, cpu_stroke_width, prepare_fill_opacity_mode,

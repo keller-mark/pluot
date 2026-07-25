@@ -92,6 +92,54 @@ fn corner_points_pixel_x_data_y() -> PointLayerParams {
     }
 }
 
+// Helper: 4 points at the corners of a [0,1]x[0,1] normalized space. Uses the
+// same fractions as corner_points_pixels() (divided by 100), so on a 100x100
+// canvas this renders identically to corner_points_pixels() while remaining
+// agnostic to the layer's actual pixel dimensions (unlike Pixels mode, the
+// same params render the same *proportions* on any canvas size).
+fn corner_points_normalized() -> PointLayerParams {
+    PointLayerParams {
+        layer_id: "my_point_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        point_radius: Some(SizeMode::UniformSize(10.0)),
+        point_radius_unit_mode_x: UnitsMode::Pixels,
+        point_radius_unit_mode_y: UnitsMode::Pixels,
+        point_shape_mode: PointShapeMode::Square,
+        model_matrix: None,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..Default::default()
+    }
+}
+
+// Helper: 4 points with x in [0,1] data space, y in [0,1] normalized space
+fn corner_points_data_x_normalized_y() -> PointLayerParams {
+    PointLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 0.5, 0.5, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 1.0, 1.0])),
+        ..corner_points_data()
+    }
+}
+
+// Helper: 4 points with x in [0,1] normalized space, y in [0,1] data space
+fn corner_points_normalized_x_data_y() -> PointLayerParams {
+    PointLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0, 1.0, 0.0])),
+        position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.5, 0.5])),
+        ..corner_points_data()
+    }
+}
+
 fn layer_params(point_params: PointLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::PointLayer(point_params)]
 }
@@ -152,6 +200,21 @@ async fn test_point_layer_square_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_no_margins").await;
+}
+
+// Normalized units: on a 100x100 canvas this renders identically to the Pixels
+// test above, since corner_points_normalized() uses the same fractions (0.0/1.0)
+// that corner_points_pixels() uses as absolute pixel values out of 100.
+#[tokio::test]
+async fn test_point_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]
@@ -269,6 +332,22 @@ async fn test_point_layer_wide_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_wide_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a wide canvas: unlike the Pixels test above (which needs
+// its own position overrides rescaled to the 200px width), corner_points_normalized()
+// is reused completely unchanged from the square-canvas test, since its 0-1
+// fractions are agnostic to the layer's actual pixel dimensions.
+#[tokio::test]
+async fn test_point_layer_wide_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(corner_points_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_wide_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_point_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -359,6 +438,20 @@ async fn test_point_layer_tall_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_point_layer_tall_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a tall canvas: again reusing corner_points_normalized()
+// unchanged, demonstrating pixel-dimension independence.
+#[tokio::test]
+async fn test_point_layer_tall_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_points_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_tall_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_point_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -419,6 +512,30 @@ async fn test_point_layer_square_contain_pixel_x_data_y_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_x_data_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_normalized_x_data_y_no_margins").await;
 }
 
 // Circle shape
@@ -718,6 +835,51 @@ async fn test_point_layer_square_contain_data_radius_model_matrix_scale() {
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_data_radius_model_matrix_scale").await;
 }
 
+// ── Normalized-units point radius ────────────────────────────────────────────
+// point_radius_unit_mode_x/y == UnitsMode::Normalized: the radius is a fraction
+// (0 to 1) of the layer height, independent of the camera (like Pixels, but
+// scaling with the layer's actual pixel dimensions rather than a fixed pixel
+// count). Both X and Y radius unit modes must match.
+
+// Helper: corner points in data space with the radius expressed as 0.05 (5%
+// of the layer height) in normalized units.
+fn corner_points_normalized_radius() -> PointLayerParams {
+    PointLayerParams {
+        point_radius: Some(SizeMode::UniformSize(0.05)),
+        point_radius_unit_mode_x: UnitsMode::Normalized,
+        point_radius_unit_mode_y: UnitsMode::Normalized,
+        ..corner_points_data()
+    }
+}
+
+#[tokio::test]
+async fn test_point_layer_square_contain_normalized_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_points_normalized_radius()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_normalized_radius_no_margins").await;
+}
+
+// Same normalized radius (0.05) on a taller (100x200) canvas: since it is
+// height-relative, the radius renders at 0.05 * 200px == 10px, twice the
+// 0.05 * 100px == 5px radius on the square-canvas test above, demonstrating
+// the height-relative scaling.
+#[tokio::test]
+async fn test_point_layer_tall_contain_normalized_radius_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_points_normalized_radius()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_tall_contain_normalized_radius_no_margins").await;
+}
+
 // model_matrix
 
 // Scale 0.5 in data mode: corner points at (0,1) become (0,0.5), lower-left quadrant.
@@ -782,6 +944,29 @@ async fn test_point_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// Scale 0.5 in normalized mode: like pixel mode, model_matrix operates in
+// normalized [0,1] space, so this should render identically to the pixel-mode
+// model-matrix-scale test above (on a 100x100 canvas, where they coincide).
+#[tokio::test]
+async fn test_point_layer_square_contain_normalized_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_points_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_normalized_units_model_matrix_scale").await;
 }
 
 // ── Fill color modes ──────────────────────────────────────────────────────────
@@ -871,6 +1056,47 @@ async fn test_point_layer_square_contain_pixel_units_instanced_opacity() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_pixel_units_instanced_opacity").await;
+}
+
+// ── stroke_width_unit_mode: Normalized ────────────────────────────────────────
+//
+// Normalized stroke width is a fraction (0 to 1) of the layer height,
+// independent of the camera. 0.02 * 100px == 2px stroke around each point.
+#[tokio::test]
+async fn test_point_layer_square_contain_normalized_units_stroke_width_normalized_mode() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            ..corner_points_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_normalized_units_stroke_width_normalized_mode").await;
+}
+
+// Same normalized stroke width (0.02) on a taller (100x200) canvas: since it is
+// height-relative, the border renders at 0.02 * 200px == 4px, twice as thick as
+// the square-canvas test above, demonstrating the height-relative scaling.
+#[tokio::test]
+async fn test_point_layer_tall_contain_normalized_units_stroke_width_normalized_mode() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(PointLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            ..corner_points_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_tall_contain_normalized_units_stroke_width_normalized_mode").await;
 }
 
 // TODO: performance tests with many elements, both raster and svg formats

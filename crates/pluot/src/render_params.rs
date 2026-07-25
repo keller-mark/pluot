@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 use pluot_core::layers::line_layer::{LineLayerParams};
-use pluot_core::layers::curve_layer::{CurveLayerParams};
-use pluot_core::layers::polygon_layer::PolygonLayerParams;
+use pluot_core::composite_layers::curve_layer::{CurveLayerParams};
+use pluot_core::composite_layers::polygon_layer::PolygonLayerParams;
 use pluot_core::layers::rect_layer::{RectLayerParams};
 use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
-use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
-use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
+use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
+use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
-use pluot_core::plot_layers::bar_plot_layer::BarPlotLayerParams;
-use pluot_core::plot_layers::histogram_layer::HistogramLayerParams;
+use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
+use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;

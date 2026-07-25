@@ -1,0 +1,17 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_point_layer_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#my_point_layer_clip_path)" transform="translate(0,0)">
+<rect fill="rgb(76, 120, 168)" height="18" opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" width="18" x="-9" y="91"/>
+<rect fill="rgb(245, 133, 24)" height="18" opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" width="18" x="91" y="91"/>
+<rect fill="rgb(228, 87, 86)" height="18" opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" width="18" x="91" y="-9"/>
+<rect fill="rgb(114, 183, 178)" height="18" opacity="1" stroke="rgb(0, 0, 0)" stroke-width="2" width="18" x="-9" y="-9"/>
+</g>
+</g>
+</g>
+</svg>

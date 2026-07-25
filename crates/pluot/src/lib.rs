@@ -22,18 +22,18 @@ pub use pluot_core::StoreMap;
 // Re-export layer param types for convenience.
 pub use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
 pub use pluot_core::layers::line_layer::{LineLayerParams};
-pub use pluot_core::layers::curve_layer::{CurveLayerParams, PathCommand};
-pub use pluot_core::layers::polygon_layer::PolygonLayerParams;
+pub use pluot_core::composite_layers::curve_layer::{CurveLayerParams, PathCommand};
+pub use pluot_core::composite_layers::polygon_layer::PolygonLayerParams;
 pub use pluot_core::layers::rect_layer::{RectLayerParams};
 pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 pub use pluot_core::render_traits::{FontWeight, FontStyle};
 pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder};
 pub use pluot_core::numeric_data::NumericData;
-pub use pluot_core::layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
-pub use pluot_core::layers::axis_band_layer::{AxisBandLayerParams};
+pub use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
+pub use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;
-pub use pluot_core::plot_layers::bar_plot_layer::{BarPlotLayerParams, BarOrientation};
-pub use pluot_core::plot_layers::histogram_layer::HistogramLayerParams;
+pub use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarOrientation};
+pub use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 
 // Zarr layers
 pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;

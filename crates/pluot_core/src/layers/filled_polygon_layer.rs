@@ -9,10 +9,10 @@ use std::sync::Arc;
 use crate::picking::LayerPickingResult;
 use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
-use super::curve_and_polygon_utils::{
+use crate::curve_and_polygon_utils::{
     polygon_rings_from_flat, resolve_margins, triangulate_polygon_rings,
 };
-use super::picking_geometry::{point_in_polygon, unapply_model_matrix};
+use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
     MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,

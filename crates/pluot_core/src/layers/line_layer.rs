@@ -11,7 +11,7 @@ use crate::picking::LayerPickingResult;
 use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
-use super::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
+use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};

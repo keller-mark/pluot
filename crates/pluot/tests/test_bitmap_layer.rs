@@ -79,6 +79,72 @@ fn bitmap_cyx_pixel_x_data_y() -> BitmapLayerParams {
     }
 }
 
+// Helper: same image in Normalized unit mode. Unlike RectLayer's explicit
+// position fields (which can just be re-expressed as 0-1 fractions), the
+// bitmap layer's position/size come from `pixel_offset` and the image's
+// `shape` (always in native image-pixel units), and bitmap_layer.wgsl does
+// NOT divide these by the layer size in Normalized mode (it only skips that
+// division, unlike Pixels mode) -- so a raw img_size of 4x4 would be
+// interpreted as 4x the layer's normalized (0,1) extent, way off-canvas.
+// A model_matrix scale is the mechanism to bring it into (0,1) space.
+// Scaling by 0.01 shrinks the 4x4 image to a 0.04x0.04 normalized extent,
+// which matches bitmap_cyx_pixels()'s 4px / 100px layer size exactly on a
+// 100x100 canvas, so this renders identically to bitmap_cyx_pixels() there.
+// Unlike Pixels mode (whose apparent size is a fraction of the *canvas'*
+// absolute pixel dimensions), this stays at exactly 4% of the layer's width
+// and height on any canvas size, since Normalized mode is not divided by
+// layer size at all.
+fn bitmap_cyx_normalized() -> BitmapLayerParams {
+    BitmapLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Normalized,
+        model_matrix: Some([
+            0.01, 0.0, 0.0, 0.0,
+            0.0, 0.01, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]),
+        ..bitmap_cyx_data()
+    }
+}
+
+// Helper: x in data space (unscaled, matching bitmap_cyx_data_x_pixel_y()'s
+// treatment of the data axis), y in normalized space. Like bitmap_cyx_normalized(),
+// the Y axis needs a model_matrix scale (0.01) to bring img_h=4 down into a
+// sensible (0,1)-ish extent, since Normalized mode does not divide by layer
+// size. The X (data) axis is left unscaled (matrix x-scale = 1.0) so its
+// behavior matches the existing data_x_pixel_y helper exactly.
+fn bitmap_cyx_data_x_normalized_y() -> BitmapLayerParams {
+    BitmapLayerParams {
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Normalized,
+        model_matrix: Some([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 0.01, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]),
+        ..bitmap_cyx_data()
+    }
+}
+
+// Helper: x in normalized space (scaled via model_matrix, see above), y in
+// data space (unscaled, matching bitmap_cyx_pixel_x_data_y()'s treatment of
+// the data axis).
+fn bitmap_cyx_normalized_x_data_y() -> BitmapLayerParams {
+    BitmapLayerParams {
+        data_unit_mode_x: UnitsMode::Normalized,
+        data_unit_mode_y: UnitsMode::Data,
+        model_matrix: Some([
+            0.01, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]),
+        ..bitmap_cyx_data()
+    }
+}
+
 fn layer_params(bitmap_params: BitmapLayerParams) -> Vec<LayerParams> {
     vec![LayerParams::BitmapLayer(bitmap_params)]
 }
@@ -152,6 +218,22 @@ async fn test_bitmap_layer_square_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmap_layer_square_contain_pixel_units_no_margins").await;
+}
+
+// Normalized units: on a 100x100 canvas this renders identically to the Pixels
+// test above, since bitmap_cyx_normalized()'s model_matrix scale (0.01) applied
+// to the 4x4 img_size yields the same 0.04 normalized extent as 4px / 100px.
+#[tokio::test]
+async fn test_bitmap_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(bitmap_cyx_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmap_layer_square_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]
@@ -272,6 +354,25 @@ async fn test_bitmap_layer_wide_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_bitmap_layer_wide_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a wide canvas: unlike the Pixels test above (which keeps
+// the image at a fixed absolute pixel size that becomes a smaller fraction of
+// a wider canvas), bitmap_cyx_normalized() is reused completely unchanged from
+// the square-canvas test, since Normalized mode is not divided by layer size
+// at all -- it stays at exactly 4% of the layer's width and height regardless
+// of the canvas' pixel dimensions.
+#[tokio::test]
+async fn test_bitmap_layer_wide_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(bitmap_cyx_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmap_layer_wide_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_bitmap_layer_wide_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -362,6 +463,21 @@ async fn test_bitmap_layer_tall_contain_pixel_units_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmap_layer_tall_contain_pixel_units_no_margins").await;
+}
+
+// Normalized units on a tall canvas: again reusing bitmap_cyx_normalized()
+// unchanged, demonstrating independence from the canvas' pixel dimensions.
+#[tokio::test]
+async fn test_bitmap_layer_tall_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(bitmap_cyx_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmap_layer_tall_contain_normalized_units_no_margins").await;
 }
 
 #[tokio::test]
@@ -527,4 +643,28 @@ async fn test_bitmap_layer_square_contain_pixel_x_data_y_no_margins() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmap_layer_square_contain_pixel_x_data_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_bitmap_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(bitmap_cyx_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmap_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_bitmap_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(bitmap_cyx_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmap_layer_square_contain_normalized_x_data_y_no_margins").await;
 }

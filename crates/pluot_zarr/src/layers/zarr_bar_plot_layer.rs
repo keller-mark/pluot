@@ -12,7 +12,7 @@ use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, Dra
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
-use pluot_core::plot_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
+use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
