@@ -507,6 +507,20 @@ async fn test_text_layer_tall_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_text_layer_tall_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a tall canvas: again reusing corner_text_normalized()
+// unchanged, demonstrating pixel-dimension independence.
+#[tokio::test]
+async fn test_text_layer_tall_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(corner_text_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_tall_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_text_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -601,6 +615,30 @@ async fn test_text_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
+#[tokio::test]
+async fn test_text_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_text_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_text_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(corner_text_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_normalized_x_data_y_no_margins").await;
+}
+
 // Font loading
 
 // PDF Base-14 font name resolved via the embedded URW font map.
@@ -687,6 +725,29 @@ async fn test_text_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// Scale 0.5 in normalized mode: like pixel mode, model_matrix operates in
+// normalized [0,1] space, so this should render identically to the pixel-mode
+// model-matrix-scale test above (on a 100x100 canvas, where they coincide).
+#[tokio::test]
+async fn test_text_layer_square_contain_normalized_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..corner_text_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_normalized_units_model_matrix_scale").await;
 }
 
 // ── Fill color modes ──────────────────────────────────────────────────────────

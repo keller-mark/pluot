@@ -1,0 +1,14 @@
+<svg height="100" width="200" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_bitmap_layer_clip_path">
+<rect height="100" width="200" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="200">
+<g clip-path="url(#my_bitmap_layer_clip_path)" transform="translate(0,0)">
+<image height="4" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAT0lEQVR4AQFEALv/AAAAmf84ADj/awBr/54Anv8ACgAK/z0APf9wAHD/owCj/wAPAA//QgBC/3UAdf+oAKj/ABQAFP9HAEf/egB6/60AAP97/Brz2gTN8QAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="8" x="0" y="96"/>
+</g>
+</g>
+</g>
+</svg>

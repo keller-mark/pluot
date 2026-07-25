@@ -222,6 +222,18 @@ async fn test_curve_layer_square_contain_pixel_units_no_margins() {
 }
 
 #[tokio::test]
+async fn test_curve_layer_square_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(wave_curve_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_normalized_units_no_margins").await;
+}
+
+#[tokio::test]
 async fn test_curve_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {
         width: 100,
@@ -400,6 +412,30 @@ async fn test_curve_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
+#[tokio::test]
+async fn test_curve_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(wave_curve_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(wave_curve_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_normalized_x_data_y_no_margins").await;
+}
+
 // ── Line width ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -449,6 +485,46 @@ async fn test_curve_layer_wide_contain_data_units_stroke_width() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_wide_contain_data_units_stroke_width").await;
+}
+
+// Stroke width measured as a fraction (0 to 1) of the layer height, independent
+// of the camera. Unlike the "wide" canvas used for the Data-units pair above
+// (which keeps the same 100px height as the square canvas and so wouldn't show
+// any scaling), this pair uses a "tall" (100x200) canvas so the height actually
+// changes between the two tests, demonstrating height-relative scaling.
+#[tokio::test]
+async fn test_curve_layer_square_contain_normalized_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.03)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_normalized_units_stroke_width").await;
+}
+
+// Same normalized stroke width (0.03) on a taller (100x200) canvas: since it is
+// height-relative, the stroke renders at 0.03 * 200px == 6px, twice as thick as
+// the square-canvas test above.
+#[tokio::test]
+async fn test_curve_layer_tall_contain_normalized_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(CurveLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.03)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_tall_contain_normalized_units_stroke_width").await;
 }
 
 // ── Instanced stroke width / opacity, fill opacity ──────────────────────────────

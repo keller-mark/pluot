@@ -448,6 +448,20 @@ async fn test_line_layer_tall_contain_pixel_units_no_margins() {
     render_and_check_both_snapshots(params, "test_line_layer_tall_contain_pixel_units_no_margins").await;
 }
 
+// Normalized units on a tall canvas: again reusing cross_lines_normalized()
+// unchanged, demonstrating pixel-dimension independence.
+#[tokio::test]
+async fn test_line_layer_tall_contain_normalized_units_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(cross_lines_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_tall_contain_normalized_units_no_margins").await;
+}
+
 #[tokio::test]
 async fn test_line_layer_tall_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -563,6 +577,30 @@ async fn test_line_layer_square_contain_pixel_x_data_y_no_margins() {
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_x_data_y_no_margins").await;
 }
 
+#[tokio::test]
+async fn test_line_layer_square_contain_data_x_normalized_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(cross_lines_data_x_normalized_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_data_x_normalized_y_no_margins").await;
+}
+
+#[tokio::test]
+async fn test_line_layer_square_contain_normalized_x_data_y_no_margins() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(cross_lines_normalized_x_data_y()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_normalized_x_data_y_no_margins").await;
+}
+
 // model_matrix
 
 // Scale 0.5 in data mode: lines shrink to lower-left quadrant of the unit square.
@@ -626,6 +664,29 @@ async fn test_line_layer_square_contain_pixel_units_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_units_model_matrix_scale").await;
+}
+
+// Scale 0.5 in normalized mode: like pixel mode, model_matrix operates in
+// normalized [0,1] space, so this should render identically to the pixel-mode
+// model-matrix-scale test above (on a 100x100 canvas, where they coincide).
+#[tokio::test]
+async fn test_line_layer_square_contain_normalized_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..cross_lines_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_normalized_units_model_matrix_scale").await;
 }
 
 // ── Stroke color modes ────────────────────────────────────────────────────────
@@ -715,4 +776,44 @@ async fn test_line_layer_square_contain_pixel_units_instanced_opacity() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_pixel_units_instanced_opacity").await;
+}
+
+// ── stroke_width_unit_mode: Normalized ────────────────────────────────────────
+//
+// Normalized stroke width is a fraction (0 to 1) of the layer height,
+// independent of the camera. 0.02 * 100px == 2px, matching the 2px line width
+// used by cross_lines_normalized()'s default (Pixels) stroke width above.
+#[tokio::test]
+async fn test_line_layer_square_contain_normalized_units_line_width_normalized_mode() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..cross_lines_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_normalized_units_line_width_normalized_mode").await;
+}
+
+// Same normalized stroke width (0.02) on a taller (100x200) canvas: since it is
+// height-relative, the line renders at 0.02 * 200px == 4px, twice as thick as
+// the square-canvas test above, demonstrating the height-relative scaling.
+#[tokio::test]
+async fn test_line_layer_tall_contain_normalized_units_line_width_normalized_mode() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(LineLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..cross_lines_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_tall_contain_normalized_units_line_width_normalized_mode").await;
 }

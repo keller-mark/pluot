@@ -166,6 +166,37 @@ async fn test_polygon_layer_square_contain_pixel_units_stroked() {
     render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_pixel_units_stroked").await;
 }
 
+// Normalized units: on a 100x100 canvas this renders identically to the Pixels
+// test above, since triangle_normalized() uses the same fractions (0.1/0.9/0.5)
+// that triangle_pixels() uses as absolute pixel values out of 100.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_normalized_units_stroked() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(triangle_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_normalized_units_stroked").await;
+}
+
+// Normalized units on a wide (200x100) canvas: unlike Pixels mode (which would
+// need its coordinates rescaled to the new canvas width), triangle_normalized()
+// is reused completely unchanged from the square-canvas test above, since its
+// 0-1 fractions are agnostic to the layer's actual pixel dimensions.
+#[tokio::test]
+async fn test_polygon_layer_wide_contain_normalized_units_stroked() {
+    let params = RenderParams {
+        width: 200,
+        height: 100,
+        layers: layer_params(triangle_normalized()),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_wide_contain_normalized_units_stroked").await;
+}
+
 #[tokio::test]
 async fn test_polygon_layer_square_contain_data_units_view_margins() {
     let params = RenderParams {
@@ -404,6 +435,44 @@ async fn test_polygon_layer_wide_contain_data_units_stroke_width() {
     render_and_check_both_snapshots(params, "test_polygon_layer_wide_contain_data_units_stroke_width").await;
 }
 
+// Stroke width as a fraction (0 to 1) of the layer height (normalized units,
+// camera-independent). 0.02 * 100px == 2px, matching the 2px border used by
+// triangle_normalized()'s default (Pixels) stroke width above.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_normalized_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..triangle_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_normalized_units_stroke_width").await;
+}
+
+// Same normalized stroke width (0.02) on a taller (100x200) canvas: since it is
+// height-relative, the border renders at 0.02 * 200px == 4px, twice as thick as
+// the square-canvas test above, demonstrating the height-relative scaling.
+#[tokio::test]
+async fn test_polygon_layer_tall_contain_normalized_units_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 200,
+        layers: layer_params(PolygonLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(0.02)),
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            ..triangle_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_tall_contain_normalized_units_stroke_width").await;
+}
+
 // ── Instanced stroke width / opacity, fill opacity ──────────────────────────────
 // The instanced modes supply one value per polygon (uploaded to the GPU as a
 // value texture), rather than a single uniform value shared by all polygons.
@@ -562,4 +631,27 @@ async fn test_polygon_layer_square_contain_model_matrix_scale() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_model_matrix_scale").await;
+}
+
+// Scale 0.5 in normalized mode: like pixel mode, model_matrix operates in
+// normalized [0,1] space, so this shrinks the triangle into the lower-left
+// quadrant, analogous to the data-units model-matrix-scale test above.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_normalized_units_model_matrix_scale() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            model_matrix: Some([
+                0.5, 0.0, 0.0, 0.0,
+                0.0, 0.5, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..triangle_normalized()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_normalized_units_model_matrix_scale").await;
 }
