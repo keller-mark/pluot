@@ -15,6 +15,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 
 // TODO: use From and Into to define the integer conversions, rather than manually defining in comments?
 
+/// Specifies how the camera and coordinate system should behave when the plotted region (within the margins) has a non-square aspect ratio.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioMode {
     /*
@@ -24,11 +25,15 @@ pub enum AspectRatioMode {
 
      - 2: fill (cover): For example, a 200 x 100 canvas would range from -1 to 1 in the X direction, and from -1+extra to 1-extra in the Y direction. The -1 to 1 square would keep its square aspect ratio but would be clipped in the Y direction (at the top and bottom) so that the entire canvas is filled/covered. The pixels would be centered.
      */
+     /// Squeeze/stretch the (0, 1) unit square so that no more and no less data is shown. The square aspect ratio of the (0, 1) unit square will NOT be preserved.
      Ignore,
+     /// (a.k.a. "fit"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
      Contain,
+     /// (a.k.a. "fill"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing less data along the shorter dimension of the rectangle.
      Cover,
 }
 
+/// Determine what extra data is shown in Contain mode, and what data is hidden in Cover mode.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AspectRatioAlignmentMode {
     /*
@@ -53,21 +58,29 @@ pub enum AspectRatioAlignmentMode {
        - When using "cover" AspectRatioMode with a tall canvas, the unit square will extend beyond the left of the viewport.
        - When using "ignore" AspectRatioMode, no action is needed.
      */
+     /// In Contain mode, the unit square will be centered vertically for tall aspect ratios (with extra space on top and bottom) and centered horizontally for wide aspect ratios (with extra space on left and right). In Cover mode, the unit square will extend beyond the left and right (for tall aspect ratios) or will extend beyond the top and bottom (for wide aspect ratios).
      Center,
+     /// In Contain mode, the unit square will be bottom-aligned for tall aspect ratios (with extra space on top) and left-aligned for wide aspect ratios (with extra space on right). In Cover mode, the unit square will extend beyond the right (for tall aspect ratios) or will extend beyond the top (for wide aspect ratios).
      Start,
+     /// In Contain mode, the unit square will be top-aligned for tall aspect ratios (with extra space on bottom) and right-aligned for wide aspect ratios (with extra space on left). In Cover mode, the unit square will extend beyond the left (for tall aspect ratios) or will extend beyond the bottom (for wide aspect ratios).
      End,
 }
 
+/// Determines whether size/position values are interpreted in pixel, data, or normalized space.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UnitsMode {
+    /// Pixel units. Agnostic to camera state.
     // 0: pixels (e.g., for fixed pixel-unit sizes).
     Pixels,
+    /// Data, or "world", units. Dependent on camera state and aspect ratio modes.
     // 1: data ("world") units (e.g., for physical sizes).
     Data,
+    /// Normalized units. Similar to pixel units, but normalized to be between zero and one. Agnostic to camera state and pixel dimensions.
     // 2: normalized: similar to pixel-based but values are between 0 and 1, so they are agnostic to the pixel dimensions of the plot. Similar to Pixels UnitMode, does not depend on the camera state.
     Normalized,
 }
 
+/// Named categorical colormap functions.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CategoricalColormap {
     // Reference: https://vega.github.io/vega/docs/schemes/
@@ -88,6 +101,7 @@ pub enum CategoricalColormap {
     Tableau20,
 }
 
+/// Named quantitative colormap functions.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum QuantitativeColormap {
     // Reference: https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/colormaps.in.glsl
@@ -108,40 +122,42 @@ pub enum QuantitativeColormap {
     Winter,
 }
 
-/// Static (r, g, b) color shared by every element.
+/// Static (r, g, b) color shared by every instance.
 pub type UniformRgbParams = (u8, u8, u8);
 
-/// Per-element RGB stored as three parallel arrays (one per channel). Each
-/// value is interpreted on a 0–255 scale (matching the `(u8, u8, u8)` used by
-/// the static modes) and normalized to 0–1 before shading.
+/// Explicitly specifies an RGB color per instance.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstancedRgbParams {
+    /// Array of red values (0 to 255). Length must be equal to the number of instances.
     pub r_values: NumericData,
+    /// Array of green values (0 to 255). Length must be equal to the number of instances.
     pub g_values: NumericData,
+    /// Array of blue values (0 to 255). Length must be equal to the number of instances.
     pub b_values: NumericData,
 }
 
-/// Per-element RGB stored as a single interleaved array: element `i` occupies
-/// indices `3*i`, `3*i + 1`, `3*i + 2`. Values use the same 0–255 scale as
-/// [`InstancedRgbParams`].
+/// Interleaved analog of [`InstancedRgbParams`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstancedRgbInterleavedParams {
+    /// Flat array of interleaved RGB values. Length must be equal to the 3 * number of instances.
     pub rgb_values: NumericData,
 }
 
-/// Categorical color: per-element integer class labels sampled against a named
-/// categorical palette. The label wraps around (modulo) the palette length.
+/// Specifies a named categorical colormap and the category per instance.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CategoricalParams {
+    /// An index of a color in the colormap per instance. Length must be equal to the number of instances.
     pub codes: NumericData,
+    /// A named categorical colormap function.
     pub colormap: CategoricalColormap,
 }
 
-/// Categorical color against a caller-supplied palette (rather than a named
-/// scheme). Otherwise identical to [`CategoricalParams`].
+/// Specifies an RGB value per category and the category per instance.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CategoricalCustomParams {
+    /// An index of a color in the colormap per instance. Length must be equal to the number of instances.
     pub values: NumericData,
+    /// An array of (r, g, b) values which define the custom categorical colormap.
     pub colormap: Vec<(u8, u8, u8)>,
 }
 
@@ -149,29 +165,26 @@ fn default_false() -> bool {
     false
 }
 
-/// Quantitative color: per-element scalar values mapped through a named
-/// continuous colormap. Values are normalized into 0–1 using `domain` (or the
-/// data's own min/max when `domain` is `None`) before sampling; `reverse` flips
-/// the colormap direction.
+/// Specifies a named quantitative colormap and a scalar value per instance.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuantitativeParams {
+    /// The scalar values passed as input to the colormap function. Length must be equal to the number of instances.
     pub values: NumericData,
+    /// A named quantitative colormap function.
     pub colormap: QuantitativeColormap,
+    /// Determines whether the colormap should be reversed (by subtracting `1 - value` before executing the colormap function). By default, false.
     #[serde(default = "default_false")]
     pub reverse: bool,
-    // Optional (min, max) normalization domain. When `None`, the domain is
-    // derived from the data's own minimum and maximum.
+    /// Optional (min, max) normalization domain.
     #[serde(default)]
     pub domain: Option<(f32, f32)>,
 }
 
 
-/// How the fill color of each element in a layer is determined.
+/// Specify uniform or instanced colors for rendered elements.
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
-/// `{"color_mode": "UniformRgb", "color_params": [255, 0, 0]}`. Variants that
-/// carry [`NumericData`] describe per-element color, and the layer uploads that
-/// data to the GPU as one or more textures (see `RectLayer`).
+/// `{"color_mode": "UniformRgb", "color_params": [255, 0, 0]}`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "color_mode", content = "color_params")]
 pub enum ColorMode {
@@ -189,16 +202,17 @@ pub enum ColorMode {
     Quantitative(QuantitativeParams),
 }
 
-/// Static opacity (0.0–1.0) shared by every element.
+/// Static opacity (between 0.0 for fully transparent and 1.0 for fully opaque) shared by every element.
 pub type UniformOpacityParams = f32;
 
-/// Per-element opacity, one value (0.0–1.0) per element.
+/// Per-element opacity, one value (between 0.0 and 1.0) per element.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstancedOpacityParams {
+    /// The opacity values per instance. Length must be equal to the number of instances.
     pub values: NumericData,
 }
 
-/// How the opacity of each element in a layer is determined.
+/// Specify uniform or instanced opacity values for rendered elements.
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"opacity_mode": "UniformOpacity", "opacity_params": 1.0}`.
@@ -230,10 +244,11 @@ pub type UniformSizeParams = f32;
 /// Per-element size (e.g., width or radius), one value per element.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstancedSizeParams {
+    /// A size value per instance. Length must be equal to the number of instances.
     pub values: NumericData,
 }
 
-/// How the size (width or radius) of each element in a layer is determined.
+/// Specify uniform or instanced size (e.g., width or radius) values for rendered elements.
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"size_mode": "UniformSize", "size_params": 1.0}`.
@@ -333,9 +348,10 @@ pub struct MarginParams {
     pub margin_bottom: Option<f32>,
 }
 
-// Struct to store anything at the view level (i.e., not layer-specific)
+/// Shared rendering parameters at the view level (i.e., not layer-specific).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ViewParams {
+    /// The view ID.
     pub view_id: String, // Just reuse the plot_id when there is a single view.
     pub width: u32,
     pub height: u32,
@@ -348,50 +364,40 @@ pub struct ViewParams {
     // Retina screens will have a value of 2.0 or higher.
     pub device_pixel_ratio: f32,
 
+    /// The camera state, as a 4x4 matrix.
     pub camera_view: Option<[f32; 16]>,
 
-    // Timeout in ms before bailing out of awaiting a data request.
+    /// Timeout (in ms) before bailing out of awaiting a data request.
     pub timeout: Option<u32>,
 
+    /// If false, bail early (e.g., upon encountering a pending Promise) rather than waiting for data requests to resolve.
     pub wait_for_store_gets: bool,
 
-    // Allow disabling memoization/cacheing. Useful for testing/debugging.
+    /// Allow disabling memoization/cacheing.
+    // Useful for testing/debugging.
     pub cache_enabled: bool,
 
-    // Margins for plots that need them (e.g. scatterplot axes).
+    /// Specify margins for plots that need them (e.g. scatterplot axes).
+    ///
+    /// Subtract margins from view-level width/height to obtain layer-level width/height.
     pub margins: Option<MarginParams>,
 
-    /// Zarr store metadata keyed by name, forwarded from
-    /// [`crate::params::RenderParams::stores`]. Zarr-based layers resolve the
-    /// store they read from against these keys (see [`resolve_store_name`]).
+    /// Mapping from zarr store name to its metadata.
+    ///
+    /// Keeping track of store metadata in parallel with the store instances in
+    /// [`store_objects`] enables serializing store info,
+    /// facilitating the render-to-script functionality.
     pub stores: Option<HashMap<String, ZarrStoreInfo>>,
 
-    /// Concrete Zarr store objects keyed by name, threaded down from
-    /// [`crate::render::render`]'s `stores` argument so that layer constructors
-    /// can read from them directly rather than looking a store up in (or
-    /// inserting one into) the global store registry. When present, the keys
-    /// mirror those of [`ViewParams::stores`]. When `None`, layers fall back to
-    /// [`crate::cache::get_or_init_store`]. Resolved per layer via
-    /// [`ViewParams::get_store`].
+    /// Mapping from zarr store name to its zarrs store instance.
     ///
-    /// Not serialized: store objects are runtime handles, not plot parameters.
+    /// Not serialized.
     #[serde(skip)]
     pub store_objects: Option<StoreMap>,
-
-    // Note: Views should have margins, but these should be translated to "bounds" for layers.
-    // This is because we may want to render certain layers in the margins
-    // (e.g., text/line layers for axes/titles/etc).
 }
 
 impl ViewParams {
-    /// Resolve the concrete Zarr store a layer should read from.
-    ///
-    /// When explicit store objects were threaded in (via
-    /// [`crate::render::render`]'s `stores` argument and [`ViewParams::store_objects`]),
-    /// the matching one is returned. Otherwise this falls back to the global
-    /// store registry ([`crate::cache::get_or_init_store`]), which constructs an
-    /// [`crate::zarr::AsyncZarritaStore`] dispatching to the globally registered
-    /// bound functions.
+    /// Given a Zarr store name, obtain the corresponding store instance from the [`ViewParams::store_objects`] hashmap.
     pub fn get_store(&self, store_name: &str) -> Arc<dyn AsyncReadableStorageTraits> {
         if let Some(store_objects) = &self.store_objects {
             if let Some(store) = store_objects.0.get(store_name) {
@@ -426,10 +432,7 @@ impl Default for ViewParams {
 ///
 /// The layer may specify a `store_name` directly (via its `layer_params`).
 /// The resolved name must be present in the keys of the top-level
-/// [`ViewParams::stores`] map (forwarded from
-/// [`crate::params::RenderParams::stores`]); it identifies the store that the
-/// language bindings registered so that the `zarr_`-prefixed bound functions
-/// can resolve `(store_name, key)` lookups.
+/// [`ViewParams::stores`] map.
 ///
 /// As an ergonomic shortcut, when the layer omits `store_name` and exactly one
 /// store is defined at the top level, that single store is used.

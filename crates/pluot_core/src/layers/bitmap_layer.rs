@@ -79,6 +79,7 @@ impl DimensionOrder {
     }
 }
 
+/// Layer params struct for [`BitmapLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct BitmapLayerParams {
@@ -902,4 +903,3 @@ impl PickableLayer for BitmapLayer {
         })
     }
 }
-

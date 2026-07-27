@@ -22,6 +22,7 @@ const DEFAULT_LINE_WIDTH: f32 = 1.0;
 const DEFAULT_AXIS_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const DEFAULT_LABEL_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
+/// Determines where to render an axis layer: top, right, bottom, or left.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AxisPosition {
     Top,
@@ -30,6 +31,7 @@ pub enum AxisPosition {
     Left,
 }
 
+/// Layer params struct for [`AxisLinearLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct AxisLinearLayerParams {

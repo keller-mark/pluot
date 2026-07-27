@@ -26,10 +26,7 @@
 use crate::params::{GraphicsFormat, RenderParams};
 use serde_json::Value;
 
-/// Serialize `params` into code (source or JSON) in the language and flavor
-/// implied by `format`.
-///
-/// Panics if `format` is not a code format (see [`GraphicsFormat::is_code`]).
+/// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
 pub fn render_to_script(params: &RenderParams, format: &GraphicsFormat) -> String {
     // Serialize once; every generator walks this JSON value.
     let value = serde_json::to_value(params).expect("RenderParams should serialize to JSON");

@@ -35,6 +35,7 @@ pub fn stores_from_params(params: &RenderParams) -> Option<StoreMap> {
     Some(StoreMap(map))
 }
 
+/// Given plotting parameters as input, render a graphical (vector or bitmap) output.
 pub async fn render(params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
     // "Rendering to code" needs no GPU, data loading or layer construction:
     // it just serializes the params into source code / JSON. Handle it up front.

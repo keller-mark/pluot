@@ -29,7 +29,7 @@ pub struct DataBounds {
 }
 
 
-// Projects data-space coordinates to pixel coordinates on screen.
+/// Projects data-space coordinates to pixel coordinates on screen.
 // Reference: https://deck.gl/docs/api-reference/core/viewport
 pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coord: DataCoord) -> ScreenCoord {
     // TODO: accept a model_matrix parameter for data transformation?
@@ -88,7 +88,7 @@ pub fn project(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coo
 }
 
 
-// Unproject pixel coordinates on screen into data-space coordinates.
+/// Unproject pixel coordinates on screen into data-space coordinates.
 // Reference: https://deck.gl/docs/api-reference/core/viewport
 pub fn unproject(view_params: &ViewParams, layer_bounds: Option<MarginParams>, coord: ScreenCoord) -> Option<DataCoord> {
     // TODO: accept a model_matrix parameter for data transformation?
@@ -174,7 +174,7 @@ pub fn camera_matrix_to_zoom_and_translation(camera_view: Option<[f32; 16]>) -> 
     (zoom_x, zoom_y, translate_x, translate_y)
 }
 
-// Calculate the visible data range based on camera view and other view parameters.
+/// Calculate the visible data range based on camera view and other view parameters.
 pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
     let (zoom_x, zoom_y, translate_x, translate_y) = camera_matrix_to_zoom_and_translation(view_params.camera_view);
 
@@ -247,7 +247,7 @@ pub fn get_bounds(view_params: &ViewParams) -> DataBounds {
     }
 }
 
-// Given x_min/x_max and y_min/y_max values, compute the corresponding camera matrix that would show data in this range.
+/// Given x_min/x_max and y_min/y_max values, compute the corresponding camera matrix that would show data in this range.
 pub fn get_camera_matrix_from_bounds(view_params: &ViewParams, data_bounds: &DataBounds) -> [f32; 16] {
     let aspect_ratio_mode = view_params.aspect_ratio_mode;
     let aspect_ratio_alignment_mode = view_params.aspect_ratio_alignment_mode;
