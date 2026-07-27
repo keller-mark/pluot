@@ -4,14 +4,8 @@
 // crate.
 //
 // `cargo publish` can only package files that live inside the crate
-// directory, so `include_bytes!` cannot reach the workspace-level vendor/
-// submodule directly. The copies under `src/vendored-fonts/` are
-// committed to git and are what actually gets embedded and published;
-// this script just keeps them in sync with the submodule automatically
-// whenever it's checked out (normal workspace dev builds). When the
-// submodule isn't available (e.g. the isolated build `cargo publish`
-// verifies against, or a build from the published crates.io tarball),
-// this script is a no-op and the already-committed copies are used as-is.
+// directory, so `include_bytes!` cannot reach into the workspace-level vendor/
+// directory.
 
 use std::fs;
 use std::path::PathBuf;
