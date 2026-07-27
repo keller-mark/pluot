@@ -9,10 +9,8 @@ use encase::{ShaderType, UniformBuffer};
 
 // Reference: https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/main.rs
 
-// Mode enum
-
-/// Discriminant values must stay in sync with the WGSL MODE_* constants in
-/// shaders/reduce.wgsl.
+/// Specify the behavior of the reducer functionality.
+// Discriminant values must stay in sync with the WGSL MODE_* constants in shaders/reduce.wgsl.
 #[derive(Debug, Clone)]
 pub enum ReduceMode {
     /// Output: one f32 (the global minimum).

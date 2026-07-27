@@ -32,6 +32,7 @@ use crate::layers::ome_zarr_utils::{
     axis_unit_space_to_coefficient_and_exponent,
 };
 
+/// Layer params struct for [`OmeZarrMultiscaleLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct OmeZarrMultiscaleLayerParams {

@@ -34,6 +34,8 @@ use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 // With JOIN_RESOLUTION=8: (8*2 + 3) * 2 = 38.
 const VERTS_PER_INSTANCE: u32 = 38;
 
+
+/// Layer params struct for [`StrokedCurveLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct StrokedCurveLayerParams {

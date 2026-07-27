@@ -21,7 +21,7 @@ use pluot_core::viewport::get_bounds;
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
-
+/// Layer params struct for [`ZarrPointLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct ZarrPointLayerParams {

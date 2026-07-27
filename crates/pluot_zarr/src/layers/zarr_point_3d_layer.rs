@@ -18,6 +18,8 @@ use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
 
+
+/// Layer params struct for [`ZarrPoint3dLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct ZarrPoint3dLayerParams {

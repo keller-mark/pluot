@@ -64,7 +64,7 @@ pub enum LayerParams {
 }
 
 /// Strongly-typed render params. Mirrors [`RawRenderParams`] but accepts
-/// `layers` as a typed [`LayerParams`] enum instead of raw JSON values.
+/// `layers` as a typed [`LayerParams`] enum instead of [`RawLayerParams`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RenderParams {
     // TODO: nest `layers` within a plot_params enum,

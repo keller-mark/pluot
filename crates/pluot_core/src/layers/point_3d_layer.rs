@@ -20,7 +20,7 @@ use crate::two::shapes::TwoElement;
 use crate::two::svg::{update_svg, SvgContext};
 use crate::layers::point_layer::PointShapeMode;
 
-
+/// Layer params struct for [`Point3dLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Point3dLayerParams {

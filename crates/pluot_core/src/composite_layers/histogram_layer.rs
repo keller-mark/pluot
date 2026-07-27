@@ -17,6 +17,8 @@ use crate::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 
 use super::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 
+
+/// Layer params struct for [`HistogramLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HistogramLayerParams {
     pub layer_id: String,
