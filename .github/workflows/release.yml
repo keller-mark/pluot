@@ -36,6 +36,8 @@ jobs:
         toolchain: stable
         targets: wasm32-unknown-unknown
     - uses: Swatinem/rust-cache@v2
+    - name: For Rust - Install cargo-edit
+      run: cargo install cargo-edit
     # Start WASM-specific stuff
     #- name: Install wasm-pack (alternative method)
     #  run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
