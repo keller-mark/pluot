@@ -11,45 +11,43 @@
           "point_radius_unit_mode_x": "Pixels",
           "point_radius_unit_mode_y": "Pixels",
           "point_shape_mode": "Square",
-          "point_radius": 15.0,
-          "store_name": "gaussian_quantiles_store",
+          "point_radius": { "size_mode": "UniformSize", "size_params": 15.0 },
           "bounds": {
             "margin_top": 0,
             "margin_right": 0,
             "margin_bottom": 0,
             "margin_left": 0
           },
-          "position_x": [100, 100],
-          "position_y": [100, 200],
-          "labels_vec": [0, 1]
+          "position_x": { "dtype": "Float32", "values": [100.0, 100.0] },
+          "position_y": { "dtype": "Float32", "values": [100.0, 200.0] }
         }
       },
       {
         "layer_type": "LineLayer",
         "layer_params": {
           "layer_id": "layer_3",
-          "data_unit_mode": "Pixels",
-          "line_width_unit_mode": "Pixels",
-          "line_width": 5.0,
-          "store_name": "gaussian_quantiles_store",
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
+          "stroke_width_unit_mode": "Pixels",
+          "stroke_width": { "size_mode": "UniformSize", "size_params": 5.0 },
           "bounds": {
             "margin_top": 0,
             "margin_right": 0,
             "margin_bottom": 0,
             "margin_left": 0
           },
-          "source_position_x": [10, 110],
-          "source_position_y": [10, 110],
-          "target_position_x": [100, 210],
-          "target_position_y": [100, 210],
-          "labels_vec": [4, 1]
+          "source_position_x": { "dtype": "Float32", "values": [10.0, 110.0] },
+          "source_position_y": { "dtype": "Float32", "values": [10.0, 110.0] },
+          "target_position_x": { "dtype": "Float32", "values": [100.0, 210.0] },
+          "target_position_y": { "dtype": "Float32", "values": [100.0, 210.0] }
         }
       },
       {
         "layer_type": "TextLayer",
         "layer_params": {
           "layer_id": "layer_text",
-          "data_unit_mode": "Pixels",
+          "data_unit_mode_x": "Pixels",
+          "data_unit_mode_y": "Pixels",
           "text_size_unit_mode": "Pixels",
           "text_size": 25.0,
           "text_align_mode": "Start",
@@ -59,8 +57,8 @@
           "font_weight": "Normal",
           "font_style": "Normal",
           "bounds": null,
-          "position_x": [10, 110],
-          "position_y": [10, 110],
+          "position_x": { "dtype": "Float32", "values": [10.0, 110.0] },
+          "position_y": { "dtype": "Float32", "values": [10.0, 110.0] },
           "text_vec": ["Hello", "The quick brown fox jumps over the lazy dog"]
         }
       }

@@ -19,9 +19,11 @@ use zarrs_storage::AsyncReadableStorageTraits;
 use resvg::usvg;
 use tiny_skia;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Cursor, Read};
 use std::path::PathBuf;
 use std::process;
+use image::ImageReader;
+use stega::{decode as stega_decode, encode as stega_encode, Carrier, Payload};
 
 /// Runs blocking `zarrs_filesystem`/`zarrs_http` store calls on Tokio's
 /// blocking thread pool, so they can back the `async` store trait that
@@ -107,12 +109,13 @@ struct Args {
     #[arg(short, long)]
     input: Option<PathBuf>,
 
-    /// Output file path. The extension determines the format:
+    /// Output file path. Required unless --decode is used. The extension
+    /// determines the format:
     ///   .svg         -> vector (SVG)
     ///   .png         -> raster (GPU-rendered PNG)
     ///   .via_svg.png -> SVG rendered to PNG via resvg
-    #[arg(short, long)]
-    output: PathBuf,
+    #[arg(short, long, required_unless_present = "decode")]
+    output: Option<PathBuf>,
 
     /// Canvas width in pixels.
     #[arg(long, default_value_t = 800)]
@@ -167,6 +170,21 @@ struct Args {
     /// Can be specified multiple times. Has no effect on GPU raster output.
     #[arg(long = "font_path")]
     font_path: Vec<PathBuf>,
+
+    /// Embed the input RenderParams JSON into the rendered SVG or PNG output,
+    /// analogous to vendor/stega-lite: a hidden `<desc>` element for SVG, or
+    /// LSB steganography (via the `stega` crate) for PNG. Has no effect on
+    /// .py/.R script output. Transparency is preserved for PNG output.
+    #[arg(long)]
+    embed_params: bool,
+
+    /// Given the path to an SVG or PNG file produced with `--embed-params`
+    /// (as the value of this --decode option), decode the embedded
+    /// RenderParams JSON representation, print it to stdout, and exit.
+    /// When a path to a file to decode is provided,
+    /// all other rendering flags (--input, --output, etc.) are ignored.
+    #[arg(long)]
+    decode: Option<PathBuf>,
 }
 
 
@@ -298,15 +316,204 @@ fn read_json(input: &Option<PathBuf>) -> Result<String, io::Error> {
     }
 }
 
+// --- RenderParams JSON embedding/decoding (see vendor/stega-lite, which does
+// the analogous thing for Vega-Lite specs) ---
+
+/// Infer whether `--decode` names an SVG or PNG file. Unlike `infer_format`,
+/// this only distinguishes the two container formats a `--decode` input can
+/// actually be, not the pluot graphics-format enum.
+fn decode_format_for_path(path: &PathBuf) -> Result<&'static str, String> {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("svg") => Ok("svg"),
+        Some("png") => Ok("png"),
+        Some(other) => Err(format!(
+            "Unsupported file extension for --decode: '.{other}'. Use .svg or .png."
+        )),
+        None => Err(format!(
+            "Cannot infer format for --decode: '{}' has no file extension.",
+            path.display()
+        )),
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn html_unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+}
+
+/// Embed the RenderParams JSON into the SVG as a hidden `<desc>` element,
+/// inserted right after the opening `<svg ...>` tag.
+fn embed_json_in_svg(svg: &str, params_json: &str) -> String {
+    if let Some(pos) = svg.find('>') {
+        let (before, after) = svg.split_at(pos + 1);
+        format!(
+            "{before}<desc class=\"pluot-params\">{}</desc>{after}",
+            html_escape(params_json)
+        )
+    } else {
+        svg.to_string()
+    }
+}
+
+/// Extract the RenderParams JSON previously embedded by `embed_json_in_svg`.
+fn extract_json_from_svg(svg: &str) -> Option<String> {
+    let start_tag = "<desc class=\"pluot-params\">";
+    let end_tag = "</desc>";
+    let start = svg.find(start_tag)? + start_tag.len();
+    let end = svg[start..].find(end_tag)? + start;
+    Some(html_unescape(&svg[start..end]))
+}
+
+/// Encode raw RGBA8 pixel data (as produced by the raster render path) into
+/// an in-memory PNG file, without writing to disk.
+fn png_bytes_from_rgba(pixel_data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    let mut out_bytes: Vec<u8> = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut out_bytes);
+    image::ImageEncoder::write_image(
+        encoder,
+        pixel_data,
+        width,
+        height,
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| format!("Failed to encode PNG: {e}"))?;
+    Ok(out_bytes)
+}
+
+/// Embed the RenderParams JSON into a PNG file's pixels using LSB
+/// steganography via the `stega` crate. The carrier only supports RGB
+/// images, so the alpha channel is split off before encoding and recombined
+/// with the (possibly LSB-perturbed) RGB channels afterwards, rather than
+/// dropped: many renders are transparent outside the plotted area, and
+/// those pixels' underlying RGB is typically (0, 0, 0), so discarding alpha
+/// would turn them solid black instead of transparent.
+fn embed_json_in_png(png_bytes: &[u8], params_json: &str) -> Result<Vec<u8>, String> {
+    let img = ImageReader::new(Cursor::new(png_bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to guess PNG format: {e}"))?
+        .decode()
+        .map_err(|e| format!("Failed to decode PNG: {e}"))?;
+    let rgba_image = img.to_rgba8();
+    let (width, height) = (rgba_image.width(), rgba_image.height());
+
+    let mut alpha = Vec::with_capacity((width * height) as usize);
+    let mut rgb_raw = Vec::with_capacity((width * height * 3) as usize);
+    for pixel in rgba_image.into_raw().chunks_exact(4) {
+        rgb_raw.extend_from_slice(&pixel[0..3]);
+        alpha.push(pixel[3]);
+    }
+    let rgb_image = image::RgbImage::from_raw(width, height, rgb_raw)
+        .ok_or_else(|| "Failed to build RGB carrier image".to_string())?;
+
+    let mut carrier = Carrier::new(rgb_image)
+        .map_err(|e| format!("Failed to create steganography carrier: {e:?}"))?;
+
+    let payload = Payload::new(params_json);
+    stega_encode(&payload, &mut carrier)
+        .map_err(|e| format!("RenderParams JSON too large for image capacity: {e:?}"))?;
+
+    let result_image = carrier.unwrap();
+    let mut rgba_out = Vec::with_capacity((width * height * 4) as usize);
+    for (rgb, a) in result_image.into_raw().chunks_exact(3).zip(alpha.iter()) {
+        rgba_out.extend_from_slice(rgb);
+        rgba_out.push(*a);
+    }
+
+    let mut out_bytes: Vec<u8> = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut out_bytes);
+    image::ImageEncoder::write_image(
+        encoder,
+        &rgba_out,
+        width,
+        height,
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| format!("Failed to encode PNG: {e}"))?;
+
+    Ok(out_bytes)
+}
+
+/// Extract the RenderParams JSON previously embedded by `embed_json_in_png`.
+fn extract_json_from_png(png_bytes: &[u8]) -> Result<String, String> {
+    let img = ImageReader::new(Cursor::new(png_bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to guess PNG format: {e}"))?
+        .decode()
+        .map_err(|e| format!("Failed to decode PNG: {e}"))?;
+    let rgb_image = img.to_rgb8();
+
+    let carrier = Carrier::new(rgb_image)
+        .map_err(|e| format!("Failed to create steganography carrier: {e:?}"))?;
+
+    stega_decode(&carrier).map_err(|e| format!("Failed to decode hidden data from PNG: {e:?}"))
+}
+
 
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
 
+    // --- Decode shortcut ---
+    //
+    // `--decode <path>` extracts and prints RenderParams JSON previously
+    // embedded (via `--embed-params`) in a graphics file, instead of
+    // rendering. All other flags are ignored.
+    if let Some(decode_path) = &args.decode {
+        let decode_format = match decode_format_for_path(decode_path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        };
+        let params_json = if decode_format == "svg" {
+            let svg = fs::read_to_string(decode_path).unwrap_or_else(|e| {
+                eprintln!("Error reading {}: {}", decode_path.display(), e);
+                process::exit(1);
+            });
+            extract_json_from_svg(&svg).unwrap_or_else(|| {
+                eprintln!(
+                    "Error: no embedded RenderParams JSON found in {}",
+                    decode_path.display()
+                );
+                process::exit(1);
+            })
+        } else {
+            let png_bytes = fs::read(decode_path).unwrap_or_else(|e| {
+                eprintln!("Error reading {}: {}", decode_path.display(), e);
+                process::exit(1);
+            });
+            extract_json_from_png(&png_bytes).unwrap_or_else(|e| {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            })
+        };
+        println!("{params_json}");
+        return;
+    }
+
+    // `--output` is required by clap (`required_unless_present = "decode"`)
+    // whenever `--decode` is absent, so this is always present here.
+    let output = args.output.clone().unwrap();
+
     // --- Parse CLI parameters ---
 
-    let format = infer_format(&args.output);
+    let format = infer_format(&output);
 
     let aspect_ratio_mode = match parse_aspect_ratio_mode(&args.aspect_ratio_mode) {
         Ok(m) => m,
@@ -406,7 +613,7 @@ async fn main() {
     // `--output foo.py` / `foo.R` skip real rendering entirely and instead
     // emit the equivalent Python/R source via `render_to_script`, for use as
     // an integration-test fixture (see `scripts/gen_render_script_fixtures.sh`).
-    if let Some(script_format) = script_format_for_output(&args.output) {
+    if let Some(script_format) = script_format_for_output(&output) {
         let script_params = RenderParams {
             format: GraphicsFormat::Vector,
             // Passed through verbatim (`None` if the input JSON declared no
@@ -417,12 +624,12 @@ async fn main() {
             ..params.clone()
         };
         let script = render_to_script(script_params, &script_format);
-        match fs::write(&args.output, &script) {
+        match fs::write(&output, &script) {
             Ok(_) => {
                 eprintln!(
                     "Wrote {script_format:?} script ({} bytes) to {}",
                     script.len(),
-                    args.output.display()
+                    output.display()
                 );
             }
             Err(e) => {
@@ -435,7 +642,7 @@ async fn main() {
 
     let width = params.width;
     let height = params.height;
-    let via_svg_png = is_via_svg_png(&args.output);
+    let via_svg_png = is_via_svg_png(&output);
     let is_vector = params.format == GraphicsFormat::Vector;
 
     // Render the plot. When the input JSON declares `stores`, construct real
@@ -497,13 +704,28 @@ async fn main() {
             }
         };
         resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
-        match pixmap.save_png(&args.output) {
+        let png_bytes = match pixmap.encode_png() {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Error encoding PNG: {}", e);
+                process::exit(1);
+            }
+        };
+        let final_bytes = if args.embed_params {
+            embed_json_in_png(&png_bytes, &json_str).unwrap_or_else(|e| {
+                eprintln!("Error embedding RenderParams JSON: {}", e);
+                process::exit(1);
+            })
+        } else {
+            png_bytes
+        };
+        match fs::write(&output, &final_bytes) {
             Ok(_) => {
                 eprintln!(
                     "Wrote PNG output via SVG ({}x{}) to {}",
                     size.width(),
                     size.height(),
-                    args.output.display()
+                    output.display()
                 );
             }
             Err(e) => {
@@ -513,12 +735,24 @@ async fn main() {
         }
     } else if is_vector {
         // Vector: the render function returns a complete SVG document as UTF-8 bytes.
-        match fs::write(&args.output, &result) {
+        let svg_bytes: Vec<u8> = if args.embed_params {
+            let svg_string = match std::str::from_utf8(&result) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error: SVG output is not valid UTF-8: {}", e);
+                    process::exit(1);
+                }
+            };
+            embed_json_in_svg(svg_string, &json_str).into_bytes()
+        } else {
+            result
+        };
+        match fs::write(&output, &svg_bytes) {
             Ok(_) => {
                 eprintln!(
                     "Wrote SVG output ({} bytes) to {}",
-                    result.len(),
-                    args.output.display()
+                    svg_bytes.len(),
+                    output.display()
                 );
             }
             Err(e) => {
@@ -533,25 +767,50 @@ async fn main() {
         let num_extra_bytes: usize = 1;
         let pixel_data = &result[..result.len() - num_extra_bytes];
 
-        match save_buffer_with_format(
-            &args.output,
-            pixel_data,
-            width,
-            height,
-            ColorType::Rgba8,
-            ImageFormat::Png,
-        ) {
-            Ok(_) => {
-                eprintln!(
-                    "Wrote PNG output ({}x{}) to {}",
-                    width,
-                    height,
-                    args.output.display()
-                );
-            }
-            Err(e) => {
-                eprintln!("Error writing PNG output: {}", e);
+        if args.embed_params {
+            let png_bytes = png_bytes_from_rgba(pixel_data, width, height).unwrap_or_else(|e| {
+                eprintln!("Error encoding PNG: {}", e);
                 process::exit(1);
+            });
+            let final_bytes = embed_json_in_png(&png_bytes, &json_str).unwrap_or_else(|e| {
+                eprintln!("Error embedding RenderParams JSON: {}", e);
+                process::exit(1);
+            });
+            match fs::write(&output, &final_bytes) {
+                Ok(_) => {
+                    eprintln!(
+                        "Wrote PNG output ({}x{}) to {}",
+                        width,
+                        height,
+                        output.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Error writing PNG output: {}", e);
+                    process::exit(1);
+                }
+            }
+        } else {
+            match save_buffer_with_format(
+                &output,
+                pixel_data,
+                width,
+                height,
+                ColorType::Rgba8,
+                ImageFormat::Png,
+            ) {
+                Ok(_) => {
+                    eprintln!(
+                        "Wrote PNG output ({}x{}) to {}",
+                        width,
+                        height,
+                        output.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Error writing PNG output: {}", e);
+                    process::exit(1);
+                }
             }
         }
     }
