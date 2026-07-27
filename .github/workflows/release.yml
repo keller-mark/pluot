@@ -74,6 +74,8 @@ jobs:
         # This expects you to have a script called changeset-publish which does a build for the packages and calls `changeset publish`
         publish: ./scripts/changeset-publish.sh --action
       env:
+        # Note: Must enable Workflow permissions - "Read and write permissions" and "Allow GitHub Actions to create and approve pull requests"
+        # in the repo's Settings -> Actions -> General page.
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: For Python - Install UV
