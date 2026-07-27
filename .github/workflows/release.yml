@@ -55,7 +55,7 @@ jobs:
         node-version: '24.x'
     # npm 11.5.1 or later is required for OIDC publishingso update to latest to be sure
     - run: npm install -g npm@latest
-    - uses: pnpm/action-setup@v4
+    - uses: pnpm/action-setup@v6
       name: Install pnpm
       id: pnpm-install
       with:
