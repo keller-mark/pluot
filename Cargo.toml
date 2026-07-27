@@ -23,7 +23,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 license-file = "LICENSE"
 
 # We use the 2021 edition which defaults to Resolver version 2
