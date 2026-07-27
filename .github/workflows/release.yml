@@ -82,7 +82,7 @@ jobs:
       uses: rust-lang/crates-io-auth-action@v1
       id: cratesioauth
     - name: For Rust - Publish to crates.io
-      run: cargo publish --workspace
+      run: cargo publish --workspace --allow-dirty
       env:
         CARGO_REGISTRY_TOKEN: ${{ steps.cratesioauth.outputs.token }}
 
