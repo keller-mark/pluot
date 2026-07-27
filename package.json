@@ -19,6 +19,7 @@
     "clean": "pnpm -r exec -- rm -rf dist dist-tsc tsconfig.tsbuildinfo",
     "clean-deps": "pnpm -r exec -- rm -rf node_modules",
     "clean-all": "pnpm run clean && pnpm run clean-deps",
+    "changeset-status": "changeset status --since=origin/main",
     "build-docs": "pnpm -r build-docs",
     "deploy": "wasm-pack build crates/pluot --release --target web && pnpm run build && pnpm run build-docs && gh-pages -d bindings-js/docs/dist --cname pluot.dev --nojekyll"
   },
@@ -32,7 +33,15 @@
     "vitest-canvas-mock": "^0.3.3",
     "typescript": "^5.9",
     "gh-pages": "^6.3.0",
-    "@webgpu/types": "~0.1.69"
+    "@webgpu/types": "~0.1.69",
+    "@changesets/cli": "^2.17.0",
+    "@changesets/get-github-info": "^0.5.2",
+    "gray-matter": "^4.0.3",
+    "isomorphic-git": "^1.24.5",
+    "unified": "^8.3.2",
+    "remark-parse": "^7.0.1",
+    "remark-stringify": "^7.0.3",
+    "mdast-util-to-string": "^1.0.6"
   },
   "packageManager": "pnpm@9.7.0"
 }
