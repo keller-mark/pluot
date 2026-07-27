@@ -29,7 +29,7 @@ jobs:
     needs: [plain_rust_unit_tests]
     strategy:
       matrix:
-        example_dir: [pluot_cli, pluot_http, pluot_egui, pluot_slint]
+        example_dir: [pluot_http, pluot_egui, pluot_slint]
         # TODO: include more examples here as they are developed
         # or auto-detect subdirectories of examples/
     steps:
