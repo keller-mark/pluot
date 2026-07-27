@@ -10,7 +10,11 @@ homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 
-exclude = ["pkg", "tests"]
+# Include and Exclude are mutually exclusive.
+# Note that because we specify the vendored-fonts files here,
+# yet we also gitignore them, running `cargo publish`
+# will require the `--allow-dirty` flag.
+include = ["/src", "/src/vendored-fonts/*.ttf"]
 categories = []
 keywords = []
 

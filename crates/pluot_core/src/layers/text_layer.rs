@@ -34,39 +34,39 @@ use crate::zarr_types::ZarrPeekResult;
 
 use crate::picking_geometry::unapply_model_matrix;
 
-const FONT_BYTES: &[u8] = include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf").as_slice();
+const FONT_BYTES: &[u8] = include_bytes!("../vendored-fonts/NimbusSans-Regular.ttf").as_slice();
 
 #[cfg(feature = "embed_fonts")]
 pub(crate) fn get_urw_font_bytes(font_family: &str, font_weight: FontWeight, font_style: FontStyle) -> Option<&'static [u8]> {
     match (font_family, font_weight, font_style) {
         ("Courier", FontWeight::Normal, FontStyle::Normal)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Regular.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusMonoPS-Regular.ttf")),
         ("Courier", FontWeight::Bold, FontStyle::Normal)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Bold.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusMonoPS-Bold.ttf")),
         ("Courier", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-Italic.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusMonoPS-Italic.ttf")),
         ("Courier", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusMonoPS-BoldItalic.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusMonoPS-BoldItalic.ttf")),
         ("Helvetica", FontWeight::Normal, FontStyle::Normal)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Regular.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusSans-Regular.ttf")),
         ("Helvetica", FontWeight::Bold, FontStyle::Normal)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Bold.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusSans-Bold.ttf")),
         ("Helvetica", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-Oblique.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusSans-Oblique.ttf")),
         ("Helvetica", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusSans-BoldOblique.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusSans-BoldOblique.ttf")),
         ("Times-Roman" | "Times", FontWeight::Normal, FontStyle::Normal)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Regular.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusRoman-Regular.ttf")),
         ("Times-Roman" | "Times", FontWeight::Bold, FontStyle::Normal)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Bold.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusRoman-Bold.ttf")),
         ("Times-Roman" | "Times", FontWeight::Normal, FontStyle::Italic | FontStyle::Oblique)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-Italic.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusRoman-Italic.ttf")),
         ("Times-Roman" | "Times", FontWeight::Bold, FontStyle::Italic | FontStyle::Oblique)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/NimbusRoman-BoldItalic.ttf")),
+            => Some(include_bytes!("../vendored-fonts/NimbusRoman-BoldItalic.ttf")),
         ("Symbol", _, _)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/StandardSymbolsPS.ttf")),
+            => Some(include_bytes!("../vendored-fonts/StandardSymbolsPS.ttf")),
         ("ZapfDingbats", _, _)
-            => Some(include_bytes!("../../../../vendor/urw-core35-fonts/D050000L.ttf")),
+            => Some(include_bytes!("../vendored-fonts/D050000L.ttf")),
         _ => None,
     }
 }

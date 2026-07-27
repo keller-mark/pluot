@@ -1,4 +1,4 @@
-use kompari::{compare_images, load_image, ImageDifference};
+/*use kompari::{compare_images, load_image, ImageDifference};
 use std::path::PathBuf;
 use std::process;
 
@@ -38,4 +38,4 @@ fn main() {
             println!("{}", distance_sum);
         }
     }
-}
+}*/

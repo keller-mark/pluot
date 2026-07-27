@@ -21,7 +21,6 @@ NEXT_VERSION=$(cat ./package.json | jq -r .version)
 
 # Set rust crate versions using cargo-edit
 cargo set-version --workspace $NEXT_VERSION
-cargo set-version --manifest-path examples/pluot_cli/Cargo.toml $NEXT_VERSION
 
 # Set R package version by modifying DESCRIPTION
 perl -pi -e "s/^Version: .*/Version: ${NEXT_VERSION}/" bindings-r/DESCRIPTION

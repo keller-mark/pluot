@@ -1,4 +1,4 @@
-# pluot CLI example
+# pluot_cli
 
 From the root of the repository, run:
 
