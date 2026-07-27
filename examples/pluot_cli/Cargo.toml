@@ -4,6 +4,7 @@ description = "An example CLI."
 edition = "2021"
 rust-version = "1.92"
 publish = false
+version = "0.1.2"
 
 [[bin]]
 name = "pluot_cli"

@@ -102,6 +102,7 @@ Install Rust tools with [Rustup](https://rustup.rs/).
 ```sh
 # Install rustup
 cargo install wasm-pack
+cargo install cargo-edit
 cargo build
 
 # Install pnpm
