@@ -1,4 +1,11 @@
 
+## 0.1.5
+
+### Patch Changes
+
+- Improve documentation comments. (`@pluot/core`) ([#257](https://github.com/keller-mark/pluot/pull/257))
+
+
 ## 0.1.4
 
 ### Patch Changes
