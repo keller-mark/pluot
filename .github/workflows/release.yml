@@ -101,10 +101,10 @@ jobs:
       uses: PyO3/maturin-action@v1
       with:
         command: build
-        args: --release
+        args: --release --out dist
     - name: For Python - Deploy package to PyPI
       if: steps.changesets.outputs.should-release == 'true'
-      run: uv publish target/wheels
+      run: uv publish
 
     - id: get-tag
       run: echo "tag=v$(cat ./package.json | jq -r .version)" >> $GITHUB_OUTPUT
