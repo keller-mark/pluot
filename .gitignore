@@ -54,6 +54,7 @@ autoresearch/
 circle_diffs/
 text_diffs/
 
+crates/pluot_core/src/vendored-fonts/*.ttf
 bindings-js/core/src/vendored-fonts/*.ttf.js
 bindings-r/src/.cargo/
 
