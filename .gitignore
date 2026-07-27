@@ -58,3 +58,8 @@ bindings-js/core/src/vendored-fonts/*.ttf.js
 bindings-r/src/.cargo/
 
 .pluot_integration_test_*.sh
+
+
+bindings-js/**/CHANGELOG.md
+crates/**/CHANGELOG.md
+RELEASE_NOTES.md
