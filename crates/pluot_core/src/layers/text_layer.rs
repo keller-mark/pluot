@@ -397,6 +397,8 @@ pub enum TextBaselineMode {
     Alphabetic,
 }
 
+
+/// Layer params struct for [`TextLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct TextLayerParams {

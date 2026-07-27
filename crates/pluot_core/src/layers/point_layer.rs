@@ -26,6 +26,7 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::{get_point_position, get_point_size};
 
 
+/// Determine whether to render points as squares or circles.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PointShapeMode {
     // 0: square (basically no-op in fragment shader)
@@ -34,6 +35,7 @@ pub enum PointShapeMode {
     Circle,
 }
 
+/// Layer params struct for [`PointLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct PointLayerParams {

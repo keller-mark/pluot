@@ -115,27 +115,30 @@ pub enum ViewMode {
 
 /// Layer parameters in their raw serde Value form.
 ///
-/// Each layer type is identified by its `layer_type` string,
-/// and the `layer_params` field holds the layer-specific parameters as
-/// an opaque JSON value.
 /// Layers register themselves via `inventory::submit!` with
 /// a factory function that knows how to deserialize their specific params.
 ///
-/// JSON wire format: `{"layer_type": "PointLayer", "layer_params": {...}}`
+/// Serializes to `{"layer_type": "PointLayer", "layer_params": {...}}`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayerParams {
     pub layer_type: String,
-    // TODO: figure out how to enable this value to be type-checked
-    // when used within Rust code.
     pub layer_params: serde_json::Value,
 }
 
-
+/// Specify [`LayerParams`] for rendering of one or more layers.
+///
+/// Serializes to `{"layers": [...]}`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LayeredPlotRenderParams {
     pub layers: Vec<LayerParams>,
 }
 
+/// Specify how to render a plot.
+///
+/// Currently, a sole layer-wise configuration mechanism is supported,
+/// but this could be expanded in the future.
+///
+/// Serializes to `{"plot_type": "LayeredPlot", "plot_params": {...}}`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "plot_type", content = "plot_params")]
 pub enum PlotParams {
@@ -146,20 +149,27 @@ pub enum PlotParams {
     LayeredPlot(LayeredPlotRenderParams),
 }
 
-/// Path to the local Zarr store directory on disk.
+/// Represents a local, filesystem-backed Zarr directory store.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalStoreParams {
+    /// Path to the local Zarr store directory on disk.
     pub path: String
 }
 
-
+/// Represents an in-memory, ephemeral Zarr store.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryStoreParams {
+    /// Display a custom message indicating the origin/source of the store's data,
+    /// and potentially how to re-construct it from scratch.
     // For memory stores, they are not really portable in the same way as the other store types,
     // but perhaps we can show a custom message related to how the data originates.
     pub message: String
 }
 
+/// Specify additional options to pass when making HTTP requests.
+///
+/// Corresponds to the second parameter of the JavaScript `fetch` API.
+// Reference: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestInit {
      pub method: Option<String>,
@@ -173,13 +183,18 @@ pub struct RequestInit {
      pub integrity: Option<String>,
 }
 
+/// Represents a remote Zarr store located on a standard HTTP static file server.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HttpStoreParams {
-    // Absolute URL to the root of the zarr store directory.
+    /// The absolute URL to the root of the Zarr store directory.
     pub url: String,
+    /// Optional parameters, such as authentication headers, to use when making HTTP requests to load data from this Zarr store.
     pub options: Option<RequestInit>,
 }
 
+/// A serializable, cross-platform representation of a Zarr store.
+///
+/// Serializes to `{"store_type": "HttpStore", "store_params": {...}}`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "store_type", content = "store_params")]
 pub enum ZarrStoreParams {
@@ -190,6 +205,10 @@ pub enum ZarrStoreParams {
     // TODO: WebFileSystemStore(WebFileSystemStoreParams),
 }
 
+/// A serializable, cross-platform representation of a Zarr store extension.
+///
+/// These allow specifying wrapper store functionality
+/// to "virtualize" non-zarr data as zarr data.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ZarrStoreExtension {
     TiffAsVirtualZarr,
@@ -200,7 +219,9 @@ pub enum ZarrStoreExtension {
 }
 
 
-// We want to define sufficient info.
+/// A serializable, cross-platform representation of a Zarr store and any associated extensions.
+///
+/// Serializes to `{"store_type": "HttpStore", "store_params": {...}, "store_extensions": [...]}`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZarrStoreInfo {
 

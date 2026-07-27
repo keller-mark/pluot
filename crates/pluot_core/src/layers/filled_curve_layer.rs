@@ -28,6 +28,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
 
+/// Layer params struct for [`FilledCurveLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FilledCurveLayerParams {

@@ -27,6 +27,7 @@ use crate::wgpu;
 
 use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
 
+/// Layer params struct for [`FilledPolygonLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FilledPolygonLayerParams {

@@ -18,6 +18,8 @@ use crate::wgpu;
 use crate::layers::stroked_polygon_layer::{StrokedPolygonLayer, StrokedPolygonLayerParams};
 use crate::layers::filled_polygon_layer::{FilledPolygonLayer, FilledPolygonLayerParams};
 
+
+/// Layer params struct for [`PolygonLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct PolygonLayerParams {

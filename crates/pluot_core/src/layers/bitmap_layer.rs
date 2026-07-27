@@ -23,28 +23,31 @@ use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
 
 
+/// Specify image channel settings, including the intensity window and an RGB color.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChannelSettings {
     // pub c_index: u32, // Rather than using c_index, we can just assume that the channel settings are provided in-order.
+    /// Channel intensity window range.
     pub window: (f32, f32),
+    /// An RGB color to use for pseudocoloring of this channel.
+    // TODO: switch to u8 to match other color structs in the crate?
     pub color: (f32, f32, f32), // RGB colors as floats in [0.0, 1.0]
 }
 
 
+/// Specify the dimension order of an image array.
+///
+/// For example, if dimension_order is "XYC", then the data array must be in (X, Y, C) order,
+/// and the shape would be [img_w, img_h, num_channels].
+/// For 2D images, the parent can simply specify dimension_order = "CXY" with num_channels of 1,
+/// as the contiguous data array will be the same regardless of whether the order is CXY vs XY.
+/// For 4D and 5D images with T and Z dimensions, the parent layer is expected to
+/// slice the data into 3D XY(C) slices for the specified z_index and t_index before passing onward.
+/// Similarly, if the original data array contains more channels than being visualized,
+/// the parent layer is responsible to slice them and provide them in the order that corresponds with
+/// the provided channel_settings c_index values.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DimensionOrder {
-    // The data array must be 3D, with dimensions in the specified order.
-    // For example, if dimension_order is "XYC", then the data array must be in (X, Y, C) order,
-    // and the shape would be [img_w, img_h, num_channels].
-    // For 2D images, the parent can simply specify dimension_order = "CXY" with num_channels of 1,
-    // as the contiguous data array will be the same regardless of whether the order is CXY vs XY.
-    // This also allows avoiding handling the lack-of-C-dimension as a special case everywhere,
-    // and forces the parent to provide channel settings.
-    // For 4D and 5D images with T and Z dimensions, the parent layer would be expected to
-    // slice the data into 3D XY(C) slices for the specified z_index and t_index before passing to the shader.
-    // Similarly, if the original data array contains more channels than being visualized,
-    // the parent layer is responsible to slice them and provide them in the order that corresponds with
-    // the provided channel_settings c_index values.
     CXY,
     CYX,
     XCY,
@@ -79,6 +82,7 @@ impl DimensionOrder {
     }
 }
 
+/// Layer params struct for [`BitmapLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct BitmapLayerParams {
@@ -902,4 +906,3 @@ impl PickableLayer for BitmapLayer {
         })
     }
 }
-

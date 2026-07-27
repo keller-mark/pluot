@@ -17,6 +17,7 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
+/// Layer params struct for [`ZarrBarPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct ZarrBarPlotLayerParams {

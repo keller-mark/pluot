@@ -22,7 +22,7 @@ use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, Two
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::{get_point_position, get_point_size};
 
-
+/// Layer params struct for [`LineLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct LineLayerParams {

@@ -18,6 +18,7 @@ const DEFAULT_TICK_PADDING: f64 = 3.0;
 const DEFAULT_FONT_SIZE: f64 = 12.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 
+/// Layer params struct for [`AxisBandLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct AxisBandLayerParams {

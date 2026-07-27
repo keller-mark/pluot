@@ -29,6 +29,8 @@ use crate::two::shapes::{
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
 
+
+/// Layer params struct for [`RectLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct RectLayerParams {

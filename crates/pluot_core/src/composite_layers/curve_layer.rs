@@ -17,6 +17,7 @@ use crate::layers::filled_curve_layer::{FilledCurveLayer, FilledCurveLayerParams
 
 pub use crate::curve_and_polygon_utils::PathCommand;
 
+/// Layer params struct for [`CurveLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct CurveLayerParams {

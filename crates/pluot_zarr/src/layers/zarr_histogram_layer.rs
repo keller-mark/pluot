@@ -14,6 +14,7 @@ use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 
+/// Layer params struct for [`ZarrHistogramLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct ZarrHistogramLayerParams {

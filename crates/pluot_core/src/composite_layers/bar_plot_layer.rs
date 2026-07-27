@@ -22,6 +22,7 @@ use crate::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 
 const DEFAULT_BAR_MARGIN: f64 = 4.0;
 
+/// Determines whether bar plot should be vertical or horizontal.
 // TODO: should this be a more general/common "PlotOrientation" enum?
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum BarOrientation {
@@ -29,6 +30,7 @@ pub enum BarOrientation {
     Horizontal,
 }
 
+/// Layer params struct for [`BarPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BarPlotLayerParams {
     pub layer_id: String,
