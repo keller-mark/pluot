@@ -1,34 +1,17 @@
 //! A very lightweight WGSL shader-module system.
 //!
-//! Shaders live as `.wgsl` files and are embedded at compile time via
-//! `include_str!`. This module provides two forms of shader composition, both
-//! built on the same primitive: substituting `{{placeholder}}` tokens in a
+//! (Ideally we could use a more robust system such as WESL, but this adds ~1MB
+//! to the WASM binary size, at least last time I tried it.)
+//!
+//! Injected shader code lives in `.wgsl` files and shaders are built at runtime
+//! This module enables shader composition by substituting `{{placeholder}}` tokens in a
 //! template string.
 //!
-//! 1. **Compile-time function injection.** Reusable WGSL functions that would
-//!    otherwise be copy-pasted across many shaders (e.g. `scale`, `translate`,
-//!    `get_aspect_ratio_mat`) live in their own `.wgsl` files under
-//!    `wgsl_functions/` and are embedded as `&'static str` constants (see
-//!    [`common`]). A shader template references one with a `{{name}}`
-//!    placeholder; [`ShaderBuilder::inject_function`] substitutes the embedded
-//!    source.
-//!
-//! 2. **Runtime dtype injection.** A template can leave the element type of a
-//!    storage array or the sampled type of a texture as a placeholder, e.g.
-//!    `var<storage, read> data: array<{{dtype}}>;` or
-//!    `var img: texture_2d_array<{{dtype}}>;`. [`ShaderBuilder::inject_dtype`] /
-//!    [`ShaderBuilder::inject_texture_sample_type`] fill it in at runtime (from
-//!    a [`WgslScalar`] or [`TextureDtype`]), so the same shader source can be
-//!    specialized per data dtype. Textures additionally let 8/16/32-bit data
-//!    live on the GPU at native width (see [`TextureDtype`]).
-//!
-//! The whole system is nothing more than repeated `str::replace` over
+//! The whole system is nothing more than repeated string replacement over
 //! `{{...}}` tokens. [`ShaderBuilder::build`] returns the finished WGSL source
 //! as a `String`, ready to hand to `device.create_shader_module` via
 //! `wgpu::ShaderSource::Wgsl`.
 //!
-//! (Ideally we could use a more robust system such as WESL, but this adds ~1MB
-//! to the WASM binary size, at least last time I tried it.)
 //!
 //! ```ignore
 //! use pluot_core::shader_modules::{common, ShaderBuilder, WgslScalar};

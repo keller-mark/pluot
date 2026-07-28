@@ -49,6 +49,7 @@ fn to_raw_render_params(render_params: RenderParams) -> RawRenderParams {
 
 // TODO: nicer return type. wrap with raster/vector variants?
 
+/// Given plotting parameters as input, render a graphical (vector or bitmap) output.
 pub async fn render(render_params: RenderParams) -> Vec<u8> {
     let raw_params = to_raw_render_params(render_params);
     // Construct the store objects from the store metadata and pass them in,
@@ -57,24 +58,14 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
     raw_render(raw_params, stores).await
 }
 
-/// Like [`render`], but lets the caller pass the [`StoreMap`] of store objects
-/// directly instead of having them constructed from `render_params.stores`
-/// metadata. Useful for Rust callers that already have store objects on hand
-/// (e.g. native zarrs stores) rather than the `zarr_*` binding functions that
-/// [`stores_from_params`] dispatches to.
+/// Similar to [`render`], but also lets the caller pass Zarr store instances
+/// via a [`StoreMap`].
 pub async fn render_with_stores(render_params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
     let raw_params = to_raw_render_params(render_params);
     raw_render(raw_params, stores).await
 }
 
-/// Serialize `render_params` into code (source or JSON) in the language and
-/// flavor implied by `format`, decoupled from `render_params.format`.
-///
-/// [`render`]/[`render_with_stores`] always pass `render_params.format` as both
-/// the params and the code target, so a request for e.g. `ScriptPython` can
-/// only ever describe raster output. Calling this function directly instead
-/// lets `render_params.format` carry the *real* desired output (`Raster` or
-/// `Vector`) while `format` independently selects the code target.
+/// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
 pub fn render_to_script(render_params: RenderParams, format: &GraphicsFormat) -> String {
     let raw_params = to_raw_render_params(render_params);
     pluot_core::render_to_script(&raw_params, format)

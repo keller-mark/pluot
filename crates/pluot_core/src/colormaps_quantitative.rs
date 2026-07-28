@@ -1,9 +1,8 @@
-//! Rust-native equivalents of the WGSL colormap functions in
-//! `wgsl_functions/colormap_quantitative/`, for sampling colormaps on the CPU (e.g. for
-//! legends or the `lacks_gpu` render path) without needing a GPU context.
+//! Rust-native equivalents of the quantitative colormap functions defined in
+//! `wgsl_functions/colormap_quantitative/`, used for sampling colormaps on the CPU.
 //!
 //! Each function here is a direct port of its WGSL counterpart, keeping the
-//! same piecewise `smoothstep`/`mix` structure so the two stay in sync.
+//! same piecewise `smoothstep`/`mix` structure so the two can stay in sync.
 //!
 
 // References:

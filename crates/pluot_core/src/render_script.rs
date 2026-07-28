@@ -1,27 +1,15 @@
-//! "Rendering to code": rather than rasterizing to pixels or an SVG, turn a
-//! [`RenderParams`] into a string of source code (or JSON) that reproduces the
-//! same plot when run against one of the language bindings.
+//! "Rendering to code": rather than producing a graphical output,
+//! turn a [`RenderParams`] input into output source code (or JSON) that
+//! can be used to render the plot via the Pluot CLI or one of the language bindings.
 //!
 //! Each generator serializes the params to a `serde_json::Value` once and then
 //! walks that value, emitting language-specific literal syntax. Two flavors are
-//! produced per language:
+//! supported:
 //!
-//! - **`Expression*`** — a single expression (a function call, or a JSX element)
-//!   with no imports or surrounding statements, suitable for embedding.
-//! - **`Script*`** — a self-contained script including the imports, variable
+//! - `Expression*`: a single expression (a function call, or a JSX element)
+//!   with no imports or surrounding statements.
+//! - `Script*`: a self-contained script including the imports, variable
 //!   definitions and library initialization needed to run standalone.
-//!
-//! Targets:
-//!
-//! - [`GraphicsFormat::Json`]: the params as pretty-printed JSON (the wire
-//!   format accepted by every binding's `render` entry point).
-//! - Python (`bindings-python`): a `pluot.render_to_image(...)` call.
-//! - R (`bindings-r`): a `render_to_raster(...)` call.
-//! - JS (`bindings-js`): a `render_wasm(...)` call.
-//! - JSX / React (`@pluot/react`): a `<Pluot />` element / component.
-//! - HTML: a standalone page that loads `@pluot/core` and renders to a canvas.
-//! - Rust: a `pluot::render(...)` call.
-//! - Bash: a shell script invoking the `pluot_cli` example binary.
 
 use crate::params::{GraphicsFormat, RenderParams};
 use serde_json::Value;

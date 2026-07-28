@@ -1,3 +1,4 @@
+//! De-centralized registration of implemented layers using [`inventory`].
 use crate::render_traits::{PreparedAndDraw, ViewParams};
 
 pub struct LayerRegistration {
@@ -7,6 +8,8 @@ pub struct LayerRegistration {
 
 inventory::collect!(LayerRegistration);
 
+/// Given a layer type and serialized layer params, obtain a layer instance
+/// (i.e., a struct which implements prepare, draw, and pick traits).
 pub fn get_layer_from_registry(
     layer_type: &str,
     layer_params: serde_json::Value,

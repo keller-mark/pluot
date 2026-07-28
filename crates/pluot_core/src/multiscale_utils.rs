@@ -130,6 +130,8 @@ pub fn select_resolution_level(view_params: &ViewParams, levels: &[ResolutionLev
     0
 }
 
+/// Flip a Y-axis slice (i.e., start index and end index into an array of a specified height)
+/// to convert from a Y-increasing-down system to a Y-increasing-up system.
 pub fn to_y_slice(start: u64, end: u64, height: u64) -> (u64, u64) {
     // OME-Zarr uses a coordinate system where (0, 0) is the top-left corner, and Y increases downwards.
     // We want to convert to a coordinate system where (0, 0) is the bottom-left corner, and Y increases upwards.

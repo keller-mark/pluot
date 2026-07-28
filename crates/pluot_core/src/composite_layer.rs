@@ -1,4 +1,6 @@
-// Utility functions inspired by the DeckGL CompositeLayer
+//! Utility functions for composite layers
+//! (i.e., higher-level layers which render one or more sub-layers).
+// Inspired by the DeckGL CompositeLayer
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
 use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PreparedLayer, PreparedAndDraw};

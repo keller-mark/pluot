@@ -1,3 +1,4 @@
+//! Memoization and cacheing utilities inspired by React's useMemo.
 use crate::wgpu;
 use crate::log;
 
@@ -42,7 +43,7 @@ async fn init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     // The InstanceDescriptor has fields for which backends wgpu will choose during instantiation,
     // and which DX12 shader compiler wgpu will use.
 
-    
+
     // Apparently this is expensive, so we try to cache it in the get_or_init_gpu_context function.
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     // We can try to enable WebGL fallback here, but it is not working,

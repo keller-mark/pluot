@@ -27,6 +27,9 @@ use pluot_core::params::{PlotParams, LayeredPlotRenderParams as RawLayeredPlotRe
 use pluot_core::params::{GraphicsFormat, ViewMode, RenderBackend, ComputeBackend, ZarrStoreInfo};
 use pluot_core::render_traits::AspectRatioMode;
 
+/// Strongly-typed layer params.
+///
+/// Serializes to `{"layer_type": "PointLayer", "layer_params": {...}}`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(test, derive(strum::VariantNames))]
 #[serde(tag = "layer_type", content = "layer_params")]

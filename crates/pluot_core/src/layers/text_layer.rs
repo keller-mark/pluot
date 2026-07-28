@@ -382,13 +382,18 @@ fn build_internal_text_layer_data(
     }
 }
 
+/// Specify the horizontal alignment of a text element.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TextAlignMode {
+    /// Left-aligned.
     Start,
+    /// Horizontally centered.
     Middle,
+    /// Right-aligned.
     End,
 }
 
+/// Specify the vertical alignment of a text element.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum TextBaselineMode {
     Top,

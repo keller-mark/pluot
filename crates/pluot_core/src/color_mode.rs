@@ -1,14 +1,5 @@
 //! Shared machinery for turning a [`ColorMode`] into what a layer needs to
 //! color its elements, on either the GPU or the CPU.
-//!
-//! [`prepare_color_mode`] uploads any per-element value arrays as textures and
-//! assembles the matching WGSL (bindings + a `get_fill_color` function) from the
-//! reusable snippets in [`crate::shader_modules::color`], so every layer can
-//! support the full set of color modes without duplicating this logic. The
-//! per-mode WGSL lives in `wgsl_functions/color/`, not in Rust string literals.
-//!
-//! [`cpu_fill_color`] is the CPU-side equivalent, used by the SVG / software
-//! render paths.
 
 use crate::colormaps_quantitative;
 use crate::colormaps_categorical;
@@ -316,9 +307,9 @@ fn create_palette_texture(
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-/// The (min, max) normalization domain for a quantitative color mode: the
-/// caller-supplied domain if present, otherwise the data's own min/max (falling
-/// back to (0, 1) for empty or non-finite data).
+// TODO: remove this, as it iterates over all values and casts them to f32,
+// which we do not want. If anything, it should only be used on the CPU.
+// Normalization of quantitative colormap values should otherwise only be performed in the shader / on the GPU.
 pub fn quantitative_domain(params: &QuantitativeParams) -> [f32; 2] {
     if let Some((lo, hi)) = params.domain {
         return [lo, hi];

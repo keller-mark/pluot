@@ -1,2 +1,7 @@
+//! The code in this directory contains logic for internally representing 2D shapes and text elements
+//! in a renderer-agnostic manner, inspired by [two.js](https://github.com/jonobr1/two.js)
+//! and its usage in the [cistrome-explorer](https://github.com/hms-dbmi/cistrome-explorer/blob/master/src/utils/two.js)
+//! and [deck-to-svg](https://github.com/keller-mark/deck-to-svg/blob/main/lib/src/shapes.js)
+//! projects.
 pub mod shapes;
 pub mod svg;

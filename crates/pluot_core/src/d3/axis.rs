@@ -1,3 +1,4 @@
+//! Rust port of some functionality from `d3-axis`.
 // Reference: https://github.com/d3/d3-axis/blob/main/src/axis.js
 
 use crate::d3::scale::{LinearRangeable, Scaleable, Tickable};
