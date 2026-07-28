@@ -1,4 +1,7 @@
-// Simulated vertex shader logic for SVG point positioning.
+//! Rust-based logic for positioning and sizing of data points.
+//!
+//! This logic should reflect that of the WGSL vertex shaders,
+//! but written in Rust so that it can be used for CPU-based rendering.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode};

@@ -1,11 +1,5 @@
-//! Rust-native definitions of the categorical color schemes catalogued in
-//! `categorical_colormaps.html`, for sampling categorical colormaps on the
-//! CPU by category index.
-//!
-//! Unlike the continuous colormaps in [`crate::colormaps_quantitative`], each scheme here
-//! is a fixed palette of discrete colors. Sampling by index wraps around
-//! (via modulo) once the index exceeds the palette length, matching the
-//! behavior of the equivalent d3/Vega categorical scales.
+//! Rust-native definitions of predefined named categorical color schemes,
+//! required for performing categorical color mapping on the CPU.
 //!
 //! Reference: <https://vega.github.io/vega/docs/schemes/>
 
@@ -13,6 +7,9 @@ use crate::render_traits::CategoricalColormap;
 
 type Rgba = [f32; 4];
 
+// TODO: remove the division by 255 here.
+// Store the color palettes as u8 in this file,
+// and do any conversion to f32 downstream/elsewhere.
 const fn rgb(r: u8, g: u8, b: u8) -> Rgba {
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
 }
@@ -310,7 +307,7 @@ pub fn tableau20(i: usize) -> Rgba {
     at(&TABLEAU20, i)
 }
 
-/// The full fixed palette backing a [`CategoricalColormap`].
+/// Obtain an array representation of the colors in a given [`CategoricalColormap`].
 ///
 /// Useful for uploading the whole scheme at once (e.g. emitting it as a WGSL
 /// `const` array so a shader can sample categorical colors on the GPU), rather

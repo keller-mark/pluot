@@ -1,24 +1,27 @@
-// Viewport utilities intended for use by layers, to implement features like picking.
-// We may also want to expose functions like project, unproject, and get_bounds via the public API and bindings.
+//! Viewport utilities intended for use by layers, to implement features like picking.
 use nalgebra_glm::{Vec2, Vec4, Mat4};
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{MarginParams, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, UnitsMode};
 use crate::positioning::{get_point_position, get_scale_mat, get_translate_mat, get_aspect_ratio_mat};
 
+/// Represents an XY coordinate relative to the screen viewport.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ScreenCoord {
     pub x: f32,
-    // Note: we treat the Y coordinate as increasing upwards, for consistency with the data coordinate system.
-    // Conversion to a coordinate system where Y increases downwards (e.g., for HTML canvas) is delegated to the caller.
+    /// Note: we treat the Y coordinate as increasing upwards, for consistency with the data coordinate system.
+    /// Conversion to a coordinate system where Y increases downwards (e.g., for HTML canvas) is delegated to the caller.
     pub y: f32,
 }
 
+/// Represents an XY or XYZ coordinate relative to the data ("world") coordinate system.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DataCoord {
     TwoD { x: f32, y: f32 },
     ThreeD { x: f32, y: f32, z: f32 },
 }
 
+/// Represents an extent of the data ("world") coordinate system
+/// (e.g., the currently-visible extent, given the camera params and other view params).
 #[derive(Debug, Clone, Copy)]
 pub struct DataBounds {
     pub x_min: f32,

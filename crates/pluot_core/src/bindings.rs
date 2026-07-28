@@ -1,3 +1,8 @@
+//! This module defines the functions that are made available via language bindings.
+//!
+//! The bound functions are feature- and target-gated, so that language-specific
+//! functionality (e.g., utilities from PyO3 or wasm-bindgen) are not included
+//! when they are irrelevant to the given compilation target.
 pub use crate::params::RenderParams;
 pub use crate::render::{render, stores_from_params};
 pub use crate::picking::{pick, PickingResult};
@@ -133,7 +138,7 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
 
         // TODO: can this be done without copying?
         // The issue is that the original Uint8Array is created via JS fetch() within zarrita fetchStore.
-
+        // See useSharedArrayBuffer option: https://github.com/manzt/zarrita.js/blob/152a90b67e497fb2dcc44da5c5d0e6938cfe22f1/packages/zarrita/__tests__/shared-array-buffer.test.ts#L14
         u8arr.copy_to(&mut vec);
 
         // Convert Vec<u8> into Bytes
@@ -579,6 +584,7 @@ pub mod r {
 // === Rust-only Bindings ===
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "python"), not(feature = "rlang")))]
 pub mod plain_rust {
+    //! Stub Zarr getter functions to satisfy [`crate::AsyncZarritaStore`] when the crate is compiled for plain-rust usage.
     use core::panic;
     pub use super::{render, ZarrPeekResult};
 

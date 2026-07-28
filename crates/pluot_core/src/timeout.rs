@@ -1,3 +1,7 @@
+/// Given a Future and a timeout (in ms),
+/// use [`futures_time`] to throw an error if the future takes longer than
+/// the specified timeout to resolve. This enables "bailing early"
+/// and performing partial rendering, which is useful during interactive plotting.
 #[macro_export]
 macro_rules! maybe_timeout {
     ($v1:expr, $v2:expr) => {

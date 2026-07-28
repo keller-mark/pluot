@@ -9,7 +9,9 @@
 //! borrowed zero-copy, and only the three 64-bit dtypes are narrowed to 32 bits
 //! (WebGPU defines no 64-bit texture formats). A storage-buffer path
 //! ([`as_gpu_buffer`](NumericData::as_gpu_buffer)) is also retained for data too
-//! large for a texture's dimension limits.
+//! large for a texture's dimension limits, but we prefer textures since
+//! WebGPU storage buffers only support 32-bit dtypes, requiring casting in more cases
+//! when compared to textures.
 
 use std::borrow::Cow;
 use std::sync::Arc;

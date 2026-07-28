@@ -1,16 +1,8 @@
 //! Shared machinery for turning a [`SizeMode`] or [`OpacityMode`] into what a
-//! layer needs to size / fade its elements, on either the GPU or the CPU.
+//! layer needs for sizing or opacity-encoding its elements, on either the GPU or the CPU.
 //!
 //! This is the scalar (single-value-per-element) counterpart of
-//! [`crate::color_mode`]. Both modes are structurally identical — a single
-//! static value shared by every element, or one per-element value uploaded as a
-//! texture — so a single [`prepare_scalar_mode`] core handles both, with
-//! [`prepare_size_mode`] / [`prepare_opacity_mode`] wrapping it for the two enum
-//! types. The per-mode WGSL lives in `wgsl_functions/get_point_radius/` and
-//! `wgsl_functions/get_point_opacity/`.
-//!
-//! [`cpu_point_radius`] / [`cpu_point_opacity`] are the CPU-side equivalents,
-//! used by the SVG / software render paths.
+//! [`crate::color_mode`].
 
 use crate::color_mode::PreparedColorTexture;
 use crate::numeric_data::NumericData;

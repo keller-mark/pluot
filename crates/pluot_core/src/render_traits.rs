@@ -326,6 +326,7 @@ impl ColorMode {
     }
 }
 
+/// Specify the font style: normal, italique, or oblique.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FontStyle {
     Normal,
@@ -333,6 +334,7 @@ pub enum FontStyle {
     Oblique,
 }
 
+/// Specify the font weight: normal or bold.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FontWeight {
     Normal,
@@ -340,6 +342,7 @@ pub enum FontWeight {
 }
 
 
+/// Define plot margins: left, right, top, bottom.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,
@@ -478,12 +481,14 @@ pub fn resolve_store_name(
 }
 
 
+/// Prepare a layer for drawing. Load data, cache expensive results, instantiate sublayers, etc.
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait PreparedLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult;
 }
 
+/// Render a layer to a vector output.
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToSvg {
@@ -491,19 +496,21 @@ pub trait DrawToSvg {
 }
 
 
+/// Render a layer to a raster output via the GPU (i.e., via [`wgpu`]).
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToRasterGpu: MaybeSend + MaybeSync {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass);
 }
 
-// Stub trait for CPU-based raster rendering (software rasterizer).
+/// Stub trait for CPU-based raster rendering (software rasterizer).
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToRasterCpu: MaybeSend + MaybeSync {
     async fn draw(&self, cpu_context: &CpuContext<'_>, pass: &mut CpuRenderPass);
 }
 
+/// Identify which data point(s) are located at (or nearby) the given screen coordinate.
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait PickableLayer {

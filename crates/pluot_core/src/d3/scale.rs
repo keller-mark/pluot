@@ -1,5 +1,5 @@
-//! This module is a port of the D3.js `d3-scale` library, specifically focusing on linear scales.
-//! Original source: <https://github.com/d3/d3-scale>
+//! Rust port of some functionality from `d3-scale`.
+// Reference: https://github.com/d3/d3-scale
 
 use std::borrow::Borrow;
 use std::collections::HashMap;

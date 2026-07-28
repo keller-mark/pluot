@@ -13,12 +13,16 @@ use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::viewport::{DataCoord, ScreenCoord, unproject};
 
+/// Serializable representation of picking results
+/// from a single plotted layer.
 #[derive(Serialize, Deserialize)]
 pub struct LayerPickingResult {
     pub layer_id: String,
     pub info: HashMap<String, String>, // Additional info about the picked element (e.g., index in data array, value, etc.)
 }
 
+/// Serializable representation of picking results
+/// from one or more plotted layers.
 #[derive(Serialize, Deserialize)]
 pub struct PickingResult {
     pub data_coord: Option<DataCoord>,
@@ -26,6 +30,7 @@ pub struct PickingResult {
     pub layer_results: Vec<LayerPickingResult>,
 }
 
+/// Identify the data point(s) at (or nearby) the given plotted coordinate.
 pub async fn pick(params: RenderParams, stores: Option<StoreMap>, screen_coord: ScreenCoord) -> PickingResult {
     // TODO: the stuff up to layer.prepare is duplicated from render(). Refactor to avoid duplication.
     let width = params.width;
