@@ -1,4 +1,11 @@
 
+## 0.1.7
+
+### Patch Changes
+
+- Fix docs site build in release workflow. (`@pluot/core`) ([#261](https://github.com/keller-mark/pluot/pull/261))
+
+
 ## 0.1.6
 
 ### Patch Changes
