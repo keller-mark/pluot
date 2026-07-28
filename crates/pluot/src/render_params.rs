@@ -74,6 +74,7 @@ pub struct RenderParams {
     // to match RawRenderParams.plot_params.layers?
     // This would allow for an alternative to layer-based plotting.
     pub layers: Vec<LayerParams>,
+    pub schema_version: Option<String>,
     pub width: u32,
     pub height: u32,
     pub format: GraphicsFormat,
@@ -103,6 +104,7 @@ impl Default for RenderParams {
         let raw = RawRenderParams::default();
         Self {
             layers: vec![],
+            schema_version: raw.schema_version,
             width: raw.width,
             height: raw.height,
             format: raw.format,

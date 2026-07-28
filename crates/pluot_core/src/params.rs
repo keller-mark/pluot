@@ -1,6 +1,7 @@
 use crate::{render_traits::AspectRatioAlignmentMode, wgpu};
 use crate::zarr::AsyncZarritaStore;
 use crate::render_traits::AspectRatioMode;
+use crate::version::CRATE_VERSION;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -248,6 +249,15 @@ pub struct ZarrStoreInfo {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct RenderParams {
+
+    /// To enable forward compatibility, specify the schema version that was used to generate the plot.
+    /// For now, we will just specify the crate version, and will throw a warning if there is a mismatch.
+    /// We will not fully error, nor will we initially implement any auto-upgrade functionality to convert a prior version to a later version,
+    /// but we could implement these features in the future.
+    /// TODO: In the future, we should also decouple the schema_version from the crate/package version,
+    /// as the latter could advance more quickly than the former.
+    pub schema_version: Option<String>,
+
     /// The width of the plot, in pixels.
     pub width: u32,
     /// The height of the plot, in pixels.
@@ -346,6 +356,7 @@ pub struct RenderParams {
 impl Default for RenderParams {
     fn default() -> Self {
         Self {
+            schema_version: Some(CRATE_VERSION.to_string()),
             width: 100,
             height: 100,
             format: GraphicsFormat::Raster,

@@ -56,6 +56,7 @@
 #' @useDynLib pluotr wrap__render_r
 pluot_render <- function(
   layers,
+  schema_version = NULL,
   width,
   height,
   format = "Raster",

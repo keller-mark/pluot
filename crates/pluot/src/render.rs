@@ -1,6 +1,7 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
 use pluot_core::{render as raw_render, stores_from_params};
 use pluot_core::params::{GraphicsFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
+use pluot_core::version::CRATE_VERSION;
 use crate::render_params::{LayerParams, RenderParams};
 
 fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
@@ -19,6 +20,7 @@ fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
 fn to_raw_render_params(render_params: RenderParams) -> RawRenderParams {
     let raw_layers = to_raw_layer_params(&render_params.layers);
     RawRenderParams {
+        schema_version: render_params.schema_version,
         width: render_params.width,
         height: render_params.height,
         format: render_params.format,

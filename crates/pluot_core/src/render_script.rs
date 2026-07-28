@@ -12,6 +12,7 @@
 //!   definitions and library initialization needed to run standalone.
 
 use crate::params::{GraphicsFormat, RenderParams};
+use crate::version::CRATE_VERSION;
 use serde_json::Value;
 
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
@@ -206,6 +207,9 @@ fn python_script(value: &Value) -> String {
     let func = python_render_func(value);
     // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
     format!(
+        // TODO: specify schema_version as CRATE_VERSION if None.
+        // TODO: specify the python package version as CRATE_VERSION in the inline dependencies metadata
+        // TODO: add a comment that explains how to execute the script via `uv`.
         "# /// script\n\
          # requires-python = \">=3.9\"\n\
          # dependencies = [\n\
@@ -214,9 +218,6 @@ fn python_script(value: &Value) -> String {
          # ///\n\
          from pluot import {func}\n\
          \n\
-         # Zarr store(s) are declared in the `stores` map below and constructed\n\
-         # from their metadata; pass `store=`/`stores=` to override with your own\n\
-         # store object(s).\n\
          img = await {}\n",
         python_call(value),
     )
@@ -284,6 +285,9 @@ fn r_render_func(value: &Value) -> &'static str {
 fn r_call(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
+    // TODO: specify schema_version as CRATE_VERSION if None.
+    // TODO: add a comment that explains how to execute the script.
+
     let mut args: Vec<String> = Vec::new();
 
     let layers = obj
@@ -307,9 +311,6 @@ fn r_script(value: &Value) -> String {
     format!(
         "library(pluotr)\n\
          \n\
-         # Zarr store(s) are declared in the `stores` list below and constructed\n\
-         # from their metadata; use `pluot_register_store()` to override with your\n\
-         # own store object(s).\n\
          img <- {}\n",
         r_call(value),
     )
@@ -327,13 +328,15 @@ fn js_call(value: &Value) -> String {
 
 fn js_script(value: &Value) -> String {
     let params = emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX);
+
+    // TODO: define a simpler JS function that renders a static plot using vanilla JS, to a new or existing canvas/SVG/img element.
+    // TODO: specify schema_version as CRATE_VERSION if None.
+    // TODO: add a comment that explains how to execute the script.
+
     format!(
         "import {{ initialize, render_wasm, setStoreByName }} from \"@pluot/core\";\n\
          \n\
          await initialize();\n\
-         // Zarr store(s) are declared in the `stores` map below and constructed\n\
-         // from their metadata; call `setStoreByName(\"my_store\", store)` before\n\
-         // rendering to override with your own store object.\n\
          \n\
          const renderParams = {params};\n\
          \n\
@@ -347,7 +350,9 @@ fn js_script(value: &Value) -> String {
 /// Map a top-level `RenderParams` (snake_case) key to the corresponding camelCase
 /// `<Pluot />` prop name, or `None` if the component does not expose that param.
 fn jsx_prop_name(key: &str) -> Option<&'static str> {
+    // TODO: specify schema_version as CRATE_VERSION if None.
     Some(match key {
+        "schema_version" => "schemaVersion",
         "width" => "width",
         "height" => "height",
         "plot_id" => "plotId",
@@ -375,6 +380,9 @@ fn jsx_prop_name(key: &str) -> Option<&'static str> {
 /// levels (two spaces per level) and props one level deeper.
 fn jsx_element(value: &Value, base: usize) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
+
+    // TODO: specify schema_version as CRATE_VERSION if None.
+
     let pad = "  ".repeat(base);
     let prop_pad = "  ".repeat(base + 1);
 
@@ -412,8 +420,6 @@ fn react_script(value: &Value) -> String {
         "import React from \"react\";\n\
          import {{ Pluot }} from \"@pluot/react\";\n\
          \n\
-         // Zarr store(s) are declared via the `stores` prop and constructed from\n\
-         // their metadata; pass a `store` prop to override with your own object.\n\
          export function PluotPlot() {{\n\
          \x20 return (\n\
          {element}\n\
@@ -430,6 +436,8 @@ fn html_script(value: &Value) -> String {
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
     // Indent the params object to sit under the module script (6 spaces).
     let params = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
+
+    // TODO: specify schema_version as CRATE_VERSION if None.
 
     format!(
         "<!DOCTYPE html>\n\
@@ -493,6 +501,8 @@ fn rust_raw_string(content: &str) -> String {
 /// lower-level `pluot_core`.
 fn ergonomic_render_params(value: &Value) -> Value {
     let mut value = with_resolved_format(value);
+
+    // TODO: specify schema_version as CRATE_VERSION if None.
     if let Some(obj) = value.as_object_mut() {
         let layers = obj
             .get("plot_params")
@@ -522,6 +532,12 @@ fn rust_expr(value: &Value) -> String {
 fn rust_script(value: &Value) -> String {
     let json = serde_json::to_string_pretty(&ergonomic_render_params(value))
         .expect("RenderParams JSON should pretty-print");
+
+    // TODO: specify schema_version as CRATE_VERSION if None.
+    // TODO: add a comment that explains how to execute the script.
+    // TODO: define a simpler wrapper render function that removes the trailing status byte?
+    // TODO: define a non-async alternative render function, so that `await` is not required?
+
     format!(
         "use pluot::{{render, RenderParams}};\n\
          \n\
@@ -561,12 +577,16 @@ fn bash_input_json(value: &Value) -> String {
         .expect("plot_type/plot_params/stores should pretty-print")
 }
 
-/// A self-contained shell script that builds and runs the `pluot_cli`
-/// example (`examples/pluot_cli`), piping the plot/layer params (and `stores`)
-/// to it as JSON on stdin and passing every other rendering parameter as a
-/// CLI flag, mirroring the `Args` struct in `examples/pluot_cli/src/main.rs`.
+/// A self-contained shell script that runs the `pluot_cli` binary
+/// (published to crates.io from `examples/pluot_cli`), piping the plot/layer
+/// params (and `stores`) to it as JSON on stdin and passing every other
+/// rendering parameter as a CLI flag, mirroring the `Args` struct in
+/// `examples/pluot_cli/src/main.rs`.
 fn bash_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
+
+    // TODO: specify schema_version as CRATE_VERSION if None.
+    // TODO: add a comment that explains how to execute the script.
 
     // The output extension selects `pluot_cli`'s backend (see `infer_format` in
     // `examples/pluot_cli/src/main.rs`); pick it from the resolved output format
@@ -576,6 +596,8 @@ fn bash_script(value: &Value) -> String {
         _ => "plot.png",
     };
     let mut flags: Vec<String> = vec![format!("--output {output_file}")];
+
+    flags.push(format!("--schema-version {CRATE_VERSION}"));
 
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(100);
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(100);
@@ -621,26 +643,10 @@ fn bash_script(value: &Value) -> String {
         "#!/usr/bin/env bash\n\
          set -euo pipefail\n\
          \n\
-         # Renders this plot via the `pluot_cli` example (examples/pluot_cli),\n\
-         # which reads the plot/layer params (and any `stores`) as JSON (piped\n\
-         # below via a heredoc on stdin) and every other rendering parameter\n\
-         # as a CLI flag.\n\
-         #\n\
-         # `HttpStore`/`LocalStore` entries in `stores` are backed by real\n\
-         # `zarrs_http`/`zarrs_filesystem` instances; `MemoryStore` entries are\n\
-         # rejected, since the CLI has no generic byte payload to construct\n\
-         # one from.\n\
-         \n\
-         # Build the CLI once. `examples/pluot_cli` has its own `Cargo.lock` and\n\
-         # is excluded from the workspace (see the root `Cargo.toml`), so it's\n\
-         # built via `--manifest-path` rather than `-p pluot_cli` (run this\n\
-         # script from the root of the pluot repository).\n\
-         cargo build --release --manifest-path \"$(dirname \"$0\")/examples/pluot_cli/Cargo.toml\"\n\
-         PLUOT_CLI=\"$(dirname \"$0\")/examples/pluot_cli/target/release/pluot_cli\"\n\
+         # Install the CLI with: cargo install pluot_cli\n\
          \n\
          # `--output`'s extension selects the backend: .svg (vector), .png\n\
-         # (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).\n\
-         \"$PLUOT_CLI\" \\\n\
+         pluot_cli \\\n\
          {flags_str}\
          \x20 <<'JSON'\n\
          {input_json}\n\
@@ -862,18 +868,20 @@ mod tests {
     }
 
     #[test]
-    fn bash_script_uses_kebab_case_flags_and_manifest_path_build() {
+    fn bash_script_uses_kebab_case_flags_and_installed_cli() {
         // `pluot_cli` (built via clap) uses kebab-case long flag names, and
-        // lives outside the workspace (its own `Cargo.lock`), so it must be
-        // built via `--manifest-path` rather than `-p pluot_cli`.
+        // is invoked as a crates.io-installed binary rather than built from
+        // a local checkout.
         let params = sample_params(GraphicsFormat::ScriptBash);
         let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
         assert!(out.contains("--plot-id"));
         assert!(!out.contains("--plot_id"));
         assert!(out.contains("--device-pixel-ratio"));
         assert!(!out.contains("--device_pixel_ratio"));
-        assert!(out.contains("--manifest-path"));
-        assert!(out.contains("examples/pluot_cli/target/release/pluot_cli"));
+        assert!(out.contains("cargo install pluot_cli"));
+        assert!(!out.contains("--manifest-path"));
+        assert!(!out.contains("cargo build"));
+        assert!(out.contains("pluot_cli \\"));
         assert!(out.contains("--output plot.png"));
     }
 

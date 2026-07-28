@@ -114,6 +114,10 @@ struct Args {
     #[arg(short, long)]
     output: PathBuf,
 
+    /// Schema version. Intended for forward compatibility support in the future.
+    #[arg(long, default_value = None)]
+    schema_version: Option<String>,
+
     /// Canvas width in pixels.
     #[arg(long, default_value_t = 800)]
     width: u32,
@@ -363,6 +367,7 @@ async fn main() {
 
     let params = RenderParams {
         layers,
+        schema_version: args.schema_version,
         width: args.width,
         height: args.height,
         format,

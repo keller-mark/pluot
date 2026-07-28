@@ -87,7 +87,20 @@ def parse_kwargs(kwargs):
 
     return new_kwargs
 
-_RENDER_DEFAULTS = dict(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, format="Raster", aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True)
+_RENDER_DEFAULTS = dict(
+    schema_version=None,
+    timeout=None,
+    wait_for_store_gets=True,
+    cache_enabled=True,
+    device_pixel_ratio=1.0,
+    format="Raster",
+    aspect_ratio_mode="Contain",
+    aspect_ratio_alignment_mode="Center",
+    view_mode="2d",
+    pickable=False,
+    svg_compression_enabled=False,
+    svg_include_document=True
+)
 
 async def render(**kwargs):
     """Render to raw bytes."""

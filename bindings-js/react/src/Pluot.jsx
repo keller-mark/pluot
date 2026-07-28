@@ -47,6 +47,7 @@ function normalizePickingResult(data) {
 
 export function Pluot(props) {
   const {
+    schemaVersion = null,
     width: widthProp,
     height: heightProp,
     plotId,
@@ -183,6 +184,7 @@ export function Pluot(props) {
   // The picking callback.
   const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
     const renderParams = {
+      schema_version: schemaVersion,
       width,
       height,
       format: format,
@@ -258,6 +260,7 @@ export function Pluot(props) {
     console.log('wasm.render');
 
     const renderParams = {
+      schema_version: schemaVersion,
       width,
       height,
       format: format,
