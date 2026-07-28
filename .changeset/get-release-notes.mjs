@@ -14,7 +14,7 @@
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
-import mdastToString from "mdast-util-to-string";
+import { toString as mdastToString } from "mdast-util-to-string";
 import fs from "node:fs";
 
 const BumpLevels = {
