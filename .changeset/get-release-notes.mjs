@@ -11,10 +11,10 @@
 // (The "fixed" part of the changesets config causes package versions to be bumped together,
 // but will still result in changesets making a separate GitHub release per-sub-package.)
 
-import unified from "unified";
+import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
-import mdastToString from "mdast-util-to-string";
+import { toString as mdastToString } from "mdast-util-to-string";
 import fs from "node:fs";
 
 const BumpLevels = {
