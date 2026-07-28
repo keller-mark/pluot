@@ -1,4 +1,11 @@
 
+## 0.1.6
+
+### Patch Changes
+
+- Update github actions publishing workflow. (`@pluot/core`) ([#259](https://github.com/keller-mark/pluot/pull/259))
+
+
 ## 0.1.5
 
 ### Patch Changes
