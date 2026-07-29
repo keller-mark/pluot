@@ -40,7 +40,7 @@ pub fn render_to_script_aux(params: &RenderParams, format: &CodeFormat, ensure_s
     match format {
         CodeFormat::Json => to_json(&value),
 
-        CodeFormat::ExpressionPython => format!("{}\n", python_call(&value)),
+        CodeFormat::ExpressionPython => format!("{}\n", python_call(&value, 0)),
         CodeFormat::ScriptPython => python_script(&value),
 
         CodeFormat::ExpressionR => format!("{}\n", r_call(&value)),
@@ -198,14 +198,16 @@ fn python_render_func(value: &Value) -> &'static str {
 /// functions force their own output format internally, so `format` is omitted;
 /// every other top-level field maps directly to a keyword argument (`plot_type`
 /// and `plot_params` are already separate keys thanks to the flattened enum).
-fn python_call(value: &Value) -> String {
+fn python_call(value: &Value, level: usize) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
+    let inner = PYTHON_SYNTAX.indent.repeat(level + 1);
+    let close = PYTHON_SYNTAX.indent.repeat(level);
     let args: Vec<String> = obj
         .iter()
         .filter(|(k, _)| k.as_str() != "format")
-        .map(|(k, v)| format!("    {k}={},", emit_curly(v, 1, &PYTHON_SYNTAX)))
+        .map(|(k, v)| format!("{inner}{k}={},", emit_curly(v, level + 1, &PYTHON_SYNTAX)))
         .collect();
-    format!("{}(\n{}\n)", python_render_func(value), args.join("\n"))
+    format!("{}(\n{}\n{close})", python_render_func(value), args.join("\n"))
 }
 
 fn python_script(value: &Value) -> String {
@@ -226,11 +228,11 @@ fn python_script(value: &Value) -> String {
          import asyncio\n\
          \n\
          async def main():\n\
-             img = await {}\n\
-             img.save(\"my_plot.png\")\n\
+         \x20   plot = await {}\n\
+         \x20   plot.save(\"my_plot.png\")\n\
          if __name__ == \"__main__\":\n\
-             asyncio.run(main())\n",
-        python_call(value),
+         \x20   asyncio.run(main())\n",
+        python_call(value, 1),
     )
 }
 
