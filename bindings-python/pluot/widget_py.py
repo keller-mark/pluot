@@ -115,13 +115,13 @@ function render({ model, el }) {
 
     // Local camera state for delta computations: updated immediately on interaction
     // so subsequent events accumulate correctly without waiting for the round-trip.
-    // Also kept in sync when Python pushes a new camera_matrix via traitlet.
-    let _localCameraMatrix = new Float32Array(model.get("camera_matrix"));
+    // Also kept in sync when Python pushes a new camera_view via traitlet.
+    let _localCameraMatrix = new Float32Array(model.get("camera_view"));
 
     function onCameraChange() {
-        _localCameraMatrix = new Float32Array(model.get("camera_matrix"));
+        _localCameraMatrix = new Float32Array(model.get("camera_view"));
     }
-    model.on("change:camera_matrix", onCameraChange);
+    model.on("change:camera_view", onCameraChange);
 
     function onWheel(event) {
         const handler = model.get("view_mode") === "3d" ? pluot.onWheel3d : pluot.onWheel2d;
@@ -182,7 +182,7 @@ function render({ model, el }) {
     return () => {
         cameraEl.removeEventListener("wheel", onWheel);
         cameraEl.removeEventListener("mousemove", onMouseMove);
-        model.off("change:camera_matrix", onCameraChange);
+        model.off("change:camera_view", onCameraChange);
         model.off("msg:custom", onCustomMsg);
         for (const key of layoutKeys) {
             model.off(`change:${key}`, applyLayout);
@@ -195,7 +195,7 @@ export default { initialize, render };
 
 
 _RENDER_TRIGGER_TRAITS = (
-    # camera_matrix excluded: JS->Python updates arrive via anywidget-command,
+    # camera_view excluded: JS->Python updates arrive via anywidget-command,
     # not traitlet sync.  Python-side changes must call _schedule_render() explicitly.
     "width",
     "height",
@@ -219,12 +219,12 @@ class PluotPyWidget(anywidget.AnyWidget):
 
     _esm = _ESM
 
-    # Synced traits: JS reads these for layout and receives camera_matrix updates
+    # Synced traits: JS reads these for layout and receives camera_view updates
     # pushed from Python.  Camera updates in the JS->Python direction use custom
     # messages (anywidget-command) instead of traitlet sync.
     width = traitlets.Int(800).tag(sync=True)
     height = traitlets.Int(800).tag(sync=True)
-    camera_matrix = traitlets.List(
+    camera_view = traitlets.List(
         trait=traitlets.Float(),
         default_value=DEFAULT_CAMERA_MATRIX_2D,
     ).tag(sync=True)
@@ -272,7 +272,7 @@ class PluotPyWidget(anywidget.AnyWidget):
         params = msg.get("msg")
         if name == "camera_update":
             if isinstance(params, list) and len(params) == 16:
-                self.camera_matrix = params
+                self.camera_view = params
                 self._schedule_render()
 
     @traitlets.observe(*_RENDER_TRIGGER_TRAITS)
@@ -298,7 +298,7 @@ class PluotPyWidget(anywidget.AnyWidget):
                 plot_type=self.plot_type,
                 store_name=self.store_name,
                 plot_params=self.plot_params,
-                camera_view=list(self.camera_matrix),
+                camera_view=list(self.camera_view),
                 margin_top=self.margin_top,
                 margin_right=self.margin_right,
                 margin_bottom=self.margin_bottom,

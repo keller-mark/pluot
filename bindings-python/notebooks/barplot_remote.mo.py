@@ -6,12 +6,12 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image, render_to_svg
+    from pluot import render_to_image, render_to_svg, render_to_script
     import numpy as np
     import marimo as mo
     import json
     import zarr
-    return mo, render_to_image, render_to_svg, zarr
+    return mo, render_to_image, render_to_script, render_to_svg, zarr
 
 
 @app.cell
@@ -58,7 +58,7 @@ async def _(camera_view, render_to_image, store):
             orientation= "Vertical",
             identifier_key= "/year",
             quantity_key= "/wheat",
-        
+
             fill_color_mode="Categorical",
                   )
                 ),
@@ -88,7 +88,7 @@ async def _(camera_view, render_to_svg, store):
             orientation= "Vertical",
             identifier_key= "/year",
             quantity_key= "/wheat",
-        
+
             fill_color_mode="Categorical",
                   )
                 ),
@@ -108,6 +108,37 @@ def _(mo, svg_string):
 def _(svg_string):
     with open("../pluot-figures/barplot.svg", "w") as f:
        f.write(svg_string)
+    return
+
+
+@app.cell
+def _(camera_view, render_to_script, store):
+    render_to_script(
+        camera_view=camera_view, width=800, height=600, plot_id="test_barplot_layer", plot_type="LayeredPlot",
+        margin_left=100,
+        margin_bottom=100,
+        margin_top=10,
+        margin_right=10,
+        store=store,
+        plot_params=dict(
+            layers=[
+                dict(
+                  layer_type = "ZarrBarPlotLayer",
+                  layer_params = dict(
+                      layer_id= "barplot_layer",
+            bounds= None,
+
+            orientation= "Vertical",
+            identifier_key= "/year",
+            quantity_key= "/wheat",
+
+            fill_color_mode="Categorical",
+                  )
+                ),
+            ]
+        ),
+        code_format="ScriptBash"
+    )
     return
 
 
