@@ -35,14 +35,15 @@ pub enum GraphicsFormat {
     Vector,
 
     // TODO: add AccessKit as a GraphicsFormat?
+}
 
-    // When "rendering to a script", specify the output format.
-    // TODO: add a `version` parameter to RenderParams, to facilitate forwards/backwards compatibility.
-    // TODO: add better comments to script outputs, so that it is clear how to run them.
+
+/// The code format for render-to-script outputs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CodeFormat {
     ExpressionRust,
     ScriptRust,
     ExpressionPython,
-    // The python script should include PEP 723 inline script metadata for dependencies
     ScriptPython,
     ExpressionR,
     ScriptR,
@@ -56,43 +57,13 @@ pub enum GraphicsFormat {
     ScriptHtml,
     Json,
 
-    // Use the pluot_cli from examples/pluot_cli
+    // Uses the pluot_cli from examples/pluot_cli
     ScriptBash,
 
     // TODO: support ScriptHtmlReact which uses the react component in a standalone HTML file?
     // TODO: jupyter nb?
     // TODO: marimo nb?
     // TODO: rmarkdown?
-}
-
-impl GraphicsFormat {
-    /// Whether this format is a "code" output: rather than rendering pixels or an
-    /// SVG, [`crate::render::render`] serializes the [`RenderParams`] into a
-    /// string of source code (or JSON) that reproduces the plot using one of the
-    /// language bindings (`bindings-js`, `bindings-r`, `bindings-python`) or the
-    /// Rust API. See [`crate::render_script`].
-    ///
-    /// The `Expression*` variants emit a single expression (e.g. a function call
-    /// or JSX element), whereas the `Script*` variants emit a self-contained
-    /// script including imports, variable definitions and library initialization.
-    pub fn is_code(&self) -> bool {
-        matches!(
-            self,
-            GraphicsFormat::ExpressionRust
-                | GraphicsFormat::ScriptRust
-                | GraphicsFormat::ExpressionPython
-                | GraphicsFormat::ScriptPython
-                | GraphicsFormat::ExpressionR
-                | GraphicsFormat::ScriptR
-                | GraphicsFormat::ExpressionJs
-                | GraphicsFormat::ScriptJs
-                | GraphicsFormat::ExpressionJsx
-                | GraphicsFormat::ScriptReact
-                | GraphicsFormat::ScriptHtml
-                | GraphicsFormat::Json
-                | GraphicsFormat::ScriptBash
-        )
-    }
 }
 
 

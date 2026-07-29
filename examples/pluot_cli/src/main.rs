@@ -7,10 +7,7 @@ use std::sync::Arc;
 use pluot::{
     render, render_to_script, render_with_stores, AspectRatioMode, GraphicsFormat, LayerParams,
     RenderParams, ViewMode, ZarrStoreInfo, ZarrStoreParams, HttpStoreParams, LocalStoreParams,
-    MemoryStoreParams, StoreMap,
-};
-use zarrs_storage::storage_adapter::async_to_sync::{
-    AsyncToSyncBlockOn, AsyncToSyncStorageAdapter,
+    MemoryStoreParams, StoreMap, CodeFormat,
 };
 use zarrs_storage::storage_adapter::sync_to_async::{
     SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter
@@ -39,12 +36,12 @@ impl SyncToAsyncSpawnBlocking for TokioSpawnBlocking {
     }
 }
 
-struct TokioBlockOn(tokio::runtime::Runtime);
-
-impl AsyncToSyncBlockOn for TokioBlockOn {
-    fn block_on<F: core::future::Future>(&self, future: F) -> F::Output {
-        self.0.block_on(future)
-    }
+#[derive(Debug, Clone, PartialEq)]
+enum CliGraphicsFormat {
+    Vector,
+    Raster,
+    // Adds PngViaSvg to the options provided by GraphicsFormat
+    PngViaSvg,
 }
 
 /// Construct the real Zarr store instances declared in `stores` (an `HttpStore`
@@ -98,7 +95,9 @@ fn build_store_map(stores: &HashMap<String, ZarrStoreInfo>) -> StoreMap {
 /// (--input) or from stdin. All other rendering parameters are provided
 /// via CLI flags.
 ///
-/// The output format (SVG or PNG) is inferred from the --output file extension.
+/// The output format (SVG or PNG) can be inferred from the --output file extension.
+// TODO: support an alternative in which the full RenderParams object is passed via JSON,
+// not just the PlotParams.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -167,6 +166,18 @@ struct Args {
     #[arg(long)]
     margin_bottom: Option<f32>,
 
+    /// The code format. Decode into a CodeFormat value.
+    /// If provided, we use render_to_script to render to code.
+    /// If not provided, we use render to render to a graphical output.
+    #[arg(long)]
+    code_format: Option<String>,
+
+    /// The graphics format. Decode into a CliGraphicsFormat value.
+    /// Required when code_format is specified.
+    /// Otherwise, if provided, overrides the graphics format inferred from the file extension.
+    #[arg(long)]
+    graphics_format: Option<String>,
+
     /// Font file(s) to register for SVG-->PNG rendering via resvg.
     /// Can be specified multiple times. Has no effect on GPU raster output.
     #[arg(long = "font_path")]
@@ -233,15 +244,15 @@ fn infer_format(path: &PathBuf) -> GraphicsFormat {
 /// matching code-generation target instead of a real render format. Used to
 /// let `pluot_cli` double as a code-gen step for the Python/R
 /// render-to-script integration tests (see `scripts/gen_render_script_fixtures.sh`).
-fn script_format_for_output(path: &PathBuf) -> Option<GraphicsFormat> {
+fn script_format_for_output(path: &PathBuf) -> Option<CodeFormat> {
     match path
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| ext.to_ascii_lowercase())
         .as_deref()
     {
-        Some("py") => Some(GraphicsFormat::ScriptPython),
-        Some("r") => Some(GraphicsFormat::ScriptR),
+        Some("py") => Some(CodeFormat::ScriptPython),
+        Some("r") => Some(CodeFormat::ScriptR),
         _ => None,
     }
 }
@@ -290,6 +301,36 @@ fn parse_camera_view(s: &str) -> Result<[f32; 16], String> {
     Ok(matrix)
 }
 
+/// Parse a `--code_format` string into a `CodeFormat`.
+///
+/// `CodeFormat` has no custom `Display`/`FromStr` and is otherwise only ever
+/// produced from the exact PascalCase variant names via serde (e.g. the
+/// `code_format="ScriptPython"` kwarg the Python bindings require), so the
+/// same PascalCase names are accepted here for consistency.
+fn parse_code_format(s: &str) -> Result<CodeFormat, String> {
+    serde_json::from_value(serde_json::Value::String(s.to_string())).map_err(|_| {
+        format!(
+            "Unknown code_format '{}'. Expected one of: ExpressionRust, ScriptRust, \
+             ExpressionPython, ScriptPython, ExpressionR, ScriptR, ExpressionJs, ScriptJs, \
+             ExpressionJsx, ScriptReact, ScriptHtml, Json, ScriptBash.",
+            s
+        )
+    })
+}
+
+/// Parse a `--graphics_format` string into a `CliGraphicsFormat`.
+fn parse_graphics_format(s: &str) -> Result<CliGraphicsFormat, String> {
+    match s {
+        "Vector" => Ok(CliGraphicsFormat::Vector),
+        "Raster" => Ok(CliGraphicsFormat::Raster),
+        "PngViaSvg" => Ok(CliGraphicsFormat::PngViaSvg),
+        _ => Err(format!(
+            "Unknown graphics_format '{}'. Expected one of: Vector, Raster, PngViaSvg.",
+            s
+        )),
+    }
+}
+
 /// Read the JSON string from a file or stdin.
 fn read_json(input: &Option<PathBuf>) -> Result<String, io::Error> {
     match input {
@@ -310,7 +351,42 @@ async fn main() {
 
     // --- Parse CLI parameters ---
 
-    let format = infer_format(&args.output);
+    let cli_code_format = match &args.code_format {
+        Some(s) => match parse_code_format(s) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        },
+        None => None,
+    };
+
+    let cli_graphics_format = match &args.graphics_format {
+        Some(s) => match parse_graphics_format(s) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        },
+        None => None,
+    };
+
+    if cli_code_format.is_some() && cli_graphics_format.is_none() {
+        eprintln!("Error: --graphics_format is required when --code_format is specified.");
+        process::exit(1);
+    }
+
+    // `graphics_format`, if provided, overrides the format inferred from the
+    // `--output` file extension. `PngViaSvg` additionally forces rendering
+    // through the vector backend followed by resvg rasterization.
+    let (format, via_svg_png) = match &cli_graphics_format {
+        Some(CliGraphicsFormat::Vector) => (GraphicsFormat::Vector, false),
+        Some(CliGraphicsFormat::Raster) => (GraphicsFormat::Raster, false),
+        Some(CliGraphicsFormat::PngViaSvg) => (GraphicsFormat::Vector, true),
+        None => (infer_format(&args.output), is_via_svg_png(&args.output)),
+    };
 
     let aspect_ratio_mode = match parse_aspect_ratio_mode(&args.aspect_ratio_mode) {
         Ok(m) => m,
@@ -408,12 +484,28 @@ async fn main() {
 
     // --- Code-generation shortcut ---
     //
-    // `--output foo.py` / `foo.R` skip real rendering entirely and instead
-    // emit the equivalent Python/R source via `render_to_script`, for use as
-    // an integration-test fixture (see `scripts/gen_render_script_fixtures.sh`).
-    if let Some(script_format) = script_format_for_output(&args.output) {
+    // `--code_format` (or, absent that, `--output foo.py` / `foo.R`) skips
+    // real rendering entirely and instead emits the equivalent source via
+    // `render_to_script`. The extension-based fallback exists for use as an
+    // integration-test fixture (see `scripts/gen_render_script_fixtures.sh`).
+    let script_format = cli_code_format.clone().or_else(|| script_format_for_output(&args.output));
+    if let Some(script_format) = script_format {
+        if cli_graphics_format == Some(CliGraphicsFormat::PngViaSvg) {
+            eprintln!(
+                "Error: --graphics_format 'PngViaSvg' is not valid when generating code. \
+                 Use 'Vector' or 'Raster'."
+            );
+            process::exit(1);
+        }
+        // Defaults to Vector to preserve prior behavior when neither
+        // `--code_format` nor `--graphics_format` is given (the extension-based
+        // fallback above).
+        let script_graphics_format = match &cli_graphics_format {
+            Some(CliGraphicsFormat::Raster) => GraphicsFormat::Raster,
+            _ => GraphicsFormat::Vector,
+        };
         let script_params = RenderParams {
-            format: GraphicsFormat::Vector,
+            format: script_graphics_format,
             // Passed through verbatim (`None` if the input JSON declared no
             // stores) rather than the synthetic MemoryStore placeholder above,
             // which is a `pluot_cli`-only bookkeeping detail that has no
@@ -440,7 +532,6 @@ async fn main() {
 
     let width = params.width;
     let height = params.height;
-    let via_svg_png = is_via_svg_png(&args.output);
     let is_vector = params.format == GraphicsFormat::Vector;
 
     // Render the plot. When the input JSON declares `stores`, construct real

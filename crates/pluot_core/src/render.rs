@@ -37,14 +37,6 @@ pub fn stores_from_params(params: &RenderParams) -> Option<StoreMap> {
 
 /// Given plotting parameters as input, render a graphical (vector or bitmap) output.
 pub async fn render(params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
-    // "Rendering to code" needs no GPU, data loading or layer construction:
-    // it just serializes the params into source code / JSON. Handle it up front.
-    // TODO: separate the render-to-graphics and render-to-script bound functions,
-    // so that render-to-script can specify `format` as either image/svg?
-    if params.format.is_code() {
-        return render_to_script(&params, &params.format).into_bytes();
-    }
-
     let width = params.width;
     let height = params.height;
 
@@ -269,7 +261,5 @@ pub async fn render(params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
 
             pixels
         }
-        // Script formats are handled by the early return at the top of `render`.
-        _ => unreachable!("script formats are handled before layer rendering"),
     }
 }

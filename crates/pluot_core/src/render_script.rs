@@ -11,52 +11,40 @@
 //! - `Script*`: a self-contained script including the imports, variable
 //!   definitions and library initialization needed to run standalone.
 
-use crate::params::{GraphicsFormat, RenderParams};
+use crate::params::{GraphicsFormat, CodeFormat, RenderParams};
 use crate::version::CRATE_VERSION;
 use serde_json::Value;
 
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
-pub fn render_to_script(params: &RenderParams, format: &GraphicsFormat) -> String {
+pub fn render_to_script(params: &RenderParams, format: &CodeFormat) -> String {
     // Serialize once; every generator walks this JSON value.
     let value = serde_json::to_value(params).expect("RenderParams should serialize to JSON");
 
     match format {
-        GraphicsFormat::Json => to_json(&value),
+        CodeFormat::Json => to_json(&value),
 
-        GraphicsFormat::ExpressionPython => format!("{}\n", python_call(&value)),
-        GraphicsFormat::ScriptPython => python_script(&value),
+        CodeFormat::ExpressionPython => format!("{}\n", python_call(&value)),
+        CodeFormat::ScriptPython => python_script(&value),
 
-        GraphicsFormat::ExpressionR => format!("{}\n", r_call(&value)),
-        GraphicsFormat::ScriptR => r_script(&value),
+        CodeFormat::ExpressionR => format!("{}\n", r_call(&value)),
+        CodeFormat::ScriptR => r_script(&value),
 
-        GraphicsFormat::ExpressionJs => format!("{}\n", js_call(&value)),
-        GraphicsFormat::ScriptJs => js_script(&value),
+        CodeFormat::ExpressionJs => format!("{}\n", js_call(&value)),
+        CodeFormat::ScriptJs => js_script(&value),
 
-        GraphicsFormat::ExpressionJsx => format!("{}\n", jsx_element(&value, 0)),
-        GraphicsFormat::ScriptReact => react_script(&value),
-        GraphicsFormat::ScriptHtml => html_script(&value),
+        CodeFormat::ExpressionJsx => format!("{}\n", jsx_element(&value, 0)),
+        CodeFormat::ScriptReact => react_script(&value),
+        CodeFormat::ScriptHtml => html_script(&value),
 
-        GraphicsFormat::ExpressionRust => format!("{}\n", rust_expr(&value)),
-        GraphicsFormat::ScriptRust => rust_script(&value),
+        CodeFormat::ExpressionRust => format!("{}\n", rust_expr(&value)),
+        CodeFormat::ScriptRust => rust_script(&value),
 
-        GraphicsFormat::ScriptBash => bash_script(&value),
-
-        other => panic!("render_to_script called with a non-code format: {other:?}"),
+        CodeFormat::ScriptBash => bash_script(&value),
     }
 }
 
 /// Resolve the underlying rendering target (`"Raster"` or `"Vector"`) that the
 /// generated code should produce.
-///
-/// `RenderParams.format` normally carries the `Expression*`/`Script*` value that
-/// requested code generation (e.g. `ScriptPython`), which would be nonsensical
-/// (and circular) inside the emitted code. But a caller invoking
-/// [`render_to_script`] directly (rather than through [`crate::render::render`])
-/// can set `params.format` to `Raster` or `Vector` to request that the generated
-/// code itself produce raster or vector (SVG) output; any other value (including
-/// every code-target variant, which is what `params.format` holds when reached
-/// via `render()`) falls back to `Raster`, matching generated code's historical
-/// default.
 fn resolved_format(value: &Value) -> &'static str {
     match value.get("format").and_then(Value::as_str) {
         Some("Vector") => "Vector",
@@ -207,13 +195,13 @@ fn python_script(value: &Value) -> String {
     let func = python_render_func(value);
     // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
     format!(
+        // We specify the python package version as CRATE_VERSION in the inline dependencies metadata.
         // TODO: specify schema_version as CRATE_VERSION if None.
-        // TODO: specify the python package version as CRATE_VERSION in the inline dependencies metadata
         // TODO: add a comment that explains how to execute the script via `uv`.
         "# /// script\n\
          # requires-python = \">=3.9\"\n\
          # dependencies = [\n\
-         #     \"pluot\",\n\
+         #     \"pluot=={CRATE_VERSION}\",\n\
          # ]\n\
          # ///\n\
          from pluot import {func}\n\
@@ -585,7 +573,6 @@ fn bash_input_json(value: &Value) -> String {
 fn bash_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
-    // TODO: specify schema_version as CRATE_VERSION if None.
     // TODO: add a comment that explains how to execute the script.
 
     // The output extension selects `pluot_cli`'s backend (see `infer_format` in
@@ -598,6 +585,7 @@ fn bash_script(value: &Value) -> String {
     let mut flags: Vec<String> = vec![format!("--output {output_file}")];
 
     flags.push(format!("--schema-version {CRATE_VERSION}"));
+    // TODO: explicitly specify --graphics-format param here?
 
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(100);
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(100);
@@ -697,8 +685,8 @@ mod tests {
 
     #[test]
     fn json_is_valid_and_format_reset() {
-        let params = sample_params(GraphicsFormat::Json);
-        let out = render_to_script(&params, &GraphicsFormat::Json);
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &CodeFormat::Json);
         let parsed: Value = serde_json::from_str(&out).expect("output should be valid JSON");
         assert_eq!(parsed["format"], Value::String("Raster".to_string()));
         assert_eq!(parsed["width"], Value::Number(640.into()));
@@ -710,8 +698,8 @@ mod tests {
         // The top-level `stores` map uses a flattened, adjacently-tagged
         // ZarrStoreParams enum; make sure it survives a serialize -> JSON ->
         // deserialize round trip (and appears in the emitted JSON).
-        let params = sample_params(GraphicsFormat::Json);
-        let out = render_to_script(&params, &GraphicsFormat::Json);
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &CodeFormat::Json);
 
         let parsed: Value = serde_json::from_str(&out).expect("valid JSON");
         assert_eq!(
@@ -731,8 +719,8 @@ mod tests {
 
     #[test]
     fn python_expression_is_a_bare_call() {
-        let params = sample_params(GraphicsFormat::ExpressionPython);
-        let out = render_to_script(&params, &GraphicsFormat::ExpressionPython);
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &CodeFormat::ExpressionPython);
         assert!(out.starts_with("render_to_image("));
         // An expression carries no imports.
         assert!(!out.contains("from pluot import"));
@@ -742,8 +730,8 @@ mod tests {
 
     #[test]
     fn python_script_has_imports() {
-        let params = sample_params(GraphicsFormat::ScriptPython);
-        let out = render_to_script(&params, &GraphicsFormat::ScriptPython);
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &CodeFormat::ScriptPython);
         assert!(out.contains("from pluot import render_to_image"));
         assert!(out.contains("img = await render_to_image("));
     }
@@ -755,7 +743,7 @@ mod tests {
         // (`Vector`) while requesting a specific code target via the explicit
         // second argument.
         let params = sample_params(GraphicsFormat::Vector);
-        let out = render_to_script(&params, &GraphicsFormat::ScriptPython);
+        let out = render_to_script(&params, &CodeFormat::ScriptPython);
         assert!(out.contains("from pluot import render_to_svg"));
         assert!(out.contains("img = await render_to_svg("));
         assert!(!out.contains("render_to_image"));
@@ -764,16 +752,16 @@ mod tests {
     #[test]
     fn r_expression_and_script() {
         let expr = render_to_script(
-            &sample_params(GraphicsFormat::ExpressionR),
-            &GraphicsFormat::ExpressionR,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ExpressionR,
         );
         assert!(expr.starts_with("render_to_raster("));
         assert!(expr.contains("layers = list("));
         assert!(!expr.contains("library(pluotr)"));
 
         let script = render_to_script(
-            &sample_params(GraphicsFormat::ScriptR),
-            &GraphicsFormat::ScriptR,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ScriptR,
         );
         assert!(script.contains("library(pluotr)"));
         assert!(script.contains("img <- render_to_raster("));
@@ -782,7 +770,7 @@ mod tests {
     #[test]
     fn r_script_uses_render_to_svg_when_format_is_vector() {
         let params = sample_params(GraphicsFormat::Vector);
-        let out = render_to_script(&params, &GraphicsFormat::ScriptR);
+        let out = render_to_script(&params, &CodeFormat::ScriptR);
         assert!(out.contains("img <- render_to_svg("));
         assert!(!out.contains("render_to_raster"));
     }
@@ -790,15 +778,15 @@ mod tests {
     #[test]
     fn js_expression_and_script() {
         let expr = render_to_script(
-            &sample_params(GraphicsFormat::ExpressionJs),
-            &GraphicsFormat::ExpressionJs,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ExpressionJs,
         );
         assert!(expr.starts_with("render_wasm({"));
         assert!(!expr.contains("import"));
 
         let script = render_to_script(
-            &sample_params(GraphicsFormat::ScriptJs),
-            &GraphicsFormat::ScriptJs,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ScriptJs,
         );
         assert!(script.contains("from \"@pluot/core\""));
         assert!(script.contains("const renderParams = {"));
@@ -808,8 +796,8 @@ mod tests {
     #[test]
     fn jsx_expression_is_single_element() {
         let out = render_to_script(
-            &sample_params(GraphicsFormat::ExpressionJsx),
-            &GraphicsFormat::ExpressionJsx,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ExpressionJsx,
         );
         assert!(out.starts_with("<Pluot"));
         assert!(out.contains("width={640}"));
@@ -822,8 +810,8 @@ mod tests {
     #[test]
     fn react_script_defines_component() {
         let out = render_to_script(
-            &sample_params(GraphicsFormat::ScriptReact),
-            &GraphicsFormat::ScriptReact,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ScriptReact,
         );
         assert!(out.contains("import { Pluot } from \"@pluot/react\""));
         assert!(out.contains("export function PluotPlot()"));
@@ -833,8 +821,8 @@ mod tests {
     #[test]
     fn html_script_is_a_page() {
         let out = render_to_script(
-            &sample_params(GraphicsFormat::ScriptHtml),
-            &GraphicsFormat::ScriptHtml,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ScriptHtml,
         );
         assert!(out.starts_with("<!DOCTYPE html>"));
         assert!(out.contains("<canvas id=\"pluot-canvas\" width=\"640\" height=\"480\">"));
@@ -845,16 +833,16 @@ mod tests {
     #[test]
     fn rust_expression_and_script() {
         let expr = render_to_script(
-            &sample_params(GraphicsFormat::ExpressionRust),
-            &GraphicsFormat::ExpressionRust,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ExpressionRust,
         );
         assert!(expr.starts_with("pluot::render("));
         assert!(expr.contains("serde_json::from_str::<pluot::RenderParams>"));
         assert!(!expr.contains("use pluot"));
 
         let script = render_to_script(
-            &sample_params(GraphicsFormat::ScriptRust),
-            &GraphicsFormat::ScriptRust,
+            &sample_params(GraphicsFormat::Vector),
+            &CodeFormat::ScriptRust,
         );
         assert!(script.contains("use pluot::{render, RenderParams}"));
         assert!(script.contains("render(params).await"));
@@ -863,7 +851,7 @@ mod tests {
     #[test]
     fn rust_script_embeds_vector_format_when_requested() {
         let params = sample_params(GraphicsFormat::Vector);
-        let out = render_to_script(&params, &GraphicsFormat::ScriptRust);
+        let out = render_to_script(&params, &CodeFormat::ScriptRust);
         assert!(out.contains("\"format\": \"Vector\""));
     }
 
@@ -872,8 +860,8 @@ mod tests {
         // `pluot_cli` (built via clap) uses kebab-case long flag names, and
         // is invoked as a crates.io-installed binary rather than built from
         // a local checkout.
-        let params = sample_params(GraphicsFormat::ScriptBash);
-        let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
+        let params = sample_params(GraphicsFormat::Vector);
+        let out = render_to_script(&params, &CodeFormat::ScriptBash);
         assert!(out.contains("--plot-id"));
         assert!(!out.contains("--plot_id"));
         assert!(out.contains("--device-pixel-ratio"));
@@ -888,7 +876,7 @@ mod tests {
     #[test]
     fn bash_script_targets_svg_output_when_format_is_vector() {
         let params = sample_params(GraphicsFormat::Vector);
-        let out = render_to_script(&params, &GraphicsFormat::ScriptBash);
+        let out = render_to_script(&params, &CodeFormat::ScriptBash);
         assert!(out.contains("--output plot.svg"));
         assert!(!out.contains("plot.png"));
     }

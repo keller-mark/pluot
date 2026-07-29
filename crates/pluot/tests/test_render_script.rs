@@ -15,6 +15,7 @@ use test_utils::render_and_check_script_snapshot;
 
 use pluot::{
     RenderParams, LayerParams, GraphicsFormat,
+    CodeFormat,
     PointLayerParams, PointShapeMode,
     AxisLinearLayerParams, AxisPosition,
     CategoricalColormap, CategoricalParams, ColorMode,
@@ -77,7 +78,8 @@ fn sample_params(format: GraphicsFormat) -> RenderParams {
 #[tokio::test]
 async fn test_render_json() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Json),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::Json,
         "test_render.json",
     )
     .await;
@@ -88,7 +90,8 @@ async fn test_render_json() {
 #[tokio::test]
 async fn test_render_expression_python() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ExpressionPython),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ExpressionPython,
         "test_render_expression.py",
     )
     .await;
@@ -97,7 +100,8 @@ async fn test_render_expression_python() {
 #[tokio::test]
 async fn test_render_script_python() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptPython),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptPython,
         "test_render_script.py",
     )
     .await;
@@ -108,7 +112,8 @@ async fn test_render_script_python() {
 #[tokio::test]
 async fn test_render_expression_r() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ExpressionR),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ExpressionR,
         "test_render_expression.R",
     )
     .await;
@@ -117,7 +122,8 @@ async fn test_render_expression_r() {
 #[tokio::test]
 async fn test_render_script_r() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptR),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptR,
         "test_render_script.R",
     )
     .await;
@@ -128,7 +134,8 @@ async fn test_render_script_r() {
 #[tokio::test]
 async fn test_render_expression_js() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ExpressionJs),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ExpressionJs,
         "test_render_expression.js",
     )
     .await;
@@ -137,7 +144,8 @@ async fn test_render_expression_js() {
 #[tokio::test]
 async fn test_render_script_js() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptJs),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptJs,
         "test_render_script.js",
     )
     .await;
@@ -148,7 +156,8 @@ async fn test_render_script_js() {
 #[tokio::test]
 async fn test_render_expression_jsx() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ExpressionJsx),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ExpressionJsx,
         "test_render_expression.jsx",
     )
     .await;
@@ -157,7 +166,8 @@ async fn test_render_expression_jsx() {
 #[tokio::test]
 async fn test_render_script_react() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptReact),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptReact,
         "test_render_script_react.jsx",
     )
     .await;
@@ -166,7 +176,8 @@ async fn test_render_script_react() {
 #[tokio::test]
 async fn test_render_script_html() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptHtml),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptHtml,
         "test_render_script.html",
     )
     .await;
@@ -177,7 +188,8 @@ async fn test_render_script_html() {
 #[tokio::test]
 async fn test_render_expression_rust() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ExpressionRust),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ExpressionRust,
         "test_render_expression.rs.txt",
     )
     .await;
@@ -186,7 +198,8 @@ async fn test_render_expression_rust() {
 #[tokio::test]
 async fn test_render_script_rust() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptRust),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptRust,
         "test_render_script.rs.txt",
     )
     .await;
@@ -197,7 +210,8 @@ async fn test_render_script_rust() {
 #[tokio::test]
 async fn test_render_script_bash() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::ScriptBash),
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptBash,
         "test_render_script.sh",
     )
     .await;

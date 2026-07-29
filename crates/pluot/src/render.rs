@@ -1,6 +1,6 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
-use pluot_core::{render as raw_render, stores_from_params};
-use pluot_core::params::{GraphicsFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
+use pluot_core::{render as raw_render, render_to_script as raw_render_to_script, stores_from_params};
+use pluot_core::params::{GraphicsFormat, CodeFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
 use pluot_core::version::CRATE_VERSION;
 use crate::render_params::{LayerParams, RenderParams};
 
@@ -68,7 +68,7 @@ pub async fn render_with_stores(render_params: RenderParams, stores: Option<Stor
 }
 
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
-pub fn render_to_script(render_params: RenderParams, format: &GraphicsFormat) -> String {
+pub fn render_to_script(render_params: RenderParams, code_format: &CodeFormat) -> String {
     let raw_params = to_raw_render_params(render_params);
-    pluot_core::render_to_script(&raw_params, format)
+    raw_render_to_script(&raw_params, code_format)
 }
