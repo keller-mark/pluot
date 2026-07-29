@@ -8,7 +8,6 @@ logger = get_logger()
 logger.setLevel(logging.ERROR)
 
 if TYPE_CHECKING:
-    from .widget_py import PluotPyWidget  # noqa: F401
     from .widget_wasm import PluotWasmWidget  # noqa: F401
 
 __all__ = [
@@ -16,21 +15,12 @@ __all__ = [
     "render_to_array",
     "render_to_image",
     "render_to_svg",
-    "PluotPyWidget",
+    "render_to_script",
     "PluotWasmWidget",
 ]
 
 
 def __getattr__(name: str):
-    if name == "PluotPyWidget":
-        try:
-            from .widget_py import PluotPyWidget
-        except ImportError as e:
-            raise ImportError(
-                "PluotPyWidget requires the 'widget' extra. "
-                "Install with: pip install pluot[widget]"
-            ) from e
-        return PluotPyWidget
     if name == "PluotWasmWidget":
         try:
             from .widget_wasm import PluotWasmWidget
