@@ -13,6 +13,7 @@ import uuid
 from typing import Any
 
 import anywidget
+from pluot.zarr import store_instance_to_metadata
 import traitlets
 from zarr.abc.store import RangeByteRequest, Store, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
@@ -35,7 +36,7 @@ DEFAULT_CAMERA_MATRIX_3D: list[float] = [
 
 
 _ESM = r"""
-import * as pluot from 'https://unpkg.com/@pluot/core@0.1.1/dist/index.js';
+import * as pluot from 'https://unpkg.com/@pluot/core@0.1.7/dist/index.js';
 import * as uuid from "https://esm.sh/@lukeed/uuid@2.0.1/es2022/uuid.mjs";
 
 // Fallback UUID for non-secure (http://) contexts where crypto.randomUUID is unavailable.
@@ -204,12 +205,13 @@ function render({ model, el }) {
     async function doRender() {
         const w = model.get("width");
         const h = model.get("height");
+        const storesMetadata = model.get("stores_metadata");
         const params = {
+            schema_version: null,
             width: w,
             height: h,
             plot_id: model.get("plot_id"),
             plot_type: model.get("plot_type"),
-            store_name: model.get("store_name"),
             plot_params: model.get("plot_params"),
             camera_view: model.get("camera_view"),
             margin_top: model.get("margin_top"),
@@ -227,6 +229,7 @@ function render({ model, el }) {
             wait_for_store_gets: true,
             svg_compression_enabled: false,
             svg_include_document: false,
+            stores: storesMetadata,
         };
         try {
             const result = await pluot.render_wasm(params);
@@ -284,26 +287,28 @@ function render({ model, el }) {
         "margin_top", "margin_right", "margin_bottom", "margin_left",
         "aspect_ratio_mode", "aspect_ratio_alignment_mode",
         "view_mode", "camera_view",
-        "plot_id", "plot_type", "store_name", "plot_params", "format",
+        "plot_id", "plot_type", "stores_metadata", "plot_params", "format",
     ];
     for (const key of renderKeys) {
         model.on(`change:${key}`, scheduleRender);
     }
 
-    function registerStore() {
-        const storeName = model.get("store_name");
-        if (storeName) {
-            pluot.setStoreByName(storeName, makeStore(storeName));
+    function registerStores() {
+        const storesMetadata = model.get("stores_metadata");
+        if(storesMetadata) {
+            Object.keys(storesMetadata).forEach((storeName) => {
+                pluot.setStoreByName(storeName, makeStore(storeName));
+            });
         }
     }
 
-    model.on("change:store_name", () => {
-        registerStore();
+    model.on("change:stores", () => {
+        registerStores();
         scheduleRender();
     });
 
     // WASM is already initialized (awaited in `initialize`); register store and render.
-    registerStore();
+    registerStores();
     scheduleRender();
 
     return () => {
@@ -315,7 +320,7 @@ function render({ model, el }) {
         for (const key of renderKeys) {
             model.off(`change:${key}`, scheduleRender);
         }
-        model.off("change:store_name");
+        model.off("change:stores_metadata");
         if (renderFrame) {
             cancelAnimationFrame(renderFrame);
             renderFrame = 0;
@@ -351,6 +356,8 @@ class PluotWasmWidget(anywidget.AnyWidget):
     plot_id = traitlets.Unicode("plot").tag(sync=True)
     plot_type = traitlets.Unicode("LayeredPlot").tag(sync=True)
     store_name = traitlets.Unicode("").tag(sync=True)
+    # The serializable stores metadata dict.
+    stores_metadata = traitlets.Dict(default_value={}).tag(sync=True)
     plot_params = traitlets.Dict(default_value={}).tag(sync=True)
     format = traitlets.Unicode("Raster").tag(sync=True)
     batch_zarr_gets = traitlets.Bool(False).tag(sync=True)
@@ -362,6 +369,10 @@ class PluotWasmWidget(anywidget.AnyWidget):
             store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
             self._stores[store_name] = store
             self.store_name = store_name
+
+        self.stores_metadata = {}
+        for store_key, store_instance in self._stores.items():
+            self.stores_metadata[store_key] = store_instance_to_metadata(store_instance)
         self.on_msg(self._handle_msg)
 
     def add_store(self, name: str, store: Any) -> None:

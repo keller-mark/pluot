@@ -48,10 +48,11 @@ def _():
 @app.cell
 def _(PluotWasmWidget, camera_view, point_radius_slider, store):
     widget2 = PluotWasmWidget(
-        camera_view=camera_view, width=600, height=600, plot_id="test_store_instance", plot_type="LayeredPlot",
+        camera_view=camera_view, width=1000, height=600, plot_id="test_store_instance", plot_type="LayeredPlot",
         margin_left=100,
         margin_bottom=100,
         store=store,
+        store_name = "my_store",
         plot_params=dict(
             layers=[
                 dict(
