@@ -142,7 +142,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
         'Python script': 'ScriptPython',
         'R script': 'ScriptR',
         'React (JSX) script': 'ScriptReact',
-        // TODO: add more options here
+        'HTML file': 'ScriptHtml',
       },
       label: 'Render-to-Script Type'
     },

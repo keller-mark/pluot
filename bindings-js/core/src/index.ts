@@ -2,6 +2,7 @@ export {
   initialize,
   getIsWasmReady,
   render_wasm,
+  render_to_script_wasm,
   pick_wasm,
   setStore,
   setStoreByName,

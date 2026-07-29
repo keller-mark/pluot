@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useCallback, useEffect, useEffectEvent, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Pluot, render_wasm, normalizeStores } from '@pluot/react';
+import { Pluot, render_to_script_wasm, normalizeStores } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
 
@@ -174,7 +174,7 @@ export function PluotWrapper(props) {
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
-      format: controlValuesRef.current.renderToScriptType,
+      format: "Raster",
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,
@@ -202,18 +202,19 @@ export function PluotWrapper(props) {
       svg_include_document: true,
     };
 
+    const codeFormat = controlValuesRef.current.renderToScriptType;
+
     // Wrap render_wasm in try/catch, to handle Rust panics.
-    let arr;
+    let codeStringResult;
     try {
-      arr = await render_wasm(renderParams);
+      codeStringResult = await render_to_script_wasm(renderParams, codeFormat);
 
     } catch (error) {
       console.error("Error during wasm.render_wasm (rendering to script):", error);
       return;
     }
 
-    const scriptContents = (new TextDecoder()).decode(arr);
-    setScriptResult(scriptContents);
+    setScriptResult(codeStringResult);
   });
 
   const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onRenderToScript });

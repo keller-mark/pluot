@@ -14,9 +14,7 @@ pub use crate::zarr_types::ZarrPeekResult;
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use crate::CodeFormat;
-
-use super::{render, render_to_script, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult, CodeFormat};
+    use super::{render, render_to_script, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult, CodeFormat};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -261,7 +259,7 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
 
         let code_format: CodeFormat = serde_wasm_bindgen::from_value(code_format).expect("Invalid code_format");
 
-        let rendered_code = render_to_script(params, &code_format);
+        let rendered_code = render_to_script(&params, &code_format);
 
         return rendered_code;
     }

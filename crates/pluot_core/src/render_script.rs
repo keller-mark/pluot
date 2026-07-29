@@ -429,6 +429,8 @@ fn react_script(value: &Value) -> String {
 }
 
 // === HTML ===
+//
+// TODO: implement an additional React-based HTML script output option, which uses dynamic-importmap.
 
 fn html_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
@@ -436,8 +438,6 @@ fn html_script(value: &Value) -> String {
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
     // Indent the params object to sit under the module script (6 spaces).
     let params = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
-
-    // TODO: do not use esm.sh here
 
     let schema_version = obj.get("schema_version").and_then(Value::as_str);
     let schema_version_suffix = match schema_version {
@@ -539,6 +539,7 @@ fn rust_script(value: &Value) -> String {
     let json = serde_json::to_string_pretty(&ergonomic_render_params(value))
         .expect("RenderParams JSON should pretty-print");
 
+    // TODO: do not serialize RenderParams to JSON; print the RenderParams value to more ergonomic/idiomatic plain Rust struct syntax, which will enable static typechecking.
     // TODO: add a comment that explains how to execute the script.
     // TODO: define a simpler wrapper render function that removes the trailing status byte?
     // TODO: define a non-async alternative render function, so that `await` is not required?
