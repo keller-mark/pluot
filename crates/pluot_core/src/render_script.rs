@@ -18,7 +18,18 @@ use serde_json::Value;
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
 pub fn render_to_script(params: &RenderParams, format: &CodeFormat) -> String {
     // Serialize once; every generator walks this JSON value.
-    let value = serde_json::to_value(params).expect("RenderParams should serialize to JSON");
+    let mut value = serde_json::to_value(params).expect("RenderParams should serialize to JSON");
+
+    // Embed the crate version as the schema_version when the caller didn't
+    // specify one, so every generator below emits a concrete version string.
+    if value.get("schema_version").is_some_and(Value::is_null) {
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "schema_version".to_string(),
+                Value::String(CRATE_VERSION.to_string()),
+            );
+        }
+    }
 
     match format {
         CodeFormat::Json => to_json(&value),
@@ -196,8 +207,7 @@ fn python_script(value: &Value) -> String {
     // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
     format!(
         // We specify the python package version as CRATE_VERSION in the inline dependencies metadata.
-        // TODO: specify schema_version as CRATE_VERSION if None.
-        // TODO: add a comment that explains how to execute the script via `uv`.
+        // TODO: add a comment that explains how to execute the script via `uv` and using an async runtime.
         "# /// script\n\
          # requires-python = \">=3.9\"\n\
          # dependencies = [\n\
@@ -273,7 +283,6 @@ fn r_render_func(value: &Value) -> &'static str {
 fn r_call(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
-    // TODO: specify schema_version as CRATE_VERSION if None.
     // TODO: add a comment that explains how to execute the script.
 
     let mut args: Vec<String> = Vec::new();
@@ -318,7 +327,6 @@ fn js_script(value: &Value) -> String {
     let params = emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX);
 
     // TODO: define a simpler JS function that renders a static plot using vanilla JS, to a new or existing canvas/SVG/img element.
-    // TODO: specify schema_version as CRATE_VERSION if None.
     // TODO: add a comment that explains how to execute the script.
 
     format!(
@@ -338,7 +346,6 @@ fn js_script(value: &Value) -> String {
 /// Map a top-level `RenderParams` (snake_case) key to the corresponding camelCase
 /// `<Pluot />` prop name, or `None` if the component does not expose that param.
 fn jsx_prop_name(key: &str) -> Option<&'static str> {
-    // TODO: specify schema_version as CRATE_VERSION if None.
     Some(match key {
         "schema_version" => "schemaVersion",
         "width" => "width",
@@ -368,8 +375,6 @@ fn jsx_prop_name(key: &str) -> Option<&'static str> {
 /// levels (two spaces per level) and props one level deeper.
 fn jsx_element(value: &Value, base: usize) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
-
-    // TODO: specify schema_version as CRATE_VERSION if None.
 
     let pad = "  ".repeat(base);
     let prop_pad = "  ".repeat(base + 1);
@@ -424,8 +429,6 @@ fn html_script(value: &Value) -> String {
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
     // Indent the params object to sit under the module script (6 spaces).
     let params = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
-
-    // TODO: specify schema_version as CRATE_VERSION if None.
 
     format!(
         "<!DOCTYPE html>\n\
@@ -490,7 +493,6 @@ fn rust_raw_string(content: &str) -> String {
 fn ergonomic_render_params(value: &Value) -> Value {
     let mut value = with_resolved_format(value);
 
-    // TODO: specify schema_version as CRATE_VERSION if None.
     if let Some(obj) = value.as_object_mut() {
         let layers = obj
             .get("plot_params")
@@ -521,7 +523,6 @@ fn rust_script(value: &Value) -> String {
     let json = serde_json::to_string_pretty(&ergonomic_render_params(value))
         .expect("RenderParams JSON should pretty-print");
 
-    // TODO: specify schema_version as CRATE_VERSION if None.
     // TODO: add a comment that explains how to execute the script.
     // TODO: define a simpler wrapper render function that removes the trailing status byte?
     // TODO: define a non-async alternative render function, so that `await` is not required?
@@ -685,7 +686,7 @@ mod tests {
 
     #[test]
     fn json_is_valid_and_format_reset() {
-        let params = sample_params(GraphicsFormat::Vector);
+        let params = sample_params(GraphicsFormat::Raster);
         let out = render_to_script(&params, &CodeFormat::Json);
         let parsed: Value = serde_json::from_str(&out).expect("output should be valid JSON");
         assert_eq!(parsed["format"], Value::String("Raster".to_string()));
@@ -719,7 +720,7 @@ mod tests {
 
     #[test]
     fn python_expression_is_a_bare_call() {
-        let params = sample_params(GraphicsFormat::Vector);
+        let params = sample_params(GraphicsFormat::Raster);
         let out = render_to_script(&params, &CodeFormat::ExpressionPython);
         assert!(out.starts_with("render_to_image("));
         // An expression carries no imports.
@@ -730,7 +731,7 @@ mod tests {
 
     #[test]
     fn python_script_has_imports() {
-        let params = sample_params(GraphicsFormat::Vector);
+        let params = sample_params(GraphicsFormat::Raster);
         let out = render_to_script(&params, &CodeFormat::ScriptPython);
         assert!(out.contains("from pluot import render_to_image"));
         assert!(out.contains("img = await render_to_image("));
@@ -752,7 +753,7 @@ mod tests {
     #[test]
     fn r_expression_and_script() {
         let expr = render_to_script(
-            &sample_params(GraphicsFormat::Vector),
+            &sample_params(GraphicsFormat::Raster),
             &CodeFormat::ExpressionR,
         );
         assert!(expr.starts_with("render_to_raster("));
@@ -760,7 +761,7 @@ mod tests {
         assert!(!expr.contains("library(pluotr)"));
 
         let script = render_to_script(
-            &sample_params(GraphicsFormat::Vector),
+            &sample_params(GraphicsFormat::Raster),
             &CodeFormat::ScriptR,
         );
         assert!(script.contains("library(pluotr)"));
@@ -796,7 +797,7 @@ mod tests {
     #[test]
     fn jsx_expression_is_single_element() {
         let out = render_to_script(
-            &sample_params(GraphicsFormat::Vector),
+            &sample_params(GraphicsFormat::Raster),
             &CodeFormat::ExpressionJsx,
         );
         assert!(out.starts_with("<Pluot"));
@@ -860,7 +861,7 @@ mod tests {
         // `pluot_cli` (built via clap) uses kebab-case long flag names, and
         // is invoked as a crates.io-installed binary rather than built from
         // a local checkout.
-        let params = sample_params(GraphicsFormat::Vector);
+        let params = sample_params(GraphicsFormat::Raster);
         let out = render_to_script(&params, &CodeFormat::ScriptBash);
         assert!(out.contains("--plot-id"));
         assert!(!out.contains("--plot_id"));
