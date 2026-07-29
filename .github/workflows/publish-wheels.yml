@@ -55,6 +55,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      # Fixes same error on s390x: snappy_src@0.2.5+snappy.1.2.2: s390x-unknown-linux-gnu-g++: error: unrecognized command line option '-std=c++14'
+      - name: Install modern GCC for s390x
+        if: ${{ matrix.platform.target == 's390x' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-s390x-linux-gnu g++-s390x-linux-gnu
+      # Fixes same error on ppc64le: snappy_src@0.2.5+snappy.1.2.2: powerpc64le-unknown-linux-gnu-g++: error: unrecognized command line option '-std=c++14'
+      - name: Install modern GCC for ppc64le
+        if: ${{ matrix.platform.target == 'ppc64le' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu
+      # `x86_64` and `x86` shouldn't need special handling on ubuntu 22 since they should build natively with the host's already-modern GCC.
       - uses: actions/setup-python@v6
         with:
           python-version: 3.x
