@@ -30,6 +30,7 @@ use pluot::{
 // varies between the per-language tests.
 fn sample_params(format: GraphicsFormat) -> RenderParams {
     RenderParams {
+        schema_version: None,
         width: 640,
         height: 480,
         format,
@@ -100,7 +101,7 @@ async fn test_render_expression_python() {
 #[tokio::test]
 async fn test_render_script_python() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Vector),
+        sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptPython,
         "test_render_script.py",
     )
@@ -122,7 +123,7 @@ async fn test_render_expression_r() {
 #[tokio::test]
 async fn test_render_script_r() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Vector),
+        sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptR,
         "test_render_script.R",
     )
@@ -144,7 +145,7 @@ async fn test_render_expression_js() {
 #[tokio::test]
 async fn test_render_script_js() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Vector),
+        sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptJs,
         "test_render_script.js",
     )
@@ -166,7 +167,7 @@ async fn test_render_expression_jsx() {
 #[tokio::test]
 async fn test_render_script_react() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Vector),
+        sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptReact,
         "test_render_script_react.jsx",
     )
@@ -198,7 +199,7 @@ async fn test_render_expression_rust() {
 #[tokio::test]
 async fn test_render_script_rust() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Vector),
+        sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptRust,
         "test_render_script.rs.txt",
     )
@@ -210,7 +211,7 @@ async fn test_render_script_rust() {
 #[tokio::test]
 async fn test_render_script_bash() {
     render_and_check_script_snapshot(
-        sample_params(GraphicsFormat::Vector),
+        sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptBash,
         "test_render_script.sh",
     )

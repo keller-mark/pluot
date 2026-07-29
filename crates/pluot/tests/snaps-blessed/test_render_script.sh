@@ -1,27 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Renders this plot via the `pluot_cli` example (examples/pluot_cli),
-# which reads the plot/layer params (and any `stores`) as JSON (piped
-# below via a heredoc on stdin) and every other rendering parameter
-# as a CLI flag.
-#
-# `HttpStore`/`LocalStore` entries in `stores` are backed by real
-# `zarrs_http`/`zarrs_filesystem` instances; `MemoryStore` entries are
-# rejected, since the CLI has no generic byte payload to construct
-# one from.
+# Install the CLI with: cargo install pluot_cli
+# Then, run with: bash render.sh
 
-# Build the CLI once. `examples/pluot_cli` has its own `Cargo.lock` and
-# is excluded from the workspace (see the root `Cargo.toml`), so it's
-# built via `--manifest-path` rather than `-p pluot_cli` (run this
-# script from the root of the pluot repository).
-cargo build --release --manifest-path "$(dirname "$0")/examples/pluot_cli/Cargo.toml"
-PLUOT_CLI="$(dirname "$0")/examples/pluot_cli/target/release/pluot_cli"
-
-# `--output`'s extension selects the backend: .svg (vector), .png
-# (GPU raster), or .via_svg.png (vector rendered to PNG via resvg).
-"$PLUOT_CLI" \
+pluot_cli \
   --output plot.png \
+  --graphics-format Raster \
   --width 640 \
   --height 480 \
   --device-pixel-ratio 1.0 \

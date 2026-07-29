@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use kompari::color::Rgba8;
 use kompari::{compare_images, load_image, ImageDifference, MinImage};
 
-use pluot::{render, render_to_script, RenderParams, GraphicsFormat, CodeFormat};
+use pluot::{render, render_to_script_aux, RenderParams, GraphicsFormat, CodeFormat};
 
 fn snapshots_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -88,7 +88,7 @@ pub async fn render_and_check_both_snapshots(base_params: RenderParams, base_nam
 /// Unlike the raster/vector snapshots, script rendering needs no GPU, so this
 /// runs on every target/feature combination.
 pub async fn render_and_check_script_snapshot(params: RenderParams, code_format: CodeFormat, name: &str) {
-    let result_str = render_to_script(params, &code_format);
+    let result_str = render_to_script_aux(params, &code_format, false);
     check_text_snapshot(&result_str, name);
 }
 

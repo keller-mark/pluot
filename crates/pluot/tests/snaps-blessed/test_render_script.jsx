@@ -1,6 +1,8 @@
 import React from "react";
 import { Pluot } from "@pluot/react";
 
+// Pass a `store` or `storeName` prop referencing your Zarr store if any
+// layers read from `store_name`.
 export function PluotPlot() {
   return (
     <Pluot
@@ -96,16 +98,7 @@ export function PluotPlot() {
         ]
       }}
       plotId="plot_1"
-      stores={{
-        my_store: {
-          store_type: "HttpStore",
-          store_params: {
-            url: "https://example.com/my_store.zarr",
-            options: null
-          },
-          store_extensions: null
-        }
-      }}
+      storeName="my_store"
       marginLeft={60.0}
       enablePicking={false}
     />

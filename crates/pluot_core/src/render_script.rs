@@ -17,12 +17,18 @@ use serde_json::Value;
 
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
 pub fn render_to_script(params: &RenderParams, format: &CodeFormat) -> String {
+    render_to_script_aux(params, format, true)
+}
+
+/// A variant of render_to_script which allows to keep schema_version as None.
+/// This is only intended to prevent extra churn in for the snapshot tests in crates/pluot/tests/test_render_script.rs
+pub fn render_to_script_aux(params: &RenderParams, format: &CodeFormat, ensure_schema_version: bool) -> String {
     // Serialize once; every generator walks this JSON value.
     let mut value = serde_json::to_value(params).expect("RenderParams should serialize to JSON");
 
     // Embed the crate version as the schema_version when the caller didn't
     // specify one, so every generator below emits a concrete version string.
-    if value.get("schema_version").is_some_and(Value::is_null) {
+    if value.get("schema_version").is_some_and(Value::is_null) && ensure_schema_version {
         if let Some(obj) = value.as_object_mut() {
             obj.insert(
                 "schema_version".to_string(),
@@ -207,7 +213,6 @@ fn python_script(value: &Value) -> String {
     // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
     format!(
         // We specify the python package version as CRATE_VERSION in the inline dependencies metadata.
-        // TODO: add a comment that explains how to execute the script via `uv` and using an async runtime.
         "# /// script\n\
          # requires-python = \">=3.9\"\n\
          # dependencies = [\n\
@@ -216,6 +221,8 @@ fn python_script(value: &Value) -> String {
          # ///\n\
          from pluot import {func}\n\
          \n\
+         # This uses a top-level `await`, so this script must be executed via an async python runtime\n\
+         # (e.g. `uv run python -m asyncio render.py`).\n\
          img = await {}\n",
         python_call(value),
     )
@@ -283,8 +290,6 @@ fn r_render_func(value: &Value) -> &'static str {
 fn r_call(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
-    // TODO: add a comment that explains how to execute the script.
-
     let mut args: Vec<String> = Vec::new();
 
     let layers = obj
@@ -308,6 +313,8 @@ fn r_script(value: &Value) -> String {
     format!(
         "library(pluotr)\n\
          \n\
+         # For installation instructions, see https://pluot.dev/reference/rlang/\n\
+         # Run with: Rscript render.R\n\
          img <- {}\n",
         r_call(value),
     )
@@ -430,6 +437,17 @@ fn html_script(value: &Value) -> String {
     // Indent the params object to sit under the module script (6 spaces).
     let params = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
 
+    // TODO: do not use esm.sh here
+
+    let schema_version = obj.get("schema_version").and_then(Value::as_str);
+    let schema_version_suffix = match schema_version {
+        Some(schema_version) => format!("@{}", schema_version),
+        None => "".to_string(),
+    };
+
+    // TODO: use different logic depending on whether raster/vector (i.e., canvas vs svg)
+    // OR, ensure this logic is in a simplified render-wrapper function in pluot/core.
+
     format!(
         "<!DOCTYPE html>\n\
          <html lang=\"en\">\n\
@@ -440,11 +458,9 @@ fn html_script(value: &Value) -> String {
          \x20 <body>\n\
          \x20   <canvas id=\"pluot-canvas\" width=\"{width}\" height=\"{height}\"></canvas>\n\
          \x20   <script type=\"module\">\n\
-         \x20     import {{ initialize, render_wasm, setStoreByName }} from \"https://esm.sh/@pluot/core\";\n\
+         \x20     import {{ initialize, render_wasm }} from \"https://unpkg.com/@pluot/core{schema_version_suffix}\";\n\
          \n\
          \x20     await initialize();\n\
-         \x20     // Zarr store(s) are declared in the `stores` map below and built from\n\
-         \x20     // their metadata; call `setStoreByName(\"my_store\", store)` to override.\n\
          \n\
          \x20     const renderParams = {params};\n\
          \n\
@@ -574,8 +590,6 @@ fn bash_input_json(value: &Value) -> String {
 fn bash_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
 
-    // TODO: add a comment that explains how to execute the script.
-
     // The output extension selects `pluot_cli`'s backend (see `infer_format` in
     // `examples/pluot_cli/src/main.rs`); pick it from the resolved output format
     // (see `resolved_format`) so a `Vector`-requesting caller gets real SVG.
@@ -585,8 +599,13 @@ fn bash_script(value: &Value) -> String {
     };
     let mut flags: Vec<String> = vec![format!("--output {output_file}")];
 
-    flags.push(format!("--schema-version {CRATE_VERSION}"));
-    // TODO: explicitly specify --graphics-format param here?
+    if let Some(schema_version) = obj.get("schema_version").and_then(Value::as_str) {
+        flags.push(format!("--schema-version {schema_version}"));
+    }
+
+    if let Some(format) = obj.get("format").and_then(Value::as_str) {
+        flags.push(format!("--graphics-format {format}"));
+    }
 
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(100);
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(100);
@@ -633,8 +652,8 @@ fn bash_script(value: &Value) -> String {
          set -euo pipefail\n\
          \n\
          # Install the CLI with: cargo install pluot_cli\n\
+         # Then, run with: bash render.sh\n\
          \n\
-         # `--output`'s extension selects the backend: .svg (vector), .png\n\
          pluot_cli \\\n\
          {flags_str}\
          \x20 <<'JSON'\n\

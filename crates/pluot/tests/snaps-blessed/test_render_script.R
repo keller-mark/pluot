@@ -1,8 +1,7 @@
 library(pluotr)
 
-# Zarr store(s) are declared in the `stores` list below and constructed
-# from their metadata; use `pluot_register_store()` to override with your
-# own store object(s).
+# For installation instructions, see https://pluot.dev/reference/rlang/
+# Run with: Rscript render.R
 img <- render_to_raster(
   layers = list(
     list(
@@ -68,6 +67,7 @@ img <- render_to_raster(
       )
     )
   ),
+  schema_version = NULL,
   width = 640,
   height = 480,
   device_pixel_ratio = 1.0,

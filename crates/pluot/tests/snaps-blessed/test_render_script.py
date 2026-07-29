@@ -1,15 +1,15 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
-#     "pluot",
+#     "pluot==0.1.7",
 # ]
 # ///
 from pluot import render_to_image
 
-# Zarr store(s) are declared in the `stores` map below and constructed
-# from their metadata; pass `store=`/`stores=` to override with your own
-# store object(s).
+# This uses a top-level `await`, so this script must be executed via an async python runtime
+# (e.g. `uv run python -m asyncio render.py`).
 img = await render_to_image(
+    schema_version=None,
     width=640,
     height=480,
     device_pixel_ratio=1.0,

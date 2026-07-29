@@ -1,5 +1,10 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
-use pluot_core::{render as raw_render, render_to_script as raw_render_to_script, stores_from_params};
+use pluot_core::{
+    render as raw_render,
+    render_to_script as raw_render_to_script,
+    render_to_script_aux as raw_render_to_script_aux,
+    stores_from_params
+};
 use pluot_core::params::{GraphicsFormat, CodeFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
 use pluot_core::version::CRATE_VERSION;
 use crate::render_params::{LayerParams, RenderParams};
@@ -71,4 +76,11 @@ pub async fn render_with_stores(render_params: RenderParams, stores: Option<Stor
 pub fn render_to_script(render_params: RenderParams, code_format: &CodeFormat) -> String {
     let raw_params = to_raw_render_params(render_params);
     raw_render_to_script(&raw_params, code_format)
+}
+
+/// A variant of render_to_script which allows to keep schema_version as None.
+/// This is only intended to prevent extra churn in for the snapshot tests in crates/pluot/tests/test_render_script.rs
+pub fn render_to_script_aux(render_params: RenderParams, code_format: &CodeFormat, ensure_schema_version: bool) -> String {
+    let raw_params = to_raw_render_params(render_params);
+    raw_render_to_script_aux(&raw_params, code_format, ensure_schema_version)
 }

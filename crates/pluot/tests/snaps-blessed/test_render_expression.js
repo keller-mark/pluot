@@ -1,7 +1,8 @@
 render_wasm({
+  schema_version: null,
   width: 640,
   height: 480,
-  format: "Raster",
+  format: "Vector",
   device_pixel_ratio: 1.0,
   camera_view: [
     0.15000000596046448,
