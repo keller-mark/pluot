@@ -211,19 +211,25 @@ fn python_call(value: &Value) -> String {
 fn python_script(value: &Value) -> String {
     let func = python_render_func(value);
     // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
+
+    // TODO: use block_on in Rust to implement a non-async render function for python, to avoid the asyncio stuff here.
+
     format!(
         // We specify the python package version as CRATE_VERSION in the inline dependencies metadata.
         "# /// script\n\
-         # requires-python = \">=3.9\"\n\
+         # requires-python = \">=3.12\"\n\
          # dependencies = [\n\
          #     \"pluot=={CRATE_VERSION}\",\n\
          # ]\n\
          # ///\n\
          from pluot import {func}\n\
+         import asyncio\n\
          \n\
-         # This uses a top-level `await`, so this script must be executed via an async python runtime\n\
-         # (e.g. `uv run python -m asyncio render.py`).\n\
-         img = await {}\n",
+         async def main():\n\
+             img = await {}\n\
+             img.save(\"my_plot.png\")\n\
+         if __name__ == \"__main__\":\n\
+             asyncio.run(main())\n",
         python_call(value),
     )
 }
@@ -310,11 +316,17 @@ fn r_call(value: &Value) -> String {
 }
 
 fn r_script(value: &Value) -> String {
+    let schema_version = value.get("schema_version").and_then(Value::as_str);
+    let version_suffix = match schema_version {
+        Some(schema_version) => format!(", ref=\"v{}\"", schema_version),
+        None => "".to_string(),
+    };
+
     format!(
         "library(pluotr)\n\
          \n\
-         # For installation instructions, see https://pluot.dev/reference/rlang/\n\
-         # Run with: Rscript render.R\n\
+         # Install with: devtools::install_github(\"keller-mark/pluot\", subdir=\"bindings-r\"{version_suffix})\n\
+         # The, run with: Rscript render.R\n\
          img <- {}\n",
         r_call(value),
     )
@@ -600,7 +612,9 @@ fn bash_script(value: &Value) -> String {
     };
     let mut flags: Vec<String> = vec![format!("--output {output_file}")];
 
-    if let Some(schema_version) = obj.get("schema_version").and_then(Value::as_str) {
+    let schema_version = obj.get("schema_version").and_then(Value::as_str);
+
+    if let Some(schema_version) = schema_version {
         flags.push(format!("--schema-version {schema_version}"));
     }
 
@@ -648,11 +662,16 @@ fn bash_script(value: &Value) -> String {
     let flags_str: String = flags.iter().map(|f| format!("  {f} \\\n")).collect();
     let input_json = bash_input_json(value);
 
+    let version_suffix = match schema_version {
+        Some(schema_version) => format!("@{}", schema_version),
+        None => "".to_string(),
+    };
+
     format!(
         "#!/usr/bin/env bash\n\
          set -euo pipefail\n\
          \n\
-         # Install the CLI with: cargo install pluot_cli\n\
+         # Install the CLI with: cargo install pluot_cli{version_suffix}\n\
          # Then, run with: bash render.sh\n\
          \n\
          pluot_cli \\\n\

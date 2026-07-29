@@ -1,13 +1,13 @@
 # /// script
-# requires-python = ">=3.9"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "pluot==0.1.7",
 # ]
 # ///
 from pluot import render_to_image
+import asyncio
 
-# This uses a top-level `await`, so this script must be executed via an async python runtime
-# (e.g. `uv run python -m asyncio render.py`).
+async def main():
 img = await render_to_image(
     schema_version=None,
     width=640,
@@ -125,3 +125,6 @@ img = await render_to_image(
     render_backend=None,
     compute_backend=None,
 )
+img.save("my_plot.png")
+if __name__ == "__main__":
+asyncio.run(main())

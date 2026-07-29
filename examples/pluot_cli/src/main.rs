@@ -301,7 +301,7 @@ fn parse_camera_view(s: &str) -> Result<[f32; 16], String> {
     Ok(matrix)
 }
 
-/// Parse a `--code_format` string into a `CodeFormat`.
+/// Parse a `--code-format` string into a `CodeFormat`.
 ///
 /// `CodeFormat` has no custom `Display`/`FromStr` and is otherwise only ever
 /// produced from the exact PascalCase variant names via serde (e.g. the
@@ -318,7 +318,7 @@ fn parse_code_format(s: &str) -> Result<CodeFormat, String> {
     })
 }
 
-/// Parse a `--graphics_format` string into a `CliGraphicsFormat`.
+/// Parse a `--graphics-format` string into a `CliGraphicsFormat`.
 fn parse_graphics_format(s: &str) -> Result<CliGraphicsFormat, String> {
     match s {
         "Vector" => Ok(CliGraphicsFormat::Vector),
@@ -374,7 +374,7 @@ async fn main() {
     };
 
     if cli_code_format.is_some() && cli_graphics_format.is_none() {
-        eprintln!("Error: --graphics_format is required when --code_format is specified.");
+        eprintln!("Error: --graphics-format is required when --code-format is specified.");
         process::exit(1);
     }
 
@@ -484,7 +484,7 @@ async fn main() {
 
     // --- Code-generation shortcut ---
     //
-    // `--code_format` (or, absent that, `--output foo.py` / `foo.R`) skips
+    // `--code-format` (or, absent that, `--output foo.py` / `foo.R`) skips
     // real rendering entirely and instead emits the equivalent source via
     // `render_to_script`. The extension-based fallback exists for use as an
     // integration-test fixture (see `scripts/gen_render_script_fixtures.sh`).
@@ -492,13 +492,13 @@ async fn main() {
     if let Some(script_format) = script_format {
         if cli_graphics_format == Some(CliGraphicsFormat::PngViaSvg) {
             eprintln!(
-                "Error: --graphics_format 'PngViaSvg' is not valid when generating code. \
+                "Error: --graphics-format 'PngViaSvg' is not valid when generating code. \
                  Use 'Vector' or 'Raster'."
             );
             process::exit(1);
         }
         // Defaults to Vector to preserve prior behavior when neither
-        // `--code_format` nor `--graphics_format` is given (the extension-based
+        // `--code-format` nor `--graphics-format` is given (the extension-based
         // fallback above).
         let script_graphics_format = match &cli_graphics_format {
             Some(CliGraphicsFormat::Raster) => GraphicsFormat::Raster,

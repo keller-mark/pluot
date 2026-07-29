@@ -30,6 +30,15 @@ cargo run -- \
     --width 400 \
     --height 400
 
+# From a JSON file -> Python script
+cargo run -- \
+    --input examples/layers.in.json \
+    --output examples/layers.out.script.py \
+    --width 500 \
+    --height 500 \
+    --code-format "ScriptPython" \
+    --graphics-format "Raster"
+
 # From stdin
 cat examples/layers.in.json | cargo run -- -o examples/layers.out.svg --width 600 --height 600
 ```

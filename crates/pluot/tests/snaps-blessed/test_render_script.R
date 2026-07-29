@@ -1,7 +1,7 @@
 library(pluotr)
 
-# For installation instructions, see https://pluot.dev/reference/rlang/
-# Run with: Rscript render.R
+# Install with: devtools::install_github("keller-mark/pluot", subdir="bindings-r")
+# The, run with: Rscript render.R
 img <- render_to_raster(
   layers = list(
     list(

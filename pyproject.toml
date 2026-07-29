@@ -1,10 +1,10 @@
 [build-system]
-requires = ["maturin>=1.8,<2.0"]
+requires = ["maturin>=1.14,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "pluot"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license-files = ["LICENSE", "NOTICE"]
 authors = [
   {name = "Mark Keller"}
@@ -50,6 +50,9 @@ module-name = "pluot._internal"
 python-source = "bindings-python"
 
 manifest-path = "crates/pluot/Cargo.toml"
+
+[tool.maturin.generate-ci.github]
+trusted-publishing = true
 
 [tool.uv]
 # Rebuild package when any rust files change
