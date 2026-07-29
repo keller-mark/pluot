@@ -102,5 +102,4 @@
     }
   }}
   marginLeft={60.0}
-  enablePicking={false}
 />

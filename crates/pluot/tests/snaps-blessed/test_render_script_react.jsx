@@ -107,7 +107,6 @@ export function PluotPlot() {
         }
       }}
       marginLeft={60.0}
-      enablePicking={false}
     />
   );
 }

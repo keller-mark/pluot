@@ -369,11 +369,11 @@ fn jsx_prop_name(key: &str) -> Option<&'static str> {
         "margin_right" => "marginRight",
         "margin_top" => "marginTop",
         "margin_bottom" => "marginBottom",
-        "pickable" => "enablePicking",
         "format" => "format",
         // Props not exposed by the <Pluot /> component (device_pixel_ratio,
         // timeout, cache_enabled, svg_*, wait_for_store_gets, render_backend,
         // compute_backend) are skipped.
+        // TODO: reconsider whether to expose any of these.
         _ => return None,
     })
 }
@@ -848,7 +848,7 @@ mod tests {
         assert!(out.starts_with("<!DOCTYPE html>"));
         assert!(out.contains("<canvas id=\"pluot-canvas\" width=\"640\" height=\"480\">"));
         assert!(out.contains("render_wasm(renderParams)"));
-        assert!(out.contains("esm.sh/@pluot/core"));
+        assert!(out.contains("@pluot/core"));
     }
 
     #[test]
