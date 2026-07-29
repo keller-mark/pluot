@@ -43,6 +43,12 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
+      # Fixes error on ubuntu 22 and armv7: snappy_src@0.2.5+snappy.1.2.2: armv7-unknown-linux-gnueabihf-g++: error: unrecognized command line option '-std=c++14'
+      - name: Install modern GCC for ARMv7
+        if: ${{ matrix.platform.target == 'armv7' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-arm-linux-gnueabihf
       - uses: actions/setup-python@v6
         with:
           python-version: 3.x
