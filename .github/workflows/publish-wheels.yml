@@ -28,16 +28,22 @@ jobs:
         platform:
           - runner: ubuntu-22.04
             target: x86_64
+            manylinux: auto
           - runner: ubuntu-22.04
             target: x86
+            manylinux: auto
           - runner: ubuntu-22.04
             target: aarch64
+            manylinux: auto
           - runner: ubuntu-22.04
             target: armv7
+            manylinux: auto
           - runner: ubuntu-22.04
             target: s390x
+            manylinux: 2_28 # Not auto
           - runner: ubuntu-22.04
             target: ppc64le
+            manylinux: 2_28 # Not auto
     steps:
       - uses: actions/checkout@v6
         with:
@@ -55,18 +61,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-      # Fixes same error on s390x: snappy_src@0.2.5+snappy.1.2.2: s390x-unknown-linux-gnu-g++: error: unrecognized command line option '-std=c++14'
-      - name: Install modern GCC for s390x
-        if: ${{ matrix.platform.target == 's390x' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-s390x-linux-gnu g++-s390x-linux-gnu
-      # Fixes same error on ppc64le: snappy_src@0.2.5+snappy.1.2.2: powerpc64le-unknown-linux-gnu-g++: error: unrecognized command line option '-std=c++14'
-      - name: Install modern GCC for ppc64le
-        if: ${{ matrix.platform.target == 'ppc64le' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu
       # `x86_64` and `x86` shouldn't need special handling on ubuntu 22 since they should build natively with the host's already-modern GCC.
       - uses: actions/setup-python@v6
         with:
@@ -77,7 +71,11 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: auto
+          # ppc64le and s390x aren't tier-1 manylinux2014 architectures, so that policy's
+          # ghcr.io/rust-cross/manylinux2014-cross image falls back to CentOS 7's stock GCC 4.8.5
+          # (no devtoolset), which predates the `-std=c++14` flag and fails building snappy_src's
+          # C++ sources. manylinux_2_28-cross ships a modern-enough GCC for those two targets.
+          manylinux: ${{ matrix.platform.manylinux }}
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
