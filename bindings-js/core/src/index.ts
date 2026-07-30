@@ -8,7 +8,13 @@ export {
   setStoreByName,
   getStore,
 } from './core.js';
-export { renderRaw, renderToArray, renderToString, renderToImageData, renderToElement } from './render.js';
+export {
+  renderRaw,
+  renderToArray,
+  renderToString,
+  renderToImageData,
+  renderToElement,
+} from './render.js';
 export {
   storeInstanceToMetadata,
   storeMetadataToInstance,
