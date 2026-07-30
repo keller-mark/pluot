@@ -1,6 +1,7 @@
 use crate::{render_traits::AspectRatioAlignmentMode, wgpu};
 use crate::zarr::AsyncZarritaStore;
 use crate::render_traits::AspectRatioMode;
+use crate::version::CRATE_VERSION;
 use serde::{Deserialize, Serialize};
 use svg::node::element::Group;
 use std::sync::Arc;
@@ -34,64 +35,32 @@ pub enum GraphicsFormat {
     Vector,
 
     // TODO: add AccessKit as a GraphicsFormat?
+}
 
-    // When "rendering to a script", specify the output format.
-    // TODO: add a `version` parameter to RenderParams, to facilitate forwards/backwards compatibility.
-    // TODO: add better comments to script outputs, so that it is clear how to run them.
+
+/// The code format for render-to-script outputs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CodeFormat {
     ExpressionRust,
     ScriptRust,
     ExpressionPython,
-    // The python script should include PEP 723 inline script metadata for dependencies
     ScriptPython,
     ExpressionR,
     ScriptR,
     ExpressionJs,
     ScriptJs,
     ExpressionJsx,
-    // TODO: when rendering to React, do not inline dict values (e.g., stores, plotParams). Construct useMemos
-    // which memoize any objects, to prevent construction of new variable references on every rerender.
     ScriptReact,
-    // TODO: use dynamic-importmap in the generated HTML?
     ScriptHtml,
+    ScriptHtmlReact,
     Json,
 
-    // Use the pluot_cli from examples/pluot_cli
+    // Uses the pluot_cli from examples/pluot_cli
     ScriptBash,
 
-    // TODO: support ScriptHtmlReact which uses the react component in a standalone HTML file?
     // TODO: jupyter nb?
     // TODO: marimo nb?
     // TODO: rmarkdown?
-}
-
-impl GraphicsFormat {
-    /// Whether this format is a "code" output: rather than rendering pixels or an
-    /// SVG, [`crate::render::render`] serializes the [`RenderParams`] into a
-    /// string of source code (or JSON) that reproduces the plot using one of the
-    /// language bindings (`bindings-js`, `bindings-r`, `bindings-python`) or the
-    /// Rust API. See [`crate::render_script`].
-    ///
-    /// The `Expression*` variants emit a single expression (e.g. a function call
-    /// or JSX element), whereas the `Script*` variants emit a self-contained
-    /// script including imports, variable definitions and library initialization.
-    pub fn is_code(&self) -> bool {
-        matches!(
-            self,
-            GraphicsFormat::ExpressionRust
-                | GraphicsFormat::ScriptRust
-                | GraphicsFormat::ExpressionPython
-                | GraphicsFormat::ScriptPython
-                | GraphicsFormat::ExpressionR
-                | GraphicsFormat::ScriptR
-                | GraphicsFormat::ExpressionJs
-                | GraphicsFormat::ScriptJs
-                | GraphicsFormat::ExpressionJsx
-                | GraphicsFormat::ScriptReact
-                | GraphicsFormat::ScriptHtml
-                | GraphicsFormat::Json
-                | GraphicsFormat::ScriptBash
-        )
-    }
 }
 
 
@@ -248,6 +217,15 @@ pub struct ZarrStoreInfo {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct RenderParams {
+
+    /// To enable forward compatibility, specify the schema version that was used to generate the plot.
+    /// For now, we will just specify the crate version, and will throw a warning if there is a mismatch.
+    /// We will not fully error, nor will we initially implement any auto-upgrade functionality to convert a prior version to a later version,
+    /// but we could implement these features in the future.
+    /// TODO: In the future, we should also decouple the schema_version from the crate/package version,
+    /// as the latter could advance more quickly than the former.
+    pub schema_version: Option<String>,
+
     /// The width of the plot, in pixels.
     pub width: u32,
     /// The height of the plot, in pixels.
@@ -346,6 +324,7 @@ pub struct RenderParams {
 impl Default for RenderParams {
     fn default() -> Self {
         Self {
+            schema_version: Some(CRATE_VERSION.to_string()),
             width: 100,
             height: 100,
             format: GraphicsFormat::Raster,

@@ -1,11 +1,7 @@
-import { initialize, render_wasm, setStoreByName } from "@pluot/core";
-
-await initialize();
-// Zarr store(s) are declared in the `stores` map below and constructed
-// from their metadata; call `setStoreByName("my_store", store)` before
-// rendering to override with your own store object.
+import { renderToString, renderToArray } from "@pluot/core";
 
 const renderParams = {
+  schema_version: null,
   width: 640,
   height: 480,
   format: "Raster",
@@ -123,5 +119,4 @@ const renderParams = {
   compute_backend: null
 };
 
-// Returns a Uint8Array of RGBA bytes (plus one trailing status byte).
-const result = await render_wasm(renderParams);
+const plot = await renderToArray(renderParams);

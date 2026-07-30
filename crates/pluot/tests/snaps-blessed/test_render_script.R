@@ -1,9 +1,8 @@
 library(pluotr)
 
-# Zarr store(s) are declared in the `stores` list below and constructed
-# from their metadata; use `pluot_register_store()` to override with your
-# own store object(s).
-img <- render_to_raster(
+# Install with: devtools::install_github("keller-mark/pluot", subdir="bindings-r")
+# The, run with: Rscript render.R
+plot <- render_to_raster(
   layers = list(
     list(
       layer_type = "PointLayer",
@@ -68,6 +67,7 @@ img <- render_to_raster(
       )
     )
   ),
+  schema_version = NULL,
   width = 640,
   height = 480,
   device_pixel_ratio = 1.0,

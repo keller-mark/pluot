@@ -1,7 +1,7 @@
 <Pluot
   width={640}
   height={480}
-  format="Raster"
+  format="Vector"
   cameraMatrix={[
     0.15000000596046448,
     0.0,
@@ -102,5 +102,4 @@
     }
   }}
   marginLeft={60.0}
-  enablePicking={false}
 />

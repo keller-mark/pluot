@@ -1,6 +1,12 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
-use pluot_core::{render as raw_render, stores_from_params};
-use pluot_core::params::{GraphicsFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
+use pluot_core::{
+    render as raw_render,
+    render_to_script as raw_render_to_script,
+    render_to_script_aux as raw_render_to_script_aux,
+    stores_from_params
+};
+use pluot_core::params::{GraphicsFormat, CodeFormat, PlotParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams};
+use pluot_core::version::CRATE_VERSION;
 use crate::render_params::{LayerParams, RenderParams};
 
 fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
@@ -19,6 +25,7 @@ fn to_raw_layer_params(layers: &[LayerParams]) -> Vec<RawLayerParams> {
 fn to_raw_render_params(render_params: RenderParams) -> RawRenderParams {
     let raw_layers = to_raw_layer_params(&render_params.layers);
     RawRenderParams {
+        schema_version: render_params.schema_version,
         width: render_params.width,
         height: render_params.height,
         format: render_params.format,
@@ -66,7 +73,14 @@ pub async fn render_with_stores(render_params: RenderParams, stores: Option<Stor
 }
 
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.
-pub fn render_to_script(render_params: RenderParams, format: &GraphicsFormat) -> String {
+pub fn render_to_script(render_params: RenderParams, code_format: &CodeFormat) -> String {
     let raw_params = to_raw_render_params(render_params);
-    pluot_core::render_to_script(&raw_params, format)
+    raw_render_to_script(&raw_params, code_format)
+}
+
+/// A variant of render_to_script which allows to keep schema_version as None.
+/// This is only intended to prevent extra churn in for the snapshot tests in crates/pluot/tests/test_render_script.rs
+pub fn render_to_script_aux(render_params: RenderParams, code_format: &CodeFormat, ensure_schema_version: bool) -> String {
+    let raw_params = to_raw_render_params(render_params);
+    raw_render_to_script_aux(&raw_params, code_format, ensure_schema_version)
 }

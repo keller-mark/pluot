@@ -2,7 +2,7 @@ from PIL import Image
 import numpy as np
 from zarr.abc.store import Store
 from .zarr import GLOBAL_STORES, store_instance_to_metadata, store_metadata_to_instance, _http_store_from_url
-from ._internal import render_py
+from ._internal import render_py, render_to_script_py
 
 NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
 
@@ -87,7 +87,20 @@ def parse_kwargs(kwargs):
 
     return new_kwargs
 
-_RENDER_DEFAULTS = dict(timeout=None, wait_for_store_gets=True, cache_enabled=True, device_pixel_ratio=1.0, format="Raster", aspect_ratio_mode="Contain", aspect_ratio_alignment_mode="Center", view_mode="2d", pickable=False, svg_compression_enabled=False, svg_include_document=True)
+_RENDER_DEFAULTS = dict(
+    schema_version=None,
+    timeout=None,
+    wait_for_store_gets=True,
+    cache_enabled=True,
+    device_pixel_ratio=1.0,
+    format="Raster",
+    aspect_ratio_mode="Contain",
+    aspect_ratio_alignment_mode="Center",
+    view_mode="2d",
+    pickable=False,
+    svg_compression_enabled=False,
+    svg_include_document=True
+)
 
 async def render(**kwargs):
     """Render to raw bytes."""
@@ -98,6 +111,17 @@ async def render(**kwargs):
 
     result = await render_py(**merged_params)
     return result
+
+def render_to_script(**kwargs):
+    """Render to a code string."""
+    # We wrap the internal function here to be able to provide types, docstrings, etc.
+    new_kwargs = parse_kwargs(kwargs)
+
+    merged_params = {**_RENDER_DEFAULTS, **new_kwargs}
+
+    result = render_to_script_py(**merged_params)
+    return result
+
 
 async def render_raw(**kwargs):
     """Render to raw bytes, bypassing parse_kwargs.

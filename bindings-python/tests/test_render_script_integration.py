@@ -24,14 +24,10 @@ async def test_render_script_integration_python():
     script = (fixtures_dir / "render_script.py").read_text()
     canonical_svg = (fixtures_dir / "canonical.svg").read_text()
 
-    # The generated script uses top-level `await` (its intended target is a
-    # notebook cell); wrap it in an `async def` so it can run under plain
-    # CPython, and have the wrapper return `img` so we can read it back.
-    indented = "\n".join(f"    {line}" for line in script.splitlines())
-    driver_src = f"async def _pluot_integration_main():\n{indented}\n    return img\n"
+    driver_src = script
 
     namespace = {}
     exec(compile(driver_src, "<render_script.py>", "exec"), namespace)
-    img = await namespace["_pluot_integration_main"]()
+    img = await namespace["main"]()
 
     assert _normalize_svg(img) == _normalize_svg(canonical_svg)

@@ -1,4 +1,4 @@
-render_to_raster(
+render_to_svg(
   layers = list(
     list(
       layer_type = "PointLayer",
@@ -63,6 +63,7 @@ render_to_raster(
       )
     )
   ),
+  schema_version = NULL,
   width = 640,
   height = 480,
   device_pixel_ratio = 1.0,

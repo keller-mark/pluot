@@ -29,6 +29,7 @@ pub(crate) mod timeout;
 pub mod two;
 pub mod zarr_types;
 pub mod zarr;
+pub mod version;
 
 pub mod maybe;
 
@@ -43,12 +44,12 @@ pub use futures_time::future::FutureExt;
 pub use futures_time::time::Duration;
 
 // Export things needed for layer-based plotting via Rust.
-pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, LayeredPlotRenderParams, ViewMode};
+pub use crate::params::{RenderParams, PlotParams, LayerParams, GraphicsFormat, CodeFormat, LayeredPlotRenderParams, ViewMode};
 pub use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, UnitsMode, ViewParams, MarginParams, FontStyle, FontWeight};
 pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 pub use crate::render::{render, stores_from_params};
 pub use crate::zarr::{AsyncZarritaStore, StoreMap};
-pub use crate::render_script::render_to_script;
+pub use crate::render_script::{render_to_script, render_to_script_aux};
 pub use crate::picking::{pick, PickingResult, LayerPickingResult};
 pub use crate::viewport::{project, unproject, get_bounds, camera_matrix_to_zoom_and_translation};
 pub use crate::numeric_data::NumericData;

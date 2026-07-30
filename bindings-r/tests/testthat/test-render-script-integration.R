@@ -17,7 +17,7 @@ test_that("executing the generated render_script.R reproduces the canonical SVG"
 
   script_env <- new.env(parent = globalenv())
   sys.source(script_path, envir = script_env)
-  img <- script_env$img
+  img <- script_env$plot
 
   canonical_svg <- paste(readLines(canonical_path), collapse = "\n")
 

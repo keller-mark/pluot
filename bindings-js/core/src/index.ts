@@ -2,13 +2,19 @@ export {
   initialize,
   getIsWasmReady,
   render_wasm,
+  render_to_script_wasm,
   pick_wasm,
   setStore,
   setStoreByName,
   getStore,
 } from './core.js';
-export { render } from './render.js';
-export type { RenderOptions, StoreValue } from './render.js';
+export {
+  renderRaw,
+  renderToArray,
+  renderToString,
+  renderToImageData,
+  renderToElement,
+} from './render.js';
 export {
   storeInstanceToMetadata,
   storeMetadataToInstance,

@@ -1,4 +1,5 @@
-render_to_image(
+render_to_svg(
+    schema_version=None,
     width=640,
     height=480,
     device_pixel_ratio=1.0,

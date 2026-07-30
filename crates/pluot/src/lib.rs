@@ -3,8 +3,8 @@
 mod plugins;
 
 // Export things needed for layer-based plotting via Rust.
-pub use pluot_core::params::{GraphicsFormat, ViewMode};
 pub use pluot_core::params::{
+    GraphicsFormat, ViewMode, CodeFormat,
     ZarrStoreInfo, ZarrStoreParams, ZarrStoreExtension,
     HttpStoreParams, LocalStoreParams, MemoryStoreParams, RequestInit,
 };
@@ -52,12 +52,12 @@ pub use crate::render_params::{RenderParams, LayerParams};
 
 // Unified exports.
 mod render;
-pub use crate::render::{render, render_with_stores, render_to_script};
+pub use crate::render::{render, render_with_stores, render_to_script, render_to_script_aux};
 
 // Exports for WASM bindings.
 #[cfg(target_arch = "wasm32")]
-pub use pluot_core::bindings::wasm::{render_wasm, set_panic_hook};
+pub use pluot_core::bindings::wasm::{render_wasm, render_to_script_wasm, set_panic_hook};
 
 // Exports for Python bindings.
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
-pub use pluot_core::bindings::python::{render_py};
+pub use pluot_core::bindings::python::{render_py, render_to_script_py};

@@ -3,8 +3,9 @@
 //! The bound functions are feature- and target-gated, so that language-specific
 //! functionality (e.g., utilities from PyO3 or wasm-bindgen) are not included
 //! when they are irrelevant to the given compilation target.
-pub use crate::params::RenderParams;
+pub use crate::params::{CodeFormat, RenderParams};
 pub use crate::render::{render, stores_from_params};
+pub use crate::render_script::render_to_script;
 pub use crate::picking::{pick, PickingResult};
 pub use crate::viewport::ScreenCoord;
 pub use crate::zarr_types::ZarrPeekResult;
@@ -13,7 +14,7 @@ pub use crate::zarr_types::ZarrPeekResult;
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult};
+    use super::{render, render_to_script, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult, CodeFormat};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -234,8 +235,7 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
         console_error_panic_hook::set_once();
     }
 
-    // This function should accept width and height as parameters,
-    // and return a Uint8Array containing the rendered image data.
+    // This function returns a Uint8Array containing the rendered image data.
     #[wasm_bindgen]
     pub async fn render_wasm(params: JsValue) -> js_sys::Uint8Array {
         let params: RenderParams =
@@ -249,6 +249,19 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
 
         // Return a Uint8Array of RGBA bytes
         js_sys::Uint8Array::from(pixels.as_slice())
+    }
+
+    // This function returns the "rendered" string of code.
+    #[wasm_bindgen]
+    pub fn render_to_script_wasm(params: JsValue, code_format: JsValue) -> String {
+        let params: RenderParams =
+            serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
+
+        let code_format: CodeFormat = serde_wasm_bindgen::from_value(code_format).expect("Invalid code_format");
+
+        let rendered_code = render_to_script(&params, &code_format);
+
+        return rendered_code;
     }
 
     #[wasm_bindgen]
@@ -268,6 +281,7 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
 #[cfg(all(not(target_arch = "wasm32"), feature = "python"))]
 pub mod python {
     use log::info;
+    use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
     use pyo3::types::{PyAny, PyBytes, PyDict, PyTuple};
     use pyo3::wrap_pyfunction;
@@ -275,7 +289,7 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult};
+    use super::{render, render_to_script, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult, CodeFormat};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
@@ -477,6 +491,31 @@ pub mod python {
         })
     }
 
+    #[pyfunction]
+    #[pyo3(signature = (**kwds))]
+    pub fn render_to_script_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<String> {
+        // Use the py parameter directly instead of Python::with_gil
+        let dict = kwds.map(|d| d.into_bound(py));
+
+        let code_format: CodeFormat = match &dict {
+            Some(dict) => {
+                let code_format_obj = dict
+                    .cast::<PyDict>()?
+                    .get_item("code_format")?
+                    .ok_or_else(|| PyValueError::new_err("Missing required 'code_format' keyword argument"))?;
+                depythonize::<CodeFormat>(&code_format_obj).map_err(PyErr::from)?
+            }
+            None => return Err(PyValueError::new_err("Missing required 'code_format' keyword argument")),
+        };
+
+        let params: RenderParams = match &dict {
+            Some(dict) => depythonize::<RenderParams>(dict).unwrap(),
+            None => RenderParams::default(),
+        };
+
+        Ok(render_to_script(&params, &code_format))
+    }
+
     // This function creates the Python module.
     #[pymodule]
     fn _internal(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -486,6 +525,7 @@ pub mod python {
         m.add_function(wrap_pyfunction!(log_info, m)?)?;
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
         m.add_function(wrap_pyfunction!(pick_py, m)?)?;
+        m.add_function(wrap_pyfunction!(render_to_script_py, m)?)?;
         Ok(())
     }
 }
@@ -586,7 +626,7 @@ pub mod r {
 pub mod plain_rust {
     //! Stub Zarr getter functions to satisfy [`crate::AsyncZarritaStore`] when the crate is compiled for plain-rust usage.
     use core::panic;
-    pub use super::{render, ZarrPeekResult};
+    pub use super::ZarrPeekResult;
 
     pub fn log(s: &str) {
         println!("{}", s);

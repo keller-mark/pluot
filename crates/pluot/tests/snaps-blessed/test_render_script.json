@@ -1,8 +1,7 @@
 {
-  "schema_version": null,
   "width": 640,
   "height": 480,
-  "format": "Vector",
+  "format": "Raster",
   "device_pixel_ratio": 1.0,
   "camera_view": [
     0.15000000596046448,
@@ -93,16 +92,7 @@
     ]
   },
   "plot_id": "plot_1",
-  "stores": {
-    "my_store": {
-      "store_type": "HttpStore",
-      "store_params": {
-        "url": "https://example.com/my_store.zarr",
-        "options": null
-      },
-      "store_extensions": null
-    }
-  },
+  "store_name": "my_store",
   "wait_for_store_gets": true,
   "timeout": null,
   "cache_enabled": true,

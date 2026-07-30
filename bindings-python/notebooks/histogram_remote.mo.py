@@ -115,7 +115,7 @@ async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
                     layer_type="TextLayer",
                     layer_params=dict(
                         layer_id="text_label_x",
-                        data_unit_mode_x="Pixels",
+                        data_unit_mode_x="Normalized",
                         data_unit_mode_y="Pixels",
                         text_size_unit_mode="Pixels",
                         text_size=15.0,
@@ -124,8 +124,8 @@ async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
                         font_family=None,
                         font_weight="Normal",
                         font_style="Normal",
-                        bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
-                        position_x=dict(dtype="Float32", values=[100 + (width-100-10)/2]),
+                        bounds=dict(margin_top=0, margin_left=100, margin_right=10, margin_bottom=0),
+                        position_x=dict(dtype="Float32", values=[0.5]),
                         position_y=dict(dtype="Float32", values=[15]),
                         text_vec=["Bin"]
                     )
@@ -135,7 +135,7 @@ async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
                     layer_params=dict(
                         layer_id="text_label_y",
                         data_unit_mode_x="Pixels",
-                        data_unit_mode_y="Pixels",
+                        data_unit_mode_y="Normalized",
                         text_size_unit_mode="Pixels",
                         text_size=15.0,
                         text_align_mode="Middle",
@@ -144,8 +144,8 @@ async def _(camera_view, height, num_bins_slider, render_to_svg, store, width):
                         font_family=None,
                         font_weight="Normal",
                         font_style="Normal",
-                        bounds=dict(margin_top=0, margin_left=0, margin_right=0, margin_bottom=0),
-                        position_y=dict(dtype="Float32", values=[100 + (height-100-10)/2]),
+                        bounds=dict(margin_top=10, margin_left=0, margin_right=0, margin_bottom=100),
+                        position_y=dict(dtype="Float32", values=[0.5]),
                         position_x=dict(dtype="Float32", values=[25]),
                         text_vec=["Count"]
                     )
