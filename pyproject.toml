@@ -18,8 +18,8 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "numpy",
-  "zarr",
+  "numpy>=2",
+  "zarr>=3",
   "pillow==11.3.0"
 ]
 
