@@ -329,7 +329,7 @@ fn r_script(value: &Value) -> String {
          \n\
          # Install with: devtools::install_github(\"keller-mark/pluot\", subdir=\"bindings-r\"{version_suffix})\n\
          # The, run with: Rscript render.R\n\
-         img <- {}\n",
+         plot <- {}\n",
         r_call(value),
     )
 }
@@ -775,7 +775,7 @@ mod tests {
         let params = sample_params(GraphicsFormat::Raster);
         let out = render_to_script(&params, &CodeFormat::ScriptPython);
         assert!(out.contains("from pluot import render_to_image"));
-        assert!(out.contains("img = await render_to_image("));
+        assert!(out.contains("plot = await render_to_image("));
     }
 
     #[test]
@@ -787,7 +787,7 @@ mod tests {
         let params = sample_params(GraphicsFormat::Vector);
         let out = render_to_script(&params, &CodeFormat::ScriptPython);
         assert!(out.contains("from pluot import render_to_svg"));
-        assert!(out.contains("img = await render_to_svg("));
+        assert!(out.contains("plot = await render_to_svg("));
         assert!(!out.contains("render_to_image"));
     }
 
@@ -806,14 +806,14 @@ mod tests {
             &CodeFormat::ScriptR,
         );
         assert!(script.contains("library(pluotr)"));
-        assert!(script.contains("img <- render_to_raster("));
+        assert!(script.contains("plot <- render_to_raster("));
     }
 
     #[test]
     fn r_script_uses_render_to_svg_when_format_is_vector() {
         let params = sample_params(GraphicsFormat::Vector);
         let out = render_to_script(&params, &CodeFormat::ScriptR);
-        assert!(out.contains("img <- render_to_svg("));
+        assert!(out.contains("plot <- render_to_svg("));
         assert!(!out.contains("render_to_raster"));
     }
 
