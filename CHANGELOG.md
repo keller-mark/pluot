@@ -1,4 +1,13 @@
 
+## 0.1.8
+
+### Patch Changes
+
+- Decouple CodeFormat from GraphicsFormat; expose separate render and render_to_script functions. Improve generated scripts. (`@pluot/core`) ([#267](https://github.com/keller-mark/pluot/pull/267))
+
+- More documentation comments. (`@pluot/core`) ([#265](https://github.com/keller-mark/pluot/pull/265))
+
+
 ## 0.1.7
 
 ### Patch Changes
