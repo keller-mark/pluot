@@ -50,17 +50,14 @@ pub enum CodeFormat {
     ExpressionJs,
     ScriptJs,
     ExpressionJsx,
-    // TODO: when rendering to React, do not inline dict values (e.g., stores, plotParams). Construct useMemos
-    // which memoize any objects, to prevent construction of new variable references on every rerender.
     ScriptReact,
-    // TODO: use dynamic-importmap in the generated HTML?
     ScriptHtml,
+    ScriptHtmlReact,
     Json,
 
     // Uses the pluot_cli from examples/pluot_cli
     ScriptBash,
 
-    // TODO: support ScriptHtmlReact which uses the react component in a standalone HTML file?
     // TODO: jupyter nb?
     // TODO: marimo nb?
     // TODO: rmarkdown?

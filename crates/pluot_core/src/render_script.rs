@@ -52,6 +52,7 @@ pub fn render_to_script_aux(params: &RenderParams, format: &CodeFormat, ensure_s
         CodeFormat::ExpressionJsx => format!("{}\n", jsx_element(&value, 0)),
         CodeFormat::ScriptReact => react_script(&value),
         CodeFormat::ScriptHtml => html_script(&value),
+        CodeFormat::ScriptHtmlReact => html_with_react_script(&value),
 
         CodeFormat::ExpressionRust => format!("{}\n", rust_expr(&value)),
         CodeFormat::ScriptRust => rust_script(&value),
@@ -348,18 +349,19 @@ fn js_call(value: &Value) -> String {
 fn js_script(value: &Value) -> String {
     let params = emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX);
 
-    // TODO: define a simpler JS function that renders a static plot using vanilla JS, to a new or existing canvas/SVG/img element.
+    let func_name = match value.get("format").and_then(Value::as_str) {
+        Some("Vector") => "renderToString",
+        _ => "renderToArray",
+    };
+
     // TODO: add a comment that explains how to execute the script.
 
     format!(
-        "import {{ initialize, render_wasm, setStoreByName }} from \"@pluot/core\";\n\
-         \n\
-         await initialize();\n\
+        "import {{ renderToString, renderToArray }} from \"@pluot/core\";\n\
          \n\
          const renderParams = {params};\n\
          \n\
-         // Returns a Uint8Array of RGBA bytes (plus one trailing status byte).\n\
-         const result = await render_wasm(renderParams);\n",
+         const plot = await {func_name}(renderParams);\n",
     )
 }
 
@@ -431,6 +433,10 @@ fn jsx_element(value: &Value, base: usize) -> String {
 fn react_script(value: &Value) -> String {
     // The element is nested inside `return ( ... )` in the component body.
     let element = jsx_element(value, 2);
+
+    // TODO: when rendering to React, do not inline dict values (e.g., stores, plotParams). Construct useMemos
+    // which memoize any objects, to prevent construction of new variable references on every rerender.
+
     format!(
         "import React from \"react\";\n\
          import {{ Pluot }} from \"@pluot/react\";\n\
@@ -444,9 +450,6 @@ fn react_script(value: &Value) -> String {
 }
 
 // === HTML ===
-//
-// TODO: implement an additional React-based HTML script output option, which uses dynamic-importmap.
-
 fn html_script(value: &Value) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(0);
@@ -475,6 +478,67 @@ fn html_script(value: &Value) -> String {
          \x20     const renderParams = {params};\n\
          \n\
          \x20     await renderToElement(renderParams, {{ el: \"pluot-plot\", asChild: true }});\n\
+         \x20   </script>\n\
+         \x20 </body>\n\
+         </html>\n",
+    )
+}
+
+fn html_with_react_script(value: &Value) -> String {
+    let obj = value.as_object().expect("RenderParams serializes to an object");
+    let width = obj.get("width").and_then(Value::as_u64).unwrap_or(0);
+    let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
+
+    // TODO: translate renderParams for react component props (snake case to camelCase)
+    let render_params_props = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
+
+    let schema_version = obj.get("schema_version").and_then(Value::as_str);
+    let schema_version_suffix = match schema_version {
+        Some(schema_version) => format!("@{}", schema_version),
+        None => "".to_string(),
+    };
+
+    format!(
+        "<!DOCTYPE html>\n\
+         <html lang=\"en\">\n\
+         \x20 <head>\n\
+         \x20   <meta charset=\"utf-8\" />\n\
+         \x20   <title>Pluot plot</title>\n\
+         \x20 </head>\n\
+         \x20 <body>\n\
+         \x20   <div id=\"root\"></div>\n\
+         \x20   <script type=\"module\">\n\
+         \x20     import {{ importWithMap }} from \"https://unpkg.com/dynamic-importmap@0.1.0\";\n\
+         \n\
+         \x20     const importMap = {{\n\
+         \x20       imports: {{\n\
+         \x20           \"react/jsx-runtime\": \"https://esm.sh/react@19.2.0/jsx-runtime?dev\",\n\
+         \x20           \"react\": \"https://esm.sh/react@19.2.0?dev\",\n\
+         \x20           \"react-dom\": \"https://esm.sh/react-dom@19.2.0dev\",\n\
+         \x20           \"react-dom/client\": \"https://esm.sh/react-dom@19.2.0/client?dev\",\n\
+         \x20           \"@pluot/react\": \"https://unpkg.com/@pluot/react{schema_version_suffix}\"\n\
+         \x20       }},\n\
+         \x20     }};\n\
+         \x20     const React = await importWithMap(\"react\", importMap);\n\
+         \x20     const {{ createRoot }} = await importWithMap(\"react-dom/client\", importMap);\n\
+         \x20     const {{ Pluot }} = await importWithMap(\"@pluot/react\", importMap);\n\
+         \x20     const e = React.createElement;\n\
+         \n\
+         \n\
+         \x20     function MyPlot(props) {{\n\
+         \x20       const renderParamsProps = {render_params_props};\n\
+         \n\
+         \x20         return e(\n\
+         \x20           Pluot,\n\
+         \x20           renderParamsProps,\n\
+         \x20           null\n\
+         \x20         );\n\
+         \x20       }}\n\
+         \n\
+         \x20       const container = document.getElementById('root');\n\
+         \x20       const root = createRoot(container);\n\
+         \x20       root.render(e(MyPlot));\n\
+         \n\
          \x20   </script>\n\
          \x20 </body>\n\
          </html>\n",
