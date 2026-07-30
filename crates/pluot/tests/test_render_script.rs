@@ -184,6 +184,16 @@ async fn test_render_script_html() {
     .await;
 }
 
+#[tokio::test]
+async fn test_render_script_react_html() {
+    render_and_check_script_snapshot(
+        sample_params(GraphicsFormat::Vector),
+        CodeFormat::ScriptHtmlReact,
+        "test_render_script_react.html",
+    )
+    .await;
+}
+
 // ── Rust ──────────────────────────────────────────────────────────────────────
 
 #[tokio::test]

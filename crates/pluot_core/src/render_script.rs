@@ -340,8 +340,13 @@ fn r_script(value: &Value) -> String {
 
 /// The `render_wasm({...})` call expression, with the params object inlined.
 fn js_call(value: &Value) -> String {
+    let func_name = match value.get("format").and_then(Value::as_str) {
+        Some("Vector") => "renderToString",
+        _ => "renderToArray",
+    };
+
     format!(
-        "render_wasm({})",
+        "{func_name}({})",
         emit_curly(&with_resolved_format(value), 0, &JS_SYNTAX)
     )
 }
@@ -395,37 +400,50 @@ fn jsx_prop_name(key: &str) -> Option<&'static str> {
     })
 }
 
-/// A `<Pluot ... />` element, with the `<Pluot` / `/>` lines indented `base`
-/// levels (two spaces per level) and props one level deeper.
-fn jsx_element(value: &Value, base: usize) -> String {
+/// Build a `RenderParams` value restricted to the keys the `<Pluot />` React
+/// component exposes (see [`jsx_prop_name`]), with keys renamed to camelCase,
+/// null values dropped (the component supplies its own defaults, e.g. for a
+/// null camera matrix or unset margins), and `format` resolved to the
+/// underlying Raster/Vector output the component should produce (see
+/// [`resolved_format`]), regardless of the requested code format.
+fn jsx_props_value(value: &Value) -> Value {
     let obj = value.as_object().expect("RenderParams serializes to an object");
+    let resolved = resolved_format(value);
 
-    let pad = "  ".repeat(base);
-    let prop_pad = "  ".repeat(base + 1);
-
-    let mut props: Vec<String> = Vec::new();
+    let mut map = serde_json::Map::new();
     for (k, v) in obj {
         let Some(name) = jsx_prop_name(k) else {
             continue;
         };
         if k == "format" {
-            // Resolve to the underlying Raster/Vector output the component should
-            // produce (see `resolved_format`), regardless of the requested code format.
-            props.push(format!("{prop_pad}format=\"{}\"", resolved_format(value)));
+            map.insert(name.to_string(), Value::String(resolved.to_string()));
             continue;
         }
-        // The component supplies its own defaults, so drop absent optional
-        // values (e.g. a null camera matrix or unset margins).
         if v.is_null() {
             continue;
         }
-        // JSX: string props use `name="..."`; everything else is a `{expr}`.
-        let rendered = match v {
+        map.insert(name.to_string(), v.clone());
+    }
+    Value::Object(map)
+}
+
+/// A `<Pluot ... />` element, with the `<Pluot` / `/>` lines indented `base`
+/// levels (two spaces per level) and props one level deeper.
+fn jsx_element(value: &Value, base: usize) -> String {
+    let props_value = jsx_props_value(value);
+    let obj = props_value.as_object().expect("jsx_props_value returns an object");
+
+    let pad = "  ".repeat(base);
+    let prop_pad = "  ".repeat(base + 1);
+
+    // JSX: string props use `name="..."`; everything else is a `{expr}`.
+    let props: Vec<String> = obj
+        .iter()
+        .map(|(name, v)| match v {
             Value::String(s) => format!("{prop_pad}{name}={}", quoted(s)),
             _ => format!("{prop_pad}{name}={{{}}}", emit_curly(v, base + 1, &JS_SYNTAX)),
-        };
-        props.push(rendered);
-    }
+        })
+        .collect();
 
     format!("{pad}<Pluot\n{}\n{pad}/>", props.join("\n"))
 }
@@ -489,8 +507,7 @@ fn html_with_react_script(value: &Value) -> String {
     let width = obj.get("width").and_then(Value::as_u64).unwrap_or(0);
     let height = obj.get("height").and_then(Value::as_u64).unwrap_or(0);
 
-    // TODO: translate renderParams for react component props (snake case to camelCase)
-    let render_params_props = emit_curly(&with_resolved_format(value), 3, &JS_SYNTAX);
+    let render_params_props = emit_curly(&jsx_props_value(value), 5, &JS_SYNTAX);
 
     let schema_version = obj.get("schema_version").and_then(Value::as_str);
     let schema_version_suffix = match schema_version {
@@ -873,7 +890,7 @@ mod tests {
             &sample_params(GraphicsFormat::Vector),
             &CodeFormat::ExpressionJs,
         );
-        assert!(expr.starts_with("render_wasm({"));
+        assert!(expr.starts_with("renderToString({"));
         assert!(!expr.contains("import"));
 
         let script = render_to_script(
@@ -882,7 +899,7 @@ mod tests {
         );
         assert!(script.contains("from \"@pluot/core\""));
         assert!(script.contains("const renderParams = {"));
-        assert!(script.contains("await render_wasm(renderParams)"));
+        assert!(script.contains("await renderToString(renderParams)"));
     }
 
     #[test]
@@ -917,8 +934,7 @@ mod tests {
             &CodeFormat::ScriptHtml,
         );
         assert!(out.starts_with("<!DOCTYPE html>"));
-        assert!(out.contains("<canvas id=\"pluot-canvas\" width=\"640\" height=\"480\">"));
-        assert!(out.contains("render_wasm(renderParams)"));
+        assert!(out.contains("renderToElement"));
         assert!(out.contains("@pluot/core"));
     }
 

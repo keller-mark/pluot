@@ -1,6 +1,4 @@
-import { initialize, render_wasm, setStoreByName } from "@pluot/core";
-
-await initialize();
+import { renderToString, renderToArray } from "@pluot/core";
 
 const renderParams = {
   schema_version: null,
@@ -121,5 +119,4 @@ const renderParams = {
   compute_backend: null
 };
 
-// Returns a Uint8Array of RGBA bytes (plus one trailing status byte).
-const result = await render_wasm(renderParams);
+const plot = await renderToArray(renderParams);

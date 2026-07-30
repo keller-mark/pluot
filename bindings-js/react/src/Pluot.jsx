@@ -312,6 +312,7 @@ export function Pluot(props) {
       svgRef.current.innerHTML = gContents;
 
       // TODO: check for bailed early
+      setBailedEarly(false);
     } else {
       // Format: Raster (render to canvas)
       const canvas = canvasRef.current;

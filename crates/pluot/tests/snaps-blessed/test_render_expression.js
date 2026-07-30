@@ -1,4 +1,4 @@
-render_wasm({
+renderToString({
   schema_version: null,
   width: 640,
   height: 480,
