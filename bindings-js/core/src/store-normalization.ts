@@ -1,6 +1,6 @@
 import { FetchStore, type AsyncReadable } from "zarrita";
 import { type ZarrStoreInfo, storeInstanceToMetadata, storeMetadataToInstance } from './store-metadata.js';
-import { setStoreByName, getStore } from './core.js';
+import { setStoreByName } from './core.js';
 import { assert } from './assert.js';
 
 // A store value is either a live zarrita store instance or already-derived
@@ -9,11 +9,11 @@ export function isZarrStoreInfo(value: unknown): boolean {
   return value != null && typeof value === 'object' && 'store_type' in value;
 }
 
-type StoreInput = string | AsyncReadable | ZarrStoreInfo;
-type StoresInput = Record<string, StoreInput>;
-type StoresOutput = Record<string, ZarrStoreInfo>
+export type StoreInput = string | AsyncReadable | ZarrStoreInfo;
+export type StoresInput = Record<string, StoreInput>;
+export type StoresOutput = Record<string, ZarrStoreInfo>
 
-type NormalizeStoresParam = {
+export type NormalizeStoresParam = {
   stores?: StoresInput,
   store?: StoreInput,
   storeName?: string,
