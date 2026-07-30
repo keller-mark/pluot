@@ -460,9 +460,6 @@ fn html_script(value: &Value) -> String {
         None => "".to_string(),
     };
 
-    // TODO: use different logic depending on whether raster/vector (i.e., canvas vs svg)
-    // OR, ensure this logic is in a simplified render-wrapper function in pluot/core.
-
     format!(
         "<!DOCTYPE html>\n\
          <html lang=\"en\">\n\
@@ -471,25 +468,13 @@ fn html_script(value: &Value) -> String {
          \x20   <title>Pluot plot</title>\n\
          \x20 </head>\n\
          \x20 <body>\n\
-         \x20   <canvas id=\"pluot-canvas\" width=\"{width}\" height=\"{height}\"></canvas>\n\
+         \x20   <div id=\"pluot-plot\"></div>\n\
          \x20   <script type=\"module\">\n\
-         \x20     import {{ initialize, render_wasm }} from \"https://unpkg.com/@pluot/core{schema_version_suffix}\";\n\
-         \n\
-         \x20     await initialize();\n\
+         \x20     import {{ renderToElement }} from \"https://unpkg.com/@pluot/core{schema_version_suffix}\";\n\
          \n\
          \x20     const renderParams = {params};\n\
          \n\
-         \x20     const result = await render_wasm(renderParams);\n\
-         \n\
-         \x20     // Draw the RGBA bytes (minus the trailing status byte) to the canvas.\n\
-         \x20     const canvas = document.getElementById(\"pluot-canvas\");\n\
-         \x20     const ctx = canvas.getContext(\"2d\");\n\
-         \x20     const imageData = new ImageData(\n\
-         \x20       new Uint8ClampedArray(result.subarray(0, -1)),\n\
-         \x20       renderParams.width,\n\
-         \x20       renderParams.height,\n\
-         \x20     );\n\
-         \x20     ctx.putImageData(imageData, 0, 0);\n\
+         \x20     await renderToElement(renderParams, {{ el: \"pluot-plot\", asChild: true }});\n\
          \x20   </script>\n\
          \x20 </body>\n\
          </html>\n",

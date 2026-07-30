@@ -5,11 +5,9 @@
     <title>Pluot plot</title>
   </head>
   <body>
-    <canvas id="pluot-canvas" width="640" height="480"></canvas>
+    <div id="pluot-plot"></div>
     <script type="module">
-      import { initialize, render_wasm } from "https://unpkg.com/@pluot/core";
-
-      await initialize();
+      import { renderToElement } from "https://unpkg.com/@pluot/core";
 
       const renderParams = {
         schema_version: null,
@@ -130,17 +128,7 @@
         compute_backend: null
       };
 
-      const result = await render_wasm(renderParams);
-
-      // Draw the RGBA bytes (minus the trailing status byte) to the canvas.
-      const canvas = document.getElementById("pluot-canvas");
-      const ctx = canvas.getContext("2d");
-      const imageData = new ImageData(
-        new Uint8ClampedArray(result.subarray(0, -1)),
-        renderParams.width,
-        renderParams.height,
-      );
-      ctx.putImageData(imageData, 0, 0);
+      await renderToElement(renderParams, { el: "pluot-plot", asChild: true });
     </script>
   </body>
 </html>
