@@ -213,16 +213,21 @@ fn python_call(value: &Value, level: usize) -> String {
 
 fn python_script(value: &Value) -> String {
     let func = python_render_func(value);
-    // PEP 723 inline script metadata so the file is runnable via e.g. `uv run`.
+    // We use PEP 723 inline script metadata to declare dependencies.
 
     // TODO: use block_on in Rust to implement a non-async render function for python, to avoid the asyncio stuff here.
 
+    let schema_version = value.get("schema_version").and_then(Value::as_str);
+    let version_suffix = match schema_version {
+        Some(schema_version) => format!("=={}", schema_version),
+        None => "".to_string(),
+    };
+
     format!(
-        // We specify the python package version as CRATE_VERSION in the inline dependencies metadata.
         "# /// script\n\
          # requires-python = \">=3.12\"\n\
          # dependencies = [\n\
-         #     \"pluot=={CRATE_VERSION}\",\n\
+         #     \"pluot{version_suffix}\",\n\
          # ]\n\
          # ///\n\
          from pluot import {func}\n\
