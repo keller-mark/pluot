@@ -141,8 +141,9 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
         'Rust script': 'ScriptRust',
         'Python script': 'ScriptPython',
         'R script': 'ScriptR',
-        'React (JSX) script': 'ScriptReact',
-        'HTML file': 'ScriptHtml',
+        'HTML file (static)': 'ScriptHtml',
+        'HTML file (React)': 'ScriptHtmlReact',
+        'JSX script (React)': 'ScriptReact',
       },
       label: 'Render-to-Script Type'
     },
