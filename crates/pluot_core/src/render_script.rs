@@ -229,7 +229,8 @@ fn python_script(value: &Value) -> String {
          \n\
          async def main():\n\
          \x20   plot = await {}\n\
-         \x20   plot.save(\"my_plot.png\")\n\
+         \x20   #plot.save(\"my_plot.png\")\n\
+         \x20   return plot\n\
          if __name__ == \"__main__\":\n\
          \x20   asyncio.run(main())\n",
         python_call(value, 1),

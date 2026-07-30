@@ -125,6 +125,7 @@ async def main():
         render_backend=None,
         compute_backend=None,
     )
-    plot.save("my_plot.png")
+    #plot.save("my_plot.png")
+    return plot
 if __name__ == "__main__":
     asyncio.run(main())
