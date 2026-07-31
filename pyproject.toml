@@ -20,6 +20,7 @@ dynamic = ["version"]
 dependencies = [
   "numpy>=2",
   "zarr>=3",
+  "obstore",
   "pillow==11.3.0"
 ]
 
@@ -30,8 +31,7 @@ dev = [
   'pytest-asyncio>=1.1.0',
   'jupyterlab>=3.0.0',
   "marimo",
-  "pandas",
-  "obstore"
+  "pandas"
 ]
 widget = [
     "anywidget==0.11.0",
