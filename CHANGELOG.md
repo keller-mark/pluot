@@ -1,4 +1,13 @@
 
+## 0.1.9
+
+### Patch Changes
+
+- Do not write current version to python script snapshot test output. (`@pluot/core`) ([#269](https://github.com/keller-mark/pluot/pull/269))
+
+- Move publish-wheels steps into release.yml to enable use of the `should-release` variable. (`@pluot/core`) ([#271](https://github.com/keller-mark/pluot/pull/271))
+
+
 ## 0.1.8
 
 ### Patch Changes
