@@ -23,7 +23,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.10"
 license-file = "LICENSE"
 
 # We use the 2021 edition which defaults to Resolver version 2
@@ -82,9 +82,9 @@ serde_json = "1.0.143"
 
 # Local crates
 # We register these here so that they can be used via .workspace = true by sibling crates.
-pluot_core = { version = "0.1.9", path = "crates/pluot_core" }
-pluot_zarr = { version = "0.1.9", path = "crates/pluot_zarr" }
-pluot = { version = "0.1.9", path = "crates/pluot" }
+pluot_core = { version = "0.1.10", path = "crates/pluot_core" }
+pluot_zarr = { version = "0.1.10", path = "crates/pluot_zarr" }
+pluot = { version = "0.1.10", path = "crates/pluot" }
 
 # WebGPU
 wgpu = { version = "30.0.0" }

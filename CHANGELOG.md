@@ -1,4 +1,11 @@
 
+## 0.1.10
+
+### Patch Changes
+
+- Revert permissions change. (`@pluot/core`) ([#272](https://github.com/keller-mark/pluot/pull/272))
+
+
 ## 0.1.9
 
 ### Patch Changes

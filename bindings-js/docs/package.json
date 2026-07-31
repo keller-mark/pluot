@@ -2,7 +2,7 @@
   "name": "docs",
   "private": true,
   "type": "module",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "author": "Mark Keller",
   "license": "Apache-2.0",
   "scripts": {
