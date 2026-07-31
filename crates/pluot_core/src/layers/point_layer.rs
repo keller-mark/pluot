@@ -886,6 +886,8 @@ impl PickableLayer for PointLayer {
             return None;
         };
 
+        // TODO: implement picking for unitsMode::pixels and unitsMode::normalized
+
         let n = self.layer_params.position_x.len();
         if n == 0 {
             return None;

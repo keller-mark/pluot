@@ -12,9 +12,14 @@ use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, Dra
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use pluot_core::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
+use pluot_core::composite_layers::axis_linear_layer::AxisPosition;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
+use pluot_core::LayerPickingResult;
+use pluot_core::viewport::DataCoord;
+use pluot_core::viewport::ScreenCoord;
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 use crate::adata_io::{read_dataframe_index, read_dense_column_f32, read_string_array};
@@ -108,11 +113,11 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
         let groupby = self.layer_params.groupby.clone();
-        let groupby_path = format!("obs/{groupby}");
+        let groupby_path = format!("/obs/{groupby}");
         let expr_array_path = if self.layer_params.layer == "X" {
-            "X".to_string()
+            "/X".to_string()
         } else {
-            format!("layers/{}", self.layer_params.layer)
+            format!("/layers/{}", self.layer_params.layer)
         };
 
         // Load the var dataframe's row labels (gene IDs) and the groupby
@@ -121,7 +126,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // displays per-cell/per-obs identifiers.)
         let var_index_deps = vec!["adata_var_index".to_string(), self.store_name.clone()];
         let var_index_future = use_memo_vec_string(async || {
-            read_dataframe_index(store.clone(), "var").await
+            read_dataframe_index(store.clone(), "/var").await
         }, &var_index_deps, self.view_params.cache_enabled);
 
         let categories_deps = vec!["adata_obs_categories".to_string(), self.store_name.clone(), groupby.clone()];
@@ -321,7 +326,35 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         );
         point_layer.prepare(gpu_context).await;
 
-        self.sub_layer_instances = vec![Box::new(point_layer)];
+        // Band-scale axes for the two categorical dimensions (genes and
+        // groupby categories), swapped along with the dot grid itself.
+        let (x_domain, y_domain) = if swap_axes {
+            (categories.clone(), Arc::new(found_var_names))
+        } else {
+            (Arc::new(found_var_names), categories.clone())
+        };
+
+        let mut x_axis_layer = AxisBandLayer::new(
+            self.view_params.clone(),
+            AxisBandLayerParams {
+                layer_id: format!("{}_x_axis_sublayer", self.layer_params.layer_id),
+                position: AxisPosition::Bottom,
+                domain: x_domain,
+            },
+        );
+        x_axis_layer.prepare(gpu_context).await;
+
+        let mut y_axis_layer = AxisBandLayer::new(
+            self.view_params.clone(),
+            AxisBandLayerParams {
+                layer_id: format!("{}_y_axis_sublayer", self.layer_params.layer_id),
+                position: AxisPosition::Left,
+                domain: y_domain,
+            },
+        );
+        y_axis_layer.prepare(gpu_context).await;
+
+        self.sub_layer_instances = vec![Box::new(point_layer), Box::new(x_axis_layer), Box::new(y_axis_layer)];
 
         PrepareResult { bailed_early: false }
     }
@@ -349,4 +382,10 @@ impl DrawToSvg for AdataZarrDotPlotLayer {
     }
 }
 
-impl PickableLayer for AdataZarrDotPlotLayer {}
+impl PickableLayer for AdataZarrDotPlotLayer {
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
+        // The PointLayer rendering the dots is always sub_layer_instances[0]
+        // (see `prepare`); the axis sublayers are not pickable.
+        self.sub_layer_instances.first()?.pick(screen_coord, data_coord)
+    }
+}
