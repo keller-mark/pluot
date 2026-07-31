@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
-use pluot_core::render_traits::PickableLayer;
+use pluot_core::render_traits::{PickableLayer, UnitsMode};
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, ViewParams, NumericData};
 
@@ -72,5 +72,33 @@ fn test_pick_with_translation_matrix() {
     assert_eq!(r.info.get("index").unwrap(), "0");
 
     let r = pick_at(&layer, 109.0, 9.0).unwrap();
+    assert_eq!(r.info.get("index").unwrap(), "1");
+}
+
+#[test]
+fn test_pick_normalized_units() {
+    let view_params = ViewParams {
+        width: 100,
+        height: 100,
+        ..ViewParams::default()
+    };
+    let layer = PointLayer::new(
+        view_params,
+        PointLayerParams {
+            layer_id: "test_point".to_string(),
+            data_unit_mode_x: UnitsMode::Normalized,
+            data_unit_mode_y: UnitsMode::Normalized,
+            position_x: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+            position_y: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+            ..PointLayerParams::default()
+        },
+    );
+
+    // Point 0 is at normalized (0,0) -> pixel (0,0) (bottom-left, Y-up).
+    let r = layer.pick(ScreenCoord { x: 2.0, y: 2.0 }, None).unwrap();
+    assert_eq!(r.info.get("index").unwrap(), "0");
+
+    // Point 1 is at normalized (1,1) -> pixel (100,100) (top-right, Y-up).
+    let r = layer.pick(ScreenCoord { x: 98.0, y: 98.0 }, None).unwrap();
     assert_eq!(r.info.get("index").unwrap(), "1");
 }

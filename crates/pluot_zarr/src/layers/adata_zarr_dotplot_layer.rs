@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use pluot_core::{maybe_timeout, FutureExt, Duration, log};
+use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::wgpu;
-use pluot_core::cache::{use_memo_vec_string, use_memo_numeric_data};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
@@ -21,8 +19,7 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
-use crate::zarr_numeric_data::load_arr_as_numeric_data;
-use crate::adata_io::{read_dataframe_index, read_dense_column_f32, read_string_array};
+use crate::adata_dotplot_data::use_dotplot_data;
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -112,50 +109,29 @@ impl AdataZarrDotPlotLayer {
 impl PreparedLayer for AdataZarrDotPlotLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
-        let groupby = self.layer_params.groupby.clone();
-        let groupby_path = format!("/obs/{groupby}");
         let expr_array_path = if self.layer_params.layer == "X" {
             "/X".to_string()
         } else {
             format!("/layers/{}", self.layer_params.layer)
         };
 
-        // Load the var dataframe's row labels (gene IDs) and the groupby
-        // column's categories + per-cell codes, in parallel. (The obs and
-        // root anndata metadata are not needed here: a dot plot never
-        // displays per-cell/per-obs identifiers.)
-        let var_index_deps = vec!["adata_var_index".to_string(), self.store_name.clone()];
-        let var_index_future = use_memo_vec_string(async || {
-            read_dataframe_index(store.clone(), "/var").await
-        }, &var_index_deps, self.view_params.cache_enabled);
-
-        let categories_deps = vec!["adata_obs_categories".to_string(), self.store_name.clone(), groupby.clone()];
-        let categories_future = use_memo_vec_string(async || {
-            read_string_array(store.clone(), &format!("{groupby_path}/categories")).await
-        }, &categories_deps, self.view_params.cache_enabled);
-
-        let codes_deps = vec!["adata_obs_codes".to_string(), self.store_name.clone(), groupby.clone()];
-        let codes_future = use_memo_numeric_data(async || {
-            load_arr_as_numeric_data(store.clone(), &format!("{groupby_path}/codes")).await
-        }, &codes_deps, self.view_params.cache_enabled);
-
-        let futures_try_join_result = futures::try_join!(
-            maybe_timeout!(var_index_future, self.view_params.timeout),
-            maybe_timeout!(categories_future, self.view_params.timeout),
-            maybe_timeout!(codes_future, self.view_params.timeout),
+        let data_future = use_dotplot_data(
+            store,
+            &self.store_name,
+            &self.layer_params.groupby,
+            &expr_array_path,
+            &self.layer_params.var_names,
+            self.layer_params.expression_cutoff,
+            self.view_params.cache_enabled,
         );
 
-        let (var_index, categories, codes) = match futures_try_join_result {
-            Ok((var_index_result, categories_result, codes_result)) => {
-                match (var_index_result, categories_result, codes_result) {
-                    (Ok(v), Ok(c), Ok(d)) => (v, c, d),
-                    (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                        if is_timed_out_zarrs_error(&e) {
-                            return PrepareResult { bailed_early: true };
-                        } else {
-                            panic!("Zarrs error during AdataZarrDotPlotLayer prepare: {:?}", e);
-                        }
-                    }
+        let data = match maybe_timeout!(data_future, self.view_params.timeout).await {
+            Ok(Ok(data)) => data,
+            Ok(Err(e)) => {
+                if is_timed_out_zarrs_error(&e) {
+                    return PrepareResult { bailed_early: true };
+                } else {
+                    panic!("Zarrs error during AdataZarrDotPlotLayer prepare: {:?}", e);
                 }
             }
             Err(_) => {
@@ -164,93 +140,13 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             }
         };
 
-        // Resolve the requested gene IDs to their column index in `var.index`,
-        // logging (and skipping) any that aren't found.
-        let var_index_lookup: HashMap<&str, usize> = var_index.iter().enumerate().map(|(i, name)| (name.as_str(), i)).collect();
-        let mut found_var_names: Vec<String> = Vec::new();
-        let mut gene_col_indices: Vec<u64> = Vec::new();
-        for var_name in &self.layer_params.var_names {
-            match var_index_lookup.get(var_name.as_str()) {
-                Some(&i) => {
-                    found_var_names.push(var_name.clone());
-                    gene_col_indices.push(i as u64);
-                }
-                None => log(&format!("AdataZarrDotPlotLayer: gene \"{var_name}\" not found in var.index; skipping")),
-            }
-        }
-
-        if found_var_names.is_empty() || categories.is_empty() {
+        if data.var_names.is_empty() || data.categories.is_empty() {
             self.sub_layer_instances = vec![];
             return PrepareResult { bailed_early: false };
         }
 
-        // Load the expression values for each requested gene (one column of
-        // `X`/`layers[layer]` per gene; for now, assumed to be a dense array).
-        let column_futures = gene_col_indices.iter().map(|&col_index| {
-            let store = store.clone();
-            let array_path = expr_array_path.clone();
-            async move { read_dense_column_f32(store, &array_path, col_index).await }
-        });
-        let columns_result = maybe_timeout!(futures::future::join_all(column_futures), self.view_params.timeout).await;
-        let columns: Vec<Vec<f32>> = match columns_result {
-            Ok(results) => {
-                let mut out = Vec::with_capacity(results.len());
-                for r in results {
-                    match r {
-                        Ok(col) => out.push(col),
-                        Err(e) => {
-                            if is_timed_out_zarrs_error(&e) {
-                                return PrepareResult { bailed_early: true };
-                            } else {
-                                panic!("Zarrs error during AdataZarrDotPlotLayer prepare: {:?}", e);
-                            }
-                        }
-                    }
-                }
-                out
-            }
-            Err(_) => return PrepareResult { bailed_early: true },
-        };
-
-        // Group cell (obs) indices by their groupby category code. A code of
-        // -1 (or out of range) denotes a missing value, per the AnnData spec;
-        // such cells are excluded from every group's mean/fraction.
-        let n_groups = categories.len();
-        let mut cells_by_group: Vec<Vec<usize>> = vec![Vec::new(); n_groups];
-        for cell_i in 0..codes.len() {
-            let code = codes.get_f32(cell_i) as i64;
-            if code >= 0 && (code as usize) < n_groups {
-                cells_by_group[code as usize].push(cell_i);
-            }
-        }
-
-        // For each (groupby category, gene) pair, compute the mean expression
-        // and the fraction of cells expressing (value > expression_cutoff),
-        // matching scanpy's `sc.pl.dotplot` semantics.
-        let cutoff = self.layer_params.expression_cutoff;
-        let n_genes = found_var_names.len();
-        let mut mean_expr: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
-        let mut frac_expr: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
-        for cell_indices in &cells_by_group {
-            for col in &columns {
-                if cell_indices.is_empty() {
-                    mean_expr.push(0.0);
-                    frac_expr.push(0.0);
-                    continue;
-                }
-                let mut sum = 0.0f32;
-                let mut n_expressing = 0usize;
-                for &cell_i in cell_indices {
-                    let v = col[cell_i];
-                    sum += v;
-                    if v > cutoff {
-                        n_expressing += 1;
-                    }
-                }
-                mean_expr.push(sum / cell_indices.len() as f32);
-                frac_expr.push(n_expressing as f32 / cell_indices.len() as f32);
-            }
-        }
+        let n_groups = data.categories.len();
+        let n_genes = data.var_names.len();
 
         // Lay genes and groupby categories out on a pixel-space grid, one
         // band scale per axis (swapped when `swap_axes` is set).
@@ -270,9 +166,9 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let swap_axes = self.layer_params.swap_axes;
 
         let mut genes_scale = ScaleBand::new();
-        genes_scale.set_domain(found_var_names.clone());
+        genes_scale.set_domain(data.var_names.clone());
         let mut groups_scale = ScaleBand::new();
-        groups_scale.set_domain(categories.as_ref().clone());
+        groups_scale.set_domain(data.categories.as_ref().clone());
         if swap_axes {
             genes_scale.set_range((0.0, layer_h as f64));
             groups_scale.set_range((0.0, layer_w as f64));
@@ -291,13 +187,13 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let mut position_y: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
         let mut point_radius_values: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
         for g in 0..n_groups {
-            let group_pos = groups_scale.scale(&categories[g]) as f32 + groups_bandwidth / 2.0;
+            let group_pos = groups_scale.scale(&data.categories[g]) as f32 + groups_bandwidth / 2.0;
             for j in 0..n_genes {
-                let gene_pos = genes_scale.scale(&found_var_names[j]) as f32 + genes_bandwidth / 2.0;
+                let gene_pos = genes_scale.scale(&data.var_names[j]) as f32 + genes_bandwidth / 2.0;
                 let (x, y) = if swap_axes { (group_pos, gene_pos) } else { (gene_pos, group_pos) };
                 position_x.push(x);
                 position_y.push(y);
-                point_radius_values.push(frac_expr[g * n_genes + j] * max_dot_radius);
+                point_radius_values.push(data.fraction_expressing[g * n_genes + j] * max_dot_radius);
             }
         }
 
@@ -314,7 +210,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     values: NumericData::Float32(Arc::new(point_radius_values)),
                 })),
                 fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
-                    values: NumericData::Float32(Arc::new(mean_expr)),
+                    values: NumericData::Float32(Arc::new(data.mean_expression.clone())),
                     colormap: self.layer_params.cmap.clone(),
                     reverse: false,
                     domain: None,
@@ -329,9 +225,9 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // Band-scale axes for the two categorical dimensions (genes and
         // groupby categories), swapped along with the dot grid itself.
         let (x_domain, y_domain) = if swap_axes {
-            (categories.clone(), Arc::new(found_var_names))
+            (data.categories.clone(), Arc::new(data.var_names.clone()))
         } else {
-            (Arc::new(found_var_names), categories.clone())
+            (Arc::new(data.var_names.clone()), data.categories.clone())
         };
 
         let mut x_axis_layer = AxisBandLayer::new(
@@ -387,5 +283,8 @@ impl PickableLayer for AdataZarrDotPlotLayer {
         // The PointLayer rendering the dots is always sub_layer_instances[0]
         // (see `prepare`); the axis sublayers are not pickable.
         self.sub_layer_instances.first()?.pick(screen_coord, data_coord)
+
+        // TODO: convert the point layer picking result into something more semantically meaningful for the dotplot
+        // (the var name, category name, the mean expression value, the fraction expressing value for the given point).
     }
 }
