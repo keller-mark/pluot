@@ -8,13 +8,14 @@
 <body>
     <canvas id="coordinateCanvas" width="600" height="600" style="border: 1px solid black;"></canvas>
     <ul style="font-family: monospace;">
-        <li style="color: rgb(64,64,64);">&#9632; Origin (0, 0, 0)</li>
-        <li style="color: rgb(255,0,0);">&#9632; +X axis (1.5, 0, 0)</li>
-        <li style="color: rgb(255,153,153);">&#9632; -X axis (-1.5, 0, 0)</li>
-        <li style="color: rgb(0,179,0);">&#9632; +Y axis (0, 1.5, 0)</li>
-        <li style="color: rgb(153,255,153);">&#9632; -Y axis (0, -1.5, 0)</li>
-        <li style="color: rgb(0,0,255);">&#9632; +Z axis (0, 0, 1.5)</li>
-        <li style="color: rgb(153,153,255);">&#9632; -Z axis (0, 0, -1.5)</li>
+        <li style="color: rgb(0,0,0);">&#9632; (0, 0, 0)</li>
+        <li style="color: rgb(255,0,0);">&#9632; (1, 0, 0) &mdash; X</li>
+        <li style="color: rgb(0,255,0);">&#9632; (0, 1, 0) &mdash; Y</li>
+        <li style="color: rgb(0,0,255);">&#9632; (0, 0, 1) &mdash; Z</li>
+        <li style="color: rgb(255,255,0);">&#9632; (1, 1, 0) &mdash; X+Y</li>
+        <li style="color: rgb(255,0,255);">&#9632; (1, 0, 1) &mdash; X+Z</li>
+        <li style="color: rgb(0,255,255);">&#9632; (0, 1, 1) &mdash; Y+Z</li>
+        <li style="color: rgb(180,180,180); text-shadow: 0 0 1px black;">&#9632; (1, 1, 1) &mdash; X+Y+Z</li>
     </ul>
     <script type="module">
       // Reference: https://observablehq.com/@mourner/webgpu-boilerplate
@@ -52,45 +53,42 @@
                 vec2<f32>( 1.0,  1.0)
             );
 
-            // Origin plus one tick in each direction along X, Y, and Z, using the
-            // conventional axis colors (X: red, Y: green, Z: blue; the negative
-            // direction of each axis uses a paler shade of the same color).
-            const POINT_COORDS: array<vec3<f32>, 7> = array<vec3<f32>, 7>(
-                vec3<f32>( 0.0,  0.0,  0.0), // Origin
-                vec3<f32>( 1.0,  0.0,  0.0), // +X
-                vec3<f32>(-1.0,  0.0,  0.0), // -X
-                vec3<f32>( 0.0,  1.0,  0.0), // +Y
-                vec3<f32>( 0.0, -1.0,  0.0), // -Y
-                vec3<f32>( 0.0,  0.0,  1.0), // +Z
-                vec3<f32>( 0.0,  0.0, -1.0)  // -Z
+            // The 8 corners of the unit cube: every combination of 0/1 in x, y,
+            // and z. Each corner's color is just its position (see vertexMain
+            // below), so the coordinate system reads directly as the RGB cube:
+            // X -> red, Y -> green, Z -> blue.
+            const POINT_COORDS: array<vec3<f32>, 8> = array<vec3<f32>, 8>(
+                vec3<f32>(0.0, 0.0, 0.0),
+                vec3<f32>(1.0, 0.0, 0.0),
+                vec3<f32>(0.0, 1.0, 0.0),
+                vec3<f32>(0.0, 0.0, 1.0),
+                vec3<f32>(1.0, 1.0, 0.0),
+                vec3<f32>(1.0, 0.0, 1.0),
+                vec3<f32>(0.0, 1.0, 1.0),
+                vec3<f32>(1.0, 1.0, 1.0)
             );
 
-            const POINT_COLORS: array<vec4<f32>, 7> = array<vec4<f32>, 7>(
-                vec4<f32>(0.25, 0.25, 0.25, 1.0), // Origin (gray)
-                vec4<f32>(1.0,  0.0,  0.0,  1.0), // +X (red)
-                vec4<f32>(1.0,  0.6,  0.6,  1.0), // -X (pale red)
-                vec4<f32>(0.0,  0.7,  0.0,  1.0), // +Y (green)
-                vec4<f32>(0.6,  1.0,  0.6,  1.0), // -Y (pale green)
-                vec4<f32>(0.0,  0.0,  1.0,  1.0), // +Z (blue)
-                vec4<f32>(0.6,  0.6,  1.0,  1.0)  // -Z (pale blue)
-            );
-
-            // Camera view matrix: Translate(0, 0, -8) * RotateX(-20 deg) * RotateY(35 deg),
-            // baked into a single literal matrix. point_3d_layer.wgsl's projection
-            // matrix expects view-space -Z to point into the screen, so this both
-            // pushes the whole scene in front of the camera and tilts it so all
-            // three axes (which would otherwise overlap head-on) are visible at once.
-            // In the real layer this comes from view_params.camera_view, usually
-            // driven by an interactive orbit camera instead of a fixed literal.
+            // Identity (no rotation) camera matrix, translated so the cube's
+            // center (0.5, 0.5, 0.5) sits on the camera's forward axis -- i.e.
+            // maps to view-space (0, 0, -2.5) -- so the unit cube is centered
+            // on screen given the 600x600 (square) LAYER_SIZE below.
             const CAMERA_VIEW: mat4x4<f32> = mat4x4<f32>(
-              vec4<f32>( 1.0, 0.0, 0.0, 0.0),
-              vec4<f32>( 0.0, 1.0, 0.0, 0.0),
-              vec4<f32>( 0.0, 0.0, 1.0, 0.0),
-              vec4<f32>( 0.0, 0.0, -3.0, 1.0)
+              vec4<f32>( 1.0,  0.0,  0.0, 0.0),
+              vec4<f32>( 0.0,  1.0,  0.0, 0.0),
+              vec4<f32>( 0.0,  0.0,  1.0, 0.0),
+              vec4<f32>(-0.5, -0.5, -3.0, 1.0)
             );
 
             const LAYER_SIZE: vec2<f32> = vec2<f32>(600.0, 600.0); // Canvas size in pixels
             const POINT_RADIUS: f32 = 10.0; // Point radius in pixels
+
+            // Vertical field of view, in radians. This is the camera's "focal
+            // length" knob: smaller FOV_Y -> longer focal length (more zoomed
+            // in, flatter/telephoto-looking) -> larger f below; larger FOV_Y ->
+            // shorter focal length (wide-angle, more edge distortion).
+            const FOV_Y: f32 = 1.001; // 45 degrees in radians
+            const NEAR: f32 = 0.1;
+            const FAR: f32 = 100.0;
 
             @vertex fn vertexMain(
               @builtin(instance_index) instance_index: u32,
@@ -103,18 +101,14 @@
               let view_aspect_ratio = LAYER_SIZE.x / LAYER_SIZE.y;
 
               // 3D Perspective Projection Matrix
-              // Using common defaults: fov = 45 degrees, near = 0.1, far = 100.0
-              let fov_y = 0.785398; // 45 degrees in radians
-              let f = 1.0 / tan(fov_y / 2.0);
-              let near = 0.1;
-              let far = 100.0;
-              let nf = 1.0 / (near - far);
+              let f = 1.0 / tan(FOV_Y / 2.0); // "focal length" term
+              let nf = 1.0 / (NEAR - FAR);
 
               let projection = mat4x4<f32>(
                   f / view_aspect_ratio, 0.0, 0.0, 0.0,
                   0.0, f, 0.0, 0.0,
-                  0.0, 0.0, (far + near) * nf, -1.0,
-                  0.0, 0.0, 2.0 * far * near * nf, 0.0
+                  0.0, 0.0, (FAR + NEAR) * nf, -1.0,
+                  0.0, 0.0, 2.0 * FAR * NEAR * nf, 0.0
               );
 
               let model_view_projection = projection * CAMERA_VIEW;
@@ -140,7 +134,7 @@
                   clip_space_position.w
               );
               out.corner = corner;
-              out.color = POINT_COLORS[instance_index];
+              out.color = vec4<f32>(p, 1.0);
               return out;
             }
 
@@ -155,8 +149,15 @@
                 discard;
               }
 
+              // Thin dark stroke around the fill (not present in
+              // point_3d_layer.wgsl) so the (1, 1, 1) corner -- pure white --
+              // still reads as a circle against the white canvas background.
+              let stroke_width = 0.12;
+              let stroke_t = smoothstep(1.0 - stroke_width - edge_width, 1.0 - stroke_width + edge_width, dist);
+              let rgb = mix(v.color.rgb, vec3<f32>(0.1, 0.1, 0.1), stroke_t);
+
               var out: FragmentOut;
-              out.color = vec4<f32>(v.color.rgb, alpha);
+              out.color = vec4<f32>(rgb, alpha);
               return out;
             }
         `;
@@ -194,7 +195,7 @@
         pass.setPipeline(pipeline);
         //pass.setVertexBuffer(0, vertexBuffer);
         //pass.setBindGroup(0, bindGroup);
-        const numPoints = 7;
+        const numPoints = 8;
         // For each point, draw a quad (4 vertices).
         pass.draw(4, numPoints);
         pass.end();
