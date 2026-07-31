@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { FetchStore } from "zarrita";
-import { Pluot, setStoreByName } from "@pluot/react";
+import { Pluot, setStoreByName, getStore } from "@pluot/react";
 
 // Initialize stores needed for demos
 
@@ -10,8 +10,29 @@ setStoreByName('gaussian_quantiles_store_compressed', new FetchStore("http://loc
 setStoreByName('ome_ngff', new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"));
 setStoreByName('ome_ngff_2', new FetchStore("https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/IMG_1033-1112_asterella_gracilis.ome.zarr"));
 setStoreByName('wheat', new FetchStore("http://localhost:5173/@data/wheat.zarr"));
+setStoreByName('pbmc', new FetchStore("http://localhost:5173/@data/pbmc68k.adata.zarr"));
+
 
 const DEMOS = {
+  dot_plot: {
+    plot_type: "LayeredPlot",
+    store_name: "pbmc",
+    plot_params: {
+      layers: [
+        {
+          layer_type: "AdataZarrDotPlotLayer",
+          layer_params: {
+            layer_id: "dot_plot",
+            var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
+            groupby: "bulk_labels",
+            layer: "X",
+            title: "My dot plot"
+
+          },
+        },
+      ]
+    }
+  },
   layered_plot: {
     plot_type: "LayeredPlot",
     store_name: "gaussian_quantiles_store",
@@ -363,7 +384,7 @@ const DEMOS = {
 };
 
 export function Demo() {
-  const [currPlotId, setCurrPlotId] = useState("layered_plot");
+  const [currPlotId, setCurrPlotId] = useState("dot_plot");
 
   const plotType = DEMOS[currPlotId].plot_type;
   const plotParams = DEMOS[currPlotId].plot_params;
@@ -399,6 +420,7 @@ export function Demo() {
         format={graphicsFormat}
         plotId={currPlotId}
         plotType={plotType}
+        store={getStore(storeName)}
         storeName={storeName}
         plotParams={
           plotType === "Triangle"

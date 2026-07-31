@@ -6,6 +6,8 @@ use pluot_zarr::layers::zarr_bar_plot_layer::{ZarrBarPlotLayer, ZarrBarPlotLayer
 use pluot_zarr::layers::zarr_histogram_layer::{ZarrHistogramLayer, ZarrHistogramLayerParams};
 use pluot_zarr::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
 use pluot_zarr::layers::ome_zarr_multiscale_layer::{OmeZarrMultiscaleLayer, OmeZarrMultiscaleLayerParams};
+use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams};
+
 
 // Ideally we could just run inventory::submit! in the pluot_zarr crate,
 // but it is not working, so we do it here instead.
@@ -65,6 +67,16 @@ inventory::submit! {
         create_layer: |value, view_params| {
             let params: OmeZarrMultiscaleLayerParams = serde_json::from_value(value).unwrap();
             Box::new(OmeZarrMultiscaleLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrDotPlotLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrDotPlotLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrDotPlotLayer::new(view_params.clone(), params))
         },
     }
 }

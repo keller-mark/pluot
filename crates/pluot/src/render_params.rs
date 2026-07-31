@@ -1,3 +1,4 @@
+use pluot_zarr::layers::adata_zarr_dotplot_layer::AdataZarrDotPlotLayerParams;
 use serde::{Deserialize, Serialize};
 
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
@@ -60,6 +61,7 @@ pub enum LayerParams {
     ZarrHistogramLayer(ZarrHistogramLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
     OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
+    AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),

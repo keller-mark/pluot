@@ -6,6 +6,7 @@
 // - https://github.com/SingleRust/anndata-rs
 // - https://github.com/ilan-gold/anndata.js/blob/main/src/io.ts
 // - https://github.com/keller-mark/zod-anndata
+// - https://github.com/vitessce/vitessce/tree/main/packages/file-types/zarr/src
 
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
