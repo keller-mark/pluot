@@ -1,9 +1,23 @@
-// A reusable "hook" (in the `pluot_core::cache::use_memo_*` sense: a cached
-// async data loader) for the data behind an AnnData dot plot: mean expression
-// and fraction of cells expressing, per (groupby category, gene) pair. Lives
-// in its own module so any future AnnData-Zarr layer needing the same shape
-// of data (e.g. a violin or heatmap layer) can reuse it.
-
+// Reusable "hook" functions (in the React sense) for loading subsets of data from AnnData objects,
+// and in some cases, filtering or summarizing or otherwise transforming the data as needed for visualizations.
+//
+// The AnnData object representation should be reusable across not just the dot plot, but also other plot types:
+// - stratified dot plots (dot per cell type, gene, and sample set - and potentially further categorization along the obs axis)
+// - violin plots (violin per cell type and gene)
+// - stratified violin plots (violin plot per cell type, gene, and sample set - and potentially further categorization along the obs axis)
+// - histograms (distribution of transcript counts for one or more genes)
+// - heatmaps (subsets of the expression matrix)
+// - cell segmentations (one or more gene columns of the expression matrix, across all cells or a subset of cells)
+//
+// For the utmost flexibility, we should support arbitrary levels of hierarchy of the obs stratification,
+// and arbitrary predicate functions for filtering and selection.
+//
+// We always want to support both filtering and selection.
+// - Filtering means that the values that are filtered out are not considered at all (no contribution to the visual representation whatsoever).
+// - Selection means that we visually emphasize the selected values, and we also visually display the non-selected values (but de-emphasized or grayed-out), so we must consider both the selected and non-selected values when performing data processing and computing data distributions (we will want to compute both "foreground" and "background" distributions, so that we can display the foreground summary as emphasized, while we display the background summary as grayed-out).
+//
+// The return values should be semantically meaningful, with easy-to-understand struct representations (that are also efficient).
+//
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
