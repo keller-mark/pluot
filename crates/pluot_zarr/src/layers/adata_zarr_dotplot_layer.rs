@@ -19,7 +19,7 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
-use crate::adata_dotplot_data::use_dotplot_data;
+use crate::adata_dotplot_data::{use_dotplot_data, DotPlotQuery, ObsStratifyLevel};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -109,21 +109,20 @@ impl AdataZarrDotPlotLayer {
 impl PreparedLayer for AdataZarrDotPlotLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
-        let expr_array_path = if self.layer_params.layer == "X" {
-            "/X".to_string()
-        } else {
-            format!("/layers/{}", self.layer_params.layer)
+
+        let query = DotPlotQuery {
+            // The `layer` param names `adata.X` as "X", which is not a `layers` entry.
+            layer: if self.layer_params.layer == "X" { None } else { Some(self.layer_params.layer.clone()) },
+            var_names: self.layer_params.var_names.clone(),
+            // TODO: accept several obs columns (and filter/selection predicates) via the
+            // layer params; the data hooks already support an arbitrarily deep hierarchy.
+            stratify_by: vec![ObsStratifyLevel::new(&self.layer_params.groupby)],
+            filter: None,
+            selection: None,
+            expression_cutoff: self.layer_params.expression_cutoff,
         };
 
-        let data_future = use_dotplot_data(
-            store,
-            &self.store_name,
-            &self.layer_params.groupby,
-            &expr_array_path,
-            &self.layer_params.var_names,
-            self.layer_params.expression_cutoff,
-            self.view_params.cache_enabled,
-        );
+        let data_future = use_dotplot_data(store, &self.store_name, &query, self.view_params.cache_enabled);
 
         let data = match maybe_timeout!(data_future, self.view_params.timeout).await {
             Ok(Ok(data)) => data,
@@ -140,13 +139,10 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             }
         };
 
-        if data.var_names.is_empty() || data.categories.is_empty() {
+        if data.is_empty() {
             self.sub_layer_instances = vec![];
             return PrepareResult { bailed_early: false };
         }
-
-        let n_groups = data.categories.len();
-        let n_genes = data.var_names.len();
 
         // Lay genes and groupby categories out on a pixel-space grid, one
         // band scale per axis (swapped when `swap_axes` is set).
@@ -165,10 +161,12 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
 
         let swap_axes = self.layer_params.swap_axes;
 
+        // One tick per gene, and one per leaf group of the obs stratification (currently
+        // always a single level, so those are just that column's category labels).
         let mut genes_scale = ScaleBand::new();
         genes_scale.set_domain(data.var_names.clone());
         let mut groups_scale = ScaleBand::new();
-        groups_scale.set_domain(data.categories.as_ref().clone());
+        groups_scale.set_domain(data.group_labels.clone());
         if swap_axes {
             genes_scale.set_range((0.0, layer_h as f64));
             groups_scale.set_range((0.0, layer_w as f64));
@@ -183,18 +181,25 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // fit within its grid cell on the tighter of the two axes.
         let max_dot_radius = (genes_bandwidth.min(groups_bandwidth) / 2.0 * 0.9).max(1.0);
 
-        let mut position_x: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
-        let mut position_y: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
-        let mut point_radius_values: Vec<f32> = Vec::with_capacity(n_groups * n_genes);
-        for g in 0..n_groups {
-            let group_pos = groups_scale.scale(&data.categories[g]) as f32 + groups_bandwidth / 2.0;
-            for j in 0..n_genes {
-                let gene_pos = genes_scale.scale(&data.var_names[j]) as f32 + genes_bandwidth / 2.0;
-                let (x, y) = if swap_axes { (group_pos, gene_pos) } else { (gene_pos, group_pos) };
-                position_x.push(x);
-                position_y.push(y);
-                point_radius_values.push(data.fraction_expressing[g * n_genes + j] * max_dot_radius);
-            }
+        // One instance per dot: each dot names its own group and gene, so its position
+        // is a scale lookup on its two axis labels. The fraction expressing drives the
+        // radius and the mean expression the color. Only the foreground (selected)
+        // summary is drawn for now; once the query grows a selection predicate, the
+        // dots' `background` summaries should become an extra, de-emphasized
+        // PointLayer beneath this one.
+        let n_dots = data.dots.len();
+        let mut position_x: Vec<f32> = Vec::with_capacity(n_dots);
+        let mut position_y: Vec<f32> = Vec::with_capacity(n_dots);
+        let mut point_radius_values: Vec<f32> = Vec::with_capacity(n_dots);
+        let mut mean_expression_values: Vec<f32> = Vec::with_capacity(n_dots);
+        for dot in &data.dots {
+            let group_pos = groups_scale.scale(data.group_label(dot)) as f32 + groups_bandwidth / 2.0;
+            let gene_pos = genes_scale.scale(data.var_name(dot)) as f32 + genes_bandwidth / 2.0;
+            let (x, y) = if swap_axes { (group_pos, gene_pos) } else { (gene_pos, group_pos) };
+            position_x.push(x);
+            position_y.push(y);
+            point_radius_values.push(dot.foreground.fraction_expressing * max_dot_radius);
+            mean_expression_values.push(dot.foreground.mean);
         }
 
         let mut point_layer = PointLayer::new(
@@ -210,7 +215,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     values: NumericData::Float32(Arc::new(point_radius_values)),
                 })),
                 fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
-                    values: NumericData::Float32(Arc::new(data.mean_expression.clone())),
+                    values: NumericData::Float32(Arc::new(mean_expression_values)),
                     colormap: self.layer_params.cmap.clone(),
                     reverse: false,
                     domain: None,
@@ -225,9 +230,9 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // Band-scale axes for the two categorical dimensions (genes and
         // groupby categories), swapped along with the dot grid itself.
         let (x_domain, y_domain) = if swap_axes {
-            (data.categories.clone(), Arc::new(data.var_names.clone()))
+            (Arc::new(data.group_labels.clone()), Arc::new(data.var_names.clone()))
         } else {
-            (Arc::new(data.var_names.clone()), data.categories.clone())
+            (Arc::new(data.var_names.clone()), Arc::new(data.group_labels.clone()))
         };
 
         let mut x_axis_layer = AxisBandLayer::new(
@@ -286,5 +291,7 @@ impl PickableLayer for AdataZarrDotPlotLayer {
 
         // TODO: convert the point layer picking result into something more semantically meaningful for the dotplot
         // (the var name, category name, the mean expression value, the fraction expressing value for the given point).
+        // The picked instance index is the index of the corresponding `DotPlotDot`, which names its own group and
+        // gene, so this only needs `prepare` to hold on to the `DotPlotData`.
     }
 }
