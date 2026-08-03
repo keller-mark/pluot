@@ -262,8 +262,6 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // rather than NaN.
         let n_dots = gene_summaries.len();
 
-        log(&format!("n_dots: {}", n_dots));
-
         let mut position_x: Vec<f32> = Vec::with_capacity(n_dots);
         let mut position_y: Vec<f32> = Vec::with_capacity(n_dots);
         let mut point_radius_values: Vec<f32> = Vec::with_capacity(n_dots);
@@ -277,8 +275,6 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             let (mean, fraction_expressing) = summary.mean_and_fraction_expressing();
             point_radius_values.push(fraction_expressing * max_dot_radius);
             mean_expression_values.push(mean);
-
-            log(&format!("var_name: {}, obs_value: {}, mean: {}, fraction: {}", summary.var_name, summary.obs_value, mean, fraction_expressing));
         }
 
         // Kept for `pick`: a picked point's instance index is this same index into
