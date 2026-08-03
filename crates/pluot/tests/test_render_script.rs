@@ -70,6 +70,7 @@ fn sample_params(format: GraphicsFormat) -> RenderParams {
             LayerParams::AxisLinearLayer(AxisLinearLayerParams {
                 layer_id: "left_axis".to_string(),
                 position: AxisPosition::Left,
+                ..Default::default()
             }),
         ],
         ..Default::default()

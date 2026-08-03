@@ -90,7 +90,9 @@ export function PluotPlot() {
             layer_type: "AxisLinearLayer",
             layer_params: {
               layer_id: "left_axis",
-              position: "Left"
+              position: "Left",
+              tick_values: null,
+              tick_labels: null
             }
           }
         ]

@@ -59,7 +59,9 @@ render_to_svg(
       layer_type = "AxisLinearLayer",
       layer_params = list(
         layer_id = "left_axis",
-        position = "Left"
+        position = "Left",
+        tick_values = NULL,
+        tick_labels = NULL
       )
     )
   ),
