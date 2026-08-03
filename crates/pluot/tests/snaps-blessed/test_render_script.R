@@ -65,7 +65,8 @@ plot <- render_to_raster(
         layer_id = "left_axis",
         position = "Left",
         tick_values = NULL,
-        tick_labels = NULL
+        tick_labels = NULL,
+        fit_outer_ticks = FALSE
       )
     )
   ),

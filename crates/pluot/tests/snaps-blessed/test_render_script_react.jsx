@@ -92,7 +92,8 @@ export function PluotPlot() {
               layer_id: "left_axis",
               position: "Left",
               tick_values: null,
-              tick_labels: null
+              tick_labels: null,
+              fit_outer_ticks: false
             }
           }
         ]

@@ -98,7 +98,8 @@ async def main():
                         "layer_id": "left_axis",
                         "position": "Left",
                         "tick_values": None,
-                        "tick_labels": None
+                        "tick_labels": None,
+                        "fit_outer_ticks": False
                     }
                 }
             ]
