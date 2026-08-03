@@ -67,11 +67,6 @@ fn sample_params(format: GraphicsFormat) -> RenderParams {
                 })),
                 ..Default::default()
             }),
-            LayerParams::AxisLinearLayer(AxisLinearLayerParams {
-                layer_id: "left_axis".to_string(),
-                position: AxisPosition::Left,
-                ..Default::default()
-            }),
         ],
         ..Default::default()
     }
@@ -82,7 +77,7 @@ async fn test_render_json() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::Json,
-        "test_render.json",
+        "test_render_code_json.json",
     )
     .await;
 }
@@ -94,7 +89,7 @@ async fn test_render_expression_python() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ExpressionPython,
-        "test_render_expression.py",
+        "test_render_code_expression.py",
     )
     .await;
 }
@@ -104,7 +99,7 @@ async fn test_render_script_python() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptPython,
-        "test_render_script.py",
+        "test_render_code_script.py",
     )
     .await;
 }
@@ -116,7 +111,7 @@ async fn test_render_expression_r() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ExpressionR,
-        "test_render_expression.R",
+        "test_render_code_expression.R",
     )
     .await;
 }
@@ -126,7 +121,7 @@ async fn test_render_script_r() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptR,
-        "test_render_script.R",
+        "test_render_code_script.R",
     )
     .await;
 }
@@ -138,7 +133,7 @@ async fn test_render_expression_js() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ExpressionJs,
-        "test_render_expression.js",
+        "test_render_code_expression.js",
     )
     .await;
 }
@@ -148,7 +143,7 @@ async fn test_render_script_js() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptJs,
-        "test_render_script.js",
+        "test_render_code_script.js",
     )
     .await;
 }
@@ -160,7 +155,7 @@ async fn test_render_expression_jsx() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ExpressionJsx,
-        "test_render_expression.jsx",
+        "test_render_code_expression.jsx",
     )
     .await;
 }
@@ -170,7 +165,7 @@ async fn test_render_script_react() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptReact,
-        "test_render_script_react.jsx",
+        "test_render_code_script_react.jsx",
     )
     .await;
 }
@@ -180,7 +175,7 @@ async fn test_render_script_html() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ScriptHtml,
-        "test_render_script.html",
+        "test_render_code_script.html",
     )
     .await;
 }
@@ -190,7 +185,7 @@ async fn test_render_script_react_html() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ScriptHtmlReact,
-        "test_render_script_react.html",
+        "test_render_code_script_react.html",
     )
     .await;
 }
@@ -202,7 +197,7 @@ async fn test_render_expression_rust() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Vector),
         CodeFormat::ExpressionRust,
-        "test_render_expression.rs.txt",
+        "test_render_code_expression.rs.txt",
     )
     .await;
 }
@@ -212,7 +207,7 @@ async fn test_render_script_rust() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptRust,
-        "test_render_script.rs.txt",
+        "test_render_code_script.rs.txt",
     )
     .await;
 }
@@ -224,7 +219,7 @@ async fn test_render_script_bash() {
     render_and_check_script_snapshot(
         sample_params(GraphicsFormat::Raster),
         CodeFormat::ScriptBash,
-        "test_render_script.sh",
+        "test_render_code_script.sh",
     )
     .await;
 }
