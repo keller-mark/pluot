@@ -121,11 +121,19 @@ pub fn update_svg(ctx: &mut SvgContext, elements: &[TwoElement]) {
         group = match element {
             TwoElement::Group(d) => {
                 let mut sub_group = Group::new();
-                if let Some(translate) = d.translate {
-                    sub_group = sub_group.set(
-                        "transform",
-                        format!("translate({},{})", translate.0, translate.1),
-                    );
+                if d.translate.is_some() || d.scale.is_some() {
+                    // Order matters: listed left-to-right, SVG transforms are applied to a
+                    // point right-to-left, so "translate(...) scale(...)" scales first (about
+                    // the group's local origin) and then translates -- i.e. `translate` names
+                    // the on-screen position of the (already-scaled) local origin.
+                    let mut parts: Vec<String> = Vec::new();
+                    if let Some(translate) = d.translate {
+                        parts.push(format!("translate({},{})", translate.0, translate.1));
+                    }
+                    if let Some(scale) = d.scale {
+                        parts.push(format!("scale({},{})", scale.0, scale.1));
+                    }
+                    sub_group = sub_group.set("transform", parts.join(" "));
                 }
                 if let Some(clip_rect) = d.clip_rect {
                     // TODO: use layer_type here?

@@ -38,6 +38,17 @@ pub struct AxisLinearLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,
 
+    /// Explicit tick values to render, overriding the automatic d3-style tick
+    /// generation. When None (the default), ticks are generated automatically
+    /// from the visible domain.
+    pub tick_values: Option<Vec<f64>>,
+
+    /// Explicit label strings for each tick, overriding the automatic numeric
+    /// formatting of the tick's own value. Must be the same length as the
+    /// resolved ticks (i.e. `tick_values`, when provided). When None (the
+    /// default), each tick is labeled with its own formatted value.
+    pub tick_labels: Option<Vec<String>>,
+
     // TODO: support a data_unit_mode param.
 }
 
@@ -46,6 +57,8 @@ impl Default for AxisLinearLayerParams {
         Self {
             layer_id: "".to_string(),
             position: AxisPosition::Bottom,
+            tick_values: None,
+            tick_labels: None,
         }
     }
 }
@@ -62,6 +75,24 @@ impl AxisLinearLayer {
             view_params,
             layer_params,
             sub_layer_instances: Vec::new(),
+        }
+    }
+
+    /// Resolve the tick values to render: explicit `tick_values` if provided,
+    /// otherwise the automatic d3-style tick generation for `scale`'s domain.
+    fn resolve_ticks(&self, scale: &ScaleLinear) -> Vec<f64> {
+        match &self.layer_params.tick_values {
+            Some(values) => values.clone(),
+            None => scale.ticks(None),
+        }
+    }
+
+    /// Resolve the label for the tick at `index`: the matching entry of
+    /// `tick_labels` if provided, otherwise `tick`'s own formatted value.
+    fn resolve_tick_label(&self, tick: f64, index: usize) -> String {
+        match self.layer_params.tick_labels.as_ref().and_then(|labels| labels.get(index)) {
+            Some(label) => label.clone(),
+            None => format_tick_value(tick),
         }
     }
 
@@ -101,7 +132,7 @@ impl AxisLinearLayer {
                 scale.set_domain((min_x, max_x));
                 scale.set_range((margin_left, viewport_w - margin_right));
 
-                let ticks = scale.ticks(None);
+                let ticks = self.resolve_ticks(&scale);
                 // The pixel-based coordinate system has y=0 at the bottom.
                 let axis_y = margin_bottom;
 
@@ -110,7 +141,7 @@ impl AxisLinearLayer {
                 line_target_positions.push([(viewport_w - margin_right) as f32, axis_y as f32]);
 
                 // Tick marks and labels
-                for tick in &ticks {
+                for (tick_index, tick) in ticks.iter().enumerate() {
                     let x = scale.scale(tick) as f32;
                     let y = axis_y as f32;
 
@@ -120,7 +151,7 @@ impl AxisLinearLayer {
 
                     // Label position
                     text_positions.push([x, y - (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32]);
-                    text_strings.push(format_tick_value(*tick));
+                    text_strings.push(self.resolve_tick_label(*tick, tick_index));
                 }
             }
             AxisPosition::Top => {
@@ -128,7 +159,7 @@ impl AxisLinearLayer {
                 scale.set_domain((min_x, max_x));
                 scale.set_range((margin_left, viewport_w - margin_right));
 
-                let ticks = scale.ticks(None);
+                let ticks = self.resolve_ticks(&scale);
                 let axis_y = viewport_h - margin_top;
 
                 // Main axis line
@@ -136,7 +167,7 @@ impl AxisLinearLayer {
                 line_target_positions.push([(viewport_w - margin_right) as f32, axis_y as f32]);
 
                 // Tick marks and labels
-                for tick in &ticks {
+                for (tick_index, tick) in ticks.iter().enumerate() {
                     let x = scale.scale(tick) as f32;
                     let y = axis_y as f32;
 
@@ -146,7 +177,7 @@ impl AxisLinearLayer {
 
                     // Label position
                     text_positions.push([x, y + (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32]);
-                    text_strings.push(format_tick_value(*tick));
+                    text_strings.push(self.resolve_tick_label(*tick, tick_index));
                 }
             }
             AxisPosition::Left => {
@@ -154,7 +185,7 @@ impl AxisLinearLayer {
                 scale.set_domain((min_y, max_y));
                 scale.set_range((margin_bottom, viewport_h - margin_top)); // TODO: verify lack of inversion here
 
-                let ticks = scale.ticks(None);
+                let ticks = self.resolve_ticks(&scale);
                 let axis_x = margin_left;
 
                 // Main axis line
@@ -162,7 +193,7 @@ impl AxisLinearLayer {
                 line_target_positions.push([axis_x as f32, (viewport_h - margin_top) as f32]);
 
                 // Tick marks and labels
-                for tick in &ticks {
+                for (tick_index, tick) in ticks.iter().enumerate() {
                     let x = axis_x as f32;
                     let y = scale.scale(tick) as f32;
 
@@ -172,7 +203,7 @@ impl AxisLinearLayer {
 
                     // Label position
                     text_positions.push([x - (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32, y]);
-                    text_strings.push(format_tick_value(*tick));
+                    text_strings.push(self.resolve_tick_label(*tick, tick_index));
                 }
             }
             AxisPosition::Right => {
@@ -180,7 +211,7 @@ impl AxisLinearLayer {
                 scale.set_domain((min_y, max_y));
                 scale.set_range((margin_bottom, viewport_h - margin_top)); // TODO: verify lack of inversion here
 
-                let ticks = scale.ticks(None);
+                let ticks = self.resolve_ticks(&scale);
                 let axis_x = viewport_w - margin_right;
 
                 // Main axis line
@@ -188,7 +219,7 @@ impl AxisLinearLayer {
                 line_target_positions.push([axis_x as f32, (viewport_h - margin_top) as f32]);
 
                 // Tick marks and labels
-                for tick in &ticks {
+                for (tick_index, tick) in ticks.iter().enumerate() {
                     let x = axis_x as f32;
                     let y = scale.scale(tick) as f32;
 
@@ -198,7 +229,7 @@ impl AxisLinearLayer {
 
                     // Label position
                     text_positions.push([x + (DEFAULT_TICK_SIZE + DEFAULT_TICK_PADDING) as f32, y]);
-                    text_strings.push(format_tick_value(*tick));
+                    text_strings.push(self.resolve_tick_label(*tick, tick_index));
                 }
             }
         }
@@ -287,7 +318,7 @@ impl AxisLinearLayer {
 
 // Format a tick value for display
 // TODO: do we already have this in the axis.rs module?
-fn format_tick_value(value: f64) -> String {
+pub(crate) fn format_tick_value(value: f64) -> String {
     if value.abs() < 1e-10 {
         "0".to_string()
     } else if value.abs() >= 1e6 || (value.abs() < 1e-3 && value != 0.0) {

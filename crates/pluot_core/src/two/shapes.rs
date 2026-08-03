@@ -240,6 +240,9 @@ pub struct TwoGroup {
     // In radians.
     pub rotation: Option<f64>,
     pub translate: Option<(f64, f64)>,
+    /// Non-uniform (x, y) scale factors applied to the group's contents, anchored at
+    /// the group's local origin (i.e. applied before `translate`).
+    pub scale: Option<(f64, f64)>,
     // If set, defines a clipping rectangle for the group.
     pub clip_rect: Option<(f64, f64, f64, f64)>, // x, y, width, height // TODO: how does clip rect interact with group translation?
     // TODO: add data- or aria- attributes for accessibility or hooking up event handlers?

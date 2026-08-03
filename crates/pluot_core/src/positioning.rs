@@ -131,17 +131,23 @@ pub fn get_point_position(
 
     let mut pixel_output: (f32, f32) = (0.0, 0.0);
     if is_camera_independent_mode(data_unit_mode_x) || is_camera_independent_mode(data_unit_mode_y) {
-        // Pixel/Normalized units mode: model_matrix is applied in normalized (0,1) space.
-        // Matches the shader logic:
-        //   point_pos_norm = vertex_pos_px / layer_size (Pixels) or vertex_pos (Normalized, already 0-1)
-        //   point_pos_ndc = NORM_TO_NDC_MAT * model_matrix * vec4(point_pos_norm, 0, 1)
-        let pos_norm = Vec4::new(
-            if data_unit_mode_x == UnitsMode::Normalized { pos_x } else { pos_x / layer_width_px },
-            if data_unit_mode_y == UnitsMode::Normalized { pos_y } else { pos_y / layer_height_px },
-            0.0, 1.0
+        // Pixel/Normalized units mode: model_matrix is applied to the raw (pos_x, pos_y)
+        // BEFORE the layer-size normalization, matching the shader logic:
+        //   vertex_pos_px = model_matrix * vec4(pos_x, pos_y, 0, 1)
+        //   point_pos_norm = vertex_pos_px / layer_size (Pixels) or vertex_pos_px (Normalized, already 0-1)
+        //   point_pos_ndc = NORM_TO_NDC_MAT * vec4(point_pos_norm, 0, 1)
+        // (Getting this order backwards only affects a model_matrix with a translation
+        // component -- a pure-scale matrix commutes with the division either way.)
+        let vertex_pos_px = model_matrix * Vec4::new(pos_x, pos_y, 0.0, 1.0);
+        // The CPU side wants final pixel coordinates directly, so we skip the redundant
+        // normalized-space round trip the GPU shader needs for NDC: for Pixels mode,
+        // dividing by the layer size and then re-multiplying by it (to undo the NDC step)
+        // cancels out, leaving `vertex_pos_px` as-is; for Normalized mode, there's no
+        // division to begin with, so we scale up by the layer size once.
+        pixel_output = (
+            if data_unit_mode_x == UnitsMode::Normalized { vertex_pos_px.x * layer_width_px } else { vertex_pos_px.x },
+            if data_unit_mode_y == UnitsMode::Normalized { vertex_pos_px.y * layer_height_px } else { vertex_pos_px.y },
         );
-        let pos_transformed = model_matrix * pos_norm;
-        pixel_output = (pos_transformed.x * layer_width_px, pos_transformed.y * layer_height_px);
         if is_camera_independent_mode(data_unit_mode_x) && is_camera_independent_mode(data_unit_mode_y) {
             return pixel_output;
         }
@@ -238,14 +244,15 @@ pub fn get_point_size(
 
     let mut pixel_output = (0.0_f32, 0.0_f32);
     if is_camera_independent_mode(data_unit_mode_x) || is_camera_independent_mode(data_unit_mode_y) {
-        // Pixel/Normalized mode: model_matrix applied in normalized space (w=0 for size).
-        let size_norm = Vec4::new(
-            if data_unit_mode_x == UnitsMode::Normalized { size_x } else { size_x / layer_width_px },
-            if data_unit_mode_y == UnitsMode::Normalized { size_y } else { size_y / layer_height_px },
-            0.0, 0.0
+        // Pixel/Normalized mode: model_matrix is applied to the raw (size_x, size_y)
+        // BEFORE the layer-size normalization (w=0, so any translation in model_matrix
+        // cancels out regardless of order; only its linear/scale part matters here).
+        // See the analogous fix in `get_point_position` above for the full rationale.
+        let vertex_size_px = model_matrix * Vec4::new(size_x, size_y, 0.0, 0.0);
+        pixel_output = (
+            if data_unit_mode_x == UnitsMode::Normalized { vertex_size_px.x * layer_width_px } else { vertex_size_px.x },
+            if data_unit_mode_y == UnitsMode::Normalized { vertex_size_px.y * layer_height_px } else { vertex_size_px.y },
         );
-        let size_transformed = model_matrix * size_norm;
-        pixel_output = (size_transformed.x * layer_width_px, size_transformed.y * layer_height_px);
         if is_camera_independent_mode(data_unit_mode_x) && is_camera_independent_mode(data_unit_mode_y) {
             return pixel_output;
         }

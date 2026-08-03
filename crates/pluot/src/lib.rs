@@ -34,6 +34,7 @@ pub use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 pub use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarOrientation};
 pub use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
+pub use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
 
 // Zarr layers
 pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;

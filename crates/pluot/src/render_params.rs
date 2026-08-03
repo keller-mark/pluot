@@ -13,6 +13,7 @@ use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
+use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
@@ -54,6 +55,7 @@ pub enum LayerParams {
     // Plot-layers
     BarPlotLayer(BarPlotLayerParams),
     HistogramLayer(HistogramLayerParams),
+    LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
 
     // Zarr
     ZarrPointLayer(ZarrPointLayerParams),

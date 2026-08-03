@@ -14,6 +14,8 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
 use pluot_core::composite_layers::axis_linear_layer::AxisPosition;
+use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams};
+use pluot_core::color_mode::quantitative_domain;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
@@ -281,6 +283,17 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // `gene_summaries`, since both were built from the one `for summary in &gene_summaries` loop above.
         self.gene_summaries = gene_summaries;
 
+        // Computed from the same `QuantitativeParams` (domain: None) used for the dots'
+        // fill color, so the legend below shows exactly the range the dots are normalized
+        // against.
+        let fill_color_params = QuantitativeParams {
+            values: NumericData::Float32(Arc::new(mean_expression_values)),
+            colormap: self.layer_params.cmap.clone(),
+            reverse: false,
+            domain: None,
+        };
+        let expression_domain = quantitative_domain(&fill_color_params);
+
         let mut point_layer = PointLayer::new(
             self.view_params.clone(),
             PointLayerParams {
@@ -293,12 +306,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 point_radius: Some(SizeMode::InstancedSize(InstancedSizeParams {
                     values: NumericData::Float32(Arc::new(point_radius_values)),
                 })),
-                fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
-                    values: NumericData::Float32(Arc::new(mean_expression_values)),
-                    colormap: self.layer_params.cmap.clone(),
-                    reverse: false,
-                    domain: None,
-                })),
+                fill_color: Some(ColorMode::Quantitative(fill_color_params)),
                 position_x: NumericData::Float32(Arc::new(position_x)),
                 position_y: NumericData::Float32(Arc::new(position_y)),
                 ..Default::default()
@@ -334,7 +342,27 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         );
         y_axis_layer.prepare(gpu_context).await;
 
-        self.sub_layer_instances = vec![Box::new(point_layer), Box::new(x_axis_layer), Box::new(y_axis_layer)];
+        // Legend for the dot color (mean expression -> `cmap`), rendered within the plot's
+        // right margin, i.e. the band from `viewport_w - margin_right` to `viewport_w`.
+        let mut legend_layer = LegendColormapQuantitativeLayer::new(
+            self.view_params.clone(),
+            LegendColormapQuantitativeLayerParams {
+                layer_id: format!("{}_legend_sublayer", self.layer_params.layer_id),
+                bounds: Some(MarginParams {
+                    margin_left: Some(self.view_params.width as f32 - margin_right),
+                    margin_right: Some(0.0),
+                    margin_top: Some(margin_top),
+                    margin_bottom: Some(0.0),
+                }),
+                title: "Mean expression".to_string(),
+                colormap: self.layer_params.cmap.clone(),
+                reverse: false,
+                domain: Some((expression_domain[0], expression_domain[1])),
+            },
+        );
+        legend_layer.prepare(gpu_context).await;
+
+        self.sub_layer_instances = vec![Box::new(point_layer), Box::new(x_axis_layer), Box::new(y_axis_layer), Box::new(legend_layer)];
 
         PrepareResult { bailed_early }
     }

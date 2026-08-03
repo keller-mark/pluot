@@ -134,6 +134,7 @@ impl BarPlotLayer {
                         AxisLinearLayerParams {
                             layer_id: format!("{}_bar_plot_layer_quantitative_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Left,
+                            ..Default::default()
                         }
                     )),
                     Box::new(AxisBandLayer::new(
@@ -183,6 +184,7 @@ impl BarPlotLayer {
                         AxisLinearLayerParams {
                             layer_id: format!("{}_bar_plot_layer_quantitative_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Bottom,
+                            ..Default::default()
                         }
                     )),
                     Box::new(AxisBandLayer::new(
