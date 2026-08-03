@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use pluot_core::{maybe_timeout, FutureExt, Duration};
@@ -94,6 +95,9 @@ pub struct AdataZarrDotPlotLayer {
     store_name: String,
 
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
+    // One entry per dot in the same order as the point sublayer's instances (see `prepare`),
+    // so a picked instance index looks up its gene/category/summary directly.
+    gene_summaries: Vec<GeneSummary>,
 }
 
 impl AdataZarrDotPlotLayer {
@@ -107,6 +111,7 @@ impl AdataZarrDotPlotLayer {
             store,
             store_name,
             sub_layer_instances: Vec::new(),
+            gene_summaries: Vec::new(),
         }
     }
 }
@@ -269,16 +274,16 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             let (x, y) = if swap_axes { (group_pos, gene_pos) } else { (gene_pos, group_pos) };
             position_x.push(x);
             position_y.push(y);
-            let (mean, fraction_expressing) = if summary.cell_count > 0 {
-                (summary.sum / summary.cell_count as f32, summary.num_expressing as f32 / summary.cell_count as f32)
-            } else {
-                (0.0, 0.0)
-            };
+            let (mean, fraction_expressing) = summary.mean_and_fraction_expressing();
             point_radius_values.push(fraction_expressing * max_dot_radius);
             mean_expression_values.push(mean);
 
             log(&format!("var_name: {}, obs_value: {}, mean: {}, fraction: {}", summary.var_name, summary.obs_value, mean, fraction_expressing));
         }
+
+        // Kept for `pick`: a picked point's instance index is this same index into
+        // `gene_summaries`, since both were built from the one `for summary in &gene_summaries` loop above.
+        self.gene_summaries = gene_summaries;
 
         let mut point_layer = PointLayer::new(
             self.view_params.clone(),
@@ -365,12 +370,23 @@ impl PickableLayer for AdataZarrDotPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         // The PointLayer rendering the dots is always sub_layer_instances[0]
         // (see `prepare`); the axis sublayers are not pickable.
-        self.sub_layer_instances.first()?.pick(screen_coord, data_coord)
+        let point_result = self.sub_layer_instances.first()?.pick(screen_coord, data_coord)?;
+        // `PointLayer::pick` names the picked instance's index under "index"; that index is
+        // into `gene_summaries`, since both were built from the same ordering in `prepare`.
+        let index: usize = point_result.info.get("index")?.parse().ok()?;
+        let summary = self.gene_summaries.get(index)?;
+        let (mean, fraction_expressing) = summary.mean_and_fraction_expressing();
 
-        // TODO: convert the point layer picking result into something more semantically meaningful for the dotplot
-        // (the var name, category name, the mean expression value, the fraction expressing value for the given point).
-        // The picked instance index is the index of the corresponding `GeneSummary`, which names its own gene and
-        // category, so this only needs `prepare` to hold on to the loaded `Vec<GeneSummary>`.
+        let mut info = HashMap::new();
+        info.insert("var_name".to_string(), summary.var_name.clone());
+        info.insert("obs_value".to_string(), summary.obs_value.clone());
+        info.insert("mean_expression".to_string(), mean.to_string());
+        info.insert("fraction_expressing".to_string(), fraction_expressing.to_string());
+
+        Some(LayerPickingResult {
+            layer_id: point_result.layer_id,
+            info,
+        })
     }
 }
 

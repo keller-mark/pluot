@@ -43,6 +43,18 @@ pub struct GeneSummary {
     pub num_expressing: u32,
 }
 
+impl GeneSummary {
+    /// Mean expression and fraction of cells expressing, over the category's cells.
+    /// A category with no cells (`cell_count == 0`) summarizes to `(0.0, 0.0)` rather than NaN.
+    pub fn mean_and_fraction_expressing(&self) -> (f32, f32) {
+        if self.cell_count > 0 {
+            (self.sum / self.cell_count as f32, self.num_expressing as f32 / self.cell_count as f32)
+        } else {
+            (0.0, 0.0)
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Memoization (plain thread-local cache; no recursive re-entrancy here, so no
 // need for the nested-borrow-safe macro pattern used elsewhere in the crate)
