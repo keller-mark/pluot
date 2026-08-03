@@ -12,10 +12,9 @@ Rust, Python, R, and JavaScript (including in a web browser) are currently suppo
 :test_tube: Pluot is new and experimental.
 
 
-## Presentation
 
 
-<a href="https://www.youtube.com/watch?v=tKBfi4nims4"><img src=".github/img/youtube.png" height="250" alt="Youtube thumbnail for Pluot talk at Scientific Computing in Rust 2026" /></a>
+<a href="https://www.youtube.com/watch?v=tKBfi4nims4"><img src=".github/img/youtube.png" height="200" alt="Youtube thumbnail for Pluot talk at Scientific Computing in Rust 2026" /></a>
 
 
 
