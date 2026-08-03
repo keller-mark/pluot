@@ -342,6 +342,9 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         );
         y_axis_layer.prepare(gpu_context).await;
 
+        // TODO: remove this padding once AxisLinearLayerParams.fit_outer_ticks is implemented.
+        const LEGEND_PADDING_HORIZONTAL: f32 = 5.0;
+
         // Legend for the dot color (mean expression -> `cmap`), rendered within the plot's
         // right margin, i.e. the band from `viewport_w - margin_right` to `viewport_w`.
         let mut legend_layer = LegendColormapQuantitativeLayer::new(
@@ -349,8 +352,8 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             LegendColormapQuantitativeLayerParams {
                 layer_id: format!("{}_legend_sublayer", self.layer_params.layer_id),
                 bounds: Some(MarginParams {
-                    margin_left: Some(self.view_params.width as f32 - margin_right),
-                    margin_right: Some(0.0),
+                    margin_left: Some(self.view_params.width as f32 - margin_right + LEGEND_PADDING_HORIZONTAL),
+                    margin_right: Some(LEGEND_PADDING_HORIZONTAL),
                     margin_top: Some(margin_top),
                     margin_bottom: Some(0.0),
                 }),

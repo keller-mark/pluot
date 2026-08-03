@@ -225,6 +225,8 @@ impl LegendColormapQuantitativeLayer {
                 tick_values: Some(vec![0.0, 1.0]),
                 tick_labels,
                 // TODO: also ensure that the ticks are not hanging over by ensuring the lower tick uses the bottom text-alignment-baseline and the upper tick uses the top text-alignment-baseline
+                // See fit_outer_ticks and implement this logic in AxisLinearLayer
+                ..Default::default()
             },
         )));
 

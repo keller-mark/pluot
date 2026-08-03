@@ -49,6 +49,13 @@ pub struct AxisLinearLayerParams {
     /// default), each tick is labeled with its own formatted value.
     pub tick_labels: Option<Vec<String>>,
 
+    /// When true, prevent first and final ticks from overhanging.
+    /// When ticks are rotated, this is achieved by setting TwoTextBaseline to Top/Bottom.
+    /// When ticks are not rotated, this is achieved by setting TwoTextAlign to Start/End.
+    /// TODO: depends on being able to specify per-element TextBaselineMode and TextAlignMode in the TextLayer.
+    /// (We could alternatively implement by rendering multiple textLayers, but not ideal).
+    pub fit_outer_ticks: bool,
+
     // TODO: support a data_unit_mode param.
 }
 
@@ -59,6 +66,7 @@ impl Default for AxisLinearLayerParams {
             position: AxisPosition::Bottom,
             tick_values: None,
             tick_labels: None,
+            fit_outer_ticks: false,
         }
     }
 }
