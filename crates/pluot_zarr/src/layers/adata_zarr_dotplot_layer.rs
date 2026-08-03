@@ -2,6 +2,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
+use pluot_core::log;
 use pluot_core::wgpu;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
@@ -19,7 +20,7 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
-use crate::adata_dotplot_data::{use_dotplot_data, DotPlotQuery, ObsStratifyLevel};
+use crate::dotplot_data::{bucket_rows_by_category, load_gene_summaries_for_gene, load_obs_categorical, load_var_names, resolve_gene_columns, GeneSummary};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -50,6 +51,11 @@ pub struct AdataZarrDotPlotLayerParams {
     /// Layer in AnnData to use for expression values. Defaults to None, which uses adata.X.
     pub layer: String,
     pub groupby: String,
+    /// The `groupby` categories to plot, in the order they should appear along the group axis.
+    /// Empty (the default) means every category of `groupby`, in its stored order. Each
+    /// requested category is looked up independently, so an unknown one yields an empty
+    /// (zero-cell) column rather than an error.
+    pub categories: Vec<String>,
     /// List of gene IDs from adata.var.index.
     pub var_names: Vec<String>,
     /// Key in adata.var to use for gene symbols, if different from adata.var.index.
@@ -73,6 +79,7 @@ impl Default for AdataZarrDotPlotLayerParams {
             store_name: None,
             layer: "X".to_string(),
             groupby: "bulk_labels".to_string(),
+            categories: vec![],
             var_names: vec![],
             gene_symbols: None,
             cache_data: true,
@@ -109,40 +116,103 @@ impl AdataZarrDotPlotLayer {
 impl PreparedLayer for AdataZarrDotPlotLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
+        let store_name = self.store_name.clone();
+        let cache_enabled = self.view_params.cache_enabled;
+        let timeout = self.view_params.timeout;
 
-        let query = DotPlotQuery {
-            // The `layer` param names `adata.X` as "X", which is not a `layers` entry.
-            layer: if self.layer_params.layer == "X" { None } else { Some(self.layer_params.layer.clone()) },
-            var_names: self.layer_params.var_names.clone(),
-            // TODO: accept several obs columns (and filter/selection predicates) via the
-            // layer params; the data hooks already support an arbitrarily deep hierarchy.
-            stratify_by: vec![ObsStratifyLevel::new(&self.layer_params.groupby)],
-            filter: None,
-            selection: None,
-            expression_cutoff: self.layer_params.expression_cutoff,
-        };
+        let var_names = self.layer_params.var_names.clone();
+        let var_column = self.layer_params.gene_symbols.clone();
+        // The `layer` param names `adata.X` as "X", which is not a `layers` entry.
+        let array_layer = if self.layer_params.layer == "X" { None } else { Some(self.layer_params.layer.clone()) };
+        let groupby = self.layer_params.groupby.clone();
+        let requested_categories = self.layer_params.categories.clone();
+        let expression_cutoff = self.layer_params.expression_cutoff;
 
-        let data_future = use_dotplot_data(store, &self.store_name, &query, self.view_params.cache_enabled);
-
-        let data = match maybe_timeout!(data_future, self.view_params.timeout).await {
-            Ok(Ok(data)) => data,
+        // Stage 1: the obs groupby column and the var names/column used to resolve gene
+        // columns. Neither depends on the other (`try_join`), and both are prerequisites for
+        // the group axis and every gene's points below -- but NOT for the gene axis, which is
+        // rendered further down directly from `var_names` (the requested gene list from the
+        // layer params) with no I/O at all.
+        let metadata_future = futures::future::try_join(
+            load_var_names(store.clone(), &store_name, var_column.as_deref(), cache_enabled),
+            load_obs_categorical(store.clone(), &store_name, &groupby, cache_enabled),
+        );
+        let metadata = match maybe_timeout!(metadata_future, timeout).await {
+            Ok(Ok(metadata)) => Some(metadata),
             Ok(Err(e)) => {
                 if is_timed_out_zarrs_error(&e) {
-                    return PrepareResult { bailed_early: true };
+                    None
                 } else {
                     panic!("Zarrs error during AdataZarrDotPlotLayer prepare: {:?}", e);
                 }
             }
-            Err(_) => {
-                // Wall-clock timeout from maybe_timeout!
-                return PrepareResult { bailed_early: true };
-            }
+            Err(_) => None, // Wall-clock timeout from maybe_timeout!
         };
 
-        if data.is_empty() {
-            self.sub_layer_instances = vec![];
-            return PrepareResult { bailed_early: false };
-        }
+        // Stage 2: once the metadata above is ready, resolve genes to column indices and
+        // bucket obs rows by category (both pure/synchronous), then load each resolved gene's
+        // own array column independently and concurrently. Each gene's slot is mutated in
+        // place as its own future resolves to `Some(..)`; a slot left at `None` means that
+        // gene's data isn't loaded yet (either it hit zarrs's "not cached yet" condition, or
+        // the wall-clock timeout below cut the rest short before its turn) -- either way, it's
+        // simply omitted from this round's dots rather than blocking the genes that did load.
+        let (group_labels, gene_summaries, genes_bailed) = match &metadata {
+            Some((var_index_values, (obs_categories, obs_codes))) => {
+                // An empty `categories` param means "every category of `groupby`", in its
+                // stored order -- matching `sc.pl.dotplot`'s own default and the behavior this
+                // layer had before `categories` became an explicit list.
+                let requested_categories =
+                    if requested_categories.is_empty() { obs_categories.as_ref().clone() } else { requested_categories };
+
+                let resolved_genes = resolve_gene_columns(&var_names, var_index_values);
+                let rows_by_category = bucket_rows_by_category(&requested_categories, obs_categories, obs_codes);
+                let var_colname = var_column.unwrap_or_else(|| "index".to_string());
+
+                let mut gene_results: Vec<Option<Vec<GeneSummary>>> = vec![None; resolved_genes.len()];
+                let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| {
+                    let store = store.clone();
+                    let store_name = &store_name;
+                    let var_colname = &var_colname;
+                    let array_layer = array_layer.as_deref();
+                    let groupby = &groupby;
+                    let requested_categories = &requested_categories;
+                    let rows_by_category = &rows_by_category;
+                    async move {
+                        *slot = load_gene_summaries_for_gene(
+                            store,
+                            store_name,
+                            var_colname,
+                            gene_name,
+                            *col_index,
+                            array_layer,
+                            groupby,
+                            requested_categories,
+                            rows_by_category,
+                            expression_cutoff,
+                            cache_enabled,
+                        )
+                        .await;
+                    }
+                });
+
+                // Discard the wall-clock result itself: whether it fires or not, `gene_results`
+                // already holds `Some` for every gene that finished and `None` for every gene
+                // that didn't, which is exactly what's needed below.
+                let _ = maybe_timeout!(futures::future::join_all(gene_futures), timeout).await;
+                let genes_bailed = gene_results.iter().any(Option::is_none);
+                let all_summaries: Vec<GeneSummary> = gene_results.into_iter().flatten().flatten().collect();
+                (requested_categories, all_summaries, genes_bailed)
+            }
+            None => (Vec::new(), Vec::new(), true),
+        };
+        // Per the dot plot's contract, bailed_early stays true until every requested gene's
+        // data and summaries have loaded -- not merely until this call's wall clock runs out.
+        let bailed_early = metadata.is_none() || genes_bailed;
+
+        // --- Everything from here is pure/synchronous layout, using whatever loaded above:
+        // `var_names` (the gene axis) is always the full requested list; `group_labels` and
+        // `gene_summaries` (the group axis and the dots) reflect only what stages 1/2 above
+        // managed to load within their timeouts. ---
 
         // Lay genes and groupby categories out on a pixel-space grid, one
         // band scale per axis (swapped when `swap_axes` is set).
@@ -161,12 +231,11 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
 
         let swap_axes = self.layer_params.swap_axes;
 
-        // One tick per gene, and one per leaf group of the obs stratification (currently
-        // always a single level, so those are just that column's category labels).
+        // One tick per gene, and one per requested groupby category.
         let mut genes_scale = ScaleBand::new();
-        genes_scale.set_domain(data.var_names.clone());
+        genes_scale.set_domain(var_names.clone());
         let mut groups_scale = ScaleBand::new();
-        groups_scale.set_domain(data.group_labels.clone());
+        groups_scale.set_domain(group_labels.clone());
         if swap_axes {
             genes_scale.set_range((0.0, layer_h as f64));
             groups_scale.set_range((0.0, layer_w as f64));
@@ -181,25 +250,34 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // fit within its grid cell on the tighter of the two axes.
         let max_dot_radius = (genes_bandwidth.min(groups_bandwidth) / 2.0 * 0.9).max(1.0);
 
-        // One instance per dot: each dot names its own group and gene, so its position
-        // is a scale lookup on its two axis labels. The fraction expressing drives the
-        // radius and the mean expression the color. Only the foreground (selected)
-        // summary is drawn for now; once the query grows a selection predicate, the
-        // dots' `background` summaries should become an extra, de-emphasized
-        // PointLayer beneath this one.
-        let n_dots = data.dots.len();
+        // One instance per dot: each summary names its own gene and category, so its
+        // position is a scale lookup on its two axis labels. The fraction expressing
+        // drives the radius and the mean expression the color. A category with no cells
+        // (e.g. one that doesn't exist in `groupby`) summarizes to a zero-radius dot
+        // rather than NaN.
+        let n_dots = gene_summaries.len();
+
+        log(&format!("n_dots: {}", n_dots));
+
         let mut position_x: Vec<f32> = Vec::with_capacity(n_dots);
         let mut position_y: Vec<f32> = Vec::with_capacity(n_dots);
         let mut point_radius_values: Vec<f32> = Vec::with_capacity(n_dots);
         let mut mean_expression_values: Vec<f32> = Vec::with_capacity(n_dots);
-        for dot in &data.dots {
-            let group_pos = groups_scale.scale(data.group_label(dot)) as f32 + groups_bandwidth / 2.0;
-            let gene_pos = genes_scale.scale(data.var_name(dot)) as f32 + genes_bandwidth / 2.0;
+        for summary in &gene_summaries {
+            let group_pos = groups_scale.scale(&summary.obs_value) as f32 + groups_bandwidth / 2.0;
+            let gene_pos = genes_scale.scale(&summary.var_name) as f32 + genes_bandwidth / 2.0;
             let (x, y) = if swap_axes { (group_pos, gene_pos) } else { (gene_pos, group_pos) };
             position_x.push(x);
             position_y.push(y);
-            point_radius_values.push(dot.foreground.fraction_expressing * max_dot_radius);
-            mean_expression_values.push(dot.foreground.mean);
+            let (mean, fraction_expressing) = if summary.cell_count > 0 {
+                (summary.sum / summary.cell_count as f32, summary.num_expressing as f32 / summary.cell_count as f32)
+            } else {
+                (0.0, 0.0)
+            };
+            point_radius_values.push(fraction_expressing * max_dot_radius);
+            mean_expression_values.push(mean);
+
+            log(&format!("var_name: {}, obs_value: {}, mean: {}, fraction: {}", summary.var_name, summary.obs_value, mean, fraction_expressing));
         }
 
         let mut point_layer = PointLayer::new(
@@ -230,9 +308,9 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // Band-scale axes for the two categorical dimensions (genes and
         // groupby categories), swapped along with the dot grid itself.
         let (x_domain, y_domain) = if swap_axes {
-            (Arc::new(data.group_labels.clone()), Arc::new(data.var_names.clone()))
+            (Arc::new(group_labels), Arc::new(var_names))
         } else {
-            (Arc::new(data.var_names.clone()), Arc::new(data.group_labels.clone()))
+            (Arc::new(var_names), Arc::new(group_labels))
         };
 
         let mut x_axis_layer = AxisBandLayer::new(
@@ -257,7 +335,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
 
         self.sub_layer_instances = vec![Box::new(point_layer), Box::new(x_axis_layer), Box::new(y_axis_layer)];
 
-        PrepareResult { bailed_early: false }
+        PrepareResult { bailed_early }
     }
 }
 
@@ -291,7 +369,7 @@ impl PickableLayer for AdataZarrDotPlotLayer {
 
         // TODO: convert the point layer picking result into something more semantically meaningful for the dotplot
         // (the var name, category name, the mean expression value, the fraction expressing value for the given point).
-        // The picked instance index is the index of the corresponding `DotPlotDot`, which names its own group and
-        // gene, so this only needs `prepare` to hold on to the `DotPlotData`.
+        // The picked instance index is the index of the corresponding `GeneSummary`, which names its own gene and
+        // category, so this only needs `prepare` to hold on to the loaded `Vec<GeneSummary>`.
     }
 }
