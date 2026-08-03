@@ -52,10 +52,10 @@ pub struct AdataZarrDotPlotLayerParams {
     pub layer: String,
     pub groupby: String,
     /// The `groupby` categories to plot, in the order they should appear along the group axis.
-    /// Empty (the default) means every category of `groupby`, in its stored order. Each
-    /// requested category is looked up independently, so an unknown one yields an empty
-    /// (zero-cell) column rather than an error.
-    pub categories: Vec<String>,
+    /// `None` (the default) means every category of `groupby`, in its stored order. `Some(vec![])`
+    /// means no categories at all. Each requested category is looked up independently, so an
+    /// unknown one yields an empty (zero-cell) column rather than an error.
+    pub categories: Option<Vec<String>>,
     /// List of gene IDs from adata.var.index.
     pub var_names: Vec<String>,
     /// Key in adata.var to use for gene symbols, if different from adata.var.index.
@@ -79,7 +79,7 @@ impl Default for AdataZarrDotPlotLayerParams {
             store_name: None,
             layer: "X".to_string(),
             groupby: "bulk_labels".to_string(),
-            categories: vec![],
+            categories: None,
             var_names: vec![],
             gene_symbols: None,
             cache_data: true,
@@ -158,11 +158,11 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // simply omitted from this round's dots rather than blocking the genes that did load.
         let (group_labels, gene_summaries, genes_bailed) = match &metadata {
             Some((var_index_values, (obs_categories, obs_codes))) => {
-                // An empty `categories` param means "every category of `groupby`", in its
+                // A `None` `categories` param means "every category of `groupby`", in its
                 // stored order -- matching `sc.pl.dotplot`'s own default and the behavior this
-                // layer had before `categories` became an explicit list.
-                let requested_categories =
-                    if requested_categories.is_empty() { obs_categories.as_ref().clone() } else { requested_categories };
+                // layer had before `categories` became an explicit list. `Some(vec![])` means
+                // no categories at all, and is passed through as-is.
+                let requested_categories = requested_categories.unwrap_or_else(|| obs_categories.as_ref().clone());
 
                 let resolved_genes = resolve_gene_columns(&var_names, var_index_values);
                 let rows_by_category = bucket_rows_by_category(&requested_categories, obs_categories, obs_codes);
@@ -371,5 +371,35 @@ impl PickableLayer for AdataZarrDotPlotLayer {
         // (the var name, category name, the mean expression value, the fraction expressing value for the given point).
         // The picked instance index is the index of the corresponding `GeneSummary`, which names its own gene and
         // category, so this only needs `prepare` to hold on to the loaded `Vec<GeneSummary>`.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `prepare()`'s per-gene stage mutates disjoint `iter_mut()` slots in place and wraps the
+    /// whole batch in one `maybe_timeout!`. This reproduces that exact pattern with a fast
+    /// future alongside one that never resolves (standing in for a gene whose data isn't
+    /// loaded yet), to confirm directly -- rather than just by inspection -- that the fast
+    /// one's result is still visible after the wrapping timeout fires and drops the rest, so
+    /// partial gene data is never discarded along with whatever didn't finish in time.
+    #[tokio::test]
+    async fn partial_completion_survives_the_wrapping_timeout() {
+        let mut slots: Vec<Option<u32>> = vec![None, None];
+        let futures = slots.iter_mut().enumerate().map(|(i, slot)| async move {
+            if i == 0 {
+                *slot = Some(42);
+            } else {
+                futures::future::pending::<()>().await;
+            }
+        });
+
+        let timeout_ms: Option<u32> = Some(20);
+        let result = maybe_timeout!(futures::future::join_all(futures), timeout_ms).await;
+
+        assert!(result.is_err(), "the never-resolving slot should have made the whole batch time out");
+        assert_eq!(slots[0], Some(42), "the fast slot's result must survive even though the batch as a whole timed out");
+        assert_eq!(slots[1], None, "the never-resolving slot is left exactly as it started");
     }
 }
