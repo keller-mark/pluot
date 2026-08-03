@@ -138,7 +138,8 @@ render_to_svg <- function(
     ...
 ) {
     raw_bytes <- pluot_render(layers=layers, width=width, height=height, format = "Vector", ...)
-    return(rawToChar(raw_bytes))
+    svg_bytes <- raw_bytes[-length(raw_bytes)]          # drop status byte
+    return(rawToChar(svg_bytes))
 }
 
 #' @export

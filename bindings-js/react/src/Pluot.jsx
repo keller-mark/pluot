@@ -300,62 +300,56 @@ export function Pluot(props) {
       return;
     }
 
+    const frameBailedEarly = arr.at(-1) === 1;
+    const graphicsArr = arr.subarray(0, -1);
+
     if (isVector) {
       // Format: Vector (render to SVG)
-      const gContents = decompressFromUint8Array(arr);
-
-      //console.log(gContents)
-
-      if (!svgRef.current) {
-        return;
+      const gContents = decompressFromUint8Array(graphicsArr);
+      if (svgRef.current) {
+        svgRef.current.innerHTML = gContents;
       }
-      svgRef.current.innerHTML = gContents;
-
-      // TODO: check for bailed early
-      setBailedEarly(false);
     } else {
       // Format: Raster (render to canvas)
       const canvas = canvasRef.current;
-      if (!canvas) {
-        return;
-      }
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-      // TODO: is there a more efficient way to do this?
-      // E.g., write to a webgl texture? or is this fast enough already?
-      const imageData = new ImageData(
-        new Uint8ClampedArray(arr.subarray(0, -1)),
-        width,
-        height,
-      );
-      ctx.putImageData(imageData, 0, 0);
-
-      const frameBailedEarly = arr.at(-1) === 1;
-      if (frameBailedEarly) {
-        // We multiply the current timeout by two to implement an exponential backoff
-        // while the Rust side is bailing early.
-        // A downstream useEffect restarts the exponential backoff from scratch
-        // if any other plotting parameters change.
-        currentTimeout.current = Math.min(currentTimeout.current * 2, maxTimeout);
-        incBacklogIteration(); // Increment this to force a re-render.
-        setBailedEarly(true); // Update this to show the loading indicator.
-      } else {
-        // Successful render.
-        currentTimeout.current = minTimeout;
-        setBailedEarly(false); // Update this to hide the loading indicator.
-
-        // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-        Object.keys(stores).forEach(storeName => {
-          const storeUsed = getStore(storeName);
-          if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
-            storeUsed.clearCache();
-          }
-        });
-
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          // TODO: is there a more efficient way to do this?
+          // E.g., write to a webgl texture? or is this fast enough already?
+          const imageData = new ImageData(
+            new Uint8ClampedArray(graphicsArr),
+            width,
+            height,
+          );
+          ctx.putImageData(imageData, 0, 0);
+        }
       }
     }
+
+    if (frameBailedEarly) {
+      // We multiply the current timeout by two to implement an exponential backoff
+      // while the Rust side is bailing early.
+      // A downstream useEffect restarts the exponential backoff from scratch
+      // if any other plotting parameters change.
+      currentTimeout.current = Math.min(currentTimeout.current * 2, maxTimeout);
+      incBacklogIteration(); // Increment this to force a re-render.
+      setBailedEarly(true); // Update this to show the loading indicator.
+    } else {
+      // Successful render.
+      currentTimeout.current = minTimeout;
+      setBailedEarly(false); // Update this to hide the loading indicator.
+
+      // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
+      Object.keys(stores).forEach(storeName => {
+        const storeUsed = getStore(storeName);
+        if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
+          storeUsed.clearCache();
+        }
+      });
+
+    }
+
     setDidFirstRender(true);
   });
 

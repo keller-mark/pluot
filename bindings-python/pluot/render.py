@@ -149,5 +149,4 @@ async def render_to_image(**kwargs):
 async def render_to_svg(**kwargs):
     """Render to an SVG string."""
     result = await render(**kwargs, format="Vector")
-    # TODO: account for bailed_early extra byte (once appended to SVG outputs on the Rust side)
-    return result.decode("utf-8")
+    return result[:-NUM_EXTRA_BYTES].decode("utf-8")

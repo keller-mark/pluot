@@ -57,7 +57,7 @@ export async function renderToImageData(params: RenderOptions): Promise<{ plot: 
       width,
       height,
     ),
-    bailedEarly
+    bailedEarly,
   };
 }
 
@@ -65,16 +65,18 @@ export async function renderToString(params: RenderOptions): Promise<{ plot: str
   // TODO: throw error if params.format is not "Vector"
   const arr = await renderRaw(params);
 
+  const bailedEarly = arr.at(-1) === 1;
+  const graphicsArr = arr.subarray(0, -1);
+
   let gContents;
   if (params.svg_compression_enabled) {
-    gContents = decompressFromUint8Array(arr);
+    gContents = decompressFromUint8Array(graphicsArr);
   } else {
-    gContents = (new TextDecoder()).decode(arr);
+    gContents = (new TextDecoder()).decode(graphicsArr);
   }
   return {
     plot: gContents,
-    // TODO: handle bailed early byte once present in vector mode.
-    bailedEarly: null
+    bailedEarly,
   };
 }
 
