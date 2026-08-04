@@ -213,6 +213,7 @@ export function AttractorWrapper(props) {
         0.0, 0.0, 1.0, 0.0,
         0.0, 0.0, 0.0, 1.0
       ]}
+      enableVector={false}
     />
 
   );
