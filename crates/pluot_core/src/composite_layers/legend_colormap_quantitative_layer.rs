@@ -4,15 +4,7 @@
 // We interpolate 256 values between 0 and 1.
 // References:
 // - https://github.com/vitessce/vitessce/blob/9f8f37f16e9cb15b911156dcfa1de15050a95165/packages/legend/src/legend-utils.ts#L46
-//
-// In Horizontal orientation (the default), the gradient is rendered as a wide rectangle,
-// with zero to one from left to right. This layer also renders a text layer with a title
-// (positioned above the gradient), as well as a linear axis layer from 0.0 to 1.0 with
-// 2 ticks (positioned below the gradient, with AxisPosition::Bottom).
-//
-// In Vertical orientation, the gradient is rendered as a tall rectangle, with zero to one
-// from bottom to top. The title is positioned above the gradient, and the axis is
-// positioned to the right of the gradient, with AxisPosition::Right.
+
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};

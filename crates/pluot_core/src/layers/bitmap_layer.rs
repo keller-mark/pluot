@@ -797,12 +797,9 @@ impl DrawToSvg for BitmapLayer {
         // dimensions, but the transformed (sw, sh) can differ (e.g. a model_matrix
         // rescaling the image, or Pixels/Normalized-mode sizing unrelated to img_w/img_h).
         // An SVG <image> element's `width`/`height` alone can't express that mismatch
-        // faithfully: per the SVG spec, mismatched width/height default to
-        // `preserveAspectRatio="xMidYMid meet"`, which *uniformly* scales the image to
-        // fit within the box (letterboxing) rather than stretching each axis
-        // independently. So when the dimensions differ, render the image at its native
-        // size and wrap it in a group with an explicit non-uniform `scale` transform,
-        // which always stretches both axes independently regardless of aspect ratio.
+        // faithfully. When the dimensions differ, render the image at its native
+        // size and wrap it in a group with an explicit `scale` transform,
+        // to allow for stretching along either axis independently.
         let image_element = if final_w == img_w as f64 && final_h == img_h as f64 {
             TwoElement::Image(TwoImage {
                 x: final_x,

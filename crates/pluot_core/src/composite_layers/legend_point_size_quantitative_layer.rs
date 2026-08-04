@@ -1,26 +1,5 @@
 // A layer that renders a legend for the point sizes of a point layer.
-//
-// Internally, this layer renders a single PointLayer instance containing `num_steps`
-// points with linearly increasing radii (from `radius_range.0` to `radius_range.1`),
-// plus a TextLayer with the corresponding data values (linearly interpolated across
-// `domain`) labeling each point. It also renders a legend title text element above the
-// legend items.
-//
-// This layer is used to render a legend for the point sizes of the AdataZarrDotPlotLayer,
-// whose dots are sized by `fraction_expressing * max_dot_radius` -- a linear map from a
-// [0, 1] domain to a [0, max_dot_radius] pixel range -- the same kind of mapping this
-// legend's `scale` (domain -> radius) describes.
-//
-// In Horizontal orientation (the default), the points are laid out in a row, in
-// increasing size from left to right, all vertically centered on a shared line. The
-// title is positioned above the row, and each point's value label is centered
-// underneath it.
-//
-// In Vertical orientation, the points are laid out in a column, in increasing size
-// from bottom to top (mirroring the bottom-to-top domain convention used by
-// LegendColormapQuantitativeLayer's Vertical orientation), all horizontally centered on
-// a shared line. The title is positioned above the column, and each point's value label
-// is placed to the right of it, vertically centered.
+// This layer is used to render a legend for the point sizes of the AdataZarrDotPlotLayer.
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
