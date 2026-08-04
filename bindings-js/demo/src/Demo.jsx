@@ -26,8 +26,8 @@ const DEMOS = {
             var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
             groupby: "bulk_labels",
             layer: "X",
-            title: "My dot plot"
-
+            title: "My dot plot",
+            cmap: "Reds",
           },
         },
       ]
