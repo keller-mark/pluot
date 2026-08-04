@@ -1,7 +1,7 @@
 Package: pluotr
 Type: Package
 Title: Visualize data in R using Pluot.
-Version: 0.1.10
+Version: 0.1.11
 Authors@R: c(
         person(
             given = "Mark",
