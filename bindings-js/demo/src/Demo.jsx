@@ -1,22 +1,48 @@
 import React, { useState } from "react";
-import { FetchStore } from "zarrita";
-import { Pluot, setStoreByName, getStore } from "@pluot/react";
+import { Pluot } from "@pluot/react";
 
 // Initialize stores needed for demos
 
-setStoreByName('mnist_store', new FetchStore("http://localhost:5173/@data/mnist.zarr"));
-setStoreByName('gaussian_quantiles_store', new FetchStore("http://localhost:5173/@data/gaussian_quantiles.zarr"));
-setStoreByName('gaussian_quantiles_store_compressed', new FetchStore("http://localhost:5173/@data/gaussian_quantiles_compressed.zarr"));
-setStoreByName('ome_ngff', new FetchStore("http://localhost:5173/@data/6001240_labels.ome.zarr"));
-setStoreByName('ome_ngff_2', new FetchStore("https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/IMG_1033-1112_asterella_gracilis.ome.zarr"));
-setStoreByName('wheat', new FetchStore("http://localhost:5173/@data/wheat.zarr"));
-setStoreByName('pbmc', new FetchStore("http://localhost:5173/@data/pbmc68k.adata.zarr"));
+const all_stores = {
+  "pbmc": {
+    store_type: "HttpStore",
+    store_params: {
+      url: "http://localhost:5173/@data/pbmc68k.adata.zarr"
+    },
+  },
+  "gaussian_quantiles_store": {
+    store_type: "HttpStore",
+    store_params: {
+      url: "http://localhost:5173/@data/gaussian_quantiles.zarr"
+    },
+  },
+  "ome_ngff": {
+    store_type: "HttpStore",
+    store_params: {
+      url: "http://localhost:5173/@data/6001240_labels.ome.zarr"
+    },
+  },
+  "ome_ngff_2": {
+    store_type: "HttpStore",
+    store_params: {
+      url: "https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/IMG_1033-1112_asterella_gracilis.ome.zarr"
+    },
+  },
+  "wheat": {
+    store_type: "HttpStore",
+    store_params: {
+      url: "http://localhost:5173/@data/wheat.zarr"
+    },
+  },
+};
 
 
 const DEMOS = {
   dot_plot: {
     plot_type: "LayeredPlot",
-    store_name: "pbmc",
+    stores: {
+      "pbmc": all_stores.pbmc,
+    },
     plot_params: {
       layers: [
         {
@@ -35,7 +61,7 @@ const DEMOS = {
   },
   layered_plot: {
     plot_type: "LayeredPlot",
-    store_name: "gaussian_quantiles_store",
+    stores: all_stores,
     plot_params: {
       layers: [
         {
@@ -264,7 +290,7 @@ const DEMOS = {
   },
   three_d_plot: {
     plot_type: "LayeredPlot",
-    store_name: "gaussian_quantiles_store",
+    stores: all_stores,
     plot_params: {
       layers: [
         {
@@ -296,7 +322,7 @@ const DEMOS = {
   },
   bar_plot: {
     plot_type: "LayeredPlot",
-    store_name: "wheat",
+    stores: all_stores,
     plot_params: {
       layers: [
         {
@@ -308,8 +334,6 @@ const DEMOS = {
             orientation: "Vertical",
             identifier_key: "/year",
             quantity_key: "/wheat",
-            fill_color_mode: "Static",
-            fill_color: [0, 255, 0],
           }
         },
       ]
@@ -317,7 +341,7 @@ const DEMOS = {
   },
   bar_plot_2: {
     plot_type: "LayeredPlot",
-    store_name: "wheat",
+    stores: all_stores,
     plot_params: {
       layers: [
         {
@@ -332,7 +356,6 @@ const DEMOS = {
             identifier: ["One", "Two", "Three"],
             quantity: [10.0, 20.0, 30.0],
 
-            fill_color_mode: "Categorical",
           }
         },
       ]
@@ -340,7 +363,7 @@ const DEMOS = {
   },
   histogram: {
     plot_type: "LayeredPlot",
-    store_name: "wheat",
+    stores: all_stores,
     plot_params: {
       layers: [
         {
@@ -355,7 +378,6 @@ const DEMOS = {
             data_min: null,
             data_max: null,
 
-            fill_color: null,
           }
         },
       ]
@@ -363,7 +385,7 @@ const DEMOS = {
   },
   zarr_histogram: {
     plot_type: "LayeredPlot",
-    store_name: "gaussian_quantiles_store",
+    stores: all_stores,
     plot_params: {
       layers: [
         {
@@ -372,6 +394,7 @@ const DEMOS = {
             layer_id: "test_zarr_hist_layer",
             bounds: null,
             orientation: "Vertical",
+            store_name: "gaussian_quantiles_store",
 
             data_key: "/n_1000000/x_coords",
             num_bins: 50,
@@ -384,11 +407,11 @@ const DEMOS = {
 };
 
 export function Demo() {
-  const [currPlotId, setCurrPlotId] = useState("dot_plot");
+  const [currPlotId, setCurrPlotId] = useState("layered_plot");
 
   const plotType = DEMOS[currPlotId].plot_type;
   const plotParams = DEMOS[currPlotId].plot_params;
-  const storeName = DEMOS[currPlotId].store_name;
+  const stores = DEMOS[currPlotId].stores;
 
   const [pointRadius, setPointRadius] = useState(5.0);
 
@@ -417,13 +440,12 @@ export function Demo() {
       <Pluot
         width={800}
         height={800}
-        marginLeft={200}
-        marginRight={150}
+        marginLeft={100}
+        marginRight={100}
         format={graphicsFormat}
         plotId={currPlotId}
         plotType={plotType}
-        store={getStore(storeName)}
-        storeName={storeName}
+        stores={stores}
         plotParams={
           plotType === "Triangle"
             ? undefined
