@@ -11,7 +11,7 @@ use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
-use crate::positioning::get_point_position;
+use crate::positioning::{get_point_position, get_point_size};
 use crate::numeric_data::NumericData;
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::picking_geometry::unapply_model_matrix;
@@ -764,13 +764,36 @@ impl DrawToSvg for RectLayer {
 
             // Stroke: only drawn when a stroke width is configured. Uses the
             // stroke color mode, opacity and per-rect width.
-            let (stroke, stroke_opacity, linewidth) = if layer_params.stroke_width.is_some() {
+            let (stroke, stroke_opacity, stroke_width_px) = if layer_params.stroke_width.is_some() {
+                let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), i);
+                let width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
+                    let (sx, sy) = get_point_size(
+                        width_value,
+                        width_value,
+                        layer_w,
+                        layer_h,
+                        &camera_view,
+                        layer_params.data_unit_mode_x,
+                        layer_params.data_unit_mode_y,
+                        view_params.aspect_ratio_mode,
+                        view_params.aspect_ratio_alignment_mode,
+                        Some(&model_matrix_raw),
+                    );
+                    (sx.abs() + sy.abs()) * 0.5
+                } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
+                    // Normalized mode: width_value is a fraction (0 to 1) of the
+                    // layer size, independent of the camera. Height-relative,
+                    // mirroring the GPU shader's stroke_width_px convention.
+                    width_value * layer_h
+                } else {
+                    width_value
+                };
                 (
                     Some(TwoColor::Rgb(cpu_fill_color(
                         layer_params.stroke_color.as_ref(), i, stroke_quant_domain,
                     ))),
                     cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
-                    cpu_stroke_width(layer_params.stroke_width.as_ref(), i) as f64,
+                    width_px as f64,
                 )
             } else {
                 (None, 1.0, 0.0)
@@ -783,7 +806,7 @@ impl DrawToSvg for RectLayer {
                 height: rect_height as f64,
                 fill,
                 stroke,
-                linewidth,
+                linewidth: stroke_width_px,
                 fill_opacity,
                 stroke_opacity,
                 ..Default::default()

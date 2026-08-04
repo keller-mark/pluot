@@ -17,7 +17,7 @@ fn current_dir() -> PathBuf {
         .join("snaps-dirty")
 }
 
-/// The render function appends one trailing byte (`bailed_early` flag) to raster output.
+/// The render function appends one trailing byte (`bailed_early` flag) to raster and vector output.
 const NUM_EXTRA_BYTES: usize = 1;
 
 /// Convert raw RGBA bytes to a kompari `MinImage`.
@@ -142,9 +142,8 @@ fn check_text_snapshot(text: &str, name: &str) {
 pub async fn render_and_check_svg_snapshot(params: RenderParams, name: &str) {
     let result_vec = render(params).await;
 
-    // TODO: add a helper function or option to render the parent <svg/> element, so that the outputs are valid and render in other apps.
-
-    let svg_string = String::from_utf8(result_vec).expect("Invalid UTF-8 in SVG output");
+    let svg_bytes = &result_vec[..result_vec.len() - NUM_EXTRA_BYTES];
+    let svg_string = String::from_utf8(svg_bytes.to_vec()).expect("Invalid UTF-8 in SVG output");
     check_svg_snapshot(&svg_string, name);
 }
 

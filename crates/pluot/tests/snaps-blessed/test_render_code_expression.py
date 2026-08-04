@@ -81,13 +81,6 @@ render_to_svg(
                         ]
                     }
                 }
-            },
-            {
-                "layer_type": "AxisLinearLayer",
-                "layer_params": {
-                    "layer_id": "left_axis",
-                    "position": "Left"
-                }
             }
         ]
     },

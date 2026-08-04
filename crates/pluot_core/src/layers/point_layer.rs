@@ -2,12 +2,13 @@
 // Reference: https://deck.gl/docs/api-reference/layers/scatterplot-layer
 
 use encase::{ShaderType, UniformBuffer};
-use glam::{DMat4, DVec4, Mat4, Vec2, Vec4};
+use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
+use crate::picking_geometry::unapply_model_matrix;
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
@@ -881,52 +882,109 @@ inventory::submit! {
 }
 
 impl PickableLayer for PointLayer {
-    fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
-        let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
-            return None;
-        };
-
+    fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let n = self.layer_params.position_x.len();
         if n == 0 {
             return None;
         }
 
-        // Map the world coordinate into the point's model space by inverting
-        // the model_matrix; the vertex shader computes
-        // world = model_matrix * vec4(position_x, position_y, 0, 1).
-        let m = self.layer_params.model_matrix.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
-        let mut m64 = [0.0f64; 16];
-        for (i, v) in m.iter().enumerate() {
-            m64[i] = *v as f64;
-        }
-        let mat = DMat4::from_cols_array(&m64);
-        if mat.determinant() == 0.0 {
-            return None;
-        }
-        let p = mat.inverse() * DVec4::new(cx as f64, cy as f64, 0.0, 1.0);
-        let (cx, cy) = (p.x as f32, p.y as f32);
-
         // For now, this is a very naive picking implementation that just iterates over the points to find the closest match.
         // In the future, we will use multiple render targets to perform GPU-accelerated picking
         // Reference: https://github.com/keller-mark/pluot/issues/140
+        let closest_idx = if self.layer_params.data_unit_mode_x == UnitsMode::Data
+            && self.layer_params.data_unit_mode_y == UnitsMode::Data
+        {
+            let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
+                return None;
+            };
 
-        let mut min_dist_sq = f32::MAX;
-        let mut closest_idx = 0usize;
+            // Map the world coordinate into the point's model space by inverting
+            // the model_matrix; the vertex shader computes
+            // world = model_matrix * vec4(position_x, position_y, 0, 1).
+            let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, cx, cy)?;
 
-        for i in 0..n {
-            let dx = self.layer_params.position_x.get_f32(i) - cx;
-            let dy = self.layer_params.position_y.get_f32(i) - cy;
-            let dist_sq = dx * dx + dy * dy;
-            if dist_sq < min_dist_sq {
-                min_dist_sq = dist_sq;
-                closest_idx = i;
+            let mut min_dist_sq = f32::MAX;
+            let mut closest_idx = 0usize;
+            for i in 0..n {
+                let dx = self.layer_params.position_x.get_f32(i) - cx;
+                let dy = self.layer_params.position_y.get_f32(i) - cy;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < min_dist_sq {
+                    min_dist_sq = dist_sq;
+                    closest_idx = i;
+                }
             }
-        }
+            closest_idx
+        } else {
+            // Pixels/Normalized units mode: point positions are placed relative
+            // to the layer bounds and are independent of the camera, so a
+            // data-space ("world") comparison does not apply. Instead, forward-
+            // project each point into layer-pixel space with the same
+            // `get_point_position` logic used for rendering, and compare
+            // against the mouse position (also in layer-pixel space).
+            let bounds = if self.layer_params.bounds.is_none() {
+                &self.view_params.margins
+            } else {
+                &self.layer_params.bounds
+            };
+            let margin_top = bounds.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0);
+            let margin_right = bounds.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0);
+            let margin_bottom = bounds.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0);
+            let margin_left = bounds.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0);
+
+            let layer_w = self.view_params.width as f32 - margin_left - margin_right;
+            let layer_h = self.view_params.height as f32 - margin_top - margin_bottom;
+
+            // screen_coord is relative to the full viewport with Y increasing
+            // upwards; subtract margins to land in the same layer-pixel,
+            // Y-up space that get_point_position operates in below. Mirrors
+            // the bounds check in `viewport::unproject`.
+            let mouse_x = screen_coord.x - margin_left;
+            let mouse_y = screen_coord.y - margin_bottom;
+            if mouse_x < 0.0 || mouse_x > layer_w || mouse_y < 0.0 || mouse_y > layer_h {
+                return None;
+            }
+
+            let camera_view = self.view_params.camera_view.unwrap_or([
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]);
+            let model_matrix_raw: [f32; 16] = self.layer_params.model_matrix.unwrap_or([
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]);
+
+            let mut min_dist_sq = f32::MAX;
+            let mut closest_idx = 0usize;
+            for i in 0..n {
+                let x = self.layer_params.position_x.get_f32(i);
+                let y = self.layer_params.position_y.get_f32(i);
+                let (px, py) = get_point_position(
+                    x,
+                    y,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    self.layer_params.data_unit_mode_x,
+                    self.layer_params.data_unit_mode_y,
+                    self.view_params.aspect_ratio_mode,
+                    self.view_params.aspect_ratio_alignment_mode,
+                    Some(&model_matrix_raw),
+                );
+                let dx = px - mouse_x;
+                let dy = py - mouse_y;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq < min_dist_sq {
+                    min_dist_sq = dist_sq;
+                    closest_idx = i;
+                }
+            }
+            closest_idx
+        };
 
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());

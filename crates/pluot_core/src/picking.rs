@@ -19,6 +19,10 @@ use crate::viewport::{DataCoord, ScreenCoord, unproject};
 pub struct LayerPickingResult {
     pub layer_id: String,
     pub info: HashMap<String, String>, // Additional info about the picked element (e.g., index in data array, value, etc.)
+    // TODO: include a "picking result type" as part of the picking result:
+    // Whether the picked item was a data point, axis element, axis label,
+    // axis category, axis quantity, legend element, legend label,
+    // legend category, legend quantity, title element, etc.
 }
 
 /// Serializable representation of picking results

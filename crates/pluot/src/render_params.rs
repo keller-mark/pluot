@@ -1,3 +1,4 @@
+use pluot_zarr::layers::adata_zarr_dotplot_layer::AdataZarrDotPlotLayerParams;
 use serde::{Deserialize, Serialize};
 
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
@@ -12,6 +13,8 @@ use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
+use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
+use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
@@ -53,6 +56,8 @@ pub enum LayerParams {
     // Plot-layers
     BarPlotLayer(BarPlotLayerParams),
     HistogramLayer(HistogramLayerParams),
+    LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
+    LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
     // Zarr
     ZarrPointLayer(ZarrPointLayerParams),
@@ -60,6 +65,7 @@ pub enum LayerParams {
     ZarrHistogramLayer(ZarrHistogramLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
     OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
+    AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),

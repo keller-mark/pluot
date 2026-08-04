@@ -674,6 +674,8 @@ impl DrawToSvg for BitmapLayer {
         let y_stride = strides[y_dim_idx];
         let c_stride = strides[c_dim_idx];
 
+        // Note: When a `model_matrix` is provided, the shape of `layer_params.data` may not correspond to the number of pixels for the output image.
+
         let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
 
         for y in 0..img_h as usize {
@@ -786,15 +788,44 @@ impl DrawToSvg for BitmapLayer {
         // px, py are in layer-local pixel coords with Y increasing upward.
         // SVG has Y increasing downward, so flip:
         //   SVG y of the image top-left = layer_h - (py + sh)
-        let image_element = TwoElement::Image(TwoImage {
-            x: px as f64,
-            y: (layer_h - py - sh) as f64,
-            width: sw as f64,
-            height: sh as f64,
-            href,
-            opacity: layer_params.opacity as f64,
-            image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
-        });
+        let final_x = px as f64;
+        let final_y = (layer_h - py - sh) as f64;
+        let final_w = sw as f64;
+        let final_h = sh as f64;
+
+        // The href's PNG is always encoded at the data's native (img_w, img_h) pixel
+        // dimensions, but the transformed (sw, sh) can differ (e.g. a model_matrix
+        // rescaling the image, or Pixels/Normalized-mode sizing unrelated to img_w/img_h).
+        // An SVG <image> element's `width`/`height` alone can't express that mismatch
+        // faithfully. When the dimensions differ, render the image at its native
+        // size and wrap it in a group with an explicit `scale` transform,
+        // to allow for stretching along either axis independently.
+        let image_element = if final_w == img_w as f64 && final_h == img_h as f64 {
+            TwoElement::Image(TwoImage {
+                x: final_x,
+                y: final_y,
+                width: final_w,
+                height: final_h,
+                href,
+                opacity: layer_params.opacity as f64,
+                image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
+            })
+        } else {
+            TwoElement::Group(TwoGroup {
+                elements: vec![TwoElement::Image(TwoImage {
+                    x: 0.0,
+                    y: 0.0,
+                    width: img_w as f64,
+                    height: img_h as f64,
+                    href,
+                    opacity: layer_params.opacity as f64,
+                    image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
+                })],
+                translate: Some((final_x, final_y)),
+                scale: Some((final_w / img_w as f64, final_h / img_h as f64)),
+                ..Default::default()
+            })
+        };
 
         // Insert the image into an SVG group with a transform and clipping to handle margins,
         // similar to the usage of scissor rect and viewport in the Canvas rendering.

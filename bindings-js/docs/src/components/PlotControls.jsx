@@ -25,7 +25,7 @@ const theme = {
 };
 
 export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
-  const { onFullscreen, onFullwindow, onRenderToScript } = callbacks ?? {};
+  const { onFullscreen, onFullwindow, onRenderToScript, enableVector = true } = callbacks ?? {};
   // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
@@ -49,6 +49,17 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
       label: 'Interactive',
     },
     */
+    // Currently, need to conditionally show the Format selector, hiding when the plot renders > ~10,000 points.
+    ...(enableVector ? ({
+      format: {
+        value: 'Raster',
+        options: {
+          Raster: 'Raster',
+          Vector: 'Vector',
+        },
+        label: 'Graphics Format'
+      },
+    }) : {}),
     size: {
       value: {
         width: defaultOptions.width ?? 500,
@@ -105,16 +116,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
       label: 'Show Margins',
       hint: 'For debugging, display a 1px border indicating margin boundaries.'
     },
-    // TODO: need to conditionally show the Format selector, hiding when the plot renders > ~10,000 points.
     /*
-    format: {
-      value: 'Raster',
-      options: {
-        Raster: 'Raster',
-        Vector: 'Vector',
-      },
-      label: 'Graphics Format'
-    },
     'Reset Camera': button(
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }

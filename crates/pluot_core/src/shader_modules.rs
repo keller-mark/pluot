@@ -190,6 +190,9 @@ pub mod colormaps {
     /// `fn autumn(x: f32) -> vec4<f32>`
     pub const AUTUMN: &str = include_str!("wgsl_functions/colormap_quantitative/autumn.wgsl");
 
+    /// `fn blues(x: f32) -> vec4<f32>`
+    pub const BLUES: &str = include_str!("wgsl_functions/colormap_quantitative/blues.wgsl");
+
     /// `fn bone(x: f32) -> vec4<f32>`
     pub const BONE: &str = include_str!("wgsl_functions/colormap_quantitative/bone.wgsl");
 
@@ -201,6 +204,9 @@ pub mod colormaps {
 
     /// `fn density(x: f32) -> vec4<f32>`
     pub const DENSITY: &str = include_str!("wgsl_functions/colormap_quantitative/density.wgsl");
+
+    /// `fn greens(x: f32) -> vec4<f32>`
+    pub const GREENS: &str = include_str!("wgsl_functions/colormap_quantitative/greens.wgsl");
 
     /// `fn greys(x: f32) -> vec4<f32>`
     pub const GREYS: &str = include_str!("wgsl_functions/colormap_quantitative/greys.wgsl");
@@ -217,8 +223,17 @@ pub mod colormaps {
     /// `fn magma(x: f32) -> vec4<f32>`
     pub const MAGMA: &str = include_str!("wgsl_functions/colormap_quantitative/magma.wgsl");
 
+    /// `fn oranges(x: f32) -> vec4<f32>`
+    pub const ORANGES: &str = include_str!("wgsl_functions/colormap_quantitative/oranges.wgsl");
+
     /// `fn plasma(x: f32) -> vec4<f32>`
     pub const PLASMA: &str = include_str!("wgsl_functions/colormap_quantitative/plasma.wgsl");
+
+    /// `fn purples(x: f32) -> vec4<f32>`
+    pub const PURPLES: &str = include_str!("wgsl_functions/colormap_quantitative/purples.wgsl");
+
+    /// `fn reds(x: f32) -> vec4<f32>`
+    pub const REDS: &str = include_str!("wgsl_functions/colormap_quantitative/reds.wgsl");
 
     /// `fn spring(x: f32) -> vec4<f32>`
     pub const SPRING: &str = include_str!("wgsl_functions/colormap_quantitative/spring.wgsl");
@@ -255,6 +270,11 @@ pub mod colormaps {
             QuantitativeColormap::Summer => (SUMMER, "summer"),
             QuantitativeColormap::Autumn => (AUTUMN, "autumn"),
             QuantitativeColormap::Winter => (WINTER, "winter"),
+            QuantitativeColormap::Blues => (BLUES, "blues"),
+            QuantitativeColormap::Greens => (GREENS, "greens"),
+            QuantitativeColormap::Oranges => (ORANGES, "oranges"),
+            QuantitativeColormap::Purples => (PURPLES, "purples"),
+            QuantitativeColormap::Reds => (REDS, "reds"),
         }
     }
 }

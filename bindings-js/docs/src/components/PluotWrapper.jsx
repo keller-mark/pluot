@@ -30,6 +30,8 @@ export function PluotWrapper(props) {
     plotSpecificOptions = null,
     cameraMatrix: cameraMatrixProp = null,
     enablePicking = true,
+    // TODO: remove this option upon completion of https://github.com/keller-mark/pluot/issues/221
+    enableVector = true,
   } = props;
 
   const defaultOptions = {
@@ -174,7 +176,7 @@ export function PluotWrapper(props) {
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
-      format: "Raster",
+      format: controlValuesRef.current.format,
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,
@@ -217,7 +219,7 @@ export function PluotWrapper(props) {
     setScriptResult(codeStringResult);
   });
 
-  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onRenderToScript });
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onRenderToScript, enableVector });
   console.log(controlValues);
 
   const derivedPlotParams = useMemo(() => {

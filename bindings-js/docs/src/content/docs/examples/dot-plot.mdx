@@ -1,0 +1,40 @@
+---
+title: Dot Plot (AnnData)
+description: Dot plot example.
+sidebar:
+    order: 30
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+This [dot plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.dotplot.html) displays single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"dotplot-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrDotPlotLayer",
+          layer_params: {
+            layer_id: "dot_plot",
+            var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
+            groupby: "bulk_labels",
+            layer: "X",
+            title: "My dot plot",
+            cmap: "Reds",
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={200}
+    marginBottom={80}
+    marginTop={60}
+    marginRight={150}
+    width={700}
+    height={700}
+/>

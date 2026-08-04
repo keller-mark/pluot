@@ -1,8 +1,4 @@
-library(pluotr)
-
-# Install with: devtools::install_github("keller-mark/pluot", subdir="bindings-r")
-# The, run with: Rscript render.R
-plot <- render_to_raster(
+render_to_svg(
   layers = list(
     list(
       layer_type = "PointLayer",
@@ -57,13 +53,6 @@ plot <- render_to_raster(
             1.0
           )
         )
-      )
-    ),
-    list(
-      layer_type = "AxisLinearLayer",
-      layer_params = list(
-        layer_id = "left_axis",
-        position = "Left"
       )
     )
   ),

@@ -1,8 +1,10 @@
-renderToString({
+import { renderToString, renderToArray } from "@pluot/core";
+
+const renderParams = {
   schema_version: null,
   width: 640,
   height: 480,
-  format: "Vector",
+  format: "Raster",
   device_pixel_ratio: 1.0,
   camera_view: [
     0.15000000596046448,
@@ -82,13 +84,6 @@ renderToString({
             ]
           }
         }
-      },
-      {
-        layer_type: "AxisLinearLayer",
-        layer_params: {
-          layer_id: "left_axis",
-          position: "Left"
-        }
       }
     ]
   },
@@ -115,4 +110,6 @@ renderToString({
   pickable: false,
   render_backend: null,
   compute_backend: null
-})
+};
+
+const plot = await renderToArray(renderParams);

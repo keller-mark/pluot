@@ -7,7 +7,9 @@
 </defs>
 <g height="200" width="100">
 <g clip-path="url(#my_bitmap_layer_clip_path)" transform="translate(0,0)">
-<image height="100" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAT0lEQVR4AQFEALv/AAAAmf84ADj/awBr/54Anv8ACgAK/z0APf9wAHD/owCj/wAPAA//QgBC/3UAdf+oAKj/ABQAFP9HAEf/egB6/60AAP97/Brz2gTN8QAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="50" x="43.75" y="12.5"/>
+<g transform="translate(43.75,12.5) scale(12.5,25)">
+<image height="4" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAT0lEQVR4AQFEALv/AAAAmf84ADj/awBr/54Anv8ACgAK/z0APf9wAHD/owCj/wAPAA//QgBC/3UAdf+oAKj/ABQAFP9HAEf/egB6/60AAP97/Brz2gTN8QAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="4" x="0" y="0"/>
+</g>
 </g>
 </g>
 </g>

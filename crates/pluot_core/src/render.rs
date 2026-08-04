@@ -97,17 +97,30 @@ pub async fn render(params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
 
     match params.format {
         GraphicsFormat::Vector => {
-            let (ctx, _render_result) = draw_layers_to_vector(&view_params, &mut layers, gpu_context.as_ref()).await;
+            let (ctx, render_result) = draw_layers_to_vector(&view_params, &mut layers, gpu_context.as_ref()).await;
 
             // Return the SVG string as bytes.
             let svg_string = ctx.to_svg_string(params.svg_include_document);
 
+            let bailed_early = prepare_bailed_early || render_result.bailed_early;
+
+            // Add final byte to provide the RenderResult values to the caller,
+            // regardless of whether SVG compression is enabled.
+            let extra_byte: u8 = match bailed_early {
+                false => 0,
+                true => 1,
+            };
+
             // If compression is not enabled, return the SVG string bytes.
             if !params.svg_compression_enabled {
-                return svg_string.as_bytes().to_vec();
+                let mut bytes = svg_string.as_bytes().to_vec();
+                bytes.push(extra_byte);
+                return bytes;
             }
             // If compression is enabled, use lz-string before returning the Uint8Array.
-            return lz_str::compress_to_uint8_array(&svg_string);
+            let mut bytes = lz_str::compress_to_uint8_array(&svg_string);
+            bytes.push(extra_byte);
+            return bytes;
         }
         GraphicsFormat::Raster => {
             // TODO: allow for CPU raster rendering if GPU isn't available or if compute_backend is CPU.

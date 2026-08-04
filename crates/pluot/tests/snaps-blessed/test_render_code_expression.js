@@ -1,8 +1,10 @@
-<Pluot
-  width={640}
-  height={480}
-  format="Vector"
-  cameraMatrix={[
+renderToString({
+  schema_version: null,
+  width: 640,
+  height: 480,
+  format: "Vector",
+  device_pixel_ratio: 1.0,
+  camera_view: [
     0.15000000596046448,
     0.0,
     0.0,
@@ -19,12 +21,12 @@
     0.0,
     0.0,
     1.0
-  ]}
-  aspectRatioMode="Contain"
-  aspectRatioAlignmentMode="Center"
-  viewMode="2d"
-  plotType="LayeredPlot"
-  plotParams={{
+  ],
+  aspect_ratio_mode: "Contain",
+  aspect_ratio_alignment_mode: "Center",
+  view_mode: "2d",
+  plot_type: "LayeredPlot",
+  plot_params: {
     layers: [
       {
         layer_type: "PointLayer",
@@ -80,18 +82,11 @@
             ]
           }
         }
-      },
-      {
-        layer_type: "AxisLinearLayer",
-        layer_params: {
-          layer_id: "left_axis",
-          position: "Left"
-        }
       }
     ]
-  }}
-  plotId="plot_1"
-  stores={{
+  },
+  plot_id: "plot_1",
+  stores: {
     my_store: {
       store_type: "HttpStore",
       store_params: {
@@ -100,6 +95,17 @@
       },
       store_extensions: null
     }
-  }}
-  marginLeft={60.0}
-/>
+  },
+  wait_for_store_gets: true,
+  timeout: null,
+  cache_enabled: true,
+  svg_compression_enabled: false,
+  svg_include_document: true,
+  margin_left: 60.0,
+  margin_right: null,
+  margin_top: null,
+  margin_bottom: null,
+  pickable: false,
+  render_backend: null,
+  compute_backend: null
+})

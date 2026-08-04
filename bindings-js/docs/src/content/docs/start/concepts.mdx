@@ -21,7 +21,7 @@ In Pluot, we need to consider bindings in both directions (to/from).
 
 The non-Rust language *calls* these.
 
-- `render`: Or its bound variant (e.g., `render_py`, `render_wasm`, etc.) which handles serialization/deserialization or other platform-specific things.
+- `render`: Render a plot to a graphical output, returning bytes that represent either pixels or an SVG string.
 
 - `pick`: Perform "picking" to look-up the value at a specific (relative) screen coordinate. Used during hover and click event handling (e.g., to show tooltips).
 
@@ -81,7 +81,7 @@ async fn render_plot(params: PlotParams) -> Vec[u8] {
 ## Headless plotting
 
 In Pluot, our Rust plot rendering logic is decoupled from any particular windowing or GUI system, meaning Pluot performs "headless" plotting.
-Instead, the plot rendering functions return bytes representing either pixels (in the raster case) or vector nodes/SVG strings (in the vector case).
+Instead, the plot rendering function returns a static plot.
 
 What to do with the returned bytes is up to the caller of plot rendering function.
 

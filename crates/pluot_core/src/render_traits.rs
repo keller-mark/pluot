@@ -120,6 +120,13 @@ pub enum QuantitativeColormap {
     Summer,
     Autumn,
     Winter,
+
+    // See https://github.com/d3/d3-scale-chromatic/tree/main/src/sequential-single
+    Blues,
+    Greens,
+    Oranges,
+    Purples,
+    Reds,
 }
 
 /// Static (r, g, b) color shared by every instance.
