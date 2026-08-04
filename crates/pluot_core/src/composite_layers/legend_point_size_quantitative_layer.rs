@@ -9,7 +9,7 @@
 // This layer is used to render a legend for the point sizes of the AdataZarrDotPlotLayer,
 // whose dots are sized by `fraction_expressing * max_dot_radius` -- a linear map from a
 // [0, 1] domain to a [0, max_dot_radius] pixel range -- the same kind of mapping this
-// legend's `domain` / `radius_range` describe.
+// legend's `scale` (domain -> radius) describes.
 //
 // In Horizontal orientation (the default), the points are laid out in a row, in
 // increasing size from left to right, all vertically centered on a shared line. The
@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::composite_layers::axis_linear_layer::format_tick_value;
 use crate::composite_layers::legend_colormap_quantitative_layer::LegendOrientation;
+use crate::d3::scale::{ScaleLinear, Scaleable};
 use crate::layers::point_layer::{PointLayer, PointLayerParams, PointShapeMode};
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
 use crate::numeric_data::NumericData;
@@ -61,15 +62,12 @@ pub struct LegendPointSizeQuantitativeLayerParams {
     pub bounds: Option<MarginParams>,
     /// Title text rendered above the legend points.
     pub title: String,
-    /// The (min, max) data values that the smallest/largest legend point represent.
-    pub domain: (f32, f32),
-    /// The (min, max) point radius, in pixels, corresponding to `domain`'s min/max.
-    /// This should match the linear value-to-radius mapping used by the point layer
-    /// this legend documents (e.g. `fraction_expressing * max_dot_radius`).
-    pub radius_range: (f32, f32),
-    /// Number of example points to render, evenly spaced (by linear interpolation)
-    /// across `domain`/`radius_range`. Must be at least 2, so both ends of the domain
-    /// are represented.
+    /// The scale mapping data values (domain) to point radii in pixels (range). Should
+    /// match the linear value-to-radius mapping used by the point layer this legend
+    /// documents (e.g. `fraction_expressing * max_dot_radius`).
+    pub scale: ScaleLinear,
+    /// Number of example points to render, evenly spaced (by linear interpolation) across
+    /// `scale`'s domain. Must be at least 2, so both ends of the domain are represented.
     pub num_steps: usize,
     /// Fill color shared by every example point.
     pub point_color: (u8, u8, u8),
@@ -81,12 +79,13 @@ pub struct LegendPointSizeQuantitativeLayerParams {
 
 impl Default for LegendPointSizeQuantitativeLayerParams {
     fn default() -> Self {
+        let mut scale = ScaleLinear::new();
+        scale.set_range((2.0, 10.0));
         Self {
             layer_id: "".to_string(),
             bounds: None,
             title: "".to_string(),
-            domain: (0.0, 1.0),
-            radius_range: (2.0, 10.0),
+            scale,
             num_steps: 4,
             point_color: DEFAULT_POINT_COLOR,
             point_shape_mode: PointShapeMode::Circle,
@@ -115,16 +114,17 @@ impl LegendPointSizeQuantitativeLayer {
         }
     }
 
-    /// The `num_steps` (value, radius) pairs to render, evenly spaced (by linear
-    /// interpolation) from `domain`/`radius_range`'s min to max.
+    /// The `num_steps` (value, radius) pairs to render: `num_steps` values evenly spaced
+    /// across `scale`'s domain, each mapped to its radius via `scale`.
     fn steps(&self) -> Vec<(f32, f32)> {
-        let (d0, d1) = self.layer_params.domain;
-        let (r0, r1) = self.layer_params.radius_range;
+        let (d0, d1) = self.layer_params.scale.get_domain();
         let n = self.layer_params.num_steps;
         (0..n)
             .map(|i| {
-                let t = i as f32 / (n - 1) as f32;
-                (d0 + (d1 - d0) * t, r0 + (r1 - r0) * t)
+                let t = i as f64 / (n - 1) as f64;
+                let value = d0 + (d1 - d0) * t;
+                let radius = self.layer_params.scale.scale(&value);
+                (value as f32, radius as f32)
             })
             .collect()
     }
@@ -140,6 +140,8 @@ impl LegendPointSizeQuantitativeLayer {
 
         let legend_left = margin_left;
         let legend_top = viewport_h - margin_top;
+
+        // TODO: use ScaleLinear and ScaleBand to clean up all the positioning arithmetic
 
         let title_y = legend_top;
         let has_title = !self.layer_params.title.is_empty();

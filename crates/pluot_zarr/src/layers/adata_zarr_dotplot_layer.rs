@@ -17,7 +17,7 @@ use pluot_core::composite_layers::axis_linear_layer::AxisPosition;
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation};
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::{LegendPointSizeQuantitativeLayer, LegendPointSizeQuantitativeLayerParams};
 use pluot_core::color_mode::quantitative_domain;
-use pluot_core::d3::scale::{ScaleBand, Scaleable};
+use pluot_core::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::LayerPickingResult;
@@ -254,12 +254,25 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let genes_bandwidth = genes_scale.bandwidth() as f32;
         let groups_bandwidth = groups_scale.bandwidth() as f32;
 
-        // TODO: use a ScaleLinear to define the domain and range for the colors and sizes.
-        // Then, pass the same scale instances to the legend layers (refactor the legend layers to accept ScaleLinear instances).
-
         // The largest dot (fraction expressing == 1.0) is sized to comfortably
         // fit within its grid cell on the tighter of the two axes.
         let max_dot_radius = (genes_bandwidth.min(groups_bandwidth) / 2.0 * 0.9).max(1.0);
+
+        // A ScaleLinear mapping fraction-expressing values (always in [0, 1], by
+        // definition) to pixel radii (0 to `max_dot_radius`). Reused below to size the
+        // point-size legend, so both draw from the exact same domain/range.
+        let mut size_scale = ScaleLinear::new();
+        size_scale.set_domain((0.0, 1.0));
+        size_scale.set_range((0.0, max_dot_radius as f64));
+
+        // We define a second legend with an adjusted minimum value,
+        // so that the smallest legend value is not zero.
+        let min_size_domain_for_legend: f64 = 0.2;
+        let min_size_range_for_legend = size_scale.scale(&min_size_domain_for_legend);
+
+        let mut size_scale_for_legend = ScaleLinear::new();
+        size_scale_for_legend.set_domain((min_size_domain_for_legend, 1.0));
+        size_scale_for_legend.set_range((min_size_range_for_legend, max_dot_radius as f64));
 
         // One instance per dot: each summary names its own gene and category, so its
         // position is a scale lookup on its two axis labels. The fraction expressing
@@ -279,7 +292,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             position_x.push(x);
             position_y.push(y);
             let (mean, fraction_expressing) = summary.mean_and_fraction_expressing();
-            point_radius_values.push(fraction_expressing * max_dot_radius);
+            point_radius_values.push(size_scale.scale(&(fraction_expressing as f64)) as f32);
             mean_expression_values.push(mean);
         }
 
@@ -288,8 +301,8 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         self.gene_summaries = gene_summaries;
 
         // Computed from the same `QuantitativeParams` (domain: None) used for the dots'
-        // fill color, so the legend below shows exactly the range the dots are normalized
-        // against.
+        // fill color, so `color_scale` -- and the legend below, which is built from it --
+        // reflect exactly the range the dots are normalized against.
         let fill_color_params = QuantitativeParams {
             values: NumericData::Float32(Arc::new(mean_expression_values)),
             colormap: self.layer_params.cmap.clone(),
@@ -297,6 +310,8 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             domain: None,
         };
         let expression_domain = quantitative_domain(&fill_color_params);
+        let mut color_scale = ScaleLinear::new();
+        color_scale.set_domain((expression_domain[0] as f64, expression_domain[1] as f64));
 
         let mut point_layer = PointLayer::new(
             self.view_params.clone(),
@@ -368,15 +383,15 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 title: "Mean expression".to_string(),
                 colormap: self.layer_params.cmap.clone(),
                 reverse: false,
-                domain: Some((expression_domain[0], expression_domain[1])),
+                scale: Some(color_scale),
                 orientation: LegendOrientation::Horizontal,
             },
         );
         legend_layer.prepare(gpu_context).await;
 
         // Legend for the dot size (fraction expressing -> radius), stacked beneath the
-        // color legend in the same right-margin column. Mirrors the dots' own linear
-        // `fraction_expressing * max_dot_radius` mapping via `domain`/`radius_range`.
+        // color legend in the same right-margin column. Uses the exact same `size_scale`
+        // that mapped the dots' own fraction-expressing values to pixel radii above.
         let mut size_legend_layer = LegendPointSizeQuantitativeLayer::new(
             self.view_params.clone(),
             LegendPointSizeQuantitativeLayerParams {
@@ -388,8 +403,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     margin_bottom: Some(0.0),
                 }),
                 title: "Fraction expressing".to_string(),
-                domain: (0.0, 1.0),
-                radius_range: (0.0, max_dot_radius),
+                scale: size_scale_for_legend,
                 orientation: LegendOrientation::Vertical,
                 ..Default::default()
             },

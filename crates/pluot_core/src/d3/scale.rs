@@ -4,6 +4,8 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 // Reference: https://github.com/d3/d3-scale/blob/main/src/linear.js
 
 /// A trait for scales that map a domain value to a range value.
@@ -27,7 +29,7 @@ pub trait Tickable<D> {
 }
 
 /// A continuous scale.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScaleLinear {
     domain: (f64, f64),
     range: (f64, f64),

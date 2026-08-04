@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::colormaps_quantitative::sample;
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::composite_layers::axis_linear_layer::{format_tick_value, AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
+use crate::d3::scale::ScaleLinear;
 use crate::layers::bitmap_layer::{BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder};
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
 use crate::numeric_data::NumericData;
@@ -65,11 +66,11 @@ pub struct LegendColormapQuantitativeLayerParams {
     /// Determines whether the colormap should be reversed (by subtracting `1 - t` before
     /// executing the colormap function). By default, false.
     pub reverse: bool,
-    /// The (min, max) data values the gradient's left and right ends represent, used only
-    /// to label the axis ticks. When None, the ticks are labeled "0" and "1" (i.e. the
-    /// colormap's own domain). This has no effect on the rendered gradient itself, which
-    /// always spans the full colormap.
-    pub domain: Option<(f32, f32)>,
+    /// A scale whose domain provides the data values the gradient's left and right ends
+    /// represent, used only to label the axis ticks. When None, the ticks are labeled "0"
+    /// and "1" (i.e. the colormap's own domain). This has no effect on the rendered
+    /// gradient itself, which always spans the full colormap.
+    pub scale: Option<ScaleLinear>,
 
     pub orientation: LegendOrientation,
 }
@@ -82,7 +83,7 @@ impl Default for LegendColormapQuantitativeLayerParams {
             title: "".to_string(),
             colormap: QuantitativeColormap::Viridis,
             reverse: false,
-            domain: None,
+            scale: None,
             orientation: LegendOrientation::Horizontal,
         }
     }
@@ -179,6 +180,8 @@ impl LegendColormapQuantitativeLayer {
         let legend_top = viewport_h - margin_top;
         let legend_bottom = margin_bottom;
 
+        // TODO: use ScaleLinear and ScaleBand to clean up all the positioning arithmetic
+
         let title_y = legend_top;
 
         let zero_bounds = MarginParams {
@@ -210,8 +213,9 @@ impl LegendColormapQuantitativeLayer {
             )));
         }
 
-        let tick_labels = self.layer_params.domain.map(|(lo, hi)| {
-            vec![format_tick_value(lo as f64), format_tick_value(hi as f64)]
+        let tick_labels = self.layer_params.scale.as_ref().map(|scale| {
+            let (lo, hi) = scale.get_domain();
+            vec![format_tick_value(lo), format_tick_value(hi)]
         });
 
         match self.layer_params.orientation {
