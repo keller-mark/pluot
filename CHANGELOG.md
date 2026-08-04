@@ -1,4 +1,11 @@
 
+## 0.1.11
+
+### Patch Changes
+
+- Add obstore to core dependencies, update changesets config. (`@pluot/core`) ([#274](https://github.com/keller-mark/pluot/pull/274))
+
+
 ## 0.1.10
 
 ### Patch Changes
