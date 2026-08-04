@@ -5,3 +5,4 @@ pub mod axis_band_layer;
 pub mod curve_layer;
 pub mod polygon_layer;
 pub mod legend_colormap_quantitative_layer;
+pub mod legend_point_size_quantitative_layer;

@@ -10,6 +10,7 @@
 
 import scanpy as sc
 from os.path import join
+import matplotlib.pyplot as plt
 
 adata = sc.datasets.pbmc68k_reduced()
 
@@ -18,3 +19,7 @@ sc.tl.tsne(adata)
 
 adata_path = join("out", "pbmc68k.adata.zarr")
 adata.write_zarr(adata_path)
+
+markers = ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ']
+sc.pl.dotplot(adata, markers, groupby='bulk_labels', show=False)
+#plt.savefig("dotplot.png")

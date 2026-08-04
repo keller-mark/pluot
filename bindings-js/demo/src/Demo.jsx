@@ -417,6 +417,8 @@ export function Demo() {
       <Pluot
         width={800}
         height={800}
+        marginLeft={200}
+        marginRight={150}
         format={graphicsFormat}
         plotId={currPlotId}
         plotType={plotType}

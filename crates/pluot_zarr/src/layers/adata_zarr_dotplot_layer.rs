@@ -14,7 +14,8 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
 use pluot_core::composite_layers::axis_linear_layer::AxisPosition;
-use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams};
+use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation};
+use pluot_core::composite_layers::legend_point_size_quantitative_layer::{LegendPointSizeQuantitativeLayer, LegendPointSizeQuantitativeLayerParams};
 use pluot_core::color_mode::quantitative_domain;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
@@ -253,6 +254,9 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let genes_bandwidth = genes_scale.bandwidth() as f32;
         let groups_bandwidth = groups_scale.bandwidth() as f32;
 
+        // TODO: use a ScaleLinear to define the domain and range for the colors and sizes.
+        // Then, pass the same scale instances to the legend layers (refactor the legend layers to accept ScaleLinear instances).
+
         // The largest dot (fraction expressing == 1.0) is sized to comfortably
         // fit within its grid cell on the tighter of the two axes.
         let max_dot_radius = (genes_bandwidth.min(groups_bandwidth) / 2.0 * 0.9).max(1.0);
@@ -344,6 +348,10 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
 
         // TODO: remove this padding once AxisLinearLayerParams.fit_outer_ticks is implemented.
         const LEGEND_PADDING_HORIZONTAL: f32 = 5.0;
+        // Approximate vertical space (in pixels) consumed by the color legend above --
+        // title + gradient bar + axis line + tick labels -- used to stack the point-size
+        // legend beneath it within the same right-margin column.
+        const COLOR_LEGEND_RESERVED_HEIGHT_PX: f32 = 80.0;
 
         // Legend for the dot color (mean expression -> `cmap`), rendered within the plot's
         // right margin, i.e. the band from `viewport_w - margin_right` to `viewport_w`.
@@ -361,11 +369,34 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 colormap: self.layer_params.cmap.clone(),
                 reverse: false,
                 domain: Some((expression_domain[0], expression_domain[1])),
+                orientation: LegendOrientation::Horizontal,
             },
         );
         legend_layer.prepare(gpu_context).await;
 
-        self.sub_layer_instances = vec![Box::new(point_layer), Box::new(x_axis_layer), Box::new(y_axis_layer), Box::new(legend_layer)];
+        // Legend for the dot size (fraction expressing -> radius), stacked beneath the
+        // color legend in the same right-margin column. Mirrors the dots' own linear
+        // `fraction_expressing * max_dot_radius` mapping via `domain`/`radius_range`.
+        let mut size_legend_layer = LegendPointSizeQuantitativeLayer::new(
+            self.view_params.clone(),
+            LegendPointSizeQuantitativeLayerParams {
+                layer_id: format!("{}_size_legend_sublayer", self.layer_params.layer_id),
+                bounds: Some(MarginParams {
+                    margin_left: Some(self.view_params.width as f32 - margin_right + LEGEND_PADDING_HORIZONTAL),
+                    margin_right: Some(LEGEND_PADDING_HORIZONTAL),
+                    margin_top: Some(margin_top + COLOR_LEGEND_RESERVED_HEIGHT_PX),
+                    margin_bottom: Some(0.0),
+                }),
+                title: "Fraction expressing".to_string(),
+                domain: (0.0, 1.0),
+                radius_range: (0.0, max_dot_radius),
+                orientation: LegendOrientation::Vertical,
+                ..Default::default()
+            },
+        );
+        size_legend_layer.prepare(gpu_context).await;
+
+        self.sub_layer_instances = vec![Box::new(point_layer), Box::new(x_axis_layer), Box::new(y_axis_layer), Box::new(legend_layer), Box::new(size_legend_layer)];
 
         PrepareResult { bailed_early }
     }

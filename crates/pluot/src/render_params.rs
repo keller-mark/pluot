@@ -14,6 +14,7 @@ use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
+use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
@@ -56,6 +57,7 @@ pub enum LayerParams {
     BarPlotLayer(BarPlotLayerParams),
     HistogramLayer(HistogramLayerParams),
     LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
+    LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
     // Zarr
     ZarrPointLayer(ZarrPointLayerParams),
