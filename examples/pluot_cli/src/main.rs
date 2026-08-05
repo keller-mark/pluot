@@ -538,7 +538,7 @@ async fn main() {
     // Zarr store instances for them and render via `render_with_stores`;
     // otherwise fall back to plain `render` (the placeholder MemoryStore
     // above is only used for `store_name` bookkeeping, never actually read).
-    let result = match &stores_input {
+    let result_with_extra = match &stores_input {
         Some(stores) => {
             // `build_store_map` constructs a `reqwest::blocking::Client` (via
             // `zarrs_http::HTTPStore::new`), which spins up its own private
@@ -557,10 +557,15 @@ async fn main() {
         None => render(params).await,
     };
 
+    // The render function returns raw RGBA pixels or a string, followed by
+    // 1 extra byte (the bailed_early flag). Strip the trailing byte.
+    let num_extra_bytes: usize = 1;
+    let result = &result_with_extra[..result_with_extra.len() - num_extra_bytes];
+
     // Write the output.
     if via_svg_png {
         // SVG --> PNG via resvg: render with the vector backend, then rasterize.
-        let svg_string = match String::from_utf8(result) {
+        let svg_string = match String::from_utf8(result.to_vec()) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("Error: SVG output is not valid UTF-8: {}", e);
@@ -623,15 +628,10 @@ async fn main() {
             }
         }
     } else {
-        // Raster: the render function returns raw RGBA pixels followed by
-        // 1 extra byte (the bailed_early flag). Strip the trailing byte
-        // before encoding to PNG.
-        let num_extra_bytes: usize = 1;
-        let pixel_data = &result[..result.len() - num_extra_bytes];
 
         match save_buffer_with_format(
             &args.output,
-            pixel_data,
+            result,
             width,
             height,
             ColorType::Rgba8,
