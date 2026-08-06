@@ -3,6 +3,16 @@ import { createPortal } from 'react-dom';
 import { Pluot, render_to_script_wasm, normalizeStores } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
+const SCRIPT_EXTENSIONS = {
+  Json: 'json',
+  ScriptBash: 'sh',
+  ScriptRust: 'rs',
+  ScriptPython: 'py',
+  ScriptR: 'R',
+  ScriptHtml: 'html',
+  ScriptHtmlReact: 'html',
+  ScriptReact: 'jsx',
+};
 
 export function PluotWrapper(props) {
   const {
@@ -219,6 +229,25 @@ export function PluotWrapper(props) {
     setScriptResult(codeStringResult);
   });
 
+  const scriptFormat = controlValuesRef.current?.renderToScriptType;
+
+  const onDownloadScript = useEffectEvent(() => {
+    if (scriptResult === null || scriptFormat === null) {
+      return;
+    }
+
+    const ext = SCRIPT_EXTENSIONS[scriptFormat] ?? 'txt';
+    const blob = new Blob([scriptResult], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${plotId}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
   const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onRenderToScript, enableVector });
   console.log(controlValues);
 
@@ -242,8 +271,6 @@ export function PluotWrapper(props) {
 
   controlValuesRef.current = { ...controlValues };
   derivedPlotParamsRef.current = { ...derivedPlotParams };
-
-  console.log(cameraMatrix);
 
   const content = (
     <div ref={divRef} style={(isFullscreenOrWindow ? ({
@@ -285,9 +312,14 @@ export function PluotWrapper(props) {
         float={isFullscreenOrWindow}
       />
       {scriptResult !== null ? (
-        <pre>
-          {scriptResult}
-        </pre>
+        <>
+          <button onClick={onDownloadScript}>
+            Download {plotId}.{SCRIPT_EXTENSIONS[scriptFormat] ?? 'txt'}
+          </button>
+          <pre>
+            {scriptResult}
+          </pre>
+        </>
       ) : null}
     </div>
   );
