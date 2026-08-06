@@ -1,9 +1,10 @@
 # pluot
 
-[![Crates.io Link and Latest Version Info](https://img.shields.io/crates/v/pluot.svg)](https://crates.io/crates/pluot)
-[![Documentation on docs.rs](https://docs.rs/pluot/badge.svg)](https://pluot.dev)
+<a href="https://commons.wikimedia.org/wiki/File:Red_pluots.JPG"><img src="bindings-js/docs/src/assets/red-pluots.jpg" align="right" height="150" alt="pluots" /></a>
 
-<a href="https://commons.wikimedia.org/wiki/File:Red_pluots.JPG"><img src="bindings-js/docs/src/assets/red-pluots.jpg" align="right" height="250" alt="pluots" /></a>
+
+[blog post](https://markk.co/blog/2026-04-24-pluot-motivations) &nbsp;✦&nbsp; [docs](https://pluot.dev) &nbsp;✦&nbsp; [example](https://pluot.dev/examples/bioimaging/) &nbsp;✦&nbsp; [crate](https://crates.io/crates/pluot) &nbsp;✦&nbsp; [pypi](https://pypi.org/project/pluot/) &nbsp;✦&nbsp; [npm](https://www.npmjs.com/package/@pluot/react) &nbsp;✦&nbsp; [paper](https://doi.org/10.48550/arXiv.2605.14118)
+
 
 Implement a data visualization once, then render it in multiple contexts (across languages, static or interactive, bitmap or vector).
 
@@ -14,35 +15,18 @@ Rust, Python, R, and JavaScript (including in a web browser) are currently suppo
 
 
 
-
-<a href="https://www.youtube.com/watch?v=tKBfi4nims4"><img src=".github/img/youtube.png" height="200" alt="Youtube thumbnail for Pluot talk at Scientific Computing in Rust 2026" /></a>
-
-
-
-## Citation
-
-If you found this useful, please cite our [preprint](https://doi.org/10.48550/arXiv.2605.14118):
-
-```bibtex
-@article{keller2026pluot,
-  title = {{Pluot: Towards 'write once, run everywhere' visualization software}},
-  author = {Keller, Mark S. and Gehlenborg, Nils},
-  journal = {arXiv},
-  year = {2026},
-  doi = {10.48550/arXiv.2605.14118}
-}
-```
-
 ## Features
 <!-- - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
-- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 4MB) to make it feasible to integrate into web applications.
+- __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 5MB) to make it feasible to integrate into web applications.
 - __Scalable__: Scales to out-of-memory dataset sizes using partial reads of arrays/columns and data tiling/aggregation strategies (currently using Zarr via [zarrs](https://github.com/zarrs/zarrs) to achieve this).
 - __Language bindings__: Usable from multiple languages, including JavaScript/TypeScript (via WASM), Python (via PyO3/maturin bindings), and R (via extendr bindings).
 - __Bitmap or Vector Outputs__: Plotting functions can implement bitmap and vector equivalent drawing logic, to support publication-quality graphics export.
 - __Layer-based API__: Compose the built-in layers to create complex plots, or build your own layers with full control over the WebGPU shaders, buffers, and draw calls. Usage of WebGPU compute (GPGPU) operations prior to each layer's draw call is also supported (regardless of whether bitmap or vector output format).
 
 
-⚠️ Currently focusing on 2D, before eventually supporting polar, ternary, and [3D](https://pluot.dev/examples/scatterplot-3d/) plotting.
+⚠️ Currently focusing on 2D, before eventually supporting polar, ternary, and [3D](https://pluot.dev/examples/scatterplot-3d/).
+
+
 
 
 
@@ -65,7 +49,7 @@ Our approach enables our CPU-based operations to benefit from the performance ch
 
 You can likely achieve better performance by using WebGPU directly via JavaScript.
 The question is whether the performance of this Rust-based approach is good enough, and whether the benefits are worth the potential performance tradeoffs for your use case.
-See my [blog post](https://markk.co/blog/2026-04-24-pluot-motivations) for more on the motivations.
+
 
 ## Development
 
@@ -265,6 +249,20 @@ A pluot is a [plum-apricot hybrid](https://en.wikipedia.org/wiki/Pluot). The fru
 - A half hour to learn Rust: https://fasterthanli.me/articles/a-half-hour-to-learn-rust
 - Guidelines: https://github.com/microsoft/rust-guidelines
 - Another list: https://github.com/microsoft/RustTraining
+
+## Citation
+
+If you found this useful, please cite our [preprint](https://doi.org/10.48550/arXiv.2605.14118):
+
+```bibtex
+@article{keller2026pluot,
+  title = {{Pluot: Towards 'write once, run everywhere' visualization software}},
+  author = {Keller, Mark S. and Gehlenborg, Nils},
+  journal = {arXiv},
+  year = {2026},
+  doi = {10.48550/arXiv.2605.14118}
+}
+```
 
 ## License
 
