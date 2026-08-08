@@ -281,7 +281,7 @@ export function Pluot(props) {
 
     // Set up hover handlers for picking, only when the onHover prop is provided.
     const hoverMoveHandler = (event) => {
-      if (enablePicking) {
+      if (enablePicking && typeof onHover === 'function') {
         throttledHoverFrame(event.offsetX, event.offsetY);
       }
     };
