@@ -10,6 +10,7 @@ import {
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
 } from '@pluot/core';
+import { Tooltip } from "./Tooltip.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -31,36 +32,6 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
-function Tooltip(props) {
-  const {
-    content,
-    asTable = false,
-  } = props;
-  if (content === null || content === undefined) {
-    return null;
-  }
-  if (typeof content === "string" || typeof content === "number") {
-    return content;
-  }
-  if (React.isValidElement(content)) {
-    return content;
-  }
-  if (asTable) {
-    return (
-        <table style={{ borderCollapse: 'collapse', marginBottom: 0, opacity: 0.9, padding: '5px', backgroundColor: 'white', borderRadius: '2px' }}>
-          <tbody>
-            {Object.entries(content).map(([key, value]) => (
-              <tr key={key}>
-                <th style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', }}>{key}</th>
-                <td style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', }}>{value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-    );
-  }
-  return <pre>{JSON.stringify(content, null, 2)}</pre>;
-}
 
 function normalizePickingResult(data) {
   const result = data;
@@ -491,11 +462,14 @@ export function Pluot(props) {
     const { mouseX, mouseY } = hoverInfo;
     const isLeft = mouseX < width / 2;
     const isTop = mouseY < height / 2;
+
+    const offsetPx = 10;
+    const extraPx = 5;
     return {
       position: "absolute",
       pointerEvents: "none",
-      ...(isTop ? { top: mouseY } : { bottom: height - mouseY }),
-      ...(isLeft ? { left: mouseX } : { right: width - mouseX }),
+      ...(isTop ? { top: mouseY + offsetPx } : { bottom: height - mouseY + offsetPx + extraPx }),
+      ...(isLeft ? { left: mouseX + offsetPx + extraPx } : { right: width - mouseX + offsetPx }),
     };
   }, [hoverInfo, width, height]);
 
@@ -561,7 +535,6 @@ export function Pluot(props) {
           </div>
         ) : null}
       </div>
-      <Tooltip content={{ 'test': 't'}} asTable />
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
     </>
   );
