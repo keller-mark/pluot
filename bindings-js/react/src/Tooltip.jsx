@@ -19,12 +19,12 @@ export function Tooltip(props) {
   }
   if (asTable) {
     return (
-        <table style={{ borderCollapse: 'collapse', marginBottom: 0, opacity: 0.9, padding: '5px', backgroundColor: 'white', borderRadius: '2px', boxShadow }}>
+        <table style={{ display: 'inline-block', marginBottom: 0, opacity: 0.9, padding: '5px', backgroundColor: 'white', borderRadius: '2px', boxShadow }}>
           <tbody>
             {Object.entries(content).map(([key, value]) => (
               <tr key={key}>
-                <th style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', }}>{key}</th>
-                <td style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', }}>{value}</td>
+                <th style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', textAlign: 'left' }}>{key}</th>
+                <td style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', textAlign: 'left' }}>{value}</td>
               </tr>
             ))}
           </tbody>
