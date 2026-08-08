@@ -23,6 +23,10 @@ const IDENTITY_CAMERA = new Float32Array([
 
 const NOOP = () => { };
 
+function defaultOnClick(obj) {
+  window.alert(JSON.stringify(obj, null, 2));
+}
+
 export function PluotWrapper(props) {
   const {
     showControls = true,
@@ -48,7 +52,8 @@ export function PluotWrapper(props) {
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
     cameraMatrix: cameraMatrixProp = null,
-    enablePicking = true,
+    enableClick = true,
+    enableTooltip = false,
     enableCamera = true,
     // TODO: remove this option upon completion of https://github.com/keller-mark/pluot/issues/221
     enableVector = true,
@@ -315,9 +320,11 @@ export function PluotWrapper(props) {
           debugMargins={debugMargins}
           cameraMatrix={enableCamera ? cameraMatrix : IDENTITY_CAMERA}
           setCameraMatrix={enableCamera ? setCameraMatrix : NOOP}
-          enablePicking={enablePicking}
+          enableClick={enableClick}
+          enableTooltip={enableTooltip}
           backgroundColor={"#fff"}
           onHover={onHover}
+          onClick={defaultOnClick}
         />
       </div>
       <PlotControls

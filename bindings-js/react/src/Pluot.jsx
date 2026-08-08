@@ -32,6 +32,12 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
+const identity = (param) => param;
+const noop = () => { };
+
+// Mouse movement (in pixels) beyond which a mousedown-to-click is
+// considered a drag rather than a click, so that picking is skipped.
+const DRAG_THRESHOLD_PX = 3;
 
 function normalizePickingResult(data) {
   const result = data;
@@ -70,12 +76,19 @@ export function Pluot(props) {
     maxTimeout = 5000,
     allowSimultaneousRenders = true,
     debugMargins = false,
+    backgroundColor = undefined,
     cameraMatrix: controlledCameraMatrix = null,
     setCameraMatrix: setControlledCameraMatrix = null,
-    enablePicking = true,
-    backgroundColor = undefined,
-    onHover = null,
+    enableClick = false,
+    enableTooltip = false,
+    onClick: onClickProp = null,
+    onHover: onHoverProp = null,
   } = props;
+
+  const onClick = typeof onClickProp === 'function' ? onClickProp : identity;
+  const onHover = typeof onHoverProp === 'function' ? onHoverProp : identity;
+
+
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
   const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState(
@@ -131,6 +144,11 @@ export function Pluot(props) {
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
   const currentTimeout = useRef(minTimeout);
+
+  // Used to distinguish a plain click from a click that ends a drag
+  // (e.g. panning), so that dragging does not trigger picking.
+  const dragStartRef = useRef(null);
+  const didDragRef = useRef(false);
 
   // TODO: do we want to use the backlog approach or not?
   // (Similar to the one used in the Vitessce heatmap)
@@ -233,7 +251,7 @@ export function Pluot(props) {
 
   // The click-picking callback.
   const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
-    setPickingResult(await pick(screenCoordX, screenCoordY));
+    setPickingResult(onClick(await pick(screenCoordX, screenCoordY)));
   });
 
   // The hover-picking callback.
@@ -271,9 +289,31 @@ export function Pluot(props) {
     cameraEl.addEventListener("mousemove", mouseMoveHandler);
     cameraEl.addEventListener("wheel", wheelHandler);
 
+    // Track mousedown -> mousemove distance so that a drag (e.g. panning)
+    // that ends on the camera element does not also trigger a click/pick.
+    const mouseDownHandler = (event) => {
+      dragStartRef.current = { x: event.clientX, y: event.clientY };
+      didDragRef.current = false;
+    };
+    const dragDetectHandler = (event) => {
+      if (!dragStartRef.current) {
+        return;
+      }
+      const dx = event.clientX - dragStartRef.current.x;
+      const dy = event.clientY - dragStartRef.current.y;
+      if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+        didDragRef.current = true;
+      }
+    };
+    cameraEl.addEventListener("mousedown", mouseDownHandler);
+    cameraEl.addEventListener("mousemove", dragDetectHandler);
+
     // Set up an onClick handler for picking.
     const clickHandler = (event) => {
-      if (enablePicking) {
+      const wasDrag = didDragRef.current;
+      dragStartRef.current = null;
+      didDragRef.current = false;
+      if (enableClick && !wasDrag) {
         pickFrame(event.offsetX, event.offsetY);
       }
     };
@@ -281,7 +321,7 @@ export function Pluot(props) {
 
     // Set up hover handlers for picking, only when the onHover prop is provided.
     const hoverMoveHandler = (event) => {
-      if (enablePicking && typeof onHover === 'function') {
+      if (enableTooltip) {
         throttledHoverFrame(event.offsetX, event.offsetY);
       }
     };
@@ -289,7 +329,7 @@ export function Pluot(props) {
       throttledHoverFrame.cancel();
       setHoverInfo(null);
     };
-    if (onHover) {
+    if (enableTooltip) {
       cameraEl.addEventListener("mousemove", hoverMoveHandler);
       cameraEl.addEventListener("mouseleave", hoverLeaveHandler);
     }
@@ -297,11 +337,13 @@ export function Pluot(props) {
     return () => {
       cameraEl.removeEventListener("mousemove", mouseMoveHandler);
       cameraEl.removeEventListener("wheel", wheelHandler);
+      cameraEl.removeEventListener("mousedown", mouseDownHandler);
+      cameraEl.removeEventListener("mousemove", dragDetectHandler);
       cameraEl.removeEventListener("click", clickHandler);
       cameraEl.removeEventListener("mousemove", hoverMoveHandler);
       cameraEl.removeEventListener("mouseleave", hoverLeaveHandler);
     };
-  }, [viewMode, enablePicking, onHover, throttledHoverFrame]);
+  }, [viewMode, enableClick, enableTooltip, throttledHoverFrame]);
 
 
   // The renderFrame callback.
@@ -404,8 +446,6 @@ export function Pluot(props) {
 
     setDidFirstRender(true);
   });
-
-
 
 
   const throttledRender = useMemo(

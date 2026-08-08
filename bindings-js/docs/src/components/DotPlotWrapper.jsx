@@ -24,6 +24,6 @@ function onHoverDotPlot(info) {
 
 export function DotPlotWrapper(props) {
   return (
-    <PluotWrapper {...props} onHover={onHoverDotPlot} />
+    <PluotWrapper {...props} onHover={onHoverDotPlot} enableTooltip />
   );
 }
