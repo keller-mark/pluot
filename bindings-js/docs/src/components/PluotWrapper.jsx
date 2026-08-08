@@ -14,6 +14,15 @@ const SCRIPT_EXTENSIONS = {
   ScriptReact: 'jsx',
 };
 
+const IDENTITY_CAMERA = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+]);
+
+const NOOP = () => { };
+
 export function PluotWrapper(props) {
   const {
     showControls = true,
@@ -40,8 +49,11 @@ export function PluotWrapper(props) {
     plotSpecificOptions = null,
     cameraMatrix: cameraMatrixProp = null,
     enablePicking = true,
+    enableCamera = true,
     // TODO: remove this option upon completion of https://github.com/keller-mark/pluot/issues/221
     enableVector = true,
+
+    onHover = null, // Pass through to Pluot component
   } = props;
 
   const defaultOptions = {
@@ -301,10 +313,11 @@ export function PluotWrapper(props) {
           aspectRatioAlignmentMode={aspectRatioAlignmentMode}
           format={format}
           debugMargins={debugMargins}
-          cameraMatrix={cameraMatrix}
-          setCameraMatrix={setCameraMatrix}
+          cameraMatrix={enableCamera ? cameraMatrix : IDENTITY_CAMERA}
+          setCameraMatrix={enableCamera ? setCameraMatrix : NOOP}
           enablePicking={enablePicking}
           backgroundColor={"#fff"}
+          onHover={onHover}
         />
       </div>
       <PlotControls

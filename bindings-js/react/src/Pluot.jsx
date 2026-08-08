@@ -31,6 +31,37 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
+function Tooltip(props) {
+  const {
+    content,
+    asTable = false,
+  } = props;
+  if (content === null || content === undefined) {
+    return null;
+  }
+  if (typeof content === "string" || typeof content === "number") {
+    return content;
+  }
+  if (React.isValidElement(content)) {
+    return content;
+  }
+  if (asTable) {
+    return (
+        <table style={{ borderCollapse: 'collapse', marginBottom: 0, opacity: 0.9, padding: '5px', backgroundColor: 'white', borderRadius: '2px' }}>
+          <tbody>
+            {Object.entries(content).map(([key, value]) => (
+              <tr key={key}>
+                <th style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', }}>{key}</th>
+                <td style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', }}>{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+    );
+  }
+  return <pre>{JSON.stringify(content, null, 2)}</pre>;
+}
+
 function normalizePickingResult(data) {
   const result = data;
   if (data && Array.isArray(result.layer_results)) {
@@ -72,6 +103,7 @@ export function Pluot(props) {
     setCameraMatrix: setControlledCameraMatrix = null,
     enablePicking = true,
     backgroundColor = undefined,
+    onHover = null,
   } = props;
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
@@ -140,6 +172,9 @@ export function Pluot(props) {
   const [bailedEarly, setBailedEarly] = useState(true);
 
   const [pickingResult, setPickingResult] = useState(null);
+  // hoverInfo.mouseX/mouseY are in the coordinate space of the outer
+  // (width x height) container, used to position the hover tooltip.
+  const [hoverInfo, setHoverInfo] = useState(null);
 
   const progressBarId = useId();
 
@@ -181,8 +216,9 @@ export function Pluot(props) {
     setCameraMatrix(nextCameraMatrix);
   });
 
-  // The picking callback.
-  const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+  // Runs the picking query against the wasm module and returns the normalized result.
+  // Shared by the click (pickFrame) and hover (hoverFrame) callbacks below.
+  const pick = useEffectEvent(async (screenCoordX, screenCoordY) => {
     const renderParams = {
       schema_version: schemaVersion,
       width,
@@ -215,14 +251,42 @@ export function Pluot(props) {
 
     // TODO: wrap pick_wasm in a try/catch
 
-    setPickingResult(normalizePickingResult(await pick_wasm(
+    return normalizePickingResult(await pick_wasm(
       renderParams,
       // The coordinates are relative to the "layer" (the camera region), not the full width/height.
       // We also need to flip the Y coordinate so that positive is up.
       screenCoordX + marginLeft,
       marginBottom + (layerHeight - screenCoordY)
-    )));
+    ));
   });
+
+  // The click-picking callback.
+  const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+    setPickingResult(await pick(screenCoordX, screenCoordY));
+  });
+
+  // The hover-picking callback.
+  const hoverFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+    const result = await pick(screenCoordX, screenCoordY);
+    setHoverInfo({
+      content: onHover(result),
+      // Convert from cameraEl-relative coordinates to outer-container-relative
+      // coordinates, since the tooltip is positioned within the outer container.
+      mouseX: screenCoordX + marginLeft,
+      mouseY: screenCoordY + marginTop,
+    });
+  });
+
+  const throttledHoverFrame = useMemo(
+    () => throttle(
+      hoverFrame,
+      50,
+      { leading: true, trailing: true },
+    ), []);
+
+  useEffect(() => {
+    return () => throttledHoverFrame.cancel();
+  }, [throttledHoverFrame]);
 
   // Set up the camera and picking handlers.
   useEffect(() => {
@@ -244,12 +308,29 @@ export function Pluot(props) {
     };
     cameraEl.addEventListener("click", clickHandler);
 
+    // Set up hover handlers for picking, only when the onHover prop is provided.
+    const hoverMoveHandler = (event) => {
+      if (enablePicking) {
+        throttledHoverFrame(event.offsetX, event.offsetY);
+      }
+    };
+    const hoverLeaveHandler = () => {
+      throttledHoverFrame.cancel();
+      setHoverInfo(null);
+    };
+    if (onHover) {
+      cameraEl.addEventListener("mousemove", hoverMoveHandler);
+      cameraEl.addEventListener("mouseleave", hoverLeaveHandler);
+    }
+
     return () => {
       cameraEl.removeEventListener("mousemove", mouseMoveHandler);
       cameraEl.removeEventListener("wheel", wheelHandler);
       cameraEl.removeEventListener("click", clickHandler);
+      cameraEl.removeEventListener("mousemove", hoverMoveHandler);
+      cameraEl.removeEventListener("mouseleave", hoverLeaveHandler);
     };
-  }, [viewMode, enablePicking]);
+  }, [viewMode, enablePicking, onHover, throttledHoverFrame]);
 
 
   // The renderFrame callback.
@@ -401,6 +482,23 @@ export function Pluot(props) {
   }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, stores, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode, marginLeft, marginRight, marginTop, marginBottom]);
 
+  // Position the hover tooltip so that it grows diagonally away from whichever
+  // quadrant of the plot the mouse currently occupies, to avoid clipping.
+  const hoverStyle = useMemo(() => {
+    if (!hoverInfo) {
+      return null;
+    }
+    const { mouseX, mouseY } = hoverInfo;
+    const isLeft = mouseX < width / 2;
+    const isTop = mouseY < height / 2;
+    return {
+      position: "absolute",
+      pointerEvents: "none",
+      ...(isTop ? { top: mouseY } : { bottom: height - mouseY }),
+      ...(isLeft ? { left: mouseX } : { right: width - mouseX }),
+    };
+  }, [hoverInfo, width, height]);
+
   return (
     <>
       <div style={{ width, height, position: "relative", backgroundColor }}>
@@ -457,12 +555,14 @@ export function Pluot(props) {
 
           />
         )}
-
+        {hoverInfo ? (
+          <div style={hoverStyle}>
+            <Tooltip content={hoverInfo.content} asTable />
+          </div>
+        ) : null}
       </div>
+      <Tooltip content={{ 'test': 't'}} asTable />
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
-      {pickingResult ? (
-        <pre>{JSON.stringify(pickingResult, null, 2)}</pre>
-      ) : null}
     </>
   );
 }
