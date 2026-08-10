@@ -404,7 +404,6 @@ class PluotWasmWidget(anywidget.AnyWidget):
         name = msg.get("name")
         params = msg.get("msg")
         msg_id = msg.get("id")
-        print(params)
         try:
             if name == "_zarr_get":
                 response, result_buffers = self._zarr_get(params, buffers)
