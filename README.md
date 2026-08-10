@@ -14,7 +14,6 @@ Rust, Python, R, and JavaScript (including in a web browser) are currently suppo
 :test_tube: Pluot is new and experimental.
 
 
-
 ## Features
 <!-- - __Fast__: Each `render()` call (at least for the case of raster-based rendering) should be efficient/quick enough for calling on each frame of an animation or user interaction (e.g., pan, zoom, hover).-->
 - __Small__: The bundle size (i.e., the WASM binary size) is small (currently less than 5MB) to make it feasible to integrate into web applications.
@@ -26,6 +25,12 @@ Rust, Python, R, and JavaScript (including in a web browser) are currently suppo
 
 ⚠️ Currently focusing on 2D, before eventually supporting polar, ternary, and [3D](https://pluot.dev/examples/scatterplot-3d/).
 
+## Examples
+
+|  |  |  |
+| :---: | :---: | :---: |
+| **Static plots**<br><sub>High-quality vector graphics</sub><br><br>![Static plots](./.github/img/static.png) | **Web-based plots**<br><sub>Scalable to millions of points</sub><br><br>![Web-based plots](./.github/img/web1.png)<br><br>[Open example](https://pluot.dev/examples/scatterplot-dynamic-opacity/) | **Python notebooks**<br><sub>Render static plots or use interactive widget built with Anywidget</sub><br><br>![Python notebooks](./.github/img/python_notebook.png)<br><br>[View source](https://github.com/keller-mark/pluot/tree/main/bindings-python/notebooks) |
+| **React component**<br><sub>React and vanilla JS</sub><br><br>![React component](./.github/img/web3.png)<br><br>[Open example](https://pluot.dev/examples/bioimaging-simple/) | **Rust-based GUIs**<br><sub>Examples with Slint and Egui; Framework-agnostic</sub><br><br>![Rust GUIs](./.github/img/pluot_egui.png)<br><br>[View source](https://github.com/keller-mark/pluot/tree/main/examples) | **Scientific data formats**<br><sub>Support for OME-Zarr and AnnData</sub><br><br>![AnnData example](./.github/img/web4.png)<br><br>[Open example](https://pluot.dev/examples/dot-plot/) |
 
 
 
