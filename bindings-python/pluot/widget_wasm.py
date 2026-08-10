@@ -96,6 +96,13 @@ function render({ model, el }) {
     cameraEl.style.position = "absolute";
     container.appendChild(cameraEl);
 
+    const loadingText = document.createElement("p");
+    loadingText.innerText = "Loading...";
+    loadingText.style.position = "absolute";
+    loadingText.style.top = 0;
+    loadingText.style.left = 0;
+    container.appendChild(loadingText);
+
     el.appendChild(container);
 
     function applyLayout() {
@@ -196,7 +203,6 @@ function render({ model, el }) {
         const w = model.get("width");
         const h = model.get("height");
         const storesMetadata = model.get("stores_metadata");
-        console.log(model, storesMetadata);
         const params = {
             schema_version: null,
             width: w,
@@ -227,6 +233,12 @@ function render({ model, el }) {
             const { plot, bailedEarly } = await pluot.renderToImageData(params);
             const ctx = canvas.getContext("2d");
             ctx.putImageData(plot, 0, 0);
+
+            if(!bailedEarly) {
+                loadingText.style.display = "none";
+            } else {
+                loadingText.style.display = "inline-block";
+            }
         } catch (err) {
             console.error("pluot.renderToImageData error:", err);
         }
