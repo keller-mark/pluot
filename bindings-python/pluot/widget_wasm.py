@@ -192,16 +192,6 @@ function render({ model, el }) {
 
     // --- Rendering ---
 
-    let renderFrame = 0;
-
-    function scheduleRender() {
-        if (renderFrame) return;
-        renderFrame = requestAnimationFrame(() => {
-            renderFrame = 0;
-            doRender();
-        });
-    }
-
     async function doRender() {
         const w = model.get("width");
         const h = model.get("height");
@@ -252,7 +242,7 @@ function render({ model, el }) {
         if (next === cur) return;
         model.set("camera_view", Array.from(next));
         model.save_changes();
-        scheduleRender();
+        doRender();
     }
 
     function onMouseMove(event) {
@@ -262,7 +252,7 @@ function render({ model, el }) {
         if (next === cur) return;
         model.set("camera_view", Array.from(next));
         model.save_changes();
-        scheduleRender();
+        doRender();
     }
 
     cameraEl.addEventListener("wheel", onWheel, { passive: false });
@@ -286,7 +276,7 @@ function render({ model, el }) {
         "plot_id", "plot_type", "stores_metadata", "plot_params", "format",
     ];
     for (const key of renderKeys) {
-        model.on(`change:${key}`, scheduleRender);
+        model.on(`change:${key}`, doRender);
     }
 
     function registerStores() {
@@ -300,12 +290,12 @@ function render({ model, el }) {
 
     model.on("change:stores_metadata", () => {
         registerStores();
-        scheduleRender();
+        doRender();
     });
 
     // WASM is already initialized (awaited in `initialize`); register store and render.
     registerStores();
-    scheduleRender();
+    doRender();
 
     return () => {
         cameraEl.removeEventListener("wheel", onWheel);
@@ -314,13 +304,9 @@ function render({ model, el }) {
             model.off(`change:${key}`, applyLayout);
         }
         for (const key of renderKeys) {
-            model.off(`change:${key}`, scheduleRender);
+            model.off(`change:${key}`, doRender);
         }
         model.off("change:stores_metadata");
-        if (renderFrame) {
-            cancelAnimationFrame(renderFrame);
-            renderFrame = 0;
-        }
     };
 }
 

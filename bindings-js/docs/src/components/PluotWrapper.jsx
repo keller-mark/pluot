@@ -203,7 +203,7 @@ export function PluotWrapper(props) {
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
-      format: controlValuesRef.current.format,
+      format: controlValuesRef.current.format ?? "Raster",
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,

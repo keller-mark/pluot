@@ -63,6 +63,7 @@ export function Pluot(props) {
     store: storeProp,
     storeName: storeNameProp,
     stores: storesProp,
+    registerStores = true,
     plotParams,
     viewMode = "2d",
     marginBottom = 100.0,
@@ -130,8 +131,8 @@ export function Pluot(props) {
     store: storeProp,
     storeName: storeNameProp,
     plotId,
-    register: true,
-  }), [storeNameProp, storeProp, storesProp, plotId]);
+    register: registerStores,
+  }), [storeNameProp, storeProp, storesProp, plotId, registerStores]);
 
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
