@@ -1,4 +1,11 @@
 
+## 0.1.13
+
+### Patch Changes
+
+- Add preliminary support for tooltips. Distinguish click events that are standalone from those during dragging. (`@pluot/react`) ([#284](https://github.com/keller-mark/pluot/pull/284))
+
+
 ## 0.1.12
 
 ### Patch Changes
