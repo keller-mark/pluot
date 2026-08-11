@@ -28,13 +28,6 @@ def _(HTTPStore, zarr):
 
 
 @app.cell
-def _(store, zarr):
-    arr = zarr.open_array(store=store, mode='r', path="/n_1000000/x_coords")
-    arr.shape
-    return
-
-
-@app.cell
 def _():
     camera_view = [
         0.15, 0.0, 0.0, 0.0,
@@ -43,6 +36,13 @@ def _():
         0.0, 0.0, 0.0, 1.0,
     ]
     return (camera_view,)
+
+
+@app.cell
+def _(mo):
+    point_radius_slider = mo.ui.slider(start=0.1, stop=5.0, value=0.5, step=0.1)
+    point_radius_slider
+    return (point_radius_slider,)
 
 
 @app.cell
@@ -92,10 +92,8 @@ def _(PluotWasmWidget, camera_view, point_radius_slider, store):
 
 
 @app.cell
-def _(mo):
-    point_radius_slider = mo.ui.slider(start=1.0, stop=20.0, value=10.0)
-    point_radius_slider
-    return (point_radius_slider,)
+def _():
+    return
 
 
 if __name__ == "__main__":

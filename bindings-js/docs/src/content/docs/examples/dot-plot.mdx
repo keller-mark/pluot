@@ -4,11 +4,11 @@ description: Dot plot example.
 sidebar:
     order: 30
 ---
-import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+import { DotPlotWrapper } from '../../../components/DotPlotWrapper.jsx';
 
 This [dot plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.dotplot.html) displays single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
 
-<PluotWrapper
+<DotPlotWrapper
     client:load
     client:only="react"
 
@@ -37,4 +37,5 @@ This [dot plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.dotp
     marginRight={150}
     width={700}
     height={700}
+    enableCamera={false}
 />

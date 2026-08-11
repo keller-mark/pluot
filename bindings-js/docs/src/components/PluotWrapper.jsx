@@ -14,6 +14,19 @@ const SCRIPT_EXTENSIONS = {
   ScriptReact: 'jsx',
 };
 
+const IDENTITY_CAMERA = new Float32Array([
+  1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+]);
+
+const NOOP = () => { };
+
+function defaultOnClick(obj) {
+  window.alert(JSON.stringify(obj, null, 2));
+}
+
 export function PluotWrapper(props) {
   const {
     showControls = true,
@@ -39,9 +52,13 @@ export function PluotWrapper(props) {
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
     cameraMatrix: cameraMatrixProp = null,
-    enablePicking = true,
+    enableClick = true,
+    enableTooltip = false,
+    enableCamera = true,
     // TODO: remove this option upon completion of https://github.com/keller-mark/pluot/issues/221
     enableVector = true,
+
+    onHover = null, // Pass through to Pluot component
   } = props;
 
   const defaultOptions = {
@@ -186,7 +203,7 @@ export function PluotWrapper(props) {
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
-      format: controlValuesRef.current.format,
+      format: controlValuesRef.current.format ?? "Raster",
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,
@@ -301,10 +318,13 @@ export function PluotWrapper(props) {
           aspectRatioAlignmentMode={aspectRatioAlignmentMode}
           format={format}
           debugMargins={debugMargins}
-          cameraMatrix={cameraMatrix}
-          setCameraMatrix={setCameraMatrix}
-          enablePicking={enablePicking}
+          cameraMatrix={enableCamera ? cameraMatrix : IDENTITY_CAMERA}
+          setCameraMatrix={enableCamera ? setCameraMatrix : NOOP}
+          enableClick={enableClick}
+          enableTooltip={enableTooltip}
           backgroundColor={"#fff"}
+          onHover={onHover}
+          onClick={defaultOnClick}
         />
       </div>
       <PlotControls

@@ -36,7 +36,7 @@ DEFAULT_CAMERA_MATRIX_3D: list[float] = [
 
 
 _ESM = r"""
-import * as pluot from 'https://unpkg.com/@pluot/core@0.1.7/dist/index.js';
+import * as pluot from 'https://unpkg.com/@pluot/core@0.1.12/dist/index.js';
 import * as uuid from "https://esm.sh/@lukeed/uuid@2.0.1/es2022/uuid.mjs";
 
 // Fallback UUID for non-secure (http://) contexts where crypto.randomUUID is unavailable.
@@ -95,6 +95,13 @@ function render({ model, el }) {
     const cameraEl = document.createElement("div");
     cameraEl.style.position = "absolute";
     container.appendChild(cameraEl);
+
+    const loadingText = document.createElement("p");
+    loadingText.innerText = "Loading...";
+    loadingText.style.position = "absolute";
+    loadingText.style.top = 0;
+    loadingText.style.left = 0;
+    container.appendChild(loadingText);
 
     el.appendChild(container);
 
@@ -192,16 +199,6 @@ function render({ model, el }) {
 
     // --- Rendering ---
 
-    let renderFrame = 0;
-
-    function scheduleRender() {
-        if (renderFrame) return;
-        renderFrame = requestAnimationFrame(() => {
-            renderFrame = 0;
-            doRender();
-        });
-    }
-
     async function doRender() {
         const w = model.get("width");
         const h = model.get("height");
@@ -230,19 +227,20 @@ function render({ model, el }) {
             svg_compression_enabled: false,
             svg_include_document: false,
             stores: storesMetadata,
+            register: false,
         };
         try {
-            const result = await pluot.render_wasm(params);
-            // Strip the trailing bailed_early flag byte appended by the Rust renderer.
-            const pixelCount = w * h * 4;
-            const data = result.length > pixelCount ? result.subarray(0, pixelCount) : result;
-            if (data.length !== pixelCount) return;
+            const { plot, bailedEarly } = await pluot.renderToImageData(params);
             const ctx = canvas.getContext("2d");
-            if (!ctx) return;
-            const clamped = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
-            ctx.putImageData(new ImageData(clamped, w, h), 0, 0);
+            ctx.putImageData(plot, 0, 0);
+
+            if(!bailedEarly) {
+                loadingText.style.display = "none";
+            } else {
+                loadingText.style.display = "inline-block";
+            }
         } catch (err) {
-            console.error("pluot render_wasm error:", err);
+            console.error("pluot.renderToImageData error:", err);
         }
     }
 
@@ -256,7 +254,7 @@ function render({ model, el }) {
         if (next === cur) return;
         model.set("camera_view", Array.from(next));
         model.save_changes();
-        scheduleRender();
+        doRender();
     }
 
     function onMouseMove(event) {
@@ -266,7 +264,7 @@ function render({ model, el }) {
         if (next === cur) return;
         model.set("camera_view", Array.from(next));
         model.save_changes();
-        scheduleRender();
+        doRender();
     }
 
     cameraEl.addEventListener("wheel", onWheel, { passive: false });
@@ -290,7 +288,7 @@ function render({ model, el }) {
         "plot_id", "plot_type", "stores_metadata", "plot_params", "format",
     ];
     for (const key of renderKeys) {
-        model.on(`change:${key}`, scheduleRender);
+        model.on(`change:${key}`, doRender);
     }
 
     function registerStores() {
@@ -302,14 +300,14 @@ function render({ model, el }) {
         }
     }
 
-    model.on("change:stores", () => {
+    model.on("change:stores_metadata", () => {
         registerStores();
-        scheduleRender();
+        doRender();
     });
 
     // WASM is already initialized (awaited in `initialize`); register store and render.
     registerStores();
-    scheduleRender();
+    doRender();
 
     return () => {
         cameraEl.removeEventListener("wheel", onWheel);
@@ -318,13 +316,9 @@ function render({ model, el }) {
             model.off(`change:${key}`, applyLayout);
         }
         for (const key of renderKeys) {
-            model.off(`change:${key}`, scheduleRender);
+            model.off(`change:${key}`, doRender);
         }
         model.off("change:stores_metadata");
-        if (renderFrame) {
-            cancelAnimationFrame(renderFrame);
-            renderFrame = 0;
-        }
     };
 }
 
@@ -363,25 +357,48 @@ class PluotWasmWidget(anywidget.AnyWidget):
     batch_zarr_gets = traitlets.Bool(False).tag(sync=True)
 
     def __init__(self, stores: dict | None = None, store: Store | None = None, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
         self._stores: dict = dict(stores or {})
         if store is not None:
             store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
             self._stores[store_name] = store
             self.store_name = store_name
 
-        self.stores_metadata = {}
+        stores_metadata = {}
         for store_key, store_instance in self._stores.items():
-            self.stores_metadata[store_key] = store_instance_to_metadata(store_instance)
+            stores_metadata[store_key] = store_instance_to_metadata(store_instance)
+
+        # We need to call the anywidget/ipywidgets constructor _after_
+        # defining stores_metadata, so that we can pass it as the initial traitlet value.
+        # Reference: https://github.com/vitessce/vitessce-python/blob/34376752fd056d3da4f7fc0bc63c9172179f75f3/src/vitessce/widget.py#L863
+        super(PluotWasmWidget, self).__init__(
+            **kwargs, stores_metadata=stores_metadata,
+        )
+
         self.on_msg(self._handle_msg)
 
     def add_store(self, name: str, store: Any) -> None:
         self._stores[name] = store
 
-    def _handle_msg(self, _widget: Any, content: Any, buffers: list[bytes]) -> None:
-        if not isinstance(content, dict) or content.get("kind") != "anywidget-command":
+    def _handle_msg(self, *args) -> None:
+        if len(args) == 1:
+            # msg passed as positional argument.
+            # This happens in jupyter lab?
+            msg = args[0]
+            content = msg.get("content", {}).get("data", {}).get("content", {})
+            buffers = msg.get("buffers", [])
+            if not isinstance(content, dict) or content.get("kind") != "anywidget-command":
+                super()._handle_msg(*args)
+                return
+            self._dispatch_command(content, buffers)
             return
-        self._dispatch_command(content, buffers)
+        elif len(args) == 3:
+            # widget, content, buffers passed as positional args.
+            # This happens in marimo?
+            [_widget, content, buffers] = args
+            if not isinstance(content, dict) or content.get("kind") != "anywidget-command":
+                super()._handle_msg(*args)
+                return
+            self._dispatch_command(content, buffers)
 
     def _dispatch_command(self, msg: dict, buffers: list[bytes]) -> None:
         name = msg.get("name")
