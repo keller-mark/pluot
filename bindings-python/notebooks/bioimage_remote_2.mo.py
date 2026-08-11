@@ -153,7 +153,7 @@ def _(
                           dict(
                             c_index= 0,
                             window= ch0_slider.value,
-                            color= [1.0, 0.0, 0.0],
+                            color= [1.0, 0.0, 1.0],
                           ),
                           dict(
                             c_index= 1,
