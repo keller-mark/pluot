@@ -30,6 +30,10 @@ use crate::layers::ome_zarr_utils::{
     OmeZarrChannelSetting, OmeDim, OmeDimensionOrder,
     PhysicalRect, rects_overlap, bounding_box,
     axis_unit_space_to_coefficient_and_exponent,
+    model_matrix_pixel_size, target_coordinate_system_model_matrix,
+};
+use crate::ome_zarr_transformations::{
+    AffineMatrix, CoordinateSystemAxis, CoordinateSystemId, TransformationGraph,
 };
 
 /// Layer params struct for [`OmeZarrMultiscaleLayer`].
@@ -45,6 +49,20 @@ pub struct OmeZarrMultiscaleLayerParams {
     pub group_path: Option<String>,
     /// Which multiscale entry to use (index into the multiscales array). Defaults to 0.
     pub multiscale_index: Option<usize>,
+    /// Name of the coordinate system to render into, as declared by the
+    /// OME-Zarr v0.6 (RFC-5) `coordinateSystems` metadata of this group or of
+    /// its `scene`.
+    ///
+    /// When set, each resolution level is positioned by composing the
+    /// coordinate transformations that lead from its array coordinate system to
+    /// this one, inverting any that are declared in the opposite direction.
+    /// World coordinates are then absolute positions in that coordinate system
+    /// (in meters, with the Y axis negated so that world Y increases upwards),
+    /// so images sharing a target coordinate system line up.
+    ///
+    /// When unset, each level is positioned by its own `scale` transformation
+    /// alone, with the image's top-left corner at world coordinate (0, 0).
+    pub target_coordinate_system: Option<String>,
     /// Z slice index. Defaults to 0.
     pub target_z: Option<u32>,
     /// T slice index. Defaults to 0.
@@ -62,6 +80,7 @@ impl Default for OmeZarrMultiscaleLayerParams {
             store_name: None,
             group_path: None,
             multiscale_index: None,
+            target_coordinate_system: None,
             target_z: None,
             target_t: None,
             channel_settings: vec![],
@@ -108,6 +127,17 @@ async fn use_memo_multiscale_metadata(
     data
 }
 
+/// How to map each resolution level into a requested target coordinate system.
+struct TargetCoordinateSystem {
+    /// Name of the target coordinate system, for error messages.
+    name: String,
+    /// Axes of the target coordinate system, giving the component order and units.
+    axes: Vec<CoordinateSystemAxis>,
+    /// Transformation from each resolution level's array coordinate system into
+    /// the target coordinate system, parallel to `resolution_levels`.
+    level_transformations: Vec<AffineMatrix>,
+}
+
 /// Cached metadata parsed from the OME-Zarr group.
 struct OmeZarrMultiscaleMetadata {
     /// Resolution levels derived from OME-Zarr datasets (finest first).
@@ -122,6 +152,8 @@ struct OmeZarrMultiscaleMetadata {
     array_metadatas: Vec<zarrs::array::ArrayMetadata>,
     /// Ordered dimension list (e.g., [T, C, Z, Y, X] for "tczyx").
     dimension_order: OmeDimensionOrder,
+    /// Set when `target_coordinate_system` was requested.
+    target: Option<TargetCoordinateSystem>,
 }
 
 // OmeZarrMultiscaleLayer.
@@ -177,12 +209,14 @@ impl OmeZarrMultiscaleLayer {
             .clone()
             .unwrap_or_else(|| "/".to_string());
         let multiscale_index = self.layer_params.multiscale_index.unwrap_or(0);
+        let target_coordinate_system = self.layer_params.target_coordinate_system.clone();
         let cache_enabled = self.view_params.cache_enabled;
 
         let keys = vec![
             self.store_name.clone(),
             group_path.clone(),
             format!("multiscale_{}", multiscale_index),
+            format!("target_{}", target_coordinate_system.clone().unwrap_or_default()),
         ];
 
         let metadata_future = use_memo_multiscale_metadata(async || {
@@ -191,9 +225,9 @@ impl OmeZarrMultiscaleLayer {
                 .expect("Failed to open zarr group for OME-Zarr metadata");
 
             let attrs = group.attributes();
-            let ome_fields: OmeFields =
-                serde_json::from_value(attrs.get("ome").expect("OME attribute missing").clone())
-                    .expect("Failed to parse OME attributes");
+            let ome_attributes = attrs.get("ome").expect("OME attribute missing");
+            let ome_fields: OmeFields = serde_json::from_value(ome_attributes.clone())
+                .expect("Failed to parse OME attributes");
 
             let multiscales = ome_fields
                 .multiscales
@@ -222,11 +256,36 @@ impl OmeZarrMultiscaleLayer {
                 _ => panic!("Expected space unit for Y axis, got non-space unit: {:?}", multiscale.axes[y_dim_i].unit),
             };
 
+            // When a target coordinate system was requested, build the graph of
+            // coordinate systems and transformations declared by this group so
+            // that each level can be mapped into that coordinate system.
+            let target_graph = target_coordinate_system.as_deref().map(|target_name| {
+                let graph = TransformationGraph::from_ome_attributes(ome_attributes)
+                    .unwrap_or_else(|e| panic!("Failed to parse OME-Zarr coordinate transformations: {}", e));
+                let target_id = graph
+                    .resolve_name(target_name)
+                    .unwrap_or_else(|| panic!(
+                        "Target coordinate system \"{}\" is not declared in the OME-Zarr metadata",
+                        target_name,
+                    ))
+                    .clone();
+                let axes = graph
+                    .coordinate_system(&target_id)
+                    .unwrap_or_else(|| panic!(
+                        "Target coordinate system \"{}\" is referenced by a coordinate transformation but its axes are not declared",
+                        target_name,
+                    ))
+                    .axes
+                    .clone();
+                (graph, target_id, axes)
+            });
+
             let mut resolution_levels = Vec::new();
             let mut dataset_paths = Vec::new();
             let mut full_shapes = Vec::new();
             let mut chunk_shapes = Vec::new();
             let mut array_metadatas = Vec::new();
+            let mut level_transformations = Vec::new();
 
             for dataset in &multiscale.datasets {
                 let array_path = if group_path == "/" {
@@ -275,10 +334,42 @@ impl OmeZarrMultiscaleLayer {
                 let scale_x_in_meters = scale_x * x_unit_coeff * 10_f64.powi(x_unit_exp);
                 let scale_y_in_meters = scale_y * y_unit_coeff * 10_f64.powi(y_unit_exp);
 
+                // Compose the transformations leading from this level's array
+                // coordinate system to the target coordinate system, and take
+                // the level's effective pixel size from the result. Only the
+                // linear part matters here, so the Z/T slice we probe with does
+                // not affect the outcome.
+                let level_scale = match &target_graph {
+                    Some((graph, target_id, target_axes)) => {
+                        let source_id = CoordinateSystemId::array(&dataset.path);
+                        let transformation = graph
+                            .transformation_between(&source_id, target_id)
+                            .unwrap_or_else(|e| panic!(
+                                "Failed to map dataset \"{}\" into coordinate system \"{}\": {}",
+                                dataset.path, target_id, e,
+                            ));
+                        let probe_matrix = target_coordinate_system_model_matrix(
+                            &transformation,
+                            &dimension_order,
+                            target_axes,
+                            img_h,
+                            0,
+                            0,
+                        )
+                        .unwrap_or_else(|e| panic!(
+                            "Failed to build a model matrix for dataset \"{}\": {}",
+                            dataset.path, e,
+                        ));
+                        level_transformations.push(transformation);
+                        model_matrix_pixel_size(&probe_matrix)
+                    }
+                    None => [scale_y_in_meters, scale_x_in_meters],
+                };
+
                 resolution_levels.push(ResolutionLevel {
                     shape: [img_h as u32, img_w as u32],
                     chunk_shape: [chunk_h as u32, chunk_w as u32],
-                    scale: [scale_y_in_meters, scale_x_in_meters],
+                    scale: level_scale,
                 });
                 dataset_paths.push(array_path);
                 full_shapes.push(shape);
@@ -293,6 +384,11 @@ impl OmeZarrMultiscaleLayer {
                 chunk_shapes,
                 array_metadatas,
                 dimension_order,
+                target: target_graph.map(|(_, target_id, axes)| TargetCoordinateSystem {
+                    name: target_id.to_string(),
+                    axes,
+                    level_transformations,
+                }),
             }
         }, &keys, cache_enabled).await;
 
@@ -331,15 +427,35 @@ impl OmeZarrMultiscaleLayer {
         for level_idx in (target_level..=coarsest_idx).rev() {
             let level = &metadata.resolution_levels[level_idx];
 
-            // Convert per-resolution scale to a model_matrix (pixel -> world coords).
-            let scale_x = level.scale[1] as f32;
-            let scale_y = level.scale[0] as f32;
-            let model_matrix: [f32; 16] = [
-                scale_x, 0.0, 0.0, 0.0,
-                0.0, scale_y, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            ];
+            // Build the model_matrix (pixel -> world coords) for this level.
+            // With a target coordinate system, this is the composed
+            // transformation into that coordinate system, evaluated at the Z/T
+            // slice being rendered. Otherwise it is just the level's scale,
+            // which places the image's top-left corner at world (0, 0).
+            let model_matrix: [f32; 16] = match &metadata.target {
+                Some(target) => target_coordinate_system_model_matrix(
+                    &target.level_transformations[level_idx],
+                    &metadata.dimension_order,
+                    &target.axes,
+                    level.shape[0] as u64,
+                    target_z.unwrap_or(0),
+                    target_t.unwrap_or(0),
+                )
+                .unwrap_or_else(|e| panic!(
+                    "Failed to build a model matrix for coordinate system \"{}\": {}",
+                    target.name, e,
+                )),
+                None => {
+                    let scale_x = level.scale[1] as f32;
+                    let scale_y = level.scale[0] as f32;
+                    [
+                        scale_x, 0.0, 0.0, 0.0,
+                        0.0, scale_y, 0.0, 0.0,
+                        0.0, 0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0, 1.0,
+                    ]
+                }
+            };
 
             let tiles = get_visible_tiles(&self.view_params, level, Some(&model_matrix));
 

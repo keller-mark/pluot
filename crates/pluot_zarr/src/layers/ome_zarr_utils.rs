@@ -3,6 +3,8 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 
+use crate::ome_zarr_transformations::{AffineMatrix, CoordinateSystemAxis};
+
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
     // (in scientific notation format where the tuple is `(coefficient, exponent)` meaning `coefficient x 10^exponent` meters)
@@ -41,6 +43,125 @@ pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64
         // TODO: would it be better to just interpret as meters if unrecognized?
         _ => panic!("Unrecognized AxisUnitSpace unit: {:?}", unit),
     }
+}
+
+
+/// Factor converting one unit of a spatial axis to meters.
+///
+/// Axes that do not declare a unit are interpreted as micrometers, matching the
+/// default used elsewhere for OME-Zarr images.
+pub fn axis_unit_to_meters(unit: Option<&str>) -> Result<f64, String> {
+    let Some(unit) = unit else {
+        return Ok(1e-6);
+    };
+    let space: AxisUnitSpace = serde_json::from_value(serde_json::Value::String(unit.to_string()))
+        .map_err(|_| format!("unrecognized spatial axis unit \"{}\"", unit))?;
+    let (coefficient, exponent) = axis_unit_space_to_coefficient_and_exponent(&space);
+    Ok(coefficient * 10_f64.powi(exponent))
+}
+
+/// Build the column-major 4x4 pixel-to-world model matrix for one resolution
+/// level from a transformation into a target coordinate system.
+///
+/// `transformation` maps points in the level's array coordinate system (array
+/// index order, Y increasing downwards) to the target coordinate system, whose
+/// component order and units are given by `target_axes`.
+///
+/// The returned matrix follows the convention of `multiscale_utils`: it maps
+/// Y-up pixel coordinates at this level to world coordinates in meters. Two
+/// axis flips are folded in to get there. The Y-up pixel row is converted back
+/// to an array row using `level_height`, and the target Y coordinate is negated
+/// because world Y increases upwards while the Y axis of an OME-Zarr image
+/// coordinate system increases downwards. Positions along the target Y axis are
+/// therefore negative, but they are absolute: two images sharing a target
+/// coordinate system line up in world space.
+///
+/// Array dimensions other than X and Y are held fixed, since a single slice is
+/// rendered at a time. This only matters for transformations that mix those
+/// dimensions into the target X or Y coordinate.
+pub fn target_coordinate_system_model_matrix(
+    transformation: &AffineMatrix,
+    dimension_order: &OmeDimensionOrder,
+    target_axes: &[CoordinateSystemAxis],
+    level_height: u64,
+    target_z: u64,
+    target_t: u64,
+) -> Result<[f32; 16], String> {
+    let n_in = transformation.n_in();
+    if n_in != dimension_order.num_dims() {
+        return Err(format!(
+            "the transformation takes {}-dimensional points but the array has {} dimensions",
+            n_in,
+            dimension_order.num_dims(),
+        ));
+    }
+    if transformation.n_out() != target_axes.len() {
+        return Err(format!(
+            "the transformation produces {}-dimensional points but the target coordinate system has {} axes",
+            transformation.n_out(),
+            target_axes.len(),
+        ));
+    }
+    let x_dim = dimension_order.index_of(OmeDim::X).unwrap();
+    let y_dim = dimension_order.index_of(OmeDim::Y).unwrap();
+
+    let find_target_axis = |name: &str| {
+        target_axes
+            .iter()
+            .position(|axis| axis.name == name)
+            .ok_or_else(|| format!("the target coordinate system has no \"{}\" axis", name))
+    };
+    let target_x = find_target_axis("x")?;
+    let target_y = find_target_axis("y")?;
+    let x_to_meters = axis_unit_to_meters(target_axes[target_x].unit.as_deref())?;
+    let y_to_meters = axis_unit_to_meters(target_axes[target_y].unit.as_deref())?;
+
+    // The value each non-X/Y array dimension is held at.
+    let fixed_at = |dim: usize| match dimension_order.dims()[dim] {
+        OmeDim::Z => target_z as f64,
+        OmeDim::T => target_t as f64,
+        _ => 0.0,
+    };
+
+    // Rewrite one output component as a function of (px, py) in Y-up pixel
+    // coordinates: the array row is `level_height - py`, so the Y column changes
+    // sign and contributes `level_height` times its coefficient to the constant.
+    let constant = |row: usize| {
+        transformation.get(row, n_in)
+            + transformation.get(row, y_dim) * level_height as f64
+            + (0..n_in)
+                .filter(|&dim| dim != x_dim && dim != y_dim)
+                .map(|dim| transformation.get(row, dim) * fixed_at(dim))
+                .sum::<f64>()
+    };
+
+    let m00 = x_to_meters * transformation.get(target_x, x_dim);
+    let m01 = -x_to_meters * transformation.get(target_x, y_dim);
+    let m03 = x_to_meters * constant(target_x);
+    let m10 = -y_to_meters * transformation.get(target_y, x_dim);
+    let m11 = y_to_meters * transformation.get(target_y, y_dim);
+    let m13 = -y_to_meters * constant(target_y);
+
+    Ok([
+        m00 as f32, m10 as f32, 0.0, 0.0,
+        m01 as f32, m11 as f32, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        m03 as f32, m13 as f32, 0.0, 1.0,
+    ])
+}
+
+/// The physical size of one pixel along the world Y and X axes, as
+/// `[scale_y, scale_x]` to match `ResolutionLevel::scale`.
+///
+/// This is the world-space length of the displacement produced by stepping one
+/// pixel along the array's Y or X axis, so it reduces to the axis scale for a
+/// model matrix that only scales, and stays meaningful under rotation and shear.
+pub fn model_matrix_pixel_size(model_matrix: &[f32; 16]) -> [f64; 2] {
+    // Column-major: column `col` starts at index `col * 4`.
+    let column_length = |col: usize| {
+        (model_matrix[col * 4] as f64).hypot(model_matrix[col * 4 + 1] as f64)
+    };
+    [column_length(1), column_length(0)]
 }
 
 
@@ -310,6 +431,194 @@ mod tests {
     #[should_panic]
     fn test_ome_dim_order_new_panics_on_duplicate() {
         OmeDimensionOrder::new(vec![OmeDim::X, OmeDim::Y, OmeDim::X]);
+    }
+
+    /// Axes for a target coordinate system, all in micrometers.
+    fn micrometer_axes(names: &[&str]) -> Vec<CoordinateSystemAxis> {
+        names
+            .iter()
+            .map(|name| {
+                serde_json::from_value(serde_json::json!({
+                    "name": name,
+                    "type": "space",
+                    "unit": "micrometer",
+                }))
+                .unwrap()
+            })
+            .collect()
+    }
+
+    /// Apply a column-major 4x4 model matrix to a Y-up pixel coordinate.
+    fn apply_model_matrix(matrix: &[f32; 16], px: f64, py: f64) -> (f64, f64) {
+        (
+            matrix[0] as f64 * px + matrix[4] as f64 * py + matrix[12] as f64,
+            matrix[1] as f64 * px + matrix[5] as f64 * py + matrix[13] as f64,
+        )
+    }
+
+    /// The model matrix is built in f32, so compare with a relative tolerance
+    /// that is loose enough for f32 rounding but tight enough to catch a wrong
+    /// coefficient or sign.
+    fn assert_close(actual: (f64, f64), expected: (f64, f64)) {
+        let close = |a: f64, e: f64| (a - e).abs() <= 1e-6 * e.abs() + 1e-15;
+        assert!(
+            close(actual.0, expected.0) && close(actual.1, expected.1),
+            "{actual:?} vs {expected:?}",
+        );
+    }
+
+    #[test]
+    fn test_axis_unit_to_meters() {
+        assert_eq!(axis_unit_to_meters(Some("micrometer")).unwrap(), 1e-6);
+        assert_eq!(axis_unit_to_meters(Some("millimeter")).unwrap(), 1e-3);
+        assert_eq!(axis_unit_to_meters(Some("meter")).unwrap(), 1.0);
+        // Axes without a unit are treated as micrometers.
+        assert_eq!(axis_unit_to_meters(None).unwrap(), 1e-6);
+        assert!(axis_unit_to_meters(Some("furlong")).is_err());
+    }
+
+    #[test]
+    fn test_target_model_matrix_matches_the_scale_only_case() {
+        // A plain per-axis scale, which is what OME-Zarr v0.4/v0.5 datasets use.
+        let transformation = AffineMatrix::from_scale(&[1.0, 0.5, 0.25]);
+        let order = OmeDimensionOrder::try_from("CYX").unwrap();
+        let matrix = target_coordinate_system_model_matrix(
+            &transformation,
+            &order,
+            &micrometer_axes(&["c", "y", "x"]),
+            100,
+            0,
+            0,
+        )
+        .unwrap();
+
+        // World X is the pixel column times the X scale.
+        assert_close(apply_model_matrix(&matrix, 0.0, 0.0), (0.0, -0.5 * 100.0 * 1e-6));
+        assert_close(apply_model_matrix(&matrix, 4.0, 0.0), (1e-6, -0.5 * 100.0 * 1e-6));
+        // The top of the image (Y-up row 100, i.e. array row 0) is at world Y 0,
+        // and the bottom of the image is one image height below it.
+        assert_close(apply_model_matrix(&matrix, 0.0, 100.0), (0.0, 0.0));
+        let [scale_y, scale_x] = model_matrix_pixel_size(&matrix);
+        assert_close((scale_x, scale_y), (0.25e-6, 0.5e-6));
+    }
+
+    #[test]
+    fn test_target_model_matrix_applies_translation_and_units() {
+        let transformation = AffineMatrix::from_affine(&[
+            vec![0.5, 0.0, 10.0],
+            vec![0.0, 0.25, 20.0],
+        ])
+        .unwrap();
+        let order = OmeDimensionOrder::try_from("YX").unwrap();
+        let matrix = target_coordinate_system_model_matrix(
+            &transformation,
+            &order,
+            &micrometer_axes(&["y", "x"]),
+            100,
+            0,
+            0,
+        )
+        .unwrap();
+
+        // Array row 0, column 0 maps to target (y=10, x=20), i.e. world (20, -10).
+        assert_close(apply_model_matrix(&matrix, 0.0, 100.0), (20.0e-6, -10.0e-6));
+        // Stepping four columns moves one micrometer along target X.
+        assert_close(apply_model_matrix(&matrix, 4.0, 100.0), (21.0e-6, -10.0e-6));
+    }
+
+    #[test]
+    fn test_target_model_matrix_handles_axis_swapping_transformations() {
+        // The transformation sends the array's Y axis to the target's X axis.
+        let transformation =
+            AffineMatrix::from_affine(&[vec![0.0, 1.0, 0.0], vec![1.0, 0.0, 0.0]]).unwrap();
+        let order = OmeDimensionOrder::try_from("YX").unwrap();
+        let matrix = target_coordinate_system_model_matrix(
+            &transformation,
+            &order,
+            &micrometer_axes(&["y", "x"]),
+            100,
+            0,
+            0,
+        )
+        .unwrap();
+
+        // Array row 0, column 5 maps to target (y=5, x=0), i.e. world (0, -5).
+        assert_close(apply_model_matrix(&matrix, 5.0, 100.0), (0.0, -5e-6));
+        // Array row 3, column 0 maps to target (y=0, x=3), i.e. world (3, 0).
+        assert_close(apply_model_matrix(&matrix, 0.0, 97.0), (3e-6, 0.0));
+    }
+
+    #[test]
+    fn test_target_model_matrix_holds_z_fixed() {
+        // An affine that mixes Z into the target Y coordinate.
+        let transformation = AffineMatrix::from_affine(&[
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![2.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        let order = OmeDimensionOrder::try_from("ZYX").unwrap();
+        let at_z = |z| {
+            target_coordinate_system_model_matrix(
+                &transformation,
+                &order,
+                &micrometer_axes(&["z", "y", "x"]),
+                10,
+                z,
+                0,
+            )
+            .unwrap()
+        };
+        // Array row 0 of slice z maps to target y = 2z, i.e. world y = -2z.
+        assert_close(apply_model_matrix(&at_z(0), 0.0, 10.0), (0.0, 0.0));
+        assert_close(apply_model_matrix(&at_z(3), 0.0, 10.0), (0.0, -6e-6));
+    }
+
+    #[test]
+    fn test_target_model_matrix_errors() {
+        let order = OmeDimensionOrder::try_from("YX").unwrap();
+        // The target coordinate system has no X or Y axis.
+        assert!(target_coordinate_system_model_matrix(
+            &AffineMatrix::identity(2),
+            &order,
+            &micrometer_axes(&["v", "u"]),
+            100,
+            0,
+            0,
+        )
+        .is_err());
+        // The transformation's input dimensionality does not match the array's.
+        assert!(target_coordinate_system_model_matrix(
+            &AffineMatrix::identity(3),
+            &order,
+            &micrometer_axes(&["z", "y", "x"]),
+            100,
+            0,
+            0,
+        )
+        .is_err());
+        // The transformation's output dimensionality does not match the target's.
+        assert!(target_coordinate_system_model_matrix(
+            &AffineMatrix::identity(2),
+            &order,
+            &micrometer_axes(&["z", "y", "x"]),
+            100,
+            0,
+            0,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_model_matrix_pixel_size_under_rotation() {
+        // A 90 degree rotation combined with a uniform scale of 2.
+        let matrix: [f32; 16] = [
+            0.0, 2.0, 0.0, 0.0,
+            -2.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        assert_eq!(model_matrix_pixel_size(&matrix), [2.0, 2.0]);
     }
 
     #[test]
