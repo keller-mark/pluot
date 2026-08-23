@@ -21,8 +21,8 @@ use std::fmt;
 
 pub use affine::AffineMatrix;
 pub use metadata::{
-    CoordinateSystem, CoordinateSystemAxis, CoordinateSystemRef, CoordinateTransformation, Scene,
-    Transformation,
+    CoordinateSystem, CoordinateSystemAxis, CoordinateSystemRef, CoordinateTransformation,
+    MultiscaleDataset, MultiscaleImage, Scene, Transformation,
 };
 
 /// Errors produced while building or traversing a [`TransformationGraph`].
@@ -324,14 +324,29 @@ impl TransformationGraph {
         source: &CoordinateSystemId,
         target: &CoordinateSystemId,
     ) -> Result<AffineMatrix, TransformationError> {
+        let ndim = self
+            .ndim(source)
+            .ok_or_else(|| TransformationError::UnknownDimensionality(source.to_string()))?;
+        self.transformation_between_with_ndim(source, target, ndim)
+    }
+
+    /// As [`Self::transformation_between`], but with the dimensionality of the
+    /// source coordinate system supplied by the caller.
+    ///
+    /// Use this for coordinate systems whose axes the metadata leaves implicit,
+    /// such as a Zarr array's, where the caller already knows the array shape
+    /// and the graph could otherwise only guess.
+    pub fn transformation_between_with_ndim(
+        &self,
+        source: &CoordinateSystemId,
+        target: &CoordinateSystemId,
+        ndim: usize,
+    ) -> Result<AffineMatrix, TransformationError> {
         for id in [source, target] {
             if !self.contains(id) {
                 return Err(TransformationError::UnknownCoordinateSystem(id.to_string()));
             }
         }
-        let ndim = self
-            .ndim(source)
-            .ok_or_else(|| TransformationError::UnknownDimensionality(source.to_string()))?;
         let path = self.find_path(source, target).ok_or_else(|| TransformationError::NoPath {
             source: source.to_string(),
             target: target.to_string(),

@@ -46,6 +46,88 @@ pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64
 }
 
 
+/// Name given to the coordinate system that OME-Zarr v0.4 and v0.5 leave
+/// implicit: the physical space that every resolution level of a multiscale
+/// image maps into.
+pub const INTRINSIC_COORDINATE_SYSTEM: &str = "intrinsic";
+
+/// Upgrade an OME-Zarr `ome` attributes object in place, rewriting v0.4 and
+/// v0.5 `multiscales` metadata into the v0.6 (RFC-5) shape so that one code path
+/// can read any version.
+///
+/// Before v0.6, a multiscale image declared its axes in an `axes` list and left
+/// the coordinate systems its transformations connect implicit. For each such
+/// entry this:
+/// - declares a `coordinateSystems` entry named [`INTRINSIC_COORDINATE_SYSTEM`]
+///   holding the entry's `axes`, and
+/// - rewrites each dataset's transformations as a single transformation from
+///   that dataset's array coordinate system to the intrinsic coordinate system.
+///
+/// A dataset's own transformations are applied in order and then the
+/// multiscale-wide `coordinateTransformations` on top, so a dataset with more
+/// than one transformation to apply becomes a `sequence` of them. A dataset with
+/// none becomes an `identity`.
+///
+/// Metadata that already declares `input` and `output` is left alone, so v0.6
+/// metadata passes through unchanged.
+pub fn upgrade_ome_multiscales(ome: &mut serde_json::Value) {
+    let Some(multiscales) = ome.get_mut("multiscales").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    for multiscale in multiscales {
+        // The transformations applied to every level, after each level's own.
+        let shared: Vec<serde_json::Value> = multiscale
+            .get("coordinateTransformations")
+            .and_then(|v| v.as_array())
+            .map(|list| list.iter().filter(|t| is_legacy(t)).cloned().collect())
+            .unwrap_or_default();
+
+        if multiscale.get("coordinateSystems").is_none() {
+            if let Some(axes) = multiscale.get("axes").cloned() {
+                multiscale["coordinateSystems"] = serde_json::json!([
+                    { "name": INTRINSIC_COORDINATE_SYSTEM, "axes": axes },
+                ]);
+            }
+        }
+
+        let Some(datasets) = multiscale.get_mut("datasets").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        for dataset in datasets {
+            let Some(path) = dataset.get("path").and_then(|p| p.as_str()).map(str::to_string) else {
+                continue;
+            };
+            let steps: Vec<serde_json::Value> = dataset
+                .get("coordinateTransformations")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if steps.iter().any(|step| !is_legacy(step)) {
+                // Already in the v0.6 shape.
+                continue;
+            }
+            let steps: Vec<serde_json::Value> =
+                steps.into_iter().chain(shared.iter().cloned()).collect();
+            let mut transformation = match <[serde_json::Value; 1]>::try_from(steps) {
+                Ok([only]) => only,
+                Err(steps) => match steps.is_empty() {
+                    true => serde_json::json!({ "type": "identity" }),
+                    false => serde_json::json!({ "type": "sequence", "transformations": steps }),
+                },
+            };
+            transformation["input"] = serde_json::json!({ "path": path });
+            transformation["output"] = serde_json::json!({ "name": INTRINSIC_COORDINATE_SYSTEM });
+            dataset["coordinateTransformations"] = serde_json::json!([transformation]);
+        }
+    }
+}
+
+/// Whether a coordinate transformation predates v0.6, i.e. does not declare the
+/// coordinate systems it connects.
+fn is_legacy(transformation: &serde_json::Value) -> bool {
+    transformation.get("input").is_none() && transformation.get("output").is_none()
+}
+
 /// Factor converting one unit of a spatial axis to meters.
 ///
 /// Axes that do not declare a unit are interpreted as micrometers, matching the
@@ -456,15 +538,155 @@ mod tests {
         )
     }
 
-    /// The model matrix is built in f32, so compare with a relative tolerance
-    /// that is loose enough for f32 rounding but tight enough to catch a wrong
-    /// coefficient or sign.
+    /// The model matrix is built in f32, so compare with a tolerance that is
+    /// loose enough for f32 rounding but tight enough to catch a wrong
+    /// coefficient or sign. The absolute floor covers the cases where an
+    /// expected value of zero comes out of cancelling terms of the order of the
+    /// image extent; 0.01 nanometers is far below any meaningful precision here.
     fn assert_close(actual: (f64, f64), expected: (f64, f64)) {
-        let close = |a: f64, e: f64| (a - e).abs() <= 1e-6 * e.abs() + 1e-15;
+        let close = |a: f64, e: f64| (a - e).abs() <= 1e-6 * e.abs() + 1e-11;
         assert!(
             close(actual.0, expected.0) && close(actual.1, expected.1),
             "{actual:?} vs {expected:?}",
         );
+    }
+
+    /// Build the transformation from a dataset's array coordinate system to the
+    /// intrinsic one, the way the multiscale layer does after upgrading.
+    fn intrinsic_transformation(ome: serde_json::Value, path: &str, ndim: usize) -> AffineMatrix {
+        let mut ome = ome;
+        upgrade_ome_multiscales(&mut ome);
+        let graph = crate::ome_zarr_transformations::TransformationGraph::from_ome_attributes(&ome)
+            .expect("build graph");
+        let intrinsic = graph.resolve_name(INTRINSIC_COORDINATE_SYSTEM).expect("intrinsic").clone();
+        graph
+            .transformation_between_with_ndim(
+                &crate::ome_zarr_transformations::CoordinateSystemId::array(path),
+                &intrinsic,
+                ndim,
+            )
+            .expect("transformation to intrinsic")
+    }
+
+    /// A v0.4/v0.5 `multiscales` entry with the given dataset and multiscale
+    /// level transformations.
+    fn legacy_ome(
+        dataset_transformations: serde_json::Value,
+        shared_transformations: serde_json::Value,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "version": "0.5",
+            "multiscales": [{
+                "axes": [
+                    { "name": "y", "type": "space", "unit": "micrometer" },
+                    { "name": "x", "type": "space", "unit": "micrometer" },
+                ],
+                "datasets": [{ "path": "0", "coordinateTransformations": dataset_transformations }],
+                "coordinateTransformations": shared_transformations,
+            }],
+        })
+    }
+
+    #[test]
+    fn test_upgrade_declares_the_intrinsic_coordinate_system() {
+        let mut ome = legacy_ome(
+            serde_json::json!([{ "type": "scale", "scale": [0.5, 0.25] }]),
+            serde_json::json!([]),
+        );
+        upgrade_ome_multiscales(&mut ome);
+
+        // The v0.4/v0.5 `axes` list becomes a named coordinate system.
+        let systems = &ome["multiscales"][0]["coordinateSystems"];
+        assert_eq!(systems.as_array().unwrap().len(), 1);
+        assert_eq!(systems[0]["name"], INTRINSIC_COORDINATE_SYSTEM);
+        assert_eq!(systems[0]["axes"][0]["name"], "y");
+        assert_eq!(systems[0]["axes"][1]["unit"], "micrometer");
+
+        // The dataset transformation gains the endpoints it was missing.
+        let transformation = &ome["multiscales"][0]["datasets"][0]["coordinateTransformations"][0];
+        assert_eq!(transformation["type"], "scale");
+        assert_eq!(transformation["input"]["path"], "0");
+        assert_eq!(transformation["output"]["name"], INTRINSIC_COORDINATE_SYSTEM);
+    }
+
+    #[test]
+    fn test_upgrade_preserves_transformation_order() {
+        // v0.4 applies a dataset's transformations in order, then the
+        // multiscale-wide ones, so the composed result must scale before
+        // translating and translate before the shared scale.
+        let ome = legacy_ome(
+            serde_json::json!([
+                { "type": "scale", "scale": [2.0, 2.0] },
+                { "type": "translation", "translation": [1.0, 1.0] },
+            ]),
+            serde_json::json!([{ "type": "scale", "scale": [10.0, 10.0] }]),
+        );
+        let transformation = intrinsic_transformation(ome, "0", 2);
+        // (3, 4) -> (6, 8) -> (7, 9) -> (70, 90)
+        assert_eq!(transformation.apply(&[3.0, 4.0]).unwrap(), vec![70.0, 90.0]);
+    }
+
+    #[test]
+    fn test_upgrade_gives_datasets_without_transformations_an_identity() {
+        let ome = legacy_ome(serde_json::json!([]), serde_json::json!([]));
+        let transformation = intrinsic_transformation(ome, "0", 2);
+        assert_eq!(transformation.apply(&[3.0, 4.0]).unwrap(), vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_upgrade_leaves_v0_6_metadata_unchanged() {
+        let original = serde_json::json!({
+            "version": "0.6",
+            "multiscales": [{
+                "coordinateSystems": [{ "name": "intrinsic", "axes": [
+                    { "name": "y", "type": "space", "unit": "micrometer" },
+                    { "name": "x", "type": "space", "unit": "micrometer" },
+                ]}],
+                "datasets": [{
+                    "path": "0",
+                    "coordinateTransformations": [{
+                        "type": "sequence",
+                        "input": { "path": "0" },
+                        "output": { "name": "intrinsic" },
+                        "transformations": [{ "type": "scale", "scale": [0.5, 0.5] }],
+                    }],
+                }],
+            }],
+        });
+        let mut upgraded = original.clone();
+        upgrade_ome_multiscales(&mut upgraded);
+        assert_eq!(upgraded, original);
+    }
+
+    #[test]
+    fn test_upgrade_ignores_metadata_without_multiscales() {
+        let original =
+            serde_json::json!({ "version": "0.6", "scene": { "coordinateSystems": [] } });
+        let mut upgraded = original.clone();
+        upgrade_ome_multiscales(&mut upgraded);
+        assert_eq!(upgraded, original);
+    }
+
+    #[test]
+    fn test_upgraded_legacy_metadata_reproduces_the_level_pixel_size() {
+        // The pixel size the multiscale layer derives for a level must match the
+        // dataset's declared scale, converted from micrometers to meters.
+        let ome = legacy_ome(
+            serde_json::json!([{ "type": "scale", "scale": [0.5, 0.25] }]),
+            serde_json::json!([]),
+        );
+        let transformation = intrinsic_transformation(ome, "0", 2);
+        let matrix = target_coordinate_system_model_matrix(
+            &transformation,
+            &OmeDimensionOrder::try_from("YX").unwrap(),
+            &micrometer_axes(&["y", "x"]),
+            100,
+            0,
+            0,
+        )
+        .unwrap();
+        let [scale_y, scale_x] = model_matrix_pixel_size(&matrix);
+        assert_close((scale_x, scale_y), (0.25e-6, 0.5e-6));
     }
 
     #[test]

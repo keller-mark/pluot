@@ -175,6 +175,39 @@ impl<'de> Deserialize<'de> for CoordinateTransformation {
     }
 }
 
+/// One `ome.multiscales` entry, in the v0.6 shape.
+///
+/// Only the fields the renderer needs are modeled; the downscaling `type` and
+/// `metadata` fields are ignored, as is the v0.4/v0.5 `axes` list, which
+/// `upgrade_ome_multiscales` turns into a `coordinateSystems` entry.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiscaleImage {
+    /// Optional name of the multiscale image.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Coordinate systems declared by this multiscale image, including the
+    /// intrinsic one that its datasets map into.
+    #[serde(default)]
+    pub coordinate_systems: Vec<CoordinateSystem>,
+    /// The resolution levels, finest first.
+    pub datasets: Vec<MultiscaleDataset>,
+    /// Transformations relating this image's coordinate systems to others.
+    #[serde(default)]
+    pub coordinate_transformations: Vec<CoordinateTransformation>,
+}
+
+/// One resolution level of a [`MultiscaleImage`].
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MultiscaleDataset {
+    /// Path of the Zarr array, relative to the multiscales group.
+    pub path: String,
+    /// Transformations from this level's array coordinate system.
+    #[serde(default)]
+    pub coordinate_transformations: Vec<CoordinateTransformation>,
+}
+
 /// The `ome.scene` metadata object: a set of coordinate systems and the
 /// transformations relating them.
 #[derive(Deserialize, Debug, Clone, Default)]
