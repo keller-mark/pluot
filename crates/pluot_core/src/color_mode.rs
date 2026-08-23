@@ -307,22 +307,24 @@ fn create_palette_texture(
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-// TODO: remove this, as it iterates over all values and casts them to f32,
-// which we do not want. If anything, it should only be used on the CPU.
-// Normalization of quantitative colormap values should otherwise only be performed in the shader / on the GPU.
+/// Domain assumed for a quantitative color mode that was given none. Values are
+/// then mapped through the colormap as-is (clamped), which is the identity for
+/// data already normalized to 0..1.
+const DEFAULT_QUANTITATIVE_DOMAIN: (f32, f32) = (0.0, 1.0);
+
+/// The `(min, max)` normalization domain of a quantitative color mode, as
+/// written into the `*_color_domain` uniform (and used by the CPU/SVG color
+/// resolution in [`cpu_fill_color`]).
+///
+/// This is a plain read of the caller-supplied `domain` parameter — the domain
+/// is expected to be known ahead of time. It is deliberately *not* derived from
+/// the data here: doing so would mean walking every value and casting it to
+/// `f32` on the CPU, whereas normalizing against a known domain is a couple of
+/// instructions inside the WGSL colormap function (see
+/// `wgsl_functions/get_fill_color/quantitative.wgsl`).
 pub fn quantitative_domain(params: &QuantitativeParams) -> [f32; 2] {
-    if let Some((lo, hi)) = params.domain {
-        return [lo, hi];
-    }
-    let values = params.values.as_f32();
-    let (min, max) = values
-        .iter()
-        .fold((f32::INFINITY, f32::NEG_INFINITY), |(mn, mx), &v| (mn.min(v), mx.max(v)));
-    if min.is_finite() && max.is_finite() {
-        [min, max]
-    } else {
-        [0.0, 1.0]
-    }
+    let (lo, hi) = params.domain.unwrap_or(DEFAULT_QUANTITATIVE_DOMAIN);
+    [lo, hi]
 }
 
 fn to_u8(channel: f32) -> u8 {
