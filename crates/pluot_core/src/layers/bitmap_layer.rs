@@ -278,7 +278,7 @@ struct BitmapLayerUniforms {
 
 
 /// Parse dimension_order and shape into a map from dimension char to (index_in_order, size).
-fn parse_dimensions(dimension_order: &DimensionOrder, shape: &[u32]) -> std::collections::HashMap<char, (usize, u32)> {
+pub(crate) fn parse_dimensions(dimension_order: &DimensionOrder, shape: &[u32]) -> std::collections::HashMap<char, (usize, u32)> {
     let dim_str = dimension_order.as_str();
     assert_eq!(
         dim_str.len(),
@@ -299,7 +299,7 @@ fn parse_dimensions(dimension_order: &DimensionOrder, shape: &[u32]) -> std::col
 /// Compute the stride for each dimension given the shape and dimension order.
 /// Strides are in units of elements (not bytes).
 /// The last dimension in the order is the fastest-varying (stride=1).
-fn compute_strides(shape: &[u32]) -> Vec<usize> {
+pub(crate) fn compute_strides(shape: &[u32]) -> Vec<usize> {
     let ndim = shape.len();
     let mut strides = vec![1usize; ndim];
     for i in (0..ndim.saturating_sub(1)).rev() {

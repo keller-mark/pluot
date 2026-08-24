@@ -107,6 +107,71 @@ pub mod stroke_color {
     pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_stroke_color/quantitative.wgsl");
 }
 
+/// Per-[`ColorMode`](crate::render_traits::ColorMode) WGSL snippets for
+/// `BitmaskLayer`, each defining `fn get_channel_color_{{ch}}(label_index:
+/// u32) -> vec3<f32>` (plus any texture bindings the mode needs). Unlike
+/// [`color`] (one `get_fill_color` shared by every instance of a layer), a
+/// `BitmaskLayer` may have several channels — each possibly using a different
+/// `ColorMode` — coexisting in one shader module, so every channel gets its
+/// own uniquely-`{{ch}}`-suffixed function and bindings rather than sharing
+/// one. Templates: substitute `{{ch}}` for the channel index plus any
+/// binding-index/dtype placeholders, assembled at runtime by
+/// `crate::layers::bitmask_layer::prepare_channel_color`. All variants that
+/// read a value texture assume [`common::FLAT_TEXEL_COORD`] is also injected.
+/// See [`bitmask_channel`] for the (non-templated) code that calls these.
+pub mod get_channel_color {
+    /// Static color shared by every object in the channel.
+    pub const UNIFORM_RGB: &str = include_str!("wgsl_functions/get_channel_color/uniform_rgb.wgsl");
+
+    /// Per-object RGB from three parallel value textures.
+    pub const INSTANCED_RGB: &str = include_str!("wgsl_functions/get_channel_color/instanced_rgb.wgsl");
+
+    /// Per-object RGB from one interleaved value texture.
+    pub const INSTANCED_RGB_INTERLEAVED: &str =
+        include_str!("wgsl_functions/get_channel_color/instanced_rgb_interleaved.wgsl");
+
+    /// Per-object integer "set color" labels indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_channel_color/categorical.wgsl");
+
+    /// Per-object scalar values mapped through a continuous colormap.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_channel_color/quantitative.wgsl");
+}
+
+/// Shared (non-templated) WGSL functions used by `BitmaskLayer`'s fragment
+/// shader to loop over its channels, plus the one small template needed to
+/// dispatch to a per-channel color function (see [`get_channel_color`]).
+///
+/// [`CHANNEL_SAMPLE`] and [`CHANNEL_IS_EDGE`] are ordinary WGSL functions
+/// (parameterized by `channel_index`, not templated) injected exactly once,
+/// regardless of channel count, and called from a real `for` loop over
+/// `u.num_channels` in `bitmask_layer.wgsl`'s `fs_main` -- unlike
+/// [`get_channel_color`], no per-channel unrolling is needed here, since
+/// sampling/edge-detection is identical logic for every channel. Only
+/// resolving a channel's *color* differs per `ColorMode`, which is why
+/// [`CHANNEL_COLOR_DISPATCH`] (a small generated `switch` over channel index)
+/// is still needed to call the right `get_channel_color_{{ch}}`. Assumes
+/// `mask_data`, `flat_texel_coord` (see [`common::FLAT_TEXEL_COORD`]) and the
+/// layer's `Uniforms`/`Channel` structs are already in scope.
+pub mod bitmask_channel {
+    /// `fn bitmask_sample(channel_index: u32, px: vec2<u32>) -> i32` — reads
+    /// the object id at `px` for one channel of the shared, multi-channel
+    /// `mask_data` texture.
+    pub const CHANNEL_SAMPLE: &str = include_str!("wgsl_functions/bitmask/channel_sample.wgsl");
+
+    /// `fn bitmask_is_edge(channel_index, px, raw_label, img_w, img_h,
+    /// stroke_width) -> bool` — an approximate object-boundary test, used to
+    /// render outline-only channels. Depends on [`CHANNEL_SAMPLE`] also being
+    /// injected.
+    pub const CHANNEL_IS_EDGE: &str = include_str!("wgsl_functions/bitmask/channel_is_edge.wgsl");
+
+    /// `fn get_channel_color(channel_index: u32, label_index: u32) ->
+    /// vec3<f32>` — dispatches to the per-channel `get_channel_color_{{ch}}`
+    /// (see [`get_channel_color`]) matching `channel_index`. Template:
+    /// substitute `{{switch_cases}}` with one `case N: { return
+    /// get_channel_color_N(label_index); }` per channel.
+    pub const CHANNEL_COLOR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_color_dispatch.wgsl");
+}
+
 /// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
 /// `fn get_point_radius(instance_index: u32) -> f32`. The uniform variant reads
 /// the `point_radius` uniform; the instanced variant reads a per-element value

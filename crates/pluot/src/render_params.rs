@@ -8,6 +8,7 @@ use pluot_core::composite_layers::polygon_layer::PolygonLayerParams;
 use pluot_core::layers::rect_layer::{RectLayerParams};
 use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
+use pluot_core::layers::bitmask_layer::BitmaskLayerParams;
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
@@ -46,6 +47,7 @@ pub enum LayerParams {
     RectLayer(RectLayerParams),
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),
+    BitmaskLayer(BitmaskLayerParams),
 
     PolygonLayer(PolygonLayerParams),
     CurveLayer(CurveLayerParams),

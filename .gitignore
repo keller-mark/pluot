@@ -64,3 +64,5 @@ bindings-r/src/.cargo/
 bindings-js/**/CHANGELOG.md
 crates/**/CHANGELOG.md
 RELEASE_NOTES.md
+
+references/

@@ -28,6 +28,7 @@ pub use pluot_core::layers::rect_layer::{RectLayerParams};
 pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 pub use pluot_core::render_traits::{FontWeight, FontStyle};
 pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder};
+pub use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskChannelSettings};
 pub use pluot_core::numeric_data::NumericData;
 pub use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 pub use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
