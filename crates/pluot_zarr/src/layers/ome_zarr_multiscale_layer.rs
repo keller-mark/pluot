@@ -26,9 +26,10 @@ use crate::layers::ome_zarr_utils::{
     PhysicalRect, rects_overlap, bounding_box,
     model_matrix_pixel_size, target_coordinate_system_model_matrix, upgrade_ome_multiscales,
 };
-use crate::ome_zarr_transformations::{
-    AffineMatrix, CoordinateSystemAxis, CoordinateSystemId, CoordinateSystemRef, MultiscaleImage,
-    TransformationGraph,
+use crate::ome_zarr_transformations::affine::AffineMatrix;
+use crate::ome_zarr_transformations::dag::{CoordinateSystemId, TransformationGraph};
+use crate::ome_zarr_transformations::metadata::{
+    CoordinateSystemAxis, CoordinateSystemRef, MultiscaleImage,
 };
 
 /// Layer params struct for [`OmeZarrMultiscaleLayer`].

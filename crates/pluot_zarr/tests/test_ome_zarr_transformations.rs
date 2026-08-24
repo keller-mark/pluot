@@ -9,9 +9,8 @@ use pluot_zarr::layers::ome_zarr_utils::{
     axis_unit_to_meters, model_matrix_pixel_size, target_coordinate_system_model_matrix,
     upgrade_ome_multiscales, OmeDim, OmeDimensionOrder, INTRINSIC_COORDINATE_SYSTEM,
 };
-use pluot_zarr::ome_zarr_transformations::{
-    CoordinateSystemId, MultiscaleImage, TransformationGraph,
-};
+use pluot_zarr::ome_zarr_transformations::dag::{CoordinateSystemId, TransformationGraph};
+use pluot_zarr::ome_zarr_transformations::metadata::MultiscaleImage;
 use serde_json::json;
 
 /// The `ome` attributes of a real 3-level v0.5 multiscale image, with the

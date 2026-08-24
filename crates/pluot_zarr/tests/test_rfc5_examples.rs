@@ -18,9 +18,10 @@
 use pluot_zarr::layers::ome_zarr_utils::{
     model_matrix_pixel_size, target_coordinate_system_model_matrix, OmeDimensionOrder,
 };
-use pluot_zarr::ome_zarr_transformations::{
-    CoordinateSystemId, CoordinateTransformation, TransformationError, TransformationGraph,
+use pluot_zarr::ome_zarr_transformations::dag::{
+    CoordinateSystemId, TransformationError, TransformationGraph,
 };
+use pluot_zarr::ome_zarr_transformations::metadata::CoordinateTransformation;
 use serde_json::{json, Value};
 
 // Helpers.
@@ -111,7 +112,7 @@ fn assert_close(actual: &[f64], expected: &[f64]) {
 fn target_axes(
     graph: &TransformationGraph,
     name: &str,
-) -> Vec<pluot_zarr::ome_zarr_transformations::CoordinateSystemAxis> {
+) -> Vec<pluot_zarr::ome_zarr_transformations::metadata::CoordinateSystemAxis> {
     let id = graph.resolve_name(name).expect("the target coordinate system").clone();
     graph.coordinate_system(&id).expect("declared axes").axes.clone()
 }

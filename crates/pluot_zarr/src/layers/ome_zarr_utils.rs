@@ -3,7 +3,8 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 
-use crate::ome_zarr_transformations::{AffineMatrix, CoordinateSystemAxis};
+use crate::ome_zarr_transformations::affine::AffineMatrix;
+use crate::ome_zarr_transformations::metadata::CoordinateSystemAxis;
 
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
@@ -556,12 +557,12 @@ mod tests {
     fn intrinsic_transformation(ome: serde_json::Value, path: &str, ndim: usize) -> AffineMatrix {
         let mut ome = ome;
         upgrade_ome_multiscales(&mut ome);
-        let graph = crate::ome_zarr_transformations::TransformationGraph::from_ome_attributes(&ome)
+        let graph = crate::ome_zarr_transformations::dag::TransformationGraph::from_ome_attributes(&ome)
             .expect("build graph");
         let intrinsic = graph.resolve_name(INTRINSIC_COORDINATE_SYSTEM).expect("intrinsic").clone();
         graph
             .transformation_between_with_ndim(
-                &crate::ome_zarr_transformations::CoordinateSystemId::array(path),
+                &crate::ome_zarr_transformations::dag::CoordinateSystemId::array(path),
                 &intrinsic,
                 ndim,
             )
