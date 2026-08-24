@@ -72,7 +72,8 @@ pub struct OmeZarrBitmaskLayerParams {
 
     /// Channel settings specifying which channels to render and how. Each
     /// entry's `c_index` determines which slice of the C dimension to load,
-    /// and `settings` determines how that channel's object ids are colored.
+    /// and its remaining fields determine how that channel's object ids are
+    /// colored.
     pub channel_settings: Vec<OmeZarrBitmaskChannelSetting>,
 
     /// How to interpret each channel's `stroke_width` (screen pixels, data
@@ -384,7 +385,7 @@ impl PreparedLayer for OmeZarrBitmaskLayer {
             .layer_params
             .channel_settings
             .iter()
-            .map(|cs| cs.settings.clone())
+            .map(BitmaskChannelSettings::from)
             .collect();
 
         let bitmask_params = BitmaskLayerParams {

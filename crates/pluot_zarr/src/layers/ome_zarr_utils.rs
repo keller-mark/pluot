@@ -3,6 +3,7 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 use pluot_core::layers::bitmask_layer::BitmaskChannelSettings;
+use pluot_core::render_traits::ColorMode;
 
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
@@ -59,20 +60,79 @@ pub struct OmeZarrChannelSetting {
     pub color: (f32, f32, f32),
 }
 
+// The render settings below are inlined from `BitmaskChannelSettings` rather
+// than nested under it, so they default to the same values as they would
+// there. These delegate to `BitmaskChannelSettings::default()` instead of
+// repeating its literals, so the two cannot drift apart.
+fn default_channel_opacity() -> f32 {
+    BitmaskChannelSettings::default().opacity
+}
+fn default_channel_visible() -> bool {
+    BitmaskChannelSettings::default().visible
+}
+fn default_channel_filled() -> bool {
+    BitmaskChannelSettings::default().filled
+}
+fn default_channel_stroke_width() -> f32 {
+    BitmaskChannelSettings::default().stroke_width
+}
+
 /// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
 /// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
 /// The bitmask counterpart of [`OmeZarrChannelSetting`]: instead of an
-/// intensity window and pseudocolor, carries the full set of
-/// [`BitmaskChannelSettings`] (color mode, opacity, filled/stroke) used to
-/// render this channel's segmentation mask.
+/// intensity window and pseudocolor, carries the [`BitmaskChannelSettings`]
+/// (color mode, opacity, filled/stroke) used to render this channel's
+/// segmentation mask, inlined alongside `c_index` rather than nested under it.
+///
+/// Only `c_index` is required -- every render setting falls back to the same
+/// default [`BitmaskChannelSettings`] uses.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrBitmaskChannelSetting {
     /// Index in the C dimension of the zarr array.
     // TODO: also support specifying channel identifiers by their string name.
     pub c_index: u32,
-    /// How to render this channel's segmentation mask.
-    // TODO: inline the properties here, analogous to OmeZarrChannelSetting, rather than nesting into a `settings` property
-    pub settings: BitmaskChannelSettings,
+
+    /// How to color each object in this channel.
+    #[serde(default)]
+    pub color: Option<ColorMode>,
+
+    /// Opacity multiplier for this channel (0.0 to 1.0).
+    #[serde(default = "default_channel_opacity")]
+    pub opacity: f32,
+
+    /// Whether this channel is drawn at all.
+    #[serde(default = "default_channel_visible")]
+    pub visible: bool,
+
+    /// If true, render filled object regions. If false, render only the
+    /// outline of each object (see `stroke_width`).
+    #[serde(default = "default_channel_filled")]
+    pub filled: bool,
+
+    /// Outline thickness, in the units given by the layer's
+    /// `stroke_width_unit_mode`, used when `filled` is false.
+    #[serde(default = "default_channel_stroke_width")]
+    pub stroke_width: f32,
+}
+
+/// Drops `c_index` -- which selects *which* slice of the C dimension to load,
+/// not how to render it -- and passes the rest through to the inner
+/// [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]'s
+/// `BitmaskLayer`.
+///
+/// Written out field-by-field (no `..Default::default()`) so that a new
+/// [`BitmaskChannelSettings`] field fails to compile here until it is either
+/// inlined above or deliberately left out.
+impl From<&OmeZarrBitmaskChannelSetting> for BitmaskChannelSettings {
+    fn from(cs: &OmeZarrBitmaskChannelSetting) -> Self {
+        Self {
+            color: cs.color.clone(),
+            opacity: cs.opacity,
+            visible: cs.visible,
+            filled: cs.filled,
+            stroke_width: cs.stroke_width,
+        }
+    }
 }
 
 /// Axis-aligned physical rectangle for a tile.
@@ -328,6 +388,86 @@ mod tests {
     #[should_panic]
     fn test_ome_dim_order_new_panics_on_duplicate() {
         OmeDimensionOrder::new(vec![OmeDim::X, OmeDim::Y, OmeDim::X]);
+    }
+
+    /// The render settings are inlined alongside `c_index` rather than nested
+    /// under a `settings` key.
+    #[test]
+    fn test_bitmask_channel_setting_inlined_fields() {
+        let cs: OmeZarrBitmaskChannelSetting = serde_json::from_str(
+            r#"{
+                "c_index": 3,
+                "color": {"color_mode": "UniformRgb", "color_params": [0, 0, 255]},
+                "opacity": 0.5,
+                "visible": false,
+                "filled": false,
+                "stroke_width": 2.0
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(cs.c_index, 3);
+        assert!(matches!(cs.color, Some(ColorMode::UniformRgb((0, 0, 255)))));
+        assert_eq!(cs.opacity, 0.5);
+        assert!(!cs.visible);
+        assert!(!cs.filled);
+        assert_eq!(cs.stroke_width, 2.0);
+
+        // Everything but c_index passes through to the inner layer's settings.
+        let inner = BitmaskChannelSettings::from(&cs);
+        assert!(matches!(inner.color, Some(ColorMode::UniformRgb((0, 0, 255)))));
+        assert_eq!(inner.opacity, 0.5);
+        assert!(!inner.visible);
+        assert!(!inner.filled);
+        assert_eq!(inner.stroke_width, 2.0);
+    }
+
+    /// Only `c_index` is required; the inlined render settings fall back to
+    /// the same defaults `BitmaskChannelSettings` uses.
+    #[test]
+    fn test_bitmask_channel_setting_defaults_match_bitmask_channel_settings() {
+        let cs: OmeZarrBitmaskChannelSetting =
+            serde_json::from_str(r#"{"c_index": 2}"#).unwrap();
+        assert_eq!(cs.c_index, 2);
+
+        let defaults = BitmaskChannelSettings::default();
+        assert!(cs.color.is_none() && defaults.color.is_none());
+        assert_eq!(cs.opacity, defaults.opacity);
+        assert_eq!(cs.visible, defaults.visible);
+        assert_eq!(cs.filled, defaults.filled);
+        assert_eq!(cs.stroke_width, defaults.stroke_width);
+    }
+
+    /// `c_index` selects which slice of the C dimension to load, so unlike the
+    /// render settings it has no meaningful default.
+    #[test]
+    fn test_bitmask_channel_setting_requires_c_index() {
+        let result: Result<OmeZarrBitmaskChannelSetting, _> =
+            serde_json::from_str(r#"{"opacity": 0.5}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bitmask_channel_setting_serde_roundtrip() {
+        let cs = OmeZarrBitmaskChannelSetting {
+            c_index: 1,
+            color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            opacity: 0.25,
+            visible: true,
+            filled: false,
+            stroke_width: 3.0,
+        };
+        let json = serde_json::to_string(&cs).unwrap();
+        // Inlined, i.e. no nested `settings` object.
+        assert!(!json.contains("settings"), "unexpected nesting in {json}");
+
+        let decoded: OmeZarrBitmaskChannelSetting = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.c_index, 1);
+        assert!(matches!(decoded.color, Some(ColorMode::UniformRgb((255, 0, 0)))));
+        assert_eq!(decoded.opacity, 0.25);
+        assert!(decoded.visible);
+        assert!(!decoded.filled);
+        assert_eq!(decoded.stroke_width, 3.0);
     }
 
     #[test]
