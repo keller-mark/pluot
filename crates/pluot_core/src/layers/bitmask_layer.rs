@@ -48,14 +48,8 @@ use crate::wgpu;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct BitmaskChannelSettings {
-    /// How to color each object in this channel, indexed by `(mask value - 1)`.
-    /// `None` renders as opaque black (same as `Some(ColorMode::UniformRgb((0,
-    /// 0, 0)))`). Modes carrying per-object `NumericData` (e.g.
-    /// `Categorical`/`CategoricalCustom` for "set colors", or `Quantitative`
-    /// for per-object feature values) are expected to have one entry per
-    /// object present in this channel's mask; this is not validated up front
-    /// since doing so would require an extra scan over the mask data to find
-    /// the maximum object id.
+    /// How to color each object in this channel.
+    // TODO: support independent color and opacity properties for the fill and stroke components.
     pub color: Option<ColorMode>,
 
     /// Opacity multiplier for this channel (0.0 to 1.0).
@@ -97,6 +91,11 @@ pub struct BitmaskLayerParams {
     pub bounds: Option<MarginParams>,
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
+
+    // TODO: support data, pixels, or normalized unit mode when rendering in stroked mode.
+    // This behavior should be analogous to the stroked_polygon_layer and stroked_curve_layer,
+    // the only difference is that for the bitmasks, we use the bitmask data array to determine which fragments should be stroked on the fly in the shader.
+    pub stroke_width_unit_mode: UnitsMode,
 
     // (x_offset, y_offset) in pixels, applied before model_matrix, to enable
     // this layer to be used to render an individual "tile" of a larger image
