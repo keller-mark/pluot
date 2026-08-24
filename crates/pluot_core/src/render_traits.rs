@@ -182,7 +182,12 @@ pub struct QuantitativeParams {
     /// Determines whether the colormap should be reversed (by subtracting `1 - value` before executing the colormap function). By default, false.
     #[serde(default = "default_false")]
     pub reverse: bool,
-    /// Optional (min, max) normalization domain.
+    /// Optional (min, max) normalization domain, defaulting to (0.0, 1.0).
+    ///
+    /// The domain is never derived from `values`: normalization happens in the
+    /// WGSL colormap function against this domain, so establishing it would cost
+    /// a CPU pass over every value. Supply it explicitly whenever `values` is not
+    /// already normalized to 0..1.
     #[serde(default)]
     pub domain: Option<(f32, f32)>,
 }
