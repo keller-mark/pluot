@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
+use pluot_core::layers::bitmask_layer::BitmaskChannelSettings;
 
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
@@ -50,11 +51,28 @@ pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmeZarrChannelSetting {
     /// Index in the C dimension of the zarr array.
+    // TODO: also support specifying channel identifiers by their string name.
     pub c_index: u32,
     /// Min/max window for normalization.
     pub window: (f32, f32),
     /// RGB color as floats in [0.0, 1.0].
     pub color: (f32, f32, f32),
+}
+
+/// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
+/// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
+/// The bitmask counterpart of [`OmeZarrChannelSetting`]: instead of an
+/// intensity window and pseudocolor, carries the full set of
+/// [`BitmaskChannelSettings`] (color mode, opacity, filled/stroke) used to
+/// render this channel's segmentation mask.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OmeZarrBitmaskChannelSetting {
+    /// Index in the C dimension of the zarr array.
+    // TODO: also support specifying channel identifiers by their string name.
+    pub c_index: u32,
+    /// How to render this channel's segmentation mask.
+    // TODO: inline the properties here, analogous to OmeZarrChannelSetting, rather than nesting into a `settings` property
+    pub settings: BitmaskChannelSettings,
 }
 
 /// Axis-aligned physical rectangle for a tile.

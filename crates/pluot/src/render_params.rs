@@ -21,6 +21,8 @@ use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
 use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
@@ -67,6 +69,8 @@ pub enum LayerParams {
     ZarrHistogramLayer(ZarrHistogramLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
     OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
+    OmeZarrBitmaskLayer(OmeZarrBitmaskLayerParams),
+    OmeZarrBitmaskMultiscaleLayer(OmeZarrBitmaskMultiscaleLayerParams),
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
 
     // 3D

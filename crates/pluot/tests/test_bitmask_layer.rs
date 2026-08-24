@@ -54,6 +54,7 @@ fn bitmask_cyx_data() -> BitmaskLayerParams {
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
+        stroke_width_unit_mode: UnitsMode::Pixels,
         pixel_offset: None,
         model_matrix: None,
         dimension_order: DimensionOrder::CYX,
@@ -637,30 +638,276 @@ async fn test_bitmask_layer_square_contain_data_units_yxc_order() {
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_yxc_order").await;
 }
 
-// Test with a wider outline stroke width, to visually distinguish the
-// outline-only channel's edge-detection thickness.
+// Helper: `bitmask_cyx_data()` with the outline-only channel widened, to
+// visually distinguish the edge-detection thickness. The width is given in
+// `unit_mode` units.
+fn bitmask_cyx_data_wide_stroke(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams {
+    BitmaskLayerParams {
+        stroke_width_unit_mode: unit_mode,
+        channel_settings: vec![
+            bitmask_cyx_data().channel_settings[0].clone(),
+            BitmaskChannelSettings {
+                color: Some(ColorMode::UniformRgb((0, 0, 255))),
+                filled: false,
+                stroke_width,
+                ..BitmaskChannelSettings::default()
+            },
+        ],
+        ..bitmask_cyx_data()
+    }
+}
+
+// The three stroke-width unit modes below are all set to resolve to the same
+// 2-mask-texel outline on this 100x100 canvas, so they must render
+// identically (i.e. share one snapshot family). With the identity
+// model_matrix, one mask texel is one data unit and -- at the 1/8 camera zoom
+// -- 12.5 screen pixels, i.e. 1/8 of the layer height.
+
+// Data-unit stroke width: 2 data units == 2 texels.
 #[tokio::test]
 async fn test_bitmask_layer_square_contain_data_units_wide_stroke() {
     let params = RenderParams {
         width: 100,
         height: 100,
-        layers: layer_params(BitmaskLayerParams {
-            channel_settings: vec![
-                bitmask_cyx_data().channel_settings[0].clone(),
-                BitmaskChannelSettings {
-                    color: Some(ColorMode::UniformRgb((0, 0, 255))),
-                    filled: false,
-                    stroke_width: 2.0,
-                    ..BitmaskChannelSettings::default()
-                },
-            ],
-            ..bitmask_cyx_data()
-        }),
+        layers: layer_params(bitmask_cyx_data_wide_stroke(UnitsMode::Data, 2.0)),
         aspect_ratio_mode: AspectRatioMode::Contain,
         camera_view: Some(CAMERA_ZOOM_OUT_8X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_wide_stroke").await;
+}
+
+// Pixel stroke width: 25 screen px / 12.5 px per texel == 2 texels.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_data_units_wide_stroke_pixel_units() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(bitmask_cyx_data_wide_stroke(UnitsMode::Pixels, 25.0)),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_wide_stroke").await;
+}
+
+// Normalized stroke width: 0.25 * 100px layer height == 25 px == 2 texels.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_data_units_wide_stroke_normalized_units() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(bitmask_cyx_data_wide_stroke(UnitsMode::Normalized, 0.25)),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_wide_stroke").await;
+}
+
+// ── Stroke width unit modes ───────────────────────────────────────────────────
+//
+// `CHANNEL_MASK`'s objects are only 2 texels wide, so every object texel is a
+// boundary even at a 1-texel stroke and outline *thickness* is invisible in
+// its snapshots (the tests above only establish that the three unit modes
+// agree). The tests below use a larger mask, where a 1-texel and a 2-texel
+// outline are plainly different, to check thickness itself.
+
+// Helper: an 8x8 single-object, single-channel mask -- a 6x6 block of object 1
+// inset by one texel:
+//   row 0:     [0, 0, 0, 0, 0, 0, 0, 0]
+//   rows 1-6:  [0, 1, 1, 1, 1, 1, 1, 0]
+//   row 7:     [0, 0, 0, 0, 0, 0, 0, 0]
+// A 1-texel outline leaves a 4x4 hole; a 2-texel outline leaves a 2x2 hole.
+const THICK_MASK: [u32; 64] = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+// Helper: `THICK_MASK` as a single outline-only blue channel, with the stroke
+// width given in `unit_mode` units.
+fn bitmask_thick(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams {
+    BitmaskLayerParams {
+        layer_id: "my_bitmask_layer".to_string(),
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
+        stroke_width_unit_mode: unit_mode,
+        dimension_order: DimensionOrder::CYX,
+        shape: vec![1, 8, 8],
+        channel_settings: vec![BitmaskChannelSettings {
+            color: Some(ColorMode::UniformRgb((0, 0, 255))),
+            filled: false,
+            stroke_width,
+            ..BitmaskChannelSettings::default()
+        }],
+        data: NumericData::Uint32(Arc::new(THICK_MASK.to_vec())),
+        ..BitmaskLayerParams::default()
+    }
+}
+
+// Zoom of 1/16, which on the 200x200 canvas the tests below use makes one
+// texel of the 8x8 `THICK_MASK` exactly 12.5 screen px (so the whole mask
+// spans 100px, half the canvas).
+const CAMERA_ZOOM_OUT_16X: [f32; 16] = [
+    0.0625, 0.0,    0.0, 0.0,
+    0.0,    0.0625, 0.0, 0.0,
+    0.0,    0.0,    0.0, 0.0,
+    0.0,    0.0,    0.0, 1.0,
+];
+
+// Zoom of 1/32, i.e. 2x further out: one texel is 6.25 screen px.
+const CAMERA_ZOOM_OUT_32X: [f32; 16] = [
+    0.03125, 0.0,     0.0, 0.0,
+    0.0,     0.03125, 0.0, 0.0,
+    0.0,     0.0,     0.0, 0.0,
+    0.0,     0.0,     0.0, 1.0,
+];
+
+fn thick_params(bitmask_params: BitmaskLayerParams, camera_view: [f32; 16]) -> RenderParams {
+    RenderParams {
+        width: 200,
+        height: 200,
+        layers: layer_params(bitmask_params),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(camera_view),
+        ..Default::default()
+    }
+}
+
+// One texel is one data unit (identity model_matrix), 12.5 screen px, and
+// 12.5/200 = 0.0625 of the layer height, so these three all resolve to the
+// same 1-texel outline and must render identically.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_thin_stroke_data_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Data, 1.0), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_thin_stroke").await;
+}
+
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_thin_stroke_pixel_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Pixels, 12.5), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_thin_stroke").await;
+}
+
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_thin_stroke_normalized_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Normalized, 0.0625), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_thin_stroke").await;
+}
+
+// Doubling the width doubles the outline: a visibly thicker ring than the
+// snapshot above, leaving a 2x2 rather than 4x4 hole.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_wide_stroke_data_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Data, 2.0), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_wide_stroke").await;
+}
+
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_wide_stroke_pixel_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Pixels, 25.0), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_wide_stroke").await;
+}
+
+// Zooming out 2x halves a texel's on-screen size to 6.25px. A data-unit width
+// is camera-*dependent* in screen terms: it stays 1 texel, so the ring shrinks
+// with the mask...
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_thin_stroke_data_units_zoomed_out() {
+    let params = thick_params(bitmask_thick(UnitsMode::Data, 1.0), CAMERA_ZOOM_OUT_32X);
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_thick_mask_thin_stroke_data_units_zoomed_out",
+    ).await;
+}
+
+// ...whereas the same 12.5px width that was 1 texel at the previous zoom is
+// now 2 texels, keeping the ring 12.5 screen px thick as the mask shrinks
+// around it.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_thin_stroke_pixel_units_zoomed_out() {
+    let params = thick_params(bitmask_thick(UnitsMode::Pixels, 12.5), CAMERA_ZOOM_OUT_32X);
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_thick_mask_thin_stroke_pixel_units_zoomed_out",
+    ).await;
+}
+
+// Pixel positioning: the camera does not apply, and `model_matrix` alone sizes
+// a texel. A 12.5x scale makes one texel 12.5 screen px, so a 25px width is a
+// 2-texel outline -- the same ring as `..._thick_mask_wide_stroke`, just
+// anchored at the origin rather than placed by the camera.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_wide_stroke_pixel_units_pixel_positioning() {
+    let params = thick_params(
+        BitmaskLayerParams {
+            data_unit_mode_x: UnitsMode::Pixels,
+            data_unit_mode_y: UnitsMode::Pixels,
+            model_matrix: Some([
+                12.5, 0.0,  0.0, 0.0,
+                0.0,  12.5, 0.0, 0.0,
+                0.0,  0.0,  1.0, 0.0,
+                0.0,  0.0,  0.0, 1.0,
+            ]),
+            ..bitmask_thick(UnitsMode::Pixels, 25.0)
+        },
+        CAMERA_ZOOM_OUT_16X,
+    );
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_thick_mask_wide_stroke_pixel_positioning",
+    ).await;
+}
+
+// Normalized positioning: `model_matrix` maps texels into a (0 to 1) fraction
+// of the layer, so a 0.0625 scale again makes one texel 12.5 of the 200 screen
+// px, and a 25px width a 2-texel outline. Renders identically to the pixel-
+// positioned case above.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_wide_stroke_pixel_units_normalized_positioning() {
+    let params = thick_params(
+        BitmaskLayerParams {
+            data_unit_mode_x: UnitsMode::Normalized,
+            data_unit_mode_y: UnitsMode::Normalized,
+            model_matrix: Some([
+                0.0625, 0.0,    0.0, 0.0,
+                0.0,    0.0625, 0.0, 0.0,
+                0.0,    0.0,    1.0, 0.0,
+                0.0,    0.0,    0.0, 1.0,
+            ]),
+            ..bitmask_thick(UnitsMode::Pixels, 25.0)
+        },
+        CAMERA_ZOOM_OUT_16X,
+    );
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_thick_mask_wide_stroke_pixel_positioning",
+    ).await;
+}
+
+// A data-unit stroke width is meaningless when the mask is positioned
+// relative to the layer bounds rather than in data space.
+#[tokio::test]
+#[should_panic(expected = "stroke_width_unit_mode cannot be 'data'")]
+async fn test_bitmask_layer_data_stroke_units_with_pixel_positioning_panics() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(BitmaskLayerParams {
+            data_unit_mode_x: UnitsMode::Pixels,
+            data_unit_mode_y: UnitsMode::Pixels,
+            ..bitmask_cyx_data_wide_stroke(UnitsMode::Data, 2.0)
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "unused_panics_before_rendering").await;
 }
 
 // Exercises `ColorMode::UniformRgb`, filled, on its own.

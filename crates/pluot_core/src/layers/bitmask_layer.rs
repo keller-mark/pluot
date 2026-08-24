@@ -62,8 +62,13 @@ pub struct BitmaskChannelSettings {
     /// outline of each object (see `stroke_width`).
     pub filled: bool,
 
-    /// Outline thickness, in mask texels, used to detect object boundaries
-    /// when `filled` is false. Has no effect when `filled` is true.
+    /// Outline thickness, in the units given by
+    /// [`BitmaskLayerParams::stroke_width_unit_mode`], used to detect object
+    /// boundaries when `filled` is false. Has no effect when `filled` is true.
+    ///
+    /// Because the boundary test can only step the mask array by whole texels,
+    /// the resolved width is rounded down to a texel count, with a floor of one
+    /// texel so outlines never vanish when zoomed out.
     pub stroke_width: f32,
 }
 
@@ -92,9 +97,24 @@ pub struct BitmaskLayerParams {
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
 
-    // TODO: support data, pixels, or normalized unit mode when rendering in stroked mode.
-    // This behavior should be analogous to the stroked_polygon_layer and stroked_curve_layer,
-    // the only difference is that for the bitmasks, we use the bitmask data array to determine which fragments should be stroked on the fly in the shader.
+    /// How to interpret every channel's [`BitmaskChannelSettings::stroke_width`]
+    /// (i.e. when rendering a channel in outline-only mode): screen pixels,
+    /// data-coordinate units, or a fraction (0 to 1) of the layer height.
+    /// Analogous to the same field on the stroked polygon/curve layers, and,
+    /// as there, widths are measured relative to the Y axis.
+    ///
+    /// Unlike those layers there is no stroke *geometry* to widen -- which
+    /// fragments are stroked is decided from the bitmask data on the fly in
+    /// the shader -- so the width is instead resolved into mask texels, the
+    /// units the object-boundary test steps by. That resolution divides by the
+    /// on-screen (or, for `Data`, the world-space) size of one mask texel:
+    /// note this means `model_matrix` is a divisor here rather than a factor
+    /// as in the stroked polygon/curve layers, since for a bitmask it maps
+    /// mask-texel space into world space rather than data units into world
+    /// units.
+    ///
+    /// `Data` is rejected unless both `data_unit_mode_x` and `data_unit_mode_y`
+    /// are also `Data`, since data units are otherwise meaningless.
     pub stroke_width_unit_mode: UnitsMode,
 
     // (x_offset, y_offset) in pixels, applied before model_matrix, to enable
@@ -140,6 +160,7 @@ impl Default for BitmaskLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
+            stroke_width_unit_mode: UnitsMode::Pixels,
             pixel_offset: None,
             model_matrix: None,
             dimension_order: DimensionOrder::CYX,
@@ -199,11 +220,78 @@ impl BitmaskLayer {
             );
         }
 
+        // 5. A data-unit stroke width has no meaning when the mask is
+        // positioned relative to the layer bounds rather than in data space.
+        // Mirrors the same check in `LineLayer`/`CurveLayer`.
+        if layer_params.stroke_width_unit_mode == UnitsMode::Data
+            && (layer_params.data_unit_mode_x != UnitsMode::Data
+                || layer_params.data_unit_mode_y != UnitsMode::Data)
+        {
+            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
+        }
+
         Self {
             view_params,
             layer_params,
         }
     }
+}
+
+/// Resolve a channel's `stroke_width` -- expressed in screen pixels, data
+/// (world) units, or a fraction of the layer height -- into the mask texels
+/// the object-boundary test steps by.
+///
+/// CPU mirror of `bitmask_stroke_width_texels` in
+/// `wgsl_functions/bitmask/channel_stroke_width.wgsl`; see
+/// [`BitmaskLayerParams::stroke_width_unit_mode`] for the rationale.
+fn stroke_width_texels(
+    stroke_width: f32,
+    stroke_width_unit_mode: UnitsMode,
+    model_matrix: &[f32; 16],
+    layer_w: f32,
+    layer_h: f32,
+    camera_view: &[f32; 16],
+    data_unit_mode_x: UnitsMode,
+    data_unit_mode_y: UnitsMode,
+    aspect_ratio_mode: AspectRatioMode,
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
+) -> f32 {
+    // World-space Y extent of a single mask texel. w = 0, so the model_matrix's
+    // translation cancels out (this is a size, not a position).
+    let world_per_texel = (Mat4::from_cols_array(model_matrix) * Vec4::new(1.0, 1.0, 0.0, 0.0))
+        .y
+        .abs();
+
+    if stroke_width_unit_mode == UnitsMode::Data {
+        // Data-unit width: camera-independent, because the mask itself scales
+        // with the camera.
+        return if world_per_texel == 0.0 { 0.0 } else { stroke_width / world_per_texel };
+    }
+
+    // Screen-pixel Y extent of a single mask texel: the on-screen size of a
+    // 1x1-texel quad, positioned exactly as the mask quad is.
+    let (_, px_per_texel) = crate::positioning::get_point_size(
+        1.0,
+        1.0,
+        layer_w,
+        layer_h,
+        camera_view,
+        data_unit_mode_x,
+        data_unit_mode_y,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        Some(model_matrix.as_slice()),
+    );
+    let px_per_texel = px_per_texel.abs();
+
+    // Normalized-unit width: a fraction (0 to 1) of the layer height, which a
+    // pixel-unit width already is in absolute terms.
+    let stroke_width_px = if stroke_width_unit_mode == UnitsMode::Normalized {
+        stroke_width * layer_h
+    } else {
+        stroke_width
+    };
+    if px_per_texel == 0.0 { 0.0 } else { stroke_width_px / px_per_texel }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -244,6 +332,9 @@ struct BitmaskLayerUniforms {
     model_matrix: Mat4,
 
     opacity: f32, // overall layer opacity multiplier
+
+    // How to interpret each channel's stroke_width.
+    stroke_width_unit_mode: u32, // 0 = pixels, 1 = data units, 2 = normalized
 
     // Strides for each dimension (in units of f32 elements), allowing the
     // shader to index into the flat data buffer regardless of the dimension
@@ -588,6 +679,11 @@ impl DrawToRasterGpu for BitmaskLayer {
                 0.0, 0.0, 0.0, 1.0,
             ])),
             opacity: layer_params.opacity,
+            stroke_width_unit_mode: match layer_params.stroke_width_unit_mode {
+                UnitsMode::Pixels => 0,
+                UnitsMode::Data => 1,
+                UnitsMode::Normalized => 2,
+            },
             x_stride,
             y_stride,
             c_stride,
@@ -707,6 +803,7 @@ impl DrawToRasterGpu for BitmaskLayer {
             .inject_texture_sample_type("mask_data", mask_dtype)
             .inject_function("bitmask_sample", bitmask_channel::CHANNEL_SAMPLE)
             .inject_function("bitmask_is_edge", bitmask_channel::CHANNEL_IS_EDGE)
+            .inject_function("bitmask_stroke_width_texels", bitmask_channel::CHANNEL_STROKE_WIDTH)
             .define("colormap_functions", &colormap_functions)
             .define("channel_color_functions", &channel_color_functions)
             .define("channel_color_dispatch", &channel_color_dispatch)
@@ -830,6 +927,69 @@ impl DrawToSvg for BitmaskLayer {
         let y_stride = strides[y_dim_idx];
         let c_stride = strides[c_dim_idx];
 
+        let camera_view = view_params.camera_view.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        let bounds = if layer_params.bounds.is_none() {
+            &view_params.margins
+        } else {
+            &layer_params.bounds
+        };
+
+        let margin_top = if let Some(margin_params) = &bounds {
+            margin_params.margin_top.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_right = if let Some(margin_params) = &bounds {
+            margin_params.margin_right.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_bottom = if let Some(margin_params) = &bounds {
+            margin_params.margin_bottom.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+        let margin_left = if let Some(margin_params) = &bounds {
+            margin_params.margin_left.unwrap_or(0.0)
+        } else { 0.0 } as f64;
+
+        let viewport_w = view_params.width as f32;
+        let viewport_h = view_params.height as f32;
+
+        let layer_w = viewport_w - (margin_left + margin_right) as f32;
+        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
+
+        let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        // Per-channel outline thickness, resolved out of `stroke_width_unit_mode`
+        // into the mask texels the boundary test below steps by (the CPU
+        // counterpart of `bitmask_stroke_width_texels` in the fragment shader).
+        // The rasterization happens in mask-texel space, so this is the only
+        // place the layer's on-screen size enters the CPU path.
+        let stroke_widths_texels: Vec<f32> = layer_params
+            .channel_settings
+            .iter()
+            .map(|ch| {
+                stroke_width_texels(
+                    ch.stroke_width,
+                    layer_params.stroke_width_unit_mode,
+                    &model_matrix_raw,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    layer_params.data_unit_mode_x,
+                    layer_params.data_unit_mode_y,
+                    view_params.aspect_ratio_mode,
+                    view_params.aspect_ratio_alignment_mode,
+                )
+            })
+            .collect();
+
         // Naive per-pixel CPU rasterization, mirroring the GPU fragment
         // shader's per-channel sampling/edge-detection/blending logic (see
         // the channel loop in `bitmask_layer.wgsl`'s `fs_main`), reusing
@@ -857,7 +1017,7 @@ impl DrawToSvg for BitmaskLayer {
                     let is_on = if channel.filled {
                         true
                     } else {
-                        let off = (channel.stroke_width.max(1.0)) as i64;
+                        let off = stroke_widths_texels[ci].max(1.0) as i64;
                         let deltas = [
                             (off, 0), (-off, 0),
                             (0, off), (0, -off),
@@ -908,45 +1068,6 @@ impl DrawToSvg for BitmaskLayer {
 
         let png = encode_png_rgba(img_w, img_h, &rgba);
         let href = format!("data:image/png;base64,{}", base64_encode(&png));
-
-        let camera_view = view_params.camera_view.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
-
-        let bounds = if layer_params.bounds.is_none() {
-            &view_params.margins
-        } else {
-            &layer_params.bounds
-        };
-
-        let margin_top = if let Some(margin_params) = &bounds {
-            margin_params.margin_top.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_right = if let Some(margin_params) = &bounds {
-            margin_params.margin_right.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_bottom = if let Some(margin_params) = &bounds {
-            margin_params.margin_bottom.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-        let margin_left = if let Some(margin_params) = &bounds {
-            margin_params.margin_left.unwrap_or(0.0)
-        } else { 0.0 } as f64;
-
-        let viewport_w = view_params.width as f32;
-        let viewport_h = view_params.height as f32;
-
-        let layer_w = viewport_w - (margin_left + margin_right) as f32;
-        let layer_h = viewport_h - (margin_top + margin_bottom) as f32;
-
-        let model_matrix_raw: [f32; 16] = layer_params.model_matrix.unwrap_or([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]);
 
         let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
 

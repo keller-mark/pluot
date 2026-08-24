@@ -35,6 +35,36 @@ fn assert_wgsl_eq(actual: &str, expected: &str) {
     assert_eq!(normalize(actual), normalize(expected));
 }
 
+/// Compare assembled WGSL against a checked-in golden file, for output too
+/// large to keep inline as a literal.
+///
+/// Writes the current output to `tests/snaps-dirty/<name>` and compares it
+/// against `tests/snaps-blessed/<name>`, panicking with blessing instructions
+/// on mismatch -- the same pattern `pluot`'s raster/vector/script snapshot
+/// tests use (see `crates/pluot/tests/test_utils/snapshot_utils.rs`).
+fn check_wgsl_snapshot(actual: &str, name: &str) {
+    let tests_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let blessed_path = tests_dir.join("snaps-blessed").join(name);
+    let dirty_path = tests_dir.join("snaps-dirty").join(name);
+
+    // Always write the current output so it can be inspected / blessed.
+    std::fs::create_dir_all(dirty_path.parent().unwrap()).unwrap();
+    std::fs::write(&dirty_path, actual).unwrap();
+
+    let expected = std::fs::read_to_string(&blessed_path).unwrap_or_default();
+    if normalize(actual) != normalize(&expected) {
+        panic!(
+            "Assembled WGSL no longer matches the golden snapshot for '{name}'.\n\
+             Current output: {dirty}\n\
+             Reference snapshot: {blessed}\n\
+             If this change is intentional, review the diff carefully and accept it with:\n  \
+             cp {dirty} {blessed}",
+            dirty = dirty_path.display(),
+            blessed = blessed_path.display(),
+        );
+    }
+}
+
 /// Mirrors the `switch_cases` construction in `BitmaskLayer::draw` exactly
 /// (same format string, same join separator), so tests here build the
 /// dispatch switch identically to production.
@@ -254,10 +284,9 @@ fn channel_sample_and_is_edge_are_not_templated() {
 /// calls) for a representative 2-channel configuration: channel 0 uses
 /// `ColorMode::UniformRgb` (or `None`, which builds identically), channel 1
 /// uses `ColorMode::Quantitative` with the `viridis` colormap. Compared
-/// against a checked-in golden file (`tests/snaps/`) rather than an inline
-/// literal, since the fully assembled shader is large; update that file
-/// (after visually verifying the diff) if a deliberate template change
-/// requires it.
+/// against a checked-in golden file rather than an inline literal, since the
+/// fully assembled shader is large; see [`check_wgsl_snapshot`] for how to
+/// bless a deliberate template change.
 #[test]
 fn full_shader_assembly_matches_snapshot() {
     let channel_color_functions = format!(
@@ -283,6 +312,7 @@ fn full_shader_assembly_matches_snapshot() {
         .inject_texture_sample_type("mask_data", TextureDtype::U32)
         .inject_function("bitmask_sample", bitmask_channel::CHANNEL_SAMPLE)
         .inject_function("bitmask_is_edge", bitmask_channel::CHANNEL_IS_EDGE)
+        .inject_function("bitmask_stroke_width_texels", bitmask_channel::CHANNEL_STROKE_WIDTH)
         .define("colormap_functions", &colormap_functions)
         .define("channel_color_functions", &channel_color_functions)
         .define("channel_color_dispatch", &channel_color_dispatch)
@@ -290,12 +320,5 @@ fn full_shader_assembly_matches_snapshot() {
 
     assert!(!shader_source.contains("{{"), "no placeholder should remain unsubstituted");
 
-    let expected = include_str!("snaps-blessed/bitmask_layer_shader_two_channels.wgsl");
-    assert_eq!(
-        normalize(&shader_source), normalize(expected),
-        "Assembled bitmask_layer.wgsl shader source no longer matches the golden \
-         snapshot at tests/snaps-blessed/bitmask_layer_shader_two_channels.wgsl. If this \
-         change is intentional, review the diff carefully (e.g. by writing \
-         `shader_source` to that file) and update the snapshot.",
-    );
+    check_wgsl_snapshot(&shader_source, "bitmask_layer_shader_two_channels.wgsl");
 }

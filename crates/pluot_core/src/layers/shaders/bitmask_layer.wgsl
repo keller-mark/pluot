@@ -23,7 +23,7 @@ struct Channel {
     color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     opacity: f32,            // this channel's opacity multiplier
     filled: u32,             // 1 = draw filled object regions, 0 = draw outlines only
-    stroke_width: f32,       // outline thickness, in mask texels (used when filled == 0)
+    stroke_width: f32,       // outline thickness, in the units given by u.stroke_width_unit_mode (used when filled == 0)
     visible: u32,            // 1 = this channel is drawn
 };
 
@@ -41,6 +41,9 @@ struct Uniforms {
     model_matrix: mat4x4<f32>,
 
     opacity: f32, // overall layer opacity multiplier
+
+    // How to interpret every channel's `stroke_width`.
+    stroke_width_unit_mode: u32, // 0: px units, 1: data coordinate system units, 2: normalized (0-1) units
 
     // Strides for each dimension (in units of elements), allowing the shader to
     // index into the flat `mask_data` buffer regardless of the dimension
@@ -71,12 +74,15 @@ struct VSOut {
 // (see `crate::shader_modules`), same as `BitmapLayer`'s `img_data`.
 @group(0) @binding(1) var mask_data: texture_2d<{{mask_data_dtype}}>;
 
-// bitmask_sample(channel_index, px) / bitmask_is_edge(...): ordinary (not
-// per-channel-templated) helper functions used by the channel loop in
-// fs_main below. See `crate::shader_modules::bitmask_channel`.
+// bitmask_sample(channel_index, px) / bitmask_is_edge(...) /
+// bitmask_stroke_width_texels(...): ordinary (not per-channel-templated)
+// helper functions used by the channel loop in fs_main below. See
+// `crate::shader_modules::bitmask_channel`.
 {{bitmask_sample}}
 
 {{bitmask_is_edge}}
+
+{{bitmask_stroke_width_texels}}
 
 // Quantitative colormap function(s) used by any channel in `Quantitative`
 // color mode, deduplicated by name so a colormap shared by multiple channels
@@ -211,10 +217,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
     // Loop over every configured channel: sample this channel's slice of
     // mask_data (bitmask_sample), reduce it to an object-boundary test when
-    // not filled (bitmask_is_edge), and blend the resolved object color
-    // (get_channel_color) into out_rgb/out_a when "on". num_channels and
-    // each Channel come from the storage buffer, so this is a genuine
-    // runtime loop -- not unrolled/generated per channel.
+    // not filled (bitmask_stroke_width_texels + bitmask_is_edge), and blend
+    // the resolved object color (get_channel_color) into out_rgb/out_a when
+    // "on". num_channels and each Channel come from the storage buffer, so
+    // this is a genuine runtime loop -- not unrolled/generated per channel.
     for (var channel_index: u32 = 0u; channel_index < u.num_channels; channel_index = channel_index + 1u) {
         let ch = u.channels[channel_index];
         if (ch.visible == 0u) {
@@ -228,7 +234,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
         var is_on = true;
         if (ch.filled == 0u) {
-            is_on = bitmask_is_edge(channel_index, px, raw_label, img_w, img_h, ch.stroke_width);
+            // The edge test steps the mask array by whole texels, so resolve
+            // this channel's stroke width out of screen-pixel/data/normalized
+            // units into texels first.
+            let stroke_width_texels = bitmask_stroke_width_texels(ch.stroke_width);
+            is_on = bitmask_is_edge(channel_index, px, raw_label, img_w, img_h, stroke_width_texels);
         }
         if (!is_on) {
             continue;

@@ -1,0 +1,16 @@
+<svg height="200" width="200" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_bitmask_layer_clip_path">
+<rect height="200" width="200" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="200" width="200">
+<g clip-path="url(#my_bitmask_layer_clip_path)" transform="translate(0,0)">
+<g transform="translate(96.875,53.125) scale(6.25,6.25)">
+<image height="8" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAW0lEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1S944agAYPN8ScELR+U5SABgcwXBC0flOdg8J4IXDvHC8Y+OcwYUH0urZwAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="8" x="0" y="0"/>
+</g>
+</g>
+</g>
+</g>
+</svg>
