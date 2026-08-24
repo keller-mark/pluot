@@ -16,7 +16,6 @@ use pluot_core::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayer
 use pluot_core::composite_layers::axis_linear_layer::AxisPosition;
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation};
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::{LegendPointSizeQuantitativeLayer, LegendPointSizeQuantitativeLayerParams};
-use pluot_core::color_mode::quantitative_domain;
 use pluot_core::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
@@ -285,6 +284,10 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let mut position_y: Vec<f32> = Vec::with_capacity(n_dots);
         let mut point_radius_values: Vec<f32> = Vec::with_capacity(n_dots);
         let mut mean_expression_values: Vec<f32> = Vec::with_capacity(n_dots);
+        // The colormap domain is known ahead of time here because this layer computes
+        // the mean expression values itself: they are accumulated as they are pushed,
+        // so no extra pass over the data is needed to establish the domain.
+        let (mut expression_min, mut expression_max) = (f32::INFINITY, f32::NEG_INFINITY);
         for summary in &gene_summaries {
             let group_pos = groups_scale.scale(&summary.obs_value) as f32 + groups_bandwidth / 2.0;
             let gene_pos = genes_scale.scale(&summary.var_name) as f32 + genes_bandwidth / 2.0;
@@ -294,24 +297,33 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             let (mean, fraction_expressing) = summary.mean_and_fraction_expressing();
             point_radius_values.push(size_scale.scale(&(fraction_expressing as f64)) as f32);
             mean_expression_values.push(mean);
+            expression_min = expression_min.min(mean);
+            expression_max = expression_max.max(mean);
         }
+        // No dots (or an all-NaN expression matrix) leaves the accumulators at their
+        // infinite seeds; fall back to the unit domain rather than emitting one the
+        // shader cannot normalize against.
+        let expression_domain = if expression_min.is_finite() && expression_max.is_finite() {
+            (expression_min, expression_max)
+        } else {
+            (0.0, 1.0)
+        };
 
         // Kept for `pick`: a picked point's instance index is this same index into
         // `gene_summaries`, since both were built from the one `for summary in &gene_summaries` loop above.
         self.gene_summaries = gene_summaries;
 
-        // Computed from the same `QuantitativeParams` (domain: None) used for the dots'
-        // fill color, so `color_scale` -- and the legend below, which is built from it --
-        // reflect exactly the range the dots are normalized against.
+        // The dots' fill color and `color_scale` -- and the legend below, which is built
+        // from it -- are given the same explicit `expression_domain`, so the legend
+        // reflects exactly the range the dots are normalized against in the shader.
         let fill_color_params = QuantitativeParams {
             values: NumericData::Float32(Arc::new(mean_expression_values)),
             colormap: self.layer_params.cmap.clone(),
             reverse: false,
-            domain: None,
+            domain: Some(expression_domain),
         };
-        let expression_domain = quantitative_domain(&fill_color_params);
         let mut color_scale = ScaleLinear::new();
-        color_scale.set_domain((expression_domain[0] as f64, expression_domain[1] as f64));
+        color_scale.set_domain((expression_domain.0 as f64, expression_domain.1 as f64));
 
         let mut point_layer = PointLayer::new(
             self.view_params.clone(),
