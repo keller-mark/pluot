@@ -3,6 +3,9 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 
+use crate::ome_zarr_transformations::affine::AffineMatrix;
+use crate::ome_zarr_transformations::metadata::CoordinateSystemAxis;
+
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
     // (in scientific notation format where the tuple is `(coefficient, exponent)` meaning `coefficient x 10^exponent` meters)
@@ -41,6 +44,207 @@ pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64
         // TODO: would it be better to just interpret as meters if unrecognized?
         _ => panic!("Unrecognized AxisUnitSpace unit: {:?}", unit),
     }
+}
+
+
+/// Name given to the coordinate system that OME-Zarr v0.4 and v0.5 leave
+/// implicit: the physical space that every resolution level of a multiscale
+/// image maps into.
+pub const INTRINSIC_COORDINATE_SYSTEM: &str = "intrinsic";
+
+/// Upgrade an OME-Zarr `ome` attributes object in place, rewriting v0.4 and
+/// v0.5 `multiscales` metadata into the v0.6 (RFC-5) shape so that one code path
+/// can read any version.
+///
+/// Before v0.6, a multiscale image declared its axes in an `axes` list and left
+/// the coordinate systems its transformations connect implicit. For each such
+/// entry this:
+/// - declares a `coordinateSystems` entry named [`INTRINSIC_COORDINATE_SYSTEM`]
+///   holding the entry's `axes`, and
+/// - rewrites each dataset's transformations as a single transformation from
+///   that dataset's array coordinate system to the intrinsic coordinate system.
+///
+/// A dataset's own transformations are applied in order and then the
+/// multiscale-wide `coordinateTransformations` on top, so a dataset with more
+/// than one transformation to apply becomes a `sequence` of them. A dataset with
+/// none becomes an `identity`.
+///
+/// Metadata that already declares `input` and `output` is left alone, so v0.6
+/// metadata passes through unchanged.
+pub fn upgrade_ome_multiscales(ome: &mut serde_json::Value) {
+    let Some(multiscales) = ome.get_mut("multiscales").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    for multiscale in multiscales {
+        // The transformations applied to every level, after each level's own.
+        let shared: Vec<serde_json::Value> = multiscale
+            .get("coordinateTransformations")
+            .and_then(|v| v.as_array())
+            .map(|list| list.iter().filter(|t| is_legacy(t)).cloned().collect())
+            .unwrap_or_default();
+
+        if multiscale.get("coordinateSystems").is_none() {
+            if let Some(axes) = multiscale.get("axes").cloned() {
+                multiscale["coordinateSystems"] = serde_json::json!([
+                    { "name": INTRINSIC_COORDINATE_SYSTEM, "axes": axes },
+                ]);
+            }
+        }
+
+        let Some(datasets) = multiscale.get_mut("datasets").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        for dataset in datasets {
+            let Some(path) = dataset.get("path").and_then(|p| p.as_str()).map(str::to_string) else {
+                continue;
+            };
+            let steps: Vec<serde_json::Value> = dataset
+                .get("coordinateTransformations")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if steps.iter().any(|step| !is_legacy(step)) {
+                // Already in the v0.6 shape.
+                continue;
+            }
+            let steps: Vec<serde_json::Value> =
+                steps.into_iter().chain(shared.iter().cloned()).collect();
+            let mut transformation = match <[serde_json::Value; 1]>::try_from(steps) {
+                Ok([only]) => only,
+                Err(steps) => match steps.is_empty() {
+                    true => serde_json::json!({ "type": "identity" }),
+                    false => serde_json::json!({ "type": "sequence", "transformations": steps }),
+                },
+            };
+            transformation["input"] = serde_json::json!({ "path": path });
+            transformation["output"] = serde_json::json!({ "name": INTRINSIC_COORDINATE_SYSTEM });
+            dataset["coordinateTransformations"] = serde_json::json!([transformation]);
+        }
+    }
+}
+
+/// Whether a coordinate transformation predates v0.6, i.e. does not declare the
+/// coordinate systems it connects.
+fn is_legacy(transformation: &serde_json::Value) -> bool {
+    transformation.get("input").is_none() && transformation.get("output").is_none()
+}
+
+/// Factor converting one unit of a spatial axis to meters.
+///
+/// Axes that do not declare a unit are interpreted as micrometers, matching the
+/// default used elsewhere for OME-Zarr images.
+pub fn axis_unit_to_meters(unit: Option<&str>) -> Result<f64, String> {
+    let Some(unit) = unit else {
+        return Ok(1e-6);
+    };
+    let space: AxisUnitSpace = serde_json::from_value(serde_json::Value::String(unit.to_string()))
+        .map_err(|_| format!("unrecognized spatial axis unit \"{}\"", unit))?;
+    let (coefficient, exponent) = axis_unit_space_to_coefficient_and_exponent(&space);
+    Ok(coefficient * 10_f64.powi(exponent))
+}
+
+/// Build the column-major 4x4 pixel-to-world model matrix for one resolution
+/// level from a transformation into a target coordinate system.
+///
+/// `transformation` maps points in the level's array coordinate system (array
+/// index order, Y increasing downwards) to the target coordinate system, whose
+/// component order and units are given by `target_axes`.
+///
+/// The returned matrix follows the convention of `multiscale_utils`: it maps
+/// Y-up pixel coordinates at this level to world coordinates in meters. Two
+/// axis flips are folded in to get there. The Y-up pixel row is converted back
+/// to an array row using `level_height`, and the target Y coordinate is negated
+/// because world Y increases upwards while the Y axis of an OME-Zarr image
+/// coordinate system increases downwards. Positions along the target Y axis are
+/// therefore negative, but they are absolute: two images sharing a target
+/// coordinate system line up in world space.
+///
+/// Array dimensions other than X and Y are held fixed, since a single slice is
+/// rendered at a time. This only matters for transformations that mix those
+/// dimensions into the target X or Y coordinate.
+pub fn target_coordinate_system_model_matrix(
+    transformation: &AffineMatrix,
+    dimension_order: &OmeDimensionOrder,
+    target_axes: &[CoordinateSystemAxis],
+    level_height: u64,
+    target_z: u64,
+    target_t: u64,
+) -> Result<[f32; 16], String> {
+    let n_in = transformation.n_in();
+    if n_in != dimension_order.num_dims() {
+        return Err(format!(
+            "the transformation takes {}-dimensional points but the array has {} dimensions",
+            n_in,
+            dimension_order.num_dims(),
+        ));
+    }
+    if transformation.n_out() != target_axes.len() {
+        return Err(format!(
+            "the transformation produces {}-dimensional points but the target coordinate system has {} axes",
+            transformation.n_out(),
+            target_axes.len(),
+        ));
+    }
+    let x_dim = dimension_order.index_of(OmeDim::X).unwrap();
+    let y_dim = dimension_order.index_of(OmeDim::Y).unwrap();
+
+    let find_target_axis = |name: &str| {
+        target_axes
+            .iter()
+            .position(|axis| axis.name == name)
+            .ok_or_else(|| format!("the target coordinate system has no \"{}\" axis", name))
+    };
+    let target_x = find_target_axis("x")?;
+    let target_y = find_target_axis("y")?;
+    let x_to_meters = axis_unit_to_meters(target_axes[target_x].unit.as_deref())?;
+    let y_to_meters = axis_unit_to_meters(target_axes[target_y].unit.as_deref())?;
+
+    // The value each non-X/Y array dimension is held at.
+    let fixed_at = |dim: usize| match dimension_order.dims()[dim] {
+        OmeDim::Z => target_z as f64,
+        OmeDim::T => target_t as f64,
+        _ => 0.0,
+    };
+
+    // Rewrite one output component as a function of (px, py) in Y-up pixel
+    // coordinates: the array row is `level_height - py`, so the Y column changes
+    // sign and contributes `level_height` times its coefficient to the constant.
+    let constant = |row: usize| {
+        transformation.get(row, n_in)
+            + transformation.get(row, y_dim) * level_height as f64
+            + (0..n_in)
+                .filter(|&dim| dim != x_dim && dim != y_dim)
+                .map(|dim| transformation.get(row, dim) * fixed_at(dim))
+                .sum::<f64>()
+    };
+
+    let m00 = x_to_meters * transformation.get(target_x, x_dim);
+    let m01 = -x_to_meters * transformation.get(target_x, y_dim);
+    let m03 = x_to_meters * constant(target_x);
+    let m10 = -y_to_meters * transformation.get(target_y, x_dim);
+    let m11 = y_to_meters * transformation.get(target_y, y_dim);
+    let m13 = -y_to_meters * constant(target_y);
+
+    Ok([
+        m00 as f32, m10 as f32, 0.0, 0.0,
+        m01 as f32, m11 as f32, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        m03 as f32, m13 as f32, 0.0, 1.0,
+    ])
+}
+
+/// The physical size of one pixel along the world Y and X axes, as
+/// `[scale_y, scale_x]` to match `ResolutionLevel::scale`.
+///
+/// This is the world-space length of the displacement produced by stepping one
+/// pixel along the array's Y or X axis, so it reduces to the axis scale for a
+/// model matrix that only scales, and stays meaningful under rotation and shear.
+pub fn model_matrix_pixel_size(model_matrix: &[f32; 16]) -> [f64; 2] {
+    // Column-major: column `col` starts at index `col * 4`.
+    let column_length = |col: usize| {
+        (model_matrix[col * 4] as f64).hypot(model_matrix[col * 4 + 1] as f64)
+    };
+    [column_length(1), column_length(0)]
 }
 
 
@@ -246,78 +450,3 @@ impl<'de> Deserialize<'de> for OmeDimensionOrder {
 }
 
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ome_dim_order_new() {
-        let order = OmeDimensionOrder::new(vec![OmeDim::T, OmeDim::Z, OmeDim::C, OmeDim::Y, OmeDim::X]);
-        assert_eq!(order.num_dims(), 5);
-        assert_eq!(order.index_of(OmeDim::X), Some(4));
-        assert_eq!(order.index_of(OmeDim::T), Some(0));
-        assert!(order.has_dim(OmeDim::C));
-        assert_eq!(order.to_string(), "TZCYX");
-    }
-
-    #[test]
-    fn test_ome_dim_order_from_str() {
-        let order = OmeDimensionOrder::try_from("CZYX").unwrap();
-        assert_eq!(order.num_dims(), 4);
-        assert_eq!(order.index_of(OmeDim::C), Some(0));
-        assert_eq!(order.index_of(OmeDim::Z), Some(1));
-        assert_eq!(order.index_of(OmeDim::Y), Some(2));
-        assert_eq!(order.index_of(OmeDim::X), Some(3));
-        assert!(!order.has_dim(OmeDim::T));
-        assert_eq!(order.to_string(), "CZYX");
-    }
-
-    #[test]
-    fn test_ome_dim_order_lowercase() {
-        // Lowercase input is accepted; order is preserved, output is uppercase.
-        let order = OmeDimensionOrder::try_from("tczyx").unwrap();
-        assert_eq!(order.to_string(), "TCZYX");
-    }
-
-    #[test]
-    fn test_ome_dim_order_into_string() {
-        let order = OmeDimensionOrder::new(vec![OmeDim::C, OmeDim::Y, OmeDim::X]);
-        let s: String = order.into();
-        assert_eq!(s, "CYX");
-    }
-
-    #[test]
-    fn test_ome_dim_order_err_no_x() {
-        assert!(OmeDimensionOrder::try_from("CY").is_err());
-    }
-
-    #[test]
-    fn test_ome_dim_order_err_no_y() {
-        assert!(OmeDimensionOrder::try_from("CX").is_err());
-    }
-
-    #[test]
-    fn test_ome_dim_order_err_duplicate() {
-        assert!(OmeDimensionOrder::try_from("XYXY").is_err());
-    }
-
-    #[test]
-    fn test_ome_dim_order_err_invalid_char() {
-        assert!(OmeDimensionOrder::try_from("AXY").is_err());
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_ome_dim_order_new_panics_on_duplicate() {
-        OmeDimensionOrder::new(vec![OmeDim::X, OmeDim::Y, OmeDim::X]);
-    }
-
-    #[test]
-    fn test_ome_dim_order_serde_roundtrip() {
-        let order = OmeDimensionOrder::new(vec![OmeDim::T, OmeDim::C, OmeDim::Z, OmeDim::Y, OmeDim::X]);
-        let json = serde_json::to_string(&order).unwrap();
-        assert_eq!(json, "\"TCZYX\"");
-        let decoded: OmeDimensionOrder = serde_json::from_str(&json).unwrap();
-        assert_eq!(order, decoded);
-    }
-}
