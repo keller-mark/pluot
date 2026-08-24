@@ -1,8 +1,9 @@
 // Resolves a channel's `stroke_width` -- expressed in screen pixels, data
 // (world) units, or as a fraction of the layer height, per
 // `u.stroke_width_unit_mode` -- into the mask-texel units that
-// `bitmask_is_edge` works in, since the edge test can only step the mask
-// array by whole texels.
+// `bitmask_is_edge` measures in. This is purely a change of units: the result
+// is free to be fractional, and nothing here depends on the mask's
+// dimensions, only on the model matrix, camera and viewport.
 //
 // The mask quad's vertices are mask-texel positions pushed through
 // `u.model_matrix` (which maps mask-texel space into world space) and then,
@@ -25,7 +26,7 @@ fn bitmask_stroke_width_texels(stroke_width: f32) -> f32 {
         // multiplying by it as the stroked polygon/curve layers do: there
         // model_matrix maps data units to world units, here it maps mask
         // texels to world units. `BitmaskLayer::new` rejects this mode unless
-        // the layer is positioned in data units.
+        // the layer's Y axis is positioned in data units.
         return select(stroke_width / world_per_texel, 0.0, world_per_texel == 0.0);
     }
 

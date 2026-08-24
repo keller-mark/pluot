@@ -204,8 +204,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // Shared pixel-position computation: every channel is a slice of the same
     // (img_width, img_height) `mask_data` array, so this only needs to happen
     // once rather than per channel.
+    // The continuous position, kept alongside the integer texel it falls in:
+    // the label is read from the containing texel, but the boundary test
+    // offsets this continuous position so the outline's thickness does not
+    // quantize to the mask's resolution (see `bitmask_is_edge`).
+    let px_f = in.tex_coord * u.img_size;
     let px = vec2<u32>(min(
-        vec2<u32>(floor(in.tex_coord * u.img_size)),
+        vec2<u32>(floor(px_f)),
         vec2<u32>(u.img_size) - vec2<u32>(1u, 1u)
     ));
     let img_w = u32(u.img_size.x);
@@ -234,11 +239,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
         var is_on = true;
         if (ch.filled == 0u) {
-            // The edge test steps the mask array by whole texels, so resolve
-            // this channel's stroke width out of screen-pixel/data/normalized
-            // units into texels first.
+            // The edge test measures in mask texels, so resolve this channel's
+            // stroke width out of screen-pixel/data/normalized units first.
+            // The result may be fractional, which the test handles.
             let stroke_width_texels = bitmask_stroke_width_texels(ch.stroke_width);
-            is_on = bitmask_is_edge(channel_index, px, raw_label, img_w, img_h, stroke_width_texels);
+            is_on = bitmask_is_edge(channel_index, px_f, raw_label, img_w, img_h, stroke_width_texels);
         }
         if (!is_on) {
             continue;

@@ -66,9 +66,11 @@ pub struct BitmaskChannelSettings {
     /// [`BitmaskLayerParams::stroke_width_unit_mode`], used to detect object
     /// boundaries when `filled` is false. Has no effect when `filled` is true.
     ///
-    /// Because the boundary test can only step the mask array by whole texels,
-    /// the resolved width is rounded down to a texel count, with a floor of one
-    /// texel so outlines never vanish when zoomed out.
+    /// The rendered thickness does not depend on the mask's resolution: the
+    /// boundary test samples at fractional texel offsets, so a width that works
+    /// out to a fraction of a texel still renders as a correspondingly thin
+    /// band. (The SVG path is the exception -- it rasterizes at the mask's own
+    /// resolution, so it can only approximate; see [`DrawToSvg`].)
     pub stroke_width: f32,
 }
 
@@ -106,15 +108,23 @@ pub struct BitmaskLayerParams {
     /// Unlike those layers there is no stroke *geometry* to widen -- which
     /// fragments are stroked is decided from the bitmask data on the fly in
     /// the shader -- so the width is instead resolved into mask texels, the
-    /// units the object-boundary test steps by. That resolution divides by the
-    /// on-screen (or, for `Data`, the world-space) size of one mask texel:
+    /// units the object-boundary test measures in. That resolution divides by
+    /// the on-screen (or, for `Data`, the world-space) size of one mask texel:
     /// note this means `model_matrix` is a divisor here rather than a factor
     /// as in the stroked polygon/curve layers, since for a bitmask it maps
     /// mask-texel space into world space rather than data units into world
     /// units.
     ///
-    /// `Data` is rejected unless both `data_unit_mode_x` and `data_unit_mode_y`
-    /// are also `Data`, since data units are otherwise meaningless.
+    /// Resolving into texels is only a change of units, not of resolution: the
+    /// texel count may be fractional and the boundary test samples accordingly,
+    /// so a `Pixels` width renders the same number of screen pixels thick
+    /// whether the mask is coarse or fine. Only the camera and viewport enter
+    /// into it, never the mask's dimensions.
+    ///
+    /// `Data` is rejected unless `data_unit_mode_y` is also `Data`, since data
+    /// units are otherwise meaningless. Only the Y mode is checked because,
+    /// as in the stroked polygon/curve layers, widths are measured relative to
+    /// the Y axis.
     pub stroke_width_unit_mode: UnitsMode,
 
     // (x_offset, y_offset) in pixels, applied before model_matrix, to enable
@@ -222,12 +232,14 @@ impl BitmaskLayer {
 
         // 5. A data-unit stroke width has no meaning when the mask is
         // positioned relative to the layer bounds rather than in data space.
-        // Mirrors the same check in `LineLayer`/`CurveLayer`.
+        // Mirrors the same check in `LineLayer`/`CurveLayer`, except that only
+        // the Y mode is checked: stroke widths here are measured relative to
+        // the Y axis, so a data-unit width stays well-defined when X alone is
+        // positioned in pixel/normalized units.
         if layer_params.stroke_width_unit_mode == UnitsMode::Data
-            && (layer_params.data_unit_mode_x != UnitsMode::Data
-                || layer_params.data_unit_mode_y != UnitsMode::Data)
+            && layer_params.data_unit_mode_y != UnitsMode::Data
         {
-            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode is 'pixels' or 'normalized'");
+            panic!("stroke_width_unit_mode cannot be 'data' when data_unit_mode_y is 'pixels' or 'normalized'");
         }
 
         Self {
@@ -996,6 +1008,14 @@ impl DrawToSvg for BitmaskLayer {
         // `cpu_fill_color` (the same per-object color resolution the GPU
         // path uses, keyed here by object index rather than per-instance
         // index).
+        //
+        // This rasterizes at the mask's own resolution (one output pixel per
+        // texel) and scales the result up, so unlike the GPU path it cannot
+        // represent an outline thinner than one texel or one whose edge falls
+        // part-way through a texel. Outline thickness is therefore rounded to
+        // whole texels here; the two paths agree exactly whenever the resolved
+        // width is a whole number of texels, and diverge by up to half a texel
+        // otherwise.
         let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
 
         for y in 0..img_h as i64 {
@@ -1017,7 +1037,12 @@ impl DrawToSvg for BitmaskLayer {
                     let is_on = if channel.filled {
                         true
                     } else {
-                        let off = stroke_widths_texels[ci].max(1.0) as i64;
+                        // Unlike the GPU path, this rasterizes one output pixel
+                        // per mask texel, so it cannot place a band edge
+                        // part-way through a texel: round to the nearest whole
+                        // texel, and never below one, so an outline-only
+                        // channel does not vanish entirely.
+                        let off = (stroke_widths_texels[ci].round().max(1.0)) as i64;
                         let deltas = [
                             (off, 0), (-off, 0),
                             (0, off), (0, -off),

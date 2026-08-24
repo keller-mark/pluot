@@ -160,14 +160,16 @@ pub mod bitmask_channel {
 
     /// `fn bitmask_is_edge(channel_index, px, raw_label, img_w, img_h,
     /// stroke_width) -> bool` — an approximate object-boundary test, used to
-    /// render outline-only channels. Its `stroke_width` is in mask texels, so
-    /// callers resolve it with [`CHANNEL_STROKE_WIDTH`] first. Depends on
-    /// [`CHANNEL_SAMPLE`] also being injected.
+    /// render outline-only channels. Takes `px` as a continuous position in
+    /// mask-texel space and a (possibly fractional) `stroke_width` in the same
+    /// units, so that outline thickness does not quantize to the mask's
+    /// resolution; callers resolve the width with [`CHANNEL_STROKE_WIDTH`]
+    /// first. Depends on [`CHANNEL_SAMPLE`] also being injected.
     pub const CHANNEL_IS_EDGE: &str = include_str!("wgsl_functions/bitmask/channel_is_edge.wgsl");
 
     /// `fn bitmask_stroke_width_texels(stroke_width: f32) -> f32` — converts a
     /// stroke width given in screen pixels, data units or a fraction of the
-    /// layer height into the mask texels [`CHANNEL_IS_EDGE`] steps by.
+    /// layer height into the mask texels [`CHANNEL_IS_EDGE`] measures in.
     /// Assumes `translate`, `scale` and `get_aspect_ratio_mat` (see
     /// [`common`]) are also injected.
     pub const CHANNEL_STROKE_WIDTH: &str =

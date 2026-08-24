@@ -48,13 +48,20 @@ fn repeated_mask_data(num_channels: usize) -> NumericData {
 // Helper: a 4x4 two-channel mask in CYX order (matches the bitmap layer test's shape).
 // Channel 0: filled, object 1 red / object 2 green (ColorMode::CategoricalCustom).
 // Channel 1: outline-only, blue (ColorMode::UniformRgb).
+//
+// The outline is one mask texel thick, which these fixtures pin down by giving
+// the stroke width in whichever unit mode makes "one texel" exact for how they
+// position the mask -- `Data` here (the identity model_matrix makes one texel
+// one data unit) and `Pixels` in the variants below whose Y axis is not in data
+// space. Doing so keeps thickness independent of the canvas size and camera,
+// which vary across the tests that use these.
 fn bitmask_cyx_data() -> BitmaskLayerParams {
     BitmaskLayerParams {
         layer_id: "my_bitmask_layer".to_string(),
         bounds: None,
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Data,
-        stroke_width_unit_mode: UnitsMode::Pixels,
+        stroke_width_unit_mode: UnitsMode::Data,
         pixel_offset: None,
         model_matrix: None,
         dimension_order: DimensionOrder::CYX,
@@ -79,11 +86,21 @@ fn bitmask_cyx_data() -> BitmaskLayerParams {
     }
 }
 
-// Helper: same mask in Pixels unit mode (4x4 pixel mask positioned in pixel space)
+// Helper: override the outline-only channel's (channel 1) stroke width, for the
+// fixtures below whose unit mode makes "one texel" a value other than 1.0.
+fn with_stroke_width(mut params: BitmaskLayerParams, stroke_width: f32) -> BitmaskLayerParams {
+    params.channel_settings[1].stroke_width = stroke_width;
+    params
+}
+
+// Helper: same mask in Pixels unit mode (4x4 pixel mask positioned in pixel space).
+// With the identity model_matrix one texel is one screen pixel, so a 1px stroke
+// is the same one-texel outline as the data-positioned fixture above.
 fn bitmask_cyx_pixels() -> BitmaskLayerParams {
     BitmaskLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
         data_unit_mode_y: UnitsMode::Pixels,
+        stroke_width_unit_mode: UnitsMode::Pixels,
         ..bitmask_cyx_data()
     }
 }
@@ -92,10 +109,13 @@ fn bitmask_cyx_data_x_pixel_y() -> BitmaskLayerParams {
     BitmaskLayerParams {
         data_unit_mode_x: UnitsMode::Data,
         data_unit_mode_y: UnitsMode::Pixels,
+        stroke_width_unit_mode: UnitsMode::Pixels,
         ..bitmask_cyx_data()
     }
 }
 
+// Y is in data space here, so the inherited `Data` stroke width still resolves
+// to exactly one texel.
 fn bitmask_cyx_pixel_x_data_y() -> BitmaskLayerParams {
     BitmaskLayerParams {
         data_unit_mode_x: UnitsMode::Pixels,
@@ -113,34 +133,48 @@ fn bitmask_cyx_pixel_x_data_y() -> BitmaskLayerParams {
 // shrinks the 4x4 mask to a 0.04x0.04 normalized extent, which matches
 // bitmask_cyx_pixels()'s 4px / 100px layer size exactly on a 100x100 canvas, so this
 // renders identically to bitmask_cyx_pixels() there.
+//
+// The stroke width is given in normalized units too, matching the model_matrix
+// scale so that it is exactly one texel: a normalized width is a fraction of
+// the layer height, and so is a texel here, so the two stay in step whatever
+// the canvas size (unlike a pixel width, which would be one texel only on a
+// 100px-tall layer).
 fn bitmask_cyx_normalized() -> BitmaskLayerParams {
-    BitmaskLayerParams {
-        data_unit_mode_x: UnitsMode::Normalized,
-        data_unit_mode_y: UnitsMode::Normalized,
-        model_matrix: Some([
-            0.01, 0.0, 0.0, 0.0,
-            0.0, 0.01, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]),
-        ..bitmask_cyx_data()
-    }
+    with_stroke_width(
+        BitmaskLayerParams {
+            data_unit_mode_x: UnitsMode::Normalized,
+            data_unit_mode_y: UnitsMode::Normalized,
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            model_matrix: Some([
+                0.01, 0.0, 0.0, 0.0,
+                0.0, 0.01, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..bitmask_cyx_data()
+        },
+        0.01,
+    )
 }
 
 // Helper: x in data space (unscaled, matching bitmask_cyx_data_x_pixel_y()'s
 // treatment of the data axis), y in normalized space (scaled via model_matrix).
 fn bitmask_cyx_data_x_normalized_y() -> BitmaskLayerParams {
-    BitmaskLayerParams {
-        data_unit_mode_x: UnitsMode::Data,
-        data_unit_mode_y: UnitsMode::Normalized,
-        model_matrix: Some([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 0.01, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]),
-        ..bitmask_cyx_data()
-    }
+    with_stroke_width(
+        BitmaskLayerParams {
+            data_unit_mode_x: UnitsMode::Data,
+            data_unit_mode_y: UnitsMode::Normalized,
+            stroke_width_unit_mode: UnitsMode::Normalized,
+            model_matrix: Some([
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 0.01, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            ]),
+            ..bitmask_cyx_data()
+        },
+        0.01,
+    )
 }
 
 // Helper: x in normalized space (scaled via model_matrix), y in data space (unscaled,
@@ -891,7 +925,7 @@ async fn test_bitmask_layer_thick_mask_wide_stroke_pixel_units_normalized_positi
     ).await;
 }
 
-// A data-unit stroke width is meaningless when the mask is positioned
+// A data-unit stroke width is meaningless when the mask's Y axis is positioned
 // relative to the layer bounds rather than in data space.
 #[tokio::test]
 #[should_panic(expected = "stroke_width_unit_mode cannot be 'data'")]
