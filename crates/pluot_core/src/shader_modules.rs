@@ -108,14 +108,17 @@ pub mod stroke_color {
 }
 
 /// Per-[`ColorMode`](crate::render_traits::ColorMode) WGSL snippets for
-/// `BitmaskLayer`, each defining `fn get_channel_color_{{ch}}(label_index:
+/// `BitmaskLayer`, each defining `fn get_channel_{{name}}_{{ch}}(label_index:
 /// u32) -> vec3<f32>` (plus any texture bindings the mode needs). Unlike
 /// [`color`] (one `get_fill_color` shared by every instance of a layer), a
 /// `BitmaskLayer` may have several channels — each possibly using a different
-/// `ColorMode` — coexisting in one shader module, so every channel gets its
-/// own uniquely-`{{ch}}`-suffixed function and bindings rather than sharing
-/// one. Templates: substitute `{{ch}}` for the channel index plus any
-/// binding-index/dtype placeholders, assembled at runtime by
+/// `ColorMode` for its fill and another for its stroke — coexisting in one
+/// shader module, so every (channel, fill/stroke) pair gets its own uniquely
+/// named function and bindings rather than sharing one. Templates: substitute
+/// `{{name}}` for the property (`fill_color` or `stroke_color`, which doubles
+/// as the prefix of the `Channel` uniform fields the snippet reads) and
+/// `{{ch}}` for the channel index, plus any binding-index/dtype placeholders;
+/// assembled at runtime by
 /// `crate::layers::bitmask_layer::prepare_channel_color`. All variants that
 /// read a value texture assume [`common::FLAT_TEXEL_COORD`] is also injected.
 /// See [`bitmask_channel`] for the (non-templated) code that calls these.
@@ -137,9 +140,28 @@ pub mod get_channel_color {
     pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_channel_color/quantitative.wgsl");
 }
 
+/// Scalar counterpart of [`get_channel_color`], for the `BitmaskLayer`
+/// properties carried by a [`SizeMode`](crate::render_traits::SizeMode) or an
+/// [`OpacityMode`](crate::render_traits::OpacityMode) rather than a
+/// `ColorMode`: each snippet defines `fn get_channel_{{name}}_{{ch}}(
+/// label_index: u32) -> f32`. Substitute `{{name}}` for the property
+/// (`fill_opacity`, `stroke_opacity` or `stroke_width`, which doubles as the
+/// name of the `Channel` uniform field the uniform variant reads) and `{{ch}}`
+/// for the channel index; assembled at runtime by
+/// `crate::layers::bitmask_layer::prepare_channel_scalar`. The instanced
+/// variant assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod get_channel_scalar {
+    /// Static value shared by every object in the channel.
+    pub const UNIFORM: &str = include_str!("wgsl_functions/get_channel_scalar/uniform.wgsl");
+
+    /// Per-object value from a value texture.
+    pub const INSTANCED: &str = include_str!("wgsl_functions/get_channel_scalar/instanced.wgsl");
+}
+
 /// Shared (non-templated) WGSL functions used by `BitmaskLayer`'s fragment
-/// shader to loop over its channels, plus the one small template needed to
-/// dispatch to a per-channel color function (see [`get_channel_color`]).
+/// shader to loop over its channels, plus the two small templates needed to
+/// dispatch to a per-channel getter (see [`get_channel_color`] and
+/// [`get_channel_scalar`]).
 ///
 /// [`CHANNEL_SAMPLE`] and [`CHANNEL_IS_EDGE`] are ordinary WGSL functions
 /// (parameterized by `channel_index`, not templated) injected exactly once,
@@ -147,11 +169,13 @@ pub mod get_channel_color {
 /// `u.num_channels` in `bitmask_layer.wgsl`'s `fs_main` -- unlike
 /// [`get_channel_color`], no per-channel unrolling is needed here, since
 /// sampling/edge-detection is identical logic for every channel. Only
-/// resolving a channel's *color* differs per `ColorMode`, which is why
-/// [`CHANNEL_COLOR_DISPATCH`] (a small generated `switch` over channel index)
-/// is still needed to call the right `get_channel_color_{{ch}}`. Assumes
-/// `mask_data`, `flat_texel_coord` (see [`common::FLAT_TEXEL_COORD`]) and the
-/// layer's `Uniforms`/`Channel` structs are already in scope.
+/// resolving a channel's *color*, *opacity* and *stroke width* differs per
+/// `ColorMode`/`OpacityMode`/`SizeMode`, which is why
+/// [`CHANNEL_COLOR_DISPATCH`] and [`CHANNEL_SCALAR_DISPATCH`] (small generated
+/// `switch`es over channel index) are still needed to call the right
+/// per-channel getter. Assumes `mask_data`, `flat_texel_coord` (see
+/// [`common::FLAT_TEXEL_COORD`]) and the layer's `Uniforms`/`Channel` structs
+/// are already in scope.
 pub mod bitmask_channel {
     /// `fn bitmask_sample(channel_index: u32, px: vec2<u32>) -> i32` — reads
     /// the object id at `px` for one channel of the shared, multi-channel
@@ -175,12 +199,21 @@ pub mod bitmask_channel {
     pub const CHANNEL_STROKE_WIDTH: &str =
         include_str!("wgsl_functions/bitmask/channel_stroke_width.wgsl");
 
-    /// `fn get_channel_color(channel_index: u32, label_index: u32) ->
-    /// vec3<f32>` — dispatches to the per-channel `get_channel_color_{{ch}}`
-    /// (see [`get_channel_color`]) matching `channel_index`. Template:
-    /// substitute `{{switch_cases}}` with one `case N: { return
-    /// get_channel_color_N(label_index); }` per channel.
+    /// `fn get_channel_{{name}}(channel_index: u32, label_index: u32) ->
+    /// vec3<f32>` — dispatches to the per-channel
+    /// `get_channel_{{name}}_{{ch}}` (see [`get_channel_color`]) matching
+    /// `channel_index`. Template: substitute `{{name}}` with the property
+    /// (`fill_color` or `stroke_color`) and `{{switch_cases}}` with one `case
+    /// N: { return get_channel_<name>_N(label_index); }` per channel.
     pub const CHANNEL_COLOR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_color_dispatch.wgsl");
+
+    /// `fn get_channel_{{name}}(channel_index: u32, label_index: u32) -> f32`
+    /// — the scalar counterpart of [`CHANNEL_COLOR_DISPATCH`], dispatching to
+    /// the per-channel `get_channel_{{name}}_{{ch}}` (see
+    /// [`get_channel_scalar`]) matching `channel_index`. Template: substitute
+    /// `{{name}}` with the property (`fill_opacity`, `stroke_opacity` or
+    /// `stroke_width`) and `{{switch_cases}}` as above.
+    pub const CHANNEL_SCALAR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_scalar_dispatch.wgsl");
 }
 
 /// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining

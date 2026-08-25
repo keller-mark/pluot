@@ -16,15 +16,27 @@
 // rows by `NumericData::create_data_texture`.
 {{flat_texel_coord}}
 
+// The fill and the stroke each carry their own ColorMode and OpacityMode, so
+// most fields below come in a `fill_`/`stroke_` pair; the `<prefix>_color_*`
+// and `<prefix>_opacity` names are also the property names the per-channel
+// getter templates are specialized with (see `crate::shader_modules`).
 struct Channel {
-    color_mode: u32,         // see ColorMode::shader_mode()
-    static_color: vec4<f32>, // rgba color used by the UniformRgb mode
-    color_reverse: u32,      // 1 = reverse the quantitative colormap
-    color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
-    opacity: f32,            // this channel's opacity multiplier
-    filled: u32,             // 1 = draw filled object regions, 0 = draw outlines only
-    stroke_width: f32,       // outline thickness, in the units given by u.stroke_width_unit_mode (used when filled == 0)
-    visible: u32,            // 1 = this channel is drawn
+    fill_color_mode: u32,          // see ColorMode::shader_mode()
+    fill_color_static: vec4<f32>,  // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,       // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>,  // (min, max) normalization domain for quantitative mode
+
+    stroke_color_mode: u32,          // as above, for the outline
+    stroke_color_static: vec4<f32>,
+    stroke_color_reverse: u32,
+    stroke_color_domain: vec2<f32>,
+
+    fill_opacity: f32,   // opacity used by the UniformOpacity mode
+    stroke_opacity: f32,
+    stroke_width: f32,   // outline thickness used by the UniformSize mode, in the units given by u.stroke_width_unit_mode
+
+    filled: u32,   // 1 = fill object interiors
+    stroked: u32,  // 1 = draw an outline along object boundaries
 };
 
 struct Uniforms {
@@ -89,17 +101,22 @@ struct VSOut {
 // is only defined once in this shader module.
 {{colormap_functions}}
 
-// Per-channel `fn get_channel_color_N(label_index: u32) -> vec3<f32>`, one per
-// channel, assembled according to that channel's `ColorMode` (mirrors
-// `crate::color_mode::prepare_color_mode`, specialized to a unique function
-// name and texture bindings per channel, since WGSL has no per-instance
-// function dispatch and each channel may use a different `ColorMode`).
-{{channel_color_functions}}
+// Per-channel getters, five per channel: `get_channel_fill_color_N` /
+// `get_channel_stroke_color_N` (-> vec3<f32>) assembled according to that
+// channel's fill/stroke `ColorMode`, and `get_channel_fill_opacity_N` /
+// `get_channel_stroke_opacity_N` / `get_channel_stroke_width_N` (-> f32)
+// assembled according to its `OpacityMode`/`SizeMode`. Each mirrors the
+// layer-wide equivalent in `crate::color_mode`/`crate::scalar_mode`,
+// specialized to a unique function name and texture bindings per (channel,
+// property) pair, since WGSL has no per-instance function dispatch and every
+// channel may resolve every property differently.
+{{channel_functions}}
 
-// get_channel_color(channel_index, label_index): dispatches to the
-// per-channel function above matching `channel_index`. See
-// `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH`.
-{{channel_color_dispatch}}
+// get_channel_fill_color(channel_index, label_index) and its four siblings:
+// each dispatches to the per-channel function above matching `channel_index`.
+// See `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
+// `CHANNEL_SCALAR_DISPATCH`.
+{{channel_dispatchers}}
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
 // The corresponding texture coordinates (UVs) for each vertex.
@@ -221,14 +238,15 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     var any_on = false;
 
     // Loop over every configured channel: sample this channel's slice of
-    // mask_data (bitmask_sample), reduce it to an object-boundary test when
-    // not filled (bitmask_stroke_width_texels + bitmask_is_edge), and blend
-    // the resolved object color (get_channel_color) into out_rgb/out_a when
-    // "on". num_channels and each Channel come from the storage buffer, so
-    // this is a genuine runtime loop -- not unrolled/generated per channel.
+    // mask_data (bitmask_sample), decide whether this pixel falls in the
+    // object's outline band (bitmask_stroke_width_texels + bitmask_is_edge) or
+    // its interior, and blend the resolved stroke/fill color and opacity into
+    // out_rgb/out_a. num_channels and each Channel come from the storage
+    // buffer, so this is a genuine runtime loop -- not unrolled/generated per
+    // channel.
     for (var channel_index: u32 = 0u; channel_index < u.num_channels; channel_index = channel_index + 1u) {
         let ch = u.channels[channel_index];
-        if (ch.visible == 0u) {
+        if (ch.filled == 0u && ch.stroked == 0u) {
             continue;
         }
 
@@ -236,23 +254,38 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         if (raw_label == 0) {
             continue;
         }
+        let label_index = u32(raw_label - 1);
 
-        var is_on = true;
-        if (ch.filled == 0u) {
-            // The edge test measures in mask texels, so resolve this channel's
-            // stroke width out of screen-pixel/data/normalized units first.
-            // The result may be fractional, which the test handles.
-            let stroke_width_texels = bitmask_stroke_width_texels(ch.stroke_width);
-            is_on = bitmask_is_edge(channel_index, px_f, raw_label, img_w, img_h, stroke_width_texels);
-        }
-        if (!is_on) {
+        // The outline band is the outermost part of an object's interior, so
+        // the stroke and the fill cover disjoint regions and this pixel takes
+        // one or the other -- never a blend of both, as in `PointLayer`. A
+        // channel that is stroked but not filled leaves the interior
+        // transparent; one that is filled but not stroked draws no band.
+        //
+        // The edge test measures in mask texels, so this channel's stroke
+        // width is resolved out of screen-pixel/data/normalized units first.
+        // The result may be fractional, which the test handles.
+        var color: vec3<f32>;
+        var alpha: f32;
+        if (ch.stroked == 1u && bitmask_is_edge(
+            channel_index,
+            px_f,
+            raw_label,
+            img_w,
+            img_h,
+            bitmask_stroke_width_texels(get_channel_stroke_width(channel_index, label_index))
+        )) {
+            color = get_channel_stroke_color(channel_index, label_index);
+            alpha = get_channel_stroke_opacity(channel_index, label_index);
+        } else if (ch.filled == 1u) {
+            color = get_channel_fill_color(channel_index, label_index);
+            alpha = get_channel_fill_opacity(channel_index, label_index);
+        } else {
             continue;
         }
 
-        let label_index = u32(raw_label - 1);
-        let color = get_channel_color(channel_index, label_index);
-        out_rgb = mix(out_rgb, color, ch.opacity);
-        out_a = max(out_a, ch.opacity);
+        out_rgb = mix(out_rgb, color, alpha);
+        out_a = max(out_a, alpha);
         any_on = true;
     }
 

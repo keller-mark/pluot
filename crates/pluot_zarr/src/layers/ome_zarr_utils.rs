@@ -3,7 +3,7 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 use pluot_core::layers::bitmask_layer::BitmaskChannelSettings;
-use pluot_core::render_traits::ColorMode;
+use pluot_core::render_traits::{ColorMode, OpacityMode, SizeMode};
 
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
@@ -64,25 +64,20 @@ pub struct OmeZarrChannelSetting {
 // than nested under it, so they default to the same values as they would
 // there. These delegate to `BitmaskChannelSettings::default()` instead of
 // repeating its literals, so the two cannot drift apart.
-fn default_channel_opacity() -> f32 {
-    BitmaskChannelSettings::default().opacity
-}
-fn default_channel_visible() -> bool {
-    BitmaskChannelSettings::default().visible
+fn default_channel_stroked() -> bool {
+    BitmaskChannelSettings::default().stroked
 }
 fn default_channel_filled() -> bool {
     BitmaskChannelSettings::default().filled
-}
-fn default_channel_stroke_width() -> f32 {
-    BitmaskChannelSettings::default().stroke_width
 }
 
 /// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
 /// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
 /// The bitmask counterpart of [`OmeZarrChannelSetting`]: instead of an
 /// intensity window and pseudocolor, carries the [`BitmaskChannelSettings`]
-/// (color mode, opacity, filled/stroke) used to render this channel's
-/// segmentation mask, inlined alongside `c_index` rather than nested under it.
+/// (stroked/filled, plus each one's color and opacity) used to render this
+/// channel's segmentation mask, inlined alongside `c_index` rather than nested
+/// under it.
 ///
 /// Only `c_index` is required -- every render setting falls back to the same
 /// default [`BitmaskChannelSettings`] uses.
@@ -92,27 +87,34 @@ pub struct OmeZarrBitmaskChannelSetting {
     // TODO: also support specifying channel identifiers by their string name.
     pub c_index: u32,
 
-    /// How to color each object in this channel.
-    #[serde(default)]
-    pub color: Option<ColorMode>,
+    /// Whether to stroke the outline of each object in this channel.
+    #[serde(default = "default_channel_stroked")]
+    pub stroked: bool,
 
-    /// Opacity multiplier for this channel (0.0 to 1.0).
-    #[serde(default = "default_channel_opacity")]
-    pub opacity: f32,
-
-    /// Whether this channel is drawn at all.
-    #[serde(default = "default_channel_visible")]
-    pub visible: bool,
-
-    /// If true, render filled object regions. If false, render only the
-    /// outline of each object (see `stroke_width`).
+    /// Whether to fill the interior of each object in this channel.
     #[serde(default = "default_channel_filled")]
     pub filled: bool,
 
+    /// How to color each object's outline.
+    #[serde(default)]
+    pub stroke_color: Option<ColorMode>,
+
     /// Outline thickness, in the units given by the layer's
-    /// `stroke_width_unit_mode`, used when `filled` is false.
-    #[serde(default = "default_channel_stroke_width")]
-    pub stroke_width: f32,
+    /// `stroke_width_unit_mode`, used when `stroked` is true.
+    #[serde(default)]
+    pub stroke_width: Option<SizeMode>,
+
+    /// Opacity multiplier for the outline (0.0 to 1.0).
+    #[serde(default)]
+    pub stroke_opacity: Option<OpacityMode>,
+
+    /// How to color each object's interior.
+    #[serde(default)]
+    pub fill_color: Option<ColorMode>,
+
+    /// Opacity multiplier for the interior (0.0 to 1.0).
+    #[serde(default)]
+    pub fill_opacity: Option<OpacityMode>,
 }
 
 /// Drops `c_index` -- which selects *which* slice of the C dimension to load,
@@ -126,11 +128,13 @@ pub struct OmeZarrBitmaskChannelSetting {
 impl From<&OmeZarrBitmaskChannelSetting> for BitmaskChannelSettings {
     fn from(cs: &OmeZarrBitmaskChannelSetting) -> Self {
         Self {
-            color: cs.color.clone(),
-            opacity: cs.opacity,
-            visible: cs.visible,
+            stroked: cs.stroked,
             filled: cs.filled,
-            stroke_width: cs.stroke_width,
+            stroke_color: cs.stroke_color.clone(),
+            stroke_width: cs.stroke_width.clone(),
+            stroke_opacity: cs.stroke_opacity.clone(),
+            fill_color: cs.fill_color.clone(),
+            fill_opacity: cs.fill_opacity.clone(),
         }
     }
 }
@@ -397,29 +401,35 @@ mod tests {
         let cs: OmeZarrBitmaskChannelSetting = serde_json::from_str(
             r#"{
                 "c_index": 3,
-                "color": {"color_mode": "UniformRgb", "color_params": [0, 0, 255]},
-                "opacity": 0.5,
-                "visible": false,
-                "filled": false,
-                "stroke_width": 2.0
+                "stroked": true,
+                "filled": true,
+                "stroke_color": {"color_mode": "UniformRgb", "color_params": [0, 0, 255]},
+                "stroke_width": {"size_mode": "UniformSize", "size_params": 2.0},
+                "stroke_opacity": {"opacity_mode": "UniformOpacity", "opacity_params": 0.5},
+                "fill_color": {"color_mode": "UniformRgb", "color_params": [255, 0, 0]},
+                "fill_opacity": {"opacity_mode": "UniformOpacity", "opacity_params": 0.25}
             }"#,
         )
         .unwrap();
 
         assert_eq!(cs.c_index, 3);
-        assert!(matches!(cs.color, Some(ColorMode::UniformRgb((0, 0, 255)))));
-        assert_eq!(cs.opacity, 0.5);
-        assert!(!cs.visible);
-        assert!(!cs.filled);
-        assert_eq!(cs.stroke_width, 2.0);
+        assert!(cs.stroked);
+        assert!(cs.filled);
+        assert!(matches!(cs.stroke_color, Some(ColorMode::UniformRgb((0, 0, 255)))));
+        assert!(matches!(cs.stroke_width, Some(SizeMode::UniformSize(w)) if w == 2.0));
+        assert!(matches!(cs.stroke_opacity, Some(OpacityMode::UniformOpacity(a)) if a == 0.5));
+        assert!(matches!(cs.fill_color, Some(ColorMode::UniformRgb((255, 0, 0)))));
+        assert!(matches!(cs.fill_opacity, Some(OpacityMode::UniformOpacity(a)) if a == 0.25));
 
         // Everything but c_index passes through to the inner layer's settings.
         let inner = BitmaskChannelSettings::from(&cs);
-        assert!(matches!(inner.color, Some(ColorMode::UniformRgb((0, 0, 255)))));
-        assert_eq!(inner.opacity, 0.5);
-        assert!(!inner.visible);
-        assert!(!inner.filled);
-        assert_eq!(inner.stroke_width, 2.0);
+        assert!(inner.stroked);
+        assert!(inner.filled);
+        assert!(matches!(inner.stroke_color, Some(ColorMode::UniformRgb((0, 0, 255)))));
+        assert!(matches!(inner.stroke_width, Some(SizeMode::UniformSize(w)) if w == 2.0));
+        assert!(matches!(inner.stroke_opacity, Some(OpacityMode::UniformOpacity(a)) if a == 0.5));
+        assert!(matches!(inner.fill_color, Some(ColorMode::UniformRgb((255, 0, 0)))));
+        assert!(matches!(inner.fill_opacity, Some(OpacityMode::UniformOpacity(a)) if a == 0.25));
     }
 
     /// Only `c_index` is required; the inlined render settings fall back to
@@ -431,11 +441,13 @@ mod tests {
         assert_eq!(cs.c_index, 2);
 
         let defaults = BitmaskChannelSettings::default();
-        assert!(cs.color.is_none() && defaults.color.is_none());
-        assert_eq!(cs.opacity, defaults.opacity);
-        assert_eq!(cs.visible, defaults.visible);
+        assert_eq!(cs.stroked, defaults.stroked);
         assert_eq!(cs.filled, defaults.filled);
-        assert_eq!(cs.stroke_width, defaults.stroke_width);
+        assert!(cs.stroke_color.is_none() && defaults.stroke_color.is_none());
+        assert!(cs.stroke_width.is_none() && defaults.stroke_width.is_none());
+        assert!(cs.stroke_opacity.is_none() && defaults.stroke_opacity.is_none());
+        assert!(cs.fill_color.is_none() && defaults.fill_color.is_none());
+        assert!(cs.fill_opacity.is_none() && defaults.fill_opacity.is_none());
     }
 
     /// `c_index` selects which slice of the C dimension to load, so unlike the
@@ -443,7 +455,7 @@ mod tests {
     #[test]
     fn test_bitmask_channel_setting_requires_c_index() {
         let result: Result<OmeZarrBitmaskChannelSetting, _> =
-            serde_json::from_str(r#"{"opacity": 0.5}"#);
+            serde_json::from_str(r#"{"filled": true}"#);
         assert!(result.is_err());
     }
 
@@ -451,11 +463,13 @@ mod tests {
     fn test_bitmask_channel_setting_serde_roundtrip() {
         let cs = OmeZarrBitmaskChannelSetting {
             c_index: 1,
-            color: Some(ColorMode::UniformRgb((255, 0, 0))),
-            opacity: 0.25,
-            visible: true,
+            stroked: true,
             filled: false,
-            stroke_width: 3.0,
+            stroke_color: Some(ColorMode::UniformRgb((255, 0, 0))),
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_opacity: Some(OpacityMode::UniformOpacity(0.25)),
+            fill_color: None,
+            fill_opacity: None,
         };
         let json = serde_json::to_string(&cs).unwrap();
         // Inlined, i.e. no nested `settings` object.
@@ -463,11 +477,13 @@ mod tests {
 
         let decoded: OmeZarrBitmaskChannelSetting = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.c_index, 1);
-        assert!(matches!(decoded.color, Some(ColorMode::UniformRgb((255, 0, 0)))));
-        assert_eq!(decoded.opacity, 0.25);
-        assert!(decoded.visible);
+        assert!(decoded.stroked);
         assert!(!decoded.filled);
-        assert_eq!(decoded.stroke_width, 3.0);
+        assert!(matches!(decoded.stroke_color, Some(ColorMode::UniformRgb((255, 0, 0)))));
+        assert!(matches!(decoded.stroke_width, Some(SizeMode::UniformSize(w)) if w == 3.0));
+        assert!(matches!(decoded.stroke_opacity, Some(OpacityMode::UniformOpacity(a)) if a == 0.25));
+        assert!(decoded.fill_color.is_none());
+        assert!(decoded.fill_opacity.is_none());
     }
 
     #[test]

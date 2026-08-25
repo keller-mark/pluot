@@ -104,15 +104,27 @@ fn flat_texel_coord(idx: u32, width: u32) -> vec2<u32> {
 }
 
 
+// The fill and the stroke each carry their own ColorMode and OpacityMode, so
+// most fields below come in a `fill_`/`stroke_` pair; the `<prefix>_color_*`
+// and `<prefix>_opacity` names are also the property names the per-channel
+// getter templates are specialized with (see `crate::shader_modules`).
 struct Channel {
-    color_mode: u32,         // see ColorMode::shader_mode()
-    static_color: vec4<f32>, // rgba color used by the UniformRgb mode
-    color_reverse: u32,      // 1 = reverse the quantitative colormap
-    color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
-    opacity: f32,            // this channel's opacity multiplier
-    filled: u32,             // 1 = draw filled object regions, 0 = draw outlines only
-    stroke_width: f32,       // outline thickness, in the units given by u.stroke_width_unit_mode (used when filled == 0)
-    visible: u32,            // 1 = this channel is drawn
+    fill_color_mode: u32,          // see ColorMode::shader_mode()
+    fill_color_static: vec4<f32>,  // rgba color used by the UniformRgb mode
+    fill_color_reverse: u32,       // 1 = reverse the quantitative colormap
+    fill_color_domain: vec2<f32>,  // (min, max) normalization domain for quantitative mode
+
+    stroke_color_mode: u32,          // as above, for the outline
+    stroke_color_static: vec4<f32>,
+    stroke_color_reverse: u32,
+    stroke_color_domain: vec2<f32>,
+
+    fill_opacity: f32,   // opacity used by the UniformOpacity mode
+    stroke_opacity: f32,
+    stroke_width: f32,   // outline thickness used by the UniformSize mode, in the units given by u.stroke_width_unit_mode
+
+    filled: u32,   // 1 = fill object interiors
+    stroked: u32,  // 1 = draw an outline along object boundaries
 };
 
 struct Uniforms {
@@ -335,15 +347,58 @@ fn viridis(x_1: f32) -> vec4<f32> {
 }
 
 
-// Per-channel `fn get_channel_color_N(label_index: u32) -> vec3<f32>`, one per
-// channel, assembled according to that channel's `ColorMode` (mirrors
-// `crate::color_mode::prepare_color_mode`, specialized to a unique function
-// name and texture bindings per channel, since WGSL has no per-instance
-// function dispatch and each channel may use a different `ColorMode`).
+// Per-channel getters, five per channel: `get_channel_fill_color_N` /
+// `get_channel_stroke_color_N` (-> vec3<f32>) assembled according to that
+// channel's fill/stroke `ColorMode`, and `get_channel_fill_opacity_N` /
+// `get_channel_stroke_opacity_N` / `get_channel_stroke_width_N` (-> f32)
+// assembled according to its `OpacityMode`/`SizeMode`. Each mirrors the
+// layer-wide equivalent in `crate::color_mode`/`crate::scalar_mode`,
+// specialized to a unique function name and texture bindings per (channel,
+// property) pair, since WGSL has no per-instance function dispatch and every
+// channel may resolve every property differently.
 // BitmaskLayer per-channel ColorMode::UniformRgb (and None) — every object in
-// this channel shares the static color from the uniform.
-fn get_channel_color_0(label_index: u32) -> vec3<f32> {
-  return u.channels[0].static_color.rgb;
+// this channel shares the static color from the uniform. Templated per
+// (channel, fill/stroke) pair, hence the two-part function name.
+fn get_channel_fill_color_0(label_index: u32) -> vec3<f32> {
+  return u.channels[0].fill_color_static.rgb;
+}
+
+// BitmaskLayer per-channel ColorMode::UniformRgb (and None) — every object in
+// this channel shares the static color from the uniform. Templated per
+// (channel, fill/stroke) pair, hence the two-part function name.
+fn get_channel_stroke_color_0(label_index: u32) -> vec3<f32> {
+  return u.channels[0].stroke_color_static.rgb;
+}
+
+// BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
+// (and None) — every object in this channel shares the static value from the
+// uniform, whose field is named after the property being resolved. Templated
+// per (channel, property) pair, hence the two-part function name.
+fn get_channel_fill_opacity_0(label_index: u32) -> f32 {
+  return u.channels[0].fill_opacity;
+}
+
+// BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
+// (and None) — every object in this channel shares the static value from the
+// uniform, whose field is named after the property being resolved. Templated
+// per (channel, property) pair, hence the two-part function name.
+fn get_channel_stroke_opacity_0(label_index: u32) -> f32 {
+  return u.channels[0].stroke_opacity;
+}
+
+// BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
+// (and None) — every object in this channel shares the static value from the
+// uniform, whose field is named after the property being resolved. Templated
+// per (channel, property) pair, hence the two-part function name.
+fn get_channel_stroke_width_0(label_index: u32) -> f32 {
+  return u.channels[0].stroke_width;
+}
+
+// BitmaskLayer per-channel ColorMode::UniformRgb (and None) — every object in
+// this channel shares the static color from the uniform. Templated per
+// (channel, fill/stroke) pair, hence the two-part function name.
+fn get_channel_fill_color_1(label_index: u32) -> vec3<f32> {
+  return u.channels[1].fill_color_static.rgb;
 }
 
 // BitmaskLayer per-channel ColorMode::Quantitative — a per-object scalar
@@ -353,36 +408,133 @@ fn get_channel_color_0(label_index: u32) -> vec3<f32> {
 // ShaderBuilder as placeholders below (not spelled out here, to avoid the
 // literal placeholder text itself being matched and substituted). Depends on
 // `flat_texel_coord` being injected.
-@group(0) @binding(2) var channel_color_values_1: texture_2d<f32>;
+@group(0) @binding(2) var channel_stroke_color_values_1: texture_2d<f32>;
 
-fn get_channel_color_1(label_index: u32) -> vec3<f32> {
-  var x = f32(textureLoad(channel_color_values_1, flat_texel_coord(label_index, textureDimensions(channel_color_values_1).x), 0).x);
-  let lo = u.channels[1].color_domain.x;
-  let hi = u.channels[1].color_domain.y;
+fn get_channel_stroke_color_1(label_index: u32) -> vec3<f32> {
+  var x = f32(textureLoad(channel_stroke_color_values_1, flat_texel_coord(label_index, textureDimensions(channel_stroke_color_values_1).x), 0).x);
+  let lo = u.channels[1].stroke_color_domain.x;
+  let hi = u.channels[1].stroke_color_domain.y;
   x = clamp((x - lo) / max(hi - lo, 1e-20), 0.0, 1.0);
-  if (u.channels[1].color_reverse == 1u) {
+  if (u.channels[1].stroke_color_reverse == 1u) {
     x = 1.0 - x;
   }
   return viridis(x).rgb;
 }
 
+// BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
+// (and None) — every object in this channel shares the static value from the
+// uniform, whose field is named after the property being resolved. Templated
+// per (channel, property) pair, hence the two-part function name.
+fn get_channel_fill_opacity_1(label_index: u32) -> f32 {
+  return u.channels[1].fill_opacity;
+}
 
-// get_channel_color(channel_index, label_index): dispatches to the
-// per-channel function above matching `channel_index`. See
-// `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH`.
-// Dispatches to the correct per-channel `get_channel_color_N`. Each channel
-// may use a different `ColorMode` (and therefore a different generated
-// function/set of texture bindings -- WGSL has no runtime function-pointer
-// indirection), so this switch is generated once per draw call, sized to the
-// actual channel count (see `crate::layers::bitmask_layer::draw`). Depends on
-// the per-channel `get_channel_color_N` functions (see `get_channel_color`)
-// also being injected. Template: the switch's case list below is substituted
-// in with one "case N: return get_channel_color_N(label_index);" per channel.
-fn get_channel_color(channel_index: u32, label_index: u32) -> vec3<f32> {
+// BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
+// (and None) — every object in this channel shares the static value from the
+// uniform, whose field is named after the property being resolved. Templated
+// per (channel, property) pair, hence the two-part function name.
+fn get_channel_stroke_opacity_1(label_index: u32) -> f32 {
+  return u.channels[1].stroke_opacity;
+}
+
+// BitmaskLayer per-channel SizeMode::InstancedSize /
+// OpacityMode::InstancedOpacity — one value per object, read from a value
+// texture indexed by object id (`label_index`). Objects past the end of the
+// array read the texture's zero padding, i.e. no stroke / full transparency.
+// Depends on `flat_texel_coord` being injected.
+@group(0) @binding(3) var channel_stroke_width_values_1: texture_2d<f32>;
+
+fn get_channel_stroke_width_1(label_index: u32) -> f32 {
+  return f32(textureLoad(channel_stroke_width_values_1, flat_texel_coord(label_index, textureDimensions(channel_stroke_width_values_1).x), 0).x);
+}
+
+
+// get_channel_fill_color(channel_index, label_index) and its four siblings:
+// each dispatches to the per-channel function above matching `channel_index`.
+// See `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
+// `CHANNEL_SCALAR_DISPATCH`.
+// Dispatches one of the per-channel color getters (the channel's fill color or
+// its stroke color) to the function matching `channel_index`. Each channel may
+// use a different `ColorMode` (and therefore a different generated function/set
+// of texture bindings -- WGSL has no runtime function-pointer indirection), so
+// this switch is generated once per draw call, sized to the actual channel
+// count (see `crate::layers::bitmask_layer::draw`). Depends on the matching
+// per-channel functions (see `get_channel_color`) also being injected.
+// Template: the switch's case list below is substituted in with one case per
+// channel, returning that channel's generated getter.
+fn get_channel_fill_color(channel_index: u32, label_index: u32) -> vec3<f32> {
     switch (channel_index) {
-        case 0u: { return get_channel_color_0(label_index); }
-        case 1u: { return get_channel_color_1(label_index); }
+        case 0u: { return get_channel_fill_color_0(label_index); }
+        case 1u: { return get_channel_fill_color_1(label_index); }
         default: { return vec3<f32>(0.0, 0.0, 0.0); }
+    }
+}
+
+// Dispatches one of the per-channel color getters (the channel's fill color or
+// its stroke color) to the function matching `channel_index`. Each channel may
+// use a different `ColorMode` (and therefore a different generated function/set
+// of texture bindings -- WGSL has no runtime function-pointer indirection), so
+// this switch is generated once per draw call, sized to the actual channel
+// count (see `crate::layers::bitmask_layer::draw`). Depends on the matching
+// per-channel functions (see `get_channel_color`) also being injected.
+// Template: the switch's case list below is substituted in with one case per
+// channel, returning that channel's generated getter.
+fn get_channel_stroke_color(channel_index: u32, label_index: u32) -> vec3<f32> {
+    switch (channel_index) {
+        case 0u: { return get_channel_stroke_color_0(label_index); }
+        case 1u: { return get_channel_stroke_color_1(label_index); }
+        default: { return vec3<f32>(0.0, 0.0, 0.0); }
+    }
+}
+
+// Scalar counterpart of `channel_color_dispatch`: dispatches one of the
+// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
+// the function matching `channel_index`. Generated once per draw call per
+// property, sized to the actual channel count, because each channel resolves
+// the property through its own `SizeMode`/`OpacityMode` (see
+// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
+// functions (see `get_channel_scalar`) also being injected. Template: the
+// switch's case list below is substituted in with one case per channel,
+// returning that channel's generated getter.
+fn get_channel_fill_opacity(channel_index: u32, label_index: u32) -> f32 {
+    switch (channel_index) {
+        case 0u: { return get_channel_fill_opacity_0(label_index); }
+        case 1u: { return get_channel_fill_opacity_1(label_index); }
+        default: { return 0.0; }
+    }
+}
+
+// Scalar counterpart of `channel_color_dispatch`: dispatches one of the
+// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
+// the function matching `channel_index`. Generated once per draw call per
+// property, sized to the actual channel count, because each channel resolves
+// the property through its own `SizeMode`/`OpacityMode` (see
+// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
+// functions (see `get_channel_scalar`) also being injected. Template: the
+// switch's case list below is substituted in with one case per channel,
+// returning that channel's generated getter.
+fn get_channel_stroke_opacity(channel_index: u32, label_index: u32) -> f32 {
+    switch (channel_index) {
+        case 0u: { return get_channel_stroke_opacity_0(label_index); }
+        case 1u: { return get_channel_stroke_opacity_1(label_index); }
+        default: { return 0.0; }
+    }
+}
+
+// Scalar counterpart of `channel_color_dispatch`: dispatches one of the
+// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
+// the function matching `channel_index`. Generated once per draw call per
+// property, sized to the actual channel count, because each channel resolves
+// the property through its own `SizeMode`/`OpacityMode` (see
+// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
+// functions (see `get_channel_scalar`) also being injected. Template: the
+// switch's case list below is substituted in with one case per channel,
+// returning that channel's generated getter.
+fn get_channel_stroke_width(channel_index: u32, label_index: u32) -> f32 {
+    switch (channel_index) {
+        case 0u: { return get_channel_stroke_width_0(label_index); }
+        case 1u: { return get_channel_stroke_width_1(label_index); }
+        default: { return 0.0; }
     }
 }
 
@@ -507,14 +659,15 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     var any_on = false;
 
     // Loop over every configured channel: sample this channel's slice of
-    // mask_data (bitmask_sample), reduce it to an object-boundary test when
-    // not filled (bitmask_stroke_width_texels + bitmask_is_edge), and blend
-    // the resolved object color (get_channel_color) into out_rgb/out_a when
-    // "on". num_channels and each Channel come from the storage buffer, so
-    // this is a genuine runtime loop -- not unrolled/generated per channel.
+    // mask_data (bitmask_sample), decide whether this pixel falls in the
+    // object's outline band (bitmask_stroke_width_texels + bitmask_is_edge) or
+    // its interior, and blend the resolved stroke/fill color and opacity into
+    // out_rgb/out_a. num_channels and each Channel come from the storage
+    // buffer, so this is a genuine runtime loop -- not unrolled/generated per
+    // channel.
     for (var channel_index: u32 = 0u; channel_index < u.num_channels; channel_index = channel_index + 1u) {
         let ch = u.channels[channel_index];
-        if (ch.visible == 0u) {
+        if (ch.filled == 0u && ch.stroked == 0u) {
             continue;
         }
 
@@ -522,23 +675,38 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         if (raw_label == 0) {
             continue;
         }
+        let label_index = u32(raw_label - 1);
 
-        var is_on = true;
-        if (ch.filled == 0u) {
-            // The edge test measures in mask texels, so resolve this channel's
-            // stroke width out of screen-pixel/data/normalized units first.
-            // The result may be fractional, which the test handles.
-            let stroke_width_texels = bitmask_stroke_width_texels(ch.stroke_width);
-            is_on = bitmask_is_edge(channel_index, px_f, raw_label, img_w, img_h, stroke_width_texels);
-        }
-        if (!is_on) {
+        // The outline band is the outermost part of an object's interior, so
+        // the stroke and the fill cover disjoint regions and this pixel takes
+        // one or the other -- never a blend of both, as in `PointLayer`. A
+        // channel that is stroked but not filled leaves the interior
+        // transparent; one that is filled but not stroked draws no band.
+        //
+        // The edge test measures in mask texels, so this channel's stroke
+        // width is resolved out of screen-pixel/data/normalized units first.
+        // The result may be fractional, which the test handles.
+        var color: vec3<f32>;
+        var alpha: f32;
+        if (ch.stroked == 1u && bitmask_is_edge(
+            channel_index,
+            px_f,
+            raw_label,
+            img_w,
+            img_h,
+            bitmask_stroke_width_texels(get_channel_stroke_width(channel_index, label_index))
+        )) {
+            color = get_channel_stroke_color(channel_index, label_index);
+            alpha = get_channel_stroke_opacity(channel_index, label_index);
+        } else if (ch.filled == 1u) {
+            color = get_channel_fill_color(channel_index, label_index);
+            alpha = get_channel_fill_opacity(channel_index, label_index);
+        } else {
             continue;
         }
 
-        let label_index = u32(raw_label - 1);
-        let color = get_channel_color(channel_index, label_index);
-        out_rgb = mix(out_rgb, color, ch.opacity);
-        out_a = max(out_a, ch.opacity);
+        out_rgb = mix(out_rgb, color, alpha);
+        out_a = max(out_a, alpha);
         any_on = true;
     }
 

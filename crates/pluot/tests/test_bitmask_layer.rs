@@ -10,8 +10,30 @@ use pluot::{
     AspectRatioMode, UnitsMode, MarginParams,
     BitmaskChannelSettings, BitmaskLayerParams, CategoricalColormap, CategoricalCustomParams,
     CategoricalParams, ColorMode, DimensionOrder, InstancedRgbInterleavedParams, InstancedRgbParams,
-    NumericData, QuantitativeColormap, QuantitativeParams,
+    NumericData, OpacityMode, QuantitativeColormap, QuantitativeParams, SizeMode,
 };
+
+// Helpers: the two single-purpose channel shapes most of these fixtures use --
+// filled only (no outline) and stroked only (no fill) -- each colored by one
+// `ColorMode`. Channels exercising both at once are written out inline.
+fn filled_channel(fill_color: ColorMode) -> BitmaskChannelSettings {
+    BitmaskChannelSettings {
+        stroked: false,
+        filled: true,
+        fill_color: Some(fill_color),
+        ..BitmaskChannelSettings::default()
+    }
+}
+
+fn stroked_channel(stroke_color: ColorMode, stroke_width: f32) -> BitmaskChannelSettings {
+    BitmaskChannelSettings {
+        stroked: true,
+        filled: false,
+        stroke_color: Some(stroke_color),
+        stroke_width: Some(SizeMode::UniformSize(stroke_width)),
+        ..BitmaskChannelSettings::default()
+    }
+}
 
 // For bitmask layer tests, we always want to test the following cases (and combinations of them):
 // - Square and non-square (wide and tall) aspect ratios
@@ -67,19 +89,11 @@ fn bitmask_cyx_data() -> BitmaskLayerParams {
         dimension_order: DimensionOrder::CYX,
         shape: vec![2, 4, 4],
         channel_settings: vec![
-            BitmaskChannelSettings {
-                color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
-                    values: NumericData::Uint8(Arc::new(vec![0, 1])),
-                    colormap: vec![(255, 0, 0), (0, 255, 0)],
-                })),
-                ..BitmaskChannelSettings::default()
-            },
-            BitmaskChannelSettings {
-                color: Some(ColorMode::UniformRgb((0, 0, 255))),
-                filled: false,
-                stroke_width: 1.0,
-                ..BitmaskChannelSettings::default()
-            },
+            filled_channel(ColorMode::CategoricalCustom(CategoricalCustomParams {
+                values: NumericData::Uint8(Arc::new(vec![0, 1])),
+                colormap: vec![(255, 0, 0), (0, 255, 0)],
+            })),
+            stroked_channel(ColorMode::UniformRgb((0, 0, 255)), 1.0),
         ],
         opacity: 1.0,
         data: repeated_mask_data(2),
@@ -89,7 +103,7 @@ fn bitmask_cyx_data() -> BitmaskLayerParams {
 // Helper: override the outline-only channel's (channel 1) stroke width, for the
 // fixtures below whose unit mode makes "one texel" a value other than 1.0.
 fn with_stroke_width(mut params: BitmaskLayerParams, stroke_width: f32) -> BitmaskLayerParams {
-    params.channel_settings[1].stroke_width = stroke_width;
+    params.channel_settings[1].stroke_width = Some(SizeMode::UniformSize(stroke_width));
     params
 }
 
@@ -680,12 +694,7 @@ fn bitmask_cyx_data_wide_stroke(unit_mode: UnitsMode, stroke_width: f32) -> Bitm
         stroke_width_unit_mode: unit_mode,
         channel_settings: vec![
             bitmask_cyx_data().channel_settings[0].clone(),
-            BitmaskChannelSettings {
-                color: Some(ColorMode::UniformRgb((0, 0, 255))),
-                filled: false,
-                stroke_width,
-                ..BitmaskChannelSettings::default()
-            },
+            stroked_channel(ColorMode::UniformRgb((0, 0, 255)), stroke_width),
         ],
         ..bitmask_cyx_data()
     }
@@ -774,12 +783,7 @@ fn bitmask_thick(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams 
         stroke_width_unit_mode: unit_mode,
         dimension_order: DimensionOrder::CYX,
         shape: vec![1, 8, 8],
-        channel_settings: vec![BitmaskChannelSettings {
-            color: Some(ColorMode::UniformRgb((0, 0, 255))),
-            filled: false,
-            stroke_width,
-            ..BitmaskChannelSettings::default()
-        }],
+        channel_settings: vec![stroked_channel(ColorMode::UniformRgb((0, 0, 255)), stroke_width)],
         data: NumericData::Uint32(Arc::new(THICK_MASK.to_vec())),
         ..BitmaskLayerParams::default()
     }
@@ -975,10 +979,7 @@ async fn test_bitmask_layer_square_contain_data_units_uniform_rgb() {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            channel_settings: vec![BitmaskChannelSettings {
-                color: Some(ColorMode::UniformRgb((255, 128, 0))),
-                ..BitmaskChannelSettings::default()
-            }],
+            channel_settings: vec![filled_channel(ColorMode::UniformRgb((255, 128, 0)))],
             shape: vec![1, 4, 4],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
@@ -997,14 +998,11 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_rgb() {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            channel_settings: vec![BitmaskChannelSettings {
-                color: Some(ColorMode::InstancedRgb(InstancedRgbParams {
-                    r_values: NumericData::Uint8(Arc::new(vec![0, 255])),
-                    g_values: NumericData::Uint8(Arc::new(vec![255, 0])),
-                    b_values: NumericData::Uint8(Arc::new(vec![0, 255])),
-                })),
-                ..BitmaskChannelSettings::default()
-            }],
+            channel_settings: vec![filled_channel(ColorMode::InstancedRgb(InstancedRgbParams {
+                r_values: NumericData::Uint8(Arc::new(vec![0, 255])),
+                g_values: NumericData::Uint8(Arc::new(vec![255, 0])),
+                b_values: NumericData::Uint8(Arc::new(vec![0, 255])),
+            }))],
             shape: vec![1, 4, 4],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
@@ -1023,12 +1021,11 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_rgb_interleaved(
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            channel_settings: vec![BitmaskChannelSettings {
-                color: Some(ColorMode::InstancedRgbInterleaved(InstancedRgbInterleavedParams {
+            channel_settings: vec![filled_channel(ColorMode::InstancedRgbInterleaved(
+                InstancedRgbInterleavedParams {
                     rgb_values: NumericData::Uint8(Arc::new(vec![0, 255, 0, 255, 0, 255])),
-                })),
-                ..BitmaskChannelSettings::default()
-            }],
+                },
+            ))],
             shape: vec![1, 4, 4],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
@@ -1048,13 +1045,10 @@ async fn test_bitmask_layer_square_contain_data_units_categorical() {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            channel_settings: vec![BitmaskChannelSettings {
-                color: Some(ColorMode::Categorical(CategoricalParams {
-                    codes: NumericData::Uint8(Arc::new(vec![0, 1])),
-                    colormap: CategoricalColormap::Tableau10,
-                })),
-                ..BitmaskChannelSettings::default()
-            }],
+            channel_settings: vec![filled_channel(ColorMode::Categorical(CategoricalParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1])),
+                colormap: CategoricalColormap::Tableau10,
+            }))],
             shape: vec![1, 4, 4],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
@@ -1074,15 +1068,12 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative() {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            channel_settings: vec![BitmaskChannelSettings {
-                color: Some(ColorMode::Quantitative(QuantitativeParams {
-                    values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
-                    colormap: QuantitativeColormap::Viridis,
-                    reverse: false,
-                    domain: None,
-                })),
-                ..BitmaskChannelSettings::default()
-            }],
+            channel_settings: vec![filled_channel(ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: None,
+            }))],
             shape: vec![1, 4, 4],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
@@ -1100,70 +1091,66 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative() {
 // wgpu actually compiles and runs the generated shader module.
 //
 // Channel counts here are kept modest deliberately: every channel binds 0-3
-// color-mode textures (on top of the one shared mask-data texture), and
-// WebGPU's default `max_sampled_textures_per_shader_stage` limit is commonly
-// 16 -- a real constraint on how many color-textured channels a single
+// color-mode textures per color (on top of the one shared mask-data texture),
+// and WebGPU's default `max_sampled_textures_per_shader_stage` limit is
+// commonly 16 -- a real constraint on how many color-textured channels a single
 // `BitmaskLayer` draw call can use at once (`None`/`UniformRgb` share the
-// exact same generated WGSL, so only one is exercised here).
+// exact same generated WGSL, so only one is exercised here, and each channel
+// below textures only one of its two colors).
 #[tokio::test]
 async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
     let channel_settings = vec![
         // UniformRgb: outline-only.
         BitmaskChannelSettings {
-            color: Some(ColorMode::UniformRgb((255, 0, 0))),
-            filled: false,
-            stroke_width: 1.0,
-            opacity: 0.8,
-            ..BitmaskChannelSettings::default()
+            stroke_opacity: Some(OpacityMode::UniformOpacity(0.8)),
+            ..stroked_channel(ColorMode::UniformRgb((255, 0, 0)), 1.0)
         },
         // InstancedRgb: filled, per-object explicit RGB.
         BitmaskChannelSettings {
-            color: Some(ColorMode::InstancedRgb(InstancedRgbParams {
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..filled_channel(ColorMode::InstancedRgb(InstancedRgbParams {
                 r_values: NumericData::Uint8(Arc::new(vec![0, 255])),
                 g_values: NumericData::Uint8(Arc::new(vec![255, 0])),
                 b_values: NumericData::Uint8(Arc::new(vec![0, 0])),
-            })),
-            opacity: 0.5,
-            ..BitmaskChannelSettings::default()
+            }))
         },
         // InstancedRgbInterleaved: filled.
         BitmaskChannelSettings {
-            color: Some(ColorMode::InstancedRgbInterleaved(InstancedRgbInterleavedParams {
-                rgb_values: NumericData::Uint8(Arc::new(vec![0, 255, 0, 255, 0, 0])),
-            })),
-            opacity: 0.5,
-            ..BitmaskChannelSettings::default()
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..filled_channel(ColorMode::InstancedRgbInterleaved(
+                InstancedRgbInterleavedParams {
+                    rgb_values: NumericData::Uint8(Arc::new(vec![0, 255, 0, 255, 0, 0])),
+                },
+            ))
         },
         // Categorical ("set colors" via a named palette): filled.
         BitmaskChannelSettings {
-            color: Some(ColorMode::Categorical(CategoricalParams {
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..filled_channel(ColorMode::Categorical(CategoricalParams {
                 codes: NumericData::Uint8(Arc::new(vec![0, 1])),
                 colormap: CategoricalColormap::Tableau10,
-            })),
-            opacity: 0.5,
-            ..BitmaskChannelSettings::default()
+            }))
         },
         // CategoricalCustom ("set colors" via explicit RGB list): outline-only.
         BitmaskChannelSettings {
-            color: Some(ColorMode::CategoricalCustom(CategoricalCustomParams {
-                values: NumericData::Uint8(Arc::new(vec![0, 1])),
-                colormap: vec![(10, 20, 30), (200, 100, 50)],
-            })),
-            filled: false,
-            stroke_width: 1.0,
-            opacity: 0.5,
-            ..BitmaskChannelSettings::default()
+            stroke_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..stroked_channel(
+                ColorMode::CategoricalCustom(CategoricalCustomParams {
+                    values: NumericData::Uint8(Arc::new(vec![0, 1])),
+                    colormap: vec![(10, 20, 30), (200, 100, 50)],
+                }),
+                1.0,
+            )
         },
         // Quantitative: filled, exercises the injected colormap function.
         BitmaskChannelSettings {
-            color: Some(ColorMode::Quantitative(QuantitativeParams {
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+            ..filled_channel(ColorMode::Quantitative(QuantitativeParams {
                 values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
-            })),
-            opacity: 0.5,
-            ..BitmaskChannelSettings::default()
+            }))
         },
     ];
     let num_channels = channel_settings.len();
@@ -1198,24 +1185,20 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedu
             shape: vec![2, 4, 4],
             data: repeated_mask_data(2),
             channel_settings: vec![
+                filled_channel(ColorMode::Quantitative(QuantitativeParams {
+                    values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
+                    colormap: QuantitativeColormap::Viridis,
+                    reverse: false,
+                    domain: None,
+                })),
                 BitmaskChannelSettings {
-                    color: Some(ColorMode::Quantitative(QuantitativeParams {
-                        values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
-                        colormap: QuantitativeColormap::Viridis,
-                        reverse: false,
-                        domain: None,
-                    })),
-                    ..BitmaskChannelSettings::default()
-                },
-                BitmaskChannelSettings {
-                    color: Some(ColorMode::Quantitative(QuantitativeParams {
+                    fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
+                    ..filled_channel(ColorMode::Quantitative(QuantitativeParams {
                         values: NumericData::Float32(Arc::new(vec![0.9, 0.1])),
                         colormap: QuantitativeColormap::Viridis,
                         reverse: true,
                         domain: Some((0.0, 1.0)),
-                    })),
-                    opacity: 0.5,
-                    ..BitmaskChannelSettings::default()
+                    }))
                 },
             ],
             ..bitmask_cyx_data()
@@ -1225,6 +1208,125 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedu
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedup").await;
+}
+
+// ── Stroked and filled together ───────────────────────────────────────────────
+//
+// The outline band is the outermost part of an object's interior, so a channel
+// that is both stroked and filled draws its stroke over the boundary and its
+// fill over what is left, each with its own color and opacity (never a blend of
+// the two at one pixel). `THICK_MASK`'s 6x6 object is wide enough for a 1-texel
+// outline to leave a visible 4x4 fill inside it.
+
+// Helper: `THICK_MASK` as one channel drawn both stroked (blue) and filled
+// (semi-transparent orange), with the stroke width in `unit_mode` units.
+fn bitmask_thick_stroked_and_filled(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams {
+    BitmaskLayerParams {
+        channel_settings: vec![BitmaskChannelSettings {
+            stroked: true,
+            filled: true,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 255))),
+            stroke_width: Some(SizeMode::UniformSize(stroke_width)),
+            stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            fill_color: Some(ColorMode::UniformRgb((255, 128, 0))),
+            fill_opacity: Some(OpacityMode::UniformOpacity(0.4)),
+        }],
+        ..bitmask_thick(unit_mode, stroke_width)
+    }
+}
+
+// A 1-texel blue outline around a 40%-opaque orange interior.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_stroked_and_filled() {
+    let params = thick_params(
+        bitmask_thick_stroked_and_filled(UnitsMode::Data, 1.0),
+        CAMERA_ZOOM_OUT_16X,
+    );
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_stroked_and_filled").await;
+}
+
+// The same channel with a sub-texel (3 of the 12.5 px a texel spans) stroke, so
+// the fill has to be drawn on the up-sampled SVG raster grid the thin outline
+// forces -- checking that up-sampling reproduces the fill unchanged rather than
+// resampling it.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_stroked_and_filled_sub_texel_stroke() {
+    let params = thick_params(
+        bitmask_thick_stroked_and_filled(UnitsMode::Pixels, 3.0),
+        CAMERA_ZOOM_OUT_16X,
+    );
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_thick_mask_stroked_and_filled_sub_texel_stroke",
+    ).await;
+}
+
+// Per-object stroke width, opacity and color: `CHANNEL_MASK`'s object 1 gets a
+// 1-texel opaque red outline, object 2 a 2-texel half-transparent green one,
+// over a shared filled channel. Exercises the instanced `SizeMode`/
+// `OpacityMode` paths (a value texture per property, indexed by object id).
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_data_units_instanced_stroke() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(BitmaskLayerParams {
+            shape: vec![1, 4, 4],
+            data: repeated_mask_data(1),
+            channel_settings: vec![BitmaskChannelSettings {
+                stroked: true,
+                filled: true,
+                stroke_color: Some(ColorMode::InstancedRgb(InstancedRgbParams {
+                    r_values: NumericData::Uint8(Arc::new(vec![255, 0])),
+                    g_values: NumericData::Uint8(Arc::new(vec![0, 255])),
+                    b_values: NumericData::Uint8(Arc::new(vec![0, 0])),
+                })),
+                stroke_width: Some(SizeMode::InstancedSize(InstancedSizeParams {
+                    values: NumericData::Float32(Arc::new(vec![1.0, 2.0])),
+                })),
+                stroke_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                    values: NumericData::Float32(Arc::new(vec![1.0, 0.5])),
+                })),
+                fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
+                fill_opacity: Some(OpacityMode::UniformOpacity(0.3)),
+            }],
+            ..bitmask_cyx_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_square_contain_data_units_instanced_stroke",
+    ).await;
+}
+
+// A channel with neither `stroked` nor `filled` draws nothing, the replacement
+// for the old per-channel `visible` flag.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_data_units_neither_stroked_nor_filled() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(BitmaskLayerParams {
+            shape: vec![1, 4, 4],
+            data: repeated_mask_data(1),
+            channel_settings: vec![BitmaskChannelSettings {
+                stroked: false,
+                filled: false,
+                ..filled_channel(ColorMode::UniformRgb((255, 128, 0)))
+            }],
+            ..bitmask_cyx_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_square_contain_data_units_neither_stroked_nor_filled",
+    ).await;
 }
 
 // A single all-background channel: should render fully transparent.

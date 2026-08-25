@@ -92,11 +92,11 @@ values below. All three layers render the same 16x16 segmentation mask.
             shape: [1, 16, 16],
             channel_settings: [
               {
-                color: OBJECT_COLORS,
-                opacity: 1.0,
-                visible: true,
+                stroke_color: OBJECT_COLORS,
+                stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
                 filled: false,
-                stroke_width: 0.01,
+                stroked: true,
+                stroke_width: { size_mode: "UniformSize", size_params: 0.01 },
               },
             ],
             opacity: 1.0,
@@ -118,11 +118,11 @@ values below. All three layers render the same 16x16 segmentation mask.
             shape: [1, 16, 16],
             channel_settings: [
               {
-                color: OBJECT_COLORS,
-                opacity: 1.0,
-                visible: true,
+                stroke_color: OBJECT_COLORS,
+                stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+                stroked: true,
                 filled: false,
-                stroke_width: 10.0,
+                stroke_width: { size_mode: "UniformSize", size_params: 10.0 },
               },
             ],
             opacity: 1.0,
@@ -144,11 +144,10 @@ values below. All three layers render the same 16x16 segmentation mask.
             shape: [1, 16, 16],
             channel_settings: [
               {
-                color: OBJECT_COLORS,
-                opacity: 1.0,
-                visible: true,
+                fill_color: OBJECT_COLORS,
+                fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
                 filled: true,
-                stroke_width: 0.0,
+                stroke_width: null,
               },
             ],
             opacity: 1.0,
