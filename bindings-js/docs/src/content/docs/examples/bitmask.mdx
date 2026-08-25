@@ -86,6 +86,31 @@ values below. All three layers render the same 16x16 segmentation mask.
             data_unit_mode_y: "Data",
             // 0.05 data units == 2 texels, at any zoom level.
             stroke_width_unit_mode: "Data",
+            model_matrix: modelMatrix(0.05, 0.6),
+            pixel_offset: null,
+            dimension_order: "CYX",
+            shape: [1, 16, 16],
+            channel_settings: [
+              {
+                fill_color: OBJECT_COLORS,
+                fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+                filled: true,
+                stroke_width: null,
+              },
+            ],
+            opacity: 1.0,
+            data: { dtype: "Uint8", values: MASK },
+          }
+        },
+        {
+          layer_type: "BitmaskLayer",
+          layer_params: {
+            layer_id: "data_stroke",
+            bounds: null,
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            // 0.05 data units == 2 texels, at any zoom level.
+            stroke_width_unit_mode: "Data",
             model_matrix: modelMatrix(0.05, 0.1),
             pixel_offset: null,
             dimension_order: "CYX",
@@ -123,31 +148,6 @@ values below. All three layers render the same 16x16 segmentation mask.
                 stroked: true,
                 filled: false,
                 stroke_width: { size_mode: "UniformSize", size_params: 10.0 },
-              },
-            ],
-            opacity: 1.0,
-            data: { dtype: "Uint8", values: MASK },
-          }
-        },
-        {
-          layer_type: "BitmaskLayer",
-          layer_params: {
-            layer_id: "data_stroke",
-            bounds: null,
-            data_unit_mode_x: "Data",
-            data_unit_mode_y: "Data",
-            // 0.05 data units == 2 texels, at any zoom level.
-            stroke_width_unit_mode: "Data",
-            model_matrix: modelMatrix(0.05, 0.6),
-            pixel_offset: null,
-            dimension_order: "CYX",
-            shape: [1, 16, 16],
-            channel_settings: [
-              {
-                fill_color: OBJECT_COLORS,
-                fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
-                filled: true,
-                stroke_width: null,
               },
             ],
             opacity: 1.0,

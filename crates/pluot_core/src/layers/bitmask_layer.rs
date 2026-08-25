@@ -108,13 +108,13 @@ pub struct BitmaskChannelSettings {
 impl Default for BitmaskChannelSettings {
     fn default() -> Self {
         Self {
-            stroked: true,
-            filled: false,
-            stroke_color: None,
-            stroke_width: None,
-            stroke_opacity: None,
-            fill_color: None,
-            fill_opacity: None,
+            stroked: false,
+            filled: true,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            stroke_width: Some(SizeMode::UniformSize(1.0)),
+            stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            fill_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         }
     }
 }
