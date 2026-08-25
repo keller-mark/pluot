@@ -443,6 +443,7 @@ mod tests {
         let defaults = BitmaskChannelSettings::default();
         assert_eq!(cs.stroked, defaults.stroked);
         assert_eq!(cs.filled, defaults.filled);
+        // TODO: update the defaults in OmeZarrBitmaskChannelSetting so that they match BitmaskChannelSettings
         assert!(cs.stroke_color.is_none() && defaults.stroke_color.is_none());
         assert!(cs.stroke_width.is_none() && defaults.stroke_width.is_none());
         assert!(cs.stroke_opacity.is_none() && defaults.stroke_opacity.is_none());
