@@ -3,18 +3,24 @@
 //
 // A BitmaskLayer accepts the same positioning/data-shape parameters as
 // `BitmapLayer` (`dimension_order`, `shape`, `data`, `model_matrix`,
-// `pixel_offset`, `bounds`, `data_unit_mode_x`/`y`) -- the "C" dimension holds
-// one segmentation "channel" per slice, i.e. a flat array of per-pixel object
-// ids (0 meaning "no object"/background) for that channel. Only
-// `channel_settings` differs from `BitmapLayer`: instead of an intensity
+// `pixel_offset`, `bounds`, `data_unit_mode_x`/`y`).
+// The "C" dimension of the data allows rendering bitmasks with multiple channels,
+// for instance, where each channel stores segmentations for a different object type.
+//
+// In the data array, 0 means "no object"/background.
+//
+// Only `channel_settings` differs from `BitmapLayer`: instead of an intensity
 // window and pseudocolor, each channel is drawn stroked and/or filled, with
 // each of the two colored independently via a [`ColorMode`] -- either a single
 // static color, per-object RGB, a named/custom categorical palette indexed by
 // object id (i.e. "set colors"), or a quantitative colormap applied to a
 // per-object feature value -- and faded independently via an [`OpacityMode`].
+//
 // Here the "index" a `ColorMode`/`OpacityMode`/`SizeMode` reads is the object
 // id (minus one, since 0 is reserved for "no object"), rather than a
 // per-instance index as in e.g. `RectLayer`.
+// TODO: support instanced color/opacity/size for bitmasks in which the
+// object IDs have gaps or start at an arbitrary integer (greater than 1).
 //
 // As in `PointLayer`, the stroke and the fill cover disjoint regions: the
 // outline band is the outermost part of an object's interior, so a pixel takes
@@ -50,39 +56,35 @@ use crate::shader_modules::{
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
+use crate::positioning::{get_point_position, get_point_size};
 use crate::wgpu;
 
 /// Per-channel settings for [`BitmaskLayer`]. The channel's mask data itself
-/// lives in `BitmaskLayerParams::data` (one slice per the "C" dimension of
-/// `shape`); this struct only carries how to draw that slice, the bitmask
-/// counterpart of `BitmapLayer`'s [`crate::layers::bitmap_layer::ChannelSettings`].
+/// lives in `BitmaskLayerParams::data`.
 ///
 /// Every per-object mode below is indexed by object id minus one (0 being
 /// reserved for "no object"), so `InstancedRgb`/`Categorical`/`Quantitative`/
 /// `InstancedOpacity`/`InstancedSize` supply one value per object rather than
-/// per instance as in the other layers. Those lengths are not validated: the
-/// object count is not known from the mask without a full CPU pass over it (see
-/// [`BitmaskLayer::new`]).
+/// per instance as in the other layers.
 ///
-/// A channel with neither `stroked` nor `filled` set draws nothing.
+/// The lengths of instanced NumericData arrays are not validated, as
+/// it would require a full CPU pass over the mask to determine all object IDs.
+///
+/// A channel that is neither `stroked` nor `filled` draws nothing.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct BitmaskChannelSettings {
-    /// Whether to stroke the bitmask outlines. Defaults to `true`.
+    /// Whether to stroke the bitmask outlines. Defaults to `false`.
     pub stroked: bool,
-    /// Whether to fill the bitmask interiors. Defaults to `false`.
+
+    /// Whether to fill the bitmask interiors. Defaults to `true`.
     pub filled: bool,
 
-    /// How to color each bitmask's outline. See [`ColorMode`]: modes carrying
-    /// `NumericData` (instanced/categorical/quantitative) supply one value per
-    /// object.
+    /// How to color each bitmask's outline.
     pub stroke_color: Option<ColorMode>,
 
     /// Outline thickness, in the units given by
-    /// [`BitmaskLayerParams::stroke_width_unit_mode`], used to detect object
-    /// boundaries when `stroked` is true (and ignored when it is false). See
-    /// [`SizeMode`]: `UniformSize` shares one width across all objects,
-    /// `InstancedSize` supplies one per object. Defaults to 1.
+    /// [`BitmaskLayerParams::stroke_width_unit_mode`].
     ///
     /// The rendered thickness does not depend on the mask's resolution: the
     /// boundary test samples at fractional texel offsets, so a width that works
@@ -90,18 +92,14 @@ pub struct BitmaskChannelSettings {
     /// band. (The SVG path up-samples the mask as needed to reproduce this,
     /// quantizing the width to whole layer pixels; see [`DrawToSvg`].)
     pub stroke_width: Option<SizeMode>,
-    /// Opacity multiplier for the stroke. See [`OpacityMode`]: `UniformOpacity`
-    /// shares one value across all objects, `InstancedOpacity` supplies one per
-    /// object. Defaults to 1.
+
+    /// Opacity multiplier for the stroke.
     pub stroke_opacity: Option<OpacityMode>,
 
-    /// How to color each bitmask's interior. See [`ColorMode`]: modes carrying
-    /// `NumericData` (instanced/categorical/quantitative) supply one value per
-    /// object.
+    /// How to color each bitmask's interior.
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the fill. See [`OpacityMode`]: `UniformOpacity`
-    /// shares one value across all objects, `InstancedOpacity` supplies one per
-    /// object. Defaults to 1.
+
+    /// Opacity multiplier for the fill.
     pub fill_opacity: Option<OpacityMode>,
 }
 
@@ -120,9 +118,6 @@ impl Default for BitmaskChannelSettings {
 }
 
 /// Layer params struct for [`BitmaskLayer`].
-///
-/// Mirrors `BitmapLayerParams` field-for-field, except `channel_settings`
-/// (bitmask coloring rather than an intensity window / pseudocolor).
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct BitmaskLayerParams {
@@ -132,31 +127,15 @@ pub struct BitmaskLayerParams {
     pub data_unit_mode_x: UnitsMode,
     pub data_unit_mode_y: UnitsMode,
 
-    /// How to interpret every channel's [`BitmaskChannelSettings::stroke_width`]:
-    /// screen pixels, data-coordinate units, or a fraction (0 to 1) of the
-    /// layer height. Analogous to the same field on the stroked polygon/curve
-    /// layers, and, as there, widths are measured relative to the Y axis.
+    /// How to interpret every channel's [`BitmaskChannelSettings::stroke_width`].
+    /// Analogous to the same field on the stroked polygon/curve layers.
     ///
     /// Unlike those layers there is no stroke *geometry* to widen -- which
     /// fragments are stroked is decided from the bitmask data on the fly in
-    /// the shader -- so the width is instead resolved into mask texels, the
-    /// units the object-boundary test measures in. That resolution divides by
-    /// the on-screen (or, for `Data`, the world-space) size of one mask texel:
-    /// note this means `model_matrix` is a divisor here rather than a factor
-    /// as in the stroked polygon/curve layers, since for a bitmask it maps
-    /// mask-texel space into world space rather than data units into world
-    /// units.
+    /// the shader.
     ///
-    /// Resolving into texels is only a change of units, not of resolution: the
-    /// texel count may be fractional and the boundary test samples accordingly,
-    /// so a `Pixels` width renders the same number of screen pixels thick
-    /// whether the mask is coarse or fine. Only the camera and viewport enter
-    /// into it, never the mask's dimensions.
-    ///
-    /// `Data` is rejected unless `data_unit_mode_y` is also `Data`, since data
-    /// units are otherwise meaningless. Only the Y mode is checked because,
-    /// as in the stroked polygon/curve layers, widths are measured relative to
-    /// the Y axis.
+    /// The boundary test samples such that a `Pixels` width renders the same number
+    /// of screen pixels thick whether the mask is coarse or fine.
     pub stroke_width_unit_mode: UnitsMode,
 
     // (x_offset, y_offset) in pixels, applied before model_matrix, to enable
@@ -267,12 +246,7 @@ impl BitmaskLayer {
             );
         }
 
-        // 5. A data-unit stroke width has no meaning when the mask is
-        // positioned relative to the layer bounds rather than in data space.
-        // Mirrors the same check in `LineLayer`/`CurveLayer`, except that only
-        // the Y mode is checked: stroke widths here are measured relative to
-        // the Y axis, so a data-unit width stays well-defined when X alone is
-        // positioned in pixel/normalized units.
+        // TODO: relax this
         if layer_params.stroke_width_unit_mode == UnitsMode::Data
             && layer_params.data_unit_mode_y != UnitsMode::Data
         {
@@ -1478,7 +1452,7 @@ impl DrawToSvg for BitmaskLayer {
         // overlap the visible (post-margin) viewport.
         let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
 
-        let (px, py) = crate::positioning::get_point_position(
+        let (px, py) = get_point_position(
             offset_x as f32,
             offset_y as f32,
             layer_w,
@@ -1491,7 +1465,7 @@ impl DrawToSvg for BitmaskLayer {
             Some(&model_matrix_raw),
         );
 
-        let (sw, sh) = crate::positioning::get_point_size(
+        let (sw, sh) = get_point_size(
             img_w as f32,
             img_h as f32,
             layer_w,
