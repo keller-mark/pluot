@@ -849,6 +849,30 @@ async fn test_bitmask_layer_thick_mask_wide_stroke_pixel_units() {
     render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_wide_stroke").await;
 }
 
+// A stroke thinner than one texel: 3 of the 12.5 screen px one texel spans.
+// The GPU decides per screen pixel, so it draws a 3px ring inside the 6x6
+// block; the SVG path cannot express that at the mask's own resolution (whole
+// texels would round it to a 12.5px ring, four times too thick), so it
+// up-samples the mask to one grid cell per screen pixel first. Widths given in
+// all three unit modes resolve to the same 3px and must render identically.
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_sub_texel_stroke_data_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Data, 0.24), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_sub_texel_stroke").await;
+}
+
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_sub_texel_stroke_pixel_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Pixels, 3.0), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_sub_texel_stroke").await;
+}
+
+#[tokio::test]
+async fn test_bitmask_layer_thick_mask_sub_texel_stroke_normalized_units() {
+    let params = thick_params(bitmask_thick(UnitsMode::Normalized, 0.015), CAMERA_ZOOM_OUT_16X);
+    render_and_check_both_snapshots(params, "test_bitmask_layer_thick_mask_sub_texel_stroke").await;
+}
+
 // Zooming out 2x halves a texel's on-screen size to 6.25px. A data-unit width
 // is camera-*dependent* in screen terms: it stays 1 texel, so the ring shrinks
 // with the mask...

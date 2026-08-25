@@ -69,8 +69,8 @@ pub struct BitmaskChannelSettings {
     /// The rendered thickness does not depend on the mask's resolution: the
     /// boundary test samples at fractional texel offsets, so a width that works
     /// out to a fraction of a texel still renders as a correspondingly thin
-    /// band. (The SVG path is the exception -- it rasterizes at the mask's own
-    /// resolution, so it can only approximate; see [`DrawToSvg`].)
+    /// band. (The SVG path up-samples the mask as needed to reproduce this,
+    /// quantizing the width to whole layer pixels; see [`DrawToSvg`].)
     pub stroke_width: f32,
 }
 
@@ -249,6 +249,35 @@ impl BitmaskLayer {
     }
 }
 
+/// Screen-pixel (layer-pixel) Y extent of a single mask texel: the on-screen
+/// size of a 1x1-texel quad, positioned exactly as the mask quad is. Depends
+/// on the model matrix, camera and viewport, but never on the mask's own
+/// dimensions.
+fn screen_px_per_texel(
+    model_matrix: &[f32; 16],
+    layer_w: f32,
+    layer_h: f32,
+    camera_view: &[f32; 16],
+    data_unit_mode_x: UnitsMode,
+    data_unit_mode_y: UnitsMode,
+    aspect_ratio_mode: AspectRatioMode,
+    aspect_ratio_alignment_mode: AspectRatioAlignmentMode,
+) -> f32 {
+    let (_, px_per_texel) = crate::positioning::get_point_size(
+        1.0,
+        1.0,
+        layer_w,
+        layer_h,
+        camera_view,
+        data_unit_mode_x,
+        data_unit_mode_y,
+        aspect_ratio_mode,
+        aspect_ratio_alignment_mode,
+        Some(model_matrix.as_slice()),
+    );
+    px_per_texel.abs()
+}
+
 /// Resolve a channel's `stroke_width` -- expressed in screen pixels, data
 /// (world) units, or a fraction of the layer height -- into the mask texels
 /// the object-boundary test steps by.
@@ -280,11 +309,8 @@ fn stroke_width_texels(
         return if world_per_texel == 0.0 { 0.0 } else { stroke_width / world_per_texel };
     }
 
-    // Screen-pixel Y extent of a single mask texel: the on-screen size of a
-    // 1x1-texel quad, positioned exactly as the mask quad is.
-    let (_, px_per_texel) = crate::positioning::get_point_size(
-        1.0,
-        1.0,
+    let px_per_texel = screen_px_per_texel(
+        model_matrix,
         layer_w,
         layer_h,
         camera_view,
@@ -292,9 +318,7 @@ fn stroke_width_texels(
         data_unit_mode_y,
         aspect_ratio_mode,
         aspect_ratio_alignment_mode,
-        Some(model_matrix.as_slice()),
     );
-    let px_per_texel = px_per_texel.abs();
 
     // Normalized-unit width: a fraction (0 to 1) of the layer height, which a
     // pixel-unit width already is in absolute terms.
@@ -304,6 +328,162 @@ fn stroke_width_texels(
         stroke_width
     };
     if px_per_texel == 0.0 { 0.0 } else { stroke_width_px / px_per_texel }
+}
+
+/// Upper bound on the number of cells in the SVG path's rasterization grid
+/// (4096 x 4096), bounding both the intermediate RGBA buffer and the base64
+/// PNG embedded in the SVG. Only reached at extreme magnifications, where the
+/// outline is drawn as close to the requested width as the cap allows (see
+/// [`plan_svg_raster_grid`]).
+const MAX_SVG_RASTER_CELLS: u64 = 4096 * 4096;
+
+/// How closely the rasterized outline must match its target width, in layer
+/// pixels. Half a pixel is as close as the target itself is defined, since the
+/// target is rounded to whole layer pixels.
+const STROKE_WIDTH_TOLERANCE_PX: f32 = 0.5;
+
+/// The grid the SVG path rasterizes the mask into, plus the per-channel
+/// outline widths measured in the units its boundary test steps by.
+struct SvgRasterGrid {
+    /// Grid cells per mask texel along each axis: 1 means one cell per texel
+    /// (the mask's own resolution), `n > 1` means the mask is up-sampled `n`x.
+    /// Always an integer, so cell boundaries include every texel boundary and
+    /// the fill is reproduced exactly rather than resampled.
+    up: u32,
+
+    /// Per-channel outline offset in mask texels, i.e. the `stroke_width`
+    /// argument of the CPU counterpart of `bitmask_is_edge`. Zero for channels
+    /// that draw no outline (filled, hidden, or a non-positive width).
+    stroke_offsets: Vec<f32>,
+}
+
+/// Thickness, in layer pixels, that an outline of `target_texels` actually
+/// rasterizes to on a grid of `up` cells per texel.
+///
+/// Grid cell boundaries fall on texel boundaries, so the cells whose centers
+/// lie within `target_texels` of an object boundary -- the ones the boundary
+/// test turns on -- are exactly the first `round(target_texels * up)` of them
+/// (and at least one, per the `0.5 / up` floor in [`plan_svg_raster_grid`]).
+fn rasterized_stroke_width_px(target_texels: f32, px_per_texel: f32, up: u32) -> f32 {
+    let up = up as f32;
+    ((target_texels * up).round().max(1.0) / up) * px_per_texel
+}
+
+/// Decide what resolution to rasterize the mask at, so that every outline-only
+/// channel's stroke comes out the same thickness the GPU path would give it.
+///
+/// The GPU decides per *screen pixel* whether it is within `stroke_width` of an
+/// object boundary, so its outlines are limited only by the screen's
+/// resolution. Rasterizing at the mask's own resolution instead quantizes an
+/// outline to whole texels, which at anything above 1:1 magnification is far
+/// too coarse -- a 1px outline on a mask magnified 20x would come out 20px
+/// thick. So: measure each channel's stroke in layer pixels (`px_per_texel`
+/// having already folded in the unit mode, layer dimensions and camera), round
+/// it to whole pixels, and then rasterize at
+///
+/// * the mask's own dimensions, up-sampling nothing, if that already draws
+///   every channel's outline to within half a layer pixel of its target -- the
+///   case whenever the mask is at least as fine as the screen (where
+///   `ceil(px_per_texel)` is 1 regardless), and whenever the targets land on
+///   whole texels anyway (a mask magnified `n`x with an `n`-pixel outline);
+/// * otherwise `ceil(px_per_texel)` cells per texel, so that one cell is at
+///   most one layer pixel and any whole-pixel width is representable. This is
+///   the finest grid that resolves anything the eventual raster does not, and
+///   puts the rasterization on (near enough) the GPU's own fragment grid.
+///
+/// A coarser grid than that second case sometimes also lands within half a
+/// pixel, but once up-sampling is happening at all the finer grid is the more
+/// faithful choice: half a pixel is a large error relative to a thin outline
+/// (drawing a 1px stroke 1.5px thick clears the tolerance but is 50% too
+/// thick), and the extra cells cost little next to getting the width right.
+/// [`MAX_SVG_RASTER_CELLS`] is the only reason the second case may fall short.
+///
+/// Note the grid is isotropic in texel space, while `px_per_texel` measures Y
+/// (stroke widths are Y-relative here, as in the stroked polygon/curve layers).
+/// A mask magnified more along X than along Y therefore quantizes its
+/// vertical outline edges more coarsely -- but so does the GPU path's own
+/// texel-space boundary test, which is likewise isotropic in texel space.
+fn plan_svg_raster_grid(
+    channel_settings: &[BitmaskChannelSettings],
+    stroke_widths_texels: &[f32],
+    px_per_texel: f32,
+    img_w: u32,
+    img_h: u32,
+) -> SvgRasterGrid {
+    let px_per_texel_valid = px_per_texel.is_finite() && px_per_texel > 0.0;
+
+    // Per-channel target width in texels: the resolved width measured in layer
+    // pixels, rounded to the nearest whole pixel -- but never below one, since
+    // (as on the GPU) a band cannot be thinner than the rasterizer's own
+    // resolution -- and converted back into texels.
+    let targets: Vec<f32> = channel_settings
+        .iter()
+        .zip(stroke_widths_texels.iter())
+        .map(|(ch, &texels)| {
+            if ch.filled || !ch.visible || texels <= 0.0 || !texels.is_finite() {
+                // Draws no outline, so imposes no constraint on the grid.
+                0.0
+            } else if px_per_texel_valid {
+                (texels * px_per_texel).round().max(1.0) / px_per_texel
+            } else {
+                // Degenerate on-screen size (a collapsed camera or model
+                // matrix): nothing meaningful to round against, so keep the
+                // width as-is.
+                texels
+            }
+        })
+        .collect();
+
+    let up = choose_upsample_factor(&targets, px_per_texel_valid, px_per_texel, img_w, img_h);
+
+    // A cell's center is at least `0.5 / up` texels from any texel boundary,
+    // so that floor keeps an outline at least one cell thick -- the same
+    // "never thinner than one pixel of the output grid" behavior the GPU path
+    // gets from the rasterizer. It only binds when `up` fell short of
+    // `px_per_texel` because of `MAX_SVG_RASTER_CELLS`.
+    let floor_texels = 0.5 / up as f32;
+    let stroke_offsets = targets
+        .iter()
+        .map(|&t| if t > 0.0 { t.max(floor_texels) } else { 0.0 })
+        .collect();
+
+    SvgRasterGrid { up, stroke_offsets }
+}
+
+/// The up-sampling factor for [`plan_svg_raster_grid`]: 1 if the mask's own
+/// resolution draws every target width to within [`STROKE_WIDTH_TOLERANCE_PX`],
+/// otherwise one cell per layer pixel, capped by [`MAX_SVG_RASTER_CELLS`].
+fn choose_upsample_factor(
+    targets: &[f32],
+    px_per_texel_valid: bool,
+    px_per_texel: f32,
+    img_w: u32,
+    img_h: u32,
+) -> u32 {
+    // Nothing to resolve: no outline-only channel is drawn (up-sampling would
+    // only nearest-neighbor-magnify a fill that the SVG viewer magnifies just
+    // as well), or there is no meaningful on-screen size to match.
+    if !px_per_texel_valid || img_w == 0 || img_h == 0 || !targets.iter().any(|&t| t > 0.0) {
+        return 1;
+    }
+
+    let worst_error_at = |up: u32| -> f32 {
+        targets
+            .iter()
+            .filter(|&&t| t > 0.0)
+            .map(|&t| (rasterized_stroke_width_px(t, px_per_texel, up) - t * px_per_texel).abs())
+            .fold(0.0f32, f32::max)
+    };
+    if worst_error_at(1) <= STROKE_WIDTH_TOLERANCE_PX + 1e-4 {
+        return 1;
+    }
+
+    // One cell per layer pixel. Float-to-int casts saturate rather than wrap,
+    // so an extreme magnification just clamps to `max_up`.
+    let finest_useful_up = px_per_texel.ceil().max(1.0) as u32;
+    let texels = (img_w as u64) * (img_h as u64);
+    let max_up = ((MAX_SVG_RASTER_CELLS / texels.max(1)) as f64).sqrt().floor().max(1.0) as u32;
+    finest_useful_up.min(max_up)
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -978,11 +1158,23 @@ impl DrawToSvg for BitmaskLayer {
             0.0, 0.0, 0.0, 1.0,
         ]);
 
+        // On-screen (layer-pixel) Y extent of one mask texel: the conversion
+        // between the mask-texel space the rasterization below works in and
+        // the layer pixels the stroke widths are matched against.
+        let px_per_texel = screen_px_per_texel(
+            &model_matrix_raw,
+            layer_w,
+            layer_h,
+            &camera_view,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
+            view_params.aspect_ratio_mode,
+            view_params.aspect_ratio_alignment_mode,
+        );
+
         // Per-channel outline thickness, resolved out of `stroke_width_unit_mode`
         // into the mask texels the boundary test below steps by (the CPU
         // counterpart of `bitmask_stroke_width_texels` in the fragment shader).
-        // The rasterization happens in mask-texel space, so this is the only
-        // place the layer's on-screen size enters the CPU path.
         let stroke_widths_texels: Vec<f32> = layer_params
             .channel_settings
             .iter()
@@ -1002,6 +1194,18 @@ impl DrawToSvg for BitmaskLayer {
             })
             .collect();
 
+        // Resolution to rasterize at: the mask's own dimensions, up-sampled
+        // by an integer factor when an outline-only channel needs a finer grid
+        // than one cell per texel to come out the thickness the GPU path would
+        // give it. See `plan_svg_raster_grid`.
+        let SvgRasterGrid { up, stroke_offsets } = plan_svg_raster_grid(
+            &layer_params.channel_settings,
+            &stroke_widths_texels,
+            px_per_texel,
+            img_w,
+            img_h,
+        );
+
         // Naive per-pixel CPU rasterization, mirroring the GPU fragment
         // shader's per-channel sampling/edge-detection/blending logic (see
         // the channel loop in `bitmask_layer.wgsl`'s `fs_main`), reusing
@@ -1009,17 +1213,34 @@ impl DrawToSvg for BitmaskLayer {
         // path uses, keyed here by object index rather than per-instance
         // index).
         //
-        // This rasterizes at the mask's own resolution (one output pixel per
-        // texel) and scales the result up, so unlike the GPU path it cannot
-        // represent an outline thinner than one texel or one whose edge falls
-        // part-way through a texel. Outline thickness is therefore rounded to
-        // whole texels here; the two paths agree exactly whenever the resolved
-        // width is a whole number of texels, and diverge by up to half a texel
-        // otherwise.
-        let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
+        // Each grid cell plays the role a fragment does on the GPU: its center,
+        // as a continuous position in mask-texel space, gives both the texel
+        // whose object id it takes (the containing one) and the origin the
+        // boundary test offsets from -- so, exactly as in `bitmask_is_edge`, a
+        // band edge may fall part-way through a texel and the offsets stay
+        // fractional. The grid's own resolution is the only quantization left,
+        // and it is chosen so that one cell is at most one layer pixel, the
+        // same granularity as the GPU's fragment grid.
+        //
+        // TODO: currently, bitmask texels/pixels that fall outside the layer bounds are rendered, and clipped via the clipping rectangle.
+        // Instead, determine which bitmask data falls outside the bounds, and skip rasterization of this data altogether, to improve performance.
+        let raster_w = img_w * up;
+        let raster_h = img_h * up;
+        let up_f = up as f32;
+        let max_texel_x = img_w as f32 - 1.0;
+        let max_texel_y = img_h as f32 - 1.0;
+        let mut rgba = vec![0u8; (raster_w as usize) * (raster_h as usize) * 4];
 
-        for y in 0..img_h as i64 {
-            for x in 0..img_w as i64 {
+        for oy in 0..raster_h {
+            // Cell center in mask-texel space (row 0 at the top, matching the
+            // data array), and the texel containing it.
+            let cy = (oy as f32 + 0.5) / up_f;
+            let y = (oy / up) as usize;
+
+            for ox in 0..raster_w {
+                let cx = (ox as f32 + 0.5) / up_f;
+                let x = (ox / up) as usize;
+
                 let mut out_rgb = [0.0f32; 3];
                 let mut out_a = 0.0f32;
                 let mut any_on = false;
@@ -1028,7 +1249,7 @@ impl DrawToSvg for BitmaskLayer {
                     if !channel.visible {
                         continue;
                     }
-                    let idx = (y as usize) * y_stride + (x as usize) * x_stride + ci * c_stride;
+                    let idx = y * y_stride + x * x_stride + ci * c_stride;
                     let raw_label = layer_params.data.get_f32(idx) as i64;
                     if raw_label == 0 {
                         continue;
@@ -1037,22 +1258,20 @@ impl DrawToSvg for BitmaskLayer {
                     let is_on = if channel.filled {
                         true
                     } else {
-                        // Unlike the GPU path, this rasterizes one output pixel
-                        // per mask texel, so it cannot place a band edge
-                        // part-way through a texel: round to the nearest whole
-                        // texel, and never below one, so an outline-only
-                        // channel does not vanish entirely.
-                        let off = (stroke_widths_texels[ci].round().max(1.0)) as i64;
+                        // Object-boundary test, mirroring `bitmask_is_edge`:
+                        // sample 8 directions at `off` texels from this cell's
+                        // continuous position, clamping to the mask's bounds.
+                        let off = stroke_offsets[ci];
                         let deltas = [
-                            (off, 0), (-off, 0),
-                            (0, off), (0, -off),
+                            (off, 0.0), (-off, 0.0),
+                            (0.0, off), (0.0, -off),
                             (off, off), (-off, off),
                             (off, -off), (-off, -off),
                         ];
                         let mut is_edge = false;
                         for (dx, dy) in deltas {
-                            let nx = (x + dx).clamp(0, img_w as i64 - 1) as usize;
-                            let ny = (y + dy).clamp(0, img_h as i64 - 1) as usize;
+                            let nx = (cx + dx).floor().clamp(0.0, max_texel_x) as usize;
+                            let ny = (cy + dy).floor().clamp(0.0, max_texel_y) as usize;
                             let nidx = ny * y_stride + nx * x_stride + ci * c_stride;
                             let nval = layer_params.data.get_f32(nidx) as i64;
                             if nval != raw_label {
@@ -1081,7 +1300,7 @@ impl DrawToSvg for BitmaskLayer {
 
                 out_a *= layer_params.opacity;
 
-                let pixel_idx = ((y as u32 * img_w + x as u32) * 4) as usize;
+                let pixel_idx = ((oy as usize) * (raster_w as usize) + (ox as usize)) * 4;
                 if any_on {
                     rgba[pixel_idx] = (out_rgb[0].clamp(0.0, 1.0) * 255.0).round() as u8;
                     rgba[pixel_idx + 1] = (out_rgb[1].clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -1091,7 +1310,7 @@ impl DrawToSvg for BitmaskLayer {
             }
         }
 
-        let png = encode_png_rgba(img_w, img_h, &rgba);
+        let png = encode_png_rgba(raster_w, raster_h, &rgba);
         let href = format!("data:image/png;base64,{}", base64_encode(&png));
 
         let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
@@ -1127,7 +1346,9 @@ impl DrawToSvg for BitmaskLayer {
         let final_w = sw as f64;
         let final_h = sh as f64;
 
-        let image_element = if final_w == img_w as f64 && final_h == img_h as f64 {
+        // The raster covers exactly the same rect either way -- `up` only
+        // changes how many cells that rect is divided into, not where it sits.
+        let image_element = if final_w == raster_w as f64 && final_h == raster_h as f64 {
             TwoElement::Image(TwoImage {
                 x: final_x,
                 y: final_y,
@@ -1142,14 +1363,14 @@ impl DrawToSvg for BitmaskLayer {
                 elements: vec![TwoElement::Image(TwoImage {
                     x: 0.0,
                     y: 0.0,
-                    width: img_w as f64,
-                    height: img_h as f64,
+                    width: raster_w as f64,
+                    height: raster_h as f64,
                     href,
                     opacity: 1.0,
                     image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
                 })],
                 translate: Some((final_x, final_y)),
-                scale: Some((final_w / img_w as f64, final_h / img_h as f64)),
+                scale: Some((final_w / raster_w as f64, final_h / raster_h as f64)),
                 ..Default::default()
             })
         };
@@ -1252,5 +1473,129 @@ impl PickableLayer for BitmaskLayer {
             layer_id: self.layer_params.layer_id.clone(),
             info,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn outline(stroke_width: f32) -> BitmaskChannelSettings {
+        BitmaskChannelSettings { filled: false, stroke_width, ..Default::default() }
+    }
+
+    fn filled() -> BitmaskChannelSettings {
+        BitmaskChannelSettings { filled: true, ..Default::default() }
+    }
+
+    /// Thickness, in layer pixels, that `plan_svg_raster_grid`'s chosen grid
+    /// actually draws channel `ci`'s outline at.
+    fn drawn_px(grid: &SvgRasterGrid, ci: usize, px_per_texel: f32) -> f32 {
+        rasterized_stroke_width_px(grid.stroke_offsets[ci], px_per_texel, grid.up)
+    }
+
+    #[test]
+    fn filled_channels_never_up_sample() {
+        // Up-sampling a fill would only nearest-neighbor-magnify it, so even a
+        // heavily magnified mask stays at its own resolution.
+        let grid = plan_svg_raster_grid(&[filled(), filled()], &[0.0, 0.0], 200.0, 4, 4);
+        assert_eq!(grid.up, 1);
+        assert_eq!(grid.stroke_offsets, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn hidden_and_zero_width_outlines_never_up_sample() {
+        let hidden = BitmaskChannelSettings { visible: false, ..outline(1.0) };
+        let grid = plan_svg_raster_grid(&[hidden, outline(0.0)], &[0.005, 0.0], 200.0, 4, 4);
+        assert_eq!(grid.up, 1);
+        assert_eq!(grid.stroke_offsets, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn whole_texel_outline_never_up_samples() {
+        // A one-texel outline on a mask magnified 200x is already exactly
+        // representable at the mask's own resolution.
+        let grid = plan_svg_raster_grid(&[outline(1.0)], &[1.0], 200.0, 4, 4);
+        assert_eq!(grid.up, 1);
+        assert_eq!(drawn_px(&grid, 0, 200.0), 200.0);
+    }
+
+    #[test]
+    fn sub_texel_outline_up_samples_to_layer_pixels() {
+        // A 1px outline on a mask magnified 200x: one texel per grid cell
+        // would draw it 200x too thick, so the grid goes to one cell per
+        // layer pixel and draws it exactly 1px thick.
+        let grid = plan_svg_raster_grid(&[outline(1.0)], &[1.0 / 200.0], 200.0, 4, 4);
+        assert_eq!(grid.up, 200);
+        assert!((drawn_px(&grid, 0, 200.0) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn fractional_texel_outline_up_samples_to_layer_pixels() {
+        // 2.5 texels at 4 px/texel = 10px, which whole texels can only render
+        // as 8px or 12px, so the grid goes to one cell per layer pixel.
+        let grid = plan_svg_raster_grid(&[outline(10.0)], &[2.5], 4.0, 16, 16);
+        assert_eq!(grid.up, 4);
+        assert!((drawn_px(&grid, 0, 4.0) - 10.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn near_whole_texel_outline_stays_at_the_mask_resolution() {
+        // 1 texel at 12.5 px/texel rounds to a 13px target, which whole texels
+        // render as 12.5px -- within half a pixel, so nothing is up-sampled.
+        let grid = plan_svg_raster_grid(&[outline(1.0)], &[13.0 / 12.5], 12.5, 4, 4);
+        assert_eq!(grid.up, 1);
+        assert_eq!(drawn_px(&grid, 0, 12.5), 12.5);
+    }
+
+    #[test]
+    fn masks_finer_than_the_screen_rasterize_at_their_own_resolution() {
+        // 4 texels per layer pixel: the data is already finer than the target
+        // stroke needs, so nothing is up-sampled.
+        let grid = plan_svg_raster_grid(&[outline(1.0)], &[4.0], 0.25, 512, 512);
+        assert_eq!(grid.up, 1);
+        assert!((drawn_px(&grid, 0, 0.25) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn multiple_outline_channels_share_one_grid() {
+        // 1px and 200px outlines at 200 px/texel: the grid must be fine enough
+        // for the thinner one, and still draws the thicker one exactly.
+        let grid = plan_svg_raster_grid(
+            &[outline(1.0), outline(200.0)],
+            &[1.0 / 200.0, 1.0],
+            200.0,
+            4,
+            4,
+        );
+        assert_eq!(grid.up, 200);
+        assert!((drawn_px(&grid, 0, 200.0) - 1.0).abs() < 1e-3);
+        assert!((drawn_px(&grid, 1, 200.0) - 200.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn up_sampling_is_capped_for_large_masks() {
+        // A 4096x4096 mask is already at the cap, so a 1px outline on it
+        // magnified 8x cannot be drawn thinner than one texel -- but it is
+        // still drawn, one cell thick, rather than vanishing or panicking.
+        let grid = plan_svg_raster_grid(&[outline(1.0)], &[0.125], 8.0, 4096, 4096);
+        assert_eq!(grid.up, 1);
+        assert_eq!(grid.stroke_offsets[0], 0.5);
+        assert_eq!(drawn_px(&grid, 0, 8.0), 8.0);
+    }
+
+    #[test]
+    fn degenerate_on_screen_size_keeps_the_resolved_width() {
+        for px_per_texel in [0.0, f32::NAN, f32::INFINITY] {
+            let grid = plan_svg_raster_grid(&[outline(1.0)], &[2.0], px_per_texel, 4, 4);
+            assert_eq!(grid.up, 1);
+            assert_eq!(grid.stroke_offsets[0], 2.0);
+        }
+    }
+
+    #[test]
+    fn empty_masks_do_not_divide_by_zero() {
+        let grid = plan_svg_raster_grid(&[outline(1.0)], &[0.005], 200.0, 0, 0);
+        assert_eq!(grid.up, 1);
     }
 }

@@ -180,35 +180,48 @@ fn bitmask_sample(channel_index: u32, px: vec2<u32>) -> i32 {
 }
 
 
-// Approximate object-boundary test: true if pixel `px` (whose object id is
-// `raw_label`) has a differently-labeled neighbor within `stroke_width`
-// texels, in any of 8 directions. Used to render outline-only channels
+// Approximate object-boundary test: true if the point `px` (whose object id is
+// `raw_label`) has a differently-labeled neighbor within `stroke_width` texels,
+// in any of 8 directions. Used to render outline-only channels
 // (`BitmaskChannelSettings::filled == false`). Injected once (not templated
 // per-channel), regardless of channel count. Depends on `bitmask_sample`
 // also being injected.
+//
+// `px` is the *continuous* position of the fragment in mask-texel space, not
+// the integer texel it falls in, and `stroke_width` may be fractional. This is
+// what keeps the outline's thickness independent of the mask's resolution:
+// were the offsets applied to the containing texel instead, every fragment
+// within a texel would answer identically and the band could only ever be a
+// whole number of texels thick, so the same requested width would render
+// differently for a coarse mask than for a fine one. Offsetting the continuous
+// position instead lets the band's edge fall part-way through a texel, so its
+// thickness is whatever `stroke_width` asks for -- down to the one-screen-pixel
+// limit of the rasterizer, rather than the one-texel limit of the mask.
+//
+// Note the diagonal offsets reach `stroke_width * sqrt(2)`, so the band bulges
+// somewhat at corners; this samples a square, not a disc.
 fn bitmask_is_edge(
     channel_index: u32,
-    px: vec2<u32>,
+    px: vec2<f32>,
     raw_label: i32,
     img_w: u32,
     img_h: u32,
     stroke_width: f32,
 ) -> bool {
-    let off = i32(max(stroke_width, 1.0));
-    let x0 = i32(px.x);
-    let y0 = i32(px.y);
-    let w = i32(img_w);
-    let h = i32(img_h);
-    let deltas = array<vec2<i32>, 8>(
-        vec2<i32>(off, 0), vec2<i32>(-off, 0),
-        vec2<i32>(0, off), vec2<i32>(0, -off),
-        vec2<i32>(off, off), vec2<i32>(-off, off),
-        vec2<i32>(off, -off), vec2<i32>(-off, -off),
+    let off = max(stroke_width, 0.0);
+    let max_x = f32(img_w) - 1.0;
+    let max_y = f32(img_h) - 1.0;
+    let deltas = array<vec2<f32>, 8>(
+        vec2<f32>(off, 0.0), vec2<f32>(-off, 0.0),
+        vec2<f32>(0.0, off), vec2<f32>(0.0, -off),
+        vec2<f32>(off, off), vec2<f32>(-off, off),
+        vec2<f32>(off, -off), vec2<f32>(-off, -off),
     );
     for (var k = 0; k < 8; k = k + 1) {
-        let nx = clamp(x0 + deltas[k].x, 0, w - 1);
-        let ny = clamp(y0 + deltas[k].y, 0, h - 1);
-        let nval = bitmask_sample(channel_index, vec2<u32>(u32(nx), u32(ny)));
+        let n = px + deltas[k];
+        let nx = u32(clamp(floor(n.x), 0.0, max_x));
+        let ny = u32(clamp(floor(n.y), 0.0, max_y));
+        let nval = bitmask_sample(channel_index, vec2<u32>(nx, ny));
         if (nval != raw_label) {
             return true;
         }
@@ -220,8 +233,9 @@ fn bitmask_is_edge(
 // Resolves a channel's `stroke_width` -- expressed in screen pixels, data
 // (world) units, or as a fraction of the layer height, per
 // `u.stroke_width_unit_mode` -- into the mask-texel units that
-// `bitmask_is_edge` works in, since the edge test can only step the mask
-// array by whole texels.
+// `bitmask_is_edge` measures in. This is purely a change of units: the result
+// is free to be fractional, and nothing here depends on the mask's
+// dimensions, only on the model matrix, camera and viewport.
 //
 // The mask quad's vertices are mask-texel positions pushed through
 // `u.model_matrix` (which maps mask-texel space into world space) and then,
@@ -244,7 +258,7 @@ fn bitmask_stroke_width_texels(stroke_width: f32) -> f32 {
         // multiplying by it as the stroked polygon/curve layers do: there
         // model_matrix maps data units to world units, here it maps mask
         // texels to world units. `BitmaskLayer::new` rejects this mode unless
-        // the layer is positioned in data units.
+        // the layer's Y axis is positioned in data units.
         return select(stroke_width / world_per_texel, 0.0, world_per_texel == 0.0);
     }
 
@@ -476,8 +490,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // Shared pixel-position computation: every channel is a slice of the same
     // (img_width, img_height) `mask_data` array, so this only needs to happen
     // once rather than per channel.
+    // The continuous position, kept alongside the integer texel it falls in:
+    // the label is read from the containing texel, but the boundary test
+    // offsets this continuous position so the outline's thickness does not
+    // quantize to the mask's resolution (see `bitmask_is_edge`).
+    let px_f = in.tex_coord * u.img_size;
     let px = vec2<u32>(min(
-        vec2<u32>(floor(in.tex_coord * u.img_size)),
+        vec2<u32>(floor(px_f)),
         vec2<u32>(u.img_size) - vec2<u32>(1u, 1u)
     ));
     let img_w = u32(u.img_size.x);
@@ -506,11 +525,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
         var is_on = true;
         if (ch.filled == 0u) {
-            // The edge test steps the mask array by whole texels, so resolve
-            // this channel's stroke width out of screen-pixel/data/normalized
-            // units into texels first.
+            // The edge test measures in mask texels, so resolve this channel's
+            // stroke width out of screen-pixel/data/normalized units first.
+            // The result may be fractional, which the test handles.
             let stroke_width_texels = bitmask_stroke_width_texels(ch.stroke_width);
-            is_on = bitmask_is_edge(channel_index, px, raw_label, img_w, img_h, stroke_width_texels);
+            is_on = bitmask_is_edge(channel_index, px_f, raw_label, img_w, img_h, stroke_width_texels);
         }
         if (!is_on) {
             continue;
