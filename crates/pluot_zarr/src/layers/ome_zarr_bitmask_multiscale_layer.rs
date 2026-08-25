@@ -34,7 +34,7 @@ use crate::layers::ome_zarr_utils::{
 
 /// Layer params struct for [`OmeZarrBitmaskMultiscaleLayer`].
 ///
-/// Mirrors [`crate::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams`]
+/// Mirrors [`crate::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams`]
 /// field-for-field, except `channel_settings` (bitmask coloring rather than
 /// an intensity window / pseudocolor) and the addition of
 /// `stroke_width_unit_mode`, forwarded to every

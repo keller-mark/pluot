@@ -61,7 +61,7 @@ async def _(camera_view, render_to_image, store):
         plot_params=dict(
             layers=[
                 dict(
-                  layer_type = "OmeZarrMultiscaleLayer",
+                  layer_type = "OmeZarrBitmapMultiscaleLayer",
                   layer_params = dict(
                       layer_id= "ome_zarr_multiscale_layer",
                         target_z= 40,

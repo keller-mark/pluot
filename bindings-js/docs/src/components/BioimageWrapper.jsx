@@ -125,7 +125,7 @@ async function queryFn(ctx) {
             }
           },
           {
-            layer_type: "OmeZarrMultiscaleLayer",
+            layer_type: "OmeZarrBitmapMultiscaleLayer",
             layer_params: {
               layer_id: "ome_zarr_multiscale_layer",
               // TODO: use omero.rdefs.defaultZ if provided,
@@ -159,7 +159,7 @@ export function BioimageWrapperInner(props) {
 
   // Then, load the OME-NGFF metadata.
   // Create the plotSpecificControls to pass to PluotWrapper.
-  // Populate the OmeZarrMultiscaleLayer params based on the control values. Perhaps plotParams should be a function.
+  // Populate the OmeZarrBitmapMultiscaleLayer params based on the control values. Perhaps plotParams should be a function.
 
   const controlsAndGetPlotParams = useQuery({
     queryKey: [storeUrl],

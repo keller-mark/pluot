@@ -259,7 +259,7 @@ const DEMOS = {
           }
         },*/
         {
-          layer_type: "OmeZarrMultiscaleLayer",
+          layer_type: "OmeZarrBitmapMultiscaleLayer",
           layer_params: {
             layer_id: "ome_zarr_multiscale_layer",
             store_name: "ome_ngff_2",

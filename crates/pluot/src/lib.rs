@@ -42,7 +42,7 @@ pub use pluot_core::composite_layers::legend_point_size_quantitative_layer::Lege
 pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
-pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
+pub use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 pub use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;

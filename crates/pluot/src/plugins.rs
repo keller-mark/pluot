@@ -5,7 +5,7 @@ use pluot_zarr::layers::zarr_point_3d_layer::{ZarrPoint3dLayer, ZarrPoint3dLayer
 use pluot_zarr::layers::zarr_bar_plot_layer::{ZarrBarPlotLayer, ZarrBarPlotLayerParams};
 use pluot_zarr::layers::zarr_histogram_layer::{ZarrHistogramLayer, ZarrHistogramLayerParams};
 use pluot_zarr::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
-use pluot_zarr::layers::ome_zarr_multiscale_layer::{OmeZarrMultiscaleLayer, OmeZarrMultiscaleLayerParams};
+use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::{OmeZarrBitmapMultiscaleLayer, OmeZarrBitmapMultiscaleLayerParams};
 use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayer, OmeZarrBitmaskLayerParams};
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::{OmeZarrBitmaskMultiscaleLayer, OmeZarrBitmaskMultiscaleLayerParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams};
@@ -65,10 +65,10 @@ inventory::submit! {
 
 inventory::submit! {
     LayerRegistration {
-        layer_type_name: "OmeZarrMultiscaleLayer",
+        layer_type_name: "OmeZarrBitmapMultiscaleLayer",
         create_layer: |value, view_params| {
-            let params: OmeZarrMultiscaleLayerParams = serde_json::from_value(value).unwrap();
-            Box::new(OmeZarrMultiscaleLayer::new(view_params.clone(), params))
+            let params: OmeZarrBitmapMultiscaleLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(OmeZarrBitmapMultiscaleLayer::new(view_params.clone(), params))
         },
     }
 }

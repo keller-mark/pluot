@@ -32,10 +32,10 @@ use crate::layers::ome_zarr_utils::{
     axis_unit_space_to_coefficient_and_exponent,
 };
 
-/// Layer params struct for [`OmeZarrMultiscaleLayer`].
+/// Layer params struct for [`OmeZarrBitmapMultiscaleLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct OmeZarrMultiscaleLayerParams {
+pub struct OmeZarrBitmapMultiscaleLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
     /// Name of the top-level store to read from (a key in `RenderParams::stores`).
@@ -54,7 +54,7 @@ pub struct OmeZarrMultiscaleLayerParams {
     pub opacity: f32,
 }
 
-impl Default for OmeZarrMultiscaleLayerParams {
+impl Default for OmeZarrBitmapMultiscaleLayerParams {
     fn default() -> Self {
         Self {
             layer_id: "".to_string(),
@@ -124,7 +124,7 @@ struct OmeZarrMultiscaleMetadata {
     dimension_order: OmeDimensionOrder,
 }
 
-// OmeZarrMultiscaleLayer.
+// OmeZarrBitmapMultiscaleLayer.
 // This layer queries for metadata and orchestrates sublayers.
 
 /// A sublayer group for a single resolution level.
@@ -141,9 +141,9 @@ struct LevelSublayers {
     prepare_results: Vec<PrepareResult>,
 }
 
-pub struct OmeZarrMultiscaleLayer {
+pub struct OmeZarrBitmapMultiscaleLayer {
     view_params: ViewParams,
-    layer_params: OmeZarrMultiscaleLayerParams,
+    layer_params: OmeZarrBitmapMultiscaleLayerParams,
     store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: String,
     /// Cached metadata, loaded on first prepare() call.
@@ -152,8 +152,8 @@ pub struct OmeZarrMultiscaleLayer {
     level_sublayers: Vec<LevelSublayers>,
 }
 
-impl OmeZarrMultiscaleLayer {
-    pub fn new(view_params: ViewParams, layer_params: OmeZarrMultiscaleLayerParams) -> Self {
+impl OmeZarrBitmapMultiscaleLayer {
+    pub fn new(view_params: ViewParams, layer_params: OmeZarrBitmapMultiscaleLayerParams) -> Self {
         let store_name = resolve_store_name(&layer_params.store_name, &view_params);
 
         let store = view_params.get_store(&store_name);
@@ -452,7 +452,7 @@ impl OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for OmeZarrMultiscaleLayer {
+impl PreparedLayer for OmeZarrBitmapMultiscaleLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
 
@@ -523,7 +523,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
+impl DrawToRasterGpu for OmeZarrBitmapMultiscaleLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         // level_sublayers is ordered coarsest-first.
         // Draw levels from coarsest to finest, but skip coarser tiles that are
@@ -557,13 +557,13 @@ impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for OmeZarrMultiscaleLayer {
+impl DrawToRasterCpu for OmeZarrBitmapMultiscaleLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for OmeZarrMultiscaleLayer {
+impl DrawToSvg for OmeZarrBitmapMultiscaleLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         let num_groups = self.level_sublayers.len();
 
@@ -586,7 +586,7 @@ impl DrawToSvg for OmeZarrMultiscaleLayer {
     }
 }
 
-impl PickableLayer for OmeZarrMultiscaleLayer {
+impl PickableLayer for OmeZarrBitmapMultiscaleLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
             return None;

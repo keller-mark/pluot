@@ -70,6 +70,21 @@ fn default_channel_stroked() -> bool {
 fn default_channel_filled() -> bool {
     BitmaskChannelSettings::default().filled
 }
+fn default_channel_stroke_color() -> Option<ColorMode> {
+    BitmaskChannelSettings::default().stroke_color
+}
+fn default_channel_stroke_width() -> Option<SizeMode> {
+    BitmaskChannelSettings::default().stroke_width
+}
+fn default_channel_stroke_opacity() -> Option<OpacityMode> {
+    BitmaskChannelSettings::default().stroke_opacity
+}
+fn default_channel_fill_color() -> Option<ColorMode> {
+    BitmaskChannelSettings::default().fill_color
+}
+fn default_channel_fill_opacity() -> Option<OpacityMode> {
+    BitmaskChannelSettings::default().fill_opacity
+}
 
 /// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
 /// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
@@ -96,24 +111,24 @@ pub struct OmeZarrBitmaskChannelSetting {
     pub filled: bool,
 
     /// How to color each object's outline.
-    #[serde(default)]
+    #[serde(default = "default_channel_stroke_color")]
     pub stroke_color: Option<ColorMode>,
 
     /// Outline thickness, in the units given by the layer's
     /// `stroke_width_unit_mode`, used when `stroked` is true.
-    #[serde(default)]
+    #[serde(default = "default_channel_stroke_width")]
     pub stroke_width: Option<SizeMode>,
 
     /// Opacity multiplier for the outline (0.0 to 1.0).
-    #[serde(default)]
+    #[serde(default = "default_channel_stroke_opacity")]
     pub stroke_opacity: Option<OpacityMode>,
 
     /// How to color each object's interior.
-    #[serde(default)]
+    #[serde(default = "default_channel_fill_color")]
     pub fill_color: Option<ColorMode>,
 
     /// Opacity multiplier for the interior (0.0 to 1.0).
-    #[serde(default)]
+    #[serde(default = "default_channel_fill_opacity")]
     pub fill_opacity: Option<OpacityMode>,
 }
 
@@ -434,21 +449,22 @@ mod tests {
 
     /// Only `c_index` is required; the inlined render settings fall back to
     /// the same defaults `BitmaskChannelSettings` uses.
+    ///
+    /// Compared as serialized JSON rather than field by field: the render
+    /// settings' modes carry `NumericData` and so have no `PartialEq`, and this
+    /// way the assertion covers *every* field at once -- an inlined field whose
+    /// `#[serde(default = ...)]` stops delegating to
+    /// `BitmaskChannelSettings::default()` fails here without the test needing
+    /// to name it.
     #[test]
     fn test_bitmask_channel_setting_defaults_match_bitmask_channel_settings() {
         let cs: OmeZarrBitmaskChannelSetting =
             serde_json::from_str(r#"{"c_index": 2}"#).unwrap();
         assert_eq!(cs.c_index, 2);
 
-        let defaults = BitmaskChannelSettings::default();
-        assert_eq!(cs.stroked, defaults.stroked);
-        assert_eq!(cs.filled, defaults.filled);
-        // TODO: update the defaults in OmeZarrBitmaskChannelSetting so that they match BitmaskChannelSettings
-        assert!(cs.stroke_color.is_none() && defaults.stroke_color.is_none());
-        assert!(cs.stroke_width.is_none() && defaults.stroke_width.is_none());
-        assert!(cs.stroke_opacity.is_none() && defaults.stroke_opacity.is_none());
-        assert!(cs.fill_color.is_none() && defaults.fill_color.is_none());
-        assert!(cs.fill_opacity.is_none() && defaults.fill_opacity.is_none());
+        let from_defaults = serde_json::to_value(BitmaskChannelSettings::from(&cs)).unwrap();
+        let defaults = serde_json::to_value(BitmaskChannelSettings::default()).unwrap();
+        assert_eq!(from_defaults, defaults);
     }
 
     /// `c_index` selects which slice of the C dimension to load, so unlike the
