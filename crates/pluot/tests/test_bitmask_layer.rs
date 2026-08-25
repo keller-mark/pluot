@@ -10,7 +10,8 @@ use pluot::{
     AspectRatioMode, UnitsMode, MarginParams,
     BitmaskChannelSettings, BitmaskLayerParams, CategoricalColormap, CategoricalCustomParams,
     CategoricalParams, ColorMode, DimensionOrder, InstancedRgbInterleavedParams, InstancedRgbParams,
-    NumericData, OpacityMode, QuantitativeColormap, QuantitativeParams, SizeMode,
+    NumericData, OpacityMode, QuantitativeColormap, QuantitativeParams, SizeMode, InstancedSizeParams,
+    InstancedOpacityParams,
 };
 
 // Helpers: the two single-purpose channel shapes most of these fixtures use --

@@ -1,0 +1,16 @@
+<svg height="200" width="200" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_bitmask_layer_clip_path">
+<rect height="200" width="200" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="200" width="200">
+<g clip-path="url(#my_bitmask_layer_clip_path)" transform="translate(0,0)">
+<g transform="translate(93.75,6.25) scale(0.9615384615384616,0.9615384615384616)">
+<image height="104" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGgAAABoCAYAAAAdHLWhAAACKUlEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1S+46n8ygqv+JyO46n8ygqv+JyO46n8ygqv+JyO46n8ygqv+JyO46n8ygqv+JyO46n8ygqv+JyO46n8yKv8mNlf9G0j86xBc9T8ZwVX/k1H5d/rAl9MHcdUL9K1/4W/h347gqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JCK76n4zgqv/JEP8mNlf9G0j86xBc9T8ZwVX/kyGu+p+M4Kr/yQiu+p+M4Kr/yQiu+p+M4Kr/yQiu+p+M4Kr/yQiu+p+M4Kr/yQiu+p+M4Kr/yQiu+p+MfwQhLAjTDWCW+QAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="104" x="0" y="0"/>
+</g>
+</g>
+</g>
+</g>
+</svg>

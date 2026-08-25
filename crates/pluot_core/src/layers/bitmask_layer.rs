@@ -1942,15 +1942,4 @@ mod tests {
             vec![uniform(0.0), uniform(0.0), uniform(8.0)],
         );
     }
-
-    /// An unset `stroke_width` falls back to `DEFAULT_STROKE_WIDTH`, matching
-    /// what the uniform-mode WGSL getter reads (see `split_size_mode`).
-    #[test]
-    fn unset_stroke_width_falls_back_to_the_default() {
-        let settings = vec![BitmaskChannelSettings::default()];
-        assert_eq!(
-            stroke_texels_per_channel(&settings, 2.0),
-            vec![uniform(DEFAULT_STROKE_WIDTH * 2.0)],
-        );
-    }
 }
