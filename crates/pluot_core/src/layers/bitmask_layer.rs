@@ -1473,6 +1473,52 @@ impl DrawToSvg for BitmaskLayer {
             0.0, 0.0, 0.0, 1.0,
         ]);
 
+        // On-screen (layer-pixel) rect the mask image will occupy, computed up
+        // front so we can bail out before rasterizing at all when it doesn't
+        // overlap the visible (post-margin) viewport.
+        let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
+
+        let (px, py) = crate::positioning::get_point_position(
+            offset_x as f32,
+            offset_y as f32,
+            layer_w,
+            layer_h,
+            &camera_view,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
+            view_params.aspect_ratio_mode,
+            view_params.aspect_ratio_alignment_mode,
+            Some(&model_matrix_raw),
+        );
+
+        let (sw, sh) = crate::positioning::get_point_size(
+            img_w as f32,
+            img_h as f32,
+            layer_w,
+            layer_h,
+            &camera_view,
+            layer_params.data_unit_mode_x,
+            layer_params.data_unit_mode_y,
+            view_params.aspect_ratio_mode,
+            view_params.aspect_ratio_alignment_mode,
+            Some(&model_matrix_raw),
+        );
+
+        let final_x = px as f64;
+        let final_y = (layer_h - py - sh) as f64;
+        let final_w = sw as f64;
+        let final_h = sh as f64;
+
+        let bitmask_visible = final_x < layer_w as f64
+            && final_x + final_w > 0.0
+            && final_y < layer_h as f64
+            && final_y + final_h > 0.0;
+
+        if !bitmask_visible {
+            update_svg(ctx, &[]);
+            return;
+        }
+
         // On-screen (layer-pixel) Y extent of one mask texel: the conversion
         // between the mask-texel space the rasterization below works in and
         // the layer pixels the stroke widths are matched against.
@@ -1528,8 +1574,14 @@ impl DrawToSvg for BitmaskLayer {
         // and it is chosen so that one cell is at most one layer pixel, the
         // same granularity as the GPU's fragment grid.
         //
-        // TODO: currently, bitmask texels/pixels that fall outside the layer bounds are rendered, and clipped via the clipping rectangle.
-        // Instead, determine which bitmask data falls outside the bounds, and skip rasterization of this data altogether, to improve performance.
+        // The whole-mask visibility check above already skips rasterizing
+        // entirely when none of the mask is in view. When it's only
+        // partially in view, though, texels/pixels outside the layer bounds
+        // are still rasterized here and clipped via the clipping rectangle.
+        // TODO: determine which bitmask data falls outside the bounds in that
+        // case, and skip rasterizing it too, to improve performance further.
+        // TODO: reuse this entire-bitmask out-of-layer-bounds logic during WGPU-based rendering as well?
+        // TODO: reuse this out-of-layer-bounds logic in the BitmapLayer as well?
         let raster_w = img_w * up;
         let raster_h = img_h * up;
         let up_f = up as f32;
@@ -1632,39 +1684,6 @@ impl DrawToSvg for BitmaskLayer {
 
         let png = encode_png_rgba(raster_w, raster_h, &rgba);
         let href = format!("data:image/png;base64,{}", base64_encode(&png));
-
-        let (offset_x, offset_y) = layer_params.pixel_offset.unwrap_or((0, 0));
-
-        let (px, py) = crate::positioning::get_point_position(
-            offset_x as f32,
-            offset_y as f32,
-            layer_w,
-            layer_h,
-            &camera_view,
-            layer_params.data_unit_mode_x,
-            layer_params.data_unit_mode_y,
-            view_params.aspect_ratio_mode,
-            view_params.aspect_ratio_alignment_mode,
-            Some(&model_matrix_raw),
-        );
-
-        let (sw, sh) = crate::positioning::get_point_size(
-            img_w as f32,
-            img_h as f32,
-            layer_w,
-            layer_h,
-            &camera_view,
-            layer_params.data_unit_mode_x,
-            layer_params.data_unit_mode_y,
-            view_params.aspect_ratio_mode,
-            view_params.aspect_ratio_alignment_mode,
-            Some(&model_matrix_raw),
-        );
-
-        let final_x = px as f64;
-        let final_y = (layer_h - py - sh) as f64;
-        let final_w = sw as f64;
-        let final_h = sh as f64;
 
         // The raster covers exactly the same rect either way -- `up` only
         // changes how many cells that rect is divided into, not where it sits.

@@ -1348,3 +1348,30 @@ async fn test_bitmask_layer_square_contain_data_units_empty_mask() {
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_empty_mask").await;
 }
+
+// ── Bitmask fully outside layer bounds ────────────────────────────────────────
+
+// `pixel_offset` places the 4x4 mask at (1000, 1000) on a 100x100 canvas, so
+// its on-screen rect (1000..1004, 1000..1004) has no overlap whatsoever with
+// the layer's visible area (0..100, 0..100) -- the mask is entirely off-screen.
+//
+// Intended behavior for the SVG path: `BitmaskLayer::draw` (`DrawToSvg` impl)
+// must detect that none of the mask overlaps the layer bounds *before* doing
+// any CPU rasterization, and skip rasterizing/encoding the mask entirely
+// rather than rasterizing an image that would just be clipped away by
+// `clip_rect`. So the resulting SVG snapshot must contain no bitmask image
+// element (or containing group) at all -- not merely a clipped-to-nothing one.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_pixel_units_fully_out_of_bounds() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(BitmaskLayerParams {
+            pixel_offset: Some((1000, 1000)),
+            ..bitmask_cyx_pixels()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_pixel_units_fully_out_of_bounds").await;
+}
