@@ -38,7 +38,9 @@ current/
 snaps-dirty/
 
 skills-lock.json
-.claude/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/skills/autoresearch
 .agents/
 
 # R stuff
@@ -64,3 +66,5 @@ bindings-r/src/.cargo/
 bindings-js/**/CHANGELOG.md
 crates/**/CHANGELOG.md
 RELEASE_NOTES.md
+
+references/

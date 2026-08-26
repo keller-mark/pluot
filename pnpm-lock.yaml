@@ -17,6 +17,9 @@ importers:
       '@webgpu/types':
         specifier: ~0.1.69
         version: 0.1.69
+      degit:
+        specifier: ^3.8.0
+        version: 3.8.0
       gh-pages:
         specifier: ^6.3.0
         version: 6.3.0
@@ -2088,6 +2091,11 @@ packages:
 
   defu@6.1.7:
     resolution: {integrity: sha512-7z22QmUWiQ/2d0KkdYmANbRUVABpZ9SNYyH5vx6PZ+nE5bcC0l7uFvEfHlyld/HcGBFTL536ClDt3DEcSlEJAQ==}
+
+  degit@3.8.0:
+    resolution: {integrity: sha512-ZHJCvLjT0B9mo3Z7wX/luIJBLiO0N4ZkTvZTST72FAoDhUVBCmGWuOvlMRHJGEc1G3PDqE1Dk9UP5ExQCV5XzQ==}
+    engines: {node: '>=20.0.0'}
+    hasBin: true
 
   depd@2.0.0:
     resolution: {integrity: sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==}
@@ -6107,6 +6115,8 @@ snapshots:
       gopd: 1.2.0
 
   defu@6.1.7: {}
+
+  degit@3.8.0: {}
 
   depd@2.0.0: {}
 
