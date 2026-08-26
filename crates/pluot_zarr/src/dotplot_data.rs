@@ -9,14 +9,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_string};
+use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use crate::adata_io::{read_dataframe_index, read_dense_column_numeric, read_encoding, read_string_array};
+use crate::adata_io::{read_dataframe_index, read_encoding, read_matrix_column_f32, read_string_array};
 use crate::adata_metadata::AnnDataEncoding;
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
@@ -255,7 +255,8 @@ pub async fn load_gene_summaries_for_gene(
         var_colname.to_string(),
         gene_name.to_string(),
     ];
-    let expr = match use_memo_numeric_data(async || read_dense_column_numeric(store.clone(), &array_path, col_index).await, &expr_keys, cache_enabled).await {
+    // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
+    let expr_values = match use_memo_vec_f32(async || read_matrix_column_f32(store.clone(), &array_path, col_index).await, &expr_keys, cache_enabled).await {
         Ok(expr) => expr,
         Err(error) => {
             if is_timed_out_zarrs_error(&error) {
@@ -264,7 +265,6 @@ pub async fn load_gene_summaries_for_gene(
             panic!("Zarrs error loading AnnData expression column for gene \"{gene_name}\" at \"{array_path}\": {error:?}");
         }
     };
-    let expr_values = expr.as_f32();
 
     let empty_rows: Vec<u32> = Vec::new();
     let mut summaries = Vec::with_capacity(categories.len());
