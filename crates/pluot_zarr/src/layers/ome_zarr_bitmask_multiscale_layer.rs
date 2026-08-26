@@ -10,7 +10,7 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams, resolve_store_name,
+    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::multiscale_utils::{
@@ -25,17 +25,23 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 
-use crate::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayer, OmeZarrBitmapLayerParams};
+use crate::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayer, OmeZarrBitmaskLayerParams};
 use crate::layers::ome_zarr_utils::{
-    OmeZarrChannelSetting, OmeDim, OmeDimensionOrder,
+    OmeZarrBitmaskChannelSetting, OmeDim, OmeDimensionOrder,
     PhysicalRect, rects_overlap, bounding_box,
     axis_unit_space_to_coefficient_and_exponent,
 };
 
-/// Layer params struct for [`OmeZarrMultiscaleLayer`].
+/// Layer params struct for [`OmeZarrBitmaskMultiscaleLayer`].
+///
+/// Mirrors [`crate::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams`]
+/// field-for-field, except `channel_settings` (bitmask coloring rather than
+/// an intensity window / pseudocolor) and the addition of
+/// `stroke_width_unit_mode`, forwarded to every
+/// [`OmeZarrBitmaskLayer`] sublayer.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct OmeZarrMultiscaleLayerParams {
+pub struct OmeZarrBitmaskMultiscaleLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
     /// Name of the top-level store to read from (a key in `RenderParams::stores`).
@@ -50,11 +56,15 @@ pub struct OmeZarrMultiscaleLayerParams {
     /// T slice index. Defaults to 0.
     pub target_t: Option<u32>,
     /// Channel settings specifying which channels to render and how.
-    pub channel_settings: Vec<OmeZarrChannelSetting>,
+    pub channel_settings: Vec<OmeZarrBitmaskChannelSetting>,
+    /// How to interpret each channel's `stroke_width` (screen pixels, data
+    /// units, or a fraction of the layer height). See
+    /// [`pluot_core::layers::bitmask_layer::BitmaskLayerParams::stroke_width_unit_mode`].
+    pub stroke_width_unit_mode: UnitsMode,
     pub opacity: f32,
 }
 
-impl Default for OmeZarrMultiscaleLayerParams {
+impl Default for OmeZarrBitmaskMultiscaleLayerParams {
     fn default() -> Self {
         Self {
             layer_id: "".to_string(),
@@ -65,20 +75,21 @@ impl Default for OmeZarrMultiscaleLayerParams {
             target_z: None,
             target_t: None,
             channel_settings: vec![],
+            stroke_width_unit_mode: UnitsMode::Pixels,
             opacity: 1.0,
         }
     }
 }
 
 thread_local! {
-    static USE_MEMO_CACHE_MULTISCALE_METADATA: RefCell<Option<HashMap<Vec<String>, Arc<OmeZarrMultiscaleMetadata>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_MULTISCALE_METADATA: RefCell<Option<HashMap<Vec<String>, Arc<OmeZarrBitmaskMultiscaleMetadata>>>> = const { RefCell::new(None) };
 }
 
 async fn use_memo_multiscale_metadata(
-    initializer: impl AsyncFnOnce() -> OmeZarrMultiscaleMetadata,
+    initializer: impl AsyncFnOnce() -> OmeZarrBitmaskMultiscaleMetadata,
     keys: &[String],
     cache_enabled: bool,
-) -> Arc<OmeZarrMultiscaleMetadata> {
+) -> Arc<OmeZarrBitmaskMultiscaleMetadata> {
     if !cache_enabled {
         return Arc::new(initializer().await);
     }
@@ -109,7 +120,7 @@ async fn use_memo_multiscale_metadata(
 }
 
 /// Cached metadata parsed from the OME-Zarr group.
-struct OmeZarrMultiscaleMetadata {
+struct OmeZarrBitmaskMultiscaleMetadata {
     /// Resolution levels derived from OME-Zarr datasets (finest first).
     resolution_levels: Vec<ResolutionLevel>,
     /// Zarr array path for each resolution level.
@@ -124,13 +135,13 @@ struct OmeZarrMultiscaleMetadata {
     dimension_order: OmeDimensionOrder,
 }
 
-// OmeZarrMultiscaleLayer.
+// OmeZarrBitmaskMultiscaleLayer.
 // This layer queries for metadata and orchestrates sublayers.
 
 /// A sublayer group for a single resolution level.
 struct LevelSublayers {
     level_idx: usize,
-    sublayers: Vec<OmeZarrBitmapLayer>,
+    sublayers: Vec<OmeZarrBitmaskLayer>,
     /// Visible tile for each sublayer (parallel to `sublayers`).
     tiles: Vec<VisibleTile>,
     /// Physical rectangle for each sublayer (parallel to `sublayers`).
@@ -141,19 +152,19 @@ struct LevelSublayers {
     prepare_results: Vec<PrepareResult>,
 }
 
-pub struct OmeZarrMultiscaleLayer {
+pub struct OmeZarrBitmaskMultiscaleLayer {
     view_params: ViewParams,
-    layer_params: OmeZarrMultiscaleLayerParams,
+    layer_params: OmeZarrBitmaskMultiscaleLayerParams,
     store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: String,
     /// Cached metadata, loaded on first prepare() call.
-    metadata: Option<Arc<OmeZarrMultiscaleMetadata>>,
+    metadata: Option<Arc<OmeZarrBitmaskMultiscaleMetadata>>,
     /// Sublayers grouped by resolution level, ordered coarsest-first.
     level_sublayers: Vec<LevelSublayers>,
 }
 
-impl OmeZarrMultiscaleLayer {
-    pub fn new(view_params: ViewParams, layer_params: OmeZarrMultiscaleLayerParams) -> Self {
+impl OmeZarrBitmaskMultiscaleLayer {
+    pub fn new(view_params: ViewParams, layer_params: OmeZarrBitmaskMultiscaleLayerParams) -> Self {
         let store_name = resolve_store_name(&layer_params.store_name, &view_params);
 
         let store = view_params.get_store(&store_name);
@@ -169,7 +180,7 @@ impl OmeZarrMultiscaleLayer {
     }
 
     /// Load and parse OME-Zarr multiscale metadata from the zarr group, using the cache.
-    async fn load_metadata(&self) -> Arc<OmeZarrMultiscaleMetadata> {
+    async fn load_metadata(&self) -> Arc<OmeZarrBitmaskMultiscaleMetadata> {
         let store = self.store.clone();
         let group_path = self
             .layer_params
@@ -286,7 +297,7 @@ impl OmeZarrMultiscaleLayer {
                 array_metadatas.push(array_metadata);
             }
 
-            OmeZarrMultiscaleMetadata {
+            OmeZarrBitmaskMultiscaleMetadata {
                 resolution_levels,
                 dataset_paths,
                 full_shapes,
@@ -299,11 +310,11 @@ impl OmeZarrMultiscaleLayer {
         return metadata_future;
     }
 
-    /// Build OmeZarrBitmapLayer sublayers for visible tiles at levels from coarsest to target_level.
+    /// Build OmeZarrBitmaskLayer sublayers for visible tiles at levels from coarsest to target_level.
     /// This method only constructs sublayer structs. No tile data is loaded here.
     fn build_sublayers(
         &self,
-        metadata: &OmeZarrMultiscaleMetadata,
+        metadata: &OmeZarrBitmaskMultiscaleMetadata,
     ) -> Vec<LevelSublayers> {
         let target_level = select_resolution_level(
             &self.view_params,
@@ -357,9 +368,9 @@ impl OmeZarrMultiscaleLayer {
 
             for tile in &tiles {
 
-                sublayers.push(OmeZarrBitmapLayer::new(
+                sublayers.push(OmeZarrBitmaskLayer::new(
                     self.view_params.clone(),
-                    OmeZarrBitmapLayerParams {
+                    OmeZarrBitmaskLayerParams {
                         store_name: Some(self.store_name.clone()),
                         array_path: dataset_path.clone(),
                         array_metadata: Some(array_metadata.clone()),
@@ -372,6 +383,7 @@ impl OmeZarrMultiscaleLayer {
                         slice_x: Some((tile.tile_x_start, tile.tile_x_end)),
                         slice_y: Some((tile.tile_y_start, tile.tile_y_end)),
                         channel_settings: self.layer_params.channel_settings.clone(),
+                        stroke_width_unit_mode: self.layer_params.stroke_width_unit_mode,
                         layer_id: format!(
                             "{}_level{}_tile_{}_{}",
                             self.layer_params.layer_id, level_idx, tile.row, tile.col
@@ -452,7 +464,7 @@ impl OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for OmeZarrMultiscaleLayer {
+impl PreparedLayer for OmeZarrBitmaskMultiscaleLayer {
     async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         // Load metadata (cached via use_memo_multiscale_metadata).
 
@@ -479,21 +491,6 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
         // Collect all sublayers at each resolution level (coarse to fine),
         // and prepare them on a per-layer basis, using maybe_timeout to bail early at each level.
 
-        // Prepare all sublayers (each loads its own tile data with caching).
-        /*
-        let mut any_bailed = false;
-        for level_group in &mut self.level_sublayers {
-            let mut results = Vec::new();
-            for sublayer in &mut level_group.sublayers {
-                let result = sublayer.prepare().await;
-                if result.bailed_early {
-                    any_bailed = true;
-                }
-                results.push(result);
-            }
-            level_group.prepare_results = results;
-        }
-        */
         // Prepare all sublayers concurrently across all levels.
         let level_futures = self.level_sublayers.iter_mut().map(|level_group| async {
             let futures = level_group.sublayers.iter_mut().map(|sublayer| sublayer.prepare(None));
@@ -523,7 +520,7 @@ impl PreparedLayer for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
+impl DrawToRasterGpu for OmeZarrBitmaskMultiscaleLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
         // level_sublayers is ordered coarsest-first.
         // Draw levels from coarsest to finest, but skip coarser tiles that are
@@ -557,13 +554,13 @@ impl DrawToRasterGpu for OmeZarrMultiscaleLayer {
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for OmeZarrMultiscaleLayer {
+impl DrawToRasterCpu for OmeZarrBitmaskMultiscaleLayer {
     async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for OmeZarrMultiscaleLayer {
+impl DrawToSvg for OmeZarrBitmaskMultiscaleLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         let num_groups = self.level_sublayers.len();
 
@@ -586,7 +583,7 @@ impl DrawToSvg for OmeZarrMultiscaleLayer {
     }
 }
 
-impl PickableLayer for OmeZarrMultiscaleLayer {
+impl PickableLayer for OmeZarrBitmaskMultiscaleLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let DataCoord::TwoD { x: cx, y: cy } = data_coord? else {
             return None;

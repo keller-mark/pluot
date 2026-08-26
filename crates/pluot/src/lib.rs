@@ -28,6 +28,7 @@ pub use pluot_core::layers::rect_layer::{RectLayerParams};
 pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 pub use pluot_core::render_traits::{FontWeight, FontStyle};
 pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder};
+pub use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskChannelSettings};
 pub use pluot_core::numeric_data::NumericData;
 pub use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 pub use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
@@ -41,7 +42,9 @@ pub use pluot_core::composite_layers::legend_point_size_quantitative_layer::Lege
 pub use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 pub use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
-pub use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
+pub use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams;
+pub use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
+pub use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 pub use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 pub use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 

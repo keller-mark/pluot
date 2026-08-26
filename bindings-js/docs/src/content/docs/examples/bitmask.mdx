@@ -1,0 +1,180 @@
+---
+title: Bitmask
+description: Bitmask layer example.
+sidebar:
+    order: 41
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+export const O = 0;
+
+{/*
+  A 16x16 segmentation mask with four differently-shaped objects, whose
+  per-pixel values are object ids (0 meaning background): a diamond (1), a
+  triangle (2), a plus (3), and a ring (4). Object 4's interior hole exercises
+  the outline of a non-simply-connected object. `O` is used for the background so
+  that the shapes stand out when reading the array as a picture. Defined once
+  here and shared by both layers below, which differ only in
+  `stroke_width_unit_mode`.
+*/}
+export const MASK = [
+  O, O, O, O, O, O, O, O, O, O, O, O, O, O, O, O,
+  O, O, O, 1, 1, O, O, O, O, O, O, 2, 2, O, O, O,
+  O, O, 1, 1, 1, 1, O, O, O, O, 2, 2, 2, 2, O, O,
+  O, 1, 1, 1, 1, 1, 1, O, O, O, 2, 2, 2, 2, O, O,
+  O, 1, 1, 1, 1, 1, 1, O, O, 2, 2, 2, 2, 2, 2, O,
+  O, O, 1, 1, 1, 1, O, O, O, 2, 2, 2, 2, 2, 2, O,
+  O, O, O, 1, 1, O, O, O, O, 2, 2, 2, 2, 2, 2, O,
+  O, O, O, O, O, O, O, O, O, O, O, O, O, O, O, O,
+  O, O, O, O, O, O, O, O, O, O, O, O, O, O, O, O,
+  O, O, O, 3, 3, O, O, O, O, 4, 4, 4, 4, 4, 4, O,
+  O, O, O, 3, 3, O, O, O, O, 4, 4, 4, 4, 4, 4, O,
+  O, 3, 3, 3, 3, 3, 3, O, O, 4, 4, O, O, 4, 4, O,
+  O, 3, 3, 3, 3, 3, 3, O, O, 4, 4, O, O, 4, 4, O,
+  O, O, O, 3, 3, O, O, O, O, 4, 4, 4, 4, 4, 4, O,
+  O, O, O, 3, 3, O, O, O, O, 4, 4, 4, 4, 4, 4, O,
+  O, O, O, O, O, O, O, O, O, O, O, O, O, O, O, O,
+];
+
+{/*
+  Each object is colored by its id via a custom categorical palette: object k
+  looks up `values[k - 1]` (ids are 1-based, since 0 means background), which
+  indexes into `colormap`.
+*/}
+export const OBJECT_COLORS = {
+  color_mode: "CategoricalCustom",
+  color_params: {
+    values: { dtype: "Uint8", values: [0, 1, 2, 3] },
+    colormap: [[31, 119, 180], [255, 127, 14], [44, 160, 44], [214, 39, 40]],
+  },
+};
+
+{/*
+  Places the 16x16 mask as a 0.4 x 0.4 square in data space (so one mask texel
+  is 0.025 data units), translated to `tx`. The BitmaskLayer's vertex positions
+  are mask texel coordinates, which `model_matrix` maps into data space, so this
+  is where a texel's physical size is decided. Column-major, as elsewhere.
+*/}
+export const modelMatrix = (tx, ty) => [
+  0.025, 0.0,   0.0, 0.0,
+  0.0,   0.025, 0.0, 0.0,
+  0.0,   0.0,   1.0, 0.0,
+  tx,    ty,   0.0, 1.0,
+];
+
+
+Example usage of the `BitmaskLayer` with `filled: true` on top, and two different `stroke_width_unit_mode`
+values below. All three layers render the same 16x16 segmentation mask.
+
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"bitmask-example-stroke-width-unit-modes"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "BitmaskLayer",
+          layer_params: {
+            layer_id: "data_stroke",
+            bounds: null,
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            // 0.05 data units == 2 texels, at any zoom level.
+            stroke_width_unit_mode: "Data",
+            model_matrix: modelMatrix(0.05, 0.6),
+            pixel_offset: null,
+            dimension_order: "CYX",
+            shape: [1, 16, 16],
+            channel_settings: [
+              {
+                fill_color: OBJECT_COLORS,
+                fill_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+                filled: true,
+                stroked: false,
+              },
+            ],
+            opacity: 1.0,
+            data: { dtype: "Uint8", values: MASK },
+          }
+        },
+        {
+          layer_type: "BitmaskLayer",
+          layer_params: {
+            layer_id: "data_stroke",
+            bounds: null,
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            // 0.05 data units == 2 texels, at any zoom level.
+            stroke_width_unit_mode: "Data",
+            model_matrix: modelMatrix(0.05, 0.1),
+            pixel_offset: null,
+            dimension_order: "CYX",
+            shape: [1, 16, 16],
+            channel_settings: [
+              {
+                stroke_color: OBJECT_COLORS,
+                stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+                filled: false,
+                stroked: true,
+                stroke_width: { size_mode: "UniformSize", size_params: 0.01 },
+              },
+            ],
+            opacity: 1.0,
+            data: { dtype: "Uint8", values: MASK },
+          }
+        },
+        {
+          layer_type: "BitmaskLayer",
+          layer_params: {
+            layer_id: "pixel_stroke",
+            bounds: null,
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            // 25 screen px, which is 2 texels only at the starting view.
+            stroke_width_unit_mode: "Pixels",
+            model_matrix: modelMatrix(0.55, 0.1),
+            pixel_offset: null,
+            dimension_order: "CYX",
+            shape: [1, 16, 16],
+            channel_settings: [
+              {
+                stroke_color: OBJECT_COLORS,
+                stroke_opacity: { opacity_mode: "UniformOpacity", opacity_params: 1.0 },
+                stroked: true,
+                filled: false,
+                stroke_width: { size_mode: "UniformSize", size_params: 10.0 },
+              },
+            ],
+            opacity: 1.0,
+            data: { dtype: "Uint8", values: MASK },
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+      ]
+    }}
+    viewMode={"2d"}
+    width={550}
+    height={550}
+    marginLeft={50}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={50}
+/>

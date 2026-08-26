@@ -8,6 +8,7 @@ use pluot_core::composite_layers::polygon_layer::PolygonLayerParams;
 use pluot_core::layers::rect_layer::{RectLayerParams};
 use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
+use pluot_core::layers::bitmask_layer::BitmaskLayerParams;
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
@@ -19,7 +20,9 @@ use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPo
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
 use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
-use pluot_zarr::layers::ome_zarr_multiscale_layer::OmeZarrMultiscaleLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
@@ -46,6 +49,7 @@ pub enum LayerParams {
     RectLayer(RectLayerParams),
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),
+    BitmaskLayer(BitmaskLayerParams),
 
     PolygonLayer(PolygonLayerParams),
     CurveLayer(CurveLayerParams),
@@ -64,7 +68,9 @@ pub enum LayerParams {
     ZarrBarPlotLayer(ZarrBarPlotLayerParams),
     ZarrHistogramLayer(ZarrHistogramLayerParams),
     OmeZarrBitmapLayer(OmeZarrBitmapLayerParams),
-    OmeZarrMultiscaleLayer(OmeZarrMultiscaleLayerParams),
+    OmeZarrBitmapMultiscaleLayer(OmeZarrBitmapMultiscaleLayerParams),
+    OmeZarrBitmaskLayer(OmeZarrBitmaskLayerParams),
+    OmeZarrBitmaskMultiscaleLayer(OmeZarrBitmaskMultiscaleLayerParams),
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
 
     // 3D
