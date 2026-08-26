@@ -9,6 +9,19 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use crate::adata_metadata::AnnDataEncoding;
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
+/// Upper bound on how much of a sparse matrix's `indptr`, `indices` or `data` array is read — and
+/// so held in memory — at one time.
+///
+/// A CSR matrix's non-zeros for a single column are spread across every row, so extracting one
+/// column has to traverse the whole matrix. Doing that in bounded pieces keeps peak memory
+/// proportional to the `n_obs`-length column being produced rather than to the size of the matrix,
+/// which for a large `X` is the difference between tens of megabytes and several gigabytes.
+const MAX_BYTES_PER_READ: u64 = 36 << 20;
+
+/// [`MAX_BYTES_PER_READ`] as a number of elements, at the 8-byte width of the widest dtype we
+/// accept. Narrower dtypes therefore read below the byte budget rather than above it.
+const MAX_ELEMENTS_PER_READ: u64 = MAX_BYTES_PER_READ / 8;
+
 
 /// Reads the `attributes` of the zarr group or array at `path` and
 /// deserializes them into an [`AnnDataEncoding`], regardless of whether the
@@ -260,29 +273,84 @@ where
 }
 
 /// Maps ascending positions within a CSR matrix's `indices`/`data` arrays to the row each entry
-/// belongs to, given the matrix's `indptr`. The returned rows are non-decreasing.
+/// belongs to, given a block of the matrix's `indptr`. The returned rows are non-decreasing and
+/// numbered relative to the first row of that block.
 ///
 /// Each position is converted into the `indptr` dtype once, rather than the `indptr` elements being
 /// widened: `entries` holds at most one position per row of the requested column, so this touches
 /// far fewer values than converting `indptr` itself would.
-fn rows_for_entries<P>(indptr: &[P], entries: &[usize]) -> Vec<usize>
+fn rows_for_entries<P>(indptr: &[P], entries: &[u64]) -> Vec<usize>
 where
-    P: Copy + Ord + TryFrom<usize>,
+    P: Copy + Ord + TryFrom<u64>,
 {
     entries
         .iter()
         .map(|&entry| {
             let Ok(entry) = P::try_from(entry) else {
-                panic!("Sparse matrix entry index does not fit in the dtype of its indptr array");
+                panic!("Sparse matrix entry position does not fit in the dtype of its indptr array");
             };
             // `indptr` is non-decreasing and row `r` owns the entry positions `indptr[r]..indptr[r + 1]`,
             // so the row containing `entry` is the last one whose start offset is `<= entry`.
             indptr
                 .partition_point(|&row_start| row_start <= entry)
                 .checked_sub(1)
-                .expect("Sparse matrix indptr must start at offset 0")
+                .expect("Sparse matrix entry position must lie at or after the block's first indptr offset")
         })
         .collect()
+}
+
+/// Builds the dense `n_obs`-length column `col_index` of the CSR matrix at `matrix_path`, in the
+/// `data` array's own dtype `V`.
+///
+/// The matrix is traversed in two nested fixed-size steps, so no array is ever held whole: `indptr`
+/// is read one block of `budget` rows at a time, and each block's slice of `indices` is then read
+/// `budget` positions at a time. Block boundaries need not line up with row boundaries — every
+/// position is resolved to its row independently, by looking it up in the `indptr` block it came
+/// from — and a span's `data` is fetched only once its `indices` have shown that the span holds
+/// something for this column, which for a single gene skips nearly every span.
+async fn read_csr_column_values<V>(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    matrix_path: &str,
+    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    col_index: u64,
+    n_obs: usize,
+    budget: u64,
+) -> Result<Vec<V>, zarrs::array::ArrayError>
+where
+    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
+{
+    let indptr_path = format!("{matrix_path}/indptr");
+    let indices_path = format!("{matrix_path}/indices");
+    let elements_per_read = budget as usize;
+
+    let mut column = vec![V::default(); n_obs];
+    for first_row in (0..n_obs).step_by(elements_per_read) {
+        let rows_in_block = elements_per_read.min(n_obs - first_row);
+        // One offset per row of the block, plus the terminating offset that closes its last row.
+        let indptr_block = read_int_array_range(store.clone(), &indptr_path, first_row as u64, (first_row + rows_in_block) as u64 + 1).await?;
+        let (block_start, block_stop) = (indptr_block.offset_at(0), indptr_block.offset_at(rows_in_block));
+
+        for span_start in (block_start..block_stop).step_by(elements_per_read) {
+            let span_stop = (span_start + budget).min(block_stop);
+            let indices_span = read_int_array_range(store.clone(), &indices_path, span_start, span_stop).await?;
+            let matches = with_int_slice!(&indices_span, |indices| find_column_entries(indices, col_index));
+            if matches.is_empty() {
+                continue;
+            }
+
+            // `find_column_entries` reports positions within the span it was given; shift those to
+            // absolute positions in `indices`/`data` to resolve each one against `indptr`.
+            let positions: Vec<u64> = matches.iter().map(|&position| span_start + position as u64).collect();
+            let rows = with_int_slice!(&indptr_block, |offsets| rows_for_entries(offsets, &positions));
+
+            let subset = zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]);
+            let values = data_array.async_retrieve_array_subset::<Vec<V>>(&subset).await?;
+            for (&position, &row) in matches.iter().zip(rows.iter()) {
+                column[first_row + row] = values[position];
+            }
+        }
+    }
+    Ok(column)
 }
 
 /// Reads one column (single gene, all rows) of a CSC-sparse AnnData matrix (e.g. `X` or a
@@ -345,51 +413,25 @@ pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 /// path to the `csr_matrix`-encoded group, which has sibling `indptr`, `indices`, and `data`
 /// arrays. Unlike the CSC case, a CSR matrix's `indptr` is indexed by row rather than column, so
 /// the requested column's non-zero entries are scattered across every row's range: there is no
-/// contiguous slice of `indices`/`data` to target, so all of `indices` and `data` (i.e. every
-/// non-zero entry of the whole matrix) must be read. This still avoids ever materializing the
-/// whole dense `n_obs x n_var` matrix, though, scattering entries directly into the single
-/// requested column's output.
-/// TODO: Before reading each of these arrays, ensure that we are not reading in more data than a specified threshold (e.g., 1M items or a certain number of gigabytes)
-/// If this threshold is exceeded, read `indices`, `data`, and so on in multiple parts,
-/// discarding them as soon as they are no longer needed to populate the final array of values,
-/// before moving on to read subsequent parts.
+/// contiguous slice of `indices`/`data` to target, and finding them means traversing the whole
+/// matrix. [`read_csr_column_values`] does that traversal in fixed-size pieces, discarding each as
+/// soon as the entries it contributes have been written, so peak memory stays proportional to the
+/// `n_obs`-length output rather than to the size of the matrix.
 pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
     let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
     let n_obs = shape[0] as usize;
 
-    let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), 0, n_obs as u64 + 1).await?;
-    let nnz = indptr.offset_at(n_obs);
-    let col_indices = read_int_array_range(store.clone(), &format!("{matrix_path}/indices"), 0, nnz).await?;
-
-    // Locate the requested column's non-zero entries by their position in `indices`/`data`, then
-    // resolve the row owning each. Splitting the two steps keeps each one generic over a single
-    // dtype: scanning `indices` never has to know the dtype of `indptr`, or vice versa.
-    let entries = with_int_slice!(&col_indices, |indices| find_column_entries(indices, col_index));
-    let rows = with_int_slice!(&indptr, |offsets| rows_for_entries(offsets, &entries));
-
     let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store, &data_path).await.unwrap();
-    let subset = data_array.subset_all();
+    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
 
     use zarrs::plugin::ZarrVersion;
     let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
 
     macro_rules! extract {
         ($rust_ty:ty, $variant:ident) => {{
-            let mut column = vec![<$rust_ty>::default(); n_obs];
-            if !entries.is_empty() {
-                let values = data_array.async_retrieve_array_subset::<Vec<$rust_ty>>(&subset).await?;
-                // A well-formed CSR matrix holds at most one entry per (row, column); should
-                // duplicates occur anyway, keep the first, which — `entries` being ascending and
-                // `rows` therefore non-decreasing — is the first of each run of equal rows.
-                let mut prev_row = None;
-                for (&entry, &row) in entries.iter().zip(rows.iter()) {
-                    if prev_row != Some(row) {
-                        column[row] = values[entry];
-                        prev_row = Some(row);
-                    }
-                }
-            }
+            let column = read_csr_column_values::<$rust_ty>(
+                store.clone(), matrix_path, &data_array, col_index, n_obs, MAX_ELEMENTS_PER_READ,
+            ).await?;
             NumericData::$variant(Arc::new(column))
         }};
     }
@@ -421,30 +463,54 @@ mod tests {
     // CSC: indptr [0, 1, 2, 3, 4], indices [2, 0, 2, 0], data [3, 5, 8, 7]
     const DENSE: [[i32; 4]; 3] = [[0, 5, 0, 7], [0, 0, 0, 0], [3, 0, 8, 0]];
 
-    /// Runs the same steps as [`read_csr_column_numeric`] over already-read arrays.
-    fn csr_column<P, C>(indptr: &[P], indices: &[C], data: &[i32], col_index: u64, n_obs: usize) -> Vec<i32>
+    /// Mirrors [`read_csr_column_values`] over already-read arrays, traversing them in the same
+    /// nested fixed-size steps so that the block/span boundary arithmetic is exercised. `budget`
+    /// stands in for [`MAX_ELEMENTS_PER_READ`]; values well below the matrix size force the
+    /// multi-block path that a realistic budget would only reach on a very large matrix.
+    fn csr_column<P, C>(indptr: &[P], indices: &[C], data: &[i32], col_index: u64, n_obs: usize, budget: u64) -> Vec<i32>
     where
-        P: Copy + Ord + TryFrom<usize>,
+        P: Copy + Ord + TryFrom<u64> + TryInto<u64>,
         C: Copy + Eq + TryFrom<u64>,
     {
-        let entries = find_column_entries(indices, col_index);
-        let rows = rows_for_entries(indptr, &entries);
+        let offset = |row: usize| -> u64 { indptr[row].try_into().ok().unwrap() };
+        let per_read = budget as usize;
+
         let mut column = vec![0i32; n_obs];
-        for (&entry, &row) in entries.iter().zip(rows.iter()) {
-            column[row] = data[entry];
+        for first_row in (0..n_obs).step_by(per_read) {
+            let rows_in_block = per_read.min(n_obs - first_row);
+            let indptr_block = &indptr[first_row..=first_row + rows_in_block];
+            let (block_start, block_stop) = (offset(first_row), offset(first_row + rows_in_block));
+
+            for span_start in (block_start..block_stop).step_by(per_read) {
+                let span_stop = (span_start + budget).min(block_stop);
+                let span = &indices[span_start as usize..span_stop as usize];
+                let matches = find_column_entries(span, col_index);
+                if matches.is_empty() {
+                    continue;
+                }
+                let positions: Vec<u64> = matches.iter().map(|&p| span_start + p as u64).collect();
+                let rows = rows_for_entries(indptr_block, &positions);
+                for (&position, &row) in matches.iter().zip(rows.iter()) {
+                    column[first_row + row] = data[span_start as usize + position];
+                }
+            }
         }
         column
     }
 
     #[test]
-    fn csr_extraction_matches_the_dense_matrix() {
+    fn csr_extraction_matches_the_dense_matrix_at_every_budget() {
         let indptr: [i32; 4] = [0, 2, 2, 4];
         let indices: [i32; 4] = [1, 3, 0, 2];
         let data: [i32; 4] = [5, 7, 3, 8];
 
-        for col in 0..4u64 {
-            let expected: Vec<i32> = DENSE.iter().map(|row| row[col as usize]).collect();
-            assert_eq!(csr_column(&indptr, &indices, &data, col, 3), expected, "column {col}");
+        // A budget of 1 reads a single row and a single entry at a time — every block and span
+        // boundary the traversal can produce; 8 exceeds the matrix, so it reads everything at once.
+        for budget in 1..=8u64 {
+            for col in 0..4u64 {
+                let expected: Vec<i32> = DENSE.iter().map(|row| row[col as usize]).collect();
+                assert_eq!(csr_column(&indptr, &indices, &data, col, 3, budget), expected, "column {col}, budget {budget}");
+            }
         }
     }
 
@@ -456,22 +522,38 @@ mod tests {
         let indices: [u8; 4] = [1, 3, 0, 2];
         let data: [i32; 4] = [5, 7, 3, 8];
 
-        assert_eq!(csr_column(&indptr, &indices, &data, 1, 3), vec![5, 0, 0]);
+        assert_eq!(csr_column(&indptr, &indices, &data, 1, 3, 2), vec![5, 0, 0]);
         // A column index too large for the indices dtype simply matches nothing.
-        assert_eq!(csr_column(&indptr, &indices, &data, 300, 3), vec![0, 0, 0]);
+        assert_eq!(csr_column(&indptr, &indices, &data, 300, 3, 2), vec![0, 0, 0]);
     }
 
     #[test]
-    fn csr_extraction_handles_empty_and_absent_columns() {
+    fn csr_extraction_handles_empty_rows_and_matrices() {
+        // Row 1 is empty (indptr[1] == indptr[2]), so it stays zero in every column.
         let indptr: [i32; 4] = [0, 2, 2, 4];
         let indices: [i32; 4] = [1, 3, 0, 2];
         let data: [i32; 4] = [5, 7, 3, 8];
+        for budget in 1..=8u64 {
+            assert_eq!(csr_column(&indptr, &indices, &data, 0, 3, budget)[1], 0);
+        }
 
-        // Row 1 is empty (indptr[1] == indptr[2]), so it stays zero in every column.
-        assert!(csr_column(&indptr, &indices, &data, 0, 3).iter().enumerate().all(|(row, &v)| row != 1 || v == 0));
+        // A matrix with no non-zeros at all reads no spans whatsoever.
+        assert_eq!(csr_column(&[0i32, 0, 0, 0], &[] as &[i32], &[], 2, 3, 2), vec![0, 0, 0]);
+    }
 
-        // A matrix with no non-zeros at all.
-        assert_eq!(csr_column(&[0i32, 0, 0, 0], &[] as &[i32], &[], 2, 3), vec![0, 0, 0]);
+    #[test]
+    fn csr_extraction_handles_a_row_larger_than_the_budget() {
+        // A single row holding more entries than one read allows: its entries span several reads,
+        // and each of those still has to resolve back to that same row.
+        //   row 0: [0, 0, 0], row 1: [1, 2, 3], row 2: [0, 0, 0]
+        let indptr: [i32; 4] = [0, 0, 3, 3];
+        let indices: [i32; 3] = [0, 1, 2];
+        let data: [i32; 3] = [1, 2, 3];
+
+        for budget in 1..=4u64 {
+            assert_eq!(csr_column(&indptr, &indices, &data, 0, 3, budget), vec![0, 1, 0], "budget {budget}");
+            assert_eq!(csr_column(&indptr, &indices, &data, 2, 3, budget), vec![0, 3, 0], "budget {budget}");
+        }
     }
 
     #[test]
@@ -487,6 +569,16 @@ mod tests {
         // Rows 1 and 3 are empty; row 0 owns entries 0..2, row 2 owns 2..3, row 4 owns 3..5.
         let indptr: [i32; 6] = [0, 2, 2, 3, 3, 5];
         assert_eq!(rows_for_entries(&indptr, &[0, 1, 2, 3, 4]), vec![0, 0, 2, 4, 4]);
+    }
+
+    #[test]
+    fn rows_for_entries_numbers_rows_relative_to_its_indptr_block() {
+        // The tail of the same indptr, as a block covering rows 2..4: absolute positions resolve to
+        // rows 0 and 2 of the block, which the caller then shifts back by the block's first row.
+        let block: [i32; 3] = [2, 3, 3];
+        assert_eq!(rows_for_entries(&block, &[2]), vec![0]);
+        let block: [i32; 2] = [3, 5];
+        assert_eq!(rows_for_entries(&block, &[3, 4]), vec![0, 0]);
     }
 
     #[test]
