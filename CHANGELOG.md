@@ -1,4 +1,15 @@
 
+## 0.1.14
+
+### Patch Changes
+
+- Bump the size check in test.yml github action to 4.75MB. (`@pluot/core`) ([#293](https://github.com/keller-mark/pluot/pull/293))
+
+- Implement BitmaskLayer and zarr/multiscale variants. (`@pluot/core`) ([#289](https://github.com/keller-mark/pluot/pull/289))
+
+- Add support for loading sparse (csc and csr) matrices from AnnData objects. (`@pluot/core`) ([#290](https://github.com/keller-mark/pluot/pull/290))
+
+
 ## 0.1.13
 
 ### Patch Changes
