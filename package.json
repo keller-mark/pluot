@@ -41,7 +41,8 @@
     "unified": "^11.0.5",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
-    "mdast-util-to-string": "^4.0.0"
+    "mdast-util-to-string": "^4.0.0",
+    "degit": "^3.8.0"
   },
   "packageManager": "pnpm@9.7.0"
 }
