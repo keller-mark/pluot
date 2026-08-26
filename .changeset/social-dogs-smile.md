@@ -2,4 +2,4 @@
 "@pluot/core": patch
 ---
 
-Implement BitmaskLayer and zarr/multiscale variants"
+Implement BitmaskLayer and zarr/multiscale variants.
