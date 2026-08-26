@@ -4,7 +4,7 @@ description: Use when the user asks you to reference specific code, documentatio
 ---
 
 
-The (git-ignored) `references` directory is intended as a space to temporarily place read-only copies of code or documentation files/folders.
+The (git-ignored) `references` directory (at the root of the repo) is intended as a space to temporarily place read-only copies of code or documentation files/folders.
 These copies allow us to reference the logic or specifications of dependencies, related tools, or data formats by reading local files within the `references` directory.
 
 ## Pulling in a new reference
