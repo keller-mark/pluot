@@ -34,12 +34,8 @@ fn normalize(s: &str) -> String {
     s.lines().map(|l| l.trim_end()).collect::<Vec<_>>().join("\n")
 }
 
-fn assert_wgsl_eq(actual: &str, expected: &str) {
-    assert_eq!(normalize(actual), normalize(expected));
-}
-
-/// Compare assembled WGSL against a checked-in golden file, for output too
-/// large to keep inline as a literal.
+/// Compare assembled WGSL against a checked-in golden file in
+/// `tests/snaps-blessed/`.
 ///
 /// Writes the current output to `tests/snaps-dirty/<name>` and compares it
 /// against `tests/snaps-blessed/<name>`, panicking with blessing instructions
@@ -95,16 +91,8 @@ fn uniform_rgb_template_matches_expected() {
         .define("stroke_or_fill_property", "fill_color")
         .define("c_idx", "0")
         .build();
-    let expected = "\
-// BitmaskLayer per-channel ColorMode::UniformRgb (and None) — every object in
-// this channel shares the static color from the uniform. Templated per
-// (channel, fill/stroke) pair, hence the two-part function name.
-fn get_channel_fill_color_0(label_index: u32) -> vec3<f32> {
-  return u.channels[0].fill_color_static.rgb;
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_uniform_rgb_template.wgsl");
 }
 
 #[test]
@@ -120,23 +108,8 @@ fn instanced_rgb_template_matches_expected() {
         .inject_texture_sample_type("g", TextureDtype::U8)
         .inject_texture_sample_type("b", TextureDtype::U8)
         .build();
-    let expected = "\
-// BitmaskLayer per-channel ColorMode::InstancedRgb — per-object RGB from
-// three parallel value textures, indexed by object id (`label_index`).
-// Depends on `flat_texel_coord` being injected.
-@group(0) @binding(5) var channel_stroke_color_r_1: texture_2d<u32>;
-@group(0) @binding(6) var channel_stroke_color_g_1: texture_2d<u32>;
-@group(0) @binding(7) var channel_stroke_color_b_1: texture_2d<u32>;
-
-fn get_channel_stroke_color_1(label_index: u32) -> vec3<f32> {
-  let r = f32(textureLoad(channel_stroke_color_r_1, flat_texel_coord(label_index, textureDimensions(channel_stroke_color_r_1).x), 0).x) / 255.0;
-  let g = f32(textureLoad(channel_stroke_color_g_1, flat_texel_coord(label_index, textureDimensions(channel_stroke_color_g_1).x), 0).x) / 255.0;
-  let b = f32(textureLoad(channel_stroke_color_b_1, flat_texel_coord(label_index, textureDimensions(channel_stroke_color_b_1).x), 0).x) / 255.0;
-  return vec3<f32>(r, g, b);
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_instanced_rgb_template.wgsl");
 }
 
 #[test]
@@ -148,23 +121,8 @@ fn instanced_rgb_interleaved_template_matches_expected() {
         .define_bidx("rgb", 8)
         .inject_texture_sample_type("rgb", TextureDtype::U8)
         .build();
-    let expected = "\
-// BitmaskLayer per-channel ColorMode::InstancedRgbInterleaved — per-object
-// RGB from one interleaved value texture, indexed by object id
-// (`label_index`). Depends on `flat_texel_coord` being injected.
-@group(0) @binding(8) var channel_fill_color_rgb_2: texture_2d<u32>;
-
-fn get_channel_fill_color_2(label_index: u32) -> vec3<f32> {
-  let w = textureDimensions(channel_fill_color_rgb_2).x;
-  let base = label_index * 3u;
-  let r = f32(textureLoad(channel_fill_color_rgb_2, flat_texel_coord(base, w), 0).x) / 255.0;
-  let g = f32(textureLoad(channel_fill_color_rgb_2, flat_texel_coord(base + 1u, w), 0).x) / 255.0;
-  let b = f32(textureLoad(channel_fill_color_rgb_2, flat_texel_coord(base + 2u, w), 0).x) / 255.0;
-  return vec3<f32>(r, g, b);
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_instanced_rgb_interleaved_template.wgsl");
 }
 
 #[test]
@@ -178,24 +136,8 @@ fn categorical_template_matches_expected() {
         .define_bidx("palette", 10)
         .inject_texture_sample_type("labels", TextureDtype::U8)
         .build();
-    let expected = "\
-// BitmaskLayer per-channel ColorMode::Categorical / CategoricalCustom — an
-// integer \"set color\" index per object, indexed by object id (`label_index`)
-// against a palette uploaded as a 1-row RGBA texture. The index wraps around
-// (modulo) the palette length, handling negative values. Depends on
-// `flat_texel_coord` being injected.
-@group(0) @binding(9) var channel_fill_color_labels_3: texture_2d<u32>;
-@group(0) @binding(10) var channel_fill_color_palette_3: texture_2d<f32>;
-
-fn get_channel_fill_color_3(label_index: u32) -> vec3<f32> {
-  let raw = i32(textureLoad(channel_fill_color_labels_3, flat_texel_coord(label_index, textureDimensions(channel_fill_color_labels_3).x), 0).x);
-  let n = i32(textureDimensions(channel_fill_color_palette_3).x);
-  let idx = u32(((raw % n) + n) % n);
-  return textureLoad(channel_fill_color_palette_3, vec2<u32>(idx, 0u), 0).rgb;
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_categorical_template.wgsl");
 }
 
 #[test]
@@ -208,29 +150,8 @@ fn quantitative_template_matches_expected() {
         .inject_texture_sample_type("values", TextureDtype::F32)
         .define("colormap_fn_name", "viridis")
         .build();
-    let expected = "\
-// BitmaskLayer per-channel ColorMode::Quantitative — a per-object scalar
-// feature value, indexed by object id (`label_index`), normalized into 0-1
-// using the channel's (min, max) domain, then mapped through a continuous
-// colormap. The colormap function's source and name are injected by
-// ShaderBuilder as placeholders below (not spelled out here, to avoid the
-// literal placeholder text itself being matched and substituted). Depends on
-// `flat_texel_coord` being injected.
-@group(0) @binding(11) var channel_stroke_color_values_4: texture_2d<f32>;
-
-fn get_channel_stroke_color_4(label_index: u32) -> vec3<f32> {
-  var x = f32(textureLoad(channel_stroke_color_values_4, flat_texel_coord(label_index, textureDimensions(channel_stroke_color_values_4).x), 0).x);
-  let lo = u.channels[4].stroke_color_domain.x;
-  let hi = u.channels[4].stroke_color_domain.y;
-  x = clamp((x - lo) / max(hi - lo, 1e-20), 0.0, 1.0);
-  if (u.channels[4].stroke_color_reverse == 1u) {
-    x = 1.0 - x;
-  }
-  return viridis(x).rgb;
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_quantitative_template.wgsl");
 }
 
 #[test]
@@ -240,17 +161,8 @@ fn uniform_scalar_template_matches_expected() {
         .define("stroke_or_fill_property", "stroke_width")
         .define("c_idx", "0")
         .build();
-    let expected = "\
-// BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
-// (and None) — every object in this channel shares the static value from the
-// uniform, whose field is named after the property being resolved. Templated
-// per (channel, property) pair, hence the two-part function name.
-fn get_channel_stroke_width_0(label_index: u32) -> f32 {
-  return u.channels[0].stroke_width;
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_uniform_scalar_template.wgsl");
 }
 
 #[test]
@@ -262,95 +174,29 @@ fn instanced_scalar_template_matches_expected() {
         .define_bidx("values", 12)
         .inject_texture_sample_type("values", TextureDtype::F32)
         .build();
-    let expected = "\
-// BitmaskLayer per-channel SizeMode::InstancedSize /
-// OpacityMode::InstancedOpacity — one value per object, read from a value
-// texture indexed by object id (`label_index`). Objects past the end of the
-// array read the texture's zero padding, i.e. no stroke / full transparency.
-// Depends on `flat_texel_coord` being injected.
-@group(0) @binding(12) var channel_fill_opacity_values_1: texture_2d<f32>;
-
-fn get_channel_fill_opacity_1(label_index: u32) -> f32 {
-  return f32(textureLoad(channel_fill_opacity_values_1, flat_texel_coord(label_index, textureDimensions(channel_fill_opacity_values_1).x), 0).x);
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_instanced_scalar_template.wgsl");
 }
 
 #[test]
 fn channel_color_dispatch_with_no_channels_matches_expected() {
     let actual = channel_dispatch(bitmask_channel::CHANNEL_COLOR_DISPATCH, "fill_color", 0);
-    let expected = "\
-// Dispatches one of the per-channel color getters (the channel's fill color or
-// its stroke color) to the function matching `channel_index`. Each channel may
-// use a different `ColorMode` (and therefore a different generated function/set
-// of texture bindings -- WGSL has no runtime function-pointer indirection), so
-// this switch is generated once per draw call, sized to the actual channel
-// count (see `crate::layers::bitmask_layer::draw`). Depends on the matching
-// per-channel functions (see `get_channel_color`) also being injected.
-// Template: the switch's case list below is substituted in with one case per
-// channel, returning that channel's generated getter.
-fn get_channel_fill_color(channel_index: u32, label_index: u32) -> vec3<f32> {
-    switch (channel_index) {
-
-        default: { return vec3<f32>(0.0, 0.0, 0.0); }
-    }
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_channel_color_dispatch_with_no_channels.wgsl");
 }
 
 #[test]
 fn channel_color_dispatch_with_three_channels_matches_expected() {
     let actual = channel_dispatch(bitmask_channel::CHANNEL_COLOR_DISPATCH, "stroke_color", 3);
-    let expected = "\
-// Dispatches one of the per-channel color getters (the channel's fill color or
-// its stroke color) to the function matching `channel_index`. Each channel may
-// use a different `ColorMode` (and therefore a different generated function/set
-// of texture bindings -- WGSL has no runtime function-pointer indirection), so
-// this switch is generated once per draw call, sized to the actual channel
-// count (see `crate::layers::bitmask_layer::draw`). Depends on the matching
-// per-channel functions (see `get_channel_color`) also being injected.
-// Template: the switch's case list below is substituted in with one case per
-// channel, returning that channel's generated getter.
-fn get_channel_stroke_color(channel_index: u32, label_index: u32) -> vec3<f32> {
-    switch (channel_index) {
-        case 0u: { return get_channel_stroke_color_0(label_index); }
-        case 1u: { return get_channel_stroke_color_1(label_index); }
-        case 2u: { return get_channel_stroke_color_2(label_index); }
-        default: { return vec3<f32>(0.0, 0.0, 0.0); }
-    }
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_channel_color_dispatch_with_three_channels.wgsl");
 }
 
 #[test]
 fn channel_scalar_dispatch_with_two_channels_matches_expected() {
     let actual = channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_opacity", 2);
-    let expected = "\
-// Scalar counterpart of `channel_color_dispatch`: dispatches one of the
-// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
-// the function matching `channel_index`. Generated once per draw call per
-// property, sized to the actual channel count, because each channel resolves
-// the property through its own `SizeMode`/`OpacityMode` (see
-// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
-// functions (see `get_channel_scalar`) also being injected. Template: the
-// switch's case list below is substituted in with one case per channel,
-// returning that channel's generated getter.
-fn get_channel_stroke_opacity(channel_index: u32, label_index: u32) -> f32 {
-    switch (channel_index) {
-        case 0u: { return get_channel_stroke_opacity_0(label_index); }
-        case 1u: { return get_channel_stroke_opacity_1(label_index); }
-        default: { return 0.0; }
-    }
-}
-";
-    assert_wgsl_eq(&actual, expected);
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "bitmask_layer_channel_scalar_dispatch_with_two_channels.wgsl");
 }
 
 #[test]

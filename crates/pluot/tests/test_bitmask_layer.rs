@@ -48,28 +48,98 @@ fn stroked_channel(stroke_color: ColorMode, stroke_width: f32) -> BitmaskChannel
 //     filled vs. outline-only channels, multi-channel blending, colormap
 //     deduplication, dimension order, opacity, and pixel_offset.
 
-// Helper: a 4x4, 2-object mask, shared by every channel below:
-//   row 0: [1, 1, 2, 2]
-//   row 1: [1, 1, 2, 2]
-//   row 2: [0, 0, 2, 2]
-//   row 3: [0, 0, 0, 0]
-const CHANNEL_MASK: [u32; 16] = [
-    1, 1, 2, 2,
-    1, 1, 2, 2,
-    0, 0, 2, 2,
-    0, 0, 0, 0,
+// Helper: the 16x16, 4-object mask shared by every channel below, matching
+// the `MASK` array in bindings-js/docs/src/content/docs/examples/bitmask.mdx
+// (a diamond (1), a triangle (2), a plus (3), and a ring (4); 0 is
+// background). Object 4's interior hole exercises the outline of a
+// non-simply-connected object.
+#[rustfmt::skip]
+const MASK: [u32; 256] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0,
+    0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 2, 2, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 0, 0, 2, 2, 2, 2, 2, 2, 0,
+    0, 0, 1, 1, 1, 1, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0,
+    0, 0, 0, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 3, 3, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 0,
+    0, 0, 0, 3, 3, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 0,
+    0, 3, 3, 3, 3, 3, 3, 0, 0, 4, 4, 0, 0, 4, 4, 0,
+    0, 3, 3, 3, 3, 3, 3, 0, 0, 4, 4, 0, 0, 4, 4, 0,
+    0, 0, 0, 3, 3, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 0,
+    0, 0, 0, 3, 3, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
+// Helper: `MASK`'s first 8 rows (8x16) -- the diamond (1) and triangle (2),
+// with the plus and ring cropped out. Used where a non-square, non-4x4 mask
+// is wanted (e.g. the "thick mask" stroke-width family below).
+#[rustfmt::skip]
+const MASK_TOP_8_ROWS: [u32; 128] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0,
+    0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 2, 2, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 0, 0, 2, 2, 2, 2, 2, 2, 0,
+    0, 0, 1, 1, 1, 1, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0,
+    0, 0, 0, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+// Helper: `MASK`'s first 8 columns (16x8) -- the diamond (1) and plus (3),
+// with the triangle and ring cropped out. A second "other array shape"
+// variant, tall rather than wide.
+#[rustfmt::skip]
+const MASK_LEFT_8_COLS: [u32; 128] = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 1, 1, 0, 0, 0,
+    0, 0, 1, 1, 1, 1, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 1, 1, 1, 1, 1, 1, 0,
+    0, 0, 1, 1, 1, 1, 0, 0,
+    0, 0, 0, 1, 1, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 3, 3, 0, 0, 0,
+    0, 0, 0, 3, 3, 0, 0, 0,
+    0, 3, 3, 3, 3, 3, 3, 0,
+    0, 3, 3, 3, 3, 3, 3, 0,
+    0, 0, 0, 3, 3, 0, 0, 0,
+    0, 0, 0, 3, 3, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+// Helper: colors each object by its id via a custom categorical palette,
+// mirroring `OBJECT_COLORS` in bitmask.mdx -- object k looks up
+// `values[k - 1]` (ids are 1-based, since 0 means background), which indexes
+// into `colormap`.
+fn object_colors() -> ColorMode {
+    ColorMode::CategoricalCustom(CategoricalCustomParams {
+        values: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+        colormap: vec![(31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40)],
+    })
+}
+
 fn repeated_mask_data(num_channels: usize) -> NumericData {
-    let mut v = Vec::with_capacity(CHANNEL_MASK.len() * num_channels);
+    let mut v = Vec::with_capacity(MASK.len() * num_channels);
     for _ in 0..num_channels {
-        v.extend_from_slice(&CHANNEL_MASK);
+        v.extend_from_slice(&MASK);
     }
     NumericData::Uint32(Arc::new(v))
 }
 
-// Helper: a 4x4 two-channel mask in CYX order (matches the bitmap layer test's shape).
-// Channel 0: filled, object 1 red / object 2 green (ColorMode::CategoricalCustom).
+// Helper: builds a mask the same size as `MASK`, keeping only the given
+// object ids and zeroing everything else. Used to give different channels
+// genuinely different content (rather than identical repeated data), so
+// multi-channel blending is exercised on more than just per-channel color.
+fn mask_filtered(allowed_ids: &[u32]) -> Vec<u32> {
+    MASK.iter().map(|&v| if allowed_ids.contains(&v) { v } else { 0 }).collect()
+}
+
+// Helper: a 16x16 two-channel mask in CYX order (matches the bitmap layer test's shape).
+// Channel 0: filled, each object colored via `object_colors()` (ColorMode::CategoricalCustom).
 // Channel 1: outline-only, blue (ColorMode::UniformRgb).
 //
 // The outline is one mask texel thick, which these fixtures pin down by giving
@@ -88,12 +158,9 @@ fn bitmask_cyx_data() -> BitmaskLayerParams {
         pixel_offset: None,
         model_matrix: None,
         dimension_order: DimensionOrder::CYX,
-        shape: vec![2, 4, 4],
+        shape: vec![2, 16, 16],
         channel_settings: vec![
-            filled_channel(ColorMode::CategoricalCustom(CategoricalCustomParams {
-                values: NumericData::Uint8(Arc::new(vec![0, 1])),
-                colormap: vec![(255, 0, 0), (0, 255, 0)],
-            })),
+            filled_channel(object_colors()),
             stroked_channel(ColorMode::UniformRgb((0, 0, 255)), 1.0),
         ],
         opacity: 1.0,
@@ -108,7 +175,7 @@ fn with_stroke_width(mut params: BitmaskLayerParams, stroke_width: f32) -> Bitma
     params
 }
 
-// Helper: same mask in Pixels unit mode (4x4 pixel mask positioned in pixel space).
+// Helper: same mask in Pixels unit mode (16x16 pixel mask positioned in pixel space).
 // With the identity model_matrix one texel is one screen pixel, so a 1px stroke
 // is the same one-texel outline as the data-positioned fixture above.
 fn bitmask_cyx_pixels() -> BitmaskLayerParams {
@@ -142,11 +209,11 @@ fn bitmask_cyx_pixel_x_data_y() -> BitmaskLayerParams {
 // Helper: same mask in Normalized unit mode. As with `BitmapLayer`, position/size come
 // from `pixel_offset` and the mask's `shape` (always in native pixel units), and
 // bitmask_layer.wgsl does NOT divide these by the layer size in Normalized mode (it
-// only skips that division, unlike Pixels mode) -- so a raw img_size of 4x4 would be
-// interpreted as 4x the layer's normalized (0,1) extent, way off-canvas. A
+// only skips that division, unlike Pixels mode) -- so a raw img_size of 16x16 would be
+// interpreted as 16x the layer's normalized (0,1) extent, way off-canvas. A
 // model_matrix scale is the mechanism to bring it into (0,1) space. Scaling by 0.01
-// shrinks the 4x4 mask to a 0.04x0.04 normalized extent, which matches
-// bitmask_cyx_pixels()'s 4px / 100px layer size exactly on a 100x100 canvas, so this
+// shrinks the 16x16 mask to a 0.16x0.16 normalized extent, which matches
+// bitmask_cyx_pixels()'s 16px / 100px layer size exactly on a 100x100 canvas, so this
 // renders identically to bitmask_cyx_pixels() there.
 //
 // The stroke width is given in normalized units too, matching the model_matrix
@@ -285,7 +352,7 @@ async fn test_bitmask_layer_square_contain_pixel_units_no_margins() {
 
 // Normalized units: on a 100x100 canvas this renders identically to the Pixels
 // test above, since bitmask_cyx_normalized()'s model_matrix scale (0.01) applied
-// to the 4x4 img_size yields the same 0.04 normalized extent as 4px / 100px.
+// to the 16x16 img_size yields the same 0.16 normalized extent as 16px / 100px.
 #[tokio::test]
 async fn test_bitmask_layer_square_contain_normalized_units_no_margins() {
     let params = RenderParams {
@@ -664,10 +731,10 @@ async fn test_bitmask_layer_square_contain_data_units_pixel_offset() {
 // indexing (shared with `BitmapLayer`) is wired correctly.
 #[tokio::test]
 async fn test_bitmask_layer_square_contain_data_units_yxc_order() {
-    let ch0 = CHANNEL_MASK;
-    let ch1 = CHANNEL_MASK;
-    let mut data_yxc = Vec::with_capacity(32);
-    for i in 0..16 {
+    let ch0 = MASK;
+    let ch1 = MASK;
+    let mut data_yxc = Vec::with_capacity(512);
+    for i in 0..256 {
         data_yxc.push(ch0[i]);
         data_yxc.push(ch1[i]);
     }
@@ -676,7 +743,7 @@ async fn test_bitmask_layer_square_contain_data_units_yxc_order() {
         height: 100,
         layers: layer_params(BitmaskLayerParams {
             dimension_order: DimensionOrder::YXC,
-            shape: vec![4, 4, 2],
+            shape: vec![16, 16, 2],
             data: NumericData::Uint32(Arc::new(data_yxc)),
             ..bitmask_cyx_data()
         }),
@@ -751,31 +818,15 @@ async fn test_bitmask_layer_square_contain_data_units_wide_stroke_normalized_uni
 
 // ── Stroke width unit modes ───────────────────────────────────────────────────
 //
-// `CHANNEL_MASK`'s objects are only 2 texels wide, so every object texel is a
+// `MASK`'s smallest objects are only 2 texels wide, so every object texel is a
 // boundary even at a 1-texel stroke and outline *thickness* is invisible in
 // its snapshots (the tests above only establish that the three unit modes
-// agree). The tests below use a larger mask, where a 1-texel and a 2-texel
-// outline are plainly different, to check thickness itself.
+// agree). The tests below use `MASK_TOP_8_ROWS` (the diamond and triangle,
+// each up to 6 texels wide), where a 1-texel and a 2-texel outline are
+// plainly different, to check thickness itself.
 
-// Helper: an 8x8 single-object, single-channel mask -- a 6x6 block of object 1
-// inset by one texel:
-//   row 0:     [0, 0, 0, 0, 0, 0, 0, 0]
-//   rows 1-6:  [0, 1, 1, 1, 1, 1, 1, 0]
-//   row 7:     [0, 0, 0, 0, 0, 0, 0, 0]
-// A 1-texel outline leaves a 4x4 hole; a 2-texel outline leaves a 2x2 hole.
-const THICK_MASK: [u32; 64] = [
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 1, 1, 1, 1, 0,
-    0, 1, 1, 1, 1, 1, 1, 0,
-    0, 1, 1, 1, 1, 1, 1, 0,
-    0, 1, 1, 1, 1, 1, 1, 0,
-    0, 1, 1, 1, 1, 1, 1, 0,
-    0, 1, 1, 1, 1, 1, 1, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-// Helper: `THICK_MASK` as a single outline-only blue channel, with the stroke
-// width given in `unit_mode` units.
+// Helper: `MASK_TOP_8_ROWS` as a single outline-only blue channel, with the
+// stroke width given in `unit_mode` units.
 fn bitmask_thick(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams {
     BitmaskLayerParams {
         layer_id: "my_bitmask_layer".to_string(),
@@ -783,16 +834,16 @@ fn bitmask_thick(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams 
         data_unit_mode_y: UnitsMode::Data,
         stroke_width_unit_mode: unit_mode,
         dimension_order: DimensionOrder::CYX,
-        shape: vec![1, 8, 8],
+        shape: vec![1, 8, 16],
         channel_settings: vec![stroked_channel(ColorMode::UniformRgb((0, 0, 255)), stroke_width)],
-        data: NumericData::Uint32(Arc::new(THICK_MASK.to_vec())),
+        data: NumericData::Uint32(Arc::new(MASK_TOP_8_ROWS.to_vec())),
         ..BitmaskLayerParams::default()
     }
 }
 
 // Zoom of 1/16, which on the 200x200 canvas the tests below use makes one
-// texel of the 8x8 `THICK_MASK` exactly 12.5 screen px (so the whole mask
-// spans 100px, half the canvas).
+// texel of `MASK_TOP_8_ROWS` exactly 12.5 screen px (so the whole mask
+// spans 200px wide by 100px tall).
 const CAMERA_ZOOM_OUT_16X: [f32; 16] = [
     0.0625, 0.0,    0.0, 0.0,
     0.0,    0.0625, 0.0, 0.0,
@@ -841,7 +892,7 @@ async fn test_bitmask_layer_thick_mask_thin_stroke_normalized_units() {
 }
 
 // Doubling the width doubles the outline: a visibly thicker ring than the
-// snapshot above, leaving a 2x2 rather than 4x4 hole.
+// snapshot above, eating further into each object's interior.
 #[tokio::test]
 async fn test_bitmask_layer_thick_mask_wide_stroke_data_units() {
     let params = thick_params(bitmask_thick(UnitsMode::Data, 2.0), CAMERA_ZOOM_OUT_16X);
@@ -855,11 +906,12 @@ async fn test_bitmask_layer_thick_mask_wide_stroke_pixel_units() {
 }
 
 // A stroke thinner than one texel: 3 of the 12.5 screen px one texel spans.
-// The GPU decides per screen pixel, so it draws a 3px ring inside the 6x6
-// block; the SVG path cannot express that at the mask's own resolution (whole
-// texels would round it to a 12.5px ring, four times too thick), so it
-// up-samples the mask to one grid cell per screen pixel first. Widths given in
-// all three unit modes resolve to the same 3px and must render identically.
+// The GPU decides per screen pixel, so it draws a 3px ring inside each
+// object's boundary; the SVG path cannot express that at the mask's own
+// resolution (whole texels would round it to a 12.5px ring, four times too
+// thick), so it up-samples the mask to one grid cell per screen pixel first.
+// Widths given in all three unit modes resolve to the same 3px and must
+// render identically.
 #[tokio::test]
 async fn test_bitmask_layer_thick_mask_sub_texel_stroke_data_units() {
     let params = thick_params(bitmask_thick(UnitsMode::Data, 0.24), CAMERA_ZOOM_OUT_16X);
@@ -981,7 +1033,7 @@ async fn test_bitmask_layer_square_contain_data_units_uniform_rgb() {
         height: 100,
         layers: layer_params(BitmaskLayerParams {
             channel_settings: vec![filled_channel(ColorMode::UniformRgb((255, 128, 0)))],
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
         }),
@@ -1000,11 +1052,11 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_rgb() {
         height: 100,
         layers: layer_params(BitmaskLayerParams {
             channel_settings: vec![filled_channel(ColorMode::InstancedRgb(InstancedRgbParams {
-                r_values: NumericData::Uint8(Arc::new(vec![0, 255])),
-                g_values: NumericData::Uint8(Arc::new(vec![255, 0])),
-                b_values: NumericData::Uint8(Arc::new(vec![0, 255])),
+                r_values: NumericData::Uint8(Arc::new(vec![31, 255, 44, 214])),
+                g_values: NumericData::Uint8(Arc::new(vec![119, 127, 160, 39])),
+                b_values: NumericData::Uint8(Arc::new(vec![180, 14, 44, 40])),
             }))],
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
         }),
@@ -1024,10 +1076,12 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_rgb_interleaved(
         layers: layer_params(BitmaskLayerParams {
             channel_settings: vec![filled_channel(ColorMode::InstancedRgbInterleaved(
                 InstancedRgbInterleavedParams {
-                    rgb_values: NumericData::Uint8(Arc::new(vec![0, 255, 0, 255, 0, 255])),
+                    rgb_values: NumericData::Uint8(Arc::new(vec![
+                        31, 119, 180, 255, 127, 14, 44, 160, 44, 214, 39, 40,
+                    ])),
                 },
             ))],
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
         }),
@@ -1047,10 +1101,10 @@ async fn test_bitmask_layer_square_contain_data_units_categorical() {
         height: 100,
         layers: layer_params(BitmaskLayerParams {
             channel_settings: vec![filled_channel(ColorMode::Categorical(CategoricalParams {
-                codes: NumericData::Uint8(Arc::new(vec![0, 1])),
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
                 colormap: CategoricalColormap::Tableau10,
             }))],
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
         }),
@@ -1070,12 +1124,12 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative() {
         height: 100,
         layers: layer_params(BitmaskLayerParams {
             channel_settings: vec![filled_channel(ColorMode::Quantitative(QuantitativeParams {
-                values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
+                values: NumericData::Float32(Arc::new(vec![0.1, 0.4, 0.6, 0.9])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
             }))],
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             ..bitmask_cyx_data()
         }),
@@ -1110,9 +1164,9 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
         BitmaskChannelSettings {
             fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
             ..filled_channel(ColorMode::InstancedRgb(InstancedRgbParams {
-                r_values: NumericData::Uint8(Arc::new(vec![0, 255])),
-                g_values: NumericData::Uint8(Arc::new(vec![255, 0])),
-                b_values: NumericData::Uint8(Arc::new(vec![0, 0])),
+                r_values: NumericData::Uint8(Arc::new(vec![31, 255, 44, 214])),
+                g_values: NumericData::Uint8(Arc::new(vec![119, 127, 160, 39])),
+                b_values: NumericData::Uint8(Arc::new(vec![180, 14, 44, 40])),
             }))
         },
         // InstancedRgbInterleaved: filled.
@@ -1120,7 +1174,9 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
             fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
             ..filled_channel(ColorMode::InstancedRgbInterleaved(
                 InstancedRgbInterleavedParams {
-                    rgb_values: NumericData::Uint8(Arc::new(vec![0, 255, 0, 255, 0, 0])),
+                    rgb_values: NumericData::Uint8(Arc::new(vec![
+                        31, 119, 180, 255, 127, 14, 44, 160, 44, 214, 39, 40,
+                    ])),
                 },
             ))
         },
@@ -1128,7 +1184,7 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
         BitmaskChannelSettings {
             fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
             ..filled_channel(ColorMode::Categorical(CategoricalParams {
-                codes: NumericData::Uint8(Arc::new(vec![0, 1])),
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
                 colormap: CategoricalColormap::Tableau10,
             }))
         },
@@ -1137,8 +1193,8 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
             stroke_opacity: Some(OpacityMode::UniformOpacity(0.5)),
             ..stroked_channel(
                 ColorMode::CategoricalCustom(CategoricalCustomParams {
-                    values: NumericData::Uint8(Arc::new(vec![0, 1])),
-                    colormap: vec![(10, 20, 30), (200, 100, 50)],
+                    values: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                    colormap: vec![(10, 20, 30), (200, 100, 50), (50, 200, 100), (100, 50, 200)],
                 }),
                 1.0,
             )
@@ -1147,7 +1203,7 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
         BitmaskChannelSettings {
             fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
             ..filled_channel(ColorMode::Quantitative(QuantitativeParams {
-                values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
+                values: NumericData::Float32(Arc::new(vec![0.1, 0.4, 0.6, 0.9])),
                 colormap: QuantitativeColormap::Viridis,
                 reverse: false,
                 domain: None,
@@ -1160,7 +1216,7 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            shape: vec![num_channels as u32, 4, 4],
+            shape: vec![num_channels as u32, 16, 16],
             data: repeated_mask_data(num_channels),
             channel_settings,
             opacity: 0.9,
@@ -1183,11 +1239,11 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedu
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            shape: vec![2, 4, 4],
+            shape: vec![2, 16, 16],
             data: repeated_mask_data(2),
             channel_settings: vec![
                 filled_channel(ColorMode::Quantitative(QuantitativeParams {
-                    values: NumericData::Float32(Arc::new(vec![0.1, 0.9])),
+                    values: NumericData::Float32(Arc::new(vec![0.1, 0.4, 0.6, 0.9])),
                     colormap: QuantitativeColormap::Viridis,
                     reverse: false,
                     domain: None,
@@ -1195,7 +1251,7 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedu
                 BitmaskChannelSettings {
                     fill_opacity: Some(OpacityMode::UniformOpacity(0.5)),
                     ..filled_channel(ColorMode::Quantitative(QuantitativeParams {
-                        values: NumericData::Float32(Arc::new(vec![0.9, 0.1])),
+                        values: NumericData::Float32(Arc::new(vec![0.9, 0.6, 0.4, 0.1])),
                         colormap: QuantitativeColormap::Viridis,
                         reverse: true,
                         domain: Some((0.0, 1.0)),
@@ -1216,10 +1272,10 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedu
 // The outline band is the outermost part of an object's interior, so a channel
 // that is both stroked and filled draws its stroke over the boundary and its
 // fill over what is left, each with its own color and opacity (never a blend of
-// the two at one pixel). `THICK_MASK`'s 6x6 object is wide enough for a 1-texel
-// outline to leave a visible 4x4 fill inside it.
+// the two at one pixel). `MASK_TOP_8_ROWS`'s objects are wide enough for a
+// 1-texel outline to leave a visible fill inside them.
 
-// Helper: `THICK_MASK` as one channel drawn both stroked (blue) and filled
+// Helper: `MASK_TOP_8_ROWS` as one channel drawn both stroked (blue) and filled
 // (semi-transparent orange), with the stroke width in `unit_mode` units.
 fn bitmask_thick_stroked_and_filled(unit_mode: UnitsMode, stroke_width: f32) -> BitmaskLayerParams {
     BitmaskLayerParams {
@@ -1262,31 +1318,32 @@ async fn test_bitmask_layer_thick_mask_stroked_and_filled_sub_texel_stroke() {
     ).await;
 }
 
-// Per-object stroke width, opacity and color: `CHANNEL_MASK`'s object 1 gets a
-// 1-texel opaque red outline, object 2 a 2-texel half-transparent green one,
-// over a shared filled channel. Exercises the instanced `SizeMode`/
-// `OpacityMode` paths (a value texture per property, indexed by object id).
+// Per-object stroke width, opacity and color: `MASK`'s diamond (1) and plus
+// (3) get a 1-texel opaque red/blue outline, the triangle (2) and ring (4) a
+// 2-texel half-transparent green/yellow one, over a shared filled channel.
+// Exercises the instanced `SizeMode`/`OpacityMode` paths (a value texture per
+// property, indexed by object id).
 #[tokio::test]
 async fn test_bitmask_layer_square_contain_data_units_instanced_stroke() {
     let params = RenderParams {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             channel_settings: vec![BitmaskChannelSettings {
                 stroked: true,
                 filled: true,
                 stroke_color: Some(ColorMode::InstancedRgb(InstancedRgbParams {
-                    r_values: NumericData::Uint8(Arc::new(vec![255, 0])),
-                    g_values: NumericData::Uint8(Arc::new(vec![0, 255])),
-                    b_values: NumericData::Uint8(Arc::new(vec![0, 0])),
+                    r_values: NumericData::Uint8(Arc::new(vec![255, 0, 0, 255])),
+                    g_values: NumericData::Uint8(Arc::new(vec![0, 255, 0, 255])),
+                    b_values: NumericData::Uint8(Arc::new(vec![0, 0, 255, 0])),
                 })),
                 stroke_width: Some(SizeMode::InstancedSize(InstancedSizeParams {
-                    values: NumericData::Float32(Arc::new(vec![1.0, 2.0])),
+                    values: NumericData::Float32(Arc::new(vec![1.0, 2.0, 1.0, 2.0])),
                 })),
                 stroke_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
-                    values: NumericData::Float32(Arc::new(vec![1.0, 0.5])),
+                    values: NumericData::Float32(Arc::new(vec![1.0, 0.5, 1.0, 0.5])),
                 })),
                 fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
                 fill_opacity: Some(OpacityMode::UniformOpacity(0.3)),
@@ -1311,7 +1368,7 @@ async fn test_bitmask_layer_square_contain_data_units_neither_stroked_nor_filled
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            shape: vec![1, 4, 4],
+            shape: vec![1, 16, 16],
             data: repeated_mask_data(1),
             channel_settings: vec![BitmaskChannelSettings {
                 stroked: false,
@@ -1337,8 +1394,8 @@ async fn test_bitmask_layer_square_contain_data_units_empty_mask() {
         width: 100,
         height: 100,
         layers: layer_params(BitmaskLayerParams {
-            shape: vec![1, 4, 4],
-            data: NumericData::Uint32(Arc::new(vec![0u32; 16])),
+            shape: vec![1, 16, 16],
+            data: NumericData::Uint32(Arc::new(vec![0u32; 256])),
             channel_settings: vec![BitmaskChannelSettings::default()],
             ..bitmask_cyx_data()
         }),
@@ -1349,10 +1406,66 @@ async fn test_bitmask_layer_square_contain_data_units_empty_mask() {
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_empty_mask").await;
 }
 
+// Two channels with genuinely different content (rather than the same mask
+// repeated per channel, as `repeated_mask_data` gives every other multi-
+// channel test): channel 0 keeps only the diamond (1) and triangle (2) via
+// `mask_filtered`, channel 1 keeps only the plus (3) and ring (4). Each is
+// filled with its own color, exercising channel blending where the channels'
+// footprints don't overlap.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_data_units_differentiated_channels() {
+    let mut data = mask_filtered(&[1, 2]);
+    data.extend(mask_filtered(&[3, 4]));
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(BitmaskLayerParams {
+            shape: vec![2, 16, 16],
+            data: NumericData::Uint32(Arc::new(data)),
+            channel_settings: vec![
+                filled_channel(ColorMode::UniformRgb((255, 128, 0))),
+                filled_channel(ColorMode::UniformRgb((0, 128, 255))),
+            ],
+            ..bitmask_cyx_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_square_contain_data_units_differentiated_channels",
+    ).await;
+}
+
+// `MASK_LEFT_8_COLS` (16x8, tall): the diamond (1) and plus (3), the other
+// "other array shape" variant besides `MASK_TOP_8_ROWS` above -- exercises a
+// mask whose height exceeds its width, rather than the other way around.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_data_units_left_8_cols_shape() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(BitmaskLayerParams {
+            shape: vec![1, 16, 8],
+            data: NumericData::Uint32(Arc::new(MASK_LEFT_8_COLS.to_vec())),
+            channel_settings: vec![filled_channel(object_colors())],
+            ..bitmask_cyx_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(
+        params,
+        "test_bitmask_layer_square_contain_data_units_left_8_cols_shape",
+    ).await;
+}
+
 // ── Bitmask fully outside layer bounds ────────────────────────────────────────
 
-// `pixel_offset` places the 4x4 mask at (1000, 1000) on a 100x100 canvas, so
-// its on-screen rect (1000..1004, 1000..1004) has no overlap whatsoever with
+// `pixel_offset` places the 16x16 mask at (1000, 1000) on a 100x100 canvas, so
+// its on-screen rect (1000..1016, 1000..1016) has no overlap whatsoever with
 // the layer's visible area (0..100, 0..100) -- the mask is entirely off-screen.
 //
 // Intended behavior for the SVG path: `BitmaskLayer::draw` (`DrawToSvg` impl)

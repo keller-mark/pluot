@@ -178,13 +178,12 @@ struct VSOut {
 // bitmask_stroke_width_texels(...): ordinary (not per-channel-templated)
 // helper functions used by the channel loop in fs_main below. See
 // `crate::shader_modules::bitmask_channel`.
-// Loads the object id at pixel `px` for one channel of the shared,
+// Loads the bitmask value at pixel `px` for one channel of the shared,
 // multi-channel `mask_data` texture (see `BitmaskLayer`), using
 // `u.x_stride`/`u.y_stride`/`u.c_stride` to locate that channel's slice
 // within the flat array -- mirrors `BitmapLayer`'s stride-based indexing.
-// Injected once (not templated per-channel), regardless of channel count,
-// since `channel_index` is an ordinary function parameter. Assumes
-// `mask_data` and `flat_texel_coord` are already in scope.
+// Injected once (not templated per-channel), regardless of channel count.
+// Assumes `mask_data` and `flat_texel_coord` are already in scope.
 fn bitmask_sample(channel_index: u32, px: vec2<u32>) -> i32 {
     let idx = px.y * u.y_stride + px.x * u.x_stride + channel_index * u.c_stride;
     let mask_tex_width = textureDimensions(mask_data).x;
@@ -200,15 +199,8 @@ fn bitmask_sample(channel_index: u32, px: vec2<u32>) -> i32 {
 // also being injected.
 //
 // `px` is the *continuous* position of the fragment in mask-texel space, not
-// the integer texel it falls in, and `stroke_width` may be fractional. This is
-// what keeps the outline's thickness independent of the mask's resolution:
-// were the offsets applied to the containing texel instead, every fragment
-// within a texel would answer identically and the band could only ever be a
-// whole number of texels thick, so the same requested width would render
-// differently for a coarse mask than for a fine one. Offsetting the continuous
-// position instead lets the band's edge fall part-way through a texel, so its
-// thickness is whatever `stroke_width` asks for -- down to the one-screen-pixel
-// limit of the rasterizer, rather than the one-texel limit of the mask.
+// the integer texel it falls in, and `stroke_width` may be fractional.
+// This keeps the outline's thickness independent of the mask's resolution.
 //
 // Note the diagonal offsets reach `stroke_width * sqrt(2)`, so the band bulges
 // somewhat at corners; this samples a square, not a disc.
@@ -243,7 +235,7 @@ fn bitmask_is_edge(
 
 
 // Resolves a channel's `stroke_width` -- expressed in screen pixels, data
-// (world) units, or as a fraction of the layer height, per
+// (world) units, or as a fraction of the layer height (normalized units), per
 // `u.stroke_width_unit_mode` -- into the mask-texel units that
 // `bitmask_is_edge` measures in. This is purely a change of units: the result
 // is free to be fractional, and nothing here depends on the mask's
@@ -254,8 +246,7 @@ fn bitmask_is_edge(
 // in data positioning mode, the camera/aspect-ratio pipeline. So one texel
 // spans `world_per_texel` world units and `px_per_texel` screen pixels, and
 // converting a width into texels is a division by whichever of those matches
-// the width's unit mode. As in the stroked polygon/curve layers, widths are
-// measured relative to the Y axis. Injected once (not templated per-channel),
+// the width's unit mode. Injected once (not templated per-channel),
 // regardless of channel count; assumes `translate`, `scale`,
 // `get_aspect_ratio_mat` and the layer's `Uniforms` struct are in scope.
 fn bitmask_stroke_width_texels(stroke_width: f32) -> f32 {
@@ -453,15 +444,9 @@ fn get_channel_stroke_width_1(label_index: u32) -> f32 {
 // each dispatches to the per-channel function above matching `channel_index`.
 // See `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
 // `CHANNEL_SCALAR_DISPATCH`.
-// Dispatches one of the per-channel color getters (the channel's fill color or
-// its stroke color) to the function matching `channel_index`. Each channel may
-// use a different `ColorMode` (and therefore a different generated function/set
-// of texture bindings -- WGSL has no runtime function-pointer indirection), so
-// this switch is generated once per draw call, sized to the actual channel
-// count (see `crate::layers::bitmask_layer::draw`). Depends on the matching
-// per-channel functions (see `get_channel_color`) also being injected.
-// Template: the switch's case list below is substituted in with one case per
-// channel, returning that channel's generated getter.
+// The switch case list below is substituted in with one case per
+// channel, which calls that channel's generated color getter.
+// Depends on the getter functions (see `get_channel_color`) also being injected.
 fn get_channel_fill_color(channel_index: u32, label_index: u32) -> vec3<f32> {
     switch (channel_index) {
         case 0u: { return get_channel_fill_color_0(label_index); }
@@ -470,15 +455,9 @@ fn get_channel_fill_color(channel_index: u32, label_index: u32) -> vec3<f32> {
     }
 }
 
-// Dispatches one of the per-channel color getters (the channel's fill color or
-// its stroke color) to the function matching `channel_index`. Each channel may
-// use a different `ColorMode` (and therefore a different generated function/set
-// of texture bindings -- WGSL has no runtime function-pointer indirection), so
-// this switch is generated once per draw call, sized to the actual channel
-// count (see `crate::layers::bitmask_layer::draw`). Depends on the matching
-// per-channel functions (see `get_channel_color`) also being injected.
-// Template: the switch's case list below is substituted in with one case per
-// channel, returning that channel's generated getter.
+// The switch case list below is substituted in with one case per
+// channel, which calls that channel's generated color getter.
+// Depends on the getter functions (see `get_channel_color`) also being injected.
 fn get_channel_stroke_color(channel_index: u32, label_index: u32) -> vec3<f32> {
     switch (channel_index) {
         case 0u: { return get_channel_stroke_color_0(label_index); }
@@ -488,14 +467,7 @@ fn get_channel_stroke_color(channel_index: u32, label_index: u32) -> vec3<f32> {
 }
 
 // Scalar counterpart of `channel_color_dispatch`: dispatches one of the
-// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
-// the function matching `channel_index`. Generated once per draw call per
-// property, sized to the actual channel count, because each channel resolves
-// the property through its own `SizeMode`/`OpacityMode` (see
-// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
-// functions (see `get_channel_scalar`) also being injected. Template: the
-// switch's case list below is substituted in with one case per channel,
-// returning that channel's generated getter.
+// per-channel scalar getters (fill opacity, stroke opacity or stroke width).
 fn get_channel_fill_opacity(channel_index: u32, label_index: u32) -> f32 {
     switch (channel_index) {
         case 0u: { return get_channel_fill_opacity_0(label_index); }
@@ -505,14 +477,7 @@ fn get_channel_fill_opacity(channel_index: u32, label_index: u32) -> f32 {
 }
 
 // Scalar counterpart of `channel_color_dispatch`: dispatches one of the
-// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
-// the function matching `channel_index`. Generated once per draw call per
-// property, sized to the actual channel count, because each channel resolves
-// the property through its own `SizeMode`/`OpacityMode` (see
-// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
-// functions (see `get_channel_scalar`) also being injected. Template: the
-// switch's case list below is substituted in with one case per channel,
-// returning that channel's generated getter.
+// per-channel scalar getters (fill opacity, stroke opacity or stroke width).
 fn get_channel_stroke_opacity(channel_index: u32, label_index: u32) -> f32 {
     switch (channel_index) {
         case 0u: { return get_channel_stroke_opacity_0(label_index); }
@@ -522,14 +487,7 @@ fn get_channel_stroke_opacity(channel_index: u32, label_index: u32) -> f32 {
 }
 
 // Scalar counterpart of `channel_color_dispatch`: dispatches one of the
-// per-channel scalar getters (fill opacity, stroke opacity or stroke width) to
-// the function matching `channel_index`. Generated once per draw call per
-// property, sized to the actual channel count, because each channel resolves
-// the property through its own `SizeMode`/`OpacityMode` (see
-// `crate::layers::bitmask_layer::draw`). Depends on the matching per-channel
-// functions (see `get_channel_scalar`) also being injected. Template: the
-// switch's case list below is substituted in with one case per channel,
-// returning that channel's generated getter.
+// per-channel scalar getters (fill opacity, stroke opacity or stroke width).
 fn get_channel_stroke_width(channel_index: u32, label_index: u32) -> f32 {
     switch (channel_index) {
         case 0u: { return get_channel_stroke_width_0(label_index); }
