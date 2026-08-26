@@ -15,7 +15,8 @@ If the user asks you to pull in a new reference material/document, they will spe
 
 - The AnnData on-disk format: https://github.com/scverse/anndata/blob/main/docs/fileformat-prose.md
 - The SpatialData design document: https://github.com/scverse/spatialdata/blob/main/docs/design_doc.md
-- The OME-NGFF specification: https://github.com/ome/ngff
+- The OME-NGFF specification and RFCs: https://github.com/ome/ngff
+- OME-Zarr RFC-5 transformations: https://github.com/clbarnes/ome_zarr_transformations_conformance
 - Vitessce Bitmask Layer files:
   - https://github.com/vitessce/vitessce/blob/main/packages/gl/src/BitmaskLayerBeta.js
   - https://github.com/vitessce/vitessce/blob/main/packages/gl/src/bitmask-layer-beta-shaders.js
