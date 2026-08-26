@@ -305,7 +305,7 @@ async fn test_bitmask_layer_square_contain_data_units_no_margins() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_no_margins").await;
@@ -318,7 +318,7 @@ async fn test_bitmask_layer_square_ignore_data_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_ignore_data_units_no_margins").await;
@@ -331,7 +331,7 @@ async fn test_bitmask_layer_square_cover_data_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_cover_data_units_no_margins").await;
@@ -344,7 +344,7 @@ async fn test_bitmask_layer_square_contain_pixel_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_pixel_units_no_margins").await;
@@ -360,7 +360,7 @@ async fn test_bitmask_layer_square_contain_normalized_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_normalized()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_normalized_units_no_margins").await;
@@ -373,7 +373,7 @@ async fn test_bitmask_layer_square_contain_data_units_view_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         margin_left: Some(10.0),
         margin_right: Some(10.0),
         margin_top: Some(10.0),
@@ -398,7 +398,7 @@ async fn test_bitmask_layer_square_contain_data_units_layer_bounds() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_layer_bounds").await;
@@ -420,7 +420,7 @@ async fn test_bitmask_layer_square_contain_data_units_layer_bounds_overrides_vie
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         margin_left: Some(20.0),
         margin_right: Some(20.0),
         margin_top: Some(20.0),
@@ -439,7 +439,7 @@ async fn test_bitmask_layer_wide_ignore_data_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_wide_ignore_data_units_no_margins").await;
@@ -452,7 +452,7 @@ async fn test_bitmask_layer_wide_contain_data_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_wide_contain_data_units_no_margins").await;
@@ -465,7 +465,7 @@ async fn test_bitmask_layer_wide_cover_data_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_wide_cover_data_units_no_margins").await;
@@ -478,7 +478,7 @@ async fn test_bitmask_layer_wide_contain_pixel_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_wide_contain_pixel_units_no_margins").await;
@@ -491,7 +491,7 @@ async fn test_bitmask_layer_wide_contain_normalized_units_no_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_normalized()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_wide_contain_normalized_units_no_margins").await;
@@ -504,7 +504,7 @@ async fn test_bitmask_layer_wide_contain_data_units_view_margins() {
         height: 100,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         margin_left: Some(10.0),
         margin_right: Some(10.0),
         margin_top: Some(10.0),
@@ -529,7 +529,7 @@ async fn test_bitmask_layer_wide_contain_data_units_layer_bounds() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_wide_contain_data_units_layer_bounds").await;
@@ -544,7 +544,7 @@ async fn test_bitmask_layer_tall_ignore_data_units_no_margins() {
         height: 200,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Ignore,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_tall_ignore_data_units_no_margins").await;
@@ -557,7 +557,7 @@ async fn test_bitmask_layer_tall_contain_data_units_no_margins() {
         height: 200,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_tall_contain_data_units_no_margins").await;
@@ -570,7 +570,7 @@ async fn test_bitmask_layer_tall_cover_data_units_no_margins() {
         height: 200,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Cover,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_tall_cover_data_units_no_margins").await;
@@ -583,7 +583,7 @@ async fn test_bitmask_layer_tall_contain_pixel_units_no_margins() {
         height: 200,
         layers: layer_params(bitmask_cyx_pixels()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_tall_contain_pixel_units_no_margins").await;
@@ -596,7 +596,7 @@ async fn test_bitmask_layer_tall_contain_normalized_units_no_margins() {
         height: 200,
         layers: layer_params(bitmask_cyx_normalized()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_tall_contain_normalized_units_no_margins").await;
@@ -609,7 +609,7 @@ async fn test_bitmask_layer_tall_contain_data_units_view_margins() {
         height: 200,
         layers: layer_params(bitmask_cyx_data()),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         margin_left: Some(10.0),
         margin_right: Some(10.0),
         margin_top: Some(10.0),
@@ -634,7 +634,7 @@ async fn test_bitmask_layer_tall_contain_data_units_layer_bounds() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_tall_contain_data_units_layer_bounds").await;
@@ -703,7 +703,7 @@ async fn test_bitmask_layer_square_contain_data_units_half_opacity() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_half_opacity").await;
@@ -720,7 +720,7 @@ async fn test_bitmask_layer_square_contain_data_units_pixel_offset() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_pixel_offset").await;
@@ -748,7 +748,7 @@ async fn test_bitmask_layer_square_contain_data_units_yxc_order() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_yxc_order").await;
@@ -782,7 +782,7 @@ async fn test_bitmask_layer_square_contain_data_units_wide_stroke() {
         height: 100,
         layers: layer_params(bitmask_cyx_data_wide_stroke(UnitsMode::Data, 2.0)),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_wide_stroke").await;
@@ -796,7 +796,7 @@ async fn test_bitmask_layer_square_contain_data_units_wide_stroke_pixel_units() 
         height: 100,
         layers: layer_params(bitmask_cyx_data_wide_stroke(UnitsMode::Pixels, 25.0)),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_wide_stroke").await;
@@ -810,7 +810,7 @@ async fn test_bitmask_layer_square_contain_data_units_wide_stroke_normalized_uni
         height: 100,
         layers: layer_params(bitmask_cyx_data_wide_stroke(UnitsMode::Normalized, 0.25)),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_wide_stroke").await;
@@ -1038,7 +1038,7 @@ async fn test_bitmask_layer_square_contain_data_units_uniform_rgb() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_uniform_rgb").await;
@@ -1061,7 +1061,7 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_rgb() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_instanced_rgb").await;
@@ -1086,7 +1086,7 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_rgb_interleaved(
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_instanced_rgb_interleaved").await;
@@ -1109,7 +1109,7 @@ async fn test_bitmask_layer_square_contain_data_units_categorical() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_categorical").await;
@@ -1134,7 +1134,7 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_quantitative").await;
@@ -1223,7 +1223,7 @@ async fn test_bitmask_layer_square_contain_data_units_all_color_modes() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_all_color_modes").await;
@@ -1261,7 +1261,7 @@ async fn test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedu
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_quantitative_colormap_dedup").await;
@@ -1351,7 +1351,7 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_stroke() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(
@@ -1378,7 +1378,7 @@ async fn test_bitmask_layer_square_contain_data_units_neither_stroked_nor_filled
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(
@@ -1400,7 +1400,7 @@ async fn test_bitmask_layer_square_contain_data_units_empty_mask() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_data_units_empty_mask").await;
@@ -1429,7 +1429,7 @@ async fn test_bitmask_layer_square_contain_data_units_differentiated_channels() 
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(
@@ -1453,7 +1453,7 @@ async fn test_bitmask_layer_square_contain_data_units_left_8_cols_shape() {
             ..bitmask_cyx_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
-        camera_view: Some(CAMERA_ZOOM_OUT_8X),
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
         ..Default::default()
     };
     render_and_check_both_snapshots(

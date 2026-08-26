@@ -7,8 +7,8 @@
 </defs>
 <g height="100" width="100">
 <g clip-path="url(#my_bitmask_layer_clip_path)" transform="translate(0,0)">
-<g transform="translate(56.25,-6.25) scale(12.5,12.5)">
-<image height="4" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAS0lEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a8aLAwAFlWYB0A8iw0gnhP/CFS1BwdkeBFhAAAAAElFTkSuQmCC" opacity="1" style="image-rendering: pixelated" width="4" x="0" y="0"/>
+<g transform="translate(51.5625,-1.5625) scale(3.125,3.125)">
+<image height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAyklEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1S/496HyHGwAkHi+bACQuALxLDbPQeI52DwHCSAAwAZ40Cf9Ag/6pF/gCpvn4s86hj/rGA9A8CKxeR42gHgWm+cg8Sy2P+sYD6TPuQRI4jnYACDxHGyeL0n8+xD8+1B5DjYASDwHm+dLCv59qABg8xxsAJB4DhIA2FxB8O9DBQAJAGwAkHi+bJ4Twb8P4t+HfwSZHS7KmYFADQAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="16" x="0" y="0"/>
 </g>
 </g>
 </g>
