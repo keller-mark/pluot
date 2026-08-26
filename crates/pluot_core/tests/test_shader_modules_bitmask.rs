@@ -8,7 +8,7 @@
 //! These assert exact string equality against golden output rather than just
 //! "does it compile", specifically to catch the class of bug that motivated
 //! this file: a `.wgsl` doc comment mentioning a template placeholder (e.g.
-//! `` `{{ch}}` ``) literally gets matched and substituted too, since
+//! `` `{{c_idx}}` ``) literally gets matched and substituted too, since
 //! `ShaderBuilder` does plain text substitution with no awareness of
 //! comments -- in one case this silently spliced multi-line generated code
 //! into a `//` comment, breaking the surrounding shader. `ShaderBuilder`'s
@@ -71,18 +71,20 @@ fn check_wgsl_snapshot(actual: &str, name: &str) {
 /// Mirrors the `switch_cases` construction in `channel_dispatch` exactly (same
 /// format string, same join separator), so tests here build the dispatch switch
 /// identically to production.
-fn switch_cases(name: &str, n: usize) -> String {
+fn switch_cases(stroke_or_fill_property: &str, n: usize) -> String {
     (0..n)
-        .map(|i| format!("case {i}u: {{ return get_channel_{name}_{i}(label_index); }}"))
+        .map(|i| {
+            format!("case {i}u: {{ return get_channel_{stroke_or_fill_property}_{i}(label_index); }}")
+        })
         .collect::<Vec<_>>()
         .join("\n        ")
 }
 
 /// Mirrors `channel_dispatch` in `BitmaskLayer`'s module.
-fn channel_dispatch(template: &str, name: &str, n: usize) -> String {
+fn channel_dispatch(template: &str, stroke_or_fill_property: &str, n: usize) -> String {
     ShaderBuilder::new(template)
-        .define("name", name)
-        .define("switch_cases", &switch_cases(name, n))
+        .define("stroke_or_fill_property", stroke_or_fill_property)
+        .define("switch_cases", &switch_cases(stroke_or_fill_property, n))
         .build()
 }
 
@@ -90,8 +92,8 @@ fn channel_dispatch(template: &str, name: &str, n: usize) -> String {
 fn uniform_rgb_template_matches_expected() {
     // Mirrors `prepare_channel_color`'s `None` / `ColorMode::UniformRgb` arm.
     let actual = ShaderBuilder::new(get_channel_color::UNIFORM_RGB)
-        .define("name", "fill_color")
-        .define("ch", "0")
+        .define("stroke_or_fill_property", "fill_color")
+        .define("c_idx", "0")
         .build();
     let expected = "\
 // BitmaskLayer per-channel ColorMode::UniformRgb (and None) — every object in
@@ -109,8 +111,8 @@ fn get_channel_fill_color_0(label_index: u32) -> vec3<f32> {
 fn instanced_rgb_template_matches_expected() {
     // Mirrors `prepare_channel_color`'s `ColorMode::InstancedRgb` arm.
     let actual = ShaderBuilder::new(get_channel_color::INSTANCED_RGB)
-        .define("name", "stroke_color")
-        .define("ch", "1")
+        .define("stroke_or_fill_property", "stroke_color")
+        .define("c_idx", "1")
         .define_bidx("r", 5)
         .define_bidx("g", 6)
         .define_bidx("b", 7)
@@ -141,8 +143,8 @@ fn get_channel_stroke_color_1(label_index: u32) -> vec3<f32> {
 fn instanced_rgb_interleaved_template_matches_expected() {
     // Mirrors `prepare_channel_color`'s `ColorMode::InstancedRgbInterleaved` arm.
     let actual = ShaderBuilder::new(get_channel_color::INSTANCED_RGB_INTERLEAVED)
-        .define("name", "fill_color")
-        .define("ch", "2")
+        .define("stroke_or_fill_property", "fill_color")
+        .define("c_idx", "2")
         .define_bidx("rgb", 8)
         .inject_texture_sample_type("rgb", TextureDtype::U8)
         .build();
@@ -170,8 +172,8 @@ fn categorical_template_matches_expected() {
     // Mirrors `prepare_channel_color`'s `ColorMode::Categorical` arm (and,
     // identically, its `CategoricalCustom` arm -- both share this template).
     let actual = ShaderBuilder::new(get_channel_color::CATEGORICAL)
-        .define("name", "fill_color")
-        .define("ch", "3")
+        .define("stroke_or_fill_property", "fill_color")
+        .define("c_idx", "3")
         .define_bidx("labels", 9)
         .define_bidx("palette", 10)
         .inject_texture_sample_type("labels", TextureDtype::U8)
@@ -200,8 +202,8 @@ fn get_channel_fill_color_3(label_index: u32) -> vec3<f32> {
 fn quantitative_template_matches_expected() {
     // Mirrors `prepare_channel_color`'s `ColorMode::Quantitative` arm.
     let actual = ShaderBuilder::new(get_channel_color::QUANTITATIVE)
-        .define("name", "stroke_color")
-        .define("ch", "4")
+        .define("stroke_or_fill_property", "stroke_color")
+        .define("c_idx", "4")
         .define_bidx("values", 11)
         .inject_texture_sample_type("values", TextureDtype::F32)
         .define("colormap_fn_name", "viridis")
@@ -235,8 +237,8 @@ fn get_channel_stroke_color_4(label_index: u32) -> vec3<f32> {
 fn uniform_scalar_template_matches_expected() {
     // Mirrors `prepare_channel_scalar`'s uniform (no instanced values) arm.
     let actual = ShaderBuilder::new(get_channel_scalar::UNIFORM)
-        .define("name", "stroke_width")
-        .define("ch", "0")
+        .define("stroke_or_fill_property", "stroke_width")
+        .define("c_idx", "0")
         .build();
     let expected = "\
 // BitmaskLayer per-channel SizeMode::UniformSize / OpacityMode::UniformOpacity
@@ -255,8 +257,8 @@ fn get_channel_stroke_width_0(label_index: u32) -> f32 {
 fn instanced_scalar_template_matches_expected() {
     // Mirrors `prepare_channel_scalar`'s instanced arm.
     let actual = ShaderBuilder::new(get_channel_scalar::INSTANCED)
-        .define("name", "fill_opacity")
-        .define("ch", "1")
+        .define("stroke_or_fill_property", "fill_opacity")
+        .define("c_idx", "1")
         .define_bidx("values", 12)
         .inject_texture_sample_type("values", TextureDtype::F32)
         .build();
@@ -356,7 +358,7 @@ fn channel_sample_and_is_edge_are_not_templated() {
     // Unlike `get_channel_color`'s per-`ColorMode` snippets, these two are
     // ordinary WGSL functions parameterized by `channel_index` -- injected
     // once via `ShaderBuilder::inject_function` regardless of channel count,
-    // with no `{{...}}` placeholders (and no per-channel `ch` substitution)
+    // with no `{{...}}` placeholders (and no per-channel `c_idx` substitution)
     // of their own.
     assert!(!bitmask_channel::CHANNEL_SAMPLE.contains("{{"));
     assert!(!bitmask_channel::CHANNEL_IS_EDGE.contains("{{"));
@@ -379,50 +381,50 @@ fn full_shader_assembly_matches_snapshot() {
     // 1's quantitative stroke color takes the first texture binding.
     let channel_0 = [
         ShaderBuilder::new(get_channel_color::UNIFORM_RGB)
-            .define("name", "fill_color")
-            .define("ch", "0")
+            .define("stroke_or_fill_property", "fill_color")
+            .define("c_idx", "0")
             .build(),
         ShaderBuilder::new(get_channel_color::UNIFORM_RGB)
-            .define("name", "stroke_color")
-            .define("ch", "0")
+            .define("stroke_or_fill_property", "stroke_color")
+            .define("c_idx", "0")
             .build(),
         ShaderBuilder::new(get_channel_scalar::UNIFORM)
-            .define("name", "fill_opacity")
-            .define("ch", "0")
+            .define("stroke_or_fill_property", "fill_opacity")
+            .define("c_idx", "0")
             .build(),
         ShaderBuilder::new(get_channel_scalar::UNIFORM)
-            .define("name", "stroke_opacity")
-            .define("ch", "0")
+            .define("stroke_or_fill_property", "stroke_opacity")
+            .define("c_idx", "0")
             .build(),
         ShaderBuilder::new(get_channel_scalar::UNIFORM)
-            .define("name", "stroke_width")
-            .define("ch", "0")
+            .define("stroke_or_fill_property", "stroke_width")
+            .define("c_idx", "0")
             .build(),
     ]
     .join("\n");
     let channel_1 = [
         ShaderBuilder::new(get_channel_color::UNIFORM_RGB)
-            .define("name", "fill_color")
-            .define("ch", "1")
+            .define("stroke_or_fill_property", "fill_color")
+            .define("c_idx", "1")
             .build(),
         ShaderBuilder::new(get_channel_color::QUANTITATIVE)
-            .define("name", "stroke_color")
-            .define("ch", "1")
+            .define("stroke_or_fill_property", "stroke_color")
+            .define("c_idx", "1")
             .define_bidx("values", 2)
             .inject_texture_sample_type("values", TextureDtype::F32)
             .define("colormap_fn_name", "viridis")
             .build(),
         ShaderBuilder::new(get_channel_scalar::UNIFORM)
-            .define("name", "fill_opacity")
-            .define("ch", "1")
+            .define("stroke_or_fill_property", "fill_opacity")
+            .define("c_idx", "1")
             .build(),
         ShaderBuilder::new(get_channel_scalar::UNIFORM)
-            .define("name", "stroke_opacity")
-            .define("ch", "1")
+            .define("stroke_or_fill_property", "stroke_opacity")
+            .define("c_idx", "1")
             .build(),
         ShaderBuilder::new(get_channel_scalar::INSTANCED)
-            .define("name", "stroke_width")
-            .define("ch", "1")
+            .define("stroke_or_fill_property", "stroke_width")
+            .define("c_idx", "1")
             .define_bidx("values", 3)
             .inject_texture_sample_type("values", TextureDtype::F32)
             .build(),

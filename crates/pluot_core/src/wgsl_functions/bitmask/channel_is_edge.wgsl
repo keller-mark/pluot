@@ -6,15 +6,8 @@
 // also being injected.
 //
 // `px` is the *continuous* position of the fragment in mask-texel space, not
-// the integer texel it falls in, and `stroke_width` may be fractional. This is
-// what keeps the outline's thickness independent of the mask's resolution:
-// were the offsets applied to the containing texel instead, every fragment
-// within a texel would answer identically and the band could only ever be a
-// whole number of texels thick, so the same requested width would render
-// differently for a coarse mask than for a fine one. Offsetting the continuous
-// position instead lets the band's edge fall part-way through a texel, so its
-// thickness is whatever `stroke_width` asks for -- down to the one-screen-pixel
-// limit of the rasterizer, rather than the one-texel limit of the mask.
+// the integer texel it falls in, and `stroke_width` may be fractional.
+// This keeps the outline's thickness independent of the mask's resolution.
 //
 // Note the diagonal offsets reach `stroke_width * sqrt(2)`, so the band bulges
 // somewhat at corners; this samples a square, not a disc.

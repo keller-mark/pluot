@@ -59,8 +59,7 @@ use crate::viewport::{DataCoord, ScreenCoord};
 use crate::positioning::{get_point_position, get_point_size};
 use crate::wgpu;
 
-/// Per-channel settings for [`BitmaskLayer`]. The channel's mask data itself
-/// lives in `BitmaskLayerParams::data`.
+/// Per-channel settings struct used by [`BitmaskLayerParams::channel_settings`].
 ///
 /// Every per-object mode below is indexed by object id minus one (0 being
 /// reserved for "no object"), so `InstancedRgb`/`Categorical`/`Quantitative`/
@@ -159,6 +158,9 @@ pub struct BitmaskLayerParams {
 
     /// One entry per channel (i.e. one per the "C" dimension of `shape`),
     /// specifying how to color that channel's segmentation mask.
+    /// Each channel may represent a different type of objects, for instance,
+    /// the first channel may contain cell segmentations while
+    /// the second channel may contain nuclei segmentations.
     pub channel_settings: Vec<BitmaskChannelSettings>,
 
     /// Overall opacity multiplier applied to the layer as a whole, on top of
@@ -651,7 +653,7 @@ struct ChannelTexture {
 /// its stroke) on the GPU.
 ///
 /// Mirrors [`crate::color_mode::prepare_color_mode`], but specialized to emit a
-/// uniquely-named `get_channel_{property}_{ch}` function (and uniquely-named
+/// uniquely-named `get_channel_{property}_{c_idx}` function (and uniquely-named
 /// texture bindings) per (channel, property) pair, since a `BitmaskLayer` may
 /// have several channels active in the same shader simultaneously, each with
 /// its own fill and stroke color — unlike layers with a single fill color,
@@ -735,16 +737,17 @@ fn create_channel_palette_texture(
 
 /// Prepare the GPU resources and WGSL for one of a channel's [`ColorMode`]s,
 /// assigning texture bindings sequentially starting at `first_binding` and
-/// naming everything after the `name` property (`fill_color` or `stroke_color`)
-/// and the `ch` channel index, so that every (channel, property) pair can
-/// coexist in one shader module. See [`PreparedChannelColor`].
+/// naming everything after the `stroke_or_fill_property` property (`fill_color`
+/// or `stroke_color`) and the `c_idx` channel index, so that every (channel,
+/// property) pair can coexist in one shader module. See
+/// [`PreparedChannelColor`].
 fn prepare_channel_color(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: Option<&ColorMode>,
-    name: &str,
+    stroke_or_fill_property: &str,
     first_binding: u32,
-    ch: usize,
+    c_idx: usize,
 ) -> PreparedChannelColor {
     let mut static_color = [0.0f32, 0.0, 0.0, 1.0];
     let mut reverse = 0u32;
@@ -753,11 +756,11 @@ fn prepare_channel_color(
     let mut colormap_fn = None;
 
     // e.g. "channel 0 stroke_color r Texture", for GPU debugging labels.
-    let label = |part: &str| format!("channel {ch} {name} {part} Texture");
+    let label = |part: &str| format!("channel {c_idx} {stroke_or_fill_property} {part} Texture");
     let template = |source: &'static str| {
         ShaderBuilder::new(source)
-            .define("name", name)
-            .define("ch", &ch.to_string())
+            .define("stroke_or_fill_property", stroke_or_fill_property)
+            .define("c_idx", &c_idx.to_string())
     };
 
     let wgsl = match color {
@@ -872,16 +875,16 @@ fn prepare_channel_color(
 fn prepare_channel_scalar(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    name: &str,
+    stroke_or_fill_property: &str,
     static_value: f32,
     instanced: Option<&NumericData>,
     first_binding: u32,
-    ch: usize,
+    c_idx: usize,
 ) -> PreparedChannelScalar {
     let template = |source: &'static str| {
         ShaderBuilder::new(source)
-            .define("name", name)
-            .define("ch", &ch.to_string())
+            .define("stroke_or_fill_property", stroke_or_fill_property)
+            .define("c_idx", &c_idx.to_string())
     };
     match instanced {
         None => PreparedChannelScalar {
@@ -893,7 +896,7 @@ fn prepare_channel_scalar(
             let (view, dtype) = values.create_data_texture(
                 device,
                 queue,
-                &format!("channel {ch} {name} values Texture"),
+                &format!("channel {c_idx} {stroke_or_fill_property} values Texture"),
             );
             let wgsl = template(get_channel_scalar::INSTANCED)
                 .define_bidx("values", first_binding)
@@ -942,22 +945,30 @@ fn prepare_channel(
     // Each property consumes as many binding indices as it has textures (none,
     // for a uniform mode), so `next_binding` walks forward through them.
     let mut next_binding = first_binding;
-    let mut color = |color: Option<&ColorMode>, name: &str, next_binding: &mut u32| {
-        let prepared = prepare_channel_color(device, queue, color, name, *next_binding, i);
+    let mut color = |color: Option<&ColorMode>, stroke_or_fill_property: &str, next_binding: &mut u32| {
+        let prepared =
+            prepare_channel_color(device, queue, color, stroke_or_fill_property, *next_binding, i);
         *next_binding += prepared.textures.len() as u32;
         prepared
     };
     let fill_color = color(ch.fill_color.as_ref(), "fill_color", &mut next_binding);
     let stroke_color = color(ch.stroke_color.as_ref(), "stroke_color", &mut next_binding);
 
-    let mut scalar =
-        |name: &str, (static_value, instanced): (f32, Option<&NumericData>), next_binding: &mut u32| {
-            let prepared = prepare_channel_scalar(
-                device, queue, name, static_value, instanced, *next_binding, i,
-            );
-            *next_binding += prepared.texture.is_some() as u32;
-            prepared
-        };
+    let mut scalar = |stroke_or_fill_property: &str,
+                       (static_value, instanced): (f32, Option<&NumericData>),
+                       next_binding: &mut u32| {
+        let prepared = prepare_channel_scalar(
+            device,
+            queue,
+            stroke_or_fill_property,
+            static_value,
+            instanced,
+            *next_binding,
+            i,
+        );
+        *next_binding += prepared.texture.is_some() as u32;
+        prepared
+    };
     let fill_opacity = scalar(
         "fill_opacity",
         split_opacity_mode(ch.fill_opacity.as_ref(), DEFAULT_FILL_OPACITY),
@@ -1016,19 +1027,19 @@ fn prepare_channel(
     PreparedChannel { uniforms, textures, wgsl, colormap_fns }
 }
 
-/// The generated `switch` dispatching `get_channel_{name}(channel_index,
-/// label_index)` to the per-channel `get_channel_{name}_{i}` matching
+/// The generated `switch` dispatching `get_channel_{stroke_or_fill_property}(channel_index,
+/// label_index)` to the per-channel `get_channel_{stroke_or_fill_property}_{i}` matching
 /// `channel_index`, for one of the five per-channel properties. `template` is
 /// [`bitmask_channel::CHANNEL_COLOR_DISPATCH`] or
 /// [`bitmask_channel::CHANNEL_SCALAR_DISPATCH`], depending on the property's
 /// return type.
-fn channel_dispatch(template: &str, name: &str, n_channels: usize) -> String {
+fn channel_dispatch(template: &str, stroke_or_fill_property: &str, n_channels: usize) -> String {
     let switch_cases: String = (0..n_channels)
-        .map(|i| format!("case {i}u: {{ return get_channel_{name}_{i}(label_index); }}"))
+        .map(|i| format!("case {i}u: {{ return get_channel_{stroke_or_fill_property}_{i}(label_index); }}"))
         .collect::<Vec<_>>()
         .join("\n        ");
     ShaderBuilder::new(template)
-        .define("name", name)
+        .define("stroke_or_fill_property", stroke_or_fill_property)
         .define("switch_cases", &switch_cases)
         .build()
 }

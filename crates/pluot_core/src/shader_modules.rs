@@ -108,16 +108,18 @@ pub mod stroke_color {
 }
 
 /// Per-[`ColorMode`](crate::render_traits::ColorMode) WGSL snippets for
-/// `BitmaskLayer`, each defining `fn get_channel_{{name}}_{{ch}}(label_index:
-/// u32) -> vec3<f32>` (plus any texture bindings the mode needs). Unlike
+/// `BitmaskLayer`, each defining `fn
+/// get_channel_{{stroke_or_fill_property}}_{{c_idx}}(label_index: u32) ->
+/// vec3<f32>` (plus any texture bindings the mode needs). Unlike
 /// [`color`] (one `get_fill_color` shared by every instance of a layer), a
 /// `BitmaskLayer` may have several channels — each possibly using a different
 /// `ColorMode` for its fill and another for its stroke — coexisting in one
 /// shader module, so every (channel, fill/stroke) pair gets its own uniquely
 /// named function and bindings rather than sharing one. Templates: substitute
-/// `{{name}}` for the property (`fill_color` or `stroke_color`, which doubles
-/// as the prefix of the `Channel` uniform fields the snippet reads) and
-/// `{{ch}}` for the channel index, plus any binding-index/dtype placeholders;
+/// `{{stroke_or_fill_property}}` for the property (`fill_color` or
+/// `stroke_color`, which doubles as the prefix of the `Channel` uniform fields
+/// the snippet reads) and `{{c_idx}}` for the channel index, plus any
+/// binding-index/dtype placeholders;
 /// assembled at runtime by
 /// `crate::layers::bitmask_layer::prepare_channel_color`. All variants that
 /// read a value texture assume [`common::FLAT_TEXEL_COORD`] is also injected.
@@ -143,11 +145,12 @@ pub mod get_channel_color {
 /// Scalar counterpart of [`get_channel_color`], for the `BitmaskLayer`
 /// properties carried by a [`SizeMode`](crate::render_traits::SizeMode) or an
 /// [`OpacityMode`](crate::render_traits::OpacityMode) rather than a
-/// `ColorMode`: each snippet defines `fn get_channel_{{name}}_{{ch}}(
-/// label_index: u32) -> f32`. Substitute `{{name}}` for the property
+/// `ColorMode`: each snippet defines `fn
+/// get_channel_{{stroke_or_fill_property}}_{{c_idx}}(label_index: u32) ->
+/// f32`. Substitute `{{stroke_or_fill_property}}` for the property
 /// (`fill_opacity`, `stroke_opacity` or `stroke_width`, which doubles as the
-/// name of the `Channel` uniform field the uniform variant reads) and `{{ch}}`
-/// for the channel index; assembled at runtime by
+/// name of the `Channel` uniform field the uniform variant reads) and
+/// `{{c_idx}}` for the channel index; assembled at runtime by
 /// `crate::layers::bitmask_layer::prepare_channel_scalar`. The instanced
 /// variant assumes [`common::FLAT_TEXEL_COORD`] is also injected.
 pub mod get_channel_scalar {
@@ -199,20 +202,22 @@ pub mod bitmask_channel {
     pub const CHANNEL_STROKE_WIDTH: &str =
         include_str!("wgsl_functions/bitmask/channel_stroke_width.wgsl");
 
-    /// `fn get_channel_{{name}}(channel_index: u32, label_index: u32) ->
-    /// vec3<f32>` — dispatches to the per-channel
-    /// `get_channel_{{name}}_{{ch}}` (see [`get_channel_color`]) matching
-    /// `channel_index`. Template: substitute `{{name}}` with the property
-    /// (`fill_color` or `stroke_color`) and `{{switch_cases}}` with one `case
-    /// N: { return get_channel_<name>_N(label_index); }` per channel.
+    /// `fn get_channel_{{stroke_or_fill_property}}(channel_index: u32,
+    /// label_index: u32) -> vec3<f32>` — dispatches to the per-channel
+    /// `get_channel_{{stroke_or_fill_property}}_{{c_idx}}` (see
+    /// [`get_channel_color`]) matching `channel_index`. Template: substitute
+    /// `{{stroke_or_fill_property}}` with the property (`fill_color` or
+    /// `stroke_color`) and `{{switch_cases}}` with one `case
+    /// N: { return get_channel_<stroke_or_fill_property>_N(label_index); }` per channel.
     pub const CHANNEL_COLOR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_color_dispatch.wgsl");
 
-    /// `fn get_channel_{{name}}(channel_index: u32, label_index: u32) -> f32`
-    /// — the scalar counterpart of [`CHANNEL_COLOR_DISPATCH`], dispatching to
-    /// the per-channel `get_channel_{{name}}_{{ch}}` (see
+    /// `fn get_channel_{{stroke_or_fill_property}}(channel_index: u32,
+    /// label_index: u32) -> f32` — the scalar counterpart of
+    /// [`CHANNEL_COLOR_DISPATCH`], dispatching to the per-channel
+    /// `get_channel_{{stroke_or_fill_property}}_{{c_idx}}` (see
     /// [`get_channel_scalar`]) matching `channel_index`. Template: substitute
-    /// `{{name}}` with the property (`fill_opacity`, `stroke_opacity` or
-    /// `stroke_width`) and `{{switch_cases}}` as above.
+    /// `{{stroke_or_fill_property}}` with the property (`fill_opacity`,
+    /// `stroke_opacity` or `stroke_width`) and `{{switch_cases}}` as above.
     pub const CHANNEL_SCALAR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_scalar_dispatch.wgsl");
 }
 

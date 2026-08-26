@@ -1,5 +1,5 @@
 // Resolves a channel's `stroke_width` -- expressed in screen pixels, data
-// (world) units, or as a fraction of the layer height, per
+// (world) units, or as a fraction of the layer height (normalized units), per
 // `u.stroke_width_unit_mode` -- into the mask-texel units that
 // `bitmask_is_edge` measures in. This is purely a change of units: the result
 // is free to be fractional, and nothing here depends on the mask's
@@ -10,8 +10,7 @@
 // in data positioning mode, the camera/aspect-ratio pipeline. So one texel
 // spans `world_per_texel` world units and `px_per_texel` screen pixels, and
 // converting a width into texels is a division by whichever of those matches
-// the width's unit mode. As in the stroked polygon/curve layers, widths are
-// measured relative to the Y axis. Injected once (not templated per-channel),
+// the width's unit mode. Injected once (not templated per-channel),
 // regardless of channel count; assumes `translate`, `scale`,
 // `get_aspect_ratio_mat` and the layer's `Uniforms` struct are in scope.
 fn bitmask_stroke_width_texels(stroke_width: f32) -> f32 {
