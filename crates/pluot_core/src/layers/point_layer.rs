@@ -9,7 +9,7 @@ use std::sync::{Arc};
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
 use crate::picking_geometry::unapply_model_matrix;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
@@ -19,6 +19,7 @@ use crate::scalar_mode::{
     prepare_fill_opacity_mode, prepare_size_mode, prepare_stroke_opacity_mode,
     prepare_stroke_width_mode,
 };
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -73,6 +74,16 @@ pub struct PointLayerParams {
     // possible (see `NumericData::create_data_texture`).
     pub position_x: NumericData,
     pub position_y: NumericData,
+
+
+    pub selection_criteria: Option<EmphasisCriteria>,
+    pub filtering_criteria: Option<EmphasisCriteria>,
+
+    // Fill/stroke colors used for filter-included, but selection-excluded
+    // ("background") points, in place of `fill_color`/`stroke_color`. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    pub background_fill_color: (u8, u8, u8),
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 impl Default for PointLayerParams {
@@ -95,6 +106,10 @@ impl Default for PointLayerParams {
             stroke_width: None,
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
+            selection_criteria: None,
+            filtering_criteria: None,
+            background_fill_color: (200, 200, 200),
+            background_stroke_color: (200, 200, 200),
         }
     }
 }
@@ -134,6 +149,12 @@ impl PointLayer {
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
             stroke_opacity.validate_len(n);
+        }
+        if let Some(selection_criteria) = &layer_params.selection_criteria {
+            selection_criteria.validate_len(n);
+        }
+        if let Some(filtering_criteria) = &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(n);
         }
         for (name, len) in [
             ("position_y", layer_params.position_y.len()),
@@ -193,13 +214,16 @@ struct PointLayerUniforms {
     stroke_color_reverse: u32,    // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,    // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,          // stroke opacity (UniformOpacity fallback)
+    background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") points
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") points
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
 // Bindings 0-2 are the uniforms buffer and the X/Y position textures. The
 // fill-color textures come first (from here), then the stroke-color, radius,
-// stroke-width, fill-opacity and stroke-opacity textures, each present only when
-// instanced.
+// stroke-width, fill-opacity, stroke-opacity, filtering-criteria and
+// selection-criteria textures, each present only when instanced (or, for the
+// filtering/selection criteria, when the criteria carries per-element data).
 const FILL_COLOR_BINDING_START: u32 = 3;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -251,6 +275,19 @@ impl DrawToRasterGpu for PointLayer {
         let fill_opacity = prepare_fill_opacity_mode(device, queue, layer_params.fill_opacity.as_ref(), fill_opacity_binding_start);
         let stroke_opacity_binding_start = fill_opacity_binding_start + fill_opacity.texture.is_some() as u32;
         let stroke_opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), stroke_opacity_binding_start);
+
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // points are discarded, selection-excluded points are re-colored with
+        // `background_fill_color`/`background_stroke_color`; see fs_main). See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        let filter_binding_start = stroke_opacity_binding_start + stroke_opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, layer_params.filtering_criteria.as_ref(), "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.texture.is_some() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, layer_params.selection_criteria.as_ref(), "is_selected_in", "select_data", select_binding_start,
+        );
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -350,6 +387,18 @@ impl DrawToRasterGpu for PointLayer {
             stroke_color_reverse: stroke_color.reverse,
             stroke_color_domain: Vec2::from_array(stroke_color.domain),
             stroke_opacity: stroke_opacity.static_value,
+            background_fill_color: Vec4::new(
+                layer_params.background_fill_color.0 as f32 / 255.0,
+                layer_params.background_fill_color.1 as f32 / 255.0,
+                layer_params.background_fill_color.2 as f32 / 255.0,
+                1.0,
+            ),
+            background_stroke_color: Vec4::new(
+                layer_params.background_stroke_color.0 as f32 / 255.0,
+                layer_params.background_stroke_color.1 as f32 / 255.0,
+                layer_params.background_stroke_color.2 as f32 / 255.0,
+                1.0,
+            ),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -484,6 +533,33 @@ impl DrawToRasterGpu for PointLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), each present
+        // only when the corresponding criteria carries per-element data.
+        if let Some(tex) = &filtering.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("PointLayer BGL"),
             entries: &bgl_entries,
@@ -539,6 +615,18 @@ impl DrawToRasterGpu for PointLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        if let Some(tex) = &filtering.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("PointLayer BG"),
             layout: &bind_group_layout,
@@ -565,6 +653,11 @@ impl DrawToRasterGpu for PointLayer {
             .define("stroke_width_module", &width.wgsl)
             .define("fill_opacity_module", &fill_opacity.wgsl)
             .define("stroke_opacity_module", &stroke_opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -733,6 +826,17 @@ impl DrawToSvg for PointLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
+            // Filter-excluded points are not rendered at all. See
+            // `.claude/skills/pluot-filter-select-highlight`.
+            if !cpu_is_included(layer_params.filtering_criteria.as_ref(), i) {
+                continue;
+            }
+            // Filter-included but selection-excluded ("background") points still
+            // render, but de-emphasized with `background_fill_color`/
+            // `background_stroke_color` in place of their configured fill/stroke
+            // color.
+            let is_selected = cpu_is_included(layer_params.selection_criteria.as_ref(), i);
+
             let x = layer_params.position_x.get_f32(i);
             let y = layer_params.position_y.get_f32(i);
 
@@ -779,9 +883,11 @@ impl DrawToSvg for PointLayer {
                 radius_value
             };
 
-            let fill = Some(TwoColor::Rgb(cpu_fill_color(
-                layer_params.fill_color.as_ref(), i, fill_quant_domain,
-            )));
+            let fill = Some(TwoColor::Rgb(if is_selected {
+                cpu_fill_color(layer_params.fill_color.as_ref(), i, fill_quant_domain)
+            } else {
+                layer_params.background_fill_color
+            }));
 
             // Stroke: only drawn when a stroke width is configured. Uses the
             // stroke color mode, opacity and per-point width. The stroke is drawn
@@ -813,9 +919,11 @@ impl DrawToSvg for PointLayer {
                     width_value
                 };
                 (
-                    Some(TwoColor::Rgb(cpu_fill_color(
-                        layer_params.stroke_color.as_ref(), i, stroke_quant_domain,
-                    ))),
+                    Some(TwoColor::Rgb(if is_selected {
+                        cpu_fill_color(layer_params.stroke_color.as_ref(), i, stroke_quant_domain)
+                    } else {
+                        layer_params.background_stroke_color
+                    })),
                     cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
                     width_px as f64,
                 )
@@ -904,17 +1012,22 @@ impl PickableLayer for PointLayer {
             let (cx, cy) = unapply_model_matrix(self.layer_params.model_matrix, cx, cy)?;
 
             let mut min_dist_sq = f32::MAX;
-            let mut closest_idx = 0usize;
+            let mut closest_idx: Option<usize> = None;
             for i in 0..n {
+                // Filter-excluded points are ignored in picking. See
+                // `.claude/skills/pluot-filter-select-highlight`.
+                if !cpu_is_included(self.layer_params.filtering_criteria.as_ref(), i) {
+                    continue;
+                }
                 let dx = self.layer_params.position_x.get_f32(i) - cx;
                 let dy = self.layer_params.position_y.get_f32(i) - cy;
                 let dist_sq = dx * dx + dy * dy;
                 if dist_sq < min_dist_sq {
                     min_dist_sq = dist_sq;
-                    closest_idx = i;
+                    closest_idx = Some(i);
                 }
             }
-            closest_idx
+            closest_idx?
         } else {
             // Pixels/Normalized units mode: point positions are placed relative
             // to the layer bounds and are independent of the camera, so a
@@ -959,8 +1072,13 @@ impl PickableLayer for PointLayer {
             ]);
 
             let mut min_dist_sq = f32::MAX;
-            let mut closest_idx = 0usize;
+            let mut closest_idx: Option<usize> = None;
             for i in 0..n {
+                // Filter-excluded points are ignored in picking. See
+                // `.claude/skills/pluot-filter-select-highlight`.
+                if !cpu_is_included(self.layer_params.filtering_criteria.as_ref(), i) {
+                    continue;
+                }
                 let x = self.layer_params.position_x.get_f32(i);
                 let y = self.layer_params.position_y.get_f32(i);
                 let (px, py) = get_point_position(
@@ -980,10 +1098,10 @@ impl PickableLayer for PointLayer {
                 let dist_sq = dx * dx + dy * dy;
                 if dist_sq < min_dist_sq {
                     min_dist_sq = dist_sq;
-                    closest_idx = i;
+                    closest_idx = Some(i);
                 }
             }
-            closest_idx
+            closest_idx?
         };
 
         let mut info = HashMap::new();

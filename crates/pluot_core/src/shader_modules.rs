@@ -293,6 +293,31 @@ pub mod fill_opacity {
     pub const INSTANCED: &str = include_str!("wgsl_functions/get_fill_opacity/instanced.wgsl");
 }
 
+/// Per-[`EmphasisCriteria`](crate::render_traits::EmphasisCriteria) WGSL
+/// snippets used to test filtering/selection membership (see
+/// `.claude/skills/pluot-filter-select-highlight`). Each variant defines `fn
+/// {{criteria_fn_name}}(instance_index: u32) -> bool`; the categorical and
+/// quantitative variants additionally declare a per-element value texture at
+/// `{{criteria_data_var}}` (binding index and sampled type filled in at
+/// runtime). Assembled at runtime by
+/// [`crate::emphasis_mode::prepare_emphasis_criteria`], once per criteria
+/// (`filtering_criteria` / `selection_criteria`) so both can coexist in the
+/// same shader module without name or binding collisions. The categorical and
+/// quantitative variants assume [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod is_included {
+    /// No criteria: every item is included.
+    pub const NONE: &str = include_str!("wgsl_functions/get_is_included/none.wgsl");
+
+    /// Explicit empty inclusion list: no item is included (texture-free).
+    pub const EMPTY: &str = include_str!("wgsl_functions/get_is_included/empty.wgsl");
+
+    /// Per-element category code tested against an inline array of included codes.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_is_included/categorical.wgsl");
+
+    /// Per-element scalar value tested against an inclusive [min, max] range.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_is_included/quantitative.wgsl");
+}
+
 /// Colormap WGSL functions, embedded at compile time from
 /// `wgsl_functions/colormaps/`.
 ///
