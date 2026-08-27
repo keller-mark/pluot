@@ -37,6 +37,9 @@ struct Channel {
 
     filled: u32,   // 1 = fill object interiors
     stroked: u32,  // 1 = draw an outline along object boundaries
+
+    background_fill_color: vec4<f32>,   // rgba fill color used for filter-included, selection-excluded ("background") objects
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") objects
 };
 
 struct Uniforms {
@@ -101,21 +104,24 @@ struct VSOut {
 // is only defined once in this shader module.
 {{colormap_functions}}
 
-// Per-channel getters, five per channel: `get_channel_fill_color_N` /
+// Per-channel getters, seven per channel: `get_channel_fill_color_N` /
 // `get_channel_stroke_color_N` (-> vec3<f32>) assembled according to that
-// channel's fill/stroke `ColorMode`, and `get_channel_fill_opacity_N` /
+// channel's fill/stroke `ColorMode`, `get_channel_fill_opacity_N` /
 // `get_channel_stroke_opacity_N` / `get_channel_stroke_width_N` (-> f32)
-// assembled according to its `OpacityMode`/`SizeMode`. Each mirrors the
-// layer-wide equivalent in `crate::color_mode`/`crate::scalar_mode`,
-// specialized to a unique function name and texture bindings per (channel,
-// property) pair, since WGSL has no per-instance function dispatch and every
-// channel may resolve every property differently.
+// assembled according to its `OpacityMode`/`SizeMode`, and
+// `get_channel_is_filtered_in_N` / `get_channel_is_selected_in_N` (-> bool)
+// assembled according to its `filtering_criteria`/`selection_criteria` (see
+// `.claude/skills/pluot-filter-select-highlight`). Each mirrors the
+// layer-wide equivalent in `crate::color_mode`/`crate::scalar_mode`/
+// `crate::emphasis_mode`, specialized to a unique function name and texture
+// bindings per (channel, property) pair, since WGSL has no per-instance
+// function dispatch and every channel may resolve every property differently.
 {{channel_functions}}
 
-// get_channel_fill_color(channel_index, label_index) and its four siblings:
-// each dispatches to the per-channel function above matching `channel_index`.
-// See `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
-// `CHANNEL_SCALAR_DISPATCH`.
+// get_channel_fill_color(channel_index, label_index) and its siblings: each
+// dispatches to the per-channel function above matching `channel_index`. See
+// `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
+// `CHANNEL_SCALAR_DISPATCH` / `CHANNEL_BOOL_DISPATCH`.
 {{channel_dispatchers}}
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
@@ -256,6 +262,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         }
         let label_index = u32(raw_label - 1);
 
+        // Filter-excluded objects are not rendered at all: not as fill, not as
+        // stroke, not in picking. See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        if (!get_channel_is_filtered_in(channel_index, label_index)) {
+            continue;
+        }
+
         // The outline band is the outermost part of an object's interior, so
         // the stroke and the fill cover disjoint regions and this pixel takes
         // one or the other -- never a blend of both, as in `PointLayer`. A
@@ -265,6 +278,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         // The edge test measures in mask texels, so this channel's stroke
         // width is resolved out of screen-pixel/data/normalized units first.
         // The result may be fractional, which the test handles.
+        //
+        // Filter-included but selection-excluded ("background") objects still
+        // render, but de-emphasized with `ch.background_fill_color` /
+        // `ch.background_stroke_color` in place of their configured fill/stroke
+        // color.
+        let is_selected = get_channel_is_selected_in(channel_index, label_index);
         var color: vec3<f32>;
         var alpha: f32;
         if (ch.stroked == 1u && bitmask_is_edge(
@@ -275,10 +294,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
             img_h,
             bitmask_stroke_width_texels(get_channel_stroke_width(channel_index, label_index))
         )) {
-            color = get_channel_stroke_color(channel_index, label_index);
+            color = select(ch.background_stroke_color.rgb, get_channel_stroke_color(channel_index, label_index), is_selected);
             alpha = get_channel_stroke_opacity(channel_index, label_index);
         } else if (ch.filled == 1u) {
-            color = get_channel_fill_color(channel_index, label_index);
+            color = select(ch.background_fill_color.rgb, get_channel_fill_color(channel_index, label_index), is_selected);
             alpha = get_channel_fill_opacity(channel_index, label_index);
         } else {
             continue;

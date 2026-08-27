@@ -375,6 +375,12 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
             stroke_opacity: opacity.static_value,
+            background_stroke_color: Vec4::new(
+                layer_params.background_stroke_color.0 as f32 / 255.0,
+                layer_params.background_stroke_color.1 as f32 / 255.0,
+                layer_params.background_stroke_color.2 as f32 / 255.0,
+                1.0,
+            ),
         };
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
         ub.write(&uniform_struct).unwrap();
@@ -438,6 +444,18 @@ impl DrawToRasterGpu for StrokedCurveLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        if let Some(tex) = &filtering.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("StrokedCurve BG"),
             layout: &bgl,
@@ -498,66 +516,81 @@ impl DrawToSvg for StrokedCurveLayer {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let stroke = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain));
 
-        // A single shape uses one width / opacity, resolved from element 0.
-        let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), 0);
-        let stroke_opacity = cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0) as f64;
-
-        // Stroke width in pixels. In pixel mode it is used directly; in data mode
-        // it is transformed through the same pipeline as positions (with w=0, so
-        // translations cancel out), mirroring the GPU shader. Stroke width is
-        // measured relative to the Y axis, so use the Y screen extent. In
-        // normalized mode it is a fraction (0 to 1) of the layer size, also
-        // treated as height-relative.
-        let stroke_width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
-            let (_sx, sy) = get_point_size(
-                width_value,
-                width_value,
-                layer_w,
-                layer_h,
-                &camera_view,
-                layer_params.data_unit_mode_x.clone(),
-                layer_params.data_unit_mode_y.clone(),
-                view_params.aspect_ratio_mode.clone(),
-                view_params.aspect_ratio_alignment_mode.clone(),
-                layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
+        // Filter-excluded shape is not rendered at all. See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        let mut svg_elements: Vec<TwoElement> = Vec::new();
+        if cpu_is_included(layer_params.filtering_criteria.as_ref(), 0) {
+            // Filter-included but selection-excluded ("background") shape still
+            // renders, but de-emphasized with `background_stroke_color` in place
+            // of the configured stroke color.
+            let stroke = TwoColor::Rgb(
+                if cpu_is_included(layer_params.selection_criteria.as_ref(), 0) {
+                    cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain)
+                } else {
+                    layer_params.background_stroke_color
+                },
             );
-            sy.abs()
-        } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
-            width_value * layer_h
-        } else {
-            width_value
-        };
 
-        let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
-        for subpath in subpaths {
-            if subpath.is_empty() {
-                continue;
-            }
-            let mut d = String::new();
-            let first = subpath[0].p0;
-            let (fx, fy) = to_px(first.x as f32, first.y as f32);
-            d.push_str(&format!("M {} {}", fx, fy));
-            for seg in subpath {
-                for step in 1..=(subdivisions as u32) {
-                    let t = step as f64 / subdivisions;
-                    let p = seg.eval(t);
-                    let (px, py) = to_px(p.x as f32, p.y as f32);
-                    d.push_str(&format!(" L {} {}", px, py));
+            // A single shape uses one width / opacity, resolved from element 0.
+            let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), 0);
+            let stroke_opacity = cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0) as f64;
+
+            // Stroke width in pixels. In pixel mode it is used directly; in data mode
+            // it is transformed through the same pipeline as positions (with w=0, so
+            // translations cancel out), mirroring the GPU shader. Stroke width is
+            // measured relative to the Y axis, so use the Y screen extent. In
+            // normalized mode it is a fraction (0 to 1) of the layer size, also
+            // treated as height-relative.
+            let stroke_width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
+                let (_sx, sy) = get_point_size(
+                    width_value,
+                    width_value,
+                    layer_w,
+                    layer_h,
+                    &camera_view,
+                    layer_params.data_unit_mode_x.clone(),
+                    layer_params.data_unit_mode_y.clone(),
+                    view_params.aspect_ratio_mode.clone(),
+                    view_params.aspect_ratio_alignment_mode.clone(),
+                    layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
+                );
+                sy.abs()
+            } else if layer_params.stroke_width_unit_mode == UnitsMode::Normalized {
+                width_value * layer_h
+            } else {
+                width_value
+            };
+
+            svg_elements.reserve(subpaths.len());
+            for subpath in subpaths {
+                if subpath.is_empty() {
+                    continue;
                 }
+                let mut d = String::new();
+                let first = subpath[0].p0;
+                let (fx, fy) = to_px(first.x as f32, first.y as f32);
+                d.push_str(&format!("M {} {}", fx, fy));
+                for seg in subpath {
+                    for step in 1..=(subdivisions as u32) {
+                        let t = step as f64 / subdivisions;
+                        let p = seg.eval(t);
+                        let (px, py) = to_px(p.x as f32, p.y as f32);
+                        d.push_str(&format!(" L {} {}", px, py));
+                    }
+                }
+                svg_elements.push(TwoElement::Path(TwoPath {
+                    d,
+                    stroke: Some(stroke.clone()),
+                    fill: None,
+                    linewidth: stroke_width_px as f64,
+                    opacity: 1.0,
+                    fill_opacity: 1.0,
+                    stroke_opacity,
+                    stroke_linejoin: Some("round".to_string()),
+                    stroke_linecap: Some("round".to_string()),
+                }));
             }
-            svg_elements.push(TwoElement::Path(TwoPath {
-                d,
-                stroke: Some(stroke.clone()),
-                fill: None,
-                linewidth: stroke_width_px as f64,
-                opacity: 1.0,
-                fill_opacity: 1.0,
-                stroke_opacity,
-                stroke_linejoin: Some("round".to_string()),
-                stroke_linecap: Some("round".to_string()),
-            }));
         }
 
         let svg_elements = vec![TwoElement::Group(TwoGroup {
@@ -577,6 +610,12 @@ impl PickableLayer for StrokedCurveLayer {
         let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
             return None;
         };
+
+        // Filter-excluded shape is ignored in picking. See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        if !cpu_is_included(self.layer_params.filtering_criteria.as_ref(), 0) {
+            return None;
+        }
 
         // Pixel/normalized-units positioning places the curve relative to
         // the layer bounds rather than in data space, so a data-space

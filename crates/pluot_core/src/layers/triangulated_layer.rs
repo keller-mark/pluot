@@ -12,12 +12,13 @@ use std::sync::Arc;
 use crate::positioning::get_point_position;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::scalar_mode::{cpu_fill_opacity, prepare_fill_opacity_mode};
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -55,6 +56,17 @@ pub struct TriangulatedLayerParams {
     /// shares one value across all elements, `InstancedOpacity` supplies one per
     /// element (indexed by `vertex_color_index`). Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Selection/filtering criteria, indexed the same way `fill_color`/
+    /// `fill_opacity` are (i.e. by `vertex_color_index`, one entry per source
+    /// shape). See `.claude/skills/pluot-filter-select-highlight`.
+    pub selection_criteria: Option<EmphasisCriteria>,
+    pub filtering_criteria: Option<EmphasisCriteria>,
+
+    /// Fill color used for filter-included, but selection-excluded
+    /// ("background") shapes, in place of `fill_color`. See
+    /// `.claude/skills/pluot-filter-select-highlight`.
+    pub background_fill_color: (u8, u8, u8),
 }
 
 impl Default for TriangulatedLayerParams {
@@ -69,6 +81,9 @@ impl Default for TriangulatedLayerParams {
             vertex_color_index: NumericData::Uint32(Arc::new(vec![])),
             fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: None,
+            filtering_criteria: None,
+            background_fill_color: (200, 200, 200),
         }
     }
 }
@@ -115,6 +130,7 @@ struct TriangulatedLayerUniforms {
     fill_color_reverse: u32,   // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     fill_opacity: f32,
+    background_fill_color: Vec4, // rgba fill color used for filter-included, selection-excluded ("background") shapes
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -184,6 +200,19 @@ impl DrawToRasterGpu for TriangulatedLayer {
         let opacity_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
         let opacity = prepare_fill_opacity_mode(device, queue, layer_params.fill_opacity.as_ref(), opacity_binding_start);
 
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // shapes are discarded, selection-excluded shapes are re-colored with
+        // `background_fill_color`; see fs_main). See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, layer_params.filtering_criteria.as_ref(), "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.texture.is_some() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, layer_params.selection_criteria.as_ref(), "is_selected_in", "select_data", select_binding_start,
+        );
+
         let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -197,6 +226,12 @@ impl DrawToRasterGpu for TriangulatedLayer {
             fill_color_reverse: color.reverse,
             fill_color_domain: Vec2::from_array(color.domain),
             fill_opacity: opacity.static_value,
+            background_fill_color: Vec4::new(
+                layer_params.background_fill_color.0 as f32 / 255.0,
+                layer_params.background_fill_color.1 as f32 / 255.0,
+                layer_params.background_fill_color.2 as f32 / 255.0,
+                1.0,
+            ),
         };
 
         let mut buf = UniformBuffer::new(Vec::<u8>::new());
@@ -273,6 +308,33 @@ impl DrawToRasterGpu for TriangulatedLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), each present
+        // only when the corresponding criteria carries per-element data.
+        if let Some(tex) = &filtering.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Triangulated BGL"),
             entries: &bgl_entries,
@@ -292,6 +354,11 @@ impl DrawToRasterGpu for TriangulatedLayer {
             // Fill opacity-mode specialization: contributes `get_fill_opacity`
             // (plus a value texture binding when instanced).
             .define("fill_opacity_module", &opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("triangulated_layer.wgsl"),
@@ -367,6 +434,18 @@ impl DrawToRasterGpu for TriangulatedLayer {
         if let Some(tex) = &opacity.texture {
             bg_entries.push(wgpu::BindGroupEntry {
                 binding: opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &filtering.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }

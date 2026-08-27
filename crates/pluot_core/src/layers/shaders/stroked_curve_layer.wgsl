@@ -48,6 +48,7 @@ struct StrokedCurveLayerUniforms {
     stroke_color_reverse: u32,      // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") shape
 }
 
 // Per-segment metadata: indices into the flat points buffer.
@@ -78,6 +79,20 @@ struct SegmentEntry {
 // `fn get_stroke_opacity(poly_index: u32) -> f32`. Assembled per opacity mode by
 // `crate::scalar_mode::prepare_stroke_opacity_mode`.
 {{stroke_opacity_module}}
+
+// Filtering module: an optional per-element codes/values texture plus
+// `fn is_filtered_in(instance_index: u32) -> bool`. A `StrokedCurveLayer`
+// renders a single shape, so the shader always resolves element 0.
+// Filter-excluded shapes are not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(instance_index: u32) -> bool`. A filter-included but
+// selection-excluded shape is de-emphasized with `u.background_stroke_color`
+// rather than not rendered (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
@@ -309,8 +324,20 @@ fn vs_main(
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
 ) -> FSOut {
+    // Filter-excluded shape is not rendered at all: not as a data point, not
+    // in picking, not in any visual encoding. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    if (!is_filtered_in(0u)) {
+        discard;
+    }
+
     // A single shape shares one color / opacity, so this always resolves element 0.
-    let out_color = get_stroke_color(0u);
+    //
+    // Filter-included but selection-excluded ("background") shape still
+    // renders, but de-emphasized with `u.background_stroke_color` in place of
+    // its configured stroke color.
+    let is_selected = is_selected_in(0u);
+    let out_color = select(u.background_stroke_color.rgb, get_stroke_color(0u), is_selected);
     let stroke_opacity = get_stroke_opacity(0u);
 
     var out: FSOut;

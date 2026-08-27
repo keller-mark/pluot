@@ -9,7 +9,7 @@ use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
 use crate::positioning::{get_point_position, get_point_size};
 use crate::numeric_data::NumericData;
@@ -20,6 +20,7 @@ use crate::scalar_mode::{
     cpu_fill_opacity, cpu_stroke_opacity, cpu_stroke_width, prepare_fill_opacity_mode,
     prepare_stroke_opacity_mode, prepare_stroke_width_mode,
 };
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
@@ -76,6 +77,15 @@ pub struct RectLayerParams {
     // TODO: accept x/y/width/height instead?
     pub position_x1: NumericData,
     pub position_y1: NumericData,
+
+    pub selection_criteria: Option<EmphasisCriteria>,
+    pub filtering_criteria: Option<EmphasisCriteria>,
+
+    // Fill/stroke colors used for filter-included, but selection-excluded
+    // ("background") rects, in place of `fill_color`/`stroke_color`. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    pub background_fill_color: (u8, u8, u8),
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 impl Default for RectLayerParams {
@@ -96,6 +106,10 @@ impl Default for RectLayerParams {
             position_y0: NumericData::Float32(Arc::new(vec![])),
             position_x1: NumericData::Float32(Arc::new(vec![])),
             position_y1: NumericData::Float32(Arc::new(vec![])),
+            selection_criteria: None,
+            filtering_criteria: None,
+            background_fill_color: (200, 200, 200),
+            background_stroke_color: (200, 200, 200),
         }
     }
 }
@@ -130,6 +144,12 @@ impl RectLayer {
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
             stroke_opacity.validate_len(n);
+        }
+        if let Some(selection_criteria) = &layer_params.selection_criteria {
+            selection_criteria.validate_len(n);
+        }
+        if let Some(filtering_criteria) = &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(n);
         }
         for (name, len) in [
             ("position_y0", layer_params.position_y0.len()),
@@ -188,12 +208,16 @@ struct RectLayerUniforms {
     stroke_color_reverse: u32,        // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,        // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,              // stroke opacity (UniformOpacity fallback)
+    background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") rects
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") rects
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
 // Bindings 0-4 are the uniforms buffer and the four position textures. The
 // fill-color textures come first (from here), then the stroke-color, stroke-width,
-// fill-opacity and stroke-opacity textures, each present only when instanced.
+// fill-opacity, stroke-opacity, filtering-criteria and selection-criteria
+// textures, each present only when instanced (or, for the filtering/selection
+// criteria, when the criteria carries per-element data).
 const FILL_COLOR_BINDING_START: u32 = 5;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -245,6 +269,19 @@ impl DrawToRasterGpu for RectLayer {
 
         let stroke_opacity_binding_start = fill_opacity_binding_start + fill_opacity.texture.is_some() as u32;
         let stroke_opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), stroke_opacity_binding_start);
+
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // rects are discarded, selection-excluded rects are re-colored with
+        // `background_fill_color`/`background_stroke_color`; see fs_main). See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        let filter_binding_start = stroke_opacity_binding_start + stroke_opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, layer_params.filtering_criteria.as_ref(), "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.texture.is_some() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, layer_params.selection_criteria.as_ref(), "is_selected_in", "select_data", select_binding_start,
+        );
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -329,6 +366,18 @@ impl DrawToRasterGpu for RectLayer {
             stroke_color_reverse: stroke_color.reverse,
             stroke_color_domain: Vec2::from_array(stroke_color.domain),
             stroke_opacity: stroke_opacity.static_value,
+            background_fill_color: Vec4::new(
+                layer_params.background_fill_color.0 as f32 / 255.0,
+                layer_params.background_fill_color.1 as f32 / 255.0,
+                layer_params.background_fill_color.2 as f32 / 255.0,
+                1.0,
+            ),
+            background_stroke_color: Vec4::new(
+                layer_params.background_stroke_color.0 as f32 / 255.0,
+                layer_params.background_stroke_color.1 as f32 / 255.0,
+                layer_params.background_stroke_color.2 as f32 / 255.0,
+                1.0,
+            ),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -473,6 +522,33 @@ impl DrawToRasterGpu for RectLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), each present
+        // only when the corresponding criteria carries per-element data.
+        if let Some(tex) = &filtering.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("RectLayer BGL"),
             entries: &bgl_entries,
@@ -527,6 +603,18 @@ impl DrawToRasterGpu for RectLayer {
         if let Some(tex) = &stroke_opacity.texture {
             bg_entries.push(wgpu::BindGroupEntry {
                 binding: stroke_opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &filtering.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        if let Some(tex) = &selection.texture {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }

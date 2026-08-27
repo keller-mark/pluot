@@ -474,6 +474,11 @@ impl DrawToRasterGpu for LineLayer {
             // texture binding when instanced).
             .define("stroke_width_module", &width.wgsl)
             .define("stroke_opacity_module", &opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {

@@ -36,13 +36,14 @@ use std::sync::Arc;
 
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::colormaps_categorical;
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria, PreparedEmphasisTexture};
 use crate::layers::bitmap_layer::{compute_strides, parse_dimensions, DimensionOrder};
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu,
-    DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
-    ViewParams,
+    DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode,
+    UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::scalar_mode::{
@@ -100,6 +101,20 @@ pub struct BitmaskChannelSettings {
 
     /// Opacity multiplier for the fill.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Filtering/selection criteria for this channel's objects, indexed by
+    /// object id minus one (the same `label_index` domain as every per-object
+    /// mode above). See `.claude/skills/pluot-filter-select-highlight`.
+    /// `None` means every object in this channel is included.
+    pub filtering_criteria: Option<EmphasisCriteria>,
+    /// `None` means every filter-included object in this channel is selected.
+    pub selection_criteria: Option<EmphasisCriteria>,
+
+    /// Fill/stroke colors used for filter-included, but selection-excluded
+    /// ("background") objects in this channel, in place of
+    /// `fill_color`/`stroke_color`.
+    pub background_fill_color: (u8, u8, u8),
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 impl Default for BitmaskChannelSettings {
@@ -112,6 +127,10 @@ impl Default for BitmaskChannelSettings {
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: Some(ColorMode::UniformRgb((0, 0, 0))),
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            filtering_criteria: None,
+            selection_criteria: None,
+            background_fill_color: (200, 200, 200),
+            background_stroke_color: (200, 200, 200),
         }
     }
 }
@@ -607,6 +626,9 @@ struct BitmaskChannelUniforms {
 
     filled: u32,                // 1 = fill object interiors
     stroked: u32,               // 1 = draw an outline along object boundaries
+
+    background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") objects
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") objects
 }
 
 #[derive(ShaderType, Debug)]
@@ -680,6 +702,18 @@ struct PreparedChannelColor {
 /// property) pair for the same reason.
 struct PreparedChannelScalar {
     static_value: f32,
+    texture: Option<ChannelTexture>,
+    wgsl: String,
+}
+
+/// Everything needed to test one of a channel's [`EmphasisCriteria`] (its
+/// `filtering_criteria` or `selection_criteria`) on the GPU: mirrors
+/// [`PreparedChannelScalar`], but wraps
+/// [`crate::emphasis_mode::prepare_emphasis_criteria`] with a channel-unique
+/// `fn_name`/`var_name` so several channels' criteria can coexist in the same
+/// shader module without name or binding collisions, for the same reason
+/// [`PreparedChannelColor`]/[`PreparedChannelScalar`] are per-channel.
+struct PreparedChannelEmphasis {
     texture: Option<ChannelTexture>,
     wgsl: String,
 }
@@ -911,6 +945,34 @@ fn prepare_channel_scalar(
     }
 }
 
+/// Prepare the GPU resources and WGSL for one of a channel's [`EmphasisCriteria`]
+/// (`filtering_criteria` or `selection_criteria`), indexed by object id minus
+/// one (`label_index`), same as the channel's other per-object properties. See
+/// [`PreparedChannelEmphasis`]. `property` is `is_filtered_in` or
+/// `is_selected_in`, used both as the per-channel function-name stem and (via
+/// `channel_dispatch`) the dispatcher's name.
+fn prepare_channel_emphasis(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    criteria: Option<&EmphasisCriteria>,
+    property: &str,
+    first_binding: u32,
+    c_idx: usize,
+) -> PreparedChannelEmphasis {
+    let prepared = prepare_emphasis_criteria(
+        device,
+        queue,
+        criteria,
+        &format!("get_channel_{property}_{c_idx}"),
+        &format!("channel_{c_idx}_{property}_data"),
+        first_binding,
+    );
+    PreparedChannelEmphasis {
+        texture: prepared.texture.map(|PreparedEmphasisTexture { view, sample_type }| ChannelTexture { view, sample_type }),
+        wgsl: prepared.wgsl,
+    }
+}
+
 /// Split an [`OpacityMode`] into the static value the uniform carries and the
 /// per-object values a texture carries. `None` falls back to `default`, as in
 /// [`crate::scalar_mode`].
@@ -985,6 +1047,17 @@ fn prepare_channel(
         &mut next_binding,
     );
 
+    // Filtering/selection criteria (see `.claude/skills/pluot-filter-select-highlight`),
+    // indexed the same way (`label_index`) as the scalar properties above.
+    let filtering_in = prepare_channel_emphasis(
+        device, queue, ch.filtering_criteria.as_ref(), "is_filtered_in", next_binding, i,
+    );
+    next_binding += filtering_in.texture.is_some() as u32;
+    let selection_in = prepare_channel_emphasis(
+        device, queue, ch.selection_criteria.as_ref(), "is_selected_in", next_binding, i,
+    );
+    next_binding += selection_in.texture.is_some() as u32;
+
     let uniforms = BitmaskChannelUniforms {
         fill_color_mode: fill_color.mode,
         fill_color_static: Vec4::from_array(fill_color.static_color),
@@ -999,6 +1072,18 @@ fn prepare_channel(
         stroke_width: stroke_width.static_value,
         filled: if ch.filled { 1 } else { 0 },
         stroked: if ch.stroked { 1 } else { 0 },
+        background_fill_color: Vec4::new(
+            ch.background_fill_color.0 as f32 / 255.0,
+            ch.background_fill_color.1 as f32 / 255.0,
+            ch.background_fill_color.2 as f32 / 255.0,
+            1.0,
+        ),
+        background_stroke_color: Vec4::new(
+            ch.background_stroke_color.0 as f32 / 255.0,
+            ch.background_stroke_color.1 as f32 / 255.0,
+            ch.background_stroke_color.2 as f32 / 255.0,
+            1.0,
+        ),
     };
 
     let colormap_fns = [fill_color.colormap_fn, stroke_color.colormap_fn]
@@ -1014,6 +1099,7 @@ fn prepare_channel(
             .into_iter()
             .flatten(),
     );
+    textures.extend([filtering_in.texture, selection_in.texture].into_iter().flatten());
 
     let wgsl = [
         fill_color.wgsl,
@@ -1021,6 +1107,8 @@ fn prepare_channel(
         fill_opacity.wgsl,
         stroke_opacity.wgsl,
         stroke_width.wgsl,
+        filtering_in.wgsl,
+        selection_in.wgsl,
     ]
     .join("\n");
 
@@ -1284,6 +1372,8 @@ impl DrawToRasterGpu for BitmaskLayer {
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "fill_opacity", n_channels),
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_opacity", n_channels),
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_width", n_channels),
+            channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_filtered_in", n_channels),
+            channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_selected_in", n_channels),
         ]
         .join("\n");
 
@@ -1599,6 +1689,12 @@ impl DrawToSvg for BitmaskLayer {
                     }
                     let label_index = (raw_label - 1) as usize;
 
+                    // Filter-excluded objects are not rendered at all. See
+                    // `.claude/skills/pluot-filter-select-highlight`.
+                    if !cpu_is_included(channel.filtering_criteria.as_ref(), label_index) {
+                        continue;
+                    }
+
                     // Object-boundary test, mirroring `bitmask_is_edge`: sample
                     // 8 directions at `off` texels from this cell's continuous
                     // position, clamping to the mask's bounds. `off` is zero
@@ -1630,25 +1726,35 @@ impl DrawToSvg for BitmaskLayer {
                     // fragment shader: a cell inside the outline band takes the
                     // stroke's color/opacity, one deeper inside the object
                     // takes the fill's.
-                    let (color, a) = if on_edge {
+                    let (color, a, background) = if on_edge {
                         (
                             channel.stroke_color.as_ref(),
                             cpu_stroke_opacity(channel.stroke_opacity.as_ref(), label_index),
+                            channel.background_stroke_color,
                         )
                     } else if channel.filled {
                         (
                             channel.fill_color.as_ref(),
                             cpu_fill_opacity(channel.fill_opacity.as_ref(), label_index),
+                            channel.background_fill_color,
                         )
                     } else {
                         continue;
                     };
 
-                    let quant_domain = match color {
-                        Some(ColorMode::Quantitative(p)) => quantitative_domain(p),
-                        _ => [0.0, 1.0],
+                    // Filter-included but selection-excluded ("background")
+                    // objects still render, but de-emphasized with
+                    // `background_fill_color`/`background_stroke_color` in
+                    // place of the configured fill/stroke color.
+                    let (r, g, b) = if cpu_is_included(channel.selection_criteria.as_ref(), label_index) {
+                        let quant_domain = match color {
+                            Some(ColorMode::Quantitative(p)) => quantitative_domain(p),
+                            _ => [0.0, 1.0],
+                        };
+                        cpu_fill_color(color, label_index, quant_domain)
+                    } else {
+                        background
                     };
-                    let (r, g, b) = cpu_fill_color(color, label_index, quant_domain);
                     let src_rgb = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
                     out_rgb = mix3(out_rgb, src_rgb, a);
                     out_a = out_a.max(a);

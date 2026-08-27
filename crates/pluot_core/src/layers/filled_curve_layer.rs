@@ -78,6 +78,16 @@ pub struct FilledCurveLayer {
 
 impl FilledCurveLayer {
     pub fn new(view_params: ViewParams, layer_params: FilledCurveLayerParams) -> Self {
+        // FilledCurveLayer renders a single shape (see `cpu_fill_color`/
+        // `cpu_fill_opacity` calls below, which always read index 0), so any
+        // selection/filtering criteria must carry exactly one element.
+        if let Some(c) = &layer_params.filtering_criteria {
+            c.validate_len(1);
+        }
+        if let Some(c) = &layer_params.selection_criteria {
+            c.validate_len(1);
+        }
+
         // TODO: move the triangulation into the prepare() function?
         // TODO: only do the triangulation in the raster drawing case?
         let subpaths = commands_to_subpaths(&layer_params.commands);
