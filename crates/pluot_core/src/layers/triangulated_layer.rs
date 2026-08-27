@@ -60,14 +60,12 @@ pub struct TriangulatedLayerParams {
     /// Criteria AND-ed together to determine the selected ("foreground") /
     /// filtered-in ("background") set of shapes, indexed by
     /// `vertex_color_index` (i.e. same cardinality as `fill_color`). An empty
-    /// list means every shape is included. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// list means every shape is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill color used for filter-included, but selection-excluded
-    /// ("background") shapes, in place of `fill_color`. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// ("background") shapes, in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
@@ -205,8 +203,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
         // Filtering and selection criteria (fragment stage only: filter-excluded
         // shapes are discarded, selection-excluded shapes are re-colored with
         // `background_fill_color`; see fs_main), indexed by `vertex_color_index`
-        // (same cardinality as `fill_color`). See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // (same cardinality as `fill_color`).
         let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
         let filtering = prepare_emphasis_criteria(
             device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -527,8 +524,7 @@ impl DrawToSvg for TriangulatedLayer {
             let d = format!("M {} {} L {} {} L {} {} Z", p0.0, p0.1, p1.0, p1.1, p2.0, p2.1);
             // All 3 vertices of a triangle share the same source color index.
             let color_index = layer_params.vertex_color_index.get_f64(i * 3) as usize;
-            // Filter-excluded shapes are not rendered at all. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded shapes are not rendered at all.
             if !cpu_is_included(&layer_params.filtering_criteria, color_index) {
                 continue;
             }

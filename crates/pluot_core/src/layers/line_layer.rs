@@ -62,13 +62,12 @@ pub struct LineLayerParams {
 
     // Criteria AND-ed together to determine the selected ("foreground") /
     // filtered-in ("background") set of lines. An empty list means every
-    // line is included. See `.claude/skills/pluot-filter-select-highlight`.
+    // line is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     // Stroke color used for filter-included, but selection-excluded
-    // ("background") lines, in place of `stroke_color`. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // ("background") lines, in place of `stroke_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
@@ -229,8 +228,7 @@ impl DrawToRasterGpu for LineLayer {
 
         // Filtering and selection criteria (fragment stage only: filter-excluded
         // lines are discarded, selection-excluded lines are re-colored with
-        // `background_stroke_color`; see fs_main). See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // `background_stroke_color`; see fs_main).
         let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
         let filtering = prepare_emphasis_criteria(
             device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -718,8 +716,7 @@ impl DrawToSvg for LineLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
-            // Filter-excluded lines are not rendered at all. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded lines are not rendered at all.
             if !cpu_is_included(&layer_params.filtering_criteria, i) {
                 continue;
             }
@@ -867,8 +864,7 @@ impl PickableLayer for LineLayer {
         let mut min_dist_sq = f32::MAX;
         let mut closest_idx: Option<usize> = None;
         for i in 0..n {
-            // Filter-excluded lines are ignored in picking. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded lines are ignored in picking.
             if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
                 continue;
             }

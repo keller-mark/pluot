@@ -265,8 +265,7 @@ fn fs_main(
     @location(1) @interpolate(flat) element_index: u32,
 ) -> FSOut {
     // Filter-excluded text elements are not rendered at all: not as glyphs,
-    // not in picking, not in any visual encoding. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // not in picking, not in any visual encoding.
     if (!is_filtered_in(element_index)) {
         discard;
     }

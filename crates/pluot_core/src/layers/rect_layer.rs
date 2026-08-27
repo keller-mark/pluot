@@ -80,13 +80,12 @@ pub struct RectLayerParams {
 
     // Criteria AND-ed together to determine the selected ("foreground") /
     // filtered-in ("background") set of rects. An empty list means every
-    // rect is included. See `.claude/skills/pluot-filter-select-highlight`.
+    // rect is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     // Fill/stroke colors used for filter-included, but selection-excluded
-    // ("background") rects, in place of `fill_color`/`stroke_color`. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // ("background") rects, in place of `fill_color`/`stroke_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
     pub background_stroke_color: Option<(u8, u8, u8)>,
 }
@@ -273,8 +272,7 @@ impl DrawToRasterGpu for RectLayer {
 
         // Filtering and selection criteria (fragment stage only: filter-excluded
         // rects are discarded, selection-excluded rects are re-colored with
-        // `background_fill_color`/`background_stroke_color`; see fs_main). See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // `background_fill_color`/`background_stroke_color`; see fs_main).
         let filter_binding_start = stroke_opacity_binding_start + stroke_opacity.texture.is_some() as u32;
         let filtering = prepare_emphasis_criteria(
             device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -807,8 +805,7 @@ impl DrawToSvg for RectLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
-            // Filter-excluded rects are not rendered at all. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded rects are not rendered at all.
             if !cpu_is_included(&layer_params.filtering_criteria, i) {
                 continue;
             }
@@ -966,8 +963,7 @@ impl PickableLayer for RectLayer {
         // last (topmost, since later instances draw on top) match.
         let mut hit_idx: Option<usize> = None;
         for i in 0..n {
-            // Filter-excluded rects are ignored in picking. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded rects are ignored in picking.
             if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
                 continue;
             }

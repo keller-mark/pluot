@@ -1101,8 +1101,7 @@ async fn test_point_layer_tall_contain_normalized_units_stroke_width_normalized_
 }
 
 // ── Filtering and selection criteria ─────────────────────────────────────────
-// See `.claude/skills/pluot-filter-select-highlight` for the general
-// filtering/selection/highlighting semantics. Filter-excluded points are not
+// Filter-excluded points are not
 // rendered at all; filter-included but selection-excluded ("background")
 // points still render, but re-colored with `background_fill_color`/
 // `background_stroke_color` in place of their configured fill/stroke color.

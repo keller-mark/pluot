@@ -324,8 +324,7 @@ fn fs_main(
 ) -> FSOut {
 
     // Filter-excluded lines are not rendered at all: not as data points, not
-    // in picking, not in any visual encoding. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // in picking, not in any visual encoding.
     if (!is_filtered_in(instance_index)) {
         discard;
     }

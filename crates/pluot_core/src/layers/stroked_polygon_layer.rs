@@ -71,13 +71,12 @@ pub struct StrokedPolygonLayerParams {
 
     /// Criteria AND-ed together to determine the selected ("foreground") /
     /// filtered-in ("background") set of polygons. An empty list means every
-    /// polygon is included. See `.claude/skills/pluot-filter-select-highlight`.
+    /// polygon is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Stroke color used for filter-included, but selection-excluded
-    /// ("background") polygons, in place of `stroke_color`. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// ("background") polygons, in place of `stroke_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
@@ -230,8 +229,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         // Filtering and selection criteria (fragment stage only: filter-excluded
         // polygons are discarded, selection-excluded polygons are re-colored
         // with `background_stroke_color`; see fs_main), indexed by `poly_index`
-        // (same cardinality as `stroke_color`). See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // (same cardinality as `stroke_color`).
         let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
         let filtering = prepare_emphasis_criteria(
             device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -574,8 +572,7 @@ impl DrawToSvg for StrokedPolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
-            // Filter-excluded polygons are not rendered at all. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded polygons are not rendered at all.
             if !cpu_is_included(&layer_params.filtering_criteria, poly_index) {
                 continue;
             }
@@ -688,8 +685,7 @@ impl PickableLayer for StrokedPolygonLayer {
             if n < 2 {
                 continue;
             }
-            // Filter-excluded polygons are ignored in picking. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded polygons are ignored in picking.
             if !cpu_is_included(&self.layer_params.filtering_criteria, ring_idx) {
                 continue;
             }

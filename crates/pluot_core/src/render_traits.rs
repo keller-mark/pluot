@@ -338,9 +338,7 @@ impl ColorMode {
     }
 }
 
-/// Filtering or selection criteria for a layer's data items. See
-/// `.claude/skills/pluot-filter-select-highlight` for the general filtering,
-/// selection, and highlighting semantics.
+/// Filtering or selection criteria for a layer's data items.
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"criteria_mode": "Categorical", "criteria_params": {...}}`.

@@ -107,13 +107,13 @@ pub struct BitmaskChannelSettings {
     /// object id minus one (like the color/opacity/size modes above). An
     /// empty list means every object is included. A filter-excluded object is
     /// treated the same as "no object" (id 0) for this channel: not drawn, not
-    /// picked. See `.claude/skills/pluot-filter-select-highlight`.
+    /// picked.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill/stroke colors used for filter-included, but selection-excluded
     /// ("background") objects in this channel, in place of `fill_color` /
-    /// `stroke_color`. See `.claude/skills/pluot-filter-select-highlight`.
+    /// `stroke_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
     pub background_stroke_color: Option<(u8, u8, u8)>,
 }
@@ -1013,7 +1013,7 @@ fn prepare_channel(
     // the color/opacity/size modes above). Each channel gets its own
     // uniquely-named `get_channel_is_filtered_in_{i}` / `get_channel_is_selected_in_{i}`
     // function (dispatched by channel index below, same as the other
-    // per-channel getters). See `.claude/skills/pluot-filter-select-highlight`.
+    // per-channel getters).
     let filtering = prepare_emphasis_criteria(
         device, queue, &ch.filtering_criteria,
         &format!("get_channel_is_filtered_in_{i}"), &format!("filter_data_channel_{i}"), next_binding,
@@ -1654,8 +1654,7 @@ impl DrawToSvg for BitmaskLayer {
                     let label_index = (raw_label - 1) as usize;
 
                     // Filter-excluded objects are treated the same as "no
-                    // object" for this channel: not drawn, not picked. See
-                    // `.claude/skills/pluot-filter-select-highlight`.
+                    // object" for this channel: not drawn, not picked.
                     if !cpu_is_included(&channel.filtering_criteria, label_index) {
                         continue;
                     }
@@ -1862,8 +1861,7 @@ impl PickableLayer for BitmaskLayer {
             let idx = texel_y * y_stride + texel_x * x_stride + i * c_stride;
             if idx < self.layer_params.data.len() {
                 // Filter-excluded objects are ignored in picking: reported as
-                // "no object" (id 0), the same as background. See
-                // `.claude/skills/pluot-filter-select-highlight`.
+                // "no object" (id 0), the same as background.
                 let raw_label = self.layer_params.data.get_f32(idx) as i64;
                 let is_filtered_in = raw_label == 0
                     || cpu_is_included(&channel.filtering_criteria, (raw_label - 1) as usize);

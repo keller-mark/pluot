@@ -1,7 +1,6 @@
 //! Shared machinery for turning a list of [`EmphasisCriteria`] into what a
 //! layer needs to filter or select its elements, on either the GPU or the
-//! CPU. See `.claude/skills/pluot-filter-select-highlight` for the general
-//! filtering, selection, and highlighting semantics.
+//! CPU.
 
 use glam::Vec4;
 
@@ -13,8 +12,7 @@ use crate::wgpu;
 /// ("background") items when a layer's `background_fill_color` /
 /// `background_stroke_color` param is `None`. Kept out of each param's
 /// `Default` impl (which is `None`) so the default does not leak into
-/// serialized JSON; resolved here instead, at render time. See
-/// `.claude/skills/pluot-filter-select-highlight`.
+/// serialized JSON; resolved here instead, at render time.
 pub const DEFAULT_BACKGROUND_COLOR: (u8, u8, u8) = (200, 200, 200);
 
 /// Resolve a `background_fill_color`/`background_stroke_color` param to the
@@ -54,8 +52,7 @@ pub struct PreparedEmphasisCriteria {
 
 /// Prepare the GPU resources and WGSL for a list of [`EmphasisCriteria`] —
 /// either the `filtering_criteria` or `selection_criteria` of a layer, AND-ed
-/// together. An empty list means every item is included, per
-/// `.claude/skills/pluot-filter-select-highlight`.
+/// together. An empty list means every item is included.
 ///
 /// `fn_name` is the WGSL function name to define (e.g. `is_filtered_in` /
 /// `is_selected_in`); `var_name` is the WGSL variable-name stem for the value
@@ -155,8 +152,7 @@ fn wgsl_float(value: f32) -> String {
 /// Resolve whether item `index` meets every criteria in `criteria` (AND-ed
 /// together) on the CPU — shared by the filtering and selection criteria
 /// (called with `filtering_criteria` / `selection_criteria` respectively),
-/// and by SVG rendering. An empty list means every item is included, per
-/// `.claude/skills/pluot-filter-select-highlight`.
+/// and by SVG rendering. An empty list means every item is included.
 pub fn cpu_is_included(criteria: &[EmphasisCriteria], index: usize) -> bool {
     criteria.iter().all(|criterion| match criterion {
         EmphasisCriteria::Categorical(params) => {

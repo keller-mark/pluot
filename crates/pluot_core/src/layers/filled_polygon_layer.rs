@@ -58,13 +58,12 @@ pub struct FilledPolygonLayerParams {
 
     /// Criteria AND-ed together to determine the selected ("foreground") /
     /// filtered-in ("background") set of polygons. An empty list means every
-    /// polygon is included. See `.claude/skills/pluot-filter-select-highlight`.
+    /// polygon is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill color used for filter-included, but selection-excluded
-    /// ("background") polygons, in place of `fill_color`. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// ("background") polygons, in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
@@ -203,8 +202,7 @@ impl DrawToSvg for FilledPolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
-            // Filter-excluded polygons are not rendered at all. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded polygons are not rendered at all.
             if !cpu_is_included(&layer_params.filtering_criteria, poly_index) {
                 continue;
             }
@@ -280,8 +278,7 @@ impl PickableLayer for FilledPolygonLayer {
         // the last (topmost, since later polygons draw on top) match.
         let mut hit_idx: Option<usize> = None;
         for (i, ring) in rings.iter().enumerate() {
-            // Filter-excluded polygons are ignored in picking. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded polygons are ignored in picking.
             if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
                 continue;
             }

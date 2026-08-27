@@ -52,14 +52,13 @@ pub struct CurveLayerParams {
     /// selected ("foreground") / filtered-in ("background"). `CurveLayer`
     /// renders a single shape, so modes carrying `NumericData` are expected to
     /// supply a single (length-1) value. An empty list means the shape is
-    /// included. Forwarded to both the stroke and fill sub-layers. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// included. Forwarded to both the stroke and fill sub-layers.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Stroke/fill colors used when the shape is filter-included, but
     /// selection-excluded ("background"), in place of `stroke_color` /
-    /// `fill_color`. See `.claude/skills/pluot-filter-select-highlight`.
+    /// `fill_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
     pub background_fill_color: Option<(u8, u8, u8)>,
 }

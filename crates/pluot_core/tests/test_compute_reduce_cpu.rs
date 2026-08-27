@@ -196,8 +196,8 @@ async fn test_histogram_unknown_extent_preserves_total() {
 
 // ── Filtering/selection criteria (background/foreground) ─────────────────────
 //
-// See `.claude/skills/pluot-filter-select-highlight`: `background` is the
-// filter-included set, `foreground` is the filter-*and*-selection-included
+// `background` is the filter-included set,
+// `foreground` is the filter-*and*-selection-included
 // subset. Selection criteria may rely on a column entirely orthogonal to the
 // filtering criteria's column.
 

@@ -3,8 +3,7 @@
 //! `crates/pluot_core/src/emphasis_mode.rs`): each `is_included` template
 //! under `wgsl_functions/get_is_included/`, plus the AND-wrapper function
 //! that combines a `Vec<EmphasisCriteria>` -- `filtering_criteria` and
-//! `selection_criteria` are each a list of criteria AND-ed together; see
-//! `.claude/skills/pluot-filter-select-highlight`.
+//! `selection_criteria` are each a list of criteria AND-ed together.
 //!
 //! These assert exact string equality against golden output, mirroring
 //! `test_shader_modules_bitmask.rs`, to catch template/placeholder

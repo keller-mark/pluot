@@ -133,8 +133,7 @@ pub struct OmeZarrBitmaskChannelSetting {
 
     /// Criteria AND-ed together to determine the selected ("foreground") /
     /// filtered-in ("background") set of objects in this channel. An empty
-    /// list means every object is included. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// list means every object is included.
     #[serde(default)]
     pub selection_criteria: Vec<EmphasisCriteria>,
     #[serde(default)]

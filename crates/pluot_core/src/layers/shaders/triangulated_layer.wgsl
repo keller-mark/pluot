@@ -148,8 +148,7 @@ fn fs_main(
     @location(0) @interpolate(flat) color_index: u32,
 ) -> FSOut {
     // Filter-excluded shapes are not rendered at all: not as data points, not
-    // in picking, not in any visual encoding. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // in picking, not in any visual encoding.
     if (!is_filtered_in(color_index)) {
         discard;
     }

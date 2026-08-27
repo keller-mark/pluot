@@ -444,13 +444,12 @@ pub struct TextLayerParams {
     // Criteria AND-ed together to determine the selected ("foreground") /
     // filtered-in ("background") set of text elements (one per entry of
     // `text_vec`, not per glyph). An empty list means every element is
-    // included. See `.claude/skills/pluot-filter-select-highlight`.
+    // included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     // Fill color used for filter-included, but selection-excluded
-    // ("background") text elements, in place of `fill_color`. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // ("background") text elements, in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
@@ -772,8 +771,7 @@ pub async fn base_draw_text_layer(
     // Filtering and selection criteria (fragment stage only: filter-excluded
     // text elements are discarded, selection-excluded elements are re-colored
     // with `background_fill_color`; see fs_main). Per-element here means per
-    // text element (matching `position_x`/`position_y`), not per glyph. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // text element (matching `position_x`/`position_y`), not per glyph.
     let filter_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
     let filtering = prepare_emphasis_criteria(
         device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -1228,8 +1226,7 @@ pub fn base_draw_text_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
-        // Filter-excluded text elements are not rendered at all. See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // Filter-excluded text elements are not rendered at all.
         if !cpu_is_included(&layer_params.filtering_criteria, i) {
             continue;
         }
@@ -1366,8 +1363,7 @@ impl PickableLayer for TextLayer {
         let mut min_dist_sq = f32::MAX;
         let mut closest_idx: Option<usize> = None;
         for i in 0..n {
-            // Filter-excluded text elements are ignored in picking. See
-            // `.claude/skills/pluot-filter-select-highlight`.
+            // Filter-excluded text elements are ignored in picking.
             if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
                 continue;
             }

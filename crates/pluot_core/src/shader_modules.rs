@@ -306,8 +306,7 @@ pub mod fill_opacity {
 }
 
 /// Per-[`EmphasisCriteria`](crate::render_traits::EmphasisCriteria) WGSL
-/// snippets used to test filtering/selection membership (see
-/// `.claude/skills/pluot-filter-select-highlight`). Each variant defines `fn
+/// snippets used to test filtering/selection membership. Each variant defines `fn
 /// {{criteria_fn_name}}(instance_index: u32) -> bool`; the categorical and
 /// quantitative variants additionally declare a per-element value texture at
 /// `{{criteria_data_var}}` (binding index and sampled type filled in at

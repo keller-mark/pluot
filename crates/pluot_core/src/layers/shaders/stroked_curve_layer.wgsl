@@ -323,8 +323,7 @@ fn vs_main(
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
 ) -> FSOut {
-    // The shape is not rendered at all when filter-excluded. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // The shape is not rendered at all when filter-excluded.
     if (!is_filtered_in(0u)) {
         discard;
     }

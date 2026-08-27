@@ -685,8 +685,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         let label_index = u32(raw_label - 1);
 
         // Filter-excluded objects are treated the same as "no object" for
-        // this channel: not drawn, not picked. See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // this channel: not drawn, not picked.
         if (!get_channel_is_filtered_in(channel_index, label_index)) {
             continue;
         }

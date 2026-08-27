@@ -60,13 +60,12 @@ pub struct StrokedCurveLayerParams {
     /// selected ("foreground") / filtered-in ("background"). `StrokedCurveLayer`
     /// renders a single shape, so modes carrying `NumericData` are expected to
     /// supply a single (length-1) value. An empty list means the shape is
-    /// included. See `.claude/skills/pluot-filter-select-highlight`.
+    /// included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Stroke color used when the shape is filter-included, but
-    /// selection-excluded ("background"), in place of `stroke_color`. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// selection-excluded ("background"), in place of `stroke_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
@@ -241,7 +240,7 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         // discarded when filter-excluded, and re-colored with
         // `background_stroke_color` when selection-excluded; see fs_main).
         // `StrokedCurveLayer` renders a single shape, so the shader always
-        // resolves element 0. See `.claude/skills/pluot-filter-select-highlight`.
+        // resolves element 0.
         let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
         let filtering = prepare_emphasis_criteria(
             device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -576,8 +575,7 @@ impl DrawToSvg for StrokedCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        // Filter-excluded shapes are not rendered at all. See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // Filter-excluded shapes are not rendered at all.
         let is_filtered_in = cpu_is_included(&layer_params.filtering_criteria, 0);
         // Filter-included but selection-excluded ("background") shapes still
         // render, but de-emphasized with `background_stroke_color` in place of
@@ -682,8 +680,7 @@ impl PickableLayer for StrokedCurveLayer {
             return None;
         }
 
-        // Filter-excluded shapes are ignored in picking. See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // Filter-excluded shapes are ignored in picking.
         if !cpu_is_included(&self.layer_params.filtering_criteria, 0) {
             return None;
         }

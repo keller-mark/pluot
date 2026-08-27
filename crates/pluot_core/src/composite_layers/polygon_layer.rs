@@ -73,13 +73,11 @@ pub struct PolygonLayerParams {
     /// Criteria AND-ed together to determine the selected ("foreground") /
     /// filtered-in ("background") set of polygons. An empty list means every
     /// polygon is included. Forwarded to both the stroke and fill sub-layers.
-    /// See `.claude/skills/pluot-filter-select-highlight`.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Stroke/fill colors used for filter-included, but selection-excluded
-    /// ("background") polygons, in place of `stroke_color` / `fill_color`. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// ("background") polygons, in place of `stroke_color` / `fill_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
     pub background_fill_color: Option<(u8, u8, u8)>,
 }

@@ -53,13 +53,12 @@ pub struct FilledCurveLayerParams {
     /// selected ("foreground") / filtered-in ("background"). `FilledCurveLayer`
     /// renders a single shape, so modes carrying `NumericData` are expected to
     /// supply a single (length-1) value. An empty list means the shape is
-    /// included. See `.claude/skills/pluot-filter-select-highlight`.
+    /// included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill color used when the shape is filter-included, but
-    /// selection-excluded ("background"), in place of `fill_color`. See
-    /// `.claude/skills/pluot-filter-select-highlight`.
+    /// selection-excluded ("background"), in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
@@ -187,8 +186,7 @@ impl DrawToSvg for FilledCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        // Filter-excluded shapes are not rendered at all. See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // Filter-excluded shapes are not rendered at all.
         let is_filtered_in = cpu_is_included(&layer_params.filtering_criteria, 0);
         // Filter-included but selection-excluded ("background") shapes still
         // render, but de-emphasized with `background_fill_color` in place of
@@ -265,8 +263,7 @@ impl PickableLayer for FilledCurveLayer {
             return None;
         }
 
-        // Filter-excluded shapes are ignored in picking. See
-        // `.claude/skills/pluot-filter-select-highlight`.
+        // Filter-excluded shapes are ignored in picking.
         if !cpu_is_included(&self.layer_params.filtering_criteria, 0) {
             return None;
         }

@@ -281,8 +281,7 @@ fn fs_main(
     @location(0) @interpolate(flat) poly_index: u32,
 ) -> FSOut {
     // Filter-excluded polygons are not rendered at all: not as data points,
-    // not in picking, not in any visual encoding. See
-    // `.claude/skills/pluot-filter-select-highlight`.
+    // not in picking, not in any visual encoding.
     if (!is_filtered_in(poly_index)) {
         discard;
     }

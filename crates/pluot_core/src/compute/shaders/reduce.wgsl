@@ -35,8 +35,7 @@
 // ── Filtering/selection criteria bindings ───────────────────────────────────
 //   @group(0) @binding(4..)  one value texture per criterion this dispatch was
 //                            built with, assembled by `reduce_is_included` (see
-//                            `crate::emphasis_mode::prepare_emphasis_criteria`
-//                            and `.claude/skills/pluot-filter-select-highlight`).
+//                            `crate::emphasis_mode::prepare_emphasis_criteria`).
 //   Each dispatch is run once per foreground/background pass, so this is a
 //   single AND-ed criteria list, not separate filtering/selection lists.
 
@@ -83,8 +82,7 @@ struct ReduceUniforms {
 // `crate::emphasis_mode::prepare_emphasis_criteria`). An excluded element is
 // skipped by both entry points below, exactly like an out-of-bounds lane. An
 // empty criteria list compiles to an always-true predicate with no texture
-// bindings, so the unfiltered case has no extra cost. See
-// `.claude/skills/pluot-filter-select-highlight`.
+// bindings, so the unfiltered case has no extra cost.
 {{criteria_wgsl}}
 
 // ── Workgroup-shared memory ───────────────────────────────────────────────────

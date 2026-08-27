@@ -2,8 +2,7 @@
 pub mod reduce;
 
 /// Paired background/foreground result of a compute operation run with
-/// filtering/selection criteria. See
-/// `.claude/skills/pluot-filter-select-highlight`.
+/// filtering/selection criteria.
 ///
 /// `background` is computed over the filter-included set; `foreground` over
 /// the filter-included *and* selection-included subset (a subset of

@@ -116,8 +116,7 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 
 /// Dispatches a GPU reduction over `input_view` and returns raw partial
 /// results as `Vec<f32>`, considering only elements that pass `criteria`
-/// (AND-ed together; an empty list includes every element — see
-/// `.claude/skills/pluot-filter-select-highlight`).
+/// (AND-ed together; an empty list includes every element).
 ///
 /// `total` is the element count of the (already-uploaded) `input_view`.
 ///
@@ -447,8 +446,7 @@ async fn dispatch_reduce(
 /// Runs [`dispatch_reduce`] once for the filter-included ("background") set
 /// and, when `selection_criteria` narrows it further, once more for the
 /// filter-*and*-selection-included ("foreground") subset — reusing the same
-/// uploaded input texture for both passes. See
-/// `.claude/skills/pluot-filter-select-highlight`.
+/// uploaded input texture for both passes.
 ///
 /// `filtering_criteria` and `selection_criteria` are AND-ed together
 /// (independently) to reach a "must pass" predicate per pass, matching
@@ -594,8 +592,7 @@ fn cpu_reduce_histogram<T: ScalarToF32>(
 // fallback runs instead.
 //
 // Every reducer accepts `filtering_criteria` and `selection_criteria` (each
-// AND-ed together, empty meaning "every item included" — see
-// `.claude/skills/pluot-filter-select-highlight`) and always returns both
+// AND-ed together, empty meaning "every item included") and always returns both
 // components: `background` is computed over the filter-included set,
 // `foreground` over the filter-*and*-selection-included subset. Passing `&[]`
 // for both makes `background` and `foreground` identical, equal to the
