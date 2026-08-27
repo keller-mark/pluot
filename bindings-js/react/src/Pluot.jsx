@@ -11,6 +11,7 @@ import {
   onMouseMove3d, onWheel3d,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
+import { Brush } from "./Brush.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -38,6 +39,19 @@ const noop = () => { };
 // Mouse movement (in pixels) beyond which a mousedown-to-click is
 // considered a drag rather than a click, so that picking is skipped.
 const DRAG_THRESHOLD_PX = 3;
+
+// Converts a mouse/wheel event that landed on the brush overlay into
+// coordinates relative to the camera element, returning null when the pointer
+// is outside of it (e.g. over one of the margins).
+function getCameraOffset(cameraEl, event) {
+  const rect = cameraEl.getBoundingClientRect();
+  const offsetX = event.clientX - rect.left;
+  const offsetY = event.clientY - rect.top;
+  if (offsetX < 0 || offsetY < 0 || offsetX > rect.width || offsetY > rect.height) {
+    return null;
+  }
+  return [offsetX, offsetY];
+}
 
 function normalizePickingResult(data) {
   const result = data;
@@ -82,8 +96,13 @@ export function Pluot(props) {
     setCameraMatrix: setControlledCameraMatrix = null,
     enableClick = false,
     enableTooltip = false,
+    enableBrush = true,
+    brushType = "xy", // "x", "y", "xy"
+    brushRegion = "layer", // "full", "layer", "marginLeft", "marginRight", "marginTop", "marginBottom"
+    brushSelection = undefined,
     onClick: onClickProp = null,
     onHover: onHoverProp = null,
+    onBrush: onBrushProp = null,
   } = props;
 
   const onClick = typeof onClickProp === 'function' ? onClickProp : identity;
@@ -136,6 +155,7 @@ export function Pluot(props) {
 
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
+  const containerRef = useRef(null);
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
   const cameraElementRef = useRef(null);
@@ -150,6 +170,12 @@ export function Pluot(props) {
   // (e.g. panning), so that dragging does not trigger picking.
   const dragStartRef = useRef(null);
   const didDragRef = useRef(false);
+
+  // Whether a brush gesture is currently in progress, and whether it has moved
+  // (as opposed to being a plain click on the brush overlay). Used to keep the
+  // brush from also panning the camera or triggering picking.
+  const isBrushingRef = useRef(false);
+  const didBrushMoveRef = useRef(false);
 
   // TODO: do we want to use the backlog approach or not?
   // (Similar to the one used in the Vitessce heatmap)
@@ -190,6 +216,12 @@ export function Pluot(props) {
   });
 
   const mouseMoveHandler = useEffectEvent((event) => {
+    // While brushing, the mouse events still reach the camera element
+    // (d3-brush listens on the window during a gesture), which would otherwise
+    // pan the camera out from under the brush.
+    if (isBrushingRef.current) {
+      return;
+    }
     const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
     const nextCameraMatrix = onMouseMove({
         width,
@@ -267,6 +299,31 @@ export function Pluot(props) {
     });
   });
 
+  // Tracks the lifecycle of a brush gesture before forwarding it to the
+  // onBrush prop, so that the gesture does not also pan the camera or pick.
+  // Not wrapped in useEffectEvent (which may not be passed to a component);
+  // the Brush component does not depend on this function's identity.
+  const handleBrush = (rect, info) => {
+    if (info.sourceEvent) {
+      if (info.type === "start") {
+        isBrushingRef.current = true;
+        didBrushMoveRef.current = false;
+      } else if (info.type === "brush") {
+        didBrushMoveRef.current = true;
+      } else if (info.type === "end") {
+        isBrushingRef.current = false;
+        // The browser dispatches a click after the mouseup that ends a brush.
+        // Reuse the drag bookkeeping so that it does not also trigger picking.
+        // A plain click on the overlay (which clears the brush) is left alone,
+        // so that it can still pick.
+        didDragRef.current = didBrushMoveRef.current;
+      }
+    }
+    if (typeof onBrushProp === "function") {
+      onBrushProp(rect, info);
+    }
+  };
+
   const throttledHoverFrame = useMemo(
     () => throttle(
       hoverFrame,
@@ -322,7 +379,7 @@ export function Pluot(props) {
 
     // Set up hover handlers for picking, only when the onHover prop is provided.
     const hoverMoveHandler = (event) => {
-      if (enableTooltip) {
+      if (enableTooltip && !isBrushingRef.current) {
         throttledHoverFrame(event.offsetX, event.offsetY);
       }
     };
@@ -345,6 +402,81 @@ export function Pluot(props) {
       cameraEl.removeEventListener("mouseleave", hoverLeaveHandler);
     };
   }, [viewMode, enableClick, enableTooltip, throttledHoverFrame]);
+
+  // The brush overlay is painted above the camera element and captures the
+  // pointer events that land within the brushable region, so the camera
+  // element never sees them. Forward the ones that are not part of a brush
+  // gesture (zooming, hovering, plain clicks), translating their coordinates
+  // into the camera element's space. Panning is deliberately not forwarded,
+  // since a left-drag within the brushable region belongs to the brush.
+  useEffect(() => {
+    const containerEl = containerRef.current;
+    const cameraEl = cameraElementRef.current;
+
+    if (!enableBrush || !containerEl || !cameraEl) {
+      return () => {};
+    }
+
+    // Events that landed on the camera element itself bubble up to the
+    // container too, but they are already handled by the effect above.
+    const wasSwallowedByBrush = (event) => event.target !== cameraEl;
+
+    const brushWheelHandler = (event) => {
+      if (!wasSwallowedByBrush(event)) {
+        return;
+      }
+      const offset = getCameraOffset(cameraEl, event);
+      if (!offset) {
+        return;
+      }
+      wheelHandler({
+        preventDefault: () => event.preventDefault(),
+        deltaMode: event.deltaMode,
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        offsetX: offset[0],
+        offsetY: offset[1],
+      });
+    };
+
+    const brushHoverHandler = (event) => {
+      if (!enableTooltip || !wasSwallowedByBrush(event) || isBrushingRef.current) {
+        return;
+      }
+      const offset = getCameraOffset(cameraEl, event);
+      if (!offset) {
+        // The camera element's own mouseleave does not fire when the pointer
+        // was never over it, so hide the tooltip here instead.
+        throttledHoverFrame.cancel();
+        setHoverInfo(null);
+        return;
+      }
+      throttledHoverFrame(offset[0], offset[1]);
+    };
+
+    const brushClickHandler = (event) => {
+      if (!enableClick || !wasSwallowedByBrush(event)) {
+        return;
+      }
+      const wasDrag = didDragRef.current;
+      dragStartRef.current = null;
+      didDragRef.current = false;
+      const offset = getCameraOffset(cameraEl, event);
+      if (!wasDrag && offset) {
+        pickFrame(offset[0], offset[1]);
+      }
+    };
+
+    containerEl.addEventListener("wheel", brushWheelHandler);
+    containerEl.addEventListener("mousemove", brushHoverHandler);
+    containerEl.addEventListener("click", brushClickHandler);
+
+    return () => {
+      containerEl.removeEventListener("wheel", brushWheelHandler);
+      containerEl.removeEventListener("mousemove", brushHoverHandler);
+      containerEl.removeEventListener("click", brushClickHandler);
+    };
+  }, [enableBrush, enableClick, enableTooltip, throttledHoverFrame]);
 
 
   // The renderFrame callback.
@@ -516,7 +648,7 @@ export function Pluot(props) {
 
   return (
     <>
-      <div style={{ width, height, position: "relative", backgroundColor }}>
+      <div ref={containerRef} style={{ width, height, position: "relative", backgroundColor }}>
         {!supportsWebGpu ? (
           <p>{supportsWebGpuMessage}</p>
         ) : null}
@@ -570,6 +702,21 @@ export function Pluot(props) {
 
           />
         )}
+        {enableBrush ? (
+          <Brush
+            width={width}
+            height={height}
+            marginLeft={marginLeft}
+            marginRight={marginRight}
+            marginTop={marginTop}
+            marginBottom={marginBottom}
+            brushType={brushType}
+            brushRegion={brushRegion}
+            selection={brushSelection}
+            onBrush={handleBrush}
+            debugRegion={debugMargins}
+          />
+        ) : null}
         {hoverInfo ? (
           <div style={hoverStyle}>
             <Tooltip content={hoverInfo.content} asTable />

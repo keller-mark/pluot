@@ -26,3 +26,5 @@ If the user asks you to pull in a new reference material/document, they will spe
 - Vitessce handling of sparse arrays: https://github.com/vitessce/vitessce/blob/main/packages/file-types/zarr/src/anndata-loaders/ObsFeatureMatrixAnndataLoader.js
 - D3 scales: https://github.com/d3/d3-scale
 - D3 axes: https://github.com/d3/d3-axis
+- D3 brush: https://github.com/d3/d3-brush
+  - Example usage in React: https://github.com/keller-mark/use-coordination/blob/main/examples/plots/src/weather-temp-precip.tsx

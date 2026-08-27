@@ -42,6 +42,7 @@
     "d3-selection": "^3.0.0",
     "d3-scale": "^4.0.2",
     "d3-drag": "^3.0.0",
+    "d3-brush": "^3.0.0",
     "dom-2d-camera": "^2.2.6",
     "camera-2d-simple": "^3.0.0",
     "gl-matrix": "^3.4.4",
