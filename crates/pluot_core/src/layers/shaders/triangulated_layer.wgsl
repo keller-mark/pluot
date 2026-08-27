@@ -28,6 +28,7 @@ struct TriangulatedLayerUniforms {
     fill_color_reverse: u32, // 1 = reverse the quantitative colormap
     fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     fill_opacity: f32,
+    background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") shapes
 }
 
 @group(0) @binding(0) var<uniform> u: TriangulatedLayerUniforms;
@@ -65,6 +66,19 @@ fn load_color_index(idx: u32) -> u32 {
 // mode) plus `fn get_fill_opacity(color_index: u32) -> f32`. Assembled per
 // opacity mode by `crate::scalar_mode::prepare_fill_opacity_mode`.
 {{fill_opacity_module}}
+
+// Filtering module: an optional per-element codes/values texture plus
+// `fn is_filtered_in(color_index: u32) -> bool`. Filter-excluded shapes are
+// not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(color_index: u32) -> bool`. Filter-included but
+// selection-excluded shapes are de-emphasized with
+// `u.background_fill_color` rather than not rendered (see fs_main). Assembled
+// by `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
@@ -133,9 +147,20 @@ fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) @interpolate(flat) color_index: u32,
 ) -> FSOut {
+    // Filter-excluded shapes are not rendered at all: not as data points, not
+    // in picking, not in any visual encoding. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    if (!is_filtered_in(color_index)) {
+        discard;
+    }
+
     // The color module's get_fill_color resolves the per-element color for the
     // active color mode (static, instanced RGB, categorical or quantitative).
-    let out_color = get_fill_color(color_index);
+    //
+    // Filter-included but selection-excluded ("background") shapes still
+    // render, but de-emphasized with `u.background_fill_color` in place of
+    // their configured fill color.
+    let out_color = select(u.background_fill_color.rgb, get_fill_color(color_index), is_selected_in(color_index));
     let fill_opacity = get_fill_opacity(color_index);
 
     var out: FSOut;

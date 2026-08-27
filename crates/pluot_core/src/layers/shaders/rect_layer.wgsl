@@ -31,6 +31,8 @@ struct RectLayerUniforms {
     stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32, // stroke opacity used by the UniformOpacity mode
+    background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") rects
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") rects
 };
 
 struct VSOut {
@@ -87,6 +89,19 @@ struct FSOut {
 // (instanced mode) plus `fn get_stroke_opacity(instance_index: u32) -> f32`.
 // Assembled by `crate::scalar_mode::prepare_stroke_opacity_mode`.
 {{stroke_opacity_module}}
+
+// Filtering module: an optional per-element codes/values texture plus
+// `fn is_filtered_in(instance_index: u32) -> bool`. Filter-excluded items are
+// not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(instance_index: u32) -> bool`. Filter-included but
+// selection-excluded items are de-emphasized with `u.background_fill_color` /
+// `u.background_stroke_color` rather than not rendered (see fs_main).
+// Assembled by `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -316,6 +331,13 @@ fn fs_main(
     @location(3) @interpolate(flat) stroke_width_px: f32,
 ) -> FSOut {
 
+    // Filter-excluded rects are not rendered at all: not as data points, not
+    // in picking, not in any visual encoding. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    if (!is_filtered_in(instance_index)) {
+        discard;
+    }
+
     // SVG-style stroke: the expanded quad is (rect_size + stroke_width) in each dimension.
     // The stroke band is stroke_width thick from the outer edge inward
     // (stroke_width/2 was added outward + stroke_width/2 extends inward from the original boundary).
@@ -339,13 +361,19 @@ fn fs_main(
     // mode (static, instanced RGB, categorical or quantitative for color; static
     // or instanced for opacity). Interior fragments use the fill; border
     // fragments use the stroke.
+    //
+    // Filter-included but selection-excluded ("background") rects still
+    // render, but de-emphasized with `u.background_fill_color` /
+    // `u.background_stroke_color` in place of their configured fill/stroke
+    // color.
+    let is_selected = is_selected_in(instance_index);
     var out_color: vec3<f32>;
     var alpha: f32;
     if (is_interior) {
-        out_color = get_fill_color(instance_index);
+        out_color = select(u.background_fill_color.rgb, get_fill_color(instance_index), is_selected);
         alpha = get_fill_opacity(instance_index);
     } else {
-        out_color = get_stroke_color(instance_index);
+        out_color = select(u.background_stroke_color.rgb, get_stroke_color(instance_index), is_selected);
         alpha = get_stroke_opacity(instance_index);
     }
 

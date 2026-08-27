@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::numeric_data::NumericData;
@@ -69,6 +69,19 @@ pub struct PolygonLayerParams {
     /// shares one value across all polygons, `InstancedOpacity` supplies one per
     /// polygon. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of polygons. An empty list means every
+    /// polygon is included. Forwarded to both the stroke and fill sub-layers.
+    /// See `.claude/skills/pluot-filter-select-highlight`.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Stroke/fill colors used for filter-included, but selection-excluded
+    /// ("background") polygons, in place of `stroke_color` / `fill_color`. See
+    /// `.claude/skills/pluot-filter-select-highlight`.
+    pub background_stroke_color: (u8, u8, u8),
+    pub background_fill_color: (u8, u8, u8),
 }
 
 impl Default for PolygonLayerParams {
@@ -89,6 +102,10 @@ impl Default for PolygonLayerParams {
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_stroke_color: (200, 200, 200),
+            background_fill_color: (200, 200, 200),
         }
     }
 }
@@ -116,6 +133,9 @@ impl PolygonLayer {
                 stroke_color: layer_params.stroke_color.clone(),
                 stroke_width: layer_params.stroke_width.clone(),
                 stroke_opacity: layer_params.stroke_opacity.clone(),
+                selection_criteria: layer_params.selection_criteria.clone(),
+                filtering_criteria: layer_params.filtering_criteria.clone(),
+                background_stroke_color: layer_params.background_stroke_color,
             }))
         } else {
             None
@@ -132,6 +152,9 @@ impl PolygonLayer {
                 polygon_offsets: layer_params.polygon_offsets.clone(),
                 fill_color: layer_params.fill_color.clone(),
                 fill_opacity: layer_params.fill_opacity.clone(),
+                selection_criteria: layer_params.selection_criteria.clone(),
+                filtering_criteria: layer_params.filtering_criteria.clone(),
+                background_fill_color: layer_params.background_fill_color,
             }))
         } else {
             None

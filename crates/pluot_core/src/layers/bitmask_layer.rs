@@ -41,7 +41,7 @@ use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu,
-    DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
+    DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
     ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -53,6 +53,7 @@ use crate::shader_modules::{
     bitmask_channel, colormaps as wgsl_colormaps, common, get_channel_color, get_channel_scalar,
     ShaderBuilder, TextureDtype,
 };
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -100,6 +101,21 @@ pub struct BitmaskChannelSettings {
 
     /// Opacity multiplier for the fill.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of objects in this channel, indexed by
+    /// object id minus one (like the color/opacity/size modes above). An
+    /// empty list means every object is included. A filter-excluded object is
+    /// treated the same as "no object" (id 0) for this channel: not drawn, not
+    /// picked. See `.claude/skills/pluot-filter-select-highlight`.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Fill/stroke colors used for filter-included, but selection-excluded
+    /// ("background") objects in this channel, in place of `fill_color` /
+    /// `stroke_color`. See `.claude/skills/pluot-filter-select-highlight`.
+    pub background_fill_color: (u8, u8, u8),
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 impl Default for BitmaskChannelSettings {
@@ -112,6 +128,10 @@ impl Default for BitmaskChannelSettings {
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: Some(ColorMode::UniformRgb((0, 0, 0))),
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: (200, 200, 200),
+            background_stroke_color: (200, 200, 200),
         }
     }
 }
@@ -607,6 +627,9 @@ struct BitmaskChannelUniforms {
 
     filled: u32,                // 1 = fill object interiors
     stroked: u32,               // 1 = draw an outline along object boundaries
+
+    background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") objects
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") objects
 }
 
 #[derive(ShaderType, Debug)]
@@ -985,6 +1008,22 @@ fn prepare_channel(
         &mut next_binding,
     );
 
+    // Filtering and selection criteria, indexed by object id minus one (like
+    // the color/opacity/size modes above). Each channel gets its own
+    // uniquely-named `get_channel_is_filtered_in_{i}` / `get_channel_is_selected_in_{i}`
+    // function (dispatched by channel index below, same as the other
+    // per-channel getters). See `.claude/skills/pluot-filter-select-highlight`.
+    let filtering = prepare_emphasis_criteria(
+        device, queue, &ch.filtering_criteria,
+        &format!("get_channel_is_filtered_in_{i}"), &format!("filter_data_channel_{i}"), next_binding,
+    );
+    next_binding += filtering.textures.len() as u32;
+    let selection = prepare_emphasis_criteria(
+        device, queue, &ch.selection_criteria,
+        &format!("get_channel_is_selected_in_{i}"), &format!("select_data_channel_{i}"), next_binding,
+    );
+    next_binding += selection.textures.len() as u32;
+
     let uniforms = BitmaskChannelUniforms {
         fill_color_mode: fill_color.mode,
         fill_color_static: Vec4::from_array(fill_color.static_color),
@@ -999,6 +1038,18 @@ fn prepare_channel(
         stroke_width: stroke_width.static_value,
         filled: if ch.filled { 1 } else { 0 },
         stroked: if ch.stroked { 1 } else { 0 },
+        background_fill_color: Vec4::new(
+            ch.background_fill_color.0 as f32 / 255.0,
+            ch.background_fill_color.1 as f32 / 255.0,
+            ch.background_fill_color.2 as f32 / 255.0,
+            1.0,
+        ),
+        background_stroke_color: Vec4::new(
+            ch.background_stroke_color.0 as f32 / 255.0,
+            ch.background_stroke_color.1 as f32 / 255.0,
+            ch.background_stroke_color.2 as f32 / 255.0,
+            1.0,
+        ),
     };
 
     let colormap_fns = [fill_color.colormap_fn, stroke_color.colormap_fn]
@@ -1014,6 +1065,14 @@ fn prepare_channel(
             .into_iter()
             .flatten(),
     );
+    textures.extend(
+        filtering.textures.into_iter()
+            .map(|t| ChannelTexture { view: t.view, sample_type: t.sample_type }),
+    );
+    textures.extend(
+        selection.textures.into_iter()
+            .map(|t| ChannelTexture { view: t.view, sample_type: t.sample_type }),
+    );
 
     let wgsl = [
         fill_color.wgsl,
@@ -1021,6 +1080,8 @@ fn prepare_channel(
         fill_opacity.wgsl,
         stroke_opacity.wgsl,
         stroke_width.wgsl,
+        filtering.wgsl,
+        selection.wgsl,
     ]
     .join("\n");
 
@@ -1284,6 +1345,8 @@ impl DrawToRasterGpu for BitmaskLayer {
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "fill_opacity", n_channels),
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_opacity", n_channels),
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_width", n_channels),
+            channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_filtered_in", n_channels),
+            channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_selected_in", n_channels),
         ]
         .join("\n");
 
@@ -1599,6 +1662,18 @@ impl DrawToSvg for BitmaskLayer {
                     }
                     let label_index = (raw_label - 1) as usize;
 
+                    // Filter-excluded objects are treated the same as "no
+                    // object" for this channel: not drawn, not picked. See
+                    // `.claude/skills/pluot-filter-select-highlight`.
+                    if !cpu_is_included(&channel.filtering_criteria, label_index) {
+                        continue;
+                    }
+                    // Filter-included but selection-excluded ("background")
+                    // objects still render, but de-emphasized with
+                    // `background_fill_color`/`background_stroke_color` in
+                    // place of their configured fill/stroke color.
+                    let is_selected = cpu_is_included(&channel.selection_criteria, label_index);
+
                     // Object-boundary test, mirroring `bitmask_is_edge`: sample
                     // 8 directions at `off` texels from this cell's continuous
                     // position, clamping to the mask's bounds. `off` is zero
@@ -1630,15 +1705,17 @@ impl DrawToSvg for BitmaskLayer {
                     // fragment shader: a cell inside the outline band takes the
                     // stroke's color/opacity, one deeper inside the object
                     // takes the fill's.
-                    let (color, a) = if on_edge {
+                    let (color, a, background) = if on_edge {
                         (
                             channel.stroke_color.as_ref(),
                             cpu_stroke_opacity(channel.stroke_opacity.as_ref(), label_index),
+                            channel.background_stroke_color,
                         )
                     } else if channel.filled {
                         (
                             channel.fill_color.as_ref(),
                             cpu_fill_opacity(channel.fill_opacity.as_ref(), label_index),
+                            channel.background_fill_color,
                         )
                     } else {
                         continue;
@@ -1648,7 +1725,11 @@ impl DrawToSvg for BitmaskLayer {
                         Some(ColorMode::Quantitative(p)) => quantitative_domain(p),
                         _ => [0.0, 1.0],
                     };
-                    let (r, g, b) = cpu_fill_color(color, label_index, quant_domain);
+                    let (r, g, b) = if is_selected {
+                        cpu_fill_color(color, label_index, quant_domain)
+                    } else {
+                        background
+                    };
                     let src_rgb = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
                     out_rgb = mix3(out_rgb, src_rgb, a);
                     out_a = out_a.max(a);
@@ -1786,10 +1867,21 @@ impl PickableLayer for BitmaskLayer {
         let mut info = HashMap::new();
         info.insert("x".to_string(), texel_x.to_string());
         info.insert("y".to_string(), texel_y.to_string());
-        for i in 0..self.layer_params.channel_settings.len() {
+        for (i, channel) in self.layer_params.channel_settings.iter().enumerate() {
             let idx = texel_y * y_stride + texel_x * x_stride + i * c_stride;
             if idx < self.layer_params.data.len() {
-                info.insert(format!("channel_{i}"), self.layer_params.data.format_element(idx));
+                // Filter-excluded objects are ignored in picking: reported as
+                // "no object" (id 0), the same as background. See
+                // `.claude/skills/pluot-filter-select-highlight`.
+                let raw_label = self.layer_params.data.get_f32(idx) as i64;
+                let is_filtered_in = raw_label == 0
+                    || cpu_is_included(&channel.filtering_criteria, (raw_label - 1) as usize);
+                let value = if is_filtered_in {
+                    self.layer_params.data.format_element(idx)
+                } else {
+                    "0".to_string()
+                };
+                info.insert(format!("channel_{i}"), value);
             }
         }
 

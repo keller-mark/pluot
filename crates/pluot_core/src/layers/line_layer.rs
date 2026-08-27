@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
@@ -17,6 +17,7 @@ use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::numeric_data::NumericData;
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
@@ -58,6 +59,17 @@ pub struct LineLayerParams {
     pub source_position_y: NumericData,
     pub target_position_x: NumericData,
     pub target_position_y: NumericData,
+
+    // Criteria AND-ed together to determine the selected ("foreground") /
+    // filtered-in ("background") set of lines. An empty list means every
+    // line is included. See `.claude/skills/pluot-filter-select-highlight`.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    // Stroke color used for filter-included, but selection-excluded
+    // ("background") lines, in place of `stroke_color`. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 impl Default for LineLayerParams {
@@ -76,6 +88,9 @@ impl Default for LineLayerParams {
             source_position_y: NumericData::Float32(Arc::new(vec![])),
             target_position_x: NumericData::Float32(Arc::new(vec![])),
             target_position_y: NumericData::Float32(Arc::new(vec![])),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_stroke_color: (200, 200, 200),
         }
     }
 }
@@ -106,6 +121,12 @@ impl LineLayer {
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
             stroke_opacity.validate_len(n);
+        }
+        for selection_criteria in &layer_params.selection_criteria {
+            selection_criteria.validate_len(n);
+        }
+        for filtering_criteria in &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(n);
         }
         for (name, len) in [
             ("source_position_y", layer_params.source_position_y.len()),
@@ -159,6 +180,7 @@ struct LineLayerUniforms {
     stroke_color: Vec4,          // rgba color used by the UniformRgb mode
     stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") lines
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -204,6 +226,19 @@ impl DrawToRasterGpu for LineLayer {
         let width = prepare_stroke_width_mode(device, queue, layer_params.stroke_width.as_ref(), width_binding_start);
         let opacity_binding_start = width_binding_start + width.texture.is_some() as u32;
         let opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), opacity_binding_start);
+
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // lines are discarded, selection-excluded lines are re-colored with
+        // `background_stroke_color`; see fs_main). See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.textures.len() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, &layer_params.selection_criteria, "is_selected_in", "select_data", select_binding_start,
+        );
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -283,6 +318,12 @@ impl DrawToRasterGpu for LineLayer {
             stroke_color: Vec4::from_array(color.static_color),
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
+            background_stroke_color: Vec4::new(
+                layer_params.background_stroke_color.0 as f32 / 255.0,
+                layer_params.background_stroke_color.1 as f32 / 255.0,
+                layer_params.background_stroke_color.2 as f32 / 255.0,
+                1.0,
+            ),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -403,6 +444,33 @@ impl DrawToRasterGpu for LineLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), one per
+        // criteria that carries per-element data.
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("LineLayer BGL"),
@@ -449,6 +517,18 @@ impl DrawToRasterGpu for LineLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("LineLayer BG"),
@@ -474,6 +554,11 @@ impl DrawToRasterGpu for LineLayer {
             // texture binding when instanced).
             .define("stroke_width_module", &width.wgsl)
             .define("stroke_opacity_module", &opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -638,6 +723,16 @@ impl DrawToSvg for LineLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
+            // Filter-excluded lines are not rendered at all. See
+            // `.claude/skills/pluot-filter-select-highlight`.
+            if !cpu_is_included(&layer_params.filtering_criteria, i) {
+                continue;
+            }
+            // Filter-included but selection-excluded ("background") lines still
+            // render, but de-emphasized with `background_stroke_color` in place
+            // of their configured stroke color.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, i);
+
             let source_x = layer_params.source_position_x.get_f32(i);
             let source_y = layer_params.source_position_y.get_f32(i);
             let target_x = layer_params.target_position_x.get_f32(i);
@@ -669,7 +764,11 @@ impl DrawToSvg for LineLayer {
                 Some(&model_matrix_raw),
             );
 
-            let color = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), i, quant_domain));
+            let color = TwoColor::Rgb(if is_selected {
+                cpu_fill_color(layer_params.stroke_color.as_ref(), i, quant_domain)
+            } else {
+                layer_params.background_stroke_color
+            });
 
             // Per-line width / opacity (uniform or instanced), matching the GPU
             // width/opacity modes.
@@ -771,8 +870,13 @@ impl PickableLayer for LineLayer {
         // closest to the picked point (no distance threshold), mirroring
         // PointLayer's nearest-neighbor approach.
         let mut min_dist_sq = f32::MAX;
-        let mut closest_idx = 0usize;
+        let mut closest_idx: Option<usize> = None;
         for i in 0..n {
+            // Filter-excluded lines are ignored in picking. See
+            // `.claude/skills/pluot-filter-select-highlight`.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
+                continue;
+            }
             let ax = self.layer_params.source_position_x.get_f32(i);
             let ay = self.layer_params.source_position_y.get_f32(i);
             let bx = self.layer_params.target_position_x.get_f32(i);
@@ -780,10 +884,11 @@ impl PickableLayer for LineLayer {
             let dist_sq = dist_sq_to_segment(cx, cy, ax, ay, bx, by);
             if dist_sq < min_dist_sq {
                 min_dist_sq = dist_sq;
-                closest_idx = i;
+                closest_idx = Some(i);
             }
         }
 
+        let closest_idx = closest_idx?;
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
         info.insert("source_x".to_string(), self.layer_params.source_position_x.format_element(closest_idx));

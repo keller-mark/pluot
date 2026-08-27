@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
+use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
@@ -47,6 +47,21 @@ pub struct CurveLayerParams {
     pub stroke_opacity: Option<OpacityMode>,
     /// Opacity multiplier for the fill. See [`OpacityMode`]. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine whether the single shape is
+    /// selected ("foreground") / filtered-in ("background"). `CurveLayer`
+    /// renders a single shape, so modes carrying `NumericData` are expected to
+    /// supply a single (length-1) value. An empty list means the shape is
+    /// included. Forwarded to both the stroke and fill sub-layers. See
+    /// `.claude/skills/pluot-filter-select-highlight`.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Stroke/fill colors used when the shape is filter-included, but
+    /// selection-excluded ("background"), in place of `stroke_color` /
+    /// `fill_color`. See `.claude/skills/pluot-filter-select-highlight`.
+    pub background_stroke_color: (u8, u8, u8),
+    pub background_fill_color: (u8, u8, u8),
 }
 
 impl Default for CurveLayerParams {
@@ -67,6 +82,10 @@ impl Default for CurveLayerParams {
             fill_color: None,
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_stroke_color: (200, 200, 200),
+            background_fill_color: (200, 200, 200),
         }
     }
 }
@@ -99,6 +118,9 @@ impl CurveLayer {
                 subdivisions: layer_params.subdivisions,
                 stroke_color: layer_params.stroke_color.clone(),
                 stroke_opacity: layer_params.stroke_opacity.clone(),
+                selection_criteria: layer_params.selection_criteria.clone(),
+                filtering_criteria: layer_params.filtering_criteria.clone(),
+                background_stroke_color: layer_params.background_stroke_color,
             }))
         } else {
             None
@@ -115,6 +137,9 @@ impl CurveLayer {
                 subdivisions: layer_params.subdivisions,
                 fill_color: layer_params.fill_color.clone(),
                 fill_opacity: layer_params.fill_opacity.clone(),
+                selection_criteria: layer_params.selection_criteria.clone(),
+                filtering_criteria: layer_params.filtering_criteria.clone(),
+                background_fill_color: layer_params.background_fill_color,
             }))
         } else {
             None

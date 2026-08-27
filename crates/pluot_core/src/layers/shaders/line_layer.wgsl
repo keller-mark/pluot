@@ -59,6 +59,7 @@ struct LineLayerUniforms {
     stroke_color: vec4<f32>, // rgba color used by the UniformRgb mode
     stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") lines
 };
 
 struct VSOut {
@@ -101,6 +102,19 @@ struct FSOut {
 // (instanced mode) plus `fn get_stroke_opacity(poly_index: u32) -> f32`.
 // Assembled per opacity mode by `crate::scalar_mode::prepare_stroke_opacity_mode`.
 {{stroke_opacity_module}}
+
+// Filtering module: an optional per-element codes/values texture plus
+// `fn is_filtered_in(instance_index: u32) -> bool`. Filter-excluded items are
+// not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(instance_index: u32) -> bool`. Filter-included but
+// selection-excluded items are de-emphasized with
+// `u.background_stroke_color` rather than not rendered (see fs_main).
+// Assembled by `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -309,9 +323,20 @@ fn fs_main(
     @location(0) @interpolate(flat) instance_index: u32,
 ) -> FSOut {
 
+    // Filter-excluded lines are not rendered at all: not as data points, not
+    // in picking, not in any visual encoding. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    if (!is_filtered_in(instance_index)) {
+        discard;
+    }
+
     // The color module's get_stroke_color resolves the per-instance color for the
     // active color mode (static, instanced RGB, categorical or quantitative).
-    let out_color = get_stroke_color(instance_index);
+    //
+    // Filter-included but selection-excluded ("background") lines still
+    // render, but de-emphasized with `u.background_stroke_color` in place of
+    // their configured stroke color.
+    let out_color = select(u.background_stroke_color.rgb, get_stroke_color(instance_index), is_selected_in(instance_index));
     let stroke_opacity = get_stroke_opacity(instance_index);
 
     var out: FSOut;

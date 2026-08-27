@@ -21,12 +21,13 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -67,6 +68,17 @@ pub struct StrokedPolygonLayerParams {
     /// shares one value across all polygons, `InstancedOpacity` supplies one per
     /// polygon. Defaults to 1.
     pub stroke_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of polygons. An empty list means every
+    /// polygon is included. See `.claude/skills/pluot-filter-select-highlight`.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Stroke color used for filter-included, but selection-excluded
+    /// ("background") polygons, in place of `stroke_color`. See
+    /// `.claude/skills/pluot-filter-select-highlight`.
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 impl Default for StrokedPolygonLayerParams {
@@ -83,6 +95,9 @@ impl Default for StrokedPolygonLayerParams {
             stroke_color: None,
             stroke_width: Some(SizeMode::UniformSize(1.0)),
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_stroke_color: (200, 200, 200),
         }
     }
 }
@@ -111,6 +126,12 @@ impl StrokedPolygonLayer {
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
             stroke_opacity.validate_len(n);
+        }
+        for selection_criteria in &layer_params.selection_criteria {
+            selection_criteria.validate_len(n);
+        }
+        for filtering_criteria in &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(n);
         }
         // TODO: assert that the polygon vertices array is a multiple of 2?
         // TODO: assert that the polygon vertices array length is longer than the final offset value?
@@ -146,6 +167,7 @@ struct StrokedPolygonLayerUniforms {
     stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") polygons
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -205,6 +227,20 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
         let opacity_binding_start = width_binding_start + width.texture.is_some() as u32;
         let opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), opacity_binding_start);
 
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // polygons are discarded, selection-excluded polygons are re-colored
+        // with `background_stroke_color`; see fs_main), indexed by `poly_index`
+        // (same cardinality as `stroke_color`). See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.textures.len() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, &layer_params.selection_criteria, "is_selected_in", "select_data", select_binding_start,
+        );
+
         let uniform_struct = StrokedPolygonLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -224,6 +260,12 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
             stroke_opacity: opacity.static_value,
+            background_stroke_color: Vec4::new(
+                layer_params.background_stroke_color.0 as f32 / 255.0,
+                layer_params.background_stroke_color.1 as f32 / 255.0,
+                layer_params.background_stroke_color.2 as f32 / 255.0,
+                1.0,
+            ),
         };
 
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
@@ -330,6 +372,33 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), one per
+        // criteria that carries per-element data.
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("StrokedPolygon BGL"),
             entries: &bgl_entries,
@@ -358,6 +427,18 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("StrokedPolygon BG"),
             layout: &bgl,
@@ -379,6 +460,11 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             // texture binding when instanced).
             .define("stroke_width_module", &width.wgsl)
             .define("stroke_opacity_module", &opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stroked_polygon_layer.wgsl"),
@@ -493,7 +579,20 @@ impl DrawToSvg for StrokedPolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
-            let stroke = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), poly_index, quant_domain));
+            // Filter-excluded polygons are not rendered at all. See
+            // `.claude/skills/pluot-filter-select-highlight`.
+            if !cpu_is_included(&layer_params.filtering_criteria, poly_index) {
+                continue;
+            }
+            // Filter-included but selection-excluded ("background") polygons
+            // still render, but de-emphasized with `background_stroke_color`
+            // in place of their configured stroke color.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, poly_index);
+            let stroke = TwoColor::Rgb(if is_selected {
+                cpu_fill_color(layer_params.stroke_color.as_ref(), poly_index, quant_domain)
+            } else {
+                layer_params.background_stroke_color
+            });
 
             // Per-polygon width / opacity (uniform or instanced), matching the
             // GPU width/opacity modes.
@@ -592,6 +691,11 @@ impl PickableLayer for StrokedPolygonLayer {
         for (ring_idx, ring) in rings.iter().enumerate() {
             let n = ring.len();
             if n < 2 {
+                continue;
+            }
+            // Filter-excluded polygons are ignored in picking. See
+            // `.claude/skills/pluot-filter-select-highlight`.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, ring_idx) {
                 continue;
             }
             for i in 0..n {

@@ -3,7 +3,7 @@ use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
 use pluot_core::layers::bitmask_layer::BitmaskChannelSettings;
-use pluot_core::render_traits::{ColorMode, OpacityMode, SizeMode};
+use pluot_core::render_traits::{ColorMode, EmphasisCriteria, OpacityMode, SizeMode};
 
 pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64, i32) {
     // Returns the coefficient and exponent for converting non-SI units to meters
@@ -85,6 +85,12 @@ fn default_channel_fill_color() -> Option<ColorMode> {
 fn default_channel_fill_opacity() -> Option<OpacityMode> {
     BitmaskChannelSettings::default().fill_opacity
 }
+fn default_channel_background_fill_color() -> (u8, u8, u8) {
+    BitmaskChannelSettings::default().background_fill_color
+}
+fn default_channel_background_stroke_color() -> (u8, u8, u8) {
+    BitmaskChannelSettings::default().background_stroke_color
+}
 
 /// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
 /// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
@@ -130,6 +136,22 @@ pub struct OmeZarrBitmaskChannelSetting {
     /// Opacity multiplier for the interior (0.0 to 1.0).
     #[serde(default = "default_channel_fill_opacity")]
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of objects in this channel. An empty
+    /// list means every object is included. See
+    /// `.claude/skills/pluot-filter-select-highlight`.
+    #[serde(default)]
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    #[serde(default)]
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Fill/stroke colors used for filter-included, but selection-excluded
+    /// ("background") objects in this channel.
+    #[serde(default = "default_channel_background_fill_color")]
+    pub background_fill_color: (u8, u8, u8),
+    #[serde(default = "default_channel_background_stroke_color")]
+    pub background_stroke_color: (u8, u8, u8),
 }
 
 /// Drops `c_index` -- which selects *which* slice of the C dimension to load,
@@ -150,6 +172,10 @@ impl From<&OmeZarrBitmaskChannelSetting> for BitmaskChannelSettings {
             stroke_opacity: cs.stroke_opacity.clone(),
             fill_color: cs.fill_color.clone(),
             fill_opacity: cs.fill_opacity.clone(),
+            selection_criteria: cs.selection_criteria.clone(),
+            filtering_criteria: cs.filtering_criteria.clone(),
+            background_fill_color: cs.background_fill_color,
+            background_stroke_color: cs.background_stroke_color,
         }
     }
 }
@@ -487,6 +513,10 @@ mod tests {
             stroke_opacity: Some(OpacityMode::UniformOpacity(0.25)),
             fill_color: None,
             fill_opacity: None,
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: (200, 200, 200),
+            background_stroke_color: (200, 200, 200),
         };
         let json = serde_json::to_string(&cs).unwrap();
         // Inlined, i.e. no nested `settings` object.

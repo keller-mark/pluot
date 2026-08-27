@@ -42,6 +42,7 @@ struct StrokedPolygonUniforms {
     stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") polygons
 };
 
 // Per-edge ring metadata. ring_start and ring_end are absolute vertex indices
@@ -89,6 +90,19 @@ struct FSOut {
 // (instanced mode) plus `fn get_stroke_opacity(poly_index: u32) -> f32`.
 // Assembled per opacity mode by `crate::scalar_mode::prepare_stroke_opacity_mode`.
 {{stroke_opacity_module}}
+
+// Filtering module: an optional per-polygon codes/values texture plus
+// `fn is_filtered_in(poly_index: u32) -> bool`. Filter-excluded polygons are
+// not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(poly_index: u32) -> bool`. Filter-included but
+// selection-excluded polygons are de-emphasized with
+// `u.background_stroke_color` rather than not rendered (see fs_main).
+// Assembled by `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 // Load the vertex at index `idx` from the interleaved coordinate texture:
 // its x is at flat index 2*idx and its y at 2*idx + 1. `f32(...)` is a no-op
@@ -266,9 +280,20 @@ fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) @interpolate(flat) poly_index: u32,
 ) -> FSOut {
+    // Filter-excluded polygons are not rendered at all: not as data points,
+    // not in picking, not in any visual encoding. See
+    // `.claude/skills/pluot-filter-select-highlight`.
+    if (!is_filtered_in(poly_index)) {
+        discard;
+    }
+
     // The color module's get_stroke_color resolves the per-polygon color for
     // the active color mode (static, instanced RGB, categorical or quantitative).
-    let out_color = get_stroke_color(poly_index);
+    //
+    // Filter-included but selection-excluded ("background") polygons still
+    // render, but de-emphasized with `u.background_stroke_color` in place of
+    // their configured stroke color.
+    let out_color = select(u.background_stroke_color.rgb, get_stroke_color(poly_index), is_selected_in(poly_index));
     let stroke_opacity = get_stroke_opacity(poly_index);
 
     var out: FSOut;

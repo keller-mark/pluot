@@ -219,6 +219,18 @@ pub mod bitmask_channel {
     /// `{{stroke_or_fill_property}}` with the property (`fill_opacity`,
     /// `stroke_opacity` or `stroke_width`) and `{{switch_cases}}` as above.
     pub const CHANNEL_SCALAR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_scalar_dispatch.wgsl");
+
+    /// `fn get_channel_{{stroke_or_fill_property}}(channel_index: u32,
+    /// label_index: u32) -> bool` — the boolean counterpart of
+    /// [`CHANNEL_SCALAR_DISPATCH`], dispatching to the per-channel
+    /// `get_channel_{{stroke_or_fill_property}}_{{c_idx}}` function matching
+    /// `channel_index` (assembled by
+    /// `crate::emphasis_mode::prepare_emphasis_criteria`, one per channel, for
+    /// `is_filtered_in` / `is_selected_in`). Template: substitute
+    /// `{{stroke_or_fill_property}}` with the property (`is_filtered_in` or
+    /// `is_selected_in`) and `{{switch_cases}}` as above. Defaults to `true`
+    /// (include) for an out-of-range channel index.
+    pub const CHANNEL_BOOL_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_bool_dispatch.wgsl");
 }
 
 /// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
