@@ -1287,6 +1287,7 @@ fn bitmask_thick_stroked_and_filled(unit_mode: UnitsMode, stroke_width: f32) -> 
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: Some(ColorMode::UniformRgb((255, 128, 0))),
             fill_opacity: Some(OpacityMode::UniformOpacity(0.4)),
+            ..Default::default()
         }],
         ..bitmask_thick(unit_mode, stroke_width)
     }
@@ -1347,6 +1348,7 @@ async fn test_bitmask_layer_square_contain_data_units_instanced_stroke() {
                 })),
                 fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
                 fill_opacity: Some(OpacityMode::UniformOpacity(0.3)),
+                ..Default::default()
             }],
             ..bitmask_cyx_data()
         }),

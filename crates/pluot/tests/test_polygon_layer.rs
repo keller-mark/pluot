@@ -45,6 +45,7 @@ fn triangle_data() -> PolygonLayerParams {
         stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
         fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+        ..Default::default()
     }
 }
 

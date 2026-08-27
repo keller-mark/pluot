@@ -56,6 +56,7 @@ fn corner_text_data() -> TextLayerParams {
             "D".to_string(),
             "Hello world".to_string(),
         ]),
+        ..Default::default()
     }
 }
 
@@ -84,6 +85,7 @@ fn corner_text_pixels() -> TextLayerParams {
             "C".to_string(),
             "D".to_string(),
         ]),
+        ..Default::default()
     }
 }
 
@@ -138,6 +140,7 @@ fn corner_text_normalized() -> TextLayerParams {
             "C".to_string(),
             "D".to_string(),
         ]),
+        ..Default::default()
     }
 }
 

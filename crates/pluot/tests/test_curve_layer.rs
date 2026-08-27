@@ -45,6 +45,7 @@ fn wave_curve_data() -> CurveLayerParams {
         fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
         stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+        ..Default::default()
     }
 }
 

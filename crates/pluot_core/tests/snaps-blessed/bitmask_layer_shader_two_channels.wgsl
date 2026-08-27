@@ -125,6 +125,9 @@ struct Channel {
 
     filled: u32,   // 1 = fill object interiors
     stroked: u32,  // 1 = draw an outline along object boundaries
+
+    background_fill_color: vec4<f32>,   // rgba fill color used for filter-included, selection-excluded ("background") objects
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") objects
 };
 
 struct Uniforms {
@@ -385,6 +388,14 @@ fn get_channel_stroke_width_0(label_index: u32) -> f32 {
   return u.channels[0].stroke_width;
 }
 
+fn get_channel_is_filtered_in_0(instance_index: u32) -> bool {
+    return true;
+}
+
+fn get_channel_is_selected_in_0(instance_index: u32) -> bool {
+    return true;
+}
+
 // BitmaskLayer per-channel ColorMode::UniformRgb (and None) — every object in
 // this channel shares the static color from the uniform. Templated per
 // (channel, fill/stroke) pair, hence the two-part function name.
@@ -439,11 +450,21 @@ fn get_channel_stroke_width_1(label_index: u32) -> f32 {
   return f32(textureLoad(channel_stroke_width_values_1, flat_texel_coord(label_index, textureDimensions(channel_stroke_width_values_1).x), 0).x);
 }
 
+fn get_channel_is_filtered_in_1(instance_index: u32) -> bool {
+    return true;
+}
 
-// get_channel_fill_color(channel_index, label_index) and its four siblings:
-// each dispatches to the per-channel function above matching `channel_index`.
-// See `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
-// `CHANNEL_SCALAR_DISPATCH`.
+fn get_channel_is_selected_in_1(instance_index: u32) -> bool {
+    return true;
+}
+
+
+// get_channel_fill_color(channel_index, label_index) and its siblings: each
+// dispatches to the per-channel function above matching `channel_index`,
+// including `get_channel_is_filtered_in`/`get_channel_is_selected_in`, which
+// dispatch to each channel's filtering/selection criteria predicate. See
+// `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
+// `CHANNEL_SCALAR_DISPATCH` / `CHANNEL_BOOL_DISPATCH`.
 // The switch case list below is substituted in with one case per
 // channel, which calls that channel's generated color getter.
 // Depends on the getter functions (see `get_channel_color`) also being injected.
@@ -493,6 +514,34 @@ fn get_channel_stroke_width(channel_index: u32, label_index: u32) -> f32 {
         case 0u: { return get_channel_stroke_width_0(label_index); }
         case 1u: { return get_channel_stroke_width_1(label_index); }
         default: { return 0.0; }
+    }
+}
+
+// Boolean counterpart of `channel_scalar_dispatch`/`channel_color_dispatch`:
+// dispatches one of the per-channel filtering/selection predicates
+// (is_filtered_in or is_selected_in). Defaults to true (include) for a
+// channel index out of range, matching the empty-criteria "everything
+// included" semantics. Depends on the getter functions (see
+// `crate::emphasis_mode::prepare_emphasis_criteria`) also being injected.
+fn get_channel_is_filtered_in(channel_index: u32, label_index: u32) -> bool {
+    switch (channel_index) {
+        case 0u: { return get_channel_is_filtered_in_0(label_index); }
+        case 1u: { return get_channel_is_filtered_in_1(label_index); }
+        default: { return true; }
+    }
+}
+
+// Boolean counterpart of `channel_scalar_dispatch`/`channel_color_dispatch`:
+// dispatches one of the per-channel filtering/selection predicates
+// (is_filtered_in or is_selected_in). Defaults to true (include) for a
+// channel index out of range, matching the empty-criteria "everything
+// included" semantics. Depends on the getter functions (see
+// `crate::emphasis_mode::prepare_emphasis_criteria`) also being injected.
+fn get_channel_is_selected_in(channel_index: u32, label_index: u32) -> bool {
+    switch (channel_index) {
+        case 0u: { return get_channel_is_selected_in_0(label_index); }
+        case 1u: { return get_channel_is_selected_in_1(label_index); }
+        default: { return true; }
     }
 }
 
@@ -635,6 +684,18 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         }
         let label_index = u32(raw_label - 1);
 
+        // Filter-excluded objects are treated the same as "no object" for
+        // this channel: not drawn, not picked. See
+        // `.claude/skills/pluot-filter-select-highlight`.
+        if (!get_channel_is_filtered_in(channel_index, label_index)) {
+            continue;
+        }
+        // Filter-included but selection-excluded ("background") objects still
+        // render, but de-emphasized with `ch.background_fill_color` /
+        // `ch.background_stroke_color` in place of their configured fill/stroke
+        // color.
+        let is_selected = get_channel_is_selected_in(channel_index, label_index);
+
         // The outline band is the outermost part of an object's interior, so
         // the stroke and the fill cover disjoint regions and this pixel takes
         // one or the other -- never a blend of both, as in `PointLayer`. A
@@ -654,10 +715,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
             img_h,
             bitmask_stroke_width_texels(get_channel_stroke_width(channel_index, label_index))
         )) {
-            color = get_channel_stroke_color(channel_index, label_index);
+            color = select(ch.background_stroke_color.rgb, get_channel_stroke_color(channel_index, label_index), is_selected);
             alpha = get_channel_stroke_opacity(channel_index, label_index);
         } else if (ch.filled == 1u) {
-            color = get_channel_fill_color(channel_index, label_index);
+            color = select(ch.background_fill_color.rgb, get_channel_fill_color(channel_index, label_index), is_selected);
             alpha = get_channel_fill_opacity(channel_index, label_index);
         } else {
             continue;
