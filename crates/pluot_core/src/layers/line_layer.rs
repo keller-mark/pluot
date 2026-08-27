@@ -17,7 +17,7 @@ use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::numeric_data::NumericData;
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
-use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
@@ -69,7 +69,7 @@ pub struct LineLayerParams {
     // Stroke color used for filter-included, but selection-excluded
     // ("background") lines, in place of `stroke_color`. See
     // `.claude/skills/pluot-filter-select-highlight`.
-    pub background_stroke_color: (u8, u8, u8),
+    pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for LineLayerParams {
@@ -90,7 +90,7 @@ impl Default for LineLayerParams {
             target_position_y: NumericData::Float32(Arc::new(vec![])),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_stroke_color: (200, 200, 200),
+            background_stroke_color: None,
         }
     }
 }
@@ -318,12 +318,7 @@ impl DrawToRasterGpu for LineLayer {
             stroke_color: Vec4::from_array(color.static_color),
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
-            background_stroke_color: Vec4::new(
-                layer_params.background_stroke_color.0 as f32 / 255.0,
-                layer_params.background_stroke_color.1 as f32 / 255.0,
-                layer_params.background_stroke_color.2 as f32 / 255.0,
-                1.0,
-            ),
+            background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -767,7 +762,7 @@ impl DrawToSvg for LineLayer {
             let color = TwoColor::Rgb(if is_selected {
                 cpu_fill_color(layer_params.stroke_color.as_ref(), i, quant_domain)
             } else {
-                layer_params.background_stroke_color
+                layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
 
             // Per-line width / opacity (uniform or instanced), matching the GPU

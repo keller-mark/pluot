@@ -1362,8 +1362,8 @@ async fn test_point_layer_square_contain_selection_custom_background_colors() {
         layers: layer_params(PointLayerParams {
             stroke_width: Some(SizeMode::UniformSize(3.0)),
             stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
-            background_fill_color: (255, 0, 0),
-            background_stroke_color: (0, 255, 0),
+            background_fill_color: Some((255, 0, 0)),
+            background_stroke_color: Some((0, 255, 0)),
             selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![1, 3],

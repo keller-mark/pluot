@@ -53,7 +53,7 @@ use crate::shader_modules::{
     bitmask_channel, colormaps as wgsl_colormaps, common, get_channel_color, get_channel_scalar,
     ShaderBuilder, TextureDtype,
 };
-use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -114,8 +114,8 @@ pub struct BitmaskChannelSettings {
     /// Fill/stroke colors used for filter-included, but selection-excluded
     /// ("background") objects in this channel, in place of `fill_color` /
     /// `stroke_color`. See `.claude/skills/pluot-filter-select-highlight`.
-    pub background_fill_color: (u8, u8, u8),
-    pub background_stroke_color: (u8, u8, u8),
+    pub background_fill_color: Option<(u8, u8, u8)>,
+    pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for BitmaskChannelSettings {
@@ -130,8 +130,8 @@ impl Default for BitmaskChannelSettings {
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
-            background_stroke_color: (200, 200, 200),
+            background_fill_color: None,
+            background_stroke_color: None,
         }
     }
 }
@@ -1038,18 +1038,8 @@ fn prepare_channel(
         stroke_width: stroke_width.static_value,
         filled: if ch.filled { 1 } else { 0 },
         stroked: if ch.stroked { 1 } else { 0 },
-        background_fill_color: Vec4::new(
-            ch.background_fill_color.0 as f32 / 255.0,
-            ch.background_fill_color.1 as f32 / 255.0,
-            ch.background_fill_color.2 as f32 / 255.0,
-            1.0,
-        ),
-        background_stroke_color: Vec4::new(
-            ch.background_stroke_color.0 as f32 / 255.0,
-            ch.background_stroke_color.1 as f32 / 255.0,
-            ch.background_stroke_color.2 as f32 / 255.0,
-            1.0,
-        ),
+        background_fill_color: background_color_vec4(ch.background_fill_color),
+        background_stroke_color: background_color_vec4(ch.background_stroke_color),
     };
 
     let colormap_fns = [fill_color.colormap_fn, stroke_color.colormap_fn]
@@ -1709,13 +1699,13 @@ impl DrawToSvg for BitmaskLayer {
                         (
                             channel.stroke_color.as_ref(),
                             cpu_stroke_opacity(channel.stroke_opacity.as_ref(), label_index),
-                            channel.background_stroke_color,
+                            channel.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
                         )
                     } else if channel.filled {
                         (
                             channel.fill_color.as_ref(),
                             cpu_fill_opacity(channel.fill_opacity.as_ref(), label_index),
-                            channel.background_fill_color,
+                            channel.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
                         )
                     } else {
                         continue;

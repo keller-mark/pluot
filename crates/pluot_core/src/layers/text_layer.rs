@@ -18,7 +18,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
-use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
 use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
@@ -451,7 +451,7 @@ pub struct TextLayerParams {
     // Fill color used for filter-included, but selection-excluded
     // ("background") text elements, in place of `fill_color`. See
     // `.claude/skills/pluot-filter-select-highlight`.
-    pub background_fill_color: (u8, u8, u8),
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for TextLayerParams {
@@ -476,7 +476,7 @@ impl Default for TextLayerParams {
             text_vec: Arc::new(vec![]),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
+            background_fill_color: None,
         }
     }
 }
@@ -876,12 +876,7 @@ pub async fn base_draw_text_layer(
         fill_color: Vec4::from_array(color.static_color),
         fill_color_reverse: color.reverse,
         fill_color_domain: Vec2::from_array(color.domain),
-        background_fill_color: Vec4::new(
-            layer_params.background_fill_color.0 as f32 / 255.0,
-            layer_params.background_fill_color.1 as f32 / 255.0,
-            layer_params.background_fill_color.2 as f32 / 255.0,
-            1.0,
-        ),
+        background_fill_color: background_color_vec4(layer_params.background_fill_color),
     };
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -1263,7 +1258,7 @@ pub fn base_draw_text_layer_svg(
         let fill = TwoColor::Rgb(if is_selected {
             cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain)
         } else {
-            layer_params.background_fill_color
+            layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
         });
 
         svg_elements.push(TwoElement::Text(TwoText {

@@ -27,7 +27,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, 
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
-use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -78,7 +78,7 @@ pub struct StrokedPolygonLayerParams {
     /// Stroke color used for filter-included, but selection-excluded
     /// ("background") polygons, in place of `stroke_color`. See
     /// `.claude/skills/pluot-filter-select-highlight`.
-    pub background_stroke_color: (u8, u8, u8),
+    pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for StrokedPolygonLayerParams {
@@ -97,7 +97,7 @@ impl Default for StrokedPolygonLayerParams {
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_stroke_color: (200, 200, 200),
+            background_stroke_color: None,
         }
     }
 }
@@ -260,12 +260,7 @@ impl DrawToRasterGpu for StrokedPolygonLayer {
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
             stroke_opacity: opacity.static_value,
-            background_stroke_color: Vec4::new(
-                layer_params.background_stroke_color.0 as f32 / 255.0,
-                layer_params.background_stroke_color.1 as f32 / 255.0,
-                layer_params.background_stroke_color.2 as f32 / 255.0,
-                1.0,
-            ),
+            background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
         };
 
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
@@ -591,7 +586,7 @@ impl DrawToSvg for StrokedPolygonLayer {
             let stroke = TwoColor::Rgb(if is_selected {
                 cpu_fill_color(layer_params.stroke_color.as_ref(), poly_index, quant_domain)
             } else {
-                layer_params.background_stroke_color
+                layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
 
             // Per-polygon width / opacity (uniform or instanced), matching the

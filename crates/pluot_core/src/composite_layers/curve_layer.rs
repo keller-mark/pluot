@@ -60,8 +60,8 @@ pub struct CurveLayerParams {
     /// Stroke/fill colors used when the shape is filter-included, but
     /// selection-excluded ("background"), in place of `stroke_color` /
     /// `fill_color`. See `.claude/skills/pluot-filter-select-highlight`.
-    pub background_stroke_color: (u8, u8, u8),
-    pub background_fill_color: (u8, u8, u8),
+    pub background_stroke_color: Option<(u8, u8, u8)>,
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for CurveLayerParams {
@@ -84,8 +84,8 @@ impl Default for CurveLayerParams {
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_stroke_color: (200, 200, 200),
-            background_fill_color: (200, 200, 200),
+            background_stroke_color: None,
+            background_fill_color: None,
         }
     }
 }

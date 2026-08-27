@@ -80,8 +80,8 @@ pub struct PolygonLayerParams {
     /// Stroke/fill colors used for filter-included, but selection-excluded
     /// ("background") polygons, in place of `stroke_color` / `fill_color`. See
     /// `.claude/skills/pluot-filter-select-highlight`.
-    pub background_stroke_color: (u8, u8, u8),
-    pub background_fill_color: (u8, u8, u8),
+    pub background_stroke_color: Option<(u8, u8, u8)>,
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for PolygonLayerParams {
@@ -104,8 +104,8 @@ impl Default for PolygonLayerParams {
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_stroke_color: (200, 200, 200),
-            background_fill_color: (200, 200, 200),
+            background_stroke_color: None,
+            background_fill_color: None,
         }
     }
 }

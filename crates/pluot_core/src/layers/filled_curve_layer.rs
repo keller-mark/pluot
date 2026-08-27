@@ -17,7 +17,7 @@ use crate::render_traits::{
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
-use crate::emphasis_mode::cpu_is_included;
+use crate::emphasis_mode::{cpu_is_included, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -60,7 +60,7 @@ pub struct FilledCurveLayerParams {
     /// Fill color used when the shape is filter-included, but
     /// selection-excluded ("background"), in place of `fill_color`. See
     /// `.claude/skills/pluot-filter-select-highlight`.
-    pub background_fill_color: (u8, u8, u8),
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for FilledCurveLayerParams {
@@ -77,7 +77,7 @@ impl Default for FilledCurveLayerParams {
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
+            background_fill_color: None,
         }
     }
 }
@@ -203,7 +203,7 @@ impl DrawToSvg for FilledCurveLayer {
         let fill = TwoColor::Rgb(if is_selected {
             cpu_fill_color(layer_params.fill_color.as_ref(), 0, quant_domain)
         } else {
-            layer_params.background_fill_color
+            layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
         });
         // A single shape uses one fill opacity, resolved from element 0.
         let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), 0) as f64;

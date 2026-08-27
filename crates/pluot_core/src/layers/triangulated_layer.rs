@@ -18,7 +18,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, 
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::scalar_mode::{cpu_fill_opacity, prepare_fill_opacity_mode};
-use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -68,7 +68,7 @@ pub struct TriangulatedLayerParams {
     /// Fill color used for filter-included, but selection-excluded
     /// ("background") shapes, in place of `fill_color`. See
     /// `.claude/skills/pluot-filter-select-highlight`.
-    pub background_fill_color: (u8, u8, u8),
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for TriangulatedLayerParams {
@@ -85,7 +85,7 @@ impl Default for TriangulatedLayerParams {
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
+            background_fill_color: None,
         }
     }
 }
@@ -229,12 +229,7 @@ impl DrawToRasterGpu for TriangulatedLayer {
             fill_color_reverse: color.reverse,
             fill_color_domain: Vec2::from_array(color.domain),
             fill_opacity: opacity.static_value,
-            background_fill_color: Vec4::new(
-                layer_params.background_fill_color.0 as f32 / 255.0,
-                layer_params.background_fill_color.1 as f32 / 255.0,
-                layer_params.background_fill_color.2 as f32 / 255.0,
-                1.0,
-            ),
+            background_fill_color: background_color_vec4(layer_params.background_fill_color),
         };
 
         let mut buf = UniformBuffer::new(Vec::<u8>::new());
@@ -544,7 +539,7 @@ impl DrawToSvg for TriangulatedLayer {
             let fill = TwoColor::Rgb(if is_selected {
                 cpu_fill_color(layer_params.fill_color.as_ref(), color_index, quant_domain)
             } else {
-                layer_params.background_fill_color
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
             let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), color_index) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {

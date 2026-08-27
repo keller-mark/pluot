@@ -85,12 +85,6 @@ fn default_channel_fill_color() -> Option<ColorMode> {
 fn default_channel_fill_opacity() -> Option<OpacityMode> {
     BitmaskChannelSettings::default().fill_opacity
 }
-fn default_channel_background_fill_color() -> (u8, u8, u8) {
-    BitmaskChannelSettings::default().background_fill_color
-}
-fn default_channel_background_stroke_color() -> (u8, u8, u8) {
-    BitmaskChannelSettings::default().background_stroke_color
-}
 
 /// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
 /// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
@@ -148,10 +142,10 @@ pub struct OmeZarrBitmaskChannelSetting {
 
     /// Fill/stroke colors used for filter-included, but selection-excluded
     /// ("background") objects in this channel.
-    #[serde(default = "default_channel_background_fill_color")]
-    pub background_fill_color: (u8, u8, u8),
-    #[serde(default = "default_channel_background_stroke_color")]
-    pub background_stroke_color: (u8, u8, u8),
+    #[serde(default)]
+    pub background_fill_color: Option<(u8, u8, u8)>,
+    #[serde(default)]
+    pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
 /// Drops `c_index` -- which selects *which* slice of the C dimension to load,
@@ -515,8 +509,8 @@ mod tests {
             fill_opacity: None,
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
-            background_stroke_color: (200, 200, 200),
+            background_fill_color: Some((200, 200, 200)),
+            background_stroke_color: Some((200, 200, 200)),
         };
         let json = serde_json::to_string(&cs).unwrap();
         // Inlined, i.e. no nested `settings` object.

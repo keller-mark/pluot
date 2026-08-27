@@ -21,7 +21,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, 
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
-use crate::emphasis_mode::cpu_is_included;
+use crate::emphasis_mode::{cpu_is_included, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -65,7 +65,7 @@ pub struct FilledPolygonLayerParams {
     /// Fill color used for filter-included, but selection-excluded
     /// ("background") polygons, in place of `fill_color`. See
     /// `.claude/skills/pluot-filter-select-highlight`.
-    pub background_fill_color: (u8, u8, u8),
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for FilledPolygonLayerParams {
@@ -82,7 +82,7 @@ impl Default for FilledPolygonLayerParams {
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
+            background_fill_color: None,
         }
     }
 }
@@ -226,7 +226,7 @@ impl DrawToSvg for FilledPolygonLayer {
             let fill = TwoColor::Rgb(if is_selected {
                 cpu_fill_color(layer_params.fill_color.as_ref(), poly_index, quant_domain)
             } else {
-                layer_params.background_fill_color
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
             let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), poly_index) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {

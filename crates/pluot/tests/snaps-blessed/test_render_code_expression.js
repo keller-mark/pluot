@@ -83,16 +83,8 @@ renderToString({
           },
           selection_criteria: [],
           filtering_criteria: [],
-          background_fill_color: [
-            200,
-            200,
-            200
-          ],
-          background_stroke_color: [
-            200,
-            200,
-            200
-          ]
+          background_fill_color: null,
+          background_stroke_color: null
         }
       }
     ]

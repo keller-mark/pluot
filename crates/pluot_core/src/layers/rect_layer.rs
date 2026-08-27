@@ -20,7 +20,7 @@ use crate::scalar_mode::{
     cpu_fill_opacity, cpu_stroke_opacity, cpu_stroke_width, prepare_fill_opacity_mode,
     prepare_stroke_opacity_mode, prepare_stroke_width_mode,
 };
-use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
@@ -87,8 +87,8 @@ pub struct RectLayerParams {
     // Fill/stroke colors used for filter-included, but selection-excluded
     // ("background") rects, in place of `fill_color`/`stroke_color`. See
     // `.claude/skills/pluot-filter-select-highlight`.
-    pub background_fill_color: (u8, u8, u8),
-    pub background_stroke_color: (u8, u8, u8),
+    pub background_fill_color: Option<(u8, u8, u8)>,
+    pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for RectLayerParams {
@@ -111,8 +111,8 @@ impl Default for RectLayerParams {
             position_y1: NumericData::Float32(Arc::new(vec![])),
             selection_criteria: vec![],
             filtering_criteria: vec![],
-            background_fill_color: (200, 200, 200),
-            background_stroke_color: (200, 200, 200),
+            background_fill_color: None,
+            background_stroke_color: None,
         }
     }
 }
@@ -367,18 +367,8 @@ impl DrawToRasterGpu for RectLayer {
             stroke_color_reverse: stroke_color.reverse,
             stroke_color_domain: Vec2::from_array(stroke_color.domain),
             stroke_opacity: stroke_opacity.static_value,
-            background_fill_color: Vec4::new(
-                layer_params.background_fill_color.0 as f32 / 255.0,
-                layer_params.background_fill_color.1 as f32 / 255.0,
-                layer_params.background_fill_color.2 as f32 / 255.0,
-                1.0,
-            ),
-            background_stroke_color: Vec4::new(
-                layer_params.background_stroke_color.0 as f32 / 255.0,
-                layer_params.background_stroke_color.1 as f32 / 255.0,
-                layer_params.background_stroke_color.2 as f32 / 255.0,
-                1.0,
-            ),
+            background_fill_color: background_color_vec4(layer_params.background_fill_color),
+            background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -865,7 +855,7 @@ impl DrawToSvg for RectLayer {
             let fill = Some(TwoColor::Rgb(if is_selected {
                 cpu_fill_color(layer_params.fill_color.as_ref(), i, fill_quant_domain)
             } else {
-                layer_params.background_fill_color
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             }));
             let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i) as f64;
 
@@ -899,7 +889,7 @@ impl DrawToSvg for RectLayer {
                     Some(TwoColor::Rgb(if is_selected {
                         cpu_fill_color(layer_params.stroke_color.as_ref(), i, stroke_quant_domain)
                     } else {
-                        layer_params.background_stroke_color
+                        layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
                     })),
                     cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
                     width_px as f64,

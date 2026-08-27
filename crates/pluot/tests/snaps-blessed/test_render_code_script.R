@@ -59,16 +59,8 @@ plot <- render_to_raster(
         ),
         selection_criteria = list(),
         filtering_criteria = list(),
-        background_fill_color = c(
-          200,
-          200,
-          200
-        ),
-        background_stroke_color = c(
-          200,
-          200,
-          200
-        )
+        background_fill_color = NULL,
+        background_stroke_color = NULL
       )
     )
   ),

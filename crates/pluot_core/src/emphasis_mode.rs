@@ -3,9 +3,27 @@
 //! CPU. See `.claude/skills/pluot-filter-select-highlight` for the general
 //! filtering, selection, and highlighting semantics.
 
+use glam::Vec4;
+
 use crate::render_traits::EmphasisCriteria;
 use crate::shader_modules::{is_included as is_included_wgsl, ShaderBuilder};
 use crate::wgpu;
+
+/// Fill/stroke color used for filter-included, but selection-excluded
+/// ("background") items when a layer's `background_fill_color` /
+/// `background_stroke_color` param is `None`. Kept out of each param's
+/// `Default` impl (which is `None`) so the default does not leak into
+/// serialized JSON; resolved here instead, at render time. See
+/// `.claude/skills/pluot-filter-select-highlight`.
+pub const DEFAULT_BACKGROUND_COLOR: (u8, u8, u8) = (200, 200, 200);
+
+/// Resolve a `background_fill_color`/`background_stroke_color` param to the
+/// rgba `Vec4` a layer's GPU uniforms expect, defaulting to
+/// [`DEFAULT_BACKGROUND_COLOR`] when `None`.
+pub fn background_color_vec4(color: Option<(u8, u8, u8)>) -> Vec4 {
+    let (r, g, b) = color.unwrap_or(DEFAULT_BACKGROUND_COLOR);
+    Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0)
+}
 
 /// A texture bound for a filtering/selection criteria, paired with the sample
 /// type its bind-group layout entry must declare.

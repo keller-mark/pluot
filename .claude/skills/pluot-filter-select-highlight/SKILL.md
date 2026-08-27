@@ -30,8 +30,6 @@ When filtering criteria is defined in terms of included categories of items (e.g
 
 ## GPU-accelerated implementation of filtering, selection, and highlighting
 
-Not yet implemented for all layer types; work in progress.
-
 For each primitive (i.e., not composite) layer drawing function (i.e., in `crates/pluot_core/src/layers`), the layer parameters must accept selection and filtering criteria alongside the associated NumericData data buffers.
 We will reuse NumericData buffers when possible (e.g., when filter criteria exactly equals selection criteria).
 For filter-excluded data items, the WGSL logic will omit/hide these items (i.e., not render them) when encountered in the shaders.
