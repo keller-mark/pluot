@@ -1117,10 +1117,10 @@ async fn test_point_layer_square_contain_filtering_categorical_subset() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            filtering_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![0, 2],
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1130,18 +1130,18 @@ async fn test_point_layer_square_contain_filtering_categorical_subset() {
 }
 
 // An explicit empty `included_codes` list means nothing is included: no
-// points render at all (distinct from `filtering_criteria: None`, which
-// includes everything).
+// points render at all (distinct from an empty `filtering_criteria` list,
+// which includes everything).
 #[tokio::test]
 async fn test_point_layer_square_contain_filtering_categorical_empty_excludes_all() {
     let params = RenderParams {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            filtering_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![],
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1159,11 +1159,11 @@ async fn test_point_layer_square_contain_filtering_quantitative_range() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            filtering_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
                 min: Some(1.0),
                 max: Some(2.0),
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1181,11 +1181,11 @@ async fn test_point_layer_square_contain_filtering_quantitative_min_only() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            filtering_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
                 min: Some(2.0),
                 max: None,
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1204,10 +1204,10 @@ async fn test_point_layer_square_contain_selection_categorical_subset() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            selection_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![0, 2],
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1217,18 +1217,18 @@ async fn test_point_layer_square_contain_selection_categorical_subset() {
 }
 
 // An explicit empty `included_codes` list for selection means nothing is
-// selected: all 4 points still render (filtering is None), but every one is
-// de-emphasized with `background_fill_color`.
+// selected: all 4 points still render (filtering_criteria is empty), but
+// every one is de-emphasized with `background_fill_color`.
 #[tokio::test]
 async fn test_point_layer_square_contain_selection_categorical_empty_deemphasizes_all() {
     let params = RenderParams {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            selection_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![],
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1246,11 +1246,11 @@ async fn test_point_layer_square_contain_selection_quantitative_range() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            selection_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
                 values: NumericData::Float32(Arc::new(vec![0.0, 10.0, 20.0, 30.0])),
                 min: Some(10.0),
                 max: Some(20.0),
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
@@ -1272,21 +1272,81 @@ async fn test_point_layer_square_contain_selection_orthogonal_to_filtering() {
         width: 100,
         height: 100,
         layers: layer_params(PointLayerParams {
-            filtering_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![0, 1, 2],
-            })),
-            selection_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            })],
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
                 values: NumericData::Float32(Arc::new(vec![5.0, 25.0, 15.0, 8.0])),
                 min: Some(15.0),
                 max: None,
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// `filtering_criteria` is a list of criteria AND-ed together: a point must
+// satisfy every one to be included. Here a categorical criteria (codes
+// 0,1,2,3, including 0/1/2 — excludes index 3) is combined with a
+// quantitative criteria (values 0,5,15,25, min 10 — excludes indices 0/1).
+// Only index 2 satisfies both, so only the top-right corner renders.
+#[tokio::test]
+async fn test_point_layer_square_contain_filtering_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            filtering_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                    included_codes: vec![0, 1, 2],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_filtering_multiple_criteria_and").await;
+}
+
+// `selection_criteria` AND-ing mirrors `filtering_criteria`: a categorical
+// criteria (included_codes 0/2) combined with a quantitative criteria (min
+// 10, excluding indices 0/1) leaves only index 2 selected (normal color);
+// every other point still renders (no filtering), but de-emphasized with
+// `background_fill_color`.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            selection_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                    included_codes: vec![0, 2],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_multiple_criteria_and").await;
 }
 
 // Custom background fill/stroke colors, combined with a stroke, so that both
@@ -1304,10 +1364,10 @@ async fn test_point_layer_square_contain_selection_custom_background_colors() {
             stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
             background_fill_color: (255, 0, 0),
             background_stroke_color: (0, 255, 0),
-            selection_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
                 codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
                 included_codes: vec![1, 3],
-            })),
+            })],
             ..corner_points_data()
         }),
         aspect_ratio_mode: AspectRatioMode::Contain,

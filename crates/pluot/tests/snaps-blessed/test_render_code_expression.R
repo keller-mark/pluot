@@ -53,8 +53,8 @@ render_to_svg(
             1.0
           )
         ),
-        selection_criteria = NULL,
-        filtering_criteria = NULL,
+        selection_criteria = list(),
+        filtering_criteria = list(),
         background_fill_color = c(
           200,
           200,

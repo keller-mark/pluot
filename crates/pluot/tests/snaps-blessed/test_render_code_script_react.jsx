@@ -84,8 +84,8 @@ export function PluotPlot() {
                   1.0
                 ]
               },
-              selection_criteria: null,
-              filtering_criteria: null,
+              selection_criteria: [],
+              filtering_criteria: [],
               background_fill_color: [
                 200,
                 200,

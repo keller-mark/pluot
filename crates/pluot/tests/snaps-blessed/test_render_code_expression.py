@@ -80,8 +80,8 @@ render_to_svg(
                             1.0
                         ]
                     },
-                    "selection_criteria": None,
-                    "filtering_criteria": None,
+                    "selection_criteria": [],
+                    "filtering_criteria": [],
                     "background_fill_color": [
                         200,
                         200,

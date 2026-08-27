@@ -1,7 +1,7 @@
-//! Shared machinery for turning an [`EmphasisCriteria`] into what a layer
-//! needs to filter or select its elements, on either the GPU or the CPU. See
-//! `.claude/skills/pluot-filter-select-highlight` for the general filtering,
-//! selection, and highlighting semantics.
+//! Shared machinery for turning a list of [`EmphasisCriteria`] into what a
+//! layer needs to filter or select its elements, on either the GPU or the
+//! CPU. See `.claude/skills/pluot-filter-select-highlight` for the general
+//! filtering, selection, and highlighting semantics.
 
 use crate::render_traits::EmphasisCriteria;
 use crate::shader_modules::{is_included as is_included_wgsl, ShaderBuilder};
@@ -14,95 +14,116 @@ pub struct PreparedEmphasisTexture {
     pub sample_type: wgpu::TextureSampleType,
 }
 
-/// Everything a layer needs to test an [`EmphasisCriteria`] on the GPU.
+/// Everything a layer needs to test a list of [`EmphasisCriteria`] on the GPU.
 ///
-/// The layer binds [`texture`](Self::texture) at the `first_binding` passed to
-/// [`prepare_emphasis_criteria`] when present, and injects
+/// The layer binds [`textures`](Self::textures) consecutively starting at the
+/// `first_binding` passed to [`prepare_emphasis_criteria`], and injects
 /// [`wgsl`](Self::wgsl) into its shader (along with
 /// [`crate::shader_modules::common::FLAT_TEXEL_COORD`]), which defines the
-/// membership-test function named by the `fn_name` argument.
+/// membership-test function named by the `fn_name` argument — the AND of every
+/// criteria in the list.
 pub struct PreparedEmphasisCriteria {
-    /// Per-element codes/values texture, present only for the categorical
-    /// (non-empty) and quantitative variants.
-    pub texture: Option<PreparedEmphasisTexture>,
-    /// Assembled WGSL: the value texture binding (when present) plus the
-    /// `fn_name(instance_index: u32) -> bool` getter.
+    /// Per-element codes/values texture(s), in binding order. One per
+    /// criteria that carries per-element data (i.e. every criteria except an
+    /// empty-`included_codes` categorical, which needs no texture).
+    pub textures: Vec<PreparedEmphasisTexture>,
+    /// Assembled WGSL: the value texture bindings plus the
+    /// `fn_name(instance_index: u32) -> bool` getter, which ANDs together the
+    /// per-criteria predicates. An empty `criteria` list means every item is
+    /// included, so `fn_name` always returns `true`.
     pub wgsl: String,
 }
 
-/// Prepare the GPU resources and WGSL for one [`EmphasisCriteria`] — either
-/// the `filtering_criteria` or `selection_criteria` of a layer. `None` means
-/// every item is included, per
+/// Prepare the GPU resources and WGSL for a list of [`EmphasisCriteria`] —
+/// either the `filtering_criteria` or `selection_criteria` of a layer, AND-ed
+/// together. An empty list means every item is included, per
 /// `.claude/skills/pluot-filter-select-highlight`.
 ///
 /// `fn_name` is the WGSL function name to define (e.g. `is_filtered_in` /
 /// `is_selected_in`); `var_name` is the WGSL variable-name stem for the value
-/// texture and must be unique within the shader so that filtering and
+/// textures and must be unique within the shader so that filtering and
 /// selection criteria can coexist without colliding (e.g. `filter_data` /
-/// `select_data`). The value texture (categorical/quantitative only) is bound
-/// at `first_binding`.
+/// `select_data`). Value textures (one per categorical/quantitative criteria)
+/// are bound consecutively starting at `first_binding`.
 pub fn prepare_emphasis_criteria(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    criteria: Option<&EmphasisCriteria>,
+    criteria: &[EmphasisCriteria],
     fn_name: &str,
     var_name: &str,
     first_binding: u32,
 ) -> PreparedEmphasisCriteria {
-    match criteria {
-        None => PreparedEmphasisCriteria {
-            texture: None,
-            wgsl: ShaderBuilder::new(is_included_wgsl::NONE)
-                .define("criteria_fn_name", fn_name)
-                .build(),
-        },
-        Some(EmphasisCriteria::Categorical(params)) if params.included_codes.is_empty() => {
-            PreparedEmphasisCriteria {
-                texture: None,
-                wgsl: ShaderBuilder::new(is_included_wgsl::EMPTY)
-                    .define("criteria_fn_name", fn_name)
-                    .build(),
+    let mut textures: Vec<PreparedEmphasisTexture> = Vec::new();
+    let mut wgsl_parts: Vec<String> = Vec::new();
+    let mut term_fn_names: Vec<String> = Vec::new();
+
+    for (i, criterion) in criteria.iter().enumerate() {
+        let term_fn_name = format!("{fn_name}_{i}");
+        let term_var_name = format!("{var_name}_{i}");
+        let binding = first_binding + textures.len() as u32;
+
+        match criterion {
+            EmphasisCriteria::Categorical(params) if params.included_codes.is_empty() => {
+                wgsl_parts.push(
+                    ShaderBuilder::new(is_included_wgsl::EMPTY)
+                        .define("criteria_fn_name", &term_fn_name)
+                        .build(),
+                );
+            }
+            EmphasisCriteria::Categorical(params) => {
+                let (view, dtype) = params.codes.create_data_texture(
+                    device, queue, &format!("{term_fn_name} codes Texture"),
+                );
+                let included_codes = params
+                    .included_codes
+                    .iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                wgsl_parts.push(
+                    ShaderBuilder::new(is_included_wgsl::CATEGORICAL)
+                        .define("criteria_fn_name", &term_fn_name)
+                        .define("criteria_data_var", &term_var_name)
+                        .define_bidx("criteria_data", binding)
+                        .inject_texture_sample_type("criteria_data", dtype)
+                        .define_u32("criteria_included_len", params.included_codes.len() as u32)
+                        .define("criteria_included_codes", &included_codes)
+                        .build(),
+                );
+                textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });
+            }
+            EmphasisCriteria::Quantitative(params) => {
+                let (view, dtype) = params.values.create_data_texture(
+                    device, queue, &format!("{term_fn_name} values Texture"),
+                );
+                wgsl_parts.push(
+                    ShaderBuilder::new(is_included_wgsl::QUANTITATIVE)
+                        .define("criteria_fn_name", &term_fn_name)
+                        .define("criteria_data_var", &term_var_name)
+                        .define_bidx("criteria_data", binding)
+                        .inject_texture_sample_type("criteria_data", dtype)
+                        .define("criteria_min_value", &wgsl_float(params.min.unwrap_or(f32::MIN)))
+                        .define("criteria_max_value", &wgsl_float(params.max.unwrap_or(f32::MAX)))
+                        .build(),
+                );
+                textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });
             }
         }
-        Some(EmphasisCriteria::Categorical(params)) => {
-            let (view, dtype) =
-                params.codes.create_data_texture(device, queue, &format!("{fn_name} codes Texture"));
-            let included_codes = params
-                .included_codes
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let wgsl = ShaderBuilder::new(is_included_wgsl::CATEGORICAL)
-                .define("criteria_fn_name", fn_name)
-                .define("criteria_data_var", var_name)
-                .define_bidx("criteria_data", first_binding)
-                .inject_texture_sample_type("criteria_data", dtype)
-                .define_u32("criteria_included_len", params.included_codes.len() as u32)
-                .define("criteria_included_codes", &included_codes)
-                .build();
-            PreparedEmphasisCriteria {
-                texture: Some(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() }),
-                wgsl,
-            }
-        }
-        Some(EmphasisCriteria::Quantitative(params)) => {
-            let (view, dtype) =
-                params.values.create_data_texture(device, queue, &format!("{fn_name} values Texture"));
-            let wgsl = ShaderBuilder::new(is_included_wgsl::QUANTITATIVE)
-                .define("criteria_fn_name", fn_name)
-                .define("criteria_data_var", var_name)
-                .define_bidx("criteria_data", first_binding)
-                .inject_texture_sample_type("criteria_data", dtype)
-                .define("criteria_min_value", &wgsl_float(params.min.unwrap_or(f32::MIN)))
-                .define("criteria_max_value", &wgsl_float(params.max.unwrap_or(f32::MAX)))
-                .build();
-            PreparedEmphasisCriteria {
-                texture: Some(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() }),
-                wgsl,
-            }
-        }
+        term_fn_names.push(term_fn_name);
     }
+
+    // Wrapper function ANDing every per-criteria predicate together. An empty
+    // `criteria` list vacuously ANDs to `true` (every item is included).
+    let and_expr = if term_fn_names.is_empty() {
+        "true".to_string()
+    } else {
+        term_fn_names.iter().map(|n| format!("{n}(instance_index)")).collect::<Vec<_>>().join(" && ")
+    };
+    wgsl_parts.push(format!(
+        "fn {fn_name}(instance_index: u32) -> bool {{\n    return {and_expr};\n}}\n"
+    ));
+
+    PreparedEmphasisCriteria { textures, wgsl: wgsl_parts.join("\n") }
 }
 
 /// Format an `f32` as a WGSL floating-point literal, e.g. `1e30` or
@@ -112,21 +133,20 @@ fn wgsl_float(value: f32) -> String {
     format!("{value:e}")
 }
 
-/// Resolve whether item `index` meets `criteria` on the CPU — shared by the
-/// filtering and selection criteria (called with `filtering_criteria` /
-/// `selection_criteria` respectively), and by SVG rendering. `None` means
-/// every item is included, per
+/// Resolve whether item `index` meets every criteria in `criteria` (AND-ed
+/// together) on the CPU — shared by the filtering and selection criteria
+/// (called with `filtering_criteria` / `selection_criteria` respectively),
+/// and by SVG rendering. An empty list means every item is included, per
 /// `.claude/skills/pluot-filter-select-highlight`.
-pub fn cpu_is_included(criteria: Option<&EmphasisCriteria>, index: usize) -> bool {
-    match criteria {
-        None => true,
-        Some(EmphasisCriteria::Categorical(params)) => {
+pub fn cpu_is_included(criteria: &[EmphasisCriteria], index: usize) -> bool {
+    criteria.iter().all(|criterion| match criterion {
+        EmphasisCriteria::Categorical(params) => {
             let code = params.codes.get_f32(index) as i64;
             params.included_codes.contains(&code)
         }
-        Some(EmphasisCriteria::Quantitative(params)) => {
+        EmphasisCriteria::Quantitative(params) => {
             let value = params.values.get_f32(index);
             params.min.map_or(true, |min| value >= min) && params.max.map_or(true, |max| value <= max)
         }
-    }
+    })
 }

@@ -305,9 +305,6 @@ pub mod fill_opacity {
 /// same shader module without name or binding collisions. The categorical and
 /// quantitative variants assume [`common::FLAT_TEXEL_COORD`] is also injected.
 pub mod is_included {
-    /// No criteria: every item is included.
-    pub const NONE: &str = include_str!("wgsl_functions/get_is_included/none.wgsl");
-
     /// Explicit empty inclusion list: no item is included (texture-free).
     pub const EMPTY: &str = include_str!("wgsl_functions/get_is_included/empty.wgsl");
 
