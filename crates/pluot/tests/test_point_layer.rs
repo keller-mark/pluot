@@ -13,6 +13,7 @@ use pluot::{
     QuantitativeParams, QuantitativeColormap,
     SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
     NumericData,
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -1097,6 +1098,222 @@ async fn test_point_layer_tall_contain_normalized_units_stroke_width_normalized_
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_point_layer_tall_contain_normalized_units_stroke_width_normalized_mode").await;
+}
+
+// ── Filtering and selection criteria ─────────────────────────────────────────
+// See `.claude/skills/pluot-filter-select-highlight` for the general
+// filtering/selection/highlighting semantics. Filter-excluded points are not
+// rendered at all; filter-included but selection-excluded ("background")
+// points still render, but re-colored with `background_fill_color`/
+// `background_stroke_color` in place of their configured fill/stroke color.
+
+// Categorical filtering: only points whose category code is in
+// `included_codes` are rendered at all. Reuses the same codes as
+// `fill_color` (0,1,2,3, one per corner), including only codes 0 and 2, so
+// only the bottom-left and top-right corner points render.
+#[tokio::test]
+async fn test_point_layer_square_contain_filtering_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            filtering_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_filtering_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list means nothing is included: no
+// points render at all (distinct from `filtering_criteria: None`, which
+// includes everything).
+#[tokio::test]
+async fn test_point_layer_square_contain_filtering_categorical_empty_excludes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            filtering_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![],
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_filtering_categorical_empty_excludes_all").await;
+}
+
+// Quantitative filtering with both a min and a max bound: a per-point value
+// column of [0, 1, 2, 3] filtered to the inclusive range [1, 2] includes only
+// the second and third corner points.
+#[tokio::test]
+async fn test_point_layer_square_contain_filtering_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            filtering_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
+                min: Some(1.0),
+                max: Some(2.0),
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_filtering_quantitative_range").await;
+}
+
+// Quantitative filtering with only a `min` bound: `max` is omitted, meaning
+// +infinity, so every point with value >= 2 is included (the last two
+// corners).
+#[tokio::test]
+async fn test_point_layer_square_contain_filtering_quantitative_min_only() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            filtering_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
+                min: Some(2.0),
+                max: None,
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_filtering_quantitative_min_only").await;
+}
+
+// Categorical selection: unlike filtering, selection-excluded points still
+// render (all 4 corners are visible), but points whose code is not in
+// `included_codes` (1 and 3) are re-colored with `background_fill_color`
+// instead of their categorical `fill_color`.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            selection_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list for selection means nothing is
+// selected: all 4 points still render (filtering is None), but every one is
+// de-emphasized with `background_fill_color`.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_categorical_empty_deemphasizes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            selection_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![],
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_categorical_empty_deemphasizes_all").await;
+}
+
+// Quantitative selection: a value column of [0, 10, 20, 30] selected to the
+// range [10, 20] renders the middle two corners with their normal fill color
+// and de-emphasizes the first/last corners with `background_fill_color`.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            selection_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 10.0, 20.0, 30.0])),
+                min: Some(10.0),
+                max: Some(20.0),
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_quantitative_range").await;
+}
+
+// Selection criteria may be entirely orthogonal to filtering criteria: here
+// filtering uses the same categorical codes as `fill_color` (excluding code 3,
+// so the top-left corner is not rendered at all), while selection uses an
+// unrelated quantitative column. Of the 3 filter-included points, the ones
+// with value >= 15 (indices 1 and 2) are selected (normal color); index 0
+// is filter-included but selection-excluded (background color); index 3 is
+// filter-excluded and not rendered regardless of its selection value.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_orthogonal_to_filtering() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            filtering_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 1, 2],
+            })),
+            selection_criteria: Some(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0, 25.0, 15.0, 8.0])),
+                min: Some(15.0),
+                max: None,
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// Custom background fill/stroke colors, combined with a stroke, so that both
+// the de-emphasized fill and the de-emphasized stroke are visible. Points 1
+// and 3 are selected (normal categorical fill + black stroke); points 0 and 2
+// are selection-excluded and rendered with a red background fill and a green
+// background stroke instead.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_custom_background_colors() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            background_fill_color: (255, 0, 0),
+            background_stroke_color: (0, 255, 0),
+            selection_criteria: Some(EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })),
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_custom_background_colors").await;
 }
 
 // TODO: performance tests with many elements, both raster and svg formats

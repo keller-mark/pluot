@@ -15,6 +15,9 @@ pub use pluot_core::render_traits::{
     SizeMode, OpacityMode, UniformSizeParams, InstancedSizeParams, UniformOpacityParams,
     InstancedOpacityParams,
 };
+pub use pluot_core::render_traits::{
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
+};
 pub use pluot_core::{RenderParams as RawRenderParams, LayerParams as RawLayerParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams, PlotParams as RawPlotParams};
 pub use pluot_core::{project, unproject, get_bounds};
 pub use pluot_core::StoreMap;

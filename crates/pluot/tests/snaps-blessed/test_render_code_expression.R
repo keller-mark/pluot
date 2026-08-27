@@ -52,6 +52,18 @@ render_to_svg(
             1.0,
             1.0
           )
+        ),
+        selection_criteria = NULL,
+        filtering_criteria = NULL,
+        background_fill_color = c(
+          200,
+          200,
+          200
+        ),
+        background_stroke_color = c(
+          200,
+          200,
+          200
         )
       )
     )

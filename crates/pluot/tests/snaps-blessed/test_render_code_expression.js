@@ -80,7 +80,19 @@ renderToString({
               1.0,
               1.0
             ]
-          }
+          },
+          selection_criteria: null,
+          filtering_criteria: null,
+          background_fill_color: [
+            200,
+            200,
+            200
+          ],
+          background_stroke_color: [
+            200,
+            200,
+            200
+          ]
         }
       }
     ]
