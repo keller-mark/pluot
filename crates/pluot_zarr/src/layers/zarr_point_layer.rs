@@ -291,8 +291,8 @@ impl PreparedLayer for ZarrPointLayer {
                     self.layer_params.y_key.clone(),
                 ];
                 let extent = use_memo_vec_f32(async || {
-                    let (x_min, x_max) = reduce_extent(gpu_context, x_for_extent).await;
-                    let (y_min, y_max) = reduce_extent(gpu_context, y_for_extent).await;
+                    let (x_min, x_max) = reduce_extent(gpu_context, x_for_extent, &[], &[]).await.background;
+                    let (y_min, y_max) = reduce_extent(gpu_context, y_for_extent, &[], &[]).await.background;
                     Ok::<Vec<f32>, std::convert::Infallible>(vec![x_min, x_max, y_min, y_max])
                 }, &extent_future_deps, self.view_params.cache_enabled)
                     .await

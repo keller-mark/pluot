@@ -31,6 +31,14 @@
 //
 //   output_hist must be zero-initialised by the caller before dispatch.
 //   Size: uniforms.num_bins  (must be <= MAX_HISTOGRAM_BINS = 256).
+//
+// ── Filtering/selection criteria bindings ───────────────────────────────────
+//   @group(0) @binding(4..)  one value texture per criterion this dispatch was
+//                            built with, assembled by `reduce_is_included` (see
+//                            `crate::emphasis_mode::prepare_emphasis_criteria`
+//                            and `.claude/skills/pluot-filter-select-highlight`).
+//   Each dispatch is run once per foreground/background pass, so this is a
+//   single AND-ed criteria list, not separate filtering/selection lists.
 
 // Constants
 
@@ -69,6 +77,15 @@ struct ReduceUniforms {
 
 // flat_texel_coord(idx, width): maps a flat element index to 2D texel coords.
 {{flat_texel_coord}}
+
+// Filtering/selection membership test for this dispatch: `reduce_is_included`
+// ANDs together whichever criteria this pass was built with (see
+// `crate::emphasis_mode::prepare_emphasis_criteria`). An excluded element is
+// skipped by both entry points below, exactly like an out-of-bounds lane. An
+// empty criteria list compiles to an always-true predicate with no texture
+// bindings, so the unfiltered case has no extra cost. See
+// `.claude/skills/pluot-filter-select-highlight`.
+{{criteria_wgsl}}
 
 // ── Workgroup-shared memory ───────────────────────────────────────────────────
 
@@ -120,12 +137,14 @@ fn main_scalar(
     let gid  = global_id.x;
     let wid  = workgroup_id.x;
     let mode = uniforms.mode;
-    let in_bounds = gid < uniforms.num_elements;
+    let flat_index = uniforms.base_offset + gid;
+    let in_bounds = gid < uniforms.num_elements && reduce_is_included(flat_index);
 
-    // ── Load into shared memory with identity values for out-of-bounds lanes ──
+    // ── Load into shared memory with identity values for out-of-bounds (or
+    // filter/selection-excluded) lanes ──
 
     if in_bounds {
-        let v = load_input(uniforms.base_offset + gid);
+        let v = load_input(flat_index);
         if mode == MODE_EXTENT {
             shared_a[lid] = v; // min accumulator
             shared_b[lid] = v; // max accumulator
@@ -204,13 +223,15 @@ fn main_histogram(
     let gid       = global_id.x;
     let num_bins  = uniforms.num_bins;
     let data_range = uniforms.data_max - uniforms.data_min;
+    let flat_index = uniforms.base_offset + gid;
 
     // local_hist is zero-initialised (workgroup address space).
 
     // ── Accumulate into workgroup-local histogram ─────────────────────────────
+    // Filter/selection-excluded elements are skipped, same as out-of-bounds.
 
-    if gid < uniforms.num_elements {
-        let val = load_input(uniforms.base_offset + gid);
+    if gid < uniforms.num_elements && reduce_is_included(flat_index) {
+        let val = load_input(flat_index);
         var bin: u32;
         if data_range <= 0.0 {
             bin = 0u;

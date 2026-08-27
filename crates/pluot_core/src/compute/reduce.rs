@@ -1,13 +1,23 @@
 use crate::{render_types::GpuContext, wgpu};
+use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::numeric_data::NumericData;
-use crate::shader_modules::{common, ShaderBuilder};
+use crate::render_traits::EmphasisCriteria;
+use crate::shader_modules::{common, ShaderBuilder, TextureDtype};
 use std::num::NonZeroU64;
 use futures::FutureExt;
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use encase::{ShaderType, UniformBuffer};
 
+use super::ForegroundBackground;
+
 // Reference: https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/main.rs
+
+/// Binding index of the first filtering/selection criteria value texture (see
+/// `crate::emphasis_mode::prepare_emphasis_criteria`). Chosen to sit clear of
+/// every binding used by either `main_scalar` (0, 1, 2) or `main_histogram`
+/// (0, 1, 3).
+const CRITERIA_FIRST_BINDING: u32 = 4;
 
 /// Specify the behavior of the reducer functionality.
 // Discriminant values must stay in sync with the WGSL MODE_* constants in shaders/reduce.wgsl.
@@ -104,7 +114,12 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
     result
 }
 
-/// Dispatches a GPU reduction and returns raw partial results as `Vec<f32>`.
+/// Dispatches a GPU reduction over `input_view` and returns raw partial
+/// results as `Vec<f32>`, considering only elements that pass `criteria`
+/// (AND-ed together; an empty list includes every element — see
+/// `.claude/skills/pluot-filter-select-highlight`).
+///
+/// `total` is the element count of the (already-uploaded) `input_view`.
 ///
 /// **Large inputs**
 ///
@@ -125,31 +140,35 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 ///                       counts, accumulated across all chunks via the shader's
 ///                       global atomics; use `bytemuck::cast_slice` to recover
 ///                       the `u32`s.
-pub async fn compute_reduce(
+async fn dispatch_reduce(
     gpu_context: &GpuContext<'_>,
-    input: &NumericData,
-    mode: ReduceMode,
+    input_view: &wgpu::TextureView,
+    input_dtype: TextureDtype,
+    total: usize,
+    mode: &ReduceMode,
+    criteria: &[EmphasisCriteria],
 ) -> Vec<f32> {
     let GpuContext { device, queue } = gpu_context;
     let is_histogram = mode.is_histogram();
     let is_extent = matches!(mode, ReduceMode::Extent);
 
-    // Upload the input once as a single-channel 2D texture in its native dtype
-    // (8/16/32-bit are zero-copy; only 64-bit is narrowed). The shader reads
-    // each element via `f32(textureLoad(...))`, so there is no CPU-side cast.
-    let (input_view, input_dtype) = input.create_data_texture(device, queue, "reduce_input");
-
-    // Assemble the shader with the texture's sampled type injected at runtime.
+    // Assemble the shader with the texture's sampled type and the
+    // filtering/selection membership predicate (`reduce_is_included`) injected
+    // at runtime.
+    let prepared = prepare_emphasis_criteria(
+        device, queue, criteria, "reduce_is_included", "reduce_criteria_data", CRITERIA_FIRST_BINDING,
+    );
     let shader_source = ShaderBuilder::new(include_str!("shaders/reduce.wgsl"))
         .inject_texture_sample_type("input", input_dtype)
         .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+        .inject_function("criteria_wgsl", &prepared.wgsl)
         .build();
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("reduce.wgsl"),
         source: wgpu::ShaderSource::Wgsl(shader_source.into()),
     });
 
-    let (num_bins, data_min, data_max) = match &mode {
+    let (num_bins, data_min, data_max) = match mode {
         ReduceMode::Histogram { num_bins, data_min, data_max } => (*num_bins, *data_min, *data_max),
         _ => (0, 0.0, 0.0),
     };
@@ -188,6 +207,9 @@ pub async fn compute_reduce(
     //
     // main_scalar    uses bindings 0 (uniform), 1 (input), 2 (output f32)
     // main_histogram uses bindings 0 (uniform), 1 (input), 3 (output atomic<u32>)
+    // Both additionally use bindings CRITERIA_FIRST_BINDING.. for the
+    // filtering/selection criteria value textures (one per criterion in
+    // `criteria` that carries per-element data).
 
     let uniform_entry = wgpu::BindGroupLayoutEntry {
         binding: 0,
@@ -221,9 +243,23 @@ pub async fn compute_reduce(
         count: None,
     };
 
+    let mut bind_group_layout_entries = vec![uniform_entry, input_entry, output_entry];
+    for (i, tex) in prepared.textures.iter().enumerate() {
+        bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: CRITERIA_FIRST_BINDING + i as u32,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Texture {
+                sample_type: tex.sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+    }
+
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
-        entries: &[uniform_entry, input_entry, output_entry],
+        entries: &bind_group_layout_entries,
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -262,7 +298,6 @@ pub async fn compute_reduce(
 
     // ── Process each chunk ────────────────────────────────────────────────────
 
-    let total = input.len();
     let mut scalar_partials: Vec<f32> = Vec::new();
     let mut offset = 0usize;
 
@@ -323,23 +358,31 @@ pub async fn compute_reduce(
             scalar_output_buffer.as_ref().unwrap().as_entire_binding()
         };
 
+        let mut bind_group_entries = vec![
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(input_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: if is_histogram { 3 } else { 2 },
+                resource: output_binding_resource,
+            },
+        ];
+        for (i, tex) in prepared.textures.iter().enumerate() {
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding: CRITERIA_FIRST_BINDING + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&input_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: if is_histogram { 3 } else { 2 },
-                    resource: output_binding_resource,
-                },
-            ],
+            entries: &bind_group_entries,
         });
 
         let mut encoder =
@@ -401,12 +444,51 @@ pub async fn compute_reduce(
     }
 }
 
+/// Runs [`dispatch_reduce`] once for the filter-included ("background") set
+/// and, when `selection_criteria` narrows it further, once more for the
+/// filter-*and*-selection-included ("foreground") subset — reusing the same
+/// uploaded input texture for both passes. See
+/// `.claude/skills/pluot-filter-select-highlight`.
+///
+/// `filtering_criteria` and `selection_criteria` are AND-ed together
+/// (independently) to reach a "must pass" predicate per pass, matching
+/// [`crate::emphasis_mode::cpu_is_included`]'s semantics: an empty list means
+/// every item is included.
+async fn compute_reduce_fg_bg(
+    gpu_context: &GpuContext<'_>,
+    input: &NumericData,
+    mode: ReduceMode,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<Vec<f32>> {
+    let GpuContext { device, queue } = gpu_context;
+    let (input_view, input_dtype) = input.create_data_texture(device, queue, "reduce_input");
+    let total = input.len();
+
+    let background =
+        dispatch_reduce(gpu_context, &input_view, input_dtype, total, &mode, filtering_criteria).await;
+    let foreground = if selection_criteria.is_empty() {
+        background.clone()
+    } else {
+        let mut combined = filtering_criteria.to_vec();
+        combined.extend_from_slice(selection_criteria);
+        dispatch_reduce(gpu_context, &input_view, input_dtype, total, &mode, &combined).await
+    };
+
+    ForegroundBackground { background, foreground }
+}
+
 // CPU fallbacks
 //
 // Each reducer runs on the input at its native dtype and casts only the scalar
 // *result* to f32 — the input array is never converted to f32 up front.
 // `ScalarToF32` provides that single-value output cast for every supported
 // element type, and `dispatch_cpu!` selects the matching `NumericData` arm.
+//
+// Every reducer additionally takes an `included: impl Fn(usize) -> bool`
+// predicate so the same functions serve both the unfiltered case (predicate
+// always `true`) and the filtered background/foreground passes (predicate
+// backed by `cpu_is_included`).
 
 /// Casts one scalar of a supported numeric dtype to f32. Applied only to
 /// reduction outputs — never to convert the input array.
@@ -440,33 +522,41 @@ macro_rules! dispatch_cpu {
     };
 }
 
-fn cpu_reduce_min<T: ScalarToF32 + PartialOrd>(input: &[T]) -> f32 {
+fn cpu_reduce_min<T: ScalarToF32 + PartialOrd>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
     input
         .iter()
-        .copied()
+        .enumerate()
+        .filter_map(|(i, &v)| included(i).then_some(v))
         .reduce(|a, b| if b < a { b } else { a })
         .map_or(f32::INFINITY, ScalarToF32::scalar_to_f32)
 }
 
-fn cpu_reduce_max<T: ScalarToF32 + PartialOrd>(input: &[T]) -> f32 {
+fn cpu_reduce_max<T: ScalarToF32 + PartialOrd>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
     input
         .iter()
-        .copied()
+        .enumerate()
+        .filter_map(|(i, &v)| included(i).then_some(v))
         .reduce(|a, b| if b > a { b } else { a })
         .map_or(f32::NEG_INFINITY, ScalarToF32::scalar_to_f32)
 }
 
-fn cpu_reduce_sum<T: ScalarToF32 + std::iter::Sum>(input: &[T]) -> f32 {
+fn cpu_reduce_sum<T: ScalarToF32 + std::iter::Sum>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
     // Accumulate in the native dtype; cast only the final sum.
-    input.iter().copied().sum::<T>().scalar_to_f32()
+    input
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &v)| included(i).then_some(v))
+        .sum::<T>()
+        .scalar_to_f32()
 }
 
-fn cpu_reduce_extent<T: ScalarToF32 + PartialOrd>(input: &[T]) -> (f32, f32) {
-    match input.split_first() {
+fn cpu_reduce_extent<T: ScalarToF32 + PartialOrd>(input: &[T], included: impl Fn(usize) -> bool) -> (f32, f32) {
+    let mut included_values = input.iter().enumerate().filter_map(|(i, &v)| included(i).then_some(v));
+    match included_values.next() {
         None => (f32::INFINITY, f32::NEG_INFINITY),
-        Some((&first, rest)) => {
+        Some(first) => {
             let (mut lo, mut hi) = (first, first);
-            for &v in rest {
+            for v in included_values {
                 if v < lo { lo = v; }
                 if v > hi { hi = v; }
             }
@@ -475,10 +565,15 @@ fn cpu_reduce_extent<T: ScalarToF32 + PartialOrd>(input: &[T]) -> (f32, f32) {
     }
 }
 
-fn cpu_reduce_histogram<T: ScalarToF32>(input: &[T], num_bins: u32, data_min: f32, data_max: f32) -> Vec<u32> {
+fn cpu_reduce_histogram<T: ScalarToF32>(
+    input: &[T], num_bins: u32, data_min: f32, data_max: f32, included: impl Fn(usize) -> bool,
+) -> Vec<u32> {
     let mut bins = vec![0u32; num_bins as usize];
     let range = data_max - data_min;
-    for &v in input {
+    for (i, &v) in input.iter().enumerate() {
+        if !included(i) {
+            continue;
+        }
         let bin = if range <= 0.0 {
             0
         } else {
@@ -494,68 +589,161 @@ fn cpu_reduce_histogram<T: ScalarToF32>(input: &[T], num_bins: u32, data_min: f3
 
 // ── Public wrapper functions ──────────────────────────────────────────────────
 //
-// When a GpuContext is provided, the GPU path is used (compute_reduce +
+// When a GpuContext is provided, the GPU path is used (compute_reduce_fg_bg +
 // CPU-side fold of partial workgroup results).  When None, a naive CPU
 // fallback runs instead.
+//
+// Every reducer accepts `filtering_criteria` and `selection_criteria` (each
+// AND-ed together, empty meaning "every item included" — see
+// `.claude/skills/pluot-filter-select-highlight`) and always returns both
+// components: `background` is computed over the filter-included set,
+// `foreground` over the filter-*and*-selection-included subset. Passing `&[]`
+// for both makes `background` and `foreground` identical, equal to the
+// unfiltered reduction over the whole input.
 
-/// Returns the minimum value in `input`, or `f32::INFINITY` if empty.
+/// Returns the minimum value in `input` (or `f32::INFINITY` if empty/nothing
+/// included), for both the filter-included ("background") and
+/// filter-and-selection-included ("foreground") subsets.
 ///
 /// Accepts anything convertible into [`NumericData`] (e.g. an
 /// `Arc<Vec<f32>>`), so any supported dtype is reduced without a CPU-side cast.
-pub async fn reduce_min(gpu_context: Option<&GpuContext<'_>>, input: impl Into<NumericData>) -> f32 {
+pub async fn reduce_min(
+    gpu_context: Option<&GpuContext<'_>>,
+    input: impl Into<NumericData>,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<f32> {
     let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, &input, ReduceMode::Min).await;
-            partials.into_iter().fold(f32::INFINITY, f32::min)
+            let partials =
+                compute_reduce_fg_bg(ctx, &input, ReduceMode::Min, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: partials.background.into_iter().fold(f32::INFINITY, f32::min),
+                foreground: partials.foreground.into_iter().fold(f32::INFINITY, f32::min),
+            }
         }
-        None => dispatch_cpu!(&input, |v| cpu_reduce_min(v)),
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background = dispatch_cpu!(&input, |v| cpu_reduce_min(v, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_min(v, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
     }
 }
 
-/// Returns the maximum value in `input`, or `f32::NEG_INFINITY` if empty.
-pub async fn reduce_max(gpu_context: Option<&GpuContext<'_>>, input: impl Into<NumericData>) -> f32 {
+/// Returns the maximum value in `input` (or `f32::NEG_INFINITY` if
+/// empty/nothing included), for both the "background" and "foreground"
+/// subsets — see [`reduce_min`].
+pub async fn reduce_max(
+    gpu_context: Option<&GpuContext<'_>>,
+    input: impl Into<NumericData>,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<f32> {
     let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, &input, ReduceMode::Max).await;
-            partials.into_iter().fold(f32::NEG_INFINITY, f32::max)
+            let partials =
+                compute_reduce_fg_bg(ctx, &input, ReduceMode::Max, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: partials.background.into_iter().fold(f32::NEG_INFINITY, f32::max),
+                foreground: partials.foreground.into_iter().fold(f32::NEG_INFINITY, f32::max),
+            }
         }
-        None => dispatch_cpu!(&input, |v| cpu_reduce_max(v)),
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background = dispatch_cpu!(&input, |v| cpu_reduce_max(v, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_max(v, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
     }
 }
 
-/// Returns the sum of all values in `input`, or `0.0` if empty.
-pub async fn reduce_sum(gpu_context: Option<&GpuContext<'_>>, input: impl Into<NumericData>) -> f32 {
+/// Returns the sum of all values in `input` (or `0.0` if empty/nothing
+/// included), for both the "background" and "foreground" subsets — see
+/// [`reduce_min`].
+pub async fn reduce_sum(
+    gpu_context: Option<&GpuContext<'_>>,
+    input: impl Into<NumericData>,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<f32> {
     let input = input.into();
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, &input, ReduceMode::Sum).await;
-            partials.into_iter().sum()
+            let partials =
+                compute_reduce_fg_bg(ctx, &input, ReduceMode::Sum, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: partials.background.into_iter().sum(),
+                foreground: partials.foreground.into_iter().sum(),
+            }
         }
-        None => dispatch_cpu!(&input, |v| cpu_reduce_sum(v)),
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background = dispatch_cpu!(&input, |v| cpu_reduce_sum(v, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_sum(v, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
     }
 }
 
-/// Returns `(min, max)` over `input`, or `(f32::INFINITY, f32::NEG_INFINITY)` if empty.
+/// Returns `(min, max)` over `input` (or `(f32::INFINITY, f32::NEG_INFINITY)`
+/// if empty/nothing included), for both the "background" and "foreground"
+/// subsets — see [`reduce_min`].
 pub async fn reduce_extent(
     gpu_context: Option<&GpuContext<'_>>,
     input: impl Into<NumericData>,
-) -> (f32, f32) {
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<(f32, f32)> {
     let input = input.into();
+    let fold_extent = |partials: Vec<f32>| {
+        let global_min = partials.iter().copied().step_by(2).fold(f32::INFINITY, f32::min);
+        let global_max = partials.iter().copied().skip(1).step_by(2).fold(f32::NEG_INFINITY, f32::max);
+        (global_min, global_max)
+    };
     match gpu_context {
         Some(ctx) => {
-            let partials = compute_reduce(ctx, &input, ReduceMode::Extent).await;
-            let global_min = partials.iter().copied().step_by(2).fold(f32::INFINITY, f32::min);
-            let global_max = partials.iter().copied().skip(1).step_by(2).fold(f32::NEG_INFINITY, f32::max);
-            (global_min, global_max)
+            let partials =
+                compute_reduce_fg_bg(ctx, &input, ReduceMode::Extent, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: fold_extent(partials.background),
+                foreground: fold_extent(partials.foreground),
+            }
         }
-        None => dispatch_cpu!(&input, |v| cpu_reduce_extent(v)),
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background = dispatch_cpu!(&input, |v| cpu_reduce_extent(v, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_extent(v, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
     }
 }
 
-/// Returns a histogram of `input_arr` as `num_bins` bin counts, using a
-/// caller-provided data range.
+/// Returns a histogram of `input` as `num_bins` bin counts, using a
+/// caller-provided data range, for both the "background" and "foreground"
+/// subsets — see [`reduce_min`].
 ///
 /// Values are binned into `[data_min, data_max)`; out-of-range values are
 /// clamped to the nearest edge bin.  `num_bins` must be ≤ 256.
@@ -565,29 +753,64 @@ pub async fn reduce_histogram_with_known_extent(
     num_bins: u32,
     data_min: f32,
     data_max: f32,
-) -> Vec<u32> {
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<Vec<u32>> {
     let input = input.into();
+    let mode = ReduceMode::Histogram { num_bins, data_min, data_max };
     match gpu_context {
         Some(ctx) => {
-            let mode = ReduceMode::Histogram { num_bins, data_min, data_max };
-            let raw = compute_reduce(ctx, &input, mode).await;
-            bytemuck::cast_slice::<f32, u32>(&raw).to_vec()
+            let partials = compute_reduce_fg_bg(ctx, &input, mode, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: bytemuck::cast_slice::<f32, u32>(&partials.background).to_vec(),
+                foreground: bytemuck::cast_slice::<f32, u32>(&partials.foreground).to_vec(),
+            }
         }
-        None => dispatch_cpu!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max)),
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background =
+                dispatch_cpu!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background.clone()
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
     }
 }
 
-/// Returns a histogram of `input_arr` as `num_bins` bin counts, automatically
-/// deriving the data range via `reduce_extent`.
+/// Returns a histogram of `input` as `num_bins` bin counts, automatically
+/// deriving the data range via `reduce_extent`, for both the "background" and
+/// "foreground" subsets — see [`reduce_min`].
 ///
-/// This performs two GPU dispatches (or two CPU passes) when the extent is
-/// unknown: one for extent, one for the histogram.  `num_bins` must be ≤ 256.
+/// The bin edges are derived from the background (filter-included) set alone
+/// — via `reduce_extent(.., filtering_criteria, &[])` — so the background and
+/// foreground histograms share the same bin boundaries and stay comparable;
+/// deriving the foreground's range from the (generally narrower) selected
+/// subset would make the two histograms' bins incomparable.
+///
+/// This performs two GPU dispatches (or two CPU passes) per pass when the
+/// extent is unknown: one for extent, one for the histogram.  `num_bins` must
+/// be ≤ 256.
 pub async fn reduce_histogram_with_unknown_extent(
     gpu_context: Option<&GpuContext<'_>>,
     input: impl Into<NumericData>,
     num_bins: u32,
-) -> Vec<u32> {
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<Vec<u32>> {
     let input = input.into();
-    let (data_min, data_max) = reduce_extent(gpu_context, input.clone()).await;
-    reduce_histogram_with_known_extent(gpu_context, input, num_bins, data_min, data_max).await
+    let extent = reduce_extent(gpu_context, input.clone(), filtering_criteria, &[]).await;
+    reduce_histogram_with_known_extent(
+        gpu_context,
+        input,
+        num_bins,
+        extent.background.0,
+        extent.background.1,
+        filtering_criteria,
+        selection_criteria,
+    )
+    .await
 }

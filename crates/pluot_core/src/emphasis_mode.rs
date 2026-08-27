@@ -67,6 +67,7 @@ pub fn prepare_emphasis_criteria(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     criteria: &[EmphasisCriteria],
+    // TODO: use enums to more strongly type these strings
     fn_name: &str,
     var_name: &str,
     first_binding: u32,

@@ -124,7 +124,7 @@ impl PreparedLayer for ZarrHistogramLayer {
             // Nested caching: cache the extent.
             let quant_arr_for_extent = quant_arr.clone();
             let extent = use_memo_vec_f32(async || {
-                let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent).await;
+                let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent, &[], &[]).await.background;
                 Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
             }, &extent_future_deps, self.view_params.cache_enabled)
                 .await
@@ -136,7 +136,9 @@ impl PreparedLayer for ZarrHistogramLayer {
                 num_bins,
                 extent[0],
                 extent[1],
-            ).await;
+                &[],
+                &[],
+            ).await.background;
 
             let mut result = vec![extent[0], extent[1]];
             result.extend(bin_counts.iter().map(|&c| c as f32));

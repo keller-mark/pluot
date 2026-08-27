@@ -768,6 +768,7 @@ fn prepare_channel_color(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: Option<&ColorMode>,
+    // TODO: use enums to more strongly type these strings
     stroke_or_fill_property: &str,
     first_binding: u32,
     c_idx: usize,
