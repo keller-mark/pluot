@@ -10,6 +10,7 @@ use pluot::{
     AspectRatioMode, UnitsMode, MarginParams,
     ColorMode, CurveLayerParams, NumericData, PathCommand, QuantitativeColormap, QuantitativeParams,
     SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -760,4 +761,268 @@ async fn test_curve_layer_square_contain_closed_curve_quantitative_fill() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_closed_curve_quantitative_fill").await;
+}
+
+// ── Filtering and selection criteria ─────────────────────────────────────────
+// `CurveLayer` renders a single shape, so `filtering_criteria`/
+// `selection_criteria` (each carrying a single, length-1 value per criteria)
+// act as an all-or-nothing toggle for the whole shape rather than selecting a
+// subset of many items. Filter-excluded means the shape (both stroke and
+// fill sub-layers) is not rendered at all; filter-included but
+// selection-excluded means it still renders, but re-colored with
+// `background_stroke_color`/`background_fill_color` in place of its
+// configured stroke/fill color.
+
+// Categorical filtering matching the shape's own code: the shape renders
+// normally.
+#[tokio::test]
+async fn test_curve_layer_square_contain_filtering_categorical_included() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![0],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_filtering_categorical_included").await;
+}
+
+// Categorical filtering excluding the shape's code (an explicit empty
+// `included_codes` list, distinct from an empty `filtering_criteria` list):
+// neither the stroke nor the fill sub-layer renders anything.
+#[tokio::test]
+async fn test_curve_layer_square_contain_filtering_categorical_excludes_shape() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_filtering_categorical_excludes_shape").await;
+}
+
+// Quantitative filtering with both a min and a max bound including the
+// shape's value: the shape renders normally.
+#[tokio::test]
+async fn test_curve_layer_square_contain_filtering_quantitative_range_included() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0])),
+                min: Some(1.0),
+                max: Some(10.0),
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_filtering_quantitative_range_included").await;
+}
+
+// Quantitative filtering whose range excludes the shape's value: not
+// rendered.
+#[tokio::test]
+async fn test_curve_layer_square_contain_filtering_quantitative_range_excludes_shape() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0])),
+                min: Some(10.0),
+                max: None,
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_filtering_quantitative_range_excludes_shape").await;
+}
+
+// Categorical selection matching the shape's own code: the shape renders
+// with its normal stroke/fill colors.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_categorical_included() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![0],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_categorical_included").await;
+}
+
+// Categorical selection excluding the shape's code: unlike filtering, the
+// shape still renders (both stroke and fill), but re-colored with
+// `background_stroke_color`/`background_fill_color`.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_categorical_deemphasizes_shape() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_categorical_deemphasizes_shape").await;
+}
+
+// Quantitative selection whose range excludes the shape's value: the shape
+// still renders, de-emphasized with the background stroke/fill colors.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0])),
+                min: Some(10.0),
+                max: None,
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_quantitative_range").await;
+}
+
+// Selection criteria may be entirely orthogonal to filtering criteria: here
+// filtering uses a categorical column that includes the shape (so it still
+// renders), while selection uses an unrelated quantitative column whose
+// range excludes the shape's value (so it renders de-emphasized).
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_orthogonal_to_filtering() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![0],
+            })],
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0])),
+                min: Some(10.0),
+                max: None,
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// `filtering_criteria` is a list of criteria AND-ed together: the shape must
+// satisfy every one to be included. Here a categorical criteria that
+// includes the shape is combined with a quantitative criteria that excludes
+// it, so the shape is not rendered.
+#[tokio::test]
+async fn test_curve_layer_square_contain_filtering_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0])),
+                    included_codes: vec![0],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![5.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_filtering_multiple_criteria_and").await;
+}
+
+// `selection_criteria` AND-ing mirrors `filtering_criteria`: both criteria
+// here match the shape, so it is selected and renders with its normal
+// stroke/fill colors.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            selection_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0])),
+                    included_codes: vec![0],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![5.0])),
+                    min: Some(1.0),
+                    max: Some(10.0),
+                }),
+            ],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_multiple_criteria_and").await;
+}
+
+// Custom background stroke/fill colors: the shape is selection-excluded, so
+// it renders with a red background fill and a green background stroke
+// instead of its configured blue fill / red stroke.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_custom_background_colors() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            background_fill_color: Some((255, 0, 0)),
+            background_stroke_color: Some((0, 255, 0)),
+            stroked: true,
+            filled: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_custom_background_colors").await;
 }

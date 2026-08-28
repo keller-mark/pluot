@@ -11,6 +11,7 @@ use pluot::{
     CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
     QuantitativeParams, QuantitativeColormap,
     LineLayerParams, NumericData, SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -819,4 +820,269 @@ async fn test_line_layer_tall_contain_normalized_units_line_width_normalized_mod
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_line_layer_tall_contain_normalized_units_line_width_normalized_mode").await;
+}
+
+// ── Filtering and selection criteria ─────────────────────────────────────────
+// Filter-excluded lines are not rendered at all; filter-included but
+// selection-excluded ("background") lines still render, but re-colored with
+// `background_stroke_color` in place of their configured stroke color.
+
+// Categorical filtering: only lines whose category code is in
+// `included_codes` are rendered at all. Reuses the same codes as
+// `stroke_color` (0-7, one per line of the house shape), including only the
+// even-numbered lines, so only half the house renders.
+#[tokio::test]
+async fn test_line_layer_square_contain_filtering_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_filtering_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list means nothing is included: no
+// lines render at all (distinct from an empty `filtering_criteria` list,
+// which includes everything).
+#[tokio::test]
+async fn test_line_layer_square_contain_filtering_categorical_empty_excludes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_filtering_categorical_empty_excludes_all").await;
+}
+
+// Quantitative filtering with both a min and a max bound: a per-line value
+// column of [0..7] filtered to the inclusive range [2, 5] includes only
+// lines 2 through 5.
+#[tokio::test]
+async fn test_line_layer_square_contain_filtering_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])),
+                min: Some(2.0),
+                max: Some(5.0),
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_filtering_quantitative_range").await;
+}
+
+// Quantitative filtering with only a `min` bound: `max` is omitted, meaning
+// +infinity, so every line with value >= 4 is included (lines 4-7).
+#[tokio::test]
+async fn test_line_layer_square_contain_filtering_quantitative_min_only() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])),
+                min: Some(4.0),
+                max: None,
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_filtering_quantitative_min_only").await;
+}
+
+// Categorical selection: unlike filtering, selection-excluded lines still
+// render (the full house shape is visible), but lines whose code is not in
+// `included_codes` are re-colored with `background_stroke_color` instead of
+// their categorical `stroke_color`.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list for selection means nothing is
+// selected: all 8 lines still render (filtering_criteria is empty), but
+// every one is de-emphasized with `background_stroke_color`.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_categorical_empty_deemphasizes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_categorical_empty_deemphasizes_all").await;
+}
+
+// Quantitative selection: a value column of [0,10,...,70] selected to the
+// range [20, 50] renders lines 2-5 with their normal stroke color and
+// de-emphasizes the rest with `background_stroke_color`.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0])),
+                min: Some(20.0),
+                max: Some(50.0),
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_quantitative_range").await;
+}
+
+// Selection criteria may be entirely orthogonal to filtering criteria: here
+// filtering uses the same categorical codes as `stroke_color` (excluding line
+// 7, so the last line is not rendered at all), while selection uses an
+// unrelated quantitative column. Of the 7 filter-included lines, only the
+// ones with value >= 15 are selected (normal color); the rest are
+// filter-included but selection-excluded (background color).
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_orthogonal_to_filtering() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 1, 2, 3, 4, 5, 6],
+            })],
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0, 8.0, 25.0, 3.0, 18.0, 2.0, 30.0, 1.0])),
+                min: Some(15.0),
+                max: None,
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// `filtering_criteria` is a list of criteria AND-ed together: a line must
+// satisfy every one to be included. Here a categorical criteria (excluding
+// line 7) is combined with a quantitative criteria (min 4, excluding lines
+// 0-3). Only lines 4-6 satisfy both.
+#[tokio::test]
+async fn test_line_layer_square_contain_filtering_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            filtering_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                    included_codes: vec![0, 1, 2, 3, 4, 5, 6],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])),
+                    min: Some(4.0),
+                    max: None,
+                }),
+            ],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_filtering_multiple_criteria_and").await;
+}
+
+// `selection_criteria` AND-ing mirrors `filtering_criteria`: a categorical
+// criteria combined with a quantitative criteria narrows the selected set to
+// lines 4-6; every other line still renders (no filtering), but
+// de-emphasized with `background_stroke_color`.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            selection_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                    included_codes: vec![0, 1, 2, 3, 4, 5, 6],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])),
+                    min: Some(4.0),
+                    max: None,
+                }),
+            ],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_multiple_criteria_and").await;
+}
+
+// Custom background stroke color: lines 0, 2, 4, 6 are selected (normal
+// categorical stroke color); the rest are selection-excluded and rendered
+// with a magenta background stroke instead.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_custom_background_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            background_stroke_color: Some((255, 0, 255)),
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_custom_background_color").await;
 }

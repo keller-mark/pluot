@@ -11,7 +11,7 @@ use pluot::{
     BitmaskChannelSettings, BitmaskLayerParams, CategoricalColormap, CategoricalCustomParams,
     CategoricalParams, ColorMode, DimensionOrder, InstancedRgbInterleavedParams, InstancedRgbParams,
     NumericData, OpacityMode, QuantitativeColormap, QuantitativeParams, SizeMode, InstancedSizeParams,
-    InstancedOpacityParams,
+    InstancedOpacityParams, EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
 };
 
 // Helpers: the two single-purpose channel shapes most of these fixtures use --
@@ -1489,4 +1489,254 @@ async fn test_bitmask_layer_square_contain_pixel_units_fully_out_of_bounds() {
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_pixel_units_fully_out_of_bounds").await;
+}
+
+// ── Filtering and selection criteria ─────────────────────────────────────────
+// Filtering/selection criteria live on `BitmaskChannelSettings`, indexed by
+// object id minus 1 (like the color/opacity/size modes; see `object_colors()`
+// above, whose codes 0-3 correspond to objects 1-4: diamond, triangle, plus,
+// ring). A filter-excluded object is treated the same as "no object" for its
+// channel: not drawn at all. A filter-included but selection-excluded object
+// still draws, but re-colored with `background_fill_color`/
+// `background_stroke_color` in place of its configured fill/stroke color.
+
+// Helper: a single filled channel, colored via `object_colors()` (codes 0-3
+// for objects 1-4), with the given filtering/selection criteria.
+fn criteria_channel(
+    filtering_criteria: Vec<EmphasisCriteria>,
+    selection_criteria: Vec<EmphasisCriteria>,
+) -> BitmaskLayerParams {
+    BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            filtering_criteria,
+            selection_criteria,
+            ..filled_channel(object_colors())
+        }],
+        ..bitmask_cyx_data()
+    }
+}
+
+fn criteria_params(bitmask_params: BitmaskLayerParams) -> RenderParams {
+    RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(bitmask_params),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        camera_view: Some(CAMERA_ZOOM_OUT_32X),
+        ..Default::default()
+    }
+}
+
+// Categorical filtering: only objects whose id-minus-1 code is in
+// `included_codes` are drawn at all. Reuses the same codes as
+// `object_colors()` (0,1,2,3 for objects 1-4), including only codes 0 and 2,
+// so only the diamond (1) and the plus (3) are drawn; the triangle (2) and
+// ring (4) are treated as "no object" and not drawn.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_filtering_categorical_subset() {
+    let params = criteria_params(criteria_channel(
+        vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+            included_codes: vec![0, 2],
+        })],
+        vec![],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_filtering_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list means nothing is included: no
+// object is drawn at all (distinct from an empty `filtering_criteria` list,
+// which includes every object).
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_filtering_categorical_empty_excludes_all() {
+    let params = criteria_params(criteria_channel(
+        vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+            included_codes: vec![],
+        })],
+        vec![],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_filtering_categorical_empty_excludes_all").await;
+}
+
+// Quantitative filtering with both a min and a max bound: a per-object value
+// column of [0, 1, 2, 3] (indexed by id minus 1) filtered to the inclusive
+// range [1, 2] includes only the triangle (2) and the plus (3).
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_filtering_quantitative_range() {
+    let params = criteria_params(criteria_channel(
+        vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
+            min: Some(1.0),
+            max: Some(2.0),
+        })],
+        vec![],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_filtering_quantitative_range").await;
+}
+
+// Quantitative filtering with only a `min` bound: `max` is omitted, meaning
+// +infinity, so every object with value >= 2 is included (the plus and the
+// ring).
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_filtering_quantitative_min_only() {
+    let params = criteria_params(criteria_channel(
+        vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
+            min: Some(2.0),
+            max: None,
+        })],
+        vec![],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_filtering_quantitative_min_only").await;
+}
+
+// Categorical selection: unlike filtering, selection-excluded objects still
+// draw (all 4 objects are visible), but objects whose id-minus-1 code is not
+// in `included_codes` (the triangle and the ring) are re-colored with
+// `background_fill_color` instead of their `object_colors()` color.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_categorical_subset() {
+    let params = criteria_params(criteria_channel(
+        vec![],
+        vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+            included_codes: vec![0, 2],
+        })],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list for selection means nothing is
+// selected: all 4 objects still draw (filtering_criteria is empty), but
+// every one is de-emphasized with `background_fill_color`.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_categorical_empty_deemphasizes_all() {
+    let params = criteria_params(criteria_channel(
+        vec![],
+        vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+            included_codes: vec![],
+        })],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_categorical_empty_deemphasizes_all").await;
+}
+
+// Quantitative selection: a value column of [0, 10, 20, 30] selected to the
+// range [10, 20] draws the triangle and the plus with their normal
+// `object_colors()` color and de-emphasizes the diamond and the ring with
+// `background_fill_color`.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_quantitative_range() {
+    let params = criteria_params(criteria_channel(
+        vec![],
+        vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            values: NumericData::Float32(Arc::new(vec![0.0, 10.0, 20.0, 30.0])),
+            min: Some(10.0),
+            max: Some(20.0),
+        })],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_quantitative_range").await;
+}
+
+// Selection criteria may be entirely orthogonal to filtering criteria: here
+// filtering uses the same id-minus-1 codes as `object_colors()` (excluding
+// code 3, so the ring is not drawn at all), while selection uses an
+// unrelated quantitative column. Of the 3 filter-included objects, the ones
+// with value >= 15 (the triangle and the plus) are selected (normal color);
+// the diamond is filter-included but selection-excluded (background color);
+// the ring is filter-excluded and not drawn regardless of its selection
+// value.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_orthogonal_to_filtering() {
+    let params = criteria_params(criteria_channel(
+        vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+            included_codes: vec![0, 1, 2],
+        })],
+        vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            values: NumericData::Float32(Arc::new(vec![5.0, 25.0, 15.0, 8.0])),
+            min: Some(15.0),
+            max: None,
+        })],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// `filtering_criteria` is a list of criteria AND-ed together: an object must
+// satisfy every one to be included. Here a categorical criteria (codes
+// 0,1,2,3, including 0/1/2 — excludes the ring) is combined with a
+// quantitative criteria (values 0,5,15,25, min 10 — excludes the diamond and
+// the triangle). Only the plus (code 2) satisfies both, so only it is drawn.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_filtering_multiple_criteria_and() {
+    let params = criteria_params(criteria_channel(
+        vec![
+            EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 1, 2],
+            }),
+            EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
+                min: Some(10.0),
+                max: None,
+            }),
+        ],
+        vec![],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_filtering_multiple_criteria_and").await;
+}
+
+// `selection_criteria` AND-ing mirrors `filtering_criteria`: a categorical
+// criteria (included_codes 0/2) combined with a quantitative criteria (min
+// 10, excluding the diamond and the triangle) leaves only the plus selected
+// (normal color); every other object still draws (no filtering), but
+// de-emphasized with `background_fill_color`.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_multiple_criteria_and() {
+    let params = criteria_params(criteria_channel(
+        vec![],
+        vec![
+            EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            }),
+            EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
+                min: Some(10.0),
+                max: None,
+            }),
+        ],
+    ));
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_multiple_criteria_and").await;
+}
+
+// Custom background fill/stroke colors, combined with a stroke, so that both
+// the de-emphasized fill and the de-emphasized stroke are visible. The
+// triangle and the ring (codes 1, 3) are selected (normal `object_colors()`
+// fill + black stroke); the diamond and the plus are selection-excluded and
+// rendered with a red background fill and a green background stroke instead.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_custom_background_colors() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            stroked: true,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            stroke_width: Some(SizeMode::UniformSize(1.0)),
+            background_fill_color: Some((255, 0, 0)),
+            background_stroke_color: Some((0, 255, 0)),
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        stroke_width_unit_mode: UnitsMode::Data,
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_custom_background_colors").await;
 }

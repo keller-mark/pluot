@@ -9,7 +9,8 @@ use pluot::{
     AspectRatioMode, CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode,
     InstancedOpacityParams, InstancedSizeParams, LayerParams, MarginParams, OpacityMode,
     QuantitativeParams, QuantitativeColormap,
-    RectLayerParams, RenderParams, SizeMode, UnitsMode, NumericData
+    RectLayerParams, RenderParams, SizeMode, UnitsMode, NumericData,
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
 };
 
 // For primitive layer tests, we always want to test the following cases (and combinations of them):
@@ -866,4 +867,300 @@ async fn test_rect_layer_tall_contain_normalized_units_stroke_width_normalized_m
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_rect_layer_tall_contain_normalized_units_stroke_width_normalized_mode").await;
+}
+
+// ── Filtering and selection criteria ─────────────────────────────────────────
+// Filter-excluded rects are not rendered at all; filter-included but
+// selection-excluded ("background") rects still render, but re-colored with
+// `background_fill_color`/`background_stroke_color` in place of their
+// configured fill/stroke color.
+
+// Helper: 4 rects at the corners of [0,1]x[0,1] in data space (bottom-left,
+// bottom-right, top-right, top-left), used by the filtering/selection tests
+// below, where 4 items (rather than corner_rects_data()'s 2) are useful to
+// demonstrate subsets.
+fn criteria_rects_data() -> RectLayerParams {
+    RectLayerParams {
+        layer_id: "my_rect_layer".to_string(),
+        bounds: None,
+        data_unit_mode_x: UnitsMode::Data,
+        data_unit_mode_y: UnitsMode::Data,
+        position_x0: NumericData::Float32(Arc::new(vec![0.0, 0.5, 0.5, 0.0])),
+        position_y0: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.5, 0.5])),
+        position_x1: NumericData::Float32(Arc::new(vec![0.4, 0.9, 0.9, 0.4])),
+        position_y1: NumericData::Float32(Arc::new(vec![0.4, 0.4, 0.9, 0.9])),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..Default::default()
+    }
+}
+
+// Categorical filtering: only rects whose category code is in
+// `included_codes` are rendered at all. Reuses the same codes as
+// `fill_color` (0,1,2,3, one per corner), including only codes 0 and 2, so
+// only the bottom-left and top-right rects render.
+#[tokio::test]
+async fn test_rect_layer_square_contain_filtering_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_filtering_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list means nothing is included: no
+// rects render at all (distinct from an empty `filtering_criteria` list,
+// which includes everything).
+#[tokio::test]
+async fn test_rect_layer_square_contain_filtering_categorical_empty_excludes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_filtering_categorical_empty_excludes_all").await;
+}
+
+// Quantitative filtering with both a min and a max bound: a per-rect value
+// column of [0, 1, 2, 3] filtered to the inclusive range [1, 2] includes only
+// the second and third rects (bottom-right and top-right).
+#[tokio::test]
+async fn test_rect_layer_square_contain_filtering_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
+                min: Some(1.0),
+                max: Some(2.0),
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_filtering_quantitative_range").await;
+}
+
+// Quantitative filtering with only a `min` bound: `max` is omitted, meaning
+// +infinity, so every rect with value >= 2 is included (the last two rects).
+#[tokio::test]
+async fn test_rect_layer_square_contain_filtering_quantitative_min_only() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
+                min: Some(2.0),
+                max: None,
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_filtering_quantitative_min_only").await;
+}
+
+// Categorical selection: unlike filtering, selection-excluded rects still
+// render (all 4 corners are visible), but rects whose code is not in
+// `included_codes` (1 and 3) are re-colored with `background_fill_color`
+// instead of their categorical `fill_color`.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list for selection means nothing is
+// selected: all 4 rects still render (filtering_criteria is empty), but
+// every one is de-emphasized with `background_fill_color`.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_categorical_empty_deemphasizes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_categorical_empty_deemphasizes_all").await;
+}
+
+// Quantitative selection: a value column of [0, 10, 20, 30] selected to the
+// range [10, 20] renders the middle two rects with their normal fill color
+// and de-emphasizes the first/last rects with `background_fill_color`.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 10.0, 20.0, 30.0])),
+                min: Some(10.0),
+                max: Some(20.0),
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_quantitative_range").await;
+}
+
+// Selection criteria may be entirely orthogonal to filtering criteria: here
+// filtering uses the same categorical codes as `fill_color` (excluding code 3,
+// so the top-left rect is not rendered at all), while selection uses an
+// unrelated quantitative column. Of the 3 filter-included rects, the ones
+// with value >= 15 (indices 1 and 2) are selected (normal color); index 0
+// is filter-included but selection-excluded (background color); index 3 is
+// filter-excluded and not rendered regardless of its selection value.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_orthogonal_to_filtering() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 1, 2],
+            })],
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0, 25.0, 15.0, 8.0])),
+                min: Some(15.0),
+                max: None,
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// `filtering_criteria` is a list of criteria AND-ed together: a rect must
+// satisfy every one to be included. Here a categorical criteria (codes
+// 0,1,2,3, including 0/1/2 — excludes index 3) is combined with a
+// quantitative criteria (values 0,5,15,25, min 10 — excludes indices 0/1).
+// Only index 2 satisfies both, so only the top-right rect renders.
+#[tokio::test]
+async fn test_rect_layer_square_contain_filtering_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            filtering_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                    included_codes: vec![0, 1, 2],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_filtering_multiple_criteria_and").await;
+}
+
+// `selection_criteria` AND-ing mirrors `filtering_criteria`: a categorical
+// criteria (included_codes 0/2) combined with a quantitative criteria (min
+// 10, excluding indices 0/1) leaves only index 2 selected (normal color);
+// every other rect still renders (no filtering), but de-emphasized with
+// `background_fill_color`.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            selection_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                    included_codes: vec![0, 2],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_multiple_criteria_and").await;
+}
+
+// Custom background fill/stroke colors, combined with a stroke, so that both
+// the de-emphasized fill and the de-emphasized stroke are visible. Rects 1
+// and 3 are selected (normal categorical fill + black stroke); rects 0 and 2
+// are selection-excluded and rendered with a red background fill and a green
+// background stroke instead.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_custom_background_colors() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            background_fill_color: Some((255, 0, 0)),
+            background_stroke_color: Some((0, 255, 0)),
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_custom_background_colors").await;
 }
