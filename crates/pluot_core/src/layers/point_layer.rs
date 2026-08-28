@@ -19,7 +19,7 @@ use crate::scalar_mode::{
     prepare_fill_opacity_mode, prepare_size_mode, prepare_stroke_opacity_mode,
     prepare_stroke_width_mode,
 };
-use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -86,6 +86,38 @@ pub struct PointLayerParams {
     // ("background") points, in place of `fill_color`/`stroke_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
     pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    // These layer parameters allow modification of the "background" visual encoding.
+    // Rather than only supporting an alternative stroke/fill color,
+    // a user may instead (or additionally) use size or opacity (or both).
+    // Each is only applied when its corresponding `enable_background_*` flag is
+    // set AND a value is provided here; otherwise the point's normal
+    // fill/stroke opacity, radius, or width is used unchanged (there is no
+    // universal "de-emphasized" default for these, unlike `background_fill_color`/
+    // `background_stroke_color`, which fall back to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+    pub background_stroke_opacity: Option<f32>,
+    pub background_point_radius: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    // When true, "background" points have the fill color specified via `background_fill_color`.
+    pub enable_background_fill_color: bool,
+    // When true, "background" points have the stroke color specified via `background_stroke_color`.
+    pub enable_background_stroke_color: bool,
+    // When true, "background" points have the fill opacity specified via `background_fill_opacity`.
+    pub enable_background_fill_opacity: bool,
+    // When true, "background" points have the stroke opacity specified via `background_stroke_opacity`.
+    pub enable_background_stroke_opacity: bool,
+    // When true, "background" points have the point radius specified via `background_point_radius`.
+    // Note: background points adopt the layer-level `point_radius_unit_mode_x` and `point_radius_unit_mode_y`.
+    pub enable_background_point_radius: bool,
+    // When true, "background" points have the stroke width specified via `background_stroke_width`.
+    // Note: background points adopt the layer-level `stroke_width_unit_mode`. Setting this (with a
+    // non-None `background_stroke_width`) draws a stroke for background points even when the
+    // layer-level `stroke_width` is None (i.e. the foreground points have no stroke).
+    pub enable_background_stroke_width: bool,
+
+
 }
 
 impl Default for PointLayerParams {
@@ -112,6 +144,16 @@ impl Default for PointLayerParams {
             filtering_criteria: vec![],
             background_fill_color: None,
             background_stroke_color: None,
+            background_fill_opacity: None,
+            background_stroke_opacity: None,
+            background_point_radius: None,
+            background_stroke_width: None,
+            enable_background_fill_color: true,
+            enable_background_stroke_color: true,
+            enable_background_fill_opacity: false,
+            enable_background_stroke_opacity: false,
+            enable_background_point_radius: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -218,6 +260,19 @@ struct PointLayerUniforms {
     stroke_opacity: f32,          // stroke opacity (UniformOpacity fallback)
     background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") points
     background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") points
+    background_fill_opacity: f32,   // fill opacity used for "background" points, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" points, when enable_background_stroke_opacity is set
+    background_point_radius: f32,   // point radius used for "background" points, when enable_background_point_radius is set
+    background_stroke_width: f32,   // stroke width used for "background" points, when enable_background_stroke_width is set
+    // Each enable_background_* flag is pre-resolved on the CPU to also require
+    // the corresponding `background_*` param to be `Some` (see `PointLayer::draw`),
+    // so the shader only needs to check `== 1u`.
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_point_radius: u32,
+    enable_background_stroke_width: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -390,6 +445,20 @@ impl DrawToRasterGpu for PointLayer {
             stroke_opacity: stroke_opacity.static_value,
             background_fill_color: background_color_vec4(layer_params.background_fill_color),
             background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
+            background_fill_opacity: layer_params.background_fill_opacity.unwrap_or(0.0),
+            background_stroke_opacity: layer_params.background_stroke_opacity.unwrap_or(0.0),
+            background_point_radius: layer_params.background_point_radius.unwrap_or(0.0),
+            background_stroke_width: layer_params.background_stroke_width.unwrap_or(0.0),
+            enable_background_fill_color: layer_params.enable_background_fill_color as u32,
+            enable_background_stroke_color: layer_params.enable_background_stroke_color as u32,
+            enable_background_fill_opacity: (layer_params.enable_background_fill_opacity
+                && layer_params.background_fill_opacity.is_some()) as u32,
+            enable_background_stroke_opacity: (layer_params.enable_background_stroke_opacity
+                && layer_params.background_stroke_opacity.is_some()) as u32,
+            enable_background_point_radius: (layer_params.enable_background_point_radius
+                && layer_params.background_point_radius.is_some()) as u32,
+            enable_background_stroke_width: (layer_params.enable_background_stroke_width
+                && layer_params.background_stroke_width.is_some()) as u32,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -542,7 +611,11 @@ impl DrawToRasterGpu for PointLayer {
         for (i, tex) in selection.textures.iter().enumerate() {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
                 binding: select_binding_start + i as u32,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                // Visible to both stages: the fragment stage uses `is_selected_in`
+                // to re-color/re-opacify background points, while the vertex stage
+                // also needs it to resolve `background_point_radius`/
+                // `background_stroke_width` (which affect vertex-stage geometry).
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: tex.sample_type,
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -822,9 +895,10 @@ impl DrawToSvg for PointLayer {
                 continue;
             }
             // Filter-included but selection-excluded ("background") points still
-            // render, but de-emphasized with `background_fill_color`/
-            // `background_stroke_color` in place of their configured fill/stroke
-            // color.
+            // render, but may be de-emphasized in place of their configured
+            // fill/stroke color, opacity, radius and/or stroke width — each only
+            // overridden when its `enable_background_*` flag is set (see
+            // `PointLayerParams`), mirroring the GPU shader.
             let is_selected = cpu_is_included(&layer_params.selection_criteria, i);
 
             let x = layer_params.position_x.get_f32(i);
@@ -845,9 +919,21 @@ impl DrawToSvg for PointLayer {
             );
 
             // Per-point radius / fill opacity (uniform or instanced), matching the
-            // GPU size/opacity modes.
-            let radius_value = cpu_point_radius(layer_params.point_radius.as_ref(), i);
-            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i) as f64;
+            // GPU size/opacity modes. Background points use
+            // `background_point_radius`/`background_fill_opacity` instead, when
+            // the corresponding `enable_background_*` flag is set.
+            let radius_value = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_point_radius,
+                layer_params.background_point_radius,
+                cpu_point_radius(layer_params.point_radius.as_ref(), i),
+            );
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i),
+            ) as f64;
 
             let point_radius = if layer_params.point_radius_unit_mode_x == UnitsMode::Data {
                 let (sx, sy) = get_point_size(
@@ -873,19 +959,31 @@ impl DrawToSvg for PointLayer {
                 radius_value
             };
 
-            let fill = Some(TwoColor::Rgb(if is_selected {
+            let fill = Some(TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
                 cpu_fill_color(layer_params.fill_color.as_ref(), i, fill_quant_domain)
             } else {
                 layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             }));
 
-            // Stroke: only drawn when a stroke width is configured. Uses the
-            // stroke color mode, opacity and per-point width. The stroke is drawn
-            // inward from `point_radius` (the point's outer bound stays fixed), so
-            // the SVG stroke — which is centered on the path — is placed on a
-            // boundary inset by half the stroke width.
-            let (stroke, stroke_opacity, stroke_width_px) = if layer_params.stroke_width.is_some() {
-                let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), i);
+            // Stroke: drawn when a stroke width is configured at the layer level,
+            // OR when this is a background point with a `background_stroke_width`
+            // override enabled (which can draw a stroke for background points even
+            // when foreground points have none). Uses the stroke color mode,
+            // opacity and per-point width, each independently overridable for
+            // background points via the corresponding `enable_background_*` flag.
+            // The stroke is drawn inward from `point_radius` (the point's outer
+            // bound stays fixed), so the SVG stroke — which is centered on the
+            // path — is placed on a boundary inset by half the stroke width.
+            let background_stroke_width_override = if !is_selected && layer_params.enable_background_stroke_width {
+                layer_params.background_stroke_width
+            } else {
+                None
+            };
+            let (stroke, stroke_opacity, stroke_width_px) = if layer_params.stroke_width.is_some()
+                || background_stroke_width_override.is_some()
+            {
+                let width_value = background_stroke_width_override
+                    .unwrap_or_else(|| cpu_stroke_width(layer_params.stroke_width.as_ref(), i));
                 let width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
                     let (sx, sy) = get_point_size(
                         width_value,
@@ -909,12 +1007,17 @@ impl DrawToSvg for PointLayer {
                     width_value
                 };
                 (
-                    Some(TwoColor::Rgb(if is_selected {
+                    Some(TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
                         cpu_fill_color(layer_params.stroke_color.as_ref(), i, stroke_quant_domain)
                     } else {
                         layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
                     })),
-                    cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
+                    resolve_background_scalar(
+                        is_selected,
+                        layer_params.enable_background_stroke_opacity,
+                        layer_params.background_stroke_opacity,
+                        cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i),
+                    ) as f64,
                     width_px as f64,
                 )
             } else {

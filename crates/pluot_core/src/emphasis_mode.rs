@@ -23,6 +23,28 @@ pub fn background_color_vec4(color: Option<(u8, u8, u8)>) -> Vec4 {
     Vec4::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0)
 }
 
+/// Resolve a scalar "background" override (fill/stroke opacity, point radius,
+/// stroke width) for a single filter-included item on the CPU. Unlike
+/// [`DEFAULT_BACKGROUND_COLOR`], there is no universal default value for these
+/// (their units depend on layer-level config), so `background_value: None` is
+/// a no-op — the item's normal `foreground_value` is used — rather than
+/// falling back to a magic constant. Only applies when the item is
+/// filter-included but selection-excluded (`!is_selected`) and
+/// `enable_background` is set.
+pub fn resolve_background_scalar(
+    is_selected: bool,
+    enable_background: bool,
+    background_value: Option<f32>,
+    foreground_value: f32,
+) -> f32 {
+    if !is_selected && enable_background {
+        if let Some(value) = background_value {
+            return value;
+        }
+    }
+    foreground_value
+}
+
 /// A texture bound for a filtering/selection criteria, paired with the sample
 /// type its bind-group layout entry must declare.
 pub struct PreparedEmphasisTexture {

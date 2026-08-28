@@ -1375,6 +1375,192 @@ async fn test_point_layer_square_contain_selection_custom_background_colors() {
     render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_custom_background_colors").await;
 }
 
+// ── Background fill/stroke opacity, radius and stroke width overrides ───────
+// `enable_background_*` flags gate whether a filter-included, selection-
+// excluded ("background") point uses the corresponding `background_*`
+// override in place of its normal fill/stroke color, opacity, radius, or
+// stroke width. Unlike `background_fill_color`/`background_stroke_color`
+// (which fall back to a default gray when unset), the opacity/radius/width
+// overrides are a no-op when left `None`, even if their `enable_background_*`
+// flag is set (see `resolve_background_scalar` in `emphasis_mode.rs`).
+
+// `enable_background_fill_color: false` disables the (otherwise default-on)
+// fill-color de-emphasis: all 4 points keep their normal categorical fill
+// color even though points 0 and 2 are selection-excluded.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_disable_background_fill_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            enable_background_fill_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_disable_background_fill_color").await;
+}
+
+// `enable_background_stroke_color: false` disables stroke-color de-emphasis:
+// every point's stroke stays black even though `background_stroke_color` is
+// set to green and points 0/2 are selection-excluded.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_disable_background_stroke_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            background_stroke_color: Some((0, 255, 0)),
+            enable_background_stroke_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_disable_background_stroke_color").await;
+}
+
+// `background_fill_opacity` + `enable_background_fill_opacity`: points 1 and 3
+// (selection-excluded) render at 0.2 fill opacity instead of the default 1.0,
+// while points 0 and 2 (selected) stay fully opaque. `enable_background_fill_color`
+// is disabled so only the opacity change is exercised.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_background_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            enable_background_fill_color: false,
+            background_fill_opacity: Some(0.2),
+            enable_background_fill_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_background_fill_opacity").await;
+}
+
+// `background_stroke_opacity` + `enable_background_stroke_opacity`: mirrors
+// the fill-opacity test above, but for the stroke band (points 0/2
+// selection-excluded, stroke opacity drops to 0.15). Fill/stroke color
+// de-emphasis is disabled so only the stroke-opacity change is exercised.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_background_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            enable_background_fill_color: false,
+            enable_background_stroke_color: false,
+            background_stroke_opacity: Some(0.15),
+            enable_background_stroke_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_background_stroke_opacity").await;
+}
+
+// `background_point_radius` + `enable_background_point_radius`: points 1 and 3
+// (selection-excluded) shrink to a 3px radius instead of the layer's 10px
+// `point_radius`, while points 0 and 2 (selected) stay at 10px.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_background_point_radius() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            enable_background_fill_color: false,
+            background_point_radius: Some(3.0),
+            enable_background_point_radius: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_background_point_radius").await;
+}
+
+// `background_stroke_width` can draw a stroke for background points even when
+// the layer-level `stroke_width` is `None` (so selected points 0/2 have no
+// stroke at all, but selection-excluded points 1/3 get a 3px black stroke).
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_background_stroke_width_only() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            // No layer-level stroke_width: selected (foreground) points have no stroke.
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            enable_background_fill_color: false,
+            background_stroke_width: Some(3.0),
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_background_stroke_width_only").await;
+}
+
+// Enabling a background override with its value left `None` is a no-op (falls
+// back to the normal foreground value), unlike `background_fill_color`/
+// `background_stroke_color`, which fall back to a default gray. This should
+// render identically to four normal, undifferentiated points despite
+// selection excluding points 1 and 3 and every scalar override flag being on.
+#[tokio::test]
+async fn test_point_layer_square_contain_selection_background_overrides_none_value_is_noop() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PointLayerParams {
+            enable_background_fill_color: false,
+            enable_background_fill_opacity: true,
+            enable_background_point_radius: true,
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..corner_points_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_point_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
+}
+
 // TODO: performance tests with many elements, both raster and svg formats
 
 // To compare svg to raster, render svg using resvg
