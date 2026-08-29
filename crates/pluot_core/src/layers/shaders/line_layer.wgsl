@@ -60,6 +60,11 @@ struct LineLayerUniforms {
     stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") lines
+    background_stroke_opacity: f32, // stroke opacity used for "background" lines, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" lines, when enable_background_stroke_width is set
+    enable_background_stroke_color: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 };
 
 struct VSOut {
@@ -148,8 +153,13 @@ fn vs_main(
 
     // Per-instance width (uniform or instanced, depending on the injected
     // stroke width module). Resolved once here and used for all width
-    // computations below.
-    let stroke_width = get_stroke_width(instance_index);
+    // computations below. Background lines use `background_stroke_width`
+    // instead when `enable_background_stroke_width` is set.
+    let is_selected = is_selected_in(instance_index);
+    var stroke_width = get_stroke_width(instance_index);
+    if (!is_selected && u.enable_background_stroke_width == 1u) {
+        stroke_width = u.background_stroke_width;
+    }
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -333,10 +343,18 @@ fn fs_main(
     // active color mode (static, instanced RGB, categorical or quantitative).
     //
     // Filter-included but selection-excluded ("background") lines still
-    // render, but de-emphasized with `u.background_stroke_color` in place of
-    // their configured stroke color.
-    let out_color = select(u.background_stroke_color.rgb, get_stroke_color(instance_index), is_selected_in(instance_index));
-    let stroke_opacity = get_stroke_opacity(instance_index);
+    // render, but may be de-emphasized in place of their configured stroke
+    // color and opacity — each only overridden when its `enable_background_*`
+    // flag is set (see `LineLayerParams`).
+    let is_selected = is_selected_in(instance_index);
+    var out_color = get_stroke_color(instance_index);
+    if (!is_selected && u.enable_background_stroke_color == 1u) {
+        out_color = u.background_stroke_color.rgb;
+    }
+    var stroke_opacity = get_stroke_opacity(instance_index);
+    if (!is_selected && u.enable_background_stroke_opacity == 1u) {
+        stroke_opacity = u.background_stroke_opacity;
+    }
 
     var out: FSOut;
     out.color = vec4<f32>(out_color, stroke_opacity);

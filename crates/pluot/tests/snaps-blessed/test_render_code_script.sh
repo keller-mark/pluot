@@ -76,7 +76,17 @@ pluot_cli \
           "selection_criteria": [],
           "filtering_criteria": [],
           "background_fill_color": null,
-          "background_stroke_color": null
+          "background_stroke_color": null,
+          "background_fill_opacity": null,
+          "background_stroke_opacity": null,
+          "background_point_radius": null,
+          "background_stroke_width": null,
+          "enable_background_fill_color": true,
+          "enable_background_stroke_color": true,
+          "enable_background_fill_opacity": false,
+          "enable_background_stroke_opacity": false,
+          "enable_background_point_radius": false,
+          "enable_background_stroke_width": false
         }
       }
     ]

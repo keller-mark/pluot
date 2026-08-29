@@ -29,6 +29,9 @@ struct TriangulatedLayerUniforms {
     fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     fill_opacity: f32,
     background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") shapes
+    background_fill_opacity: f32, // fill opacity used for "background" shapes, when enable_background_fill_opacity is set
+    enable_background_fill_color: u32,
+    enable_background_fill_opacity: u32,
 }
 
 @group(0) @binding(0) var<uniform> u: TriangulatedLayerUniforms;
@@ -157,10 +160,18 @@ fn fs_main(
     // active color mode (static, instanced RGB, categorical or quantitative).
     //
     // Filter-included but selection-excluded ("background") shapes still
-    // render, but de-emphasized with `u.background_fill_color` in place of
-    // their configured fill color.
-    let out_color = select(u.background_fill_color.rgb, get_fill_color(color_index), is_selected_in(color_index));
-    let fill_opacity = get_fill_opacity(color_index);
+    // render, but may be de-emphasized in place of their configured fill color
+    // and opacity — each only overridden when its `enable_background_*` flag
+    // is set (see `TriangulatedLayerParams`).
+    let is_selected = is_selected_in(color_index);
+    var out_color = get_fill_color(color_index);
+    if (!is_selected && u.enable_background_fill_color == 1u) {
+        out_color = u.background_fill_color.rgb;
+    }
+    var fill_opacity = get_fill_opacity(color_index);
+    if (!is_selected && u.enable_background_fill_opacity == 1u) {
+        fill_opacity = u.background_fill_opacity;
+    }
 
     var out: FSOut;
     out.color = vec4<f32>(out_color, fill_opacity);

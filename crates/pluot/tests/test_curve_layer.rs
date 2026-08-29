@@ -1026,3 +1026,170 @@ async fn test_curve_layer_square_contain_selection_custom_background_colors() {
     };
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_custom_background_colors").await;
 }
+
+// ── Background fill/stroke opacity and stroke width overrides ───────────────
+// `enable_background_*` flags gate whether a selection-excluded ("background")
+// shape uses the corresponding `background_*` override in place of its
+// normal fill/stroke color, opacity, or stroke width. Unlike
+// `background_fill_color`/`background_stroke_color` (which fall back to a
+// default gray when unset), the opacity/width overrides are a no-op when
+// left `None`, even if their `enable_background_*` flag is set. All tests
+// below use an empty `included_codes` selection criteria, so the single
+// shape is always selection-excluded.
+
+// `enable_background_fill_color: false` disables the (otherwise default-on)
+// fill-color de-emphasis: the shape keeps its normal fill color even though
+// it is selection-excluded.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_disable_background_fill_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            enable_background_fill_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_disable_background_fill_color").await;
+}
+
+// `enable_background_stroke_color: false` disables stroke-color
+// de-emphasis: the stroke stays its normal color even though
+// `background_stroke_color` is set to green and the shape is
+// selection-excluded.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_disable_background_stroke_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            background_stroke_color: Some((0, 255, 0)),
+            enable_background_stroke_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_disable_background_stroke_color").await;
+}
+
+// `background_fill_opacity` + `enable_background_fill_opacity`: the
+// selection-excluded shape renders at 0.2 fill opacity instead of the
+// default 1.0.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_background_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            enable_background_fill_color: false,
+            background_fill_opacity: Some(0.2),
+            enable_background_fill_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_background_fill_opacity").await;
+}
+
+// `background_stroke_opacity` + `enable_background_stroke_opacity`: mirrors
+// the fill-opacity test above, but for the stroke.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_background_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            enable_background_fill_color: false,
+            enable_background_stroke_color: false,
+            background_stroke_opacity: Some(0.15),
+            enable_background_stroke_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_background_stroke_opacity").await;
+}
+
+// `background_stroke_width` + `enable_background_stroke_width`: the
+// selection-excluded shape renders with a much thicker stroke than the
+// layer's default 1px `stroke_width`.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_background_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: false,
+            enable_background_fill_color: false,
+            background_stroke_width: Some(6.0),
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_background_stroke_width").await;
+}
+
+// Enabling a background override with its value left `None` is a no-op
+// (falls back to the normal foreground value), unlike
+// `background_fill_color`/`background_stroke_color`, which fall back to a
+// default gray. This should render identically to the normal,
+// undifferentiated shape despite selection excluding it and every scalar
+// override flag being on.
+#[tokio::test]
+async fn test_curve_layer_square_contain_selection_background_overrides_none_value_is_noop() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            stroked: true,
+            filled: true,
+            enable_background_fill_color: false,
+            enable_background_fill_opacity: true,
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0])),
+                included_codes: vec![],
+            })],
+            ..wave_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
+}

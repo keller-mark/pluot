@@ -18,7 +18,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, 
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::scalar_mode::{cpu_fill_opacity, prepare_fill_opacity_mode};
-use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -67,6 +67,21 @@ pub struct TriangulatedLayerParams {
     /// Fill color used for filter-included, but selection-excluded
     /// ("background") shapes, in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
+
+    /// Fill opacity used for filter-included, but selection-excluded
+    /// ("background") shapes, in place of `fill_opacity`. Only applied when
+    /// `enable_background_fill_opacity` is set AND a value is provided here;
+    /// otherwise the shape's normal fill opacity is used unchanged (there is
+    /// no universal "de-emphasized" default for this, unlike
+    /// `background_fill_color`, which falls back to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+
+    /// When true, "background" shapes have the fill color specified via
+    /// `background_fill_color`.
+    pub enable_background_fill_color: bool,
+    /// When true, "background" shapes have the fill opacity specified via
+    /// `background_fill_opacity`.
+    pub enable_background_fill_opacity: bool,
 }
 
 impl Default for TriangulatedLayerParams {
@@ -84,6 +99,9 @@ impl Default for TriangulatedLayerParams {
             selection_criteria: vec![],
             filtering_criteria: vec![],
             background_fill_color: None,
+            background_fill_opacity: None,
+            enable_background_fill_color: true,
+            enable_background_fill_opacity: false,
         }
     }
 }
@@ -131,6 +149,9 @@ struct TriangulatedLayerUniforms {
     fill_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     fill_opacity: f32,
     background_fill_color: Vec4, // rgba fill color used for filter-included, selection-excluded ("background") shapes
+    background_fill_opacity: f32, // fill opacity used for "background" shapes, when enable_background_fill_opacity is set
+    enable_background_fill_color: u32,
+    enable_background_fill_opacity: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -227,6 +248,10 @@ impl DrawToRasterGpu for TriangulatedLayer {
             fill_color_domain: Vec2::from_array(color.domain),
             fill_opacity: opacity.static_value,
             background_fill_color: background_color_vec4(layer_params.background_fill_color),
+            background_fill_opacity: layer_params.background_fill_opacity.unwrap_or(0.0),
+            enable_background_fill_color: layer_params.enable_background_fill_color as u32,
+            enable_background_fill_opacity: (layer_params.enable_background_fill_opacity
+                && layer_params.background_fill_opacity.is_some()) as u32,
         };
 
         let mut buf = UniformBuffer::new(Vec::<u8>::new());
@@ -532,12 +557,17 @@ impl DrawToSvg for TriangulatedLayer {
             // still render, but de-emphasized with `background_fill_color` in
             // place of their configured fill color.
             let is_selected = cpu_is_included(&layer_params.selection_criteria, color_index);
-            let fill = TwoColor::Rgb(if is_selected {
+            let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
                 cpu_fill_color(layer_params.fill_color.as_ref(), color_index, quant_domain)
             } else {
                 layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
-            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), color_index) as f64;
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), color_index),
+            ) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,

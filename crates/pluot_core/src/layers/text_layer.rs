@@ -451,6 +451,10 @@ pub struct TextLayerParams {
     // Fill color used for filter-included, but selection-excluded
     // ("background") text elements, in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
+
+    // When true, "background" text elements have the fill color specified via
+    // `background_fill_color`.
+    pub enable_background_fill_color: bool,
 }
 
 impl Default for TextLayerParams {
@@ -476,6 +480,7 @@ impl Default for TextLayerParams {
             selection_criteria: vec![],
             filtering_criteria: vec![],
             background_fill_color: None,
+            enable_background_fill_color: true,
         }
     }
 }
@@ -694,6 +699,7 @@ struct TextLayerUniforms {
     fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
     background_fill_color: Vec4, // rgba fill color used for filter-included, selection-excluded ("background") text elements
+    enable_background_fill_color: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -875,6 +881,7 @@ pub async fn base_draw_text_layer(
         fill_color_reverse: color.reverse,
         fill_color_domain: Vec2::from_array(color.domain),
         background_fill_color: background_color_vec4(layer_params.background_fill_color),
+        enable_background_fill_color: layer_params.enable_background_fill_color as u32,
     };
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -1252,7 +1259,7 @@ pub fn base_draw_text_layer_svg(
             Some(&model_matrix_raw),
         );
 
-        let fill = TwoColor::Rgb(if is_selected {
+        let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
             cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain)
         } else {
             layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)

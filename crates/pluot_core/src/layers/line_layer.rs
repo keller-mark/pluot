@@ -17,7 +17,7 @@ use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::numeric_data::NumericData;
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
-use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::wgpu;
 use crate::two::shapes::{TwoCircle, TwoColor, TwoElement, TwoGroup, TwoLine, TwoPath, TwoRectangle, TwoText};
 use crate::two::svg::{update_svg, SvgContext};
@@ -69,6 +69,26 @@ pub struct LineLayerParams {
     // Stroke color used for filter-included, but selection-excluded
     // ("background") lines, in place of `stroke_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    // Stroke opacity/width used for filter-included, but selection-excluded
+    // ("background") lines, in place of `stroke_opacity`/`stroke_width`. Only
+    // applied when the corresponding `enable_background_*` flag is set AND a
+    // value is provided here; otherwise the line's normal value is used
+    // unchanged (there is no universal "de-emphasized" default for these,
+    // unlike `background_stroke_color`, which falls back to
+    // `DEFAULT_BACKGROUND_COLOR`).
+    pub background_stroke_opacity: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    // When true, "background" lines have the stroke color specified via
+    // `background_stroke_color`.
+    pub enable_background_stroke_color: bool,
+    // When true, "background" lines have the stroke opacity specified via
+    // `background_stroke_opacity`.
+    pub enable_background_stroke_opacity: bool,
+    // When true, "background" lines have the stroke width specified via
+    // `background_stroke_width`.
+    pub enable_background_stroke_width: bool,
 }
 
 impl Default for LineLayerParams {
@@ -90,6 +110,11 @@ impl Default for LineLayerParams {
             selection_criteria: vec![],
             filtering_criteria: vec![],
             background_stroke_color: None,
+            background_stroke_opacity: None,
+            background_stroke_width: None,
+            enable_background_stroke_color: true,
+            enable_background_stroke_opacity: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -180,6 +205,11 @@ struct LineLayerUniforms {
     stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") lines
+    background_stroke_opacity: f32, // stroke opacity used for "background" lines, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" lines, when enable_background_stroke_width is set
+    enable_background_stroke_color: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -317,6 +347,13 @@ impl DrawToRasterGpu for LineLayer {
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
             background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
+            background_stroke_opacity: layer_params.background_stroke_opacity.unwrap_or(0.0),
+            background_stroke_width: layer_params.background_stroke_width.unwrap_or(0.0),
+            enable_background_stroke_color: layer_params.enable_background_stroke_color as u32,
+            enable_background_stroke_opacity: (layer_params.enable_background_stroke_opacity
+                && layer_params.background_stroke_opacity.is_some()) as u32,
+            enable_background_stroke_width: (layer_params.enable_background_stroke_width
+                && layer_params.background_stroke_width.is_some()) as u32,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -455,7 +492,11 @@ impl DrawToRasterGpu for LineLayer {
         for (i, tex) in selection.textures.iter().enumerate() {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
                 binding: select_binding_start + i as u32,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                // Visible to both stages: the fragment stage uses `is_selected_in`
+                // to re-color/re-opacify background lines, while the vertex
+                // stage also needs it to resolve `background_stroke_width`
+                // (which affects vertex-stage geometry).
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: tex.sample_type,
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -756,16 +797,28 @@ impl DrawToSvg for LineLayer {
                 Some(&model_matrix_raw),
             );
 
-            let color = TwoColor::Rgb(if is_selected {
+            let color = TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
                 cpu_fill_color(layer_params.stroke_color.as_ref(), i, quant_domain)
             } else {
                 layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
 
             // Per-line width / opacity (uniform or instanced), matching the GPU
-            // width/opacity modes.
-            let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), i);
-            let stroke_opacity = cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64;
+            // width/opacity modes. Background lines use `background_stroke_width`/
+            // `background_stroke_opacity` instead, when the corresponding
+            // `enable_background_*` flag is set.
+            let width_value = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_stroke_width,
+                layer_params.background_stroke_width,
+                cpu_stroke_width(layer_params.stroke_width.as_ref(), i),
+            );
+            let stroke_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_stroke_opacity,
+                layer_params.background_stroke_opacity,
+                cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i),
+            ) as f64;
 
             // Line width in pixels. In pixel mode it is used directly; in data
             // mode it is transformed through the same pipeline as positions

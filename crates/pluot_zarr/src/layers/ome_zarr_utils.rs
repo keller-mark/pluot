@@ -85,6 +85,30 @@ fn default_channel_fill_color() -> Option<ColorMode> {
 fn default_channel_fill_opacity() -> Option<OpacityMode> {
     BitmaskChannelSettings::default().fill_opacity
 }
+fn default_channel_background_fill_opacity() -> Option<f32> {
+    BitmaskChannelSettings::default().background_fill_opacity
+}
+fn default_channel_background_stroke_opacity() -> Option<f32> {
+    BitmaskChannelSettings::default().background_stroke_opacity
+}
+fn default_channel_background_stroke_width() -> Option<f32> {
+    BitmaskChannelSettings::default().background_stroke_width
+}
+fn default_channel_enable_background_fill_color() -> bool {
+    BitmaskChannelSettings::default().enable_background_fill_color
+}
+fn default_channel_enable_background_stroke_color() -> bool {
+    BitmaskChannelSettings::default().enable_background_stroke_color
+}
+fn default_channel_enable_background_fill_opacity() -> bool {
+    BitmaskChannelSettings::default().enable_background_fill_opacity
+}
+fn default_channel_enable_background_stroke_opacity() -> bool {
+    BitmaskChannelSettings::default().enable_background_stroke_opacity
+}
+fn default_channel_enable_background_stroke_width() -> bool {
+    BitmaskChannelSettings::default().enable_background_stroke_width
+}
 
 /// Per-channel settings for [`crate::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayer`]
 /// and [`crate::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayer`].
@@ -145,6 +169,32 @@ pub struct OmeZarrBitmaskChannelSetting {
     pub background_fill_color: Option<(u8, u8, u8)>,
     #[serde(default)]
     pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    /// Fill/stroke opacity and stroke width used for filter-included, but
+    /// selection-excluded ("background") objects in this channel.
+    #[serde(default = "default_channel_background_fill_opacity")]
+    pub background_fill_opacity: Option<f32>,
+    #[serde(default = "default_channel_background_stroke_opacity")]
+    pub background_stroke_opacity: Option<f32>,
+    #[serde(default = "default_channel_background_stroke_width")]
+    pub background_stroke_width: Option<f32>,
+
+    /// When true, "background" objects in this channel have the fill/stroke
+    /// color specified via `background_fill_color`/`background_stroke_color`.
+    #[serde(default = "default_channel_enable_background_fill_color")]
+    pub enable_background_fill_color: bool,
+    #[serde(default = "default_channel_enable_background_stroke_color")]
+    pub enable_background_stroke_color: bool,
+    /// When true, "background" objects in this channel have the fill/stroke
+    /// opacity specified via `background_fill_opacity`/`background_stroke_opacity`.
+    #[serde(default = "default_channel_enable_background_fill_opacity")]
+    pub enable_background_fill_opacity: bool,
+    #[serde(default = "default_channel_enable_background_stroke_opacity")]
+    pub enable_background_stroke_opacity: bool,
+    /// When true, "background" objects in this channel have the stroke width
+    /// specified via `background_stroke_width`.
+    #[serde(default = "default_channel_enable_background_stroke_width")]
+    pub enable_background_stroke_width: bool,
 }
 
 /// Drops `c_index` -- which selects *which* slice of the C dimension to load,
@@ -169,6 +219,14 @@ impl From<&OmeZarrBitmaskChannelSetting> for BitmaskChannelSettings {
             filtering_criteria: cs.filtering_criteria.clone(),
             background_fill_color: cs.background_fill_color,
             background_stroke_color: cs.background_stroke_color,
+            background_fill_opacity: cs.background_fill_opacity,
+            background_stroke_opacity: cs.background_stroke_opacity,
+            background_stroke_width: cs.background_stroke_width,
+            enable_background_fill_color: cs.enable_background_fill_color,
+            enable_background_stroke_color: cs.enable_background_stroke_color,
+            enable_background_fill_opacity: cs.enable_background_fill_opacity,
+            enable_background_stroke_opacity: cs.enable_background_stroke_opacity,
+            enable_background_stroke_width: cs.enable_background_stroke_width,
         }
     }
 }
@@ -510,6 +568,14 @@ mod tests {
             filtering_criteria: vec![],
             background_fill_color: Some((200, 200, 200)),
             background_stroke_color: Some((200, 200, 200)),
+            background_fill_opacity: None,
+            background_stroke_opacity: None,
+            background_stroke_width: None,
+            enable_background_fill_color: true,
+            enable_background_stroke_color: true,
+            enable_background_fill_opacity: false,
+            enable_background_stroke_opacity: false,
+            enable_background_stroke_width: false,
         };
         let json = serde_json::to_string(&cs).unwrap();
         // Inlined, i.e. no nested `settings` object.

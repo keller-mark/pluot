@@ -1740,3 +1740,167 @@ async fn test_bitmask_layer_square_contain_selection_custom_background_colors() 
     });
     render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_custom_background_colors").await;
 }
+
+// ── Background fill/stroke opacity and stroke width overrides ───────────────
+// `enable_background_*` flags gate whether a filter-included, selection-
+// excluded ("background") object in a channel uses the corresponding
+// `background_*` override in place of its normal fill/stroke color, opacity,
+// or stroke width. Unlike `background_fill_color`/`background_stroke_color`
+// (which fall back to a default gray when unset), the opacity/width
+// overrides are a no-op when left `None`, even if their
+// `enable_background_*` flag is set. All tests below reuse the
+// `object_colors()`/selection setup from
+// `test_bitmask_layer_square_contain_selection_custom_background_colors`:
+// the diamond and the plus (codes 0, 2) are selection-excluded, the triangle
+// and the ring (codes 1, 3) are selected.
+
+// `enable_background_fill_color: false` disables the (otherwise default-on)
+// fill-color de-emphasis: every object keeps its normal `object_colors()`
+// fill even though the diamond and the plus are selection-excluded.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_disable_background_fill_color() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            enable_background_fill_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_disable_background_fill_color").await;
+}
+
+// `enable_background_stroke_color: false` disables stroke-color de-emphasis:
+// every object's stroke stays black even though `background_stroke_color` is
+// set to green and the diamond/plus are selection-excluded.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_disable_background_stroke_color() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            stroked: true,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            stroke_width: Some(SizeMode::UniformSize(1.0)),
+            background_stroke_color: Some((0, 255, 0)),
+            enable_background_stroke_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        stroke_width_unit_mode: UnitsMode::Data,
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_disable_background_stroke_color").await;
+}
+
+// `background_fill_opacity` + `enable_background_fill_opacity`: the
+// selection-excluded diamond/plus render at 0.2 fill opacity instead of the
+// default 1.0, while the selected triangle/ring stay fully opaque.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_background_fill_opacity() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            enable_background_fill_color: false,
+            background_fill_opacity: Some(0.2),
+            enable_background_fill_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_background_fill_opacity").await;
+}
+
+// `background_stroke_opacity` + `enable_background_stroke_opacity`: mirrors
+// the fill-opacity test above, but for the stroke band.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_background_stroke_opacity() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            stroked: true,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            stroke_width: Some(SizeMode::UniformSize(1.0)),
+            enable_background_fill_color: false,
+            enable_background_stroke_color: false,
+            background_stroke_opacity: Some(0.15),
+            enable_background_stroke_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        stroke_width_unit_mode: UnitsMode::Data,
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_background_stroke_opacity").await;
+}
+
+// `background_stroke_width` can draw a thicker outline for background
+// objects even though the layer-level `stroke_width` is thin: the
+// selection-excluded diamond/plus render with a much thicker outline than
+// the selected triangle/ring.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_background_stroke_width() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            stroked: true,
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            stroke_width: Some(SizeMode::UniformSize(0.05)),
+            enable_background_fill_color: false,
+            background_stroke_width: Some(0.3),
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        stroke_width_unit_mode: UnitsMode::Data,
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_background_stroke_width").await;
+}
+
+// Enabling a background override with its value left `None` is a no-op
+// (falls back to the normal foreground value), unlike
+// `background_fill_color`/`background_stroke_color`, which fall back to a
+// default gray. This should render identically to four normal,
+// undifferentiated objects despite selection excluding the diamond/plus and
+// every scalar override flag being on.
+#[tokio::test]
+async fn test_bitmask_layer_square_contain_selection_background_overrides_none_value_is_noop() {
+    let params = criteria_params(BitmaskLayerParams {
+        shape: vec![1, 16, 16],
+        data: repeated_mask_data(1),
+        channel_settings: vec![BitmaskChannelSettings {
+            enable_background_fill_color: false,
+            enable_background_fill_opacity: true,
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Uint8(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![1, 3],
+            })],
+            ..filled_channel(object_colors())
+        }],
+        ..bitmask_cyx_data()
+    });
+    render_and_check_both_snapshots(params, "test_bitmask_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
+}

@@ -1164,3 +1164,161 @@ async fn test_rect_layer_square_contain_selection_custom_background_colors() {
     };
     render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_custom_background_colors").await;
 }
+
+// ── Background fill/stroke opacity and stroke width overrides ───────────────
+// `enable_background_*` flags gate whether a filter-included, selection-
+// excluded ("background") rect uses the corresponding `background_*`
+// override in place of its normal fill/stroke color, opacity, or stroke
+// width. Unlike `background_fill_color`/`background_stroke_color` (which
+// fall back to a default gray when unset), the opacity/width overrides are a
+// no-op when left `None`, even if their `enable_background_*` flag is set.
+
+// `enable_background_fill_color: false` disables the (otherwise default-on)
+// fill-color de-emphasis: all 4 rects keep their normal categorical fill
+// color even though rects 0 and 2 are selection-excluded.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_disable_background_fill_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            enable_background_fill_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_disable_background_fill_color").await;
+}
+
+// `enable_background_stroke_color: false` disables stroke-color de-emphasis:
+// every rect's stroke stays black even though `background_stroke_color` is
+// set to green and rects 0/2 are selection-excluded.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_disable_background_stroke_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            background_stroke_color: Some((0, 255, 0)),
+            enable_background_stroke_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_disable_background_stroke_color").await;
+}
+
+// `background_fill_opacity` + `enable_background_fill_opacity`: rects 1 and 3
+// (selection-excluded) render at 0.2 fill opacity instead of the default 1.0,
+// while rects 0 and 2 (selected) stay fully opaque.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_background_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            enable_background_fill_color: false,
+            background_fill_opacity: Some(0.2),
+            enable_background_fill_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_background_fill_opacity").await;
+}
+
+// `background_stroke_opacity` + `enable_background_stroke_opacity`: mirrors
+// the fill-opacity test above, but for the stroke band.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_background_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            stroke_width: Some(SizeMode::UniformSize(3.0)),
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            enable_background_fill_color: false,
+            enable_background_stroke_color: false,
+            background_stroke_opacity: Some(0.15),
+            enable_background_stroke_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_background_stroke_opacity").await;
+}
+
+// `background_stroke_width` can draw a border for background rects even when
+// the layer-level `stroke_width` is `None` (so selected rects 0/2 have no
+// border at all, but selection-excluded rects 1/3 get a 3px black border).
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_background_stroke_width_only() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            // No layer-level stroke_width: selected (foreground) rects have no border.
+            stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+            enable_background_fill_color: false,
+            background_stroke_width: Some(3.0),
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_background_stroke_width_only").await;
+}
+
+// Enabling a background override with its value left `None` is a no-op
+// (falls back to the normal foreground value), unlike
+// `background_fill_color`/`background_stroke_color`, which fall back to a
+// default gray. This should render identically to four normal,
+// undifferentiated rects despite selection excluding rects 1 and 3 and every
+// scalar override flag being on.
+#[tokio::test]
+async fn test_rect_layer_square_contain_selection_background_overrides_none_value_is_noop() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(RectLayerParams {
+            enable_background_fill_color: false,
+            enable_background_fill_opacity: true,
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3])),
+                included_codes: vec![0, 2],
+            })],
+            ..criteria_rects_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_rect_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
+}

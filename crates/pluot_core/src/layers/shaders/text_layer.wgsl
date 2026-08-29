@@ -28,6 +28,7 @@ struct TextLayerUniforms {
     fill_color_reverse: u32, // 1 = reverse the quantitative colormap
     fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") text elements
+    enable_background_fill_color: u32,
 };
 
 struct VSOut {
@@ -276,9 +277,12 @@ fn fs_main(
     // by the owning text element's index (not the glyph instance).
     //
     // Filter-included but selection-excluded ("background") text elements
-    // still render, but de-emphasized with `u.background_fill_color` in
-    // place of their configured fill color.
-    let out_color = select(u.background_fill_color.rgb, get_fill_color(element_index), is_selected_in(element_index));
+    // still render, but may be de-emphasized in place of their configured
+    // fill color, only when `enable_background_fill_color` is set.
+    var out_color = get_fill_color(element_index);
+    if (!is_selected_in(element_index) && u.enable_background_fill_color == 1u) {
+        out_color = u.background_fill_color.rgb;
+    }
     var out: FSOut;
     out.color = vec4<f32>(out_color, a);
     return out;

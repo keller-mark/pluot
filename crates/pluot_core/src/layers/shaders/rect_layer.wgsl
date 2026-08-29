@@ -33,6 +33,14 @@ struct RectLayerUniforms {
     stroke_opacity: f32, // stroke opacity used by the UniformOpacity mode
     background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") rects
     background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") rects
+    background_fill_opacity: f32,   // fill opacity used for "background" rects, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" rects, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" rects, when enable_background_stroke_width is set
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 };
 
 struct VSOut {
@@ -136,7 +144,15 @@ fn vs_main(
     // Per-instance border width (uniform or instanced, depending on the injected
     // stroke-width module). Resolved once here and used for quad expansion below,
     // and passed through to the fragment shader to size the stroke band.
-    let stroke_width = get_stroke_width(instance_index);
+    // Background rects use `background_stroke_width` instead when
+    // `enable_background_stroke_width` is set — this can draw a border for
+    // background rects even when the layer-level `stroke_width` is None
+    // (`get_stroke_width` then resolves to 0, i.e. no border for foreground rects).
+    let is_selected = is_selected_in(instance_index);
+    var stroke_width = get_stroke_width(instance_index);
+    if (!is_selected && u.enable_background_stroke_width == 1u) {
+        stroke_width = u.background_stroke_width;
+    }
 
     // TODO: adapt the rest of the code to draw lines rather than points.
 
@@ -362,18 +378,30 @@ fn fs_main(
     // fragments use the stroke.
     //
     // Filter-included but selection-excluded ("background") rects still
-    // render, but de-emphasized with `u.background_fill_color` /
-    // `u.background_stroke_color` in place of their configured fill/stroke
-    // color.
+    // render, but may be de-emphasized in place of their configured fill/stroke
+    // color and opacity — each only overridden when its `enable_background_*`
+    // flag is set (see `RectLayerParams`).
     let is_selected = is_selected_in(instance_index);
     var out_color: vec3<f32>;
     var alpha: f32;
     if (is_interior) {
-        out_color = select(u.background_fill_color.rgb, get_fill_color(instance_index), is_selected);
+        out_color = get_fill_color(instance_index);
+        if (!is_selected && u.enable_background_fill_color == 1u) {
+            out_color = u.background_fill_color.rgb;
+        }
         alpha = get_fill_opacity(instance_index);
+        if (!is_selected && u.enable_background_fill_opacity == 1u) {
+            alpha = u.background_fill_opacity;
+        }
     } else {
-        out_color = select(u.background_stroke_color.rgb, get_stroke_color(instance_index), is_selected);
+        out_color = get_stroke_color(instance_index);
+        if (!is_selected && u.enable_background_stroke_color == 1u) {
+            out_color = u.background_stroke_color.rgb;
+        }
         alpha = get_stroke_opacity(instance_index);
+        if (!is_selected && u.enable_background_stroke_opacity == 1u) {
+            alpha = u.background_stroke_opacity;
+        }
     }
 
     var out: FSOut;

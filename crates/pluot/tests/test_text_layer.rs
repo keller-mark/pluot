@@ -1076,6 +1076,30 @@ async fn test_text_layer_square_contain_selection_custom_background_color() {
     render_and_check_both_snapshots(params, "test_text_layer_square_contain_selection_custom_background_color").await;
 }
 
+// `enable_background_fill_color: false` disables the (otherwise default-on)
+// fill-color de-emphasis: every text element keeps its normal categorical
+// fill color even though "A" and "C" (indices 0, 2) are selection-excluded.
+// `TextLayerParams` has no opacity/stroke/size modes to gate, so this is the
+// only background override this layer supports.
+#[tokio::test]
+async fn test_text_layer_square_contain_selection_disable_background_fill_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(TextLayerParams {
+            enable_background_fill_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4])),
+                included_codes: vec![1, 3],
+            })],
+            ..criteria_text_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_text_layer_square_contain_selection_disable_background_fill_color").await;
+}
+
 /*
 // TODO: re-enable after #207 is complete
 // Custom TTF supplied as a filesystem path.

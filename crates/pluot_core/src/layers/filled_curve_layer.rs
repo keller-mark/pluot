@@ -17,7 +17,7 @@ use crate::render_traits::{
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
-use crate::emphasis_mode::{cpu_is_included, DEFAULT_BACKGROUND_COLOR};
+use crate::emphasis_mode::{cpu_is_included, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -60,6 +60,22 @@ pub struct FilledCurveLayerParams {
     /// Fill color used when the shape is filter-included, but
     /// selection-excluded ("background"), in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
+
+    /// Fill opacity used when the shape is filter-included, but
+    /// selection-excluded ("background"), in place of `fill_opacity`. Only
+    /// applied when `enable_background_fill_opacity` is set AND a value is
+    /// provided here; otherwise the shape's normal fill opacity is used
+    /// unchanged (there is no universal "de-emphasized" default for this,
+    /// unlike `background_fill_color`, which falls back to
+    /// `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+
+    /// When true, the shape has the fill color specified via
+    /// `background_fill_color` when selection-excluded.
+    pub enable_background_fill_color: bool,
+    /// When true, the shape has the fill opacity specified via
+    /// `background_fill_opacity` when selection-excluded.
+    pub enable_background_fill_opacity: bool,
 }
 
 impl Default for FilledCurveLayerParams {
@@ -77,6 +93,9 @@ impl Default for FilledCurveLayerParams {
             selection_criteria: vec![],
             filtering_criteria: vec![],
             background_fill_color: None,
+            background_fill_opacity: None,
+            enable_background_fill_color: true,
+            enable_background_fill_opacity: false,
         }
     }
 }
@@ -137,6 +156,9 @@ impl DrawToRasterGpu for FilledCurveLayer {
                 selection_criteria: self.layer_params.selection_criteria.clone(),
                 filtering_criteria: self.layer_params.filtering_criteria.clone(),
                 background_fill_color: self.layer_params.background_fill_color,
+                background_fill_opacity: self.layer_params.background_fill_opacity,
+                enable_background_fill_color: self.layer_params.enable_background_fill_color,
+                enable_background_fill_opacity: self.layer_params.enable_background_fill_opacity,
             },
         );
         DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;
@@ -198,13 +220,18 @@ impl DrawToSvg for FilledCurveLayer {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let fill = TwoColor::Rgb(if is_selected {
+        let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
             cpu_fill_color(layer_params.fill_color.as_ref(), 0, quant_domain)
         } else {
             layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
         });
         // A single shape uses one fill opacity, resolved from element 0.
-        let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), 0) as f64;
+        let fill_opacity = resolve_background_scalar(
+            is_selected,
+            layer_params.enable_background_fill_opacity,
+            layer_params.background_fill_opacity,
+            cpu_fill_opacity(layer_params.fill_opacity.as_ref(), 0),
+        ) as f64;
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {

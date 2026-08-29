@@ -56,7 +56,17 @@ render_to_svg(
         selection_criteria = list(),
         filtering_criteria = list(),
         background_fill_color = NULL,
-        background_stroke_color = NULL
+        background_stroke_color = NULL,
+        background_fill_opacity = NULL,
+        background_stroke_opacity = NULL,
+        background_point_radius = NULL,
+        background_stroke_width = NULL,
+        enable_background_fill_color = TRUE,
+        enable_background_stroke_color = TRUE,
+        enable_background_fill_opacity = FALSE,
+        enable_background_stroke_opacity = FALSE,
+        enable_background_point_radius = FALSE,
+        enable_background_stroke_width = FALSE
       )
     )
   ),

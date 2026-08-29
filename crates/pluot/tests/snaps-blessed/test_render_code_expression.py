@@ -83,7 +83,17 @@ render_to_svg(
                     "selection_criteria": [],
                     "filtering_criteria": [],
                     "background_fill_color": None,
-                    "background_stroke_color": None
+                    "background_stroke_color": None,
+                    "background_fill_opacity": None,
+                    "background_stroke_opacity": None,
+                    "background_point_radius": None,
+                    "background_stroke_width": None,
+                    "enable_background_fill_color": True,
+                    "enable_background_stroke_color": True,
+                    "enable_background_fill_opacity": False,
+                    "enable_background_stroke_opacity": False,
+                    "enable_background_point_radius": False,
+                    "enable_background_stroke_width": False
                 }
             }
         ]

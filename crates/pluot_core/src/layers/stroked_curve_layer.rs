@@ -21,7 +21,7 @@ use crate::render_traits::{
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
-use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -67,6 +67,26 @@ pub struct StrokedCurveLayerParams {
     /// Stroke color used when the shape is filter-included, but
     /// selection-excluded ("background"), in place of `stroke_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    /// These layer parameters allow modification of the "background" visual
+    /// encoding. Rather than only supporting an alternative stroke color, a
+    /// user may instead (or additionally) use opacity or stroke width. Each is
+    /// only applied when its corresponding `enable_background_*` flag is set
+    /// AND a value is provided here; otherwise the shape's normal stroke
+    /// opacity/width is used unchanged (there is no universal "de-emphasized"
+    /// default for these, unlike `background_stroke_color`, which falls back
+    /// to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_stroke_opacity: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    // When true, a "background" shape has the stroke color specified via `background_stroke_color`.
+    pub enable_background_stroke_color: bool,
+    // When true, a "background" shape has the stroke opacity specified via `background_stroke_opacity`.
+    pub enable_background_stroke_opacity: bool,
+    // When true, a "background" shape has the stroke width specified via `background_stroke_width`.
+    // Note: `StrokedCurveLayer` renders a single shape, so this applies uniformly
+    // (see the `0u`-indexed `is_selected_in`/`get_stroke_width` calls in the shader).
+    pub enable_background_stroke_width: bool,
 }
 
 impl Default for StrokedCurveLayerParams {
@@ -86,6 +106,11 @@ impl Default for StrokedCurveLayerParams {
             selection_criteria: vec![],
             filtering_criteria: vec![],
             background_stroke_color: None,
+            background_stroke_opacity: None,
+            background_stroke_width: None,
+            enable_background_stroke_color: true,
+            enable_background_stroke_opacity: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -154,6 +179,13 @@ struct StrokedCurveLayerUniforms {
     stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,
     background_stroke_color: Vec4, // rgba stroke color used when filter-included, but selection-excluded ("background")
+    background_stroke_opacity: f32, // stroke opacity used for "background" when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" when enable_background_stroke_width is set
+    // Each flag is pre-resolved on the CPU to also require the corresponding
+    // background_* param to be non-default, so the shader only checks `== 1u`.
+    enable_background_stroke_color: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 
     // TODO: define a stroke_linecap parameter, with either None or Round options,
     // and add support for this configurable property in both the Raster and SVG drawing cases.
@@ -340,7 +372,11 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         for (i, tex) in selection.textures.iter().enumerate() {
             bgl_entries.push(wgpu::BindGroupLayoutEntry {
                 binding: select_binding_start + i as u32,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                // Visible to both stages: the fragment stage uses `is_selected_in`
+                // to re-color/re-opacify the background shape, while the vertex
+                // stage also needs it to resolve `background_stroke_width` (which
+                // affects vertex-stage geometry).
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Texture {
                     sample_type: tex.sample_type,
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -445,6 +481,13 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             stroke_color_domain: Vec2::from_array(color.domain),
             stroke_opacity: opacity.static_value,
             background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
+            background_stroke_opacity: layer_params.background_stroke_opacity.unwrap_or(0.0),
+            background_stroke_width: layer_params.background_stroke_width.unwrap_or(0.0),
+            enable_background_stroke_color: layer_params.enable_background_stroke_color as u32,
+            enable_background_stroke_opacity: (layer_params.enable_background_stroke_opacity
+                && layer_params.background_stroke_opacity.is_some()) as u32,
+            enable_background_stroke_width: (layer_params.enable_background_stroke_width
+                && layer_params.background_stroke_width.is_some()) as u32,
         };
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
         ub.write(&uniform_struct).unwrap();
@@ -587,15 +630,27 @@ impl DrawToSvg for StrokedCurveLayer {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let stroke = TwoColor::Rgb(if is_selected {
+        let stroke = TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
             cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain)
         } else {
             layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
         });
 
         // A single shape uses one width / opacity, resolved from element 0.
-        let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), 0);
-        let stroke_opacity = cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0) as f64;
+        // The background overrides (when enabled) replace these before the
+        // width's unit conversion below.
+        let width_value = resolve_background_scalar(
+            is_selected,
+            layer_params.enable_background_stroke_width,
+            layer_params.background_stroke_width,
+            cpu_stroke_width(layer_params.stroke_width.as_ref(), 0),
+        );
+        let stroke_opacity = resolve_background_scalar(
+            is_selected,
+            layer_params.enable_background_stroke_opacity,
+            layer_params.background_stroke_opacity,
+            cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0),
+        ) as f64;
 
         // Stroke width in pixels. In pixel mode it is used directly; in data mode
         // it is transformed through the same pipeline as positions (with w=0, so

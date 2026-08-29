@@ -21,7 +21,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, 
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
-use crate::emphasis_mode::{cpu_is_included, DEFAULT_BACKGROUND_COLOR};
+use crate::emphasis_mode::{cpu_is_included, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -65,6 +65,21 @@ pub struct FilledPolygonLayerParams {
     /// Fill color used for filter-included, but selection-excluded
     /// ("background") polygons, in place of `fill_color`.
     pub background_fill_color: Option<(u8, u8, u8)>,
+
+    /// Fill opacity used for filter-included, but selection-excluded
+    /// ("background") polygons, in place of `fill_opacity`. Only applied when
+    /// `enable_background_fill_opacity` is set AND a value is provided here;
+    /// otherwise the polygon's normal fill opacity is used unchanged (there is
+    /// no universal "de-emphasized" default for this, unlike
+    /// `background_fill_color`, which falls back to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+
+    /// When true, "background" polygons have the fill color specified via
+    /// `background_fill_color`.
+    pub enable_background_fill_color: bool,
+    /// When true, "background" polygons have the fill opacity specified via
+    /// `background_fill_opacity`.
+    pub enable_background_fill_opacity: bool,
 }
 
 impl Default for FilledPolygonLayerParams {
@@ -82,6 +97,9 @@ impl Default for FilledPolygonLayerParams {
             selection_criteria: vec![],
             filtering_criteria: vec![],
             background_fill_color: None,
+            background_fill_opacity: None,
+            enable_background_fill_color: true,
+            enable_background_fill_opacity: false,
         }
     }
 }
@@ -143,6 +161,9 @@ impl DrawToRasterGpu for FilledPolygonLayer {
                 selection_criteria: self.layer_params.selection_criteria.clone(),
                 filtering_criteria: self.layer_params.filtering_criteria.clone(),
                 background_fill_color: self.layer_params.background_fill_color,
+                background_fill_opacity: self.layer_params.background_fill_opacity,
+                enable_background_fill_color: self.layer_params.enable_background_fill_color,
+                enable_background_fill_opacity: self.layer_params.enable_background_fill_opacity,
             },
         );
         DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;
@@ -221,12 +242,17 @@ impl DrawToSvg for FilledPolygonLayer {
                 }
             }
             d.push_str(" Z");
-            let fill = TwoColor::Rgb(if is_selected {
+            let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
                 cpu_fill_color(layer_params.fill_color.as_ref(), poly_index, quant_domain)
             } else {
                 layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
             });
-            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), poly_index) as f64;
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), poly_index),
+            ) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,

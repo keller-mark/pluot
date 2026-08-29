@@ -1086,3 +1086,107 @@ async fn test_line_layer_square_contain_selection_custom_background_color() {
     };
     render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_custom_background_color").await;
 }
+
+// ── Background stroke opacity and stroke width overrides ────────────────────
+// `enable_background_*` flags gate whether a filter-included, selection-
+// excluded ("background") line uses the corresponding `background_*`
+// override in place of its normal stroke color, opacity, or width. Unlike
+// `background_stroke_color` (which falls back to a default gray when unset),
+// the opacity/width overrides are a no-op when left `None`, even if their
+// `enable_background_*` flag is set.
+
+// `enable_background_stroke_color: false` disables the (otherwise default-on)
+// stroke-color de-emphasis: every line keeps its normal categorical stroke
+// color even though lines 1, 3, 5, 7 are selection-excluded.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_disable_background_stroke_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            enable_background_stroke_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_disable_background_stroke_color").await;
+}
+
+// `background_stroke_opacity` + `enable_background_stroke_opacity`: the
+// selection-excluded lines render at 0.15 stroke opacity instead of the
+// default 1.0, while the selected lines stay fully opaque.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_background_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            enable_background_stroke_color: false,
+            background_stroke_opacity: Some(0.15),
+            enable_background_stroke_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_background_stroke_opacity").await;
+}
+
+// `background_stroke_width` + `enable_background_stroke_width`: the
+// selection-excluded lines render 6px thick instead of the layer's 2px
+// `stroke_width`, while the selected lines stay at 2px.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_background_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            enable_background_stroke_color: false,
+            background_stroke_width: Some(6.0),
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_background_stroke_width").await;
+}
+
+// Enabling a background override with its value left `None` is a no-op
+// (falls back to the normal foreground value), unlike
+// `background_stroke_color`, which falls back to a default gray. This should
+// render identically to eight normal, undifferentiated lines despite
+// selection excluding half of them and every scalar override flag being on.
+#[tokio::test]
+async fn test_line_layer_square_contain_selection_background_overrides_none_value_is_noop() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(LineLayerParams {
+            enable_background_stroke_color: false,
+            enable_background_stroke_opacity: true,
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 2, 3, 4, 5, 6, 7])),
+                included_codes: vec![0, 2, 4, 6],
+            })],
+            ..cross_lines_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_line_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
+}
