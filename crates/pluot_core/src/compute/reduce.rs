@@ -13,10 +13,11 @@ use super::ForegroundBackground;
 
 // Reference: https://github.com/gfx-rs/wgpu/blob/trunk/examples/standalone/01_hello_compute/src/main.rs
 
-/// Binding index of the first filtering/selection criteria value texture (see
+/// Binding index of the first filtering criteria value texture (see
 /// `crate::emphasis_mode::prepare_emphasis_criteria`). Chosen to sit clear of
 /// every binding used by either `main_scalar` (0, 1, 2) or `main_histogram`
-/// (0, 1, 3).
+/// (0, 1, 3). Selection criteria textures immediately follow the filtering
+/// criteria textures (however many of those there are).
 const CRITERIA_FIRST_BINDING: u32 = 4;
 
 /// Specify the behavior of the reducer functionality.
@@ -41,40 +42,56 @@ pub enum ReduceMode {
         data_min: f32,
         data_max: f32,
     },
+    /// Output: one f32 (the number of included elements).
+    Count,
+    /// Output: one f32 (the mean of all included elements, or `NaN` if none
+    /// are included).
+    Mean,
 }
 
 
 
 impl ReduceMode {
-    fn discriminant(&self) -> u32 {
+    /// Discriminant matching the WGSL `MODE_*` constants (shared by
+    /// `reduce.wgsl` and `reduce_stratified.wgsl`).
+    pub fn discriminant(&self) -> u32 {
         match self {
             ReduceMode::Min => 0,
             ReduceMode::Max => 1,
             ReduceMode::Sum => 2,
             ReduceMode::Extent => 3,
             ReduceMode::Histogram { .. } => 4,
+            ReduceMode::Count => 5,
+            ReduceMode::Mean => 6,
         }
     }
 
-    fn is_histogram(&self) -> bool {
+    pub fn is_histogram(&self) -> bool {
         matches!(self, ReduceMode::Histogram { .. })
+    }
+
+    /// Whether this mode writes two f32 values per workgroup (like
+    /// [`ReduceMode::Extent`]'s `[min, max]` pair) rather than one.
+    fn is_dual_output(&self) -> bool {
+        matches!(self, ReduceMode::Extent | ReduceMode::Mean)
     }
 }
 
 // Uniform struct
 
-/// Must match `ReduceUniforms` in shaders/reduce.wgsl exactly (field order
-/// and types).  6 x 4 bytes = 24 bytes.
+/// Must match `ReduceUniforms` in shaders/reduce.wgsl (and
+/// shaders/reduce_stratified.wgsl, which reuses this same Rust struct)
+/// exactly (field order and types).  6 x 4 bytes = 24 bytes.
 #[derive(ShaderType)]
-struct ReduceUniforms {
-    mode: u32,
-    // Number of elements processed by the current dispatch (chunk length).
-    num_elements: u32,
-    num_bins: u32,
-    data_min: f32,
-    data_max: f32,
-    // Flat index of the current chunk's first element within the input texture.
-    base_offset: u32,
+pub struct ReduceUniforms {
+    pub mode: u32,
+    /// Number of elements processed by the current dispatch (chunk length).
+    pub num_elements: u32,
+    pub num_bins: u32,
+    pub data_min: f32,
+    pub data_max: f32,
+    /// Flat index of the current chunk's first element within the input texture.
+    pub base_offset: u32,
 }
 
 // Core dispatch function
@@ -114,9 +131,15 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
     result
 }
 
-/// Dispatches a GPU reduction over `input_view` and returns raw partial
-/// results as `Vec<f32>`, considering only elements that pass `criteria`
-/// (AND-ed together; an empty list includes every element).
+/// Dispatches a GPU reduction over `input_view`, computing both the
+/// filter-included ("background") and filter-*and*-selection-included
+/// ("foreground") result in a single pass — every thread tests
+/// `is_filtered_in(idx)`/`is_selected_in(idx)` once and feeds two parallel
+/// accumulators, rather than the shader being dispatched twice with two
+/// different criteria predicates. `filtering_criteria` and
+/// `selection_criteria` are each AND-ed together independently, matching
+/// [`crate::emphasis_mode::cpu_is_included`]'s semantics: an empty list means
+/// every item passes.
 ///
 /// `total` is the element count of the (already-uploaded) `input_view`.
 ///
@@ -128,39 +151,38 @@ async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 /// single storage binding is bounded by `max_storage_buffer_binding_size`
 /// (default 128 MiB or ~33M elements).  Each chunk is dispatched separately and
 /// the partial results are combined as described below.
-///
-/// **Return value layout**
-/// - `Min / Max / Sum`:  one `f32` per workgroup, concatenated across all
-///                       chunks; caller folds them into the final scalar.
-/// - `Extent`:           two `f32` per workgroup: `[partial_min, partial_max]`
-///                       interleaved, concatenated across chunks; caller folds
-///                       each component separately.
-/// - `Histogram`:        `num_bins` values whose bytes are actually `u32` bin
-///                       counts, accumulated across all chunks via the shader's
-///                       global atomics; use `bytemuck::cast_slice` to recover
-///                       the `u32`s.
 async fn dispatch_reduce(
     gpu_context: &GpuContext<'_>,
     input_view: &wgpu::TextureView,
     input_dtype: TextureDtype,
     total: usize,
     mode: &ReduceMode,
-    criteria: &[EmphasisCriteria],
-) -> Vec<f32> {
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<Vec<f32>> {
     let GpuContext { device, queue } = gpu_context;
     let is_histogram = mode.is_histogram();
-    let is_extent = matches!(mode, ReduceMode::Extent);
+    let is_dual_output = mode.is_dual_output();
 
-    // Assemble the shader with the texture's sampled type and the
-    // filtering/selection membership predicate (`reduce_is_included`) injected
-    // at runtime.
-    let prepared = prepare_emphasis_criteria(
-        device, queue, criteria, "reduce_is_included", "reduce_criteria_data", CRITERIA_FIRST_BINDING,
+    // Two independent membership predicates, injected side by side: the
+    // background gate (`is_filtered_in`, from `filtering_criteria` alone) and
+    // the additional foreground narrowing (`is_selected_in`, from
+    // `selection_criteria` alone, not pre-ANDed with filtering — the shader
+    // ANDs it with `is_filtered_in` itself). Selection textures are bound
+    // right after however many filtering textures there are.
+    let filtering = prepare_emphasis_criteria(
+        device, queue, filtering_criteria, "is_filtered_in", "filter_data", CRITERIA_FIRST_BINDING,
     );
+    let selection_first_binding = CRITERIA_FIRST_BINDING + filtering.textures.len() as u32;
+    let selection = prepare_emphasis_criteria(
+        device, queue, selection_criteria, "is_selected_in", "select_data", selection_first_binding,
+    );
+
     let shader_source = ShaderBuilder::new(include_str!("shaders/reduce.wgsl"))
         .inject_texture_sample_type("input", input_dtype)
         .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-        .inject_function("criteria_wgsl", &prepared.wgsl)
+        .inject_function("filtering_wgsl", &filtering.wgsl)
+        .inject_function("selection_wgsl", &selection.wgsl)
         .build();
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("reduce.wgsl"),
@@ -207,8 +229,8 @@ async fn dispatch_reduce(
     // main_scalar    uses bindings 0 (uniform), 1 (input), 2 (output f32)
     // main_histogram uses bindings 0 (uniform), 1 (input), 3 (output atomic<u32>)
     // Both additionally use bindings CRITERIA_FIRST_BINDING.. for the
-    // filtering/selection criteria value textures (one per criterion in
-    // `criteria` that carries per-element data).
+    // filtering criteria value textures, immediately followed by the
+    // selection criteria value textures.
 
     let uniform_entry = wgpu::BindGroupLayoutEntry {
         binding: 0,
@@ -243,7 +265,7 @@ async fn dispatch_reduce(
     };
 
     let mut bind_group_layout_entries = vec![uniform_entry, input_entry, output_entry];
-    for (i, tex) in prepared.textures.iter().enumerate() {
+    for (i, tex) in filtering.textures.iter().chain(selection.textures.iter()).enumerate() {
         bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
             binding: CRITERIA_FIRST_BINDING + i as u32,
             visibility: wgpu::ShaderStages::COMPUTE,
@@ -283,11 +305,13 @@ async fn dispatch_reduce(
     // The histogram shader accumulates into this buffer with global atomics, so
     // every chunk's dispatch adds into the same bins.  WebGPU zero-initialises
     // newly created buffers, so it starts at zero without an explicit clear.
+    // Holds background bins at [0, num_bins) and foreground bins at
+    // [num_bins, 2*num_bins).
 
     let hist_output = if is_histogram {
         Some(device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("reduce_histogram_output"),
-            size: (num_bins as u64) * 4,
+            size: (num_bins as u64) * 2 * 4,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         }))
@@ -329,15 +353,16 @@ async fn dispatch_reduce(
         queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
         // Output buffer: per-chunk for scalar modes, shared accumulator for
-        // histogram.
+        // histogram. Every workgroup writes both a background and a
+        // foreground partial:
         //
-        //   Min / Max / Sum  --> one f32 per workgroup (partial result)
-        //   Extent           --> two f32 per workgroup ([partial_min, partial_max])
+        //   Min / Max / Sum / Count  --> 2 f32 per workgroup: [bg, fg]
+        //   Extent / Mean            --> 4 f32 per workgroup: [bg_a, bg_b, fg_a, fg_b]
 
-        let scalar_output_bytes: u64 = if is_extent {
-            (workgroup_count as u64) * 2 * 4
+        let scalar_output_bytes: u64 = if is_dual_output {
+            (workgroup_count as u64) * 4 * 4
         } else {
-            (workgroup_count as u64) * 4
+            (workgroup_count as u64) * 2 * 4
         };
 
         let scalar_output_buffer = if is_histogram {
@@ -371,7 +396,7 @@ async fn dispatch_reduce(
                 resource: output_binding_resource,
             },
         ];
-        for (i, tex) in prepared.textures.iter().enumerate() {
+        for (i, tex) in filtering.textures.iter().chain(selection.textures.iter()).enumerate() {
             bind_group_entries.push(wgpu::BindGroupEntry {
                 binding: CRITERIA_FIRST_BINDING + i as u32,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
@@ -423,10 +448,15 @@ async fn dispatch_reduce(
         offset += chunk_len;
     }
 
-    // ── Read back the final result ────────────────────────────────────────────
+    // ── Read back the final result and split into background/foreground ──────
+    //
+    // Each raw group (2-wide for single-value modes, 4-wide for dual-value
+    // modes) interleaves background then foreground; split it back into two
+    // flat lists shaped exactly like a single (pre-fusion) dispatch's output,
+    // so every `reduce_*` wrapper's fold logic is unaffected by this fusion.
 
-    if let Some(hist_output) = hist_output {
-        let size = (num_bins as u64) * 4;
+    if is_histogram {
+        let size = (num_bins as u64) * 2 * 4;
         let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("reduce_download"),
             size,
@@ -435,23 +465,32 @@ async fn dispatch_reduce(
         });
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(&hist_output, 0, &download_buffer, 0, size);
+        encoder.copy_buffer_to_buffer(hist_output.as_ref().unwrap(), 0, &download_buffer, 0, size);
         queue.submit([encoder.finish()]);
-        read_back_f32(device, &download_buffer).await
+        let raw = read_back_f32(device, &download_buffer).await;
+        let (background, foreground) = raw.split_at(num_bins as usize);
+        ForegroundBackground { background: background.to_vec(), foreground: foreground.to_vec() }
+    } else if is_dual_output {
+        let mut background = Vec::with_capacity(scalar_partials.len() / 2);
+        let mut foreground = Vec::with_capacity(scalar_partials.len() / 2);
+        for group in scalar_partials.chunks(4) {
+            background.extend_from_slice(&group[0..2]);
+            foreground.extend_from_slice(&group[2..4]);
+        }
+        ForegroundBackground { background, foreground }
     } else {
-        scalar_partials
+        let mut background = Vec::with_capacity(scalar_partials.len() / 2);
+        let mut foreground = Vec::with_capacity(scalar_partials.len() / 2);
+        for group in scalar_partials.chunks(2) {
+            background.push(group[0]);
+            foreground.push(group[1]);
+        }
+        ForegroundBackground { background, foreground }
     }
 }
 
-/// Runs [`dispatch_reduce`] once for the filter-included ("background") set
-/// and, when `selection_criteria` narrows it further, once more for the
-/// filter-*and*-selection-included ("foreground") subset — reusing the same
-/// uploaded input texture for both passes.
-///
-/// `filtering_criteria` and `selection_criteria` are AND-ed together
-/// (independently) to reach a "must pass" predicate per pass, matching
-/// [`crate::emphasis_mode::cpu_is_included`]'s semantics: an empty list means
-/// every item is included.
+/// Uploads `input` once and runs [`dispatch_reduce`], which computes both the
+/// "background" and "foreground" result in a single dispatch.
 async fn compute_reduce_fg_bg(
     gpu_context: &GpuContext<'_>,
     input: &NumericData,
@@ -463,17 +502,10 @@ async fn compute_reduce_fg_bg(
     let (input_view, input_dtype) = input.create_data_texture(device, queue, "reduce_input");
     let total = input.len();
 
-    let background =
-        dispatch_reduce(gpu_context, &input_view, input_dtype, total, &mode, filtering_criteria).await;
-    let foreground = if selection_criteria.is_empty() {
-        background.clone()
-    } else {
-        let mut combined = filtering_criteria.to_vec();
-        combined.extend_from_slice(selection_criteria);
-        dispatch_reduce(gpu_context, &input_view, input_dtype, total, &mode, &combined).await
-    };
-
-    ForegroundBackground { background, foreground }
+    dispatch_reduce(
+        gpu_context, &input_view, input_dtype, total, &mode, filtering_criteria, selection_criteria,
+    )
+    .await
 }
 
 // CPU fallbacks
@@ -546,6 +578,23 @@ fn cpu_reduce_sum<T: ScalarToF32 + std::iter::Sum>(input: &[T], included: impl F
         .filter_map(|(i, &v)| included(i).then_some(v))
         .sum::<T>()
         .scalar_to_f32()
+}
+
+fn cpu_reduce_count<T>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
+    (0..input.len()).filter(|&i| included(i)).count() as f32
+}
+
+fn cpu_reduce_mean<T: ScalarToF32>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
+    let mut sum = 0.0f32;
+    let mut count = 0u32;
+    for (i, &v) in input.iter().enumerate() {
+        if included(i) {
+            sum += v.scalar_to_f32();
+            count += 1;
+        }
+    }
+    // Matches the GPU path's 0.0 / 0.0 (NaN) when nothing is included.
+    sum / count as f32
 }
 
 fn cpu_reduce_extent<T: ScalarToF32 + PartialOrd>(input: &[T], included: impl Fn(usize) -> bool) -> (f32, f32) {
@@ -694,6 +743,76 @@ pub async fn reduce_sum(
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
                 dispatch_cpu!(&input, |v| cpu_reduce_sum(v, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
+    }
+}
+
+/// Returns the number of included elements in `input` (as an `f32`), for both
+/// the "background" and "foreground" subsets — see [`reduce_min`].
+pub async fn reduce_count(
+    gpu_context: Option<&GpuContext<'_>>,
+    input: impl Into<NumericData>,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<f32> {
+    let input = input.into();
+    match gpu_context {
+        Some(ctx) => {
+            let partials =
+                compute_reduce_fg_bg(ctx, &input, ReduceMode::Count, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: partials.background.into_iter().sum(),
+                foreground: partials.foreground.into_iter().sum(),
+            }
+        }
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background = dispatch_cpu!(&input, |v| cpu_reduce_count(v, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_count(v, is_foreground))
+            };
+            ForegroundBackground { background, foreground }
+        }
+    }
+}
+
+/// Returns the mean of the included elements in `input` (or `NaN` if none are
+/// included), for both the "background" and "foreground" subsets — see
+/// [`reduce_min`].
+pub async fn reduce_mean(
+    gpu_context: Option<&GpuContext<'_>>,
+    input: impl Into<NumericData>,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<f32> {
+    let input = input.into();
+    let fold_mean = |partials: Vec<f32>| {
+        let sum: f32 = partials.iter().copied().step_by(2).sum();
+        let count: f32 = partials.iter().copied().skip(1).step_by(2).sum();
+        sum / count
+    };
+    match gpu_context {
+        Some(ctx) => {
+            let partials =
+                compute_reduce_fg_bg(ctx, &input, ReduceMode::Mean, filtering_criteria, selection_criteria).await;
+            ForegroundBackground {
+                background: fold_mean(partials.background),
+                foreground: fold_mean(partials.foreground),
+            }
+        }
+        None => {
+            let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
+            let background = dispatch_cpu!(&input, |v| cpu_reduce_mean(v, is_background));
+            let foreground = if selection_criteria.is_empty() {
+                background
+            } else {
+                let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
+                dispatch_cpu!(&input, |v| cpu_reduce_mean(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }

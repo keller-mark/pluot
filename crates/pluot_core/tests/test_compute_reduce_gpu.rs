@@ -7,7 +7,7 @@ use std::sync::Arc;
 use pluot_core::cache::get_or_init_gpu_context;
 use pluot_core::render_types::GpuContext;
 use pluot_core::compute::reduce::{
-    reduce_min, reduce_max, reduce_sum, reduce_extent,
+    reduce_min, reduce_max, reduce_sum, reduce_count, reduce_mean, reduce_extent,
     reduce_histogram_with_known_extent, reduce_histogram_with_unknown_extent,
 };
 use pluot_core::numeric_data::NumericData;
@@ -94,6 +94,54 @@ async fn test_gpu_reduce_sum_large() {
     // 256 ones --> sum should be 256.
     let input: Arc<Vec<f32>> = Arc::new(vec![1.0; 256]);
     assert_eq!(reduce_sum(Some(&ctx), input, &[], &[]).await.background, 256.0);
+}
+
+// reduce_count (GPU)
+
+#[tokio::test]
+async fn test_gpu_reduce_count_basic() {
+    let (device, queue) = gpu_ctx().await;
+    let ctx = GpuContext { device: &device, queue: &queue };
+    let input: Arc<Vec<f32>> = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0]);
+    assert_eq!(reduce_count(Some(&ctx), input, &[], &[]).await.background, 5.0);
+}
+
+#[tokio::test]
+async fn test_gpu_reduce_count_filtering_and_selection() {
+    let (device, queue) = gpu_ctx().await;
+    let ctx = GpuContext { device: &device, queue: &queue };
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let filtering = vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+        codes: NumericData::Int32(Arc::new(vec![0, 1, 0, 1, 0])),
+        included_codes: vec![0],
+    })];
+    let selection = vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+        values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
+        min: Some(50.0),
+        max: None,
+    })];
+    let result = reduce_count(Some(&ctx), input, &filtering, &selection).await;
+    assert_eq!(result.background, 3.0);
+    assert_eq!(result.foreground, 1.0);
+}
+
+// reduce_mean (GPU)
+
+#[tokio::test]
+async fn test_gpu_reduce_mean_basic() {
+    let (device, queue) = gpu_ctx().await;
+    let ctx = GpuContext { device: &device, queue: &queue };
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(reduce_mean(Some(&ctx), input, &[], &[]).await.background, 2.5);
+}
+
+#[tokio::test]
+async fn test_gpu_reduce_mean_large() {
+    let (device, queue) = gpu_ctx().await;
+    let ctx = GpuContext { device: &device, queue: &queue };
+    // 1000 elements spans multiple workgroups/chunks; mean of 0..1000 is 499.5.
+    let input: Arc<Vec<f32>> = Arc::new((0..1000).map(|i| i as f32).collect());
+    assert_eq!(reduce_mean(Some(&ctx), input, &[], &[]).await.background, 499.5);
 }
 
 // reduce_extent (GPU)

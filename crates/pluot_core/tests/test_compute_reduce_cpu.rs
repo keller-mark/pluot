@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use pluot_core::compute::reduce::{
-    reduce_min, reduce_max, reduce_sum, reduce_extent,
+    reduce_min, reduce_max, reduce_sum, reduce_count, reduce_mean, reduce_extent,
     reduce_histogram_with_known_extent, reduce_histogram_with_unknown_extent,
 };
 use pluot_core::numeric_data::NumericData;
@@ -90,6 +90,64 @@ async fn test_reduce_sum_empty() {
 async fn test_reduce_sum_negative() {
     let input: Arc<Vec<f32>> = Arc::new(vec![-1.0, 2.0, -3.0, 4.0]);
     assert_eq!(reduce_sum(None, input, &[], &[]).await.background, 2.0);
+}
+
+// reduce_count
+
+#[tokio::test]
+async fn test_reduce_count_basic() {
+    let input: Arc<Vec<f32>> = Arc::new(vec![3.0, 1.0, 4.0, 1.5, 9.0]);
+    assert_eq!(reduce_count(None, input, &[], &[]).await.background, 5.0);
+}
+
+#[tokio::test]
+async fn test_reduce_count_empty() {
+    assert_eq!(reduce_count(None, Arc::new(Vec::<f32>::new()), &[], &[]).await.background, 0.0);
+}
+
+#[tokio::test]
+async fn test_reduce_count_filtering_and_selection() {
+    // Filtering keeps category 0 (indices 0, 2, 4 --> 3 items). Selection
+    // further narrows (orthogonal quantitative column) to just index 4.
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let filtering = vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+        codes: category_codes(),
+        included_codes: vec![0],
+    })];
+    let selection = vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+        values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
+        min: Some(50.0),
+        max: None,
+    })];
+    let result = reduce_count(None, input, &filtering, &selection).await;
+    assert_eq!(result.background, 3.0);
+    assert_eq!(result.foreground, 1.0);
+}
+
+// reduce_mean
+
+#[tokio::test]
+async fn test_reduce_mean_basic() {
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(reduce_mean(None, input, &[], &[]).await.background, 2.5);
+}
+
+#[tokio::test]
+async fn test_reduce_mean_empty_is_nan() {
+    assert!(reduce_mean(None, Arc::new(Vec::<f32>::new()), &[], &[]).await.background.is_nan());
+}
+
+#[tokio::test]
+async fn test_reduce_mean_filtering_only() {
+    // Values [1, 2, 3, 4, 5]; filtering keeps category 0 (values 1, 3, 5).
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let filtering = vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+        codes: category_codes(),
+        included_codes: vec![0],
+    })];
+    let result = reduce_mean(None, input, &filtering, &[]).await;
+    assert_eq!(result.background, 3.0);
+    assert_eq!(result.foreground, 3.0);
 }
 
 // reduce_extent

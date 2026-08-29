@@ -128,6 +128,14 @@ struct Channel {
 
     background_fill_color: vec4<f32>,   // rgba fill color used for filter-included, selection-excluded ("background") objects
     background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") objects
+    background_fill_opacity: f32,   // fill opacity used for "background" objects, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" objects, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" objects, when enable_background_stroke_width is set
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 };
 
 struct Uniforms {
@@ -690,9 +698,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
             continue;
         }
         // Filter-included but selection-excluded ("background") objects still
-        // render, but de-emphasized with `ch.background_fill_color` /
-        // `ch.background_stroke_color` in place of their configured fill/stroke
-        // color.
+        // render, but may be de-emphasized in place of their configured
+        // fill/stroke color, opacity and stroke width -- each only overridden
+        // when its `enable_background_*` flag is set (see
+        // `BitmaskChannelSettings`).
         let is_selected = get_channel_is_selected_in(channel_index, label_index);
 
         // The outline band is the outermost part of an object's interior, so
@@ -703,7 +712,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         //
         // The edge test measures in mask texels, so this channel's stroke
         // width is resolved out of screen-pixel/data/normalized units first.
-        // The result may be fractional, which the test handles.
+        // The result may be fractional, which the test handles. Background
+        // objects use `ch.background_stroke_width` instead when
+        // `ch.enable_background_stroke_width` is set.
+        var stroke_width = get_channel_stroke_width(channel_index, label_index);
+        if (!is_selected && ch.enable_background_stroke_width == 1u) {
+            stroke_width = ch.background_stroke_width;
+        }
+
         var color: vec3<f32>;
         var alpha: f32;
         if (ch.stroked == 1u && bitmask_is_edge(
@@ -712,13 +728,25 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
             raw_label,
             img_w,
             img_h,
-            bitmask_stroke_width_texels(get_channel_stroke_width(channel_index, label_index))
+            bitmask_stroke_width_texels(stroke_width)
         )) {
-            color = select(ch.background_stroke_color.rgb, get_channel_stroke_color(channel_index, label_index), is_selected);
+            color = get_channel_stroke_color(channel_index, label_index);
+            if (!is_selected && ch.enable_background_stroke_color == 1u) {
+                color = ch.background_stroke_color.rgb;
+            }
             alpha = get_channel_stroke_opacity(channel_index, label_index);
+            if (!is_selected && ch.enable_background_stroke_opacity == 1u) {
+                alpha = ch.background_stroke_opacity;
+            }
         } else if (ch.filled == 1u) {
-            color = select(ch.background_fill_color.rgb, get_channel_fill_color(channel_index, label_index), is_selected);
+            color = get_channel_fill_color(channel_index, label_index);
+            if (!is_selected && ch.enable_background_fill_color == 1u) {
+                color = ch.background_fill_color.rgb;
+            }
             alpha = get_channel_fill_opacity(channel_index, label_index);
+            if (!is_selected && ch.enable_background_fill_opacity == 1u) {
+                alpha = ch.background_fill_opacity;
+            }
         } else {
             continue;
         }
