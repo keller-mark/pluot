@@ -41,6 +41,8 @@ pub struct Point3dLayerParams {
     pub position_x: NumericData,
     pub position_y: NumericData,
     pub position_z: NumericData,
+
+    // TODO: support filtering/selection criteria, analogous to PointLayer.
 }
 
 impl Default for Point3dLayerParams {

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::numeric_data::NumericData;
@@ -69,6 +69,42 @@ pub struct PolygonLayerParams {
     /// shares one value across all polygons, `InstancedOpacity` supplies one per
     /// polygon. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of polygons. An empty list means every
+    /// polygon is included. Forwarded to both the stroke and fill sub-layers.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Stroke/fill colors used for filter-included, but selection-excluded
+    /// ("background") polygons, in place of `stroke_color` / `fill_color`.
+    pub background_stroke_color: Option<(u8, u8, u8)>,
+    pub background_fill_color: Option<(u8, u8, u8)>,
+
+    /// Stroke/fill opacity and stroke width used for filter-included, but
+    /// selection-excluded ("background") polygons, in place of
+    /// `stroke_opacity`/`fill_opacity`/`stroke_width`. Only applied when the
+    /// corresponding `enable_background_*` flag is set AND a value is
+    /// provided here; otherwise the polygon's normal value is used unchanged
+    /// (there is no universal "de-emphasized" default for these, unlike
+    /// `background_stroke_color`/`background_fill_color`, which fall back to
+    /// `DEFAULT_BACKGROUND_COLOR`).
+    pub background_stroke_opacity: Option<f32>,
+    pub background_fill_opacity: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    /// When true, "background" polygons have the stroke/fill color specified
+    /// via `background_stroke_color`/`background_fill_color`.
+    pub enable_background_stroke_color: bool,
+    pub enable_background_fill_color: bool,
+    /// When true, "background" polygons have the stroke/fill opacity
+    /// specified via `background_stroke_opacity`/`background_fill_opacity`.
+    pub enable_background_stroke_opacity: bool,
+    pub enable_background_fill_opacity: bool,
+    /// When true, "background" polygons have the stroke width specified via
+    /// `background_stroke_width`. Only affects the stroke's width, not
+    /// whether it is drawn at all (that is `stroked`).
+    pub enable_background_stroke_width: bool,
 }
 
 impl Default for PolygonLayerParams {
@@ -89,6 +125,18 @@ impl Default for PolygonLayerParams {
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_stroke_color: None,
+            background_fill_color: None,
+            background_stroke_opacity: None,
+            background_fill_opacity: None,
+            background_stroke_width: None,
+            enable_background_stroke_color: true,
+            enable_background_fill_color: true,
+            enable_background_stroke_opacity: false,
+            enable_background_fill_opacity: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -116,6 +164,14 @@ impl PolygonLayer {
                 stroke_color: layer_params.stroke_color.clone(),
                 stroke_width: layer_params.stroke_width.clone(),
                 stroke_opacity: layer_params.stroke_opacity.clone(),
+                selection_criteria: layer_params.selection_criteria.clone(),
+                filtering_criteria: layer_params.filtering_criteria.clone(),
+                background_stroke_color: layer_params.background_stroke_color,
+                background_stroke_opacity: layer_params.background_stroke_opacity,
+                background_stroke_width: layer_params.background_stroke_width,
+                enable_background_stroke_color: layer_params.enable_background_stroke_color,
+                enable_background_stroke_opacity: layer_params.enable_background_stroke_opacity,
+                enable_background_stroke_width: layer_params.enable_background_stroke_width,
             }))
         } else {
             None
@@ -132,6 +188,12 @@ impl PolygonLayer {
                 polygon_offsets: layer_params.polygon_offsets.clone(),
                 fill_color: layer_params.fill_color.clone(),
                 fill_opacity: layer_params.fill_opacity.clone(),
+                selection_criteria: layer_params.selection_criteria.clone(),
+                filtering_criteria: layer_params.filtering_criteria.clone(),
+                background_fill_color: layer_params.background_fill_color,
+                background_fill_opacity: layer_params.background_fill_opacity,
+                enable_background_fill_color: layer_params.enable_background_fill_color,
+                enable_background_fill_opacity: layer_params.enable_background_fill_opacity,
             }))
         } else {
             None

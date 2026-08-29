@@ -12,12 +12,13 @@ use std::sync::Arc;
 use crate::positioning::get_point_position;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::scalar_mode::{cpu_fill_opacity, prepare_fill_opacity_mode};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -55,6 +56,32 @@ pub struct TriangulatedLayerParams {
     /// shares one value across all elements, `InstancedOpacity` supplies one per
     /// element (indexed by `vertex_color_index`). Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of shapes, indexed by
+    /// `vertex_color_index` (i.e. same cardinality as `fill_color`). An empty
+    /// list means every shape is included.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Fill color used for filter-included, but selection-excluded
+    /// ("background") shapes, in place of `fill_color`.
+    pub background_fill_color: Option<(u8, u8, u8)>,
+
+    /// Fill opacity used for filter-included, but selection-excluded
+    /// ("background") shapes, in place of `fill_opacity`. Only applied when
+    /// `enable_background_fill_opacity` is set AND a value is provided here;
+    /// otherwise the shape's normal fill opacity is used unchanged (there is
+    /// no universal "de-emphasized" default for this, unlike
+    /// `background_fill_color`, which falls back to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+
+    /// When true, "background" shapes have the fill color specified via
+    /// `background_fill_color`.
+    pub enable_background_fill_color: bool,
+    /// When true, "background" shapes have the fill opacity specified via
+    /// `background_fill_opacity`.
+    pub enable_background_fill_opacity: bool,
 }
 
 impl Default for TriangulatedLayerParams {
@@ -69,6 +96,12 @@ impl Default for TriangulatedLayerParams {
             vertex_color_index: NumericData::Uint32(Arc::new(vec![])),
             fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
+            background_fill_opacity: None,
+            enable_background_fill_color: true,
+            enable_background_fill_opacity: false,
         }
     }
 }
@@ -115,6 +148,10 @@ struct TriangulatedLayerUniforms {
     fill_color_reverse: u32,   // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     fill_opacity: f32,
+    background_fill_color: Vec4, // rgba fill color used for filter-included, selection-excluded ("background") shapes
+    background_fill_opacity: f32, // fill opacity used for "background" shapes, when enable_background_fill_opacity is set
+    enable_background_fill_color: u32,
+    enable_background_fill_opacity: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -184,6 +221,19 @@ impl DrawToRasterGpu for TriangulatedLayer {
         let opacity_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
         let opacity = prepare_fill_opacity_mode(device, queue, layer_params.fill_opacity.as_ref(), opacity_binding_start);
 
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // shapes are discarded, selection-excluded shapes are re-colored with
+        // `background_fill_color`; see fs_main), indexed by `vertex_color_index`
+        // (same cardinality as `fill_color`).
+        let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.textures.len() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, &layer_params.selection_criteria, "is_selected_in", "select_data", select_binding_start,
+        );
+
         let uniform_struct = TriangulatedLayerUniforms {
             layer_size: Vec2::new(layer_w, layer_h),
             camera_view: Mat4::from_cols_array(&camera_view),
@@ -197,6 +247,11 @@ impl DrawToRasterGpu for TriangulatedLayer {
             fill_color_reverse: color.reverse,
             fill_color_domain: Vec2::from_array(color.domain),
             fill_opacity: opacity.static_value,
+            background_fill_color: background_color_vec4(layer_params.background_fill_color),
+            background_fill_opacity: layer_params.background_fill_opacity.unwrap_or(0.0),
+            enable_background_fill_color: layer_params.enable_background_fill_color as u32,
+            enable_background_fill_opacity: (layer_params.enable_background_fill_opacity
+                && layer_params.background_fill_opacity.is_some()) as u32,
         };
 
         let mut buf = UniformBuffer::new(Vec::<u8>::new());
@@ -273,6 +328,33 @@ impl DrawToRasterGpu for TriangulatedLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), one per
+        // criteria that carries per-element data.
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Triangulated BGL"),
             entries: &bgl_entries,
@@ -292,6 +374,11 @@ impl DrawToRasterGpu for TriangulatedLayer {
             // Fill opacity-mode specialization: contributes `get_fill_opacity`
             // (plus a value texture binding when instanced).
             .define("fill_opacity_module", &opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("triangulated_layer.wgsl"),
@@ -367,6 +454,18 @@ impl DrawToRasterGpu for TriangulatedLayer {
         if let Some(tex) = &opacity.texture {
             bg_entries.push(wgpu::BindGroupEntry {
                 binding: opacity_binding_start,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start + i as u32,
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
@@ -450,8 +549,25 @@ impl DrawToSvg for TriangulatedLayer {
             let d = format!("M {} {} L {} {} L {} {} Z", p0.0, p0.1, p1.0, p1.1, p2.0, p2.1);
             // All 3 vertices of a triangle share the same source color index.
             let color_index = layer_params.vertex_color_index.get_f64(i * 3) as usize;
-            let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), color_index, quant_domain));
-            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), color_index) as f64;
+            // Filter-excluded shapes are not rendered at all.
+            if !cpu_is_included(&layer_params.filtering_criteria, color_index) {
+                continue;
+            }
+            // Filter-included but selection-excluded ("background") shapes
+            // still render, but de-emphasized with `background_fill_color` in
+            // place of their configured fill color.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, color_index);
+            let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
+                cpu_fill_color(layer_params.fill_color.as_ref(), color_index, quant_domain)
+            } else {
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            });
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), color_index),
+            ) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,

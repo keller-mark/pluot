@@ -219,6 +219,18 @@ pub mod bitmask_channel {
     /// `{{stroke_or_fill_property}}` with the property (`fill_opacity`,
     /// `stroke_opacity` or `stroke_width`) and `{{switch_cases}}` as above.
     pub const CHANNEL_SCALAR_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_scalar_dispatch.wgsl");
+
+    /// `fn get_channel_{{stroke_or_fill_property}}(channel_index: u32,
+    /// label_index: u32) -> bool` — the boolean counterpart of
+    /// [`CHANNEL_SCALAR_DISPATCH`], dispatching to the per-channel
+    /// `get_channel_{{stroke_or_fill_property}}_{{c_idx}}` function matching
+    /// `channel_index` (assembled by
+    /// `crate::emphasis_mode::prepare_emphasis_criteria`, one per channel, for
+    /// `is_filtered_in` / `is_selected_in`). Template: substitute
+    /// `{{stroke_or_fill_property}}` with the property (`is_filtered_in` or
+    /// `is_selected_in`) and `{{switch_cases}}` as above. Defaults to `true`
+    /// (include) for an out-of-range channel index.
+    pub const CHANNEL_BOOL_DISPATCH: &str = include_str!("wgsl_functions/bitmask/channel_bool_dispatch.wgsl");
 }
 
 /// Per-[`SizeMode`](crate::render_traits::SizeMode) WGSL snippets, each defining
@@ -291,6 +303,27 @@ pub mod fill_opacity {
 
     /// Per-polygon opacity from a value texture.
     pub const INSTANCED: &str = include_str!("wgsl_functions/get_fill_opacity/instanced.wgsl");
+}
+
+/// Per-[`EmphasisCriteria`](crate::render_traits::EmphasisCriteria) WGSL
+/// snippets used to test filtering/selection membership. Each variant defines `fn
+/// {{criteria_fn_name}}(instance_index: u32) -> bool`; the categorical and
+/// quantitative variants additionally declare a per-element value texture at
+/// `{{criteria_data_var}}` (binding index and sampled type filled in at
+/// runtime). Assembled at runtime by
+/// [`crate::emphasis_mode::prepare_emphasis_criteria`], once per criteria
+/// (`filtering_criteria` / `selection_criteria`) so both can coexist in the
+/// same shader module without name or binding collisions. The categorical and
+/// quantitative variants assume [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod is_included {
+    /// Explicit empty inclusion list: no item is included (texture-free).
+    pub const EMPTY: &str = include_str!("wgsl_functions/get_is_included/empty.wgsl");
+
+    /// Per-element category code tested against an inline array of included codes.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_is_included/categorical.wgsl");
+
+    /// Per-element scalar value tested against an inclusive [min, max] range.
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_is_included/quantitative.wgsl");
 }
 
 /// Colormap WGSL functions, embedded at compile time from

@@ -41,7 +41,7 @@ use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu,
-    DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
+    DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
     ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -53,6 +53,7 @@ use crate::shader_modules::{
     bitmask_channel, colormaps as wgsl_colormaps, common, get_channel_color, get_channel_scalar,
     ShaderBuilder, TextureDtype,
 };
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -100,6 +101,45 @@ pub struct BitmaskChannelSettings {
 
     /// Opacity multiplier for the fill.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of objects in this channel, indexed by
+    /// object id minus one (like the color/opacity/size modes above). An
+    /// empty list means every object is included. A filter-excluded object is
+    /// treated the same as "no object" (id 0) for this channel: not drawn, not
+    /// picked.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Fill/stroke colors used for filter-included, but selection-excluded
+    /// ("background") objects in this channel, in place of `fill_color` /
+    /// `stroke_color`.
+    pub background_fill_color: Option<(u8, u8, u8)>,
+    pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    /// Fill/stroke opacity and stroke width used for filter-included, but
+    /// selection-excluded ("background") objects in this channel, in place of
+    /// `fill_opacity`/`stroke_opacity`/`stroke_width`. Only applied when the
+    /// corresponding `enable_background_*` flag is set AND a value is
+    /// provided here; otherwise the object's normal value is used unchanged
+    /// (there is no universal "de-emphasized" default for these, unlike
+    /// `background_fill_color`/`background_stroke_color`, which fall back to
+    /// `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+    pub background_stroke_opacity: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    /// When true, "background" objects in this channel have the fill/stroke
+    /// color specified via `background_fill_color`/`background_stroke_color`.
+    pub enable_background_fill_color: bool,
+    pub enable_background_stroke_color: bool,
+    /// When true, "background" objects in this channel have the fill/stroke
+    /// opacity specified via `background_fill_opacity`/`background_stroke_opacity`.
+    pub enable_background_fill_opacity: bool,
+    pub enable_background_stroke_opacity: bool,
+    /// When true, "background" objects in this channel have the stroke width
+    /// specified via `background_stroke_width`.
+    pub enable_background_stroke_width: bool,
 }
 
 impl Default for BitmaskChannelSettings {
@@ -112,6 +152,18 @@ impl Default for BitmaskChannelSettings {
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
             fill_color: Some(ColorMode::UniformRgb((0, 0, 0))),
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
+            background_stroke_color: None,
+            background_fill_opacity: None,
+            background_stroke_opacity: None,
+            background_stroke_width: None,
+            enable_background_fill_color: true,
+            enable_background_stroke_color: true,
+            enable_background_fill_opacity: false,
+            enable_background_stroke_opacity: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -607,6 +659,17 @@ struct BitmaskChannelUniforms {
 
     filled: u32,                // 1 = fill object interiors
     stroked: u32,               // 1 = draw an outline along object boundaries
+
+    background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") objects
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") objects
+    background_fill_opacity: f32,   // fill opacity used for "background" objects, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" objects, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" objects, when enable_background_stroke_width is set
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 }
 
 #[derive(ShaderType, Debug)]
@@ -745,6 +808,7 @@ fn prepare_channel_color(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: Option<&ColorMode>,
+    // TODO: use enums to more strongly type these strings
     stroke_or_fill_property: &str,
     first_binding: u32,
     c_idx: usize,
@@ -985,6 +1049,22 @@ fn prepare_channel(
         &mut next_binding,
     );
 
+    // Filtering and selection criteria, indexed by object id minus one (like
+    // the color/opacity/size modes above). Each channel gets its own
+    // uniquely-named `get_channel_is_filtered_in_{i}` / `get_channel_is_selected_in_{i}`
+    // function (dispatched by channel index below, same as the other
+    // per-channel getters).
+    let filtering = prepare_emphasis_criteria(
+        device, queue, &ch.filtering_criteria,
+        &format!("get_channel_is_filtered_in_{i}"), &format!("filter_data_channel_{i}"), next_binding,
+    );
+    next_binding += filtering.textures.len() as u32;
+    let selection = prepare_emphasis_criteria(
+        device, queue, &ch.selection_criteria,
+        &format!("get_channel_is_selected_in_{i}"), &format!("select_data_channel_{i}"), next_binding,
+    );
+    next_binding += selection.textures.len() as u32;
+
     let uniforms = BitmaskChannelUniforms {
         fill_color_mode: fill_color.mode,
         fill_color_static: Vec4::from_array(fill_color.static_color),
@@ -999,6 +1079,19 @@ fn prepare_channel(
         stroke_width: stroke_width.static_value,
         filled: if ch.filled { 1 } else { 0 },
         stroked: if ch.stroked { 1 } else { 0 },
+        background_fill_color: background_color_vec4(ch.background_fill_color),
+        background_stroke_color: background_color_vec4(ch.background_stroke_color),
+        background_fill_opacity: ch.background_fill_opacity.unwrap_or(0.0),
+        background_stroke_opacity: ch.background_stroke_opacity.unwrap_or(0.0),
+        background_stroke_width: ch.background_stroke_width.unwrap_or(0.0),
+        enable_background_fill_color: ch.enable_background_fill_color as u32,
+        enable_background_stroke_color: ch.enable_background_stroke_color as u32,
+        enable_background_fill_opacity: (ch.enable_background_fill_opacity
+            && ch.background_fill_opacity.is_some()) as u32,
+        enable_background_stroke_opacity: (ch.enable_background_stroke_opacity
+            && ch.background_stroke_opacity.is_some()) as u32,
+        enable_background_stroke_width: (ch.enable_background_stroke_width
+            && ch.background_stroke_width.is_some()) as u32,
     };
 
     let colormap_fns = [fill_color.colormap_fn, stroke_color.colormap_fn]
@@ -1014,6 +1107,14 @@ fn prepare_channel(
             .into_iter()
             .flatten(),
     );
+    textures.extend(
+        filtering.textures.into_iter()
+            .map(|t| ChannelTexture { view: t.view, sample_type: t.sample_type }),
+    );
+    textures.extend(
+        selection.textures.into_iter()
+            .map(|t| ChannelTexture { view: t.view, sample_type: t.sample_type }),
+    );
 
     let wgsl = [
         fill_color.wgsl,
@@ -1021,6 +1122,8 @@ fn prepare_channel(
         fill_opacity.wgsl,
         stroke_opacity.wgsl,
         stroke_width.wgsl,
+        filtering.wgsl,
+        selection.wgsl,
     ]
     .join("\n");
 
@@ -1284,6 +1387,8 @@ impl DrawToRasterGpu for BitmaskLayer {
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "fill_opacity", n_channels),
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_opacity", n_channels),
             channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_width", n_channels),
+            channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_filtered_in", n_channels),
+            channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_selected_in", n_channels),
         ]
         .join("\n");
 
@@ -1599,6 +1704,17 @@ impl DrawToSvg for BitmaskLayer {
                     }
                     let label_index = (raw_label - 1) as usize;
 
+                    // Filter-excluded objects are treated the same as "no
+                    // object" for this channel: not drawn, not picked.
+                    if !cpu_is_included(&channel.filtering_criteria, label_index) {
+                        continue;
+                    }
+                    // Filter-included but selection-excluded ("background")
+                    // objects still render, but de-emphasized with
+                    // `background_fill_color`/`background_stroke_color` in
+                    // place of their configured fill/stroke color.
+                    let is_selected = cpu_is_included(&channel.selection_criteria, label_index);
+
                     // Object-boundary test, mirroring `bitmask_is_edge`: sample
                     // 8 directions at `off` texels from this cell's continuous
                     // position, clamping to the mask's bounds. `off` is zero
@@ -1629,16 +1745,36 @@ impl DrawToSvg for BitmaskLayer {
                     // Stroke and fill cover disjoint regions, as in the
                     // fragment shader: a cell inside the outline band takes the
                     // stroke's color/opacity, one deeper inside the object
-                    // takes the fill's.
-                    let (color, a) = if on_edge {
+                    // takes the fill's. Background objects may be de-emphasized
+                    // in place of their color/opacity, each only overridden
+                    // when its `enable_background_*` flag is set. Note: unlike
+                    // the GPU path, `background_stroke_width` does not affect
+                    // this embedded raster's outline thickness (the up-sample
+                    // grid is planned once per channel/object from the normal
+                    // `stroke_width`, before selection is known).
+                    let (color, a, background, enable_color) = if on_edge {
                         (
                             channel.stroke_color.as_ref(),
-                            cpu_stroke_opacity(channel.stroke_opacity.as_ref(), label_index),
+                            resolve_background_scalar(
+                                is_selected,
+                                channel.enable_background_stroke_opacity,
+                                channel.background_stroke_opacity,
+                                cpu_stroke_opacity(channel.stroke_opacity.as_ref(), label_index),
+                            ),
+                            channel.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
+                            channel.enable_background_stroke_color,
                         )
                     } else if channel.filled {
                         (
                             channel.fill_color.as_ref(),
-                            cpu_fill_opacity(channel.fill_opacity.as_ref(), label_index),
+                            resolve_background_scalar(
+                                is_selected,
+                                channel.enable_background_fill_opacity,
+                                channel.background_fill_opacity,
+                                cpu_fill_opacity(channel.fill_opacity.as_ref(), label_index),
+                            ),
+                            channel.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
+                            channel.enable_background_fill_color,
                         )
                     } else {
                         continue;
@@ -1648,7 +1784,11 @@ impl DrawToSvg for BitmaskLayer {
                         Some(ColorMode::Quantitative(p)) => quantitative_domain(p),
                         _ => [0.0, 1.0],
                     };
-                    let (r, g, b) = cpu_fill_color(color, label_index, quant_domain);
+                    let (r, g, b) = if is_selected || !enable_color {
+                        cpu_fill_color(color, label_index, quant_domain)
+                    } else {
+                        background
+                    };
                     let src_rgb = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0];
                     out_rgb = mix3(out_rgb, src_rgb, a);
                     out_a = out_a.max(a);
@@ -1786,10 +1926,20 @@ impl PickableLayer for BitmaskLayer {
         let mut info = HashMap::new();
         info.insert("x".to_string(), texel_x.to_string());
         info.insert("y".to_string(), texel_y.to_string());
-        for i in 0..self.layer_params.channel_settings.len() {
+        for (i, channel) in self.layer_params.channel_settings.iter().enumerate() {
             let idx = texel_y * y_stride + texel_x * x_stride + i * c_stride;
             if idx < self.layer_params.data.len() {
-                info.insert(format!("channel_{i}"), self.layer_params.data.format_element(idx));
+                // Filter-excluded objects are ignored in picking: reported as
+                // "no object" (id 0), the same as background.
+                let raw_label = self.layer_params.data.get_f32(idx) as i64;
+                let is_filtered_in = raw_label == 0
+                    || cpu_is_included(&channel.filtering_criteria, (raw_label - 1) as usize);
+                let value = if is_filtered_in {
+                    self.layer_params.data.format_element(idx)
+                } else {
+                    "0".to_string()
+                };
+                info.insert(format!("channel_{i}"), value);
             }
         }
 

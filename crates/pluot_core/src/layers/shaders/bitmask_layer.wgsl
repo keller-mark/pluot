@@ -37,6 +37,17 @@ struct Channel {
 
     filled: u32,   // 1 = fill object interiors
     stroked: u32,  // 1 = draw an outline along object boundaries
+
+    background_fill_color: vec4<f32>,   // rgba fill color used for filter-included, selection-excluded ("background") objects
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") objects
+    background_fill_opacity: f32,   // fill opacity used for "background" objects, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" objects, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" objects, when enable_background_stroke_width is set
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 };
 
 struct Uniforms {
@@ -112,10 +123,12 @@ struct VSOut {
 // channel may resolve every property differently.
 {{channel_functions}}
 
-// get_channel_fill_color(channel_index, label_index) and its four siblings:
-// each dispatches to the per-channel function above matching `channel_index`.
-// See `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
-// `CHANNEL_SCALAR_DISPATCH`.
+// get_channel_fill_color(channel_index, label_index) and its siblings: each
+// dispatches to the per-channel function above matching `channel_index`,
+// including `get_channel_is_filtered_in`/`get_channel_is_selected_in`, which
+// dispatch to each channel's filtering/selection criteria predicate. See
+// `crate::shader_modules::bitmask_channel::CHANNEL_COLOR_DISPATCH` /
+// `CHANNEL_SCALAR_DISPATCH` / `CHANNEL_BOOL_DISPATCH`.
 {{channel_dispatchers}}
 
 // A quad that covers the full viewport in Normalized Device Coordinates (NDC).
@@ -256,6 +269,18 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         }
         let label_index = u32(raw_label - 1);
 
+        // Filter-excluded objects are treated the same as "no object" for
+        // this channel: not drawn, not picked.
+        if (!get_channel_is_filtered_in(channel_index, label_index)) {
+            continue;
+        }
+        // Filter-included but selection-excluded ("background") objects still
+        // render, but may be de-emphasized in place of their configured
+        // fill/stroke color, opacity and stroke width -- each only overridden
+        // when its `enable_background_*` flag is set (see
+        // `BitmaskChannelSettings`).
+        let is_selected = get_channel_is_selected_in(channel_index, label_index);
+
         // The outline band is the outermost part of an object's interior, so
         // the stroke and the fill cover disjoint regions and this pixel takes
         // one or the other -- never a blend of both, as in `PointLayer`. A
@@ -264,7 +289,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         //
         // The edge test measures in mask texels, so this channel's stroke
         // width is resolved out of screen-pixel/data/normalized units first.
-        // The result may be fractional, which the test handles.
+        // The result may be fractional, which the test handles. Background
+        // objects use `ch.background_stroke_width` instead when
+        // `ch.enable_background_stroke_width` is set.
+        var stroke_width = get_channel_stroke_width(channel_index, label_index);
+        if (!is_selected && ch.enable_background_stroke_width == 1u) {
+            stroke_width = ch.background_stroke_width;
+        }
+
         var color: vec3<f32>;
         var alpha: f32;
         if (ch.stroked == 1u && bitmask_is_edge(
@@ -273,13 +305,25 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
             raw_label,
             img_w,
             img_h,
-            bitmask_stroke_width_texels(get_channel_stroke_width(channel_index, label_index))
+            bitmask_stroke_width_texels(stroke_width)
         )) {
             color = get_channel_stroke_color(channel_index, label_index);
+            if (!is_selected && ch.enable_background_stroke_color == 1u) {
+                color = ch.background_stroke_color.rgb;
+            }
             alpha = get_channel_stroke_opacity(channel_index, label_index);
+            if (!is_selected && ch.enable_background_stroke_opacity == 1u) {
+                alpha = ch.background_stroke_opacity;
+            }
         } else if (ch.filled == 1u) {
             color = get_channel_fill_color(channel_index, label_index);
+            if (!is_selected && ch.enable_background_fill_color == 1u) {
+                color = ch.background_fill_color.rgb;
+            }
             alpha = get_channel_fill_opacity(channel_index, label_index);
+            if (!is_selected && ch.enable_background_fill_opacity == 1u) {
+                alpha = ch.background_fill_opacity;
+            }
         } else {
             continue;
         }

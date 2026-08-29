@@ -9,7 +9,7 @@ use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
+    AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
 use crate::positioning::{get_point_position, get_point_size};
 use crate::numeric_data::NumericData;
@@ -20,6 +20,7 @@ use crate::scalar_mode::{
     cpu_fill_opacity, cpu_stroke_opacity, cpu_stroke_width, prepare_fill_opacity_mode,
     prepare_stroke_opacity_mode, prepare_stroke_width_mode,
 };
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
@@ -76,6 +77,44 @@ pub struct RectLayerParams {
     // TODO: accept x/y/width/height instead?
     pub position_x1: NumericData,
     pub position_y1: NumericData,
+
+    // Criteria AND-ed together to determine the selected ("foreground") /
+    // filtered-in ("background") set of rects. An empty list means every
+    // rect is included.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    // Fill/stroke colors used for filter-included, but selection-excluded
+    // ("background") rects, in place of `fill_color`/`stroke_color`.
+    pub background_fill_color: Option<(u8, u8, u8)>,
+    pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    // Fill/stroke opacity and stroke width used for filter-included, but
+    // selection-excluded ("background") rects, in place of
+    // `fill_opacity`/`stroke_opacity`/`stroke_width`. Only applied when the
+    // corresponding `enable_background_*` flag is set AND a value is
+    // provided here; otherwise the rect's normal value is used unchanged
+    // (there is no universal "de-emphasized" default for these, unlike
+    // `background_fill_color`/`background_stroke_color`, which fall back to
+    // `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+    pub background_stroke_opacity: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    // When true, "background" rects have the fill/stroke color specified via
+    // `background_fill_color`/`background_stroke_color`.
+    pub enable_background_fill_color: bool,
+    pub enable_background_stroke_color: bool,
+    // When true, "background" rects have the fill/stroke opacity specified
+    // via `background_fill_opacity`/`background_stroke_opacity`.
+    pub enable_background_fill_opacity: bool,
+    pub enable_background_stroke_opacity: bool,
+    // When true, "background" rects have the stroke width specified via
+    // `background_stroke_width`. Setting this (with a non-None
+    // `background_stroke_width`) draws a border for background rects even
+    // when the layer-level `stroke_width` is `None` (i.e. the foreground
+    // rects have no border).
+    pub enable_background_stroke_width: bool,
 }
 
 impl Default for RectLayerParams {
@@ -96,6 +135,18 @@ impl Default for RectLayerParams {
             position_y0: NumericData::Float32(Arc::new(vec![])),
             position_x1: NumericData::Float32(Arc::new(vec![])),
             position_y1: NumericData::Float32(Arc::new(vec![])),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
+            background_stroke_color: None,
+            background_fill_opacity: None,
+            background_stroke_opacity: None,
+            background_stroke_width: None,
+            enable_background_fill_color: true,
+            enable_background_stroke_color: true,
+            enable_background_fill_opacity: false,
+            enable_background_stroke_opacity: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -130,6 +181,12 @@ impl RectLayer {
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
             stroke_opacity.validate_len(n);
+        }
+        for selection_criteria in &layer_params.selection_criteria {
+            selection_criteria.validate_len(n);
+        }
+        for filtering_criteria in &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(n);
         }
         for (name, len) in [
             ("position_y0", layer_params.position_y0.len()),
@@ -188,6 +245,16 @@ struct RectLayerUniforms {
     stroke_color_reverse: u32,        // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,        // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,              // stroke opacity (UniformOpacity fallback)
+    background_fill_color: Vec4,   // rgba fill color used for filter-included, selection-excluded ("background") rects
+    background_stroke_color: Vec4, // rgba stroke color used for filter-included, selection-excluded ("background") rects
+    background_fill_opacity: f32,   // fill opacity used for "background" rects, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" rects, when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" rects, when enable_background_stroke_width is set
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -245,6 +312,18 @@ impl DrawToRasterGpu for RectLayer {
 
         let stroke_opacity_binding_start = fill_opacity_binding_start + fill_opacity.texture.is_some() as u32;
         let stroke_opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), stroke_opacity_binding_start);
+
+        // Filtering and selection criteria (fragment stage only: filter-excluded
+        // rects are discarded, selection-excluded rects are re-colored with
+        // `background_fill_color`/`background_stroke_color`; see fs_main).
+        let filter_binding_start = stroke_opacity_binding_start + stroke_opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.textures.len() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, &layer_params.selection_criteria, "is_selected_in", "select_data", select_binding_start,
+        );
 
         // Note: WebGPU's shading language (WGSL) treats matrices as column-major.
         let camera_view = view_params.camera_view.unwrap_or([
@@ -329,6 +408,19 @@ impl DrawToRasterGpu for RectLayer {
             stroke_color_reverse: stroke_color.reverse,
             stroke_color_domain: Vec2::from_array(stroke_color.domain),
             stroke_opacity: stroke_opacity.static_value,
+            background_fill_color: background_color_vec4(layer_params.background_fill_color),
+            background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
+            background_fill_opacity: layer_params.background_fill_opacity.unwrap_or(0.0),
+            background_stroke_opacity: layer_params.background_stroke_opacity.unwrap_or(0.0),
+            background_stroke_width: layer_params.background_stroke_width.unwrap_or(0.0),
+            enable_background_fill_color: layer_params.enable_background_fill_color as u32,
+            enable_background_stroke_color: layer_params.enable_background_stroke_color as u32,
+            enable_background_fill_opacity: (layer_params.enable_background_fill_opacity
+                && layer_params.background_fill_opacity.is_some()) as u32,
+            enable_background_stroke_opacity: (layer_params.enable_background_stroke_opacity
+                && layer_params.background_stroke_opacity.is_some()) as u32,
+            enable_background_stroke_width: (layer_params.enable_background_stroke_width
+                && layer_params.background_stroke_width.is_some()) as u32,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -473,6 +565,38 @@ impl DrawToRasterGpu for RectLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), one per
+        // criteria that carries per-element data.
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start + i as u32,
+                // Visible to both stages: the fragment stage uses `is_selected_in`
+                // to re-color/re-opacify background rects, while the vertex
+                // stage also needs it to resolve `background_stroke_width`
+                // (which affects vertex-stage geometry: the SVG-style stroke
+                // expands the quad outward).
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("RectLayer BGL"),
             entries: &bgl_entries,
@@ -530,6 +654,18 @@ impl DrawToRasterGpu for RectLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("RectLayer BG"),
             layout: &bind_group_layout,
@@ -557,6 +693,11 @@ impl DrawToRasterGpu for RectLayer {
             .define("stroke_width_module", &width.wgsl)
             .define("fill_opacity_module", &fill_opacity.wgsl)
             .define("stroke_opacity_module", &stroke_opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect_layer.wgsl"),
@@ -723,6 +864,16 @@ impl DrawToSvg for RectLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
         for i in 0..n {
+            // Filter-excluded rects are not rendered at all.
+            if !cpu_is_included(&layer_params.filtering_criteria, i) {
+                continue;
+            }
+            // Filter-included but selection-excluded ("background") rects still
+            // render, but de-emphasized with `background_fill_color`/
+            // `background_stroke_color` in place of their configured fill/stroke
+            // color.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, i);
+
             let source_x = layer_params.position_x0.get_f32(i);
             let source_y = layer_params.position_y0.get_f32(i);
             let target_x = layer_params.position_x1.get_f32(i);
@@ -757,15 +908,34 @@ impl DrawToSvg for RectLayer {
             let rect_height = (target_y_px - source_y_px).abs();
 
             // Fill: color + opacity, matching the GPU fill color/opacity modes.
-            let fill = Some(TwoColor::Rgb(cpu_fill_color(
-                layer_params.fill_color.as_ref(), i, fill_quant_domain,
-            )));
-            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i) as f64;
+            // Background rects use `background_fill_color`/`background_fill_opacity`
+            // instead, when the corresponding `enable_background_*` flag is set.
+            let fill = Some(TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
+                cpu_fill_color(layer_params.fill_color.as_ref(), i, fill_quant_domain)
+            } else {
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            }));
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), i),
+            ) as f64;
 
-            // Stroke: only drawn when a stroke width is configured. Uses the
-            // stroke color mode, opacity and per-rect width.
-            let (stroke, stroke_opacity, stroke_width_px) = if layer_params.stroke_width.is_some() {
-                let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), i);
+            // Stroke: drawn when a stroke width is configured at the layer level,
+            // OR when this is a background rect with a `background_stroke_width`
+            // override enabled (which can draw a border for background rects even
+            // when foreground rects have none).
+            let background_stroke_width_override = if !is_selected && layer_params.enable_background_stroke_width {
+                layer_params.background_stroke_width
+            } else {
+                None
+            };
+            let (stroke, stroke_opacity, stroke_width_px) = if layer_params.stroke_width.is_some()
+                || background_stroke_width_override.is_some()
+            {
+                let width_value = background_stroke_width_override
+                    .unwrap_or_else(|| cpu_stroke_width(layer_params.stroke_width.as_ref(), i));
                 let width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
                     let (sx, sy) = get_point_size(
                         width_value,
@@ -789,10 +959,17 @@ impl DrawToSvg for RectLayer {
                     width_value
                 };
                 (
-                    Some(TwoColor::Rgb(cpu_fill_color(
-                        layer_params.stroke_color.as_ref(), i, stroke_quant_domain,
-                    ))),
-                    cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i) as f64,
+                    Some(TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
+                        cpu_fill_color(layer_params.stroke_color.as_ref(), i, stroke_quant_domain)
+                    } else {
+                        layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+                    })),
+                    resolve_background_scalar(
+                        is_selected,
+                        layer_params.enable_background_stroke_opacity,
+                        layer_params.background_stroke_opacity,
+                        cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), i),
+                    ) as f64,
                     width_px as f64,
                 )
             } else {
@@ -867,6 +1044,10 @@ impl PickableLayer for RectLayer {
         // last (topmost, since later instances draw on top) match.
         let mut hit_idx: Option<usize> = None;
         for i in 0..n {
+            // Filter-excluded rects are ignored in picking.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
+                continue;
+            }
             let x0 = self.layer_params.position_x0.get_f32(i);
             let y0 = self.layer_params.position_y0.get_f32(i);
             let x1 = self.layer_params.position_x1.get_f32(i);

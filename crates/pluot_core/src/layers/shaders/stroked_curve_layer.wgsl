@@ -48,6 +48,12 @@ struct StrokedCurveLayerUniforms {
     stroke_color_reverse: u32,      // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,
+    background_stroke_color: vec4<f32>, // rgba stroke color used when filter-included, but selection-excluded ("background")
+    background_stroke_opacity: f32, // stroke opacity used for "background" when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" when enable_background_stroke_width is set
+    enable_background_stroke_color: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 }
 
 // Per-segment metadata: indices into the flat points buffer.
@@ -78,6 +84,19 @@ struct SegmentEntry {
 // `fn get_stroke_opacity(poly_index: u32) -> f32`. Assembled per opacity mode by
 // `crate::scalar_mode::prepare_stroke_opacity_mode`.
 {{stroke_opacity_module}}
+
+// Filtering module: an optional value texture plus
+// `fn is_filtered_in(poly_index: u32) -> bool`. The shape is not rendered at
+// all when filter-excluded (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(poly_index: u32) -> bool`. The shape is de-emphasized
+// with `u.background_stroke_color` rather than not rendered when
+// filter-included but selection-excluded (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
@@ -175,8 +194,14 @@ fn vs_main(
     var pD = ndc_to_px(project_point(points[u32(clamp(D_idx, poly_start, poly_end))], aspect));
 
     // Stroke width (uniform or instanced; a single shape always resolves
-    // element 0), resolved to pixels here.
-    let stroke_width = get_stroke_width(0u);
+    // element 0), resolved to pixels here. Background points use
+    // `background_stroke_width` instead when `enable_background_stroke_width`
+    // is set.
+    let is_selected = is_selected_in(0u);
+    var stroke_width = get_stroke_width(0u);
+    if (!is_selected && u.enable_background_stroke_width == 1u) {
+        stroke_width = u.background_stroke_width;
+    }
     var stroke_width_px = stroke_width;
     if (u.stroke_width_unit_mode == 1u) {
         // Data-coordinate width: transform the width delta through the same
@@ -309,9 +334,26 @@ fn vs_main(
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
 ) -> FSOut {
+    // The shape is not rendered at all when filter-excluded.
+    if (!is_filtered_in(0u)) {
+        discard;
+    }
+
     // A single shape shares one color / opacity, so this always resolves element 0.
-    let out_color = get_stroke_color(0u);
-    let stroke_opacity = get_stroke_opacity(0u);
+    //
+    // Filter-included but selection-excluded ("background") shapes still
+    // render, but may be de-emphasized in place of the configured stroke color
+    // and opacity — each only overridden when its `enable_background_*` flag
+    // is set (see `StrokedCurveLayerParams`).
+    let is_selected = is_selected_in(0u);
+    var out_color = get_stroke_color(0u);
+    if (!is_selected && u.enable_background_stroke_color == 1u) {
+        out_color = u.background_stroke_color.rgb;
+    }
+    var stroke_opacity = get_stroke_opacity(0u);
+    if (!is_selected && u.enable_background_stroke_opacity == 1u) {
+        stroke_opacity = u.background_stroke_opacity;
+    }
 
     var out: FSOut;
     out.color = vec4<f32>(out_color, stroke_opacity);

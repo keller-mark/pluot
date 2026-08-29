@@ -8,8 +8,9 @@ use test_utils::render_and_check_both_snapshots;
 use pluot::{
     RenderParams, LayerParams,
     AspectRatioMode, UnitsMode, MarginParams,
-    CategoricalCustomParams, ColorMode, PolygonLayerParams, NumericData,
+    CategoricalColormap, CategoricalParams, CategoricalCustomParams, ColorMode, PolygonLayerParams, NumericData,
     SizeMode, OpacityMode, InstancedSizeParams, InstancedOpacityParams,
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
 };
 
 // For each test suite we check:
@@ -45,6 +46,7 @@ fn triangle_data() -> PolygonLayerParams {
         stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
         fill_color: Some(ColorMode::UniformRgb((0, 0, 255))),
         fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+        ..Default::default()
     }
 }
 
@@ -654,4 +656,447 @@ async fn test_polygon_layer_square_contain_normalized_units_model_matrix_scale()
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_normalized_units_model_matrix_scale").await;
+}
+
+// ── Filtering and selection criteria ─────────────────────────────────────────
+// Filter-excluded polygons are not rendered at all; filter-included but
+// selection-excluded ("background") polygons still render, but re-colored
+// with `background_fill_color`/`background_stroke_color` in place of their
+// configured fill/stroke color.
+
+// Helper: `two_triangles_data()`'s two triangles, stroked and filled, with a
+// categorical fill color (one per polygon) so filtering/selection subsets
+// are easy to distinguish.
+fn criteria_polygons_data() -> PolygonLayerParams {
+    PolygonLayerParams {
+        stroked: true,
+        filled: true,
+        stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+        fill_color: Some(ColorMode::Categorical(CategoricalParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1])),
+            colormap: CategoricalColormap::Tableau10,
+        })),
+        ..two_triangles_data()
+    }
+}
+
+// Categorical filtering: only polygons whose category code is in
+// `included_codes` are rendered at all. Reuses the same codes as
+// `fill_color` (0 and 1, one per triangle), including only code 0, so only
+// the first triangle renders.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_filtering_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_filtering_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list means nothing is included: no
+// polygons render at all (distinct from an empty `filtering_criteria` list,
+// which includes everything).
+#[tokio::test]
+async fn test_polygon_layer_square_contain_filtering_categorical_empty_excludes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_filtering_categorical_empty_excludes_all").await;
+}
+
+// Quantitative filtering with both a min and a max bound: a per-polygon value
+// column of [0, 1] filtered to the inclusive range [0, 0] includes only the
+// first triangle.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_filtering_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+                min: Some(0.0),
+                max: Some(0.0),
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_filtering_quantitative_range").await;
+}
+
+// Quantitative filtering with only a `min` bound: `max` is omitted, meaning
+// +infinity, so only the second triangle (value 1) is included.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_filtering_quantitative_min_only() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+                min: Some(1.0),
+                max: None,
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_filtering_quantitative_min_only").await;
+}
+
+// Categorical selection: unlike filtering, selection-excluded polygons still
+// render (both triangles are visible), but the polygon whose code is not in
+// `included_codes` (1) is re-colored with `background_fill_color`/
+// `background_stroke_color` instead of its configured fill/stroke color.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_categorical_subset() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_categorical_subset").await;
+}
+
+// An explicit empty `included_codes` list for selection means nothing is
+// selected: both polygons still render (filtering_criteria is empty), but
+// every one is de-emphasized with `background_fill_color`/
+// `background_stroke_color`.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_categorical_empty_deemphasizes_all() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_categorical_empty_deemphasizes_all").await;
+}
+
+// Quantitative selection: a value column of [0, 1] selected to the range
+// [1, 1] renders the second triangle with its normal fill/stroke color and
+// de-emphasizes the first with `background_fill_color`/
+// `background_stroke_color`.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_quantitative_range() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
+                min: Some(1.0),
+                max: Some(1.0),
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_quantitative_range").await;
+}
+
+// Selection criteria may be entirely orthogonal to filtering criteria: here
+// filtering uses the same categorical codes as `fill_color`, including both
+// polygons, while selection uses an unrelated quantitative column. The first
+// triangle (value 5) is filter-included but selection-excluded (background
+// color); the second (value 25) is both filter- and selection-included
+// (normal color).
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_orthogonal_to_filtering() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0, 1],
+            })],
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![5.0, 25.0])),
+                min: Some(10.0),
+                max: None,
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_orthogonal_to_filtering").await;
+}
+
+// `filtering_criteria` is a list of criteria AND-ed together: a polygon must
+// satisfy every one to be included. Here a categorical criteria (codes 0,1,
+// including both) is combined with a quantitative criteria (values 0,25,
+// min 10 — excludes the first triangle). Only the second triangle satisfies
+// both, so only it renders.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_filtering_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            filtering_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                    included_codes: vec![0, 1],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 25.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_filtering_multiple_criteria_and").await;
+}
+
+// `selection_criteria` AND-ing mirrors `filtering_criteria`: a categorical
+// criteria (included_codes 0,1) combined with a quantitative criteria (min
+// 10, excluding the first triangle) leaves only the second triangle
+// selected (normal color); the first still renders (no filtering), but
+// de-emphasized with `background_fill_color`/`background_stroke_color`.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_multiple_criteria_and() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            selection_criteria: vec![
+                EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                    included_codes: vec![0, 1],
+                }),
+                EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: NumericData::Float32(Arc::new(vec![0.0, 25.0])),
+                    min: Some(10.0),
+                    max: None,
+                }),
+            ],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_multiple_criteria_and").await;
+}
+
+// Custom background fill/stroke colors: the first triangle is selected
+// (normal categorical fill + black stroke); the second is selection-excluded
+// and rendered with a red background fill and a green background stroke
+// instead.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_custom_background_colors() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            background_fill_color: Some((255, 0, 0)),
+            background_stroke_color: Some((0, 255, 0)),
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_custom_background_colors").await;
+}
+
+// ── Background fill/stroke opacity and stroke width overrides ───────────────
+// `enable_background_*` flags gate whether a filter-included, selection-
+// excluded ("background") polygon uses the corresponding `background_*`
+// override in place of its normal fill/stroke color, opacity, or stroke
+// width. Unlike `background_fill_color`/`background_stroke_color` (which
+// fall back to a default gray when unset), the opacity/width overrides are a
+// no-op when left `None`, even if their `enable_background_*` flag is set.
+// All tests below select only code 0 (the first triangle), leaving the
+// second triangle selection-excluded ("background").
+
+// `enable_background_fill_color: false` disables the (otherwise default-on)
+// fill-color de-emphasis: both triangles keep their normal categorical fill
+// color even though the second is selection-excluded.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_disable_background_fill_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            enable_background_fill_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_disable_background_fill_color").await;
+}
+
+// `enable_background_stroke_color: false` disables stroke-color
+// de-emphasis: every stroke stays black even though
+// `background_stroke_color` is set to green and the second triangle is
+// selection-excluded.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_disable_background_stroke_color() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            background_stroke_color: Some((0, 255, 0)),
+            enable_background_stroke_color: false,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_disable_background_stroke_color").await;
+}
+
+// `background_fill_opacity` + `enable_background_fill_opacity`: the
+// selection-excluded second triangle renders at 0.2 fill opacity instead of
+// the default 1.0, while the selected first triangle stays fully opaque.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_background_fill_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            enable_background_fill_color: false,
+            background_fill_opacity: Some(0.2),
+            enable_background_fill_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_background_fill_opacity").await;
+}
+
+// `background_stroke_opacity` + `enable_background_stroke_opacity`: mirrors
+// the fill-opacity test above, but for the stroke.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_background_stroke_opacity() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            enable_background_fill_color: false,
+            enable_background_stroke_color: false,
+            background_stroke_opacity: Some(0.15),
+            enable_background_stroke_opacity: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_background_stroke_opacity").await;
+}
+
+// `background_stroke_width` + `enable_background_stroke_width`: the
+// selection-excluded second triangle renders with a much thicker outline
+// than the layer's default 1px `stroke_width`.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_background_stroke_width() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            enable_background_fill_color: false,
+            background_stroke_width: Some(6.0),
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_background_stroke_width").await;
+}
+
+// Enabling a background override with its value left `None` is a no-op
+// (falls back to the normal foreground value), unlike
+// `background_fill_color`/`background_stroke_color`, which fall back to a
+// default gray. This should render identically to two normal,
+// undifferentiated triangles despite selection excluding the second and
+// every scalar override flag being on.
+#[tokio::test]
+async fn test_polygon_layer_square_contain_selection_background_overrides_none_value_is_noop() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(PolygonLayerParams {
+            enable_background_fill_color: false,
+            enable_background_fill_opacity: true,
+            enable_background_stroke_width: true,
+            selection_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1])),
+                included_codes: vec![0],
+            })],
+            ..criteria_polygons_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_polygon_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
 }

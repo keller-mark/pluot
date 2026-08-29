@@ -27,6 +27,8 @@ struct TextLayerUniforms {
     fill_color: vec4<f32>, // rgba color used by the UniformRgb mode
     fill_color_reverse: u32, // 1 = reverse the quantitative colormap
     fill_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
+    background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") text elements
+    enable_background_fill_color: u32,
 };
 
 struct VSOut {
@@ -48,6 +50,19 @@ struct FSOut {
 // Assembled per color mode by `crate::color_mode::prepare_color_mode`. Here
 // "instance" means text element (see `element_index` below), not glyph.
 {{color_module}}
+
+// Filtering module: an optional per-element codes/values texture plus
+// `fn is_filtered_in(element_index: u32) -> bool`. Filter-excluded text
+// elements are not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(element_index: u32) -> bool`. Filter-included but
+// selection-excluded text elements are de-emphasized with
+// `u.background_fill_color` rather than not rendered (see fs_main). Assembled
+// by `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
 
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
@@ -250,11 +265,24 @@ fn fs_main(
     @location(0) uv: vec2<f32>,
     @location(1) @interpolate(flat) element_index: u32,
 ) -> FSOut {
+    // Filter-excluded text elements are not rendered at all: not as glyphs,
+    // not in picking, not in any visual encoding.
+    if (!is_filtered_in(element_index)) {
+        discard;
+    }
+
     let a = textureSample(glyph_tex, glyph_sampler, uv).r;
     // The color module's get_fill_color resolves the color for the active
     // color mode (static, instanced RGB, categorical or quantitative), keyed
     // by the owning text element's index (not the glyph instance).
-    let out_color = get_fill_color(element_index);
+    //
+    // Filter-included but selection-excluded ("background") text elements
+    // still render, but may be de-emphasized in place of their configured
+    // fill color, only when `enable_background_fill_color` is set.
+    var out_color = get_fill_color(element_index);
+    if (!is_selected_in(element_index) && u.enable_background_fill_color == 1u) {
+        out_color = u.background_fill_color.rgb;
+    }
     var out: FSOut;
     out.color = vec4<f32>(out_color, a);
     return out;

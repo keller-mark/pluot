@@ -205,6 +205,7 @@ impl AxisBandLayer {
             source_position_y: NumericData::Float32(Arc::new(line_source_position_y)),
             target_position_x: NumericData::Float32(Arc::new(line_target_position_x)),
             target_position_y: NumericData::Float32(Arc::new(line_target_position_y)),
+            ..Default::default()
         };
         sublayers.push(Box::new(LineLayer::new(
             self.view_params.clone(),
@@ -234,6 +235,7 @@ impl AxisBandLayer {
                 position_x: NumericData::Float32(Arc::new(text_position_x)),
                 position_y: NumericData::Float32(Arc::new(text_position_y)),
                 text_vec: Arc::new(text_strings),
+                ..Default::default()
             };
             sublayers.push(Box::new(TextLayer::new(
                 self.view_params.clone(),

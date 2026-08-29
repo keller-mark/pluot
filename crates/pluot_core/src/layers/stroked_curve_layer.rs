@@ -16,11 +16,12 @@ use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
@@ -54,6 +55,38 @@ pub struct StrokedCurveLayerParams {
     /// single (length-1) value.
     pub stroke_color: Option<ColorMode>,
     pub stroke_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine whether the single shape is
+    /// selected ("foreground") / filtered-in ("background"). `StrokedCurveLayer`
+    /// renders a single shape, so modes carrying `NumericData` are expected to
+    /// supply a single (length-1) value. An empty list means the shape is
+    /// included.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Stroke color used when the shape is filter-included, but
+    /// selection-excluded ("background"), in place of `stroke_color`.
+    pub background_stroke_color: Option<(u8, u8, u8)>,
+
+    /// These layer parameters allow modification of the "background" visual
+    /// encoding. Rather than only supporting an alternative stroke color, a
+    /// user may instead (or additionally) use opacity or stroke width. Each is
+    /// only applied when its corresponding `enable_background_*` flag is set
+    /// AND a value is provided here; otherwise the shape's normal stroke
+    /// opacity/width is used unchanged (there is no universal "de-emphasized"
+    /// default for these, unlike `background_stroke_color`, which falls back
+    /// to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_stroke_opacity: Option<f32>,
+    pub background_stroke_width: Option<f32>,
+
+    // When true, a "background" shape has the stroke color specified via `background_stroke_color`.
+    pub enable_background_stroke_color: bool,
+    // When true, a "background" shape has the stroke opacity specified via `background_stroke_opacity`.
+    pub enable_background_stroke_opacity: bool,
+    // When true, a "background" shape has the stroke width specified via `background_stroke_width`.
+    // Note: `StrokedCurveLayer` renders a single shape, so this applies uniformly
+    // (see the `0u`-indexed `is_selected_in`/`get_stroke_width` calls in the shader).
+    pub enable_background_stroke_width: bool,
 }
 
 impl Default for StrokedCurveLayerParams {
@@ -70,6 +103,14 @@ impl Default for StrokedCurveLayerParams {
             subdivisions: 32,
             stroke_color: None,
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_stroke_color: None,
+            background_stroke_opacity: None,
+            background_stroke_width: None,
+            enable_background_stroke_color: true,
+            enable_background_stroke_opacity: false,
+            enable_background_stroke_width: false,
         }
     }
 }
@@ -95,6 +136,12 @@ impl StrokedCurveLayer {
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
             stroke_opacity.validate_len(1);
+        }
+        for selection_criteria in &layer_params.selection_criteria {
+            selection_criteria.validate_len(1);
+        }
+        for filtering_criteria in &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(1);
         }
 
         // TODO: move this logic to the prepare() function?
@@ -131,6 +178,14 @@ struct StrokedCurveLayerUniforms {
     stroke_color_reverse: u32,   // 1 = reverse the quantitative colormap
     stroke_color_domain: Vec2,   // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32,
+    background_stroke_color: Vec4, // rgba stroke color used when filter-included, but selection-excluded ("background")
+    background_stroke_opacity: f32, // stroke opacity used for "background" when enable_background_stroke_opacity is set
+    background_stroke_width: f32,   // stroke width used for "background" when enable_background_stroke_width is set
+    // Each flag is pre-resolved on the CPU to also require the corresponding
+    // background_* param to be non-default, so the shader only checks `== 1u`.
+    enable_background_stroke_color: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_stroke_width: u32,
 
     // TODO: define a stroke_linecap parameter, with either None or Round options,
     // and add support for this configurable property in both the Raster and SVG drawing cases.
@@ -213,6 +268,20 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         let opacity_binding_start = width_binding_start + width.texture.is_some() as u32;
         let opacity = prepare_stroke_opacity_mode(device, queue, layer_params.stroke_opacity.as_ref(), opacity_binding_start);
 
+        // Filtering and selection criteria (fragment stage only: the shape is
+        // discarded when filter-excluded, and re-colored with
+        // `background_stroke_color` when selection-excluded; see fs_main).
+        // `StrokedCurveLayer` renders a single shape, so the shader always
+        // resolves element 0.
+        let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
+        let filtering = prepare_emphasis_criteria(
+            device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
+        );
+        let select_binding_start = filter_binding_start + filtering.textures.len() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, &layer_params.selection_criteria, "is_selected_in", "select_data", select_binding_start,
+        );
+
         let mut bgl_entries = vec![
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -285,6 +354,37 @@ impl DrawToRasterGpu for StrokedCurveLayer {
                 count: None,
             });
         }
+        // Filtering/selection codes or values textures (fragment stage only;
+        // see `is_filtered_in`/`is_selected_in` in the shader), one per
+        // criteria that carries per-element data.
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: filter_binding_start + i as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bgl_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: select_binding_start + i as u32,
+                // Visible to both stages: the fragment stage uses `is_selected_in`
+                // to re-color/re-opacify the background shape, while the vertex
+                // stage also needs it to resolve `background_stroke_width` (which
+                // affects vertex-stage geometry).
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("StrokedCurve BGL"),
             entries: &bgl_entries,
@@ -304,6 +404,11 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             // texture binding when instanced).
             .define("stroke_width_module", &width.wgsl)
             .define("stroke_opacity_module", &opacity.wgsl)
+            // Filtering/selection specialization: each contributes its
+            // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+            // texture binding when the criteria carries per-element data).
+            .define("filtering_module", &filtering.wgsl)
+            .define("selection_module", &selection.wgsl)
             .build();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stroked_curve_layer.wgsl"),
@@ -375,6 +480,14 @@ impl DrawToRasterGpu for StrokedCurveLayer {
             stroke_color_reverse: color.reverse,
             stroke_color_domain: Vec2::from_array(color.domain),
             stroke_opacity: opacity.static_value,
+            background_stroke_color: background_color_vec4(layer_params.background_stroke_color),
+            background_stroke_opacity: layer_params.background_stroke_opacity.unwrap_or(0.0),
+            background_stroke_width: layer_params.background_stroke_width.unwrap_or(0.0),
+            enable_background_stroke_color: layer_params.enable_background_stroke_color as u32,
+            enable_background_stroke_opacity: (layer_params.enable_background_stroke_opacity
+                && layer_params.background_stroke_opacity.is_some()) as u32,
+            enable_background_stroke_width: (layer_params.enable_background_stroke_width
+                && layer_params.background_stroke_width.is_some()) as u32,
         };
         let mut ub = UniformBuffer::new(Vec::<u8>::new());
         ub.write(&uniform_struct).unwrap();
@@ -438,6 +551,18 @@ impl DrawToRasterGpu for StrokedCurveLayer {
                 resource: wgpu::BindingResource::TextureView(&tex.view),
             });
         }
+        for (i, tex) in filtering.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: filter_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
+        for (i, tex) in selection.textures.iter().enumerate() {
+            bg_entries.push(wgpu::BindGroupEntry {
+                binding: select_binding_start + i as u32,
+                resource: wgpu::BindingResource::TextureView(&tex.view),
+            });
+        }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("StrokedCurve BG"),
             layout: &bgl,
@@ -493,16 +618,39 @@ impl DrawToSvg for StrokedCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
+        // Filter-excluded shapes are not rendered at all.
+        let is_filtered_in = cpu_is_included(&layer_params.filtering_criteria, 0);
+        // Filter-included but selection-excluded ("background") shapes still
+        // render, but de-emphasized with `background_stroke_color` in place of
+        // the configured stroke color.
+        let is_selected = cpu_is_included(&layer_params.selection_criteria, 0);
+
         // A single shape uses one color, resolved from element 0.
         let quant_domain = match layer_params.stroke_color.as_ref() {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let stroke = TwoColor::Rgb(cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain));
+        let stroke = TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
+            cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain)
+        } else {
+            layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+        });
 
         // A single shape uses one width / opacity, resolved from element 0.
-        let width_value = cpu_stroke_width(layer_params.stroke_width.as_ref(), 0);
-        let stroke_opacity = cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0) as f64;
+        // The background overrides (when enabled) replace these before the
+        // width's unit conversion below.
+        let width_value = resolve_background_scalar(
+            is_selected,
+            layer_params.enable_background_stroke_width,
+            layer_params.background_stroke_width,
+            cpu_stroke_width(layer_params.stroke_width.as_ref(), 0),
+        );
+        let stroke_opacity = resolve_background_scalar(
+            is_selected,
+            layer_params.enable_background_stroke_opacity,
+            layer_params.background_stroke_opacity,
+            cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0),
+        ) as f64;
 
         // Stroke width in pixels. In pixel mode it is used directly; in data mode
         // it is transformed through the same pipeline as positions (with w=0, so
@@ -532,7 +680,7 @@ impl DrawToSvg for StrokedCurveLayer {
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
         for subpath in subpaths {
-            if subpath.is_empty() {
+            if !is_filtered_in || subpath.is_empty() {
                 continue;
             }
             let mut d = String::new();
@@ -584,6 +732,11 @@ impl PickableLayer for StrokedCurveLayer {
         if self.layer_params.data_unit_mode_x != UnitsMode::Data
             || self.layer_params.data_unit_mode_y != UnitsMode::Data
         {
+            return None;
+        }
+
+        // Filter-excluded shapes are ignored in picking.
+        if !cpu_is_included(&self.layer_params.filtering_criteria, 0) {
             return None;
         }
 

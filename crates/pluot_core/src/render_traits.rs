@@ -338,6 +338,70 @@ impl ColorMode {
     }
 }
 
+/// Filtering or selection criteria for a layer's data items.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"criteria_mode": "Categorical", "criteria_params": {...}}`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "criteria_mode", content = "criteria_params")]
+pub enum EmphasisCriteria {
+    // A categorical column (categories+codes format with NumericData, similar to ColorMode),
+    // along with a set of included categories
+    Categorical(CategoricalCriteriaParams),
+
+    // A quantitative column (NumericData),
+    // along with min and/or max (included values within this range) - omitted min/max implicitly means -inf/+inf.
+    Quantitative(QuantitativeCriteriaParams),
+}
+
+impl EmphasisCriteria {
+    /// Panics if the per-element [`NumericData`] this criteria is defined
+    /// over has a length that doesn't match `expected` (the layer's element
+    /// count).
+    pub fn validate_len(&self, expected: usize) {
+        match self {
+            EmphasisCriteria::Categorical(params) => {
+                assert_eq!(
+                    params.codes.len(), expected,
+                    "EmphasisCriteria codes has length {} but layer has {expected} elements",
+                    params.codes.len(),
+                );
+            }
+            EmphasisCriteria::Quantitative(params) => {
+                assert_eq!(
+                    params.values.len(), expected,
+                    "EmphasisCriteria values has length {} but layer has {expected} elements",
+                    params.values.len(),
+                );
+            }
+        }
+    }
+}
+
+/// A categorical column in categories+codes format (one category code per
+/// item, similar to [`ColorMode::Categorical`]), along with the set of
+/// category codes that are included.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CategoricalCriteriaParams {
+    /// A category code per item. Length must be equal to the number of instances.
+    pub codes: NumericData,
+    /// The category codes to include. An explicit empty list means nothing is included.
+    pub included_codes: Vec<i64>,
+}
+
+/// A quantitative column (one value per item), along with the included
+/// range. Omitting `min` or `max` implicitly means -infinity/+infinity in
+/// that direction.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuantitativeCriteriaParams {
+    /// A value per item. Length must be equal to the number of instances.
+    pub values: NumericData,
+    /// Inclusive lower bound of included values. Omitted implies -infinity.
+    pub min: Option<f32>,
+    /// Inclusive upper bound of included values. Omitted implies +infinity.
+    pub max: Option<f32>,
+}
+
 /// Specify the font style: normal, italique, or oblique.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FontStyle {

@@ -15,12 +15,13 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
+use crate::emphasis_mode::{cpu_is_included, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::two::shapes::{TwoColor, TwoElement, TwoGroup, TwoPath};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::wgpu;
@@ -54,6 +55,31 @@ pub struct FilledPolygonLayerParams {
     /// shares one value across all polygons, `InstancedOpacity` supplies one per
     /// polygon. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
+
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of polygons. An empty list means every
+    /// polygon is included.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    /// Fill color used for filter-included, but selection-excluded
+    /// ("background") polygons, in place of `fill_color`.
+    pub background_fill_color: Option<(u8, u8, u8)>,
+
+    /// Fill opacity used for filter-included, but selection-excluded
+    /// ("background") polygons, in place of `fill_opacity`. Only applied when
+    /// `enable_background_fill_opacity` is set AND a value is provided here;
+    /// otherwise the polygon's normal fill opacity is used unchanged (there is
+    /// no universal "de-emphasized" default for this, unlike
+    /// `background_fill_color`, which falls back to `DEFAULT_BACKGROUND_COLOR`).
+    pub background_fill_opacity: Option<f32>,
+
+    /// When true, "background" polygons have the fill color specified via
+    /// `background_fill_color`.
+    pub enable_background_fill_color: bool,
+    /// When true, "background" polygons have the fill opacity specified via
+    /// `background_fill_opacity`.
+    pub enable_background_fill_opacity: bool,
 }
 
 impl Default for FilledPolygonLayerParams {
@@ -68,6 +94,12 @@ impl Default for FilledPolygonLayerParams {
             polygon_offsets: NumericData::Uint32(Arc::new(vec![])),
             fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
+            background_fill_opacity: None,
+            enable_background_fill_color: true,
+            enable_background_fill_opacity: false,
         }
     }
 }
@@ -126,6 +158,12 @@ impl DrawToRasterGpu for FilledPolygonLayer {
                 vertex_color_index: self.vertex_color_index.clone(),
                 fill_color: self.layer_params.fill_color.clone(),
                 fill_opacity: self.layer_params.fill_opacity.clone(),
+                selection_criteria: self.layer_params.selection_criteria.clone(),
+                filtering_criteria: self.layer_params.filtering_criteria.clone(),
+                background_fill_color: self.layer_params.background_fill_color,
+                background_fill_opacity: self.layer_params.background_fill_opacity,
+                enable_background_fill_color: self.layer_params.enable_background_fill_color,
+                enable_background_fill_opacity: self.layer_params.enable_background_fill_opacity,
             },
         );
         DrawToRasterGpu::draw(&triangulated, gpu_context, pass).await;
@@ -185,6 +223,15 @@ impl DrawToSvg for FilledPolygonLayer {
             if ring.len() < 3 {
                 continue;
             }
+            // Filter-excluded polygons are not rendered at all.
+            if !cpu_is_included(&layer_params.filtering_criteria, poly_index) {
+                continue;
+            }
+            // Filter-included but selection-excluded ("background") polygons
+            // still render, but de-emphasized with `background_fill_color` in
+            // place of their configured fill color.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, poly_index);
+
             let mut d = String::new();
             for (i, &(x, y)) in ring.iter().enumerate() {
                 let (px, py) = to_px(x, y);
@@ -195,8 +242,17 @@ impl DrawToSvg for FilledPolygonLayer {
                 }
             }
             d.push_str(" Z");
-            let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), poly_index, quant_domain));
-            let fill_opacity = cpu_fill_opacity(layer_params.fill_opacity.as_ref(), poly_index) as f64;
+            let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
+                cpu_fill_color(layer_params.fill_color.as_ref(), poly_index, quant_domain)
+            } else {
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            });
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), poly_index),
+            ) as f64;
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,
@@ -248,6 +304,10 @@ impl PickableLayer for FilledPolygonLayer {
         // the last (topmost, since later polygons draw on top) match.
         let mut hit_idx: Option<usize> = None;
         for (i, ring) in rings.iter().enumerate() {
+            // Filter-excluded polygons are ignored in picking.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
+                continue;
+            }
             if point_in_polygon(cx, cy, ring) {
                 hit_idx = Some(i);
             }

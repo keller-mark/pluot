@@ -80,7 +80,7 @@ impl PreparedLayer for HistogramLayer {
                     p.layer_id.clone(),
                 ];
                 let extent = use_memo_vec_f32(async || {
-                    let (lo, hi) = reduce_extent(gpu_context, extent_data).await;
+                    let (lo, hi) = reduce_extent(gpu_context, extent_data, &[], &[]).await.background;
                     Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
                 }, &extent_deps, self.view_params.cache_enabled)
                 .await
@@ -105,8 +105,11 @@ impl PreparedLayer for HistogramLayer {
                 num_bins,
                 data_min,
                 data_max,
+                &[],
+                &[],
             )
-            .await;
+            .await
+            .background;
             let quantity: Vec<f32> = bin_counts.iter().map(|&c| c as f32).collect();
             Ok::<Vec<f32>, std::convert::Infallible>(quantity)
         }, &cache_deps, self.view_params.cache_enabled)

@@ -8,6 +8,7 @@ pub mod colormaps_quantitative;
 pub mod colormaps_categorical;
 pub mod color_mode;
 pub mod scalar_mode;
+pub mod emphasis_mode;
 mod render;
 pub mod render_script;
 mod render_post;
