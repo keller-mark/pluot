@@ -1,4 +1,11 @@
 
+## 0.1.15
+
+### Patch Changes
+
+- Implement selection and filtering logic for layers. (`@pluot/core`) ([#296](https://github.com/keller-mark/pluot/pull/296))
+
+
 ## 0.1.14
 
 ### Patch Changes
