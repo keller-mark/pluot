@@ -84,6 +84,12 @@ export function Pluot(props) {
     enableTooltip = false,
     onClick: onClickProp = null,
     onHover: onHoverProp = null,
+    isBrushing = null, // When null, the brushing is uncontrolled; long-click to trigger a brushing interaction. When false, do not allow brushing. When true, disable camera zoom/pan, click, and hover/tooltip interactions in the specified brush region; start the rect/lasso drawing on drag interaction within the specified brush region (no long press to trigger).
+    brushDelay = 3000, // Long-click of 3s to trigger a brushing interaction. Only relevant when brushing is uncontrolled (isBrushing is null).
+    brushMode = "xy", // "xy", "x", "y", "lasso"
+    brushRegion = "layer", // "full", "layer", "marginLeft", "marginRight", "marginTop", "marginBottom"
+    onBrush: onBrushProp = null, // Callback called continuously during brushing interactions upon changes to the rect or lasso vertices.
+    onBrushEnd: onBrushEndProp = null, // Callback called upon the end of the brushing interaction (when the user has finished dragging) with the final rect/lasso vertices.
   } = props;
 
   const onClick = typeof onClickProp === 'function' ? onClickProp : identity;
