@@ -86,6 +86,7 @@ export function Pluot(props) {
     onHover: onHoverProp = null,
     isBrushing = null, // When null, the brushing is uncontrolled; long-click to trigger a brushing interaction. When false, do not allow brushing. When true, disable camera zoom/pan, click, and hover/tooltip interactions in the specified brush region; start the rect/lasso drawing on drag interaction within the specified brush region (no long press to trigger).
     brushDelay = 3000, // Long-click of 3s to trigger a brushing interaction. Only relevant when brushing is uncontrolled (isBrushing is null).
+    maybeBrushDelay = 250, // When a user has begun to click-and-hold for this amount of ms, we render a small circle at the current mouse cursor position, and animate the circle "filling" by rendering a wedge (slice of pie) with a larger angle until the wedge fills the whole pie (finishing at the specified brushDelay duration).
     brushMode = "xy", // "xy", "x", "y", "lasso"
     brushRegion = "layer", // "full", "layer", "marginLeft", "marginRight", "marginTop", "marginBottom"
     onBrush: onBrushProp = null, // Callback called continuously during brushing interactions upon changes to the rect or lasso vertices.
