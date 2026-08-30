@@ -11,6 +11,7 @@ import {
   onMouseMove3d, onWheel3d,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
+import { useBrush, BrushOverlay } from "./Brush.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -85,12 +86,16 @@ export function Pluot(props) {
     onClick: onClickProp = null,
     onHover: onHoverProp = null,
     isBrushing = null, // When null, the brushing is uncontrolled; long-click to trigger a brushing interaction. When false, do not allow brushing. When true, disable camera zoom/pan, click, and hover/tooltip interactions in the specified brush region; start the rect/lasso drawing on drag interaction within the specified brush region (no long press to trigger).
-    brushDelay = 3000, // Long-click of 3s to trigger a brushing interaction. Only relevant when brushing is uncontrolled (isBrushing is null).
+    brushDelay = 1500, // Long-click of 3s to trigger a brushing interaction. Only relevant when brushing is uncontrolled (isBrushing is null).
     maybeBrushDelay = 250, // When a user has begun to click-and-hold for this amount of ms, we render a small circle at the current mouse cursor position, and animate the circle "filling" by rendering a wedge (slice of pie) with a larger angle until the wedge fills the whole pie (finishing at the specified brushDelay duration).
-    brushMode = "xy", // "xy", "x", "y", "lasso"
-    brushRegion = "layer", // "full", "layer", "marginLeft", "marginRight", "marginTop", "marginBottom"
+    brushMode = "x", // "xy", "x", "y", "lasso"
+    brushRegion = "full", // "full", "layer", "marginLeft", "marginRight", "marginTop", "marginBottom", "layerWidth", "layerHeight"
+    persistBrush = true, // If the brush is persisted and it was a rect type (xy, x, or y brushMode) then allow the user to adjust the rect after it has been drawn.
+    brushUnitsMode = "Pixels", // "Pixels", "Data", "Normalized"; If "Data" and the brush was persisted, then the drawn brushed rect/polygon should respond to camera interactions. If brushMode was "x" or "y", then the rect only responds along the specified dimension.
+    // If all brush callbacks are null (i.e., not provided and not functions), then do not allow brushing at all.
     onBrush: onBrushProp = null, // Callback called continuously during brushing interactions upon changes to the rect or lasso vertices.
     onBrushEnd: onBrushEndProp = null, // Callback called upon the end of the brushing interaction (when the user has finished dragging) with the final rect/lasso vertices.
+    onBrushClear: onBrushClearProp = null, // Callback called when the user has cleared the brush (e.g., by clicking outside).
   } = props;
 
   const onClick = typeof onClickProp === 'function' ? onClickProp : identity;
@@ -146,6 +151,7 @@ export function Pluot(props) {
   const svgRef = useRef(null);
   const canvasRef = useRef(null);
   const cameraElementRef = useRef(null);
+  const containerElementRef = useRef(null);
 
   const tempButtonRef = useRef(null);
 
@@ -179,7 +185,34 @@ export function Pluot(props) {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
 
+  // Rect/lasso brushing, rendered as an SVG overlay within the brush region.
+  const {
+    blocksEvent: brushBlocksEvent,
+    consumeBrushedClick,
+    overlayProps: brushOverlayProps,
+  } = useBrush({
+    containerRef: containerElementRef,
+    width,
+    height,
+    marginTop,
+    marginRight,
+    marginBottom,
+    marginLeft,
+    isBrushing,
+    brushDelay,
+    maybeBrushDelay,
+    brushMode,
+    brushRegion,
+    onBrush: onBrushProp,
+    onBrushEnd: onBrushEndProp,
+  });
+
   const wheelHandler = useEffectEvent((event) => {
+    if (brushBlocksEvent(event)) {
+      // Prevent the page from scrolling, which is what onWheel would have done.
+      event.preventDefault();
+      return;
+    }
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
     const nextCameraMatrix = onWheel({
         width,
@@ -197,6 +230,9 @@ export function Pluot(props) {
   });
 
   const mouseMoveHandler = useEffectEvent((event) => {
+    if (brushBlocksEvent(event)) {
+      return;
+    }
     const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
     const nextCameraMatrix = onMouseMove({
         width,
@@ -321,7 +357,9 @@ export function Pluot(props) {
       const wasDrag = didDragRef.current;
       dragStartRef.current = null;
       didDragRef.current = false;
-      if (enableClick && !wasDrag) {
+      // A click that ended a brushing interaction should not trigger picking.
+      const wasBrush = consumeBrushedClick();
+      if (enableClick && !wasDrag && !wasBrush && !brushBlocksEvent(event)) {
         pickFrame(event.offsetX, event.offsetY);
       }
     };
@@ -329,6 +367,12 @@ export function Pluot(props) {
 
     // Set up hover handlers for picking, only when the onHover prop is provided.
     const hoverMoveHandler = (event) => {
+      if (brushBlocksEvent(event)) {
+        // Hide any tooltip that was visible before brushing began.
+        throttledHoverFrame.cancel();
+        setHoverInfo(null);
+        return;
+      }
       if (enableTooltip) {
         throttledHoverFrame(event.offsetX, event.offsetY);
       }
@@ -351,7 +395,7 @@ export function Pluot(props) {
       cameraEl.removeEventListener("mousemove", hoverMoveHandler);
       cameraEl.removeEventListener("mouseleave", hoverLeaveHandler);
     };
-  }, [viewMode, enableClick, enableTooltip, throttledHoverFrame]);
+  }, [viewMode, enableClick, enableTooltip, throttledHoverFrame, brushBlocksEvent, consumeBrushedClick]);
 
 
   // The renderFrame callback.
@@ -523,7 +567,7 @@ export function Pluot(props) {
 
   return (
     <>
-      <div style={{ width, height, position: "relative", backgroundColor }}>
+      <div ref={containerElementRef} style={{ width, height, position: "relative", backgroundColor }}>
         {!supportsWebGpu ? (
           <p>{supportsWebGpuMessage}</p>
         ) : null}
@@ -576,6 +620,9 @@ export function Pluot(props) {
             }) : {})}
 
           />
+        )}
+        {isBrushing === false ? null : (
+          <BrushOverlay {...brushOverlayProps} />
         )}
         {hoverInfo ? (
           <div style={hoverStyle}>
