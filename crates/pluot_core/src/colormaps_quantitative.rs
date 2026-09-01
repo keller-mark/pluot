@@ -11,6 +11,8 @@
 // - https://github.com/vitessce/vitessce/blob/main/packages/utils/sets-utils/src/interpolate-colors.js
 // - https://unpkg.com/colormap@2.3.2/colorScale.js
 
+#![allow(clippy::excessive_precision)]
+
 use crate::render_traits::QuantitativeColormap;
 
 type Rgba = [f32; 4];

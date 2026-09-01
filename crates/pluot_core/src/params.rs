@@ -164,6 +164,7 @@ pub struct HttpStoreParams {
 /// A serializable, cross-platform representation of a Zarr store.
 ///
 /// Serializes to `{"store_type": "HttpStore", "store_params": {...}}`
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "store_type", content = "store_params")]
 pub enum ZarrStoreParams {
