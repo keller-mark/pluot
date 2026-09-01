@@ -14,7 +14,6 @@ use zarrs_storage::storage_adapter::sync_to_async::{
 };
 use zarrs_storage::AsyncReadableStorageTraits;
 use resvg::usvg;
-use tiny_skia;
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -614,7 +613,7 @@ async fn main() {
         }
     } else if is_vector {
         // Vector: the render function returns a complete SVG document as UTF-8 bytes.
-        match fs::write(&args.output, &result) {
+        match fs::write(&args.output, result) {
             Ok(_) => {
                 eprintln!(
                     "Wrote SVG output ({} bytes) to {}",

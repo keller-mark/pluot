@@ -183,7 +183,7 @@ pub fn cpu_is_included(criteria: &[EmphasisCriteria], index: usize) -> bool {
         }
         EmphasisCriteria::Quantitative(params) => {
             let value = params.values.get_f32(index);
-            params.min.map_or(true, |min| value >= min) && params.max.map_or(true, |max| value <= max)
+            params.min.is_none_or(|min| value >= min) && params.max.is_none_or(|max| value <= max)
         }
     })
 }

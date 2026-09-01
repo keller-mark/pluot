@@ -151,8 +151,8 @@ impl DrawToRasterGpu for FilledPolygonLayer {
             TriangulatedLayerParams {
                 layer_id: self.layer_params.layer_id.clone(),
                 bounds: self.layer_params.bounds.clone(),
-                data_unit_mode_x: self.layer_params.data_unit_mode_x.clone(),
-                data_unit_mode_y: self.layer_params.data_unit_mode_y.clone(),
+                data_unit_mode_x: self.layer_params.data_unit_mode_x,
+                data_unit_mode_y: self.layer_params.data_unit_mode_y,
                 model_matrix: self.layer_params.model_matrix,
                 vertices: self.fill_vertices.clone(),
                 vertex_color_index: self.vertex_color_index.clone(),
@@ -202,10 +202,10 @@ impl DrawToSvg for FilledPolygonLayer {
                 x, y,
                 layer_w, layer_h,
                 &camera_view,
-                layer_params.data_unit_mode_x.clone(),
-                layer_params.data_unit_mode_y.clone(),
-                view_params.aspect_ratio_mode.clone(),
-                view_params.aspect_ratio_alignment_mode.clone(),
+                layer_params.data_unit_mode_x,
+                layer_params.data_unit_mode_y,
+                view_params.aspect_ratio_mode,
+                view_params.aspect_ratio_alignment_mode,
                 layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
             );
             (px as f64, (layer_h - py) as f64)

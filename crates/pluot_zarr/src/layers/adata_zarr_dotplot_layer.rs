@@ -318,7 +318,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // reflects exactly the range the dots are normalized against in the shader.
         let fill_color_params = QuantitativeParams {
             values: NumericData::Float32(Arc::new(mean_expression_values)),
-            colormap: self.layer_params.cmap.clone(),
+            colormap: self.layer_params.cmap,
             reverse: false,
             domain: Some(expression_domain),
         };
@@ -393,7 +393,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     margin_bottom: Some(0.0),
                 }),
                 title: "Mean expression".to_string(),
-                colormap: self.layer_params.cmap.clone(),
+                colormap: self.layer_params.cmap,
                 reverse: false,
                 scale: Some(color_scale),
                 orientation: LegendOrientation::Horizontal,
