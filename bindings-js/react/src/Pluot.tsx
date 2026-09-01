@@ -12,7 +12,7 @@ import {
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
 import type {
-  HoverInfo, PickingResult, PluotProps, RenderParams, TooltipContent,
+  HoverInfo, PickingResult, PluotProps, RawPickingResult, RenderParams, TooltipContent,
 } from "./types.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -36,22 +36,24 @@ const DEFAULT_3D_VIEW = new Float32Array([
 ]);
 
 const identity = <T,>(param: T): T => param;
+const noop = () => { };
 
 // Mouse movement (in pixels) beyond which a mousedown-to-click is
 // considered a drag rather than a click, so that picking is skipped.
 const DRAG_THRESHOLD_PX = 3;
 
-function normalizePickingResult(data: unknown): PickingResult {
-  const result = data as PickingResult;
-  if (data && Array.isArray(result.layer_results)) {
-    result.layer_results = result.layer_results.map(obj => ({
-      layer_id: obj.layer_id,
+// `pick_wasm` is typed `any` by wasm-bindgen, so `RawPickingResult` is what
+// documents its wire format (see types.ts).
+function normalizePickingResult(data: RawPickingResult): PickingResult {
+  return {
+    ...data,
+    layer_results: data.layer_results.map(({ layer_id, info }) => ({
+      layer_id,
       // This is needed because serde-wasm-bindgen
       // converts Rust HashMap to JS Map.
-      info: Object.fromEntries(Array.from(obj.info as unknown as Map<string, string>)),
-    }));
-  }
-  return result;
+      info: Object.fromEntries(info),
+    })),
+  };
 }
 
 
@@ -88,7 +90,7 @@ export function Pluot(props: PluotProps) {
     onHover: onHoverProp = null,
   } = props;
 
-  const onClick: (result: PickingResult) => unknown = typeof onClickProp === 'function' ? onClickProp : identity;
+  const onClick: (result: PickingResult) => void = typeof onClickProp === 'function' ? onClickProp : noop;
   const onHover: (result: PickingResult) => TooltipContent = typeof onHoverProp === 'function' ? onHoverProp : identity;
 
 
@@ -163,7 +165,6 @@ export function Pluot(props: PluotProps) {
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
 
-  const [pickingResult, setPickingResult] = useState<unknown>(null);
   // hoverInfo.mouseX/mouseY are in the coordinate space of the outer
   // (width x height) container, used to position the hover tooltip.
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
@@ -254,7 +255,7 @@ export function Pluot(props: PluotProps) {
 
   // The click-picking callback.
   const pickFrame = useEffectEvent(async (screenCoordX: number, screenCoordY: number) => {
-    setPickingResult(onClick(await pick(screenCoordX, screenCoordY)));
+    onClick(await pick(screenCoordX, screenCoordY));
   });
 
   // The hover-picking callback.

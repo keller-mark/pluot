@@ -59,13 +59,13 @@ export type RenderParams = {
   aspect_ratio_alignment_mode: AspectRatioAlignmentMode;
   view_mode: ViewMode;
   pickable: boolean;
-  camera_view: CameraMatrix;
+  camera_view: CameraMatrix | null;
   plot_id: string;
   plot_type: PlotType;
   stores: StoresOutput | undefined;
   plot_params: PlotParams;
   /** In milliseconds. Has no effect when `wait_for_store_gets` is false. */
-  timeout: number;
+  timeout: number | null;
   wait_for_store_gets: boolean;
   cache_enabled: boolean;
   svg_compression_enabled: boolean;
@@ -94,11 +94,29 @@ export type LayerPickingResult = {
 /**
  * Mirrors the Rust `PickingResult` struct, after normalization
  * of the `info` Maps (produced by serde-wasm-bindgen) to plain objects.
+ *
+ * Note: `serde_wasm_bindgen` serializes a Rust `None` as `undefined`
+ * (not `null`), so `data_coord` is absent rather than null when picking
+ * did not resolve to a data coordinate.
  */
 export type PickingResult = {
-  data_coord: DataCoord | null;
+  data_coord: DataCoord | undefined;
   screen_coord: ScreenCoord;
   layer_results: LayerPickingResult[];
+};
+
+/**
+ * The un-normalized shape that `pick_wasm` actually resolves to. It is typed
+ * `any` on the wasm-bindgen side, so this type is what documents the wire
+ * format: `serde_wasm_bindgen` converts the Rust `HashMap` behind `info` into
+ * a JS `Map`, which {@link PickingResult} flattens to a plain object.
+ */
+export type RawLayerPickingResult = Omit<LayerPickingResult, "info"> & {
+  info: Map<string, string>;
+};
+
+export type RawPickingResult = Omit<PickingResult, "layer_results"> & {
+  layer_results: RawLayerPickingResult[];
 };
 
 // === Tooltip ===
@@ -197,6 +215,6 @@ export type PluotProps = {
   enableClick?: boolean;
   /** Whether hovering should run a picking query and show a tooltip via `onHover`. */
   enableTooltip?: boolean;
-  onClick?: ((result: PickingResult) => unknown) | null;
+  onClick?: ((result: PickingResult) => void) | null;
   onHover?: ((result: PickingResult) => TooltipContent) | null;
 };
