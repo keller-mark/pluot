@@ -1,4 +1,11 @@
 
+## 0.1.16
+
+### Patch Changes
+
+- Update docs.rs metadata to try to resolve oom issue. (`@pluot/core`) ([#307](https://github.com/keller-mark/pluot/pull/307))
+
+
 ## 0.1.15
 
 ### Patch Changes
