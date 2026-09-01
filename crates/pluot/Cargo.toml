@@ -14,22 +14,6 @@ exclude = ["pkg", "tests"]
 categories.workspace = true
 keywords.workspace = true
 
-
-[package.metadata.docs.rs]
-# This controls parameters for building documentation via docs.rs.
-# The container has a 6 GB limit, which happens while `pluot_core` is being compiled as a dependency of `pluot`
-# `pluot_core` pulls in several memory-hungry deps for rustdoc:
-# `wgpu`, `zarrs`, `image`, `fontdue`, `nalgebra-glm`, `kurbo`, `earcut`.
-
-# rustdoc's parallel item-processing threads are the usual culprit.
-# rustdoc parallelizes doc generation across threads; each thread holds
-# full type/monomorphization info in memory. wgpu's generics make this expensive.
-# Note: `-Z threads=N` (rustc parallel frontend) is experimental and available on nightly (docs.rs runs on nightly).
-rustdoc-args = ["-Z", "threads=1"]
-
-# Skip building docs for extra targets; only document the default one.
-targets = []
-
 [lib]
 name = "pluot"
 crate-type = ["cdylib", "rlib"]
