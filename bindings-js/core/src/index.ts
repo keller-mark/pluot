@@ -34,7 +34,21 @@ export {
   isZarrStoreInfo,
   normalizeStores,
 } from './store-normalization.js';
+export type {
+  StoreInput,
+  StoresInput,
+  StoresOutput,
+  NormalizeStoresParam,
+} from './store-normalization.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
 export { getBounds, getCameraMatrixFromBounds } from './viewport.js';
+export type {
+  AspectRatioMode,
+  AspectRatioAlignmentMode,
+  Margins,
+  ViewportParams,
+  Bounds,
+} from './viewport.js';
 export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';
+export type { CameraMatrix } from './functional-dom-2d-camera.js';
 export { onMouseMove as onMouseMove3d, onWheel as onWheel3d } from './functional-3d-view-controls.js';

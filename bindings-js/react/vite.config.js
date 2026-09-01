@@ -47,15 +47,17 @@ export default defineConfig({
       // files stay ESM-compatible (only ".js" extensions in imports)
       // and also Astro compatible, and also satisfy
       // the following Vite/Rollup error:
-      // `Could not resolve "./Pluot.js" from "src/index.js"`.
-      name: "resolve-js-to-jsx",
+      // `Could not resolve "./Pluot.js" from "src/index.ts"`.
+      name: "resolve-js-to-source",
       resolveId(source, importer) {
         if (source.endsWith(".js") && importer) {
-          const jsxPath = resolve(
-            resolve(importer, ".."),
-            source.replace(/\.js$/, ".jsx")
-          );
-          if (existsSync(jsxPath)) return jsxPath;
+          for (const ext of [".tsx", ".ts", ".jsx"]) {
+            const sourcePath = resolve(
+              resolve(importer, ".."),
+              source.replace(/\.js$/, ext)
+            );
+            if (existsSync(sourcePath)) return sourcePath;
+          }
         }
       },
     },

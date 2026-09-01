@@ -1,16 +1,19 @@
-import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useCallback, useId } from "react";
+import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useId, type CSSProperties } from "react";
 import lzs from "lz-string";
-import { isEqual, throttle } from "lodash-es";
+import { throttle } from "lodash-es";
 import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm,
   normalizeStores, getStore,
-  getBounds, getCameraMatrixFromBounds,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
+  type CameraMatrix,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
+import type {
+  HoverInfo, PickingResult, PluotProps, RenderParams, TooltipContent,
+} from "./types.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -32,28 +35,27 @@ const DEFAULT_3D_VIEW = new Float32Array([
   0, 0, -10, 1,
 ]);
 
-const identity = (param) => param;
-const noop = () => { };
+const identity = <T,>(param: T): T => param;
 
 // Mouse movement (in pixels) beyond which a mousedown-to-click is
 // considered a drag rather than a click, so that picking is skipped.
 const DRAG_THRESHOLD_PX = 3;
 
-function normalizePickingResult(data) {
-  const result = data;
+function normalizePickingResult(data: unknown): PickingResult {
+  const result = data as PickingResult;
   if (data && Array.isArray(result.layer_results)) {
     result.layer_results = result.layer_results.map(obj => ({
       layer_id: obj.layer_id,
       // This is needed because serde-wasm-bindgen
       // converts Rust HashMap to JS Map.
-      info: Object.fromEntries(Array.from(obj.info)),
+      info: Object.fromEntries(Array.from(obj.info as unknown as Map<string, string>)),
     }));
   }
   return result;
 }
 
 
-export function Pluot(props) {
+export function Pluot(props: PluotProps) {
   const {
     schemaVersion = null,
     width: widthProp,
@@ -86,13 +88,13 @@ export function Pluot(props) {
     onHover: onHoverProp = null,
   } = props;
 
-  const onClick = typeof onClickProp === 'function' ? onClickProp : identity;
-  const onHover = typeof onHoverProp === 'function' ? onHoverProp : identity;
+  const onClick: (result: PickingResult) => unknown = typeof onClickProp === 'function' ? onClickProp : identity;
+  const onHover: (result: PickingResult) => TooltipContent = typeof onHoverProp === 'function' ? onHoverProp : identity;
 
 
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
-  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState(
+  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix>(
     // Note: We use an initializer function here to avoid
     // sharing the same Float32Array among multiple Pluot
     // component instances that may be rendered on the same page.
@@ -115,7 +117,7 @@ export function Pluot(props) {
   const cameraMatrix = isControlledCamera && controlledCameraMatrix !== null
     ? controlledCameraMatrix
     : uncontrolledCameraMatrix;
-  const setCameraMatrix = isControlledCamera
+  const setCameraMatrix: (nextCameraMatrix: CameraMatrix) => void = isControlledCamera
     ? setControlledCameraMatrix
     : setUncontrolledCameraMatrix;
 
@@ -136,11 +138,11 @@ export function Pluot(props) {
 
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
-  const svgRef = useRef(null);
-  const canvasRef = useRef(null);
-  const cameraElementRef = useRef(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraElementRef = useRef<HTMLDivElement | null>(null);
 
-  const tempButtonRef = useRef(null);
+  const tempButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // We may want to update these things without triggering a re-render.
   const isRenderingRef = useRef(false);
@@ -148,23 +150,23 @@ export function Pluot(props) {
 
   // Used to distinguish a plain click from a click that ends a drag
   // (e.g. panning), so that dragging does not trigger picking.
-  const dragStartRef = useRef(null);
+  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const didDragRef = useRef(false);
 
   // TODO: do we want to use the backlog approach or not?
   // (Similar to the one used in the Vitessce heatmap)
   // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
   //const backlogRef = useRef([]);
-  const [backlogIteration, incBacklogIteration] = useReducer(i => i + 1, 0);
+  const [backlogIteration, incBacklogIteration] = useReducer((i: number) => i + 1, 0);
 
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
 
-  const [pickingResult, setPickingResult] = useState(null);
+  const [pickingResult, setPickingResult] = useState<unknown>(null);
   // hoverInfo.mouseX/mouseY are in the coordinate space of the outer
   // (width x height) container, used to position the hover tooltip.
-  const [hoverInfo, setHoverInfo] = useState(null);
+  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
 
   const progressBarId = useId();
 
@@ -172,7 +174,7 @@ export function Pluot(props) {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
 
-  const wheelHandler = useEffectEvent((event) => {
+  const wheelHandler = useEffectEvent((event: WheelEvent) => {
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
     const nextCameraMatrix = onWheel({
         width,
@@ -189,7 +191,7 @@ export function Pluot(props) {
     setCameraMatrix(nextCameraMatrix);
   });
 
-  const mouseMoveHandler = useEffectEvent((event) => {
+  const mouseMoveHandler = useEffectEvent((event: MouseEvent) => {
     const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
     const nextCameraMatrix = onMouseMove({
         width,
@@ -208,8 +210,8 @@ export function Pluot(props) {
 
   // Runs the picking query against the wasm module and returns the normalized result.
   // Shared by the click (pickFrame) and hover (hoverFrame) callbacks below.
-  const pick = useEffectEvent(async (screenCoordX, screenCoordY) => {
-    const renderParams = {
+  const pick = useEffectEvent(async (screenCoordX: number, screenCoordY: number): Promise<PickingResult> => {
+    const renderParams: RenderParams = {
       schema_version: schemaVersion,
       width,
       height,
@@ -251,12 +253,12 @@ export function Pluot(props) {
   });
 
   // The click-picking callback.
-  const pickFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+  const pickFrame = useEffectEvent(async (screenCoordX: number, screenCoordY: number) => {
     setPickingResult(onClick(await pick(screenCoordX, screenCoordY)));
   });
 
   // The hover-picking callback.
-  const hoverFrame = useEffectEvent(async (screenCoordX, screenCoordY) => {
+  const hoverFrame = useEffectEvent(async (screenCoordX: number, screenCoordY: number) => {
     const result = await pick(screenCoordX, screenCoordY);
     setHoverInfo({
       content: onHover(result),
@@ -292,11 +294,11 @@ export function Pluot(props) {
 
     // Track mousedown -> mousemove distance so that a drag (e.g. panning)
     // that ends on the camera element does not also trigger a click/pick.
-    const mouseDownHandler = (event) => {
+    const mouseDownHandler = (event: MouseEvent) => {
       dragStartRef.current = { x: event.clientX, y: event.clientY };
       didDragRef.current = false;
     };
-    const dragDetectHandler = (event) => {
+    const dragDetectHandler = (event: MouseEvent) => {
       if (!dragStartRef.current) {
         return;
       }
@@ -310,7 +312,7 @@ export function Pluot(props) {
     cameraEl.addEventListener("mousemove", dragDetectHandler);
 
     // Set up an onClick handler for picking.
-    const clickHandler = (event) => {
+    const clickHandler = (event: MouseEvent) => {
       const wasDrag = didDragRef.current;
       dragStartRef.current = null;
       didDragRef.current = false;
@@ -321,7 +323,7 @@ export function Pluot(props) {
     cameraEl.addEventListener("click", clickHandler);
 
     // Set up hover handlers for picking, only when the onHover prop is provided.
-    const hoverMoveHandler = (event) => {
+    const hoverMoveHandler = (event: MouseEvent) => {
       if (enableTooltip) {
         throttledHoverFrame(event.offsetX, event.offsetY);
       }
@@ -354,7 +356,7 @@ export function Pluot(props) {
     isRenderingRef.current = true;
     console.log('wasm.render');
 
-    const renderParams = {
+    const renderParams: RenderParams = {
       schema_version: schemaVersion,
       width,
       height,
@@ -383,7 +385,7 @@ export function Pluot(props) {
     };
 
     // Wrap render_wasm in try/catch, to handle Rust panics.
-    let arr;
+    let arr: Uint8Array;
     try {
       arr = await render_wasm(renderParams);
 
@@ -436,9 +438,9 @@ export function Pluot(props) {
       setBailedEarly(false); // Update this to hide the loading indicator.
 
       // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-      Object.keys(stores).forEach(storeName => {
+      Object.keys(stores ?? {}).forEach(storeName => {
         const storeUsed = getStore(storeName);
-        if (storeUsed && storeUsed.clearCache && typeof storeUsed.clearCache === 'function') {
+        if (storeUsed && typeof storeUsed.clearCache === 'function') {
           storeUsed.clearCache();
         }
       });
@@ -496,7 +498,7 @@ export function Pluot(props) {
 
   // Position the hover tooltip so that it grows diagonally away from whichever
   // quadrant of the plot the mouse currently occupies, to avoid clipping.
-  const hoverStyle = useMemo(() => {
+  const hoverStyle = useMemo<CSSProperties | null>(() => {
     if (!hoverInfo) {
       return null;
     }
@@ -571,7 +573,7 @@ export function Pluot(props) {
           />
         )}
         {hoverInfo ? (
-          <div style={hoverStyle}>
+          <div style={hoverStyle ?? undefined}>
             <Tooltip content={hoverInfo.content} asTable />
           </div>
         ) : null}
