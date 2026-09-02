@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pluot } from "@pluot/react";
+import { Pluot, NO_BRUSH } from "@pluot/react";
 
 // Initialize stores needed for demos
 
@@ -427,7 +427,8 @@ export function Demo() {
   const [brushMode, setBrushMode] = useState("Rect");
   const [brushUnitsMode, setBrushUnitsMode] = useState("Data");
   // Controlled brushing, so the vertices can be echoed back below the plot.
-  const [brush, setBrush] = useState(undefined);
+  // NO_BRUSH (not undefined) is the empty state, so this stays controlled throughout.
+  const [brush, setBrush] = useState(NO_BRUSH);
 
   return (
     <div>
@@ -482,7 +483,7 @@ export function Demo() {
         brush={brush}
         onBrush={(state) => setBrush(state)}
         onBrushEnd={(state) => setBrush(state)}
-        onBrushClear={() => setBrush(undefined)}
+        onBrushClear={() => setBrush(NO_BRUSH)}
       />
       <div>
         <label>Brush shape:&nbsp;
@@ -503,9 +504,9 @@ export function Demo() {
         </label>
         &nbsp;
         <span>
-          {brush
-            ? `${brush.status} ${brush.shape} with ${brush.vertices.length} vertices`
-            : "Long-click (1.5s) inside the plot, then drag, to brush."}
+          {brush === NO_BRUSH
+            ? "Long-click (1.5s) inside the plot, then drag, to brush."
+            : `${brush.status} ${brush.shape} with ${brush.vertices.length} vertices`}
         </span>
       </div>
       {plotType === "Scatterplot" ? (

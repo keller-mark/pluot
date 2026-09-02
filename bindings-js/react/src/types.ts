@@ -208,6 +208,19 @@ export type BrushState = {
   vertices: BrushVertex[],
 };
 
+/**
+ * The value of {@link PluotProps.brush} meaning "controlled, but nothing is
+ * brushed right now".
+ *
+ * `undefined` cannot play this role: a prop that was never passed is
+ * indistinguishable from one explicitly set to `undefined`, and an absent
+ * `brush` has to mean uncontrolled. A parent that controls the brush therefore
+ * passes `NO_BRUSH` rather than `undefined` to show no brush, which keeps it
+ * controlled across the empty state instead of silently handing control back.
+ */
+export const NO_BRUSH = "NoBrush";
+export type NoBrush = typeof NO_BRUSH;
+
 // TODO: On the rust side, define a Brushable.brush trait, analogous to Pickable.pick.
 export type BrushResult = {
   // Similar to picking, upon brush, the Rust side can return a per-layer Map with essentially any data
@@ -309,6 +322,8 @@ export type PluotProps = {
   // When true, the user can draw a brush rect/polygon by long-clicking and then dragging.
   enableBrushCreate?: boolean;
   // When true, the user can modify the vertices of persisted brushes (uncontrolled) or brushes passed via `brush` prop (controlled) by interacting with the overlay.
+  // For Rect, RangeX and RangeY, the user can also drag a side of the overlay to extend the brush in that direction alone.
+  // A range brush only exposes the two sides on the axis it selects, since the other axis always spans the whole brushable region.
   enableBrushEdit?: boolean;
   // When true, we display a clear button upon hovering the brush rect/polygon, to allow the user to clear/cancel the brush.
   enableBrushClear?: boolean;
@@ -331,15 +346,19 @@ export type PluotProps = {
   brushMode?: BrushMode;
 
   // For brushing, we support both controlled and uncontrolled (similar to the cameraMatrix/setCameraMatrix).
-  // When controlled, the parent provides the brush state (rect/polygon vertices) or `undefined`.
-  // When uncontrolled, the value of `brush` is `null`, so the brush state will be managed internally.
+  // When controlled, the parent provides the brush state (rect/polygon vertices) or `NO_BRUSH`.
+  // When uncontrolled, the value of `brush` is `null` (or the prop is omitted), so the brush state will be managed internally.
   // When controlled via parent, we ignore the persistBrush prop; instead, the brush persists while the BrushState is specified/present.
-  // If null, we take this to mean uncontrolled.
-  // If a BrushState object or `undefined` is provided, we take this to mean controlled.
+  // If null or absent, we take this to mean uncontrolled.
+  // If a BrushState object or `NO_BRUSH` is provided, we take this to mean controlled.
+  // A controlled parent must use `NO_BRUSH` rather than `undefined` for the empty
+  // state, since `undefined` is indistinguishable from the prop being omitted and
+  // would hand control back mid-interaction, resurfacing whatever the internal
+  // (uncontrolled) state last held.
   // Note that when controlled, enableBrushCreate can be false (the user cannot long-click to draw a new brush),
   // but the parent may still provide a brush value.
   // When controlled, we only emit onBrush/onBrushEnd for internally-triggered updates (e.g., if enableBrushEdit is true) or clearing (e.g., if enableBrushClear is true).
-  brush: BrushState | undefined | null;
+  brush?: BrushState | NoBrush | null;
 
   // Called on drag interactions, as the user is drawing the brush rect/polygon.
   // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush, if enableBrushEdit is true).

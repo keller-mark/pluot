@@ -1,5 +1,16 @@
 import { getBounds, type AspectRatioMode, type AspectRatioAlignmentMode, type Bounds, type CameraMatrix } from "@pluot/core";
-import type { BrushState, BrushUnitsMode, BrushVertex, RectLikeBrushMode } from "./types.js";
+import type { BrushMode, BrushState, BrushUnitsMode, BrushVertex, RectLikeBrushMode } from "./types.js";
+
+/** An axis-aligned brush extent, in container pixels. */
+export type BrushBoundingBox = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+/** One side of an axis-aligned brush, which the user can drag to extend it. */
+export type BrushEdge = "Top" | "Right" | "Bottom" | "Left";
 
 /**
  * Everything needed to convert a brush vertex between the three units modes.
@@ -223,7 +234,7 @@ export function rectVerticesFromCorners(
 }
 
 /** The bounding box, in container pixels, of a list of already-reprojected vertices. */
-export function getVerticesBoundingBox(vertices: BrushVertex[]): { left: number, top: number, right: number, bottom: number } | null {
+export function getVerticesBoundingBox(vertices: BrushVertex[]): BrushBoundingBox | null {
   if (vertices.length === 0) {
     return null;
   }
@@ -237,15 +248,108 @@ export function getVerticesBoundingBox(vertices: BrushVertex[]): { left: number,
   };
 }
 
+/** The smallest extent, in pixels, that a brush must span along a selected axis. */
+const MIN_BRUSH_EXTENT_PX = 2;
+
+/**
+ * Whether a brush is too small to be a selection.
+ *
+ * A long-click that never turns into a drag produces a rect whose four corners
+ * coincide, which draws as a stray dot rather than as nothing, so these states
+ * are held back instead of being committed.
+ */
+export function isDegenerateBrush(state: BrushState): boolean {
+  if (state.shape === "Polygon") {
+    return state.vertices.length < 3;
+  }
+  const boundingBox = getVerticesBoundingBox(state.vertices);
+  if (boundingBox === null) {
+    return true;
+  }
+  const brushWidth = boundingBox.right - boundingBox.left;
+  const brushHeight = boundingBox.bottom - boundingBox.top;
+  // A range brush only selects along one axis; the other always spans the whole
+  // brushable region, so it is not evidence that the user drew anything.
+  if (state.shape === "RangeX") {
+    return brushWidth < MIN_BRUSH_EXTENT_PX;
+  }
+  if (state.shape === "RangeY") {
+    return brushHeight < MIN_BRUSH_EXTENT_PX;
+  }
+  return brushWidth < MIN_BRUSH_EXTENT_PX || brushHeight < MIN_BRUSH_EXTENT_PX;
+}
+
 /**
  * Where the clear button sits: just outside the top-right corner of the brush's
  * bounding box, so that it does not obscure the brushed content.
  */
 export function getClearButtonCenter(
-  boundingBox: { left: number, top: number, right: number, bottom: number },
+  boundingBox: BrushBoundingBox,
   radius: number,
 ): [number, number] {
   return [boundingBox.right + radius, boundingBox.top - radius];
+}
+
+/**
+ * Which sides of a brush the user may drag to extend it.
+ *
+ * A range brush pins its unselected axis to the whole brushable region, so
+ * dragging those two sides could not change anything and they are left out.
+ */
+export function getEditableEdges(shape: BrushMode): BrushEdge[] {
+  switch (shape) {
+    case "Rect":
+      return ["Top", "Right", "Bottom", "Left"];
+    case "RangeX":
+      return ["Left", "Right"];
+    case "RangeY":
+      return ["Top", "Bottom"];
+    default:
+      return [];
+  }
+}
+
+/** The endpoints `[x1, y1, x2, y2]` of an edge, in container pixels. */
+export function getEdgeLine(edge: BrushEdge, boundingBox: BrushBoundingBox): [number, number, number, number] {
+  const { left, top, right, bottom } = boundingBox;
+  switch (edge) {
+    case "Top":
+      return [left, top, right, top];
+    case "Bottom":
+      return [left, bottom, right, bottom];
+    case "Left":
+      return [left, top, left, bottom];
+    case "Right":
+      return [right, top, right, bottom];
+  }
+}
+
+/**
+ * The two opposite corners that dragging `edge` spans: the corner that stays
+ * put, and the corner that follows the cursor along `axis` only.
+ *
+ * Expressing an edge drag as a pair of corners lets it reuse
+ * {@link rectVerticesFromCorners}, which also means dragging a side past its
+ * opposite side flips the brush rather than inverting it.
+ */
+export function getEdgeDragCorners(edge: BrushEdge, boundingBox: BrushBoundingBox): {
+  axis: "X" | "Y";
+  fixedX: number;
+  fixedY: number;
+  movingX: number;
+  movingY: number;
+} {
+  const { left, top, right, bottom } = boundingBox;
+  switch (edge) {
+    case "Left":
+      return { axis: "X", fixedX: right, fixedY: top, movingX: left, movingY: bottom };
+    case "Right":
+      return { axis: "X", fixedX: left, fixedY: top, movingX: right, movingY: bottom };
+    case "Top":
+      return { axis: "Y", fixedX: left, fixedY: bottom, movingX: right, movingY: top };
+    case "Bottom":
+      return { axis: "Y", fixedX: left, fixedY: top, movingX: right, movingY: bottom };
+  }
 }
 
 /**

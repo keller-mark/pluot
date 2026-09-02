@@ -1,10 +1,15 @@
-import React, { useMemo } from "react";
-import { describeWedgePath, getClearButtonCenter, getVerticesBoundingBox } from "./brush.js";
+import React, { useMemo, type RefObject } from "react";
+import {
+  describeWedgePath, getClearButtonCenter, getEdgeLine, getEditableEdges, getVerticesBoundingBox,
+  type BrushEdge,
+} from "./brush.js";
 import type { BrushState } from "./types.js";
 import { CLEAR_BUTTON_RADIUS_PX, type BrushPressProgress } from "./useBrush.js";
 
 const VERTEX_HANDLE_RADIUS_PX = 4;
 const PRESS_INDICATOR_RADIUS_PX = 10;
+/** How wide a side's invisible grab target is. Kept generous, since a side is 1.5px of ink. */
+const EDGE_HANDLE_WIDTH_PX = 9;
 
 const BRUSH_STROKE = "#3b6ea5";
 const BRUSH_FILL = "rgba(59, 110, 165, 0.15)";
@@ -14,14 +19,41 @@ const CLEAR_FILL = "#b34040";
 export type BrushOverlayProps = {
   width: number;
   height: number;
+  /** From `useBrush`, so that presses on the handles below are not read as new brushes. */
+  overlayRef: RefObject<SVGSVGElement | null>;
   brushState: BrushState | undefined;
   pressProgress: BrushPressProgress | null;
   /** Whether to draw the clear button (the pointer is over the brush and `enableBrushClear`). */
   isBrushHovered: boolean;
   enableBrushEdit: boolean;
   onVertexMouseDown: (vertexIndex: number, event: React.MouseEvent) => void;
+  onEdgeMouseDown: (edge: BrushEdge, event: React.MouseEvent) => void;
   onClearClick: (event: React.MouseEvent) => void;
 };
+
+/** A side is dragged along its perpendicular, so it takes the matching resize cursor. */
+function getEdgeCursor(edge: BrushEdge): string {
+  return edge === "Left" || edge === "Right" ? "ew-resize" : "ns-resize";
+}
+
+/**
+ * The cursor for corner `vertexIndex`, which advertises the axes that corner can
+ * actually move: a range brush only resizes along the axis it selects, and a rect
+ * corner resizes along the diagonal it sits on.
+ */
+function getVertexCursor(shape: BrushState['shape'] | undefined, vertexIndex: number): string {
+  if (shape === "RangeX") {
+    return "ew-resize";
+  }
+  if (shape === "RangeY") {
+    return "ns-resize";
+  }
+  if (shape === "Rect") {
+    // Corners are ordered clockwise from the top-left.
+    return vertexIndex % 2 === 0 ? "nwse-resize" : "nesw-resize";
+  }
+  return "grab";
+}
 
 /**
  * Draws the brush as an SVG above the plot: a rectangle (or lasso polygon) with
@@ -33,11 +65,13 @@ export type BrushOverlayProps = {
 export function BrushOverlay(props: BrushOverlayProps) {
   const {
     width, height,
+    overlayRef,
     brushState,
     pressProgress,
     isBrushHovered,
     enableBrushEdit,
     onVertexMouseDown,
+    onEdgeMouseDown,
     onClearClick,
   } = props;
 
@@ -56,17 +90,25 @@ export function BrushOverlay(props: BrushOverlayProps) {
     return `M ${points}${isClosed ? " Z" : ""}`;
   }, [vertices, isClosed]);
 
-  const clearButtonCenter = useMemo(() => {
-    const boundingBox = getVerticesBoundingBox(vertices);
-    return boundingBox ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX) : null;
-  }, [vertices]);
+  const boundingBox = useMemo(() => getVerticesBoundingBox(vertices), [vertices]);
+
+  const clearButtonCenter = boundingBox
+    ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX)
+    : null;
 
   // While drawing a lasso, the intermediate vertices are too dense to be useful
   // as handles, and they are not editable until the drag completes.
   const shouldShowVertexHandles = isClosed;
 
+  // Sides are draggable only once the shape is settled, and only for the
+  // axis-aligned shapes; a lasso has no meaningful sides.
+  const editableEdges = enableBrushEdit && isClosed && brushState && boundingBox
+    ? getEditableEdges(brushState.shape)
+    : [];
+
   return (
     <svg
+      ref={overlayRef}
       style={{
         position: "absolute",
         top: 0,
@@ -89,6 +131,26 @@ export function BrushOverlay(props: BrushOverlayProps) {
           strokeDasharray={brushState?.status === "Drawing" ? "4 3" : undefined}
         />
       ) : null}
+      {/* Drawn before the corner handles, so a press near a corner grabs the
+          corner rather than one of the two sides meeting there. */}
+      {editableEdges.map(edge => {
+        const [x1, y1, x2, y2] = getEdgeLine(edge, boundingBox!);
+        return (
+          <line
+            key={edge}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            // Invisible ink, but a wide grab target.
+            stroke="transparent"
+            strokeWidth={EDGE_HANDLE_WIDTH_PX}
+            strokeLinecap="butt"
+            style={{ pointerEvents: "stroke", cursor: getEdgeCursor(edge) }}
+            onMouseDown={event => onEdgeMouseDown(edge, event)}
+          />
+        );
+      })}
       {shouldShowVertexHandles ? vertices.map((vertex, vertexIndex) => (
         <circle
           // Vertices have no identity beyond their position in the ring, and the
@@ -102,11 +164,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
           strokeWidth={1.5}
           style={{
             pointerEvents: enableBrushEdit ? "auto" : "none",
-            // A range brush only moves along its selected axis, so say so.
-            cursor: !enableBrushEdit ? "default"
-              : brushState?.shape === "RangeX" ? "ew-resize"
-              : brushState?.shape === "RangeY" ? "ns-resize"
-              : "grab",
+            cursor: enableBrushEdit ? getVertexCursor(brushState?.shape, vertexIndex) : "default",
           }}
           onMouseDown={enableBrushEdit ? (event => onVertexMouseDown(vertexIndex, event)) : undefined}
         />
@@ -114,7 +172,6 @@ export function BrushOverlay(props: BrushOverlayProps) {
       {isBrushHovered && clearButtonCenter ? (
         <g
           style={{ pointerEvents: "auto", cursor: "pointer" }}
-          onMouseDown={event => event.stopPropagation()}
           onClick={onClearClick}
           role="button"
           aria-label="Clear brush"

@@ -103,6 +103,8 @@ export function Pluot(props: PluotProps) {
     maybeBrushDelay = 250,
     persistBrush = false,
     brushMode = "Rect",
+    // An omitted `brush` means uncontrolled; a controlled parent signals the
+    // empty state with `NO_BRUSH`, never `undefined`.
     brush = null,
     onBrush,
     onBrushEnd,
@@ -195,11 +197,13 @@ export function Pluot(props: PluotProps) {
 
   const {
     brushState,
+    overlayRef: brushOverlayRef,
     pressProgress,
     isBrushHovered,
     isBrushingRef,
     shouldSuppressClickRef,
     onVertexMouseDown,
+    onEdgeMouseDown,
     onClearClick,
   } = useBrush({
     containerRef,
@@ -639,11 +643,13 @@ export function Pluot(props: PluotProps) {
         <BrushOverlay
           width={width}
           height={height}
+          overlayRef={brushOverlayRef}
           brushState={brushState}
           pressProgress={pressProgress}
           isBrushHovered={isBrushHovered}
           enableBrushEdit={enableBrushEdit}
           onVertexMouseDown={onVertexMouseDown}
+          onEdgeMouseDown={onEdgeMouseDown}
           onClearClick={onClearClick}
         />
         {hoverInfo ? (

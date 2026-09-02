@@ -3,7 +3,11 @@ import {
   clampToBrushRegion,
   describeWedgePath,
   getBrushGeometry,
+  getEdgeDragCorners,
+  getEdgeLine,
+  getEditableEdges,
   getVerticesBoundingBox,
+  isDegenerateBrush,
   isPointInBrush,
   pixelsFromVertex,
   rectVerticesFromCorners,
@@ -210,6 +214,107 @@ describe('reprojectVertex', () => {
     expect(reprojected.y_pixels).toBeCloseTo(300, 6);
     expect(reprojected.x_data).toBeCloseTo(vertex.x_data, 5);
     expect(reprojected.x_pixels).not.toBeCloseTo(vertex.x_pixels, 1);
+  });
+});
+
+describe('getEditableEdges', () => {
+  it('offers all four sides of a Rect', () => {
+    expect(getEditableEdges('Rect')).toEqual(['Top', 'Right', 'Bottom', 'Left']);
+  });
+
+  it('offers only the sides a range brush can actually move', () => {
+    expect(getEditableEdges('RangeX')).toEqual(['Left', 'Right']);
+    expect(getEditableEdges('RangeY')).toEqual(['Top', 'Bottom']);
+  });
+
+  it('offers no sides for a lasso', () => {
+    expect(getEditableEdges('Polygon')).toEqual([]);
+  });
+});
+
+describe('getEdgeLine', () => {
+  const boundingBox = { left: 100, top: 120, right: 300, bottom: 340 };
+
+  it('spans each side of the bounding box', () => {
+    expect(getEdgeLine('Top', boundingBox)).toEqual([100, 120, 300, 120]);
+    expect(getEdgeLine('Bottom', boundingBox)).toEqual([100, 340, 300, 340]);
+    expect(getEdgeLine('Left', boundingBox)).toEqual([100, 120, 100, 340]);
+    expect(getEdgeLine('Right', boundingBox)).toEqual([300, 120, 300, 340]);
+  });
+});
+
+describe('getEdgeDragCorners', () => {
+  const geom = getBrushGeometry(baseParams({ brushUnitsModeX: "Pixels", brushUnitsModeY: "Pixels" }));
+  const boundingBox = { left: 100, top: 120, right: 300, bottom: 340 };
+
+  // Replays what `updateRect` does with the corners this returns.
+  function dragEdge(edge: Parameters<typeof getEdgeDragCorners>[0], cursorX: number, cursorY: number) {
+    const { axis, fixedX, fixedY, movingX, movingY } = getEdgeDragCorners(edge, boundingBox);
+    return getVerticesBoundingBox(rectVerticesFromCorners(
+      fixedX, fixedY,
+      axis === "Y" ? movingX : cursorX,
+      axis === "X" ? movingY : cursorY,
+      geom,
+    ))!;
+  }
+
+  it('moves only the dragged side, ignoring cursor movement along the other axis', () => {
+    // The cursor wanders far off in Y, but dragging the left side must not change
+    // the top or the bottom.
+    expect(dragEdge('Left', 160, 999)).toEqual({ left: 160, top: 120, right: 300, bottom: 340 });
+    expect(dragEdge('Right', 260, -999)).toEqual({ left: 100, top: 120, right: 260, bottom: 340 });
+    expect(dragEdge('Top', 999, 200)).toEqual({ left: 100, top: 200, right: 300, bottom: 340 });
+    expect(dragEdge('Bottom', -999, 300)).toEqual({ left: 100, top: 120, right: 300, bottom: 300 });
+  });
+
+  it('flips the brush when a side is dragged past its opposite', () => {
+    // Dragging the left side to the right of the right side yields a rect that
+    // extends from the old right edge, rather than an inside-out one.
+    expect(dragEdge('Left', 400, 0)).toEqual({ left: 300, top: 120, right: 400, bottom: 340 });
+    expect(dragEdge('Bottom', 0, 50)).toEqual({ left: 100, top: 50, right: 300, bottom: 120 });
+  });
+
+  it('keeps the opposite side fixed', () => {
+    for (const [edge, key] of [['Left', 'right'], ['Right', 'left'], ['Top', 'bottom'], ['Bottom', 'top']] as const) {
+      const dragged = dragEdge(edge, 175, 175);
+      expect(dragged[key]).toBe(boundingBox[key]);
+    }
+  });
+});
+
+describe('isDegenerateBrush', () => {
+  const geom = getBrushGeometry(baseParams({ brushUnitsModeX: "Pixels", brushUnitsModeY: "Pixels" }));
+
+  function state(shape: BrushState['shape'], vertices: BrushState['vertices']): BrushState {
+    return { status: 'Drawing', shape, vertices };
+  }
+
+  it('rejects the zero-area rect that a long-click with no drag produces', () => {
+    expect(isDegenerateBrush(state('Rect', rectVerticesFromCorners(200, 200, 200, 200, geom)))).toBe(true);
+  });
+
+  it('rejects a rect that collapses along either axis', () => {
+    expect(isDegenerateBrush(state('Rect', rectVerticesFromCorners(100, 200, 300, 200, geom)))).toBe(true);
+    expect(isDegenerateBrush(state('Rect', rectVerticesFromCorners(200, 100, 200, 300, geom)))).toBe(true);
+  });
+
+  it('accepts a rect with extent on both axes', () => {
+    expect(isDegenerateBrush(state('Rect', rectVerticesFromCorners(100, 100, 300, 300, geom)))).toBe(false);
+  });
+
+  it('judges a range brush only on the axis it selects', () => {
+    // Full brush height, but no width: nothing was selected.
+    expect(isDegenerateBrush(state('RangeX', rectVerticesFromCorners(200, 0, 200, 0, geom, 'RangeX')))).toBe(true);
+    expect(isDegenerateBrush(state('RangeX', rectVerticesFromCorners(100, 0, 300, 0, geom, 'RangeX')))).toBe(false);
+    expect(isDegenerateBrush(state('RangeY', rectVerticesFromCorners(0, 200, 0, 200, geom, 'RangeY')))).toBe(true);
+    expect(isDegenerateBrush(state('RangeY', rectVerticesFromCorners(0, 100, 0, 300, geom, 'RangeY')))).toBe(false);
+  });
+
+  it('requires a lasso to have at least three vertices', () => {
+    const points = [[100, 100], [200, 100], [200, 200]].map(([x, y]) => vertexFromPixels(x!, y!, geom));
+    expect(isDegenerateBrush(state('Polygon', []))).toBe(true);
+    expect(isDegenerateBrush(state('Polygon', points.slice(0, 2)))).toBe(true);
+    expect(isDegenerateBrush(state('Polygon', points))).toBe(false);
   });
 });
 

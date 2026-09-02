@@ -5,13 +5,17 @@ import {
   clampToBrushRegion,
   getBrushGeometry,
   getClearButtonCenter,
+  getEdgeDragCorners,
   getVerticesBoundingBox,
+  isDegenerateBrush,
   isPointInBrush,
   rectVerticesFromCorners,
   reprojectBrushState,
   vertexFromPixels,
+  type BrushEdge,
   type BrushGeometry,
 } from "./brush.js";
+import { NO_BRUSH } from "./types.js";
 import type { BrushState, BrushVertex, PluotProps } from "./types.js";
 
 /** Cursor movement (in pixels) that cancels a pending long-click, since the user is panning instead. */
@@ -54,6 +58,8 @@ export type UseBrushResult = {
   /** The brush to draw, already reprojected into the current geometry. */
   brushState: BrushState | undefined;
   geometry: BrushGeometry;
+  /** Must be attached to the overlay SVG, so its handles are excluded from brush creation. */
+  overlayRef: RefObject<SVGSVGElement | null>;
   pressProgress: BrushPressProgress | null;
   /** Whether the clear button should be shown (hovering the brush, `enableBrushClear`). */
   isBrushHovered: boolean;
@@ -62,6 +68,7 @@ export type UseBrushResult = {
   /** Set when a brush drag just ended, so the ensuing `click` does not also pick. */
   shouldSuppressClickRef: RefObject<boolean>;
   onVertexMouseDown: (vertexIndex: number, event: React.MouseEvent) => void;
+  onEdgeMouseDown: (edge: BrushEdge, event: React.MouseEvent) => void;
   onClearClick: (event: React.MouseEvent) => void;
 };
 
@@ -69,7 +76,10 @@ export type UseBrushResult = {
 type ActiveInteraction =
   | { kind: "Create"; anchorX: number; anchorY: number }
   // For a Rect, `fixedX`/`fixedY` is the diagonally opposite corner, which stays put.
-  | { kind: "EditVertex"; vertexIndex: number; fixedX: number; fixedY: number };
+  | { kind: "EditVertex"; vertexIndex: number; fixedX: number; fixedY: number }
+  // Dragging a side: the cursor drives only `axis`, so the perpendicular extent
+  // is carried over from `movingX`/`movingY` and the opposite side stays put.
+  | ({ kind: "EditEdge" } & ReturnType<typeof getEdgeDragCorners>);
 
 /**
  * Implements the brush interactions: long-click to create a rect/lasso, drag a
@@ -105,16 +115,31 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     onBrushClear,
   } = params;
 
-  // `null` means uncontrolled; a BrushState or `undefined` means controlled.
-  const isControlledBrush = controlledBrush !== null;
+  // `null` (or an omitted prop) means uncontrolled; a BrushState or `NO_BRUSH`
+  // means controlled, with `NO_BRUSH` standing for "controlled, nothing brushed".
+  const isControlledBrush = controlledBrush !== null && controlledBrush !== undefined;
   const [uncontrolledBrush, setUncontrolledBrush] = useState<BrushState | undefined>(undefined);
-  const rawBrush = isControlledBrush ? controlledBrush : uncontrolledBrush;
+  const rawBrush: BrushState | undefined = isControlledBrush
+    ? (controlledBrush === NO_BRUSH ? undefined : controlledBrush)
+    : uncontrolledBrush;
+
+  // A parent may switch between controlled and uncontrolled at runtime. Whatever
+  // was stored during an earlier uncontrolled phase is not the current selection,
+  // so drop it rather than let it resurface if the brush ever goes back.
+  useEffect(() => {
+    if (isControlledBrush) {
+      setUncontrolledBrush(undefined);
+    }
+  }, [isControlledBrush]);
 
   const [pressProgress, setPressProgress] = useState<BrushPressProgress | null>(null);
   const [isBrushHovered, setIsBrushHovered] = useState(false);
 
   const isBrushingRef = useRef(false);
   const shouldSuppressClickRef = useRef(false);
+  // The overlay SVG, so that presses on its handles can be told apart from
+  // presses on the plot itself.
+  const overlayRef = useRef<SVGSVGElement | null>(null);
   const interactionRef = useRef<ActiveInteraction | null>(null);
   // The in-progress brush, so that incremental updates (e.g. appending lasso
   // vertices) do not depend on a controlled parent having fed state back yet.
@@ -159,7 +184,14 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
   // both cases. Until the Rust-side `Brushable` trait lands there is nothing to
   // snap to, so the snapped state is the state and the `BrushResult` is unused.
   const emitBrush = useEffectEvent((nextBrush: BrushState, isEnd: boolean) => {
+    // The draft is always advanced, since the rest of the drag builds on it...
     draftRef.current = nextBrush;
+    // ...but a brush that spans nothing is not a selection. Committing one would
+    // strand a stray dot on screen (four coincident vertex handles) that the user
+    // then has to clear, so hold it back until the drag gives it some extent.
+    if (isDegenerateBrush(nextBrush)) {
+      return;
+    }
     if (!isControlledBrush) {
       setUncontrolledBrush(nextBrush);
     }
@@ -223,16 +255,21 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
       return;
     }
     const [x, y] = clampToBrushRegion(xPixels, yPixels, geometry);
-    // While creating, the press point is the fixed corner; while editing, it is
-    // the corner diagonally opposite the one being dragged.
-    const [fixedX, fixedY] = interaction.kind === "Create"
-      ? [interaction.anchorX, interaction.anchorY]
-      : [interaction.fixedX, interaction.fixedY];
+
+    // Every rect-like drag reduces to a fixed corner plus a moving one. While
+    // creating, the fixed corner is the press point; while dragging a corner, it
+    // is the corner diagonally opposite; while dragging a side, it is a corner of
+    // the opposite side, and the cursor drives only one axis of the moving corner.
+    const fixedX = interaction.kind === "Create" ? interaction.anchorX : interaction.fixedX;
+    const fixedY = interaction.kind === "Create" ? interaction.anchorY : interaction.fixedY;
+    const movingX = interaction.kind === "EditEdge" && interaction.axis === "Y" ? interaction.movingX : x;
+    const movingY = interaction.kind === "EditEdge" && interaction.axis === "X" ? interaction.movingY : y;
+
     emitBrush({
       ...draft,
       // For RangeX/RangeY this discards the cross-axis drag, so dragging any
       // corner only ever moves the selected edge.
-      vertices: rectVerticesFromCorners(fixedX, fixedY, x, y, geometry, draft.shape),
+      vertices: rectVerticesFromCorners(fixedX, fixedY, movingX, movingY, geometry, draft.shape),
     }, false);
   });
 
@@ -295,6 +332,13 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     if (!enableBrushCreate || event.button !== 0 || interactionRef.current) {
       return;
     }
+    // Presses on the overlay's own controls (the vertex handles and the clear
+    // button) are not attempts to draw a new brush. Their React handlers cannot
+    // prevent this: React dispatches from its root, by which point this native
+    // listener on an ancestor has already run, so `stopPropagation` is too late.
+    if (event.target instanceof Node && overlayRef.current?.contains(event.target)) {
+      return;
+    }
     const [x, y] = getContainerCoords(event);
     if (x < geometry.brushLeft || x > geometry.brushRight || y < geometry.brushTop || y > geometry.brushBottom) {
       return;
@@ -326,7 +370,7 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
         } else {
           updateRect(x, y);
         }
-      } else if (draftRef.current?.shape === "Polygon") {
+      } else if (interaction.kind === "EditVertex" && draftRef.current?.shape === "Polygon") {
         movePolygonVertex(interaction.vertexIndex, x, y);
       } else {
         updateRect(x, y);
@@ -393,8 +437,8 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     if (!enableBrushEdit || !brushState || event.button !== 0) {
       return;
     }
-    // Keep this press from also being read as the start of a new brush.
-    event.stopPropagation();
+    // `mouseDownHandler` already ignored this press; preventDefault only stops
+    // the browser's own text-selection/drag behaviour.
     event.preventDefault();
     cancelPendingPress();
     draftRef.current = brushState;
@@ -409,10 +453,25 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     };
   });
 
+  const edgeMouseDown = useEffectEvent((edge: BrushEdge, event: React.MouseEvent) => {
+    if (!enableBrushEdit || !brushState || event.button !== 0) {
+      return;
+    }
+    const boundingBox = getVerticesBoundingBox(brushState.vertices);
+    if (!boundingBox) {
+      return;
+    }
+    // See `vertexMouseDown`: preventDefault only stops text selection here.
+    event.preventDefault();
+    cancelPendingPress();
+    draftRef.current = brushState;
+    isBrushingRef.current = true;
+    interactionRef.current = { kind: "EditEdge", ...getEdgeDragCorners(edge, boundingBox) };
+  });
+
   const clearClick = useEffectEvent((event: React.MouseEvent) => {
     // The overlay is a sibling of the camera element rather than an ancestor,
     // so this click never reaches the picking handler and needs no suppression.
-    event.stopPropagation();
     event.preventDefault();
     clearBrush();
   });
@@ -422,16 +481,22 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     (vertexIndex: number, event: React.MouseEvent) => vertexMouseDown(vertexIndex, event),
     [],
   );
+  const onEdgeMouseDown = useCallback(
+    (edge: BrushEdge, event: React.MouseEvent) => edgeMouseDown(edge, event),
+    [],
+  );
   const onClearClick = useCallback((event: React.MouseEvent) => clearClick(event), []);
 
   return {
     brushState,
     geometry,
+    overlayRef,
     pressProgress,
     isBrushHovered: isBrushHovered && enableBrushClear,
     isBrushingRef,
     shouldSuppressClickRef,
     onVertexMouseDown,
+    onEdgeMouseDown,
     onClearClick,
   };
 }
