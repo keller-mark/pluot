@@ -194,9 +194,9 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     const [x, y] = clampToBrushRegion(xPixels, yPixels, geometry);
     isBrushingRef.current = true;
     interactionRef.current = { kind: "Create", anchorX: x, anchorY: y };
-    const vertices: BrushVertex[] = brushMode === "Rect"
-      ? rectVerticesFromCorners(x, y, x, y, geometry)
-      : [vertexFromPixels(x, y, geometry)];
+    const vertices: BrushVertex[] = brushMode === "Polygon"
+      ? [vertexFromPixels(x, y, geometry)]
+      : rectVerticesFromCorners(x, y, x, y, geometry, brushMode);
     emitBrush({ status: "Drawing", shape: brushMode, vertices }, false);
   });
 
@@ -219,16 +219,20 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
   const updateRect = useEffectEvent((xPixels: number, yPixels: number) => {
     const interaction = interactionRef.current;
     const draft = draftRef.current;
-    if (!interaction || !draft) {
+    if (!interaction || !draft || draft.shape === "Polygon") {
       return;
     }
     const [x, y] = clampToBrushRegion(xPixels, yPixels, geometry);
+    // While creating, the press point is the fixed corner; while editing, it is
+    // the corner diagonally opposite the one being dragged.
     const [fixedX, fixedY] = interaction.kind === "Create"
       ? [interaction.anchorX, interaction.anchorY]
       : [interaction.fixedX, interaction.fixedY];
     emitBrush({
       ...draft,
-      vertices: rectVerticesFromCorners(fixedX, fixedY, x, y, geometry),
+      // For RangeX/RangeY this discards the cross-axis drag, so dragging any
+      // corner only ever moves the selected edge.
+      vertices: rectVerticesFromCorners(fixedX, fixedY, x, y, geometry, draft.shape),
     }, false);
   });
 
@@ -317,15 +321,15 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     const interaction = interactionRef.current;
     if (interaction) {
       if (interaction.kind === "Create") {
-        if (brushMode === "Rect") {
-          updateRect(x, y);
-        } else {
+        if (brushMode === "Polygon") {
           throttledAppendPolygonVertex(x, y);
+        } else {
+          updateRect(x, y);
         }
-      } else if (draftRef.current?.shape === "Rect") {
-        updateRect(x, y);
-      } else {
+      } else if (draftRef.current?.shape === "Polygon") {
         movePolygonVertex(interaction.vertexIndex, x, y);
+      } else {
+        updateRect(x, y);
       }
       return;
     }

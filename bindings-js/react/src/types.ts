@@ -180,12 +180,31 @@ export type BrushVertex = {
   y_normalized: number,
 };
 
+/**
+ * The shape the user draws, and which the resulting {@link BrushState} holds.
+ *
+ * - `Rect`: click and drag to draw a rectangle.
+ * - `Polygon`: click and drag to draw a lasso, defining vertices as the user
+ *   drags. The number of vertices is limited by using lodash-es throttle.
+ * - `RangeX`: select a horizontal range. The overlay renders as a rectangle
+ *   which takes up the full brush height, according to the brush margins.
+ * - `RangeY`: select a vertical range. The overlay renders as a rectangle
+ *   which takes up the full brush width, according to the brush margins.
+ */
+export type BrushMode = 'Rect' | 'Polygon' | 'RangeX' | 'RangeY';
+
+/** The axis-aligned modes, all of which are stored as four rectangle corners. */
+export type RectLikeBrushMode = Exclude<BrushMode, 'Polygon'>;
+
 export type BrushState = {
   // Is the user still drawing, or have they completed their drag interaction?
   status: 'Drawing' | 'Complete';
-  shape: 'Rect' | 'Polygon',
-  // For a Rect, always four corners ordered clockwise in pixel space starting
-  // from the top-left, so corner `i` is diagonally opposite corner `(i + 2) % 4`.
+  shape: BrushMode,
+  // For every shape but Polygon, always four corners ordered clockwise in pixel
+  // space starting from the top-left, so corner `i` is diagonally opposite
+  // corner `(i + 2) % 4`.
+  // For RangeX and RangeY, the axis that is not being selected always spans the
+  // full brushable extent, so it is re-pinned whenever that extent changes.
   vertices: BrushVertex[],
 };
 
@@ -308,11 +327,8 @@ export type PluotProps = {
   // If false, the brush overlay should be removed upon the end of the drag interaction, after calling onBrushEnd.
   persistBrush?: boolean;
 
-  // If rect, the user clicks and drags to draw a rectangle.
-  // If polygon, the user clicks and drags to draw a lasso (i.e., polygon), defining vertices as the user drags. The number of vertices is limited by using lodash-es throttle.
-  // TODO: support RangeX and RangeY, which allow selection of horizontal or vertical ranges.
-  // The overlay for these brush modes renders as a rectangle which takes up the full brush height or full brush width, according to the specified brush margins.
-  brushMode?: "Rect" | "Polygon" | "RangeX" | "RangeY";
+  // Which shape the user draws. By default, "Rect".
+  brushMode?: BrushMode;
 
   // For brushing, we support both controlled and uncontrolled (similar to the cameraMatrix/setCameraMatrix).
   // When controlled, the parent provides the brush state (rect/polygon vertices) or `undefined`.

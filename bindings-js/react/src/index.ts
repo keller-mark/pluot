@@ -14,6 +14,8 @@ export type {
   PickingResult,
   TooltipContent,
   BrushUnitsMode,
+  BrushMode,
+  RectLikeBrushMode,
   BrushVertex,
   BrushState,
   BrushResult,

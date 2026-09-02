@@ -1,5 +1,5 @@
 import { getBounds, type AspectRatioMode, type AspectRatioAlignmentMode, type Bounds, type CameraMatrix } from "@pluot/core";
-import type { BrushState, BrushUnitsMode, BrushVertex } from "./types.js";
+import type { BrushState, BrushUnitsMode, BrushVertex, RectLikeBrushMode } from "./types.js";
 
 /**
  * Everything needed to convert a brush vertex between the three units modes.
@@ -169,9 +169,22 @@ export function reprojectBrushState(
   brushUnitsModeX: BrushUnitsMode,
   brushUnitsModeY: BrushUnitsMode,
 ): BrushState {
+  const vertices = state.vertices.map(v => reprojectVertex(v, geom, brushUnitsModeX, brushUnitsModeY));
+  const boundingBox = state.shape === "Polygon" ? null : getVerticesBoundingBox(vertices);
+  if (state.shape === "Polygon" || boundingBox === null) {
+    return { ...state, vertices };
+  }
+  // Rebuild the corners from the reprojected extent, so that the unselected axis
+  // of a RangeX/RangeY brush keeps spanning the whole brushable region even as
+  // the camera, the container size, or the margins change. For a plain Rect this
+  // is a no-op, since reprojection is axis-aligned and monotonic.
   return {
     ...state,
-    vertices: state.vertices.map(v => reprojectVertex(v, geom, brushUnitsModeX, brushUnitsModeY)),
+    vertices: rectVerticesFromCorners(
+      boundingBox.left, boundingBox.top,
+      boundingBox.right, boundingBox.bottom,
+      geom, state.shape,
+    ),
   };
 }
 
@@ -187,16 +200,20 @@ export function clampToBrushRegion(xPixels: number, yPixels: number, geom: Brush
  * The four corners of the rect spanned by two opposite corners, ordered
  * clockwise in pixel space starting from the top-left, so that corner `i` is
  * always diagonally opposite corner `(i + 2) % 4`.
+ *
+ * `RangeX` and `RangeY` select along a single axis, so the other axis is
+ * discarded and pinned to the full extent of the brushable region.
  */
 export function rectVerticesFromCorners(
   x0: number, y0: number,
   x1: number, y1: number,
   geom: BrushGeometry,
+  shape: RectLikeBrushMode = "Rect",
 ): BrushVertex[] {
-  const left = Math.min(x0, x1);
-  const right = Math.max(x0, x1);
-  const top = Math.min(y0, y1);
-  const bottom = Math.max(y0, y1);
+  const left = shape === "RangeY" ? geom.brushLeft : Math.min(x0, x1);
+  const right = shape === "RangeY" ? geom.brushRight : Math.max(x0, x1);
+  const top = shape === "RangeX" ? geom.brushTop : Math.min(y0, y1);
+  const bottom = shape === "RangeX" ? geom.brushBottom : Math.max(y0, y1);
   return [
     vertexFromPixels(left, top, geom),
     vertexFromPixels(right, top, geom),

@@ -489,6 +489,8 @@ export function Demo() {
           <select value={brushMode} onChange={(e) => setBrushMode(e.target.value)}>
             <option value="Rect">Rect</option>
             <option value="Polygon">Polygon (lasso)</option>
+            <option value="RangeX">RangeX (horizontal range)</option>
+            <option value="RangeY">RangeY (vertical range)</option>
           </select>
         </label>
         &nbsp;

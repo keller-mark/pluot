@@ -43,16 +43,18 @@ export function BrushOverlay(props: BrushOverlayProps) {
 
   const vertices = brushState?.vertices ?? [];
 
-  // A rect is always closed; a lasso is left open while the user is still
-  // drawing it, and closed once the drag completes.
+  // Every shape but the lasso is a closed rectangle throughout the drag; a lasso
+  // is left open while the user is still drawing it, and closed once the drag completes.
+  const isClosed = (brushState !== undefined && brushState.shape !== "Polygon")
+    || brushState?.status === "Complete";
+
   const pathData = useMemo(() => {
     if (vertices.length === 0) {
       return null;
     }
     const points = vertices.map(v => `${v.x_pixels},${v.y_pixels}`).join(" L ");
-    const shouldClose = brushState?.shape === "Rect" || brushState?.status === "Complete";
-    return `M ${points}${shouldClose ? " Z" : ""}`;
-  }, [vertices, brushState?.shape, brushState?.status]);
+    return `M ${points}${isClosed ? " Z" : ""}`;
+  }, [vertices, isClosed]);
 
   const clearButtonCenter = useMemo(() => {
     const boundingBox = getVerticesBoundingBox(vertices);
@@ -61,7 +63,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
 
   // While drawing a lasso, the intermediate vertices are too dense to be useful
   // as handles, and they are not editable until the drag completes.
-  const shouldShowVertexHandles = brushState?.shape === "Rect" || brushState?.status === "Complete";
+  const shouldShowVertexHandles = isClosed;
 
   return (
     <svg
@@ -81,7 +83,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
       {pathData ? (
         <path
           d={pathData}
-          fill={brushState?.shape === "Rect" || brushState?.status === "Complete" ? BRUSH_FILL : "none"}
+          fill={isClosed ? BRUSH_FILL : "none"}
           stroke={BRUSH_STROKE}
           strokeWidth={1.5}
           strokeDasharray={brushState?.status === "Drawing" ? "4 3" : undefined}
@@ -100,7 +102,11 @@ export function BrushOverlay(props: BrushOverlayProps) {
           strokeWidth={1.5}
           style={{
             pointerEvents: enableBrushEdit ? "auto" : "none",
-            cursor: enableBrushEdit ? "grab" : "default",
+            // A range brush only moves along its selected axis, so say so.
+            cursor: !enableBrushEdit ? "default"
+              : brushState?.shape === "RangeX" ? "ew-resize"
+              : brushState?.shape === "RangeY" ? "ns-resize"
+              : "grab",
           }}
           onMouseDown={enableBrushEdit ? (event => onVertexMouseDown(vertexIndex, event)) : undefined}
         />

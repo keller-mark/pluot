@@ -7,10 +7,12 @@ import {
   isPointInBrush,
   pixelsFromVertex,
   rectVerticesFromCorners,
+  reprojectBrushState,
   reprojectVertex,
   vertexFromPixels,
   type BrushGeometryParams,
 } from './brush.js';
+import type { BrushState } from './types.js';
 
 function identityCamera(): Float32Array {
   return new Float32Array([
@@ -211,6 +213,92 @@ describe('reprojectVertex', () => {
   });
 });
 
+describe('reprojectBrushState', () => {
+  function completeState(shape: BrushState['shape'], vertices: BrushState['vertices']): BrushState {
+    return { status: 'Complete', shape, vertices };
+  }
+
+  // Reprojection round-trips through the Float32Array camera matrix, so the
+  // recovered pixel positions carry float32-sized error.
+  function expectBoundingBoxCloseTo(
+    vertices: BrushState['vertices'],
+    expected: { left: number, top: number, right: number, bottom: number },
+  ) {
+    const actual = getVerticesBoundingBox(vertices)!;
+    expect(actual.left).toBeCloseTo(expected.left, 4);
+    expect(actual.top).toBeCloseTo(expected.top, 4);
+    expect(actual.right).toBeCloseTo(expected.right, 4);
+    expect(actual.bottom).toBeCloseTo(expected.bottom, 4);
+  }
+
+  it('re-pins the unselected axis of a RangeX brush when the margins change', () => {
+    // "Ignore" keeps the data bounds at 0..1 regardless of aspect ratio, so the
+    // only thing moving in this test is the brushable extent.
+    const params = { aspectRatioMode: "Ignore" } as const;
+    const before = getBrushGeometry(baseParams(params));
+    const state = completeState('RangeX', rectVerticesFromCorners(100, 0, 200, 0, before, 'RangeX'));
+    expect(getVerticesBoundingBox(state.vertices)).toEqual({ left: 100, top: 50, right: 200, bottom: 350 });
+
+    const after = getBrushGeometry(baseParams({ ...params, marginBottom: 100 }));
+    const reprojected = reprojectBrushState(state, after, "Data", "Data");
+
+    // The selected X extent is untouched, while Y shrinks to the new full height.
+    expectBoundingBoxCloseTo(reprojected.vertices, { left: 100, top: 50, right: 200, bottom: 300 });
+  });
+
+  it('lets a Data-mode RangeX brush scroll with the camera while staying full-height', () => {
+    const before = getBrushGeometry(baseParams());
+    const state = completeState('RangeX', rectVerticesFromCorners(100, 0, 200, 0, before, 'RangeX'));
+
+    const after = getBrushGeometry(baseParams({ cameraMatrix: zoomCamera(2) }));
+    const reprojected = reprojectBrushState(state, after, "Data", "Data");
+    const boundingBox = getVerticesBoundingBox(reprojected.vertices)!;
+
+    // Zooming in spreads the selected range out across (and past) the viewport...
+    expect(boundingBox.left).toBeCloseTo(0, 4);
+    expect(boundingBox.right).toBeCloseTo(200, 4);
+    // ...but the unselected axis still spans the full brush height.
+    expect(boundingBox.top).toBe(50);
+    expect(boundingBox.bottom).toBe(350);
+  });
+
+  it('re-pins the unselected axis of a RangeY brush when the container is resized', () => {
+    // Both axes are screen-anchored, so the resize is the only thing in play.
+    const params = {
+      brushUnitsModeX: "Pixels", brushUnitsModeY: "Pixels",
+      brushMarginLeft: 0, brushMarginRight: 0,
+    } as const;
+    const before = getBrushGeometry(baseParams(params));
+    const state = completeState('RangeY', rectVerticesFromCorners(0, 100, 0, 200, before, 'RangeY'));
+    expect(getVerticesBoundingBox(state.vertices)).toEqual({ left: 0, top: 100, right: 400, bottom: 200 });
+
+    const after = getBrushGeometry(baseParams({ ...params, width: 200 }));
+    const reprojected = reprojectBrushState(state, after, "Pixels", "Pixels");
+
+    // The selected Y extent is untouched, while X shrinks to the new full width.
+    expectBoundingBoxCloseTo(reprojected.vertices, { left: 0, top: 100, right: 200, bottom: 200 });
+  });
+
+  it('leaves a Rect unchanged when nothing about the geometry changed', () => {
+    const geom = getBrushGeometry(baseParams());
+    const state = completeState('Rect', rectVerticesFromCorners(100, 120, 300, 340, geom));
+    const reprojected = reprojectBrushState(state, geom, "Data", "Data");
+    expectBoundingBoxCloseTo(reprojected.vertices, { left: 100, top: 120, right: 300, bottom: 340 });
+  });
+
+  it('does not re-pin a Polygon to its bounding box', () => {
+    const geom = getBrushGeometry(baseParams());
+    const vertices = [[100, 100], [300, 120], [180, 300]].map(([x, y]) => vertexFromPixels(x!, y!, geom));
+    const reprojected = reprojectBrushState(completeState('Polygon', vertices), geom, "Data", "Data");
+    expect(reprojected.vertices).toHaveLength(3);
+    // A rebuild from the bounding box would have moved every vertex to a corner.
+    reprojected.vertices.forEach((vertex, i) => {
+      expect(vertex.x_pixels).toBeCloseTo(vertices[i]!.x_pixels, 4);
+      expect(vertex.y_pixels).toBeCloseTo(vertices[i]!.y_pixels, 4);
+    });
+  });
+});
+
 describe('clampToBrushRegion', () => {
   it('restricts positions to the brushable region', () => {
     const geom = getBrushGeometry(baseParams({ brushUnitsModeX: "Pixels", brushUnitsModeY: "Pixels" }));
@@ -229,6 +317,36 @@ describe('rectVerticesFromCorners', () => {
       [300, 100],
       [300, 300],
       [100, 300],
+    ]);
+  });
+
+  it('pins RangeX to the full brush height, keeping the dragged X extent', () => {
+    const geom = getBrushGeometry(baseParams({
+      brushUnitsModeY: "Pixels",
+      brushMarginTop: 10,
+      brushMarginBottom: 20,
+    }));
+    const vertices = rectVerticesFromCorners(120, 200, 260, 210, geom, "RangeX");
+    expect(vertices.map(v => [v.x_pixels, v.y_pixels])).toEqual([
+      [120, 10],
+      [260, 10],
+      [260, 380],
+      [120, 380],
+    ]);
+  });
+
+  it('pins RangeY to the full brush width, keeping the dragged Y extent', () => {
+    const geom = getBrushGeometry(baseParams({
+      brushUnitsModeX: "Pixels",
+      brushMarginLeft: 30,
+      brushMarginRight: 40,
+    }));
+    const vertices = rectVerticesFromCorners(200, 260, 210, 120, geom, "RangeY");
+    expect(vertices.map(v => [v.x_pixels, v.y_pixels])).toEqual([
+      [30, 120],
+      [360, 120],
+      [360, 260],
+      [30, 260],
     ]);
   });
 
