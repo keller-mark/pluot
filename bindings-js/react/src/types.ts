@@ -248,9 +248,14 @@ export type PluotProps = {
   onHover?: ((result: PickingResult) => TooltipContent) | null;
 
   // TODO: implement brushing, with support for both rectangular brush and lasso (i.e., polygonal) brush.
-  // We draw a brush overlay as an SVG.
+  // We draw a brush overlay as an SVG to indicate the drawn rect/polygon (both during the draw interactions and following completion).
   // The brush overlay consists of either a rectangle with circle elements at its corner vertices,
   // or a circle element at each polygon vertex, with lines connecting the polygon vertices.
+
+  // When the brush units mode is "Data", the brushed overlay rect/polygon should be dependent on the camera matrix and should respond to camera state updates.
+  // As the user zooms/pans, the overlay will need to update if the unitsMode is "Data" in either the X, Y, or XY directions.
+  brushUnitsModeX?: "Pixels" | "Data" | "Normalized";
+  brushUnitsModeY?: "Pixels" | "Data" | "Normalized";
 
   // The brush margins restrict the brushable region to within the specified brush bounds.
   // However, when brushUnitsModeY is "Data", we ignore brushMarginTop and brushMarginBottom, and instead the layer (i.e., camera) bounds (marginTop and marginBottom) take precedence.
@@ -260,11 +265,6 @@ export type PluotProps = {
   brushMarginLeft?: number;
   brushMarginRight?: number;
 
-  // When the brush units mode is "Data", the brushed overlay rect/polygon should be dependent on the camera matrix and should respond to camera state updates.
-  // As the user zooms/pans, the overlay will need to update if the unitsMode is "Data" in either the X, Y, or XY directions.
-  brushUnitsModeX?: "Pixels" | "Data" | "Normalized";
-  brushUnitsModeY?: "Pixels" | "Data" | "Normalized";
-
   // When true, the user can draw a brush rect/polygon by long-clicking and then dragging.
   enableBrushCreate?: boolean;
   // When true, the user can modify the vertices of persisted brushes (uncontrolled) or brushes passed via `brush` prop (controlled) by interacting with the overlay.
@@ -272,13 +272,15 @@ export type PluotProps = {
   // When true, we display a clear button upon hovering the brush rect/polygon, to allow the user to clear/cancel the brush.
   enableBrushClear?: boolean;
 
-  // If the user begins to long-click for this long, we start to render a small circle (at the mouse cursor location) which gradually fills in by rendering a pie slice with a larger angle until it fills the full pie at brushDelay.
-  // By default, 250ms.
-  maybeBrushDelay?: number;
-
-  // If the user long-clicks for this amount of milliseconds, then they can being drawing the brush rect/lasso.
+  // Long-click of 1.5s to trigger a brushing interaction. If the user long-clicks for this amount of milliseconds, then they can being drawing the brush rect/lasso.
+  // Only relevant when enableBrushCreate is true.
   // By default, 1500 ms.
   brushDelay?: number;
+
+  // When a user has begun to click-and-hold for this amount of ms, we render a small circle at the current mouse cursor position, and animate the circle "filling" by rendering a wedge (slice of pie) with a larger angle until the wedge fills the whole pie (finishing at the specified brushDelay duration).
+  // Only relevant when enableBrushCreate is true.
+  // By default, 250ms.
+  maybeBrushDelay?: number;
 
   // If true, the brush overlay should remain after the drag interaction.
   // If false, the brush overlay should be removed upon the end of the drag interaction, after calling onBrushEnd.
@@ -289,18 +291,18 @@ export type PluotProps = {
   brushMode?: "Rect" | "Polygon";
 
   // For brushing, we support both controlled and uncontrolled (similar to the cameraMatrix/setCameraMatrix).
-  // When controlled, the parent provides the brush state (rect/polygon vertices).
-  // Otherwise, the brush state is managed internally.
-  // When controlled via parent, we ignore the persistBrush prop.
+  // When controlled, the parent provides the brush state (rect/polygon vertices) or `undefined`.
+  // When uncontrolled, the value of `brush` is `null`, so the brush state will be managed internally.
+  // When controlled via parent, we ignore the persistBrush prop; instead, the brush persists while the BrushState is specified/present.
   // If null, we take this to mean uncontrolled.
-  // If an object is provided, we take this to mean controlled.
-  // Note that when controlled, enableBrushing can be false (the user cannot long-click to draw a new brush),
-  // but the parent may still provide a brush.
-  // When controlled, we do not emit onBrush/onBrushEnd.
-  brush?: BrushState;
+  // If a BrushState object or `undefined` is provided, we take this to mean controlled.
+  // Note that when controlled, enableBrushCreate can be false (the user cannot long-click to draw a new brush),
+  // but the parent may still provide a brush value.
+  // When controlled, we only emit onBrush/onBrushEnd for internally-triggered updates (e.g., if enableBrushEdit is true) or clearing (e.g., if enableBrushClear is true).
+  brush: BrushState | undefined | null;
 
   // Called on drag interactions, as the user is drawing the brush rect/polygon.
-  // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush).
+  // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush, if enableBrushEdit is true).
   onBrush?: (state: BrushState, snappedState: BrushState) => BrushResult,
   // Called at the conclusion of the drag interaction, with the final (i.e., complete) brush rect/polygon.
   onBrushEnd?: (state: BrushState, snappedState: BrushState) => BrushResult,
