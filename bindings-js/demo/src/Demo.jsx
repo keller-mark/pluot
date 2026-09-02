@@ -423,6 +423,12 @@ export function Demo() {
 
   const [graphicsFormat, setGraphicsFormat] = useState("Raster");
 
+  // Brushing: long-click (1.5s by default) inside the plot area, then drag.
+  const [brushMode, setBrushMode] = useState("Rect");
+  const [brushUnitsMode, setBrushUnitsMode] = useState("Data");
+  // Controlled brushing, so the vertices can be echoed back below the plot.
+  const [brush, setBrush] = useState(undefined);
+
   return (
     <div>
       <select
@@ -467,7 +473,39 @@ export function Demo() {
               }
         }
         viewMode={currPlotId === "three_d_plot" ? "3d" : "2d"}
+        brushMode={brushMode}
+        brushUnitsModeX={brushUnitsMode}
+        brushUnitsModeY={brushUnitsMode}
+        enableBrushCreate
+        enableBrushEdit
+        enableBrushClear
+        brush={brush}
+        onBrush={(state) => setBrush(state)}
+        onBrushEnd={(state) => setBrush(state)}
+        onBrushClear={() => setBrush(undefined)}
       />
+      <div>
+        <label>Brush shape:&nbsp;
+          <select value={brushMode} onChange={(e) => setBrushMode(e.target.value)}>
+            <option value="Rect">Rect</option>
+            <option value="Polygon">Polygon (lasso)</option>
+          </select>
+        </label>
+        &nbsp;
+        <label>Brush units:&nbsp;
+          <select value={brushUnitsMode} onChange={(e) => setBrushUnitsMode(e.target.value)}>
+            <option value="Data">Data (follows the camera)</option>
+            <option value="Pixels">Pixels</option>
+            <option value="Normalized">Normalized</option>
+          </select>
+        </label>
+        &nbsp;
+        <span>
+          {brush
+            ? `${brush.status} ${brush.shape} with ${brush.vertices.length} vertices`
+            : "Long-click (1.5s) inside the plot, then drag, to brush."}
+        </span>
+      </div>
       {plotType === "Scatterplot" ? (
         <div>
           <label>Point Radius (for Scatterplot):</label>

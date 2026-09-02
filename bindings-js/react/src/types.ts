@@ -148,8 +148,26 @@ export type HoverInfo = {
   mouseY: number;
 };
 
+// === Brushing ===
+
+/**
+ * Which representation of a {@link BrushVertex} is authoritative for an axis.
+ *
+ * - `Pixels`: relative to the top-left of the outer (width x height) container,
+ *   with Y increasing downwards (the DOM/SVG convention). Unaffected by the camera.
+ * - `Data`: the data coordinate under the current camera, as reported by
+ *   `getBounds`, with Y increasing upwards. A brush in this mode is pinned to the
+ *   data, so it moves on screen as the user zooms/pans.
+ * - `Normalized`: a 0-to-1 fraction of the brushable region, with Y increasing
+ *   upwards (0 at the bottom edge, 1 at the top edge). Unaffected by the camera.
+ */
+export type BrushUnitsMode = "Pixels" | "Data" | "Normalized";
+
 // For each brushed rect/polygon vertex,
 // we represent it using all units modes simultaneously.
+// Only the representation matching `brushUnitsModeX`/`brushUnitsModeY` is
+// authoritative; the other two are derived from it and are recomputed whenever
+// the camera, the container size, or the margins change.
 export type BrushVertex = {
   // Data unitsMode.
   x_data: number,
@@ -166,6 +184,8 @@ export type BrushState = {
   // Is the user still drawing, or have they completed their drag interaction?
   status: 'Drawing' | 'Complete';
   shape: 'Rect' | 'Polygon',
+  // For a Rect, always four corners ordered clockwise in pixel space starting
+  // from the top-left, so corner `i` is diagonally opposite corner `(i + 2) % 4`.
   vertices: BrushVertex[],
 };
 
@@ -247,17 +267,19 @@ export type PluotProps = {
   onClick?: ((result: PickingResult) => void) | null;
   onHover?: ((result: PickingResult) => TooltipContent) | null;
 
-  // TODO: implement brushing, with support for both rectangular brush and lasso (i.e., polygonal) brush.
+  // Brushing supports both a rectangular brush and a lasso (i.e., polygonal) brush.
   // We draw a brush overlay as an SVG to indicate the drawn rect/polygon (both during the draw interactions and following completion).
   // The brush overlay consists of either a rectangle with circle elements at its corner vertices,
   // or a circle element at each polygon vertex, with lines connecting the polygon vertices.
 
-  // When the brush units mode is "Data", the brushed overlay rect/polygon should be dependent on the camera matrix and should respond to camera state updates.
-  // As the user zooms/pans, the overlay will need to update if the unitsMode is "Data" in either the X, Y, or XY directions.
-  brushUnitsModeX?: "Pixels" | "Data" | "Normalized";
-  brushUnitsModeY?: "Pixels" | "Data" | "Normalized";
+  // When the brush units mode is "Data", the brushed overlay rect/polygon is dependent on the camera matrix and responds to camera state updates.
+  // As the user zooms/pans, the overlay updates if the unitsMode is "Data" in either the X, Y, or XY directions.
+  // Both default to "Data".
+  brushUnitsModeX?: BrushUnitsMode;
+  brushUnitsModeY?: BrushUnitsMode;
 
   // The brush margins restrict the brushable region to within the specified brush bounds.
+  // Each defaults to the corresponding layer margin, so by default the brushable region is the layer region.
   // However, when brushUnitsModeY is "Data", we ignore brushMarginTop and brushMarginBottom, and instead the layer (i.e., camera) bounds (marginTop and marginBottom) take precedence.
   brushMarginTop?: number;
   brushMarginBottom?: number;
@@ -288,7 +310,9 @@ export type PluotProps = {
 
   // If rect, the user clicks and drags to draw a rectangle.
   // If polygon, the user clicks and drags to draw a lasso (i.e., polygon), defining vertices as the user drags. The number of vertices is limited by using lodash-es throttle.
-  brushMode?: "Rect" | "Polygon";
+  // TODO: support RangeX and RangeY, which allow selection of horizontal or vertical ranges.
+  // The overlay for these brush modes renders as a rectangle which takes up the full brush height or full brush width, according to the specified brush margins.
+  brushMode?: "Rect" | "Polygon" | "RangeX" | "RangeY";
 
   // For brushing, we support both controlled and uncontrolled (similar to the cameraMatrix/setCameraMatrix).
   // When controlled, the parent provides the brush state (rect/polygon vertices) or `undefined`.
@@ -303,6 +327,8 @@ export type PluotProps = {
 
   // Called on drag interactions, as the user is drawing the brush rect/polygon.
   // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush, if enableBrushEdit is true).
+  // Note: until the Rust `Brushable` trait exists, there is nothing to snap to, so
+  // `snappedState` is the same object as `state` and the returned `BrushResult` is ignored.
   onBrush?: (state: BrushState, snappedState: BrushState) => BrushResult,
   // Called at the conclusion of the drag interaction, with the final (i.e., complete) brush rect/polygon.
   onBrushEnd?: (state: BrushState, snappedState: BrushState) => BrushResult,

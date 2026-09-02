@@ -13,4 +13,8 @@ export type {
   LayerPickingResult,
   PickingResult,
   TooltipContent,
+  BrushUnitsMode,
+  BrushVertex,
+  BrushState,
+  BrushResult,
 } from "./types.js";

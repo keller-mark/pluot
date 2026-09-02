@@ -11,6 +11,8 @@ import {
   type CameraMatrix,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
+import { BrushOverlay } from "./BrushOverlay.js";
+import { useBrush } from "./useBrush.js";
 import type {
   HoverInfo, PickingResult, PluotProps, RawPickingResult, RenderParams, TooltipContent,
 } from "./types.js";
@@ -88,6 +90,23 @@ export function Pluot(props: PluotProps) {
     enableTooltip = false,
     onClick: onClickProp = null,
     onHover: onHoverProp = null,
+    brushUnitsModeX = "Data",
+    brushUnitsModeY = "Data",
+    brushMarginTop,
+    brushMarginRight,
+    brushMarginBottom,
+    brushMarginLeft,
+    enableBrushCreate = false,
+    enableBrushEdit = false,
+    enableBrushClear = false,
+    brushDelay = 1500,
+    maybeBrushDelay = 250,
+    persistBrush = false,
+    brushMode = "Rect",
+    brush = null,
+    onBrush,
+    onBrushEnd,
+    onBrushClear,
   } = props;
 
   const onClick: (result: PickingResult) => void = typeof onClickProp === 'function' ? onClickProp : noop;
@@ -143,6 +162,9 @@ export function Pluot(props: PluotProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraElementRef = useRef<HTMLDivElement | null>(null);
+  // The outer (width x height) element, which is the coordinate space that both
+  // the brush overlay and the hover tooltip are positioned within.
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const tempButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -171,6 +193,26 @@ export function Pluot(props: PluotProps) {
 
   const progressBarId = useId();
 
+  const {
+    brushState,
+    pressProgress,
+    isBrushHovered,
+    isBrushingRef,
+    shouldSuppressClickRef,
+    onVertexMouseDown,
+    onClearClick,
+  } = useBrush({
+    containerRef,
+    width, height,
+    marginTop, marginRight, marginBottom, marginLeft,
+    aspectRatioMode, aspectRatioAlignmentMode, cameraMatrix,
+    brushUnitsModeX, brushUnitsModeY,
+    brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
+    enableBrushCreate, enableBrushEdit, enableBrushClear,
+    brushDelay, maybeBrushDelay, persistBrush, brushMode,
+    brush, onBrush, onBrushEnd, onBrushClear,
+  });
+
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
@@ -193,6 +235,10 @@ export function Pluot(props: PluotProps) {
   });
 
   const mouseMoveHandler = useEffectEvent((event: MouseEvent) => {
+    // A drag that is drawing or editing a brush must not also pan/rotate the camera.
+    if (isBrushingRef.current) {
+      return;
+    }
     const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
     const nextCameraMatrix = onMouseMove({
         width,
@@ -298,6 +344,10 @@ export function Pluot(props: PluotProps) {
     const mouseDownHandler = (event: MouseEvent) => {
       dragStartRef.current = { x: event.clientX, y: event.clientY };
       didDragRef.current = false;
+      // A brush drag that ended outside the camera element never produced the
+      // click that would have consumed this flag, so clear it as the next
+      // interaction begins rather than letting it suppress that one too.
+      shouldSuppressClickRef.current = false;
     };
     const dragDetectHandler = (event: MouseEvent) => {
       if (!dragStartRef.current) {
@@ -315,9 +365,13 @@ export function Pluot(props: PluotProps) {
     // Set up an onClick handler for picking.
     const clickHandler = (event: MouseEvent) => {
       const wasDrag = didDragRef.current;
+      // A brush drag (or a click on the clear button) ends with a click on the
+      // camera element, which should not also run a picking query.
+      const wasBrush = shouldSuppressClickRef.current;
       dragStartRef.current = null;
       didDragRef.current = false;
-      if (enableClick && !wasDrag) {
+      shouldSuppressClickRef.current = false;
+      if (enableClick && !wasDrag && !wasBrush) {
         pickFrame(event.offsetX, event.offsetY);
       }
     };
@@ -325,7 +379,7 @@ export function Pluot(props: PluotProps) {
 
     // Set up hover handlers for picking, only when the onHover prop is provided.
     const hoverMoveHandler = (event: MouseEvent) => {
-      if (enableTooltip) {
+      if (enableTooltip && !isBrushingRef.current) {
         throttledHoverFrame(event.offsetX, event.offsetY);
       }
     };
@@ -512,6 +566,8 @@ export function Pluot(props: PluotProps) {
     return {
       position: "absolute",
       pointerEvents: "none",
+      // Above the brush overlay, so a persisted brush does not tint the tooltip.
+      zIndex: 2,
       ...(isTop ? { top: mouseY + offsetPx } : { bottom: height - mouseY + offsetPx + extraPx }),
       ...(isLeft ? { left: mouseX + offsetPx + extraPx } : { right: width - mouseX + offsetPx }),
     };
@@ -519,7 +575,14 @@ export function Pluot(props: PluotProps) {
 
   return (
     <>
-      <div style={{ width, height, position: "relative", backgroundColor }}>
+      <div
+        ref={containerRef}
+        style={{
+          width, height, position: "relative", backgroundColor,
+          // Long-clicking to start a brush otherwise selects surrounding text.
+          userSelect: enableBrushCreate ? "none" : undefined,
+        }}
+      >
         {!supportsWebGpu ? (
           <p>{supportsWebGpuMessage}</p>
         ) : null}
@@ -573,6 +636,16 @@ export function Pluot(props: PluotProps) {
 
           />
         )}
+        <BrushOverlay
+          width={width}
+          height={height}
+          brushState={brushState}
+          pressProgress={pressProgress}
+          isBrushHovered={isBrushHovered}
+          enableBrushEdit={enableBrushEdit}
+          onVertexMouseDown={onVertexMouseDown}
+          onClearClick={onClearClick}
+        />
         {hoverInfo ? (
           <div style={hoverStyle ?? undefined}>
             <Tooltip content={hoverInfo.content} asTable />
