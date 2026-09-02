@@ -1,7 +1,7 @@
-import React, { useMemo, type RefObject } from "react";
+import React, { useId, useMemo, type RefObject } from "react";
 import {
   describeWedgePath, getClearButtonCenter, getEdgeLine, getEditableEdges, getVerticesBoundingBox,
-  type BrushEdge,
+  type BrushEdge, type BrushGeometry,
 } from "./brush.js";
 import type { BrushState } from "./types.js";
 import { CLEAR_BUTTON_RADIUS_PX, type BrushPressProgress } from "./useBrush.js";
@@ -21,6 +21,8 @@ export type BrushOverlayProps = {
   height: number;
   /** From `useBrush`, so that presses on the handles below are not read as new brushes. */
   overlayRef: RefObject<SVGSVGElement | null>;
+  /** Supplies the brushable region, which everything drawn here is clipped to. */
+  geometry: BrushGeometry;
   brushState: BrushState | undefined;
   pressProgress: BrushPressProgress | null;
   /** Whether to draw the clear button (the pointer is over the brush and `enableBrushClear`). */
@@ -66,6 +68,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
   const {
     width, height,
     overlayRef,
+    geometry,
     brushState,
     pressProgress,
     isBrushHovered,
@@ -93,8 +96,11 @@ export function BrushOverlay(props: BrushOverlayProps) {
   const boundingBox = useMemo(() => getVerticesBoundingBox(vertices), [vertices]);
 
   const clearButtonCenter = boundingBox
-    ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX)
+    ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX, geometry)
     : null;
+
+  // `useId` emits colons, which are legal in an id but awkward inside `url(#...)`.
+  const clipPathId = `pluot-brush-clip-${useId().replace(/:/g, "")}`;
 
   // While drawing a lasso, the intermediate vertices are too dense to be useful
   // as handles, and they are not editable until the drag completes.
@@ -122,98 +128,115 @@ export function BrushOverlay(props: BrushOverlayProps) {
       viewBox={`0 0 ${width} ${height}`}
       xmlns="http://www.w3.org/2000/svg"
     >
-      {pathData ? (
-        <path
-          d={pathData}
-          fill={isClosed ? BRUSH_FILL : "none"}
-          stroke={BRUSH_STROKE}
-          strokeWidth={1.5}
-          strokeDasharray={brushState?.status === "Drawing" ? "4 3" : undefined}
-        />
-      ) : null}
-      {/* Drawn before the corner handles, so a press near a corner grabs the
-          corner rather than one of the two sides meeting there. */}
-      {editableEdges.map(edge => {
-        const [x1, y1, x2, y2] = getEdgeLine(edge, boundingBox!);
-        return (
-          <line
-            key={edge}
-            x1={x1}
-            y1={y1}
-            x2={x2}
-            y2={y2}
-            // Invisible ink, but a wide grab target.
-            stroke="transparent"
-            strokeWidth={EDGE_HANDLE_WIDTH_PX}
-            strokeLinecap="butt"
-            style={{ pointerEvents: "stroke", cursor: getEdgeCursor(edge) }}
-            onMouseDown={event => onEdgeMouseDown(edge, event)}
+      <defs>
+        <clipPath id={clipPathId}>
+          <rect
+            x={geometry.brushLeft}
+            y={geometry.brushTop}
+            width={Math.max(geometry.brushRight - geometry.brushLeft, 0)}
+            height={Math.max(geometry.brushBottom - geometry.brushTop, 0)}
           />
-        );
-      })}
-      {shouldShowVertexHandles ? vertices.map((vertex, vertexIndex) => (
-        <circle
-          // Vertices have no identity beyond their position in the ring, and the
-          // list is rebuilt on every update, so the index is the only stable key.
-          key={vertexIndex}
-          cx={vertex.x_pixels}
-          cy={vertex.y_pixels}
-          r={VERTEX_HANDLE_RADIUS_PX}
-          fill={HANDLE_FILL}
-          stroke={BRUSH_STROKE}
-          strokeWidth={1.5}
-          style={{
-            pointerEvents: enableBrushEdit ? "auto" : "none",
-            cursor: enableBrushEdit ? getVertexCursor(brushState?.shape, vertexIndex) : "default",
-          }}
-          onMouseDown={enableBrushEdit ? (event => onVertexMouseDown(vertexIndex, event)) : undefined}
-        />
-      )) : null}
-      {isBrushHovered && clearButtonCenter ? (
-        <g
-          style={{ pointerEvents: "auto", cursor: "pointer" }}
-          onClick={onClearClick}
-          role="button"
-          aria-label="Clear brush"
-        >
-          <circle
-            cx={clearButtonCenter[0]}
-            cy={clearButtonCenter[1]}
-            r={CLEAR_BUTTON_RADIUS_PX}
-            fill={CLEAR_FILL}
-          />
+        </clipPath>
+      </defs>
+      {/* Everything is clipped to the brushable region: a brush anchored in data
+          units scrolls with the camera, so without this it would spill over the
+          axes and the surrounding margins as the user pans or zooms out. Clipping
+          also applies to hit-testing, so handles that have scrolled out of the
+          region stop responding, matching what the user can see. */}
+      <g clipPath={`url(#${clipPathId})`}>
+        {pathData ? (
           <path
-            d={
-              `M ${clearButtonCenter[0] - 4} ${clearButtonCenter[1] - 4} L ${clearButtonCenter[0] + 4} ${clearButtonCenter[1] + 4} `
-              + `M ${clearButtonCenter[0] + 4} ${clearButtonCenter[1] - 4} L ${clearButtonCenter[0] - 4} ${clearButtonCenter[1] + 4}`
-            }
-            stroke="#ffffff"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-          />
-        </g>
-      ) : null}
-      {pressProgress ? (
-        <g>
-          <circle
-            cx={pressProgress.xPixels}
-            cy={pressProgress.yPixels}
-            r={PRESS_INDICATOR_RADIUS_PX}
-            fill="rgba(255, 255, 255, 0.6)"
+            d={pathData}
+            fill={isClosed ? BRUSH_FILL : "none"}
             stroke={BRUSH_STROKE}
             strokeWidth={1.5}
+            strokeDasharray={brushState?.status === "Drawing" ? "4 3" : undefined}
           />
-          <path
-            d={describeWedgePath(
-              pressProgress.xPixels,
-              pressProgress.yPixels,
-              PRESS_INDICATOR_RADIUS_PX,
-              pressProgress.fraction,
-            )}
-            fill={BRUSH_STROKE}
+        ) : null}
+        {/* Drawn before the corner handles, so a press near a corner grabs the
+            corner rather than one of the two sides meeting there. */}
+        {editableEdges.map(edge => {
+          const [x1, y1, x2, y2] = getEdgeLine(edge, boundingBox!);
+          return (
+            <line
+              key={edge}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              // Invisible ink, but a wide grab target.
+              stroke="transparent"
+              strokeWidth={EDGE_HANDLE_WIDTH_PX}
+              strokeLinecap="butt"
+              style={{ pointerEvents: "stroke", cursor: getEdgeCursor(edge) }}
+              onMouseDown={event => onEdgeMouseDown(edge, event)}
+            />
+          );
+        })}
+        {shouldShowVertexHandles ? vertices.map((vertex, vertexIndex) => (
+          <circle
+            // Vertices have no identity beyond their position in the ring, and the
+            // list is rebuilt on every update, so the index is the only stable key.
+            key={vertexIndex}
+            cx={vertex.x_pixels}
+            cy={vertex.y_pixels}
+            r={VERTEX_HANDLE_RADIUS_PX}
+            fill={HANDLE_FILL}
+            stroke={BRUSH_STROKE}
+            strokeWidth={1.5}
+            style={{
+              pointerEvents: enableBrushEdit ? "auto" : "none",
+              cursor: enableBrushEdit ? getVertexCursor(brushState?.shape, vertexIndex) : "default",
+            }}
+            onMouseDown={enableBrushEdit ? (event => onVertexMouseDown(vertexIndex, event)) : undefined}
           />
-        </g>
-      ) : null}
+        )) : null}
+        {isBrushHovered && clearButtonCenter ? (
+          <g
+            style={{ pointerEvents: "auto", cursor: "pointer" }}
+            onClick={onClearClick}
+            role="button"
+            aria-label="Clear brush"
+          >
+            <circle
+              cx={clearButtonCenter[0]}
+              cy={clearButtonCenter[1]}
+              r={CLEAR_BUTTON_RADIUS_PX}
+              fill={CLEAR_FILL}
+            />
+            <path
+              d={
+                `M ${clearButtonCenter[0] - 4} ${clearButtonCenter[1] - 4} L ${clearButtonCenter[0] + 4} ${clearButtonCenter[1] + 4} `
+                + `M ${clearButtonCenter[0] + 4} ${clearButtonCenter[1] - 4} L ${clearButtonCenter[0] - 4} ${clearButtonCenter[1] + 4}`
+              }
+              stroke="#ffffff"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+            />
+          </g>
+        ) : null}
+        {pressProgress ? (
+          <g>
+            <circle
+              cx={pressProgress.xPixels}
+              cy={pressProgress.yPixels}
+              r={PRESS_INDICATOR_RADIUS_PX}
+              fill="rgba(255, 255, 255, 0.6)"
+              stroke={BRUSH_STROKE}
+              strokeWidth={1.5}
+            />
+            <path
+              d={describeWedgePath(
+                pressProgress.xPixels,
+                pressProgress.yPixels,
+                PRESS_INDICATOR_RADIUS_PX,
+                pressProgress.fraction,
+              )}
+              fill={BRUSH_STROKE}
+            />
+          </g>
+        ) : null}
+      </g>
     </svg>
   );
 }

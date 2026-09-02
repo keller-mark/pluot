@@ -198,6 +198,7 @@ export function Pluot(props: PluotProps) {
   const {
     brushState,
     overlayRef: brushOverlayRef,
+    geometry: brushGeometry,
     pressProgress,
     isBrushHovered,
     isBrushingRef,
@@ -644,6 +645,7 @@ export function Pluot(props: PluotProps) {
           width={width}
           height={height}
           overlayRef={brushOverlayRef}
+          geometry={brushGeometry}
           brushState={brushState}
           pressProgress={pressProgress}
           isBrushHovered={isBrushHovered}

@@ -382,7 +382,9 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     // whether to reveal the clear button.
     if (isTrackingHover && brushState) {
       const boundingBox = getVerticesBoundingBox(brushState.vertices);
-      const clearButtonCenter = boundingBox ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX) : null;
+      const clearButtonCenter = boundingBox
+        ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX, geometry)
+        : null;
       // The button sits outside the brush, so it needs its own hover target;
       // otherwise it would vanish as soon as the pointer moved towards it.
       const isOverClearButton = clearButtonCenter !== null

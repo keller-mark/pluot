@@ -282,12 +282,19 @@ export function isDegenerateBrush(state: BrushState): boolean {
 /**
  * Where the clear button sits: just outside the top-right corner of the brush's
  * bounding box, so that it does not obscure the brushed content.
+ *
+ * Kept within the brushable region, since the overlay is clipped to that region
+ * and a button pushed outside it would be both invisible and unclickable.
  */
 export function getClearButtonCenter(
   boundingBox: BrushBoundingBox,
   radius: number,
+  geom: BrushGeometry,
 ): [number, number] {
-  return [boundingBox.right + radius, boundingBox.top - radius];
+  return [
+    Math.min(Math.max(boundingBox.right + radius, geom.brushLeft + radius), geom.brushRight - radius),
+    Math.min(Math.max(boundingBox.top - radius, geom.brushTop + radius), geom.brushBottom - radius),
+  ];
 }
 
 /**

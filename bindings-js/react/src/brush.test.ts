@@ -3,6 +3,7 @@ import {
   clampToBrushRegion,
   describeWedgePath,
   getBrushGeometry,
+  getClearButtonCenter,
   getEdgeDragCorners,
   getEdgeLine,
   getEditableEdges,
@@ -214,6 +215,30 @@ describe('reprojectVertex', () => {
     expect(reprojected.y_pixels).toBeCloseTo(300, 6);
     expect(reprojected.x_data).toBeCloseTo(vertex.x_data, 5);
     expect(reprojected.x_pixels).not.toBeCloseTo(vertex.x_pixels, 1);
+  });
+});
+
+describe('getClearButtonCenter', () => {
+  // Brushable region spans 50..350 on both axes.
+  const geom = getBrushGeometry(baseParams({ brushUnitsModeX: "Pixels", brushUnitsModeY: "Pixels" }));
+  const radius = 9;
+
+  it('sits just outside the top-right corner of the brush', () => {
+    expect(getClearButtonCenter({ left: 100, top: 120, right: 200, bottom: 220 }, radius, geom))
+      .toEqual([209, 111]);
+  });
+
+  it('stays inside the brushable region when the brush reaches its edges', () => {
+    // Without clamping this would land at (359, 41), outside the clipped overlay
+    // and so both invisible and unclickable.
+    expect(getClearButtonCenter({ left: 50, top: 50, right: 350, bottom: 350 }, radius, geom))
+      .toEqual([341, 59]);
+  });
+
+  it('clamps a brush that has scrolled out of the region entirely', () => {
+    const center = getClearButtonCenter({ left: -900, top: -900, right: -800, bottom: -800 }, radius, geom);
+    expect(center[0]).toBeGreaterThanOrEqual(geom.brushLeft + radius);
+    expect(center[1]).toBeGreaterThanOrEqual(geom.brushTop + radius);
   });
 });
 
