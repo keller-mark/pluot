@@ -7,7 +7,7 @@ use pluot_core::cache::use_memo_vec_f32;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
@@ -217,5 +217,7 @@ impl DrawToSvg for ZarrHistogramLayer {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
+
+impl BrushableLayer for ZarrHistogramLayer {}
 
 impl PickableLayer for ZarrHistogramLayer {}

@@ -7,6 +7,7 @@ pub use crate::params::{CodeFormat, RenderParams};
 pub use crate::render::{render, stores_from_params};
 pub use crate::render_script::render_to_script;
 pub use crate::picking::{pick, PickingResult};
+pub use crate::brushing::{brush, BrushParams, BrushingResult};
 pub use crate::viewport::ScreenCoord;
 pub use crate::zarr_types::ZarrPeekResult;
 
@@ -14,7 +15,7 @@ pub use crate::zarr_types::ZarrPeekResult;
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, render_to_script, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult, CodeFormat};
+    use super::{render, render_to_script, stores_from_params, pick, brush, RenderParams, ScreenCoord, BrushParams, ZarrPeekResult, CodeFormat};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -275,6 +276,19 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
 
         serde_wasm_bindgen::to_value(&result).expect("Failed to serialize PickingResult")
     }
+
+    #[wasm_bindgen]
+    pub async fn brush_wasm(params: JsValue, brush_params: JsValue) -> JsValue {
+        let params: RenderParams =
+            serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
+        let brush_params: BrushParams =
+            serde_wasm_bindgen::from_value(brush_params).expect("Invalid brush_params");
+
+        let stores = stores_from_params(&params);
+        let result = brush(params, stores, brush_params).await;
+
+        serde_wasm_bindgen::to_value(&result).expect("Failed to serialize BrushingResult")
+    }
 }
 
 // === Python Bindings ===
@@ -289,7 +303,7 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, render_to_script, stores_from_params, pick, RenderParams, ScreenCoord, ZarrPeekResult, CodeFormat};
+    use super::{render, render_to_script, stores_from_params, pick, brush, RenderParams, ScreenCoord, BrushParams, ZarrPeekResult, CodeFormat};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
@@ -472,6 +486,29 @@ pub mod python {
     }
 
     #[pyfunction]
+    #[pyo3(signature = (brush_params, **kwds))]
+    pub fn brush_py(py: Python, brush_params: Py<PyAny>, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
+        let params: RenderParams = if let Some(dict) = kwds {
+            depythonize::<RenderParams>(&dict.into_bound(py)).unwrap()
+        } else {
+            RenderParams::default()
+        };
+
+        let brush_params: BrushParams = depythonize::<BrushParams>(&brush_params.into_bound(py)).unwrap();
+
+        let stores = stores_from_params(&params);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = brush(params, stores, brush_params).await;
+            Python::attach(|py| {
+                pythonize::pythonize(py, &result)
+                    .map(|v| v.unbind())
+                    .map_err(|e| PyErr::from(e))
+            })
+        })
+    }
+
+    #[pyfunction]
     #[pyo3(signature = (**kwds))]
     pub fn render_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
         // Use the py parameter directly instead of Python::with_gil
@@ -525,6 +562,7 @@ pub mod python {
         m.add_function(wrap_pyfunction!(log_info, m)?)?;
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
         m.add_function(wrap_pyfunction!(pick_py, m)?)?;
+        m.add_function(wrap_pyfunction!(brush_py, m)?)?;
         m.add_function(wrap_pyfunction!(render_to_script_py, m)?)?;
         Ok(())
     }

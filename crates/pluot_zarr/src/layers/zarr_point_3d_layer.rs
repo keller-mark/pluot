@@ -11,7 +11,7 @@ use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, MarginParams, resolve_store_name};
 use pluot_core::layers::point_layer::PointShapeMode;
 use pluot_core::layers::point_3d_layer::{Point3dLayer, Point3dLayerParams};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
@@ -209,6 +209,8 @@ impl DrawToSvg for ZarrPoint3dLayer {
         // SVG rendering not supported for 3D layers.
     }
 }
+
+impl BrushableLayer for ZarrPoint3dLayer {}
 
 impl PickableLayer for ZarrPoint3dLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

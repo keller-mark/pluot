@@ -10,7 +10,7 @@ use pluot_core::cache::use_memo_numeric_data;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::render_traits::{
-    DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
+    BrushableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmap_layer::{
@@ -426,6 +426,8 @@ impl DrawToSvg for OmeZarrBitmapLayer {
         }
     }
 }
+
+impl BrushableLayer for OmeZarrBitmapLayer {}
 
 impl PickableLayer for OmeZarrBitmapLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

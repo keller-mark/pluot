@@ -17,7 +17,7 @@ use crate::layers::bitmap_layer::{BitmapLayer, BitmapLayerParams, ChannelSetting
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
-    AspectRatioMode, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
+    AspectRatioMode, BrushableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
 use crate::render_types::GpuContext;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
@@ -345,5 +345,7 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for LegendColormapQuantitativeLayer {}
 
 impl PickableLayer for LegendColormapQuantitativeLayer {}

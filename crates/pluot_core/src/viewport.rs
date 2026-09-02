@@ -13,12 +13,20 @@ pub struct ScreenCoord {
     pub y: f32,
 }
 
+/// Represents a list of XY coordinates which define rect or polygon vertices relative to the screen viewport.
+pub type ScreenVertices = Vec<ScreenCoord>;
+
 /// Represents an XY or XYZ coordinate relative to the data ("world") coordinate system.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DataCoord {
     TwoD { x: f32, y: f32 },
     ThreeD { x: f32, y: f32, z: f32 },
 }
+
+// TODO: is this the best way to represent data coordinates?
+// This is intended to be used in the brush function, as the target when transforming
+// rects/polygons from screen coordinates to data coordinates.
+pub type DataVertices = Vec<DataCoord>;
 
 /// Represents an extent of the data ("world") coordinate system
 /// (e.g., the currently-visible extent, given the camera params and other view params).

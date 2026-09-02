@@ -1,53 +1,49 @@
+// The brushing analog of picking.rs
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-use crate::wgpu;
+use crate::{UnitsMode, wgpu};
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
 use crate::render_types::GpuContext;
-use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend};
-use crate::render_traits::{MarginParams, PickableLayer, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
+use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, ComputeBackend, BrushMode};
+use crate::render_traits::{MarginParams, BrushableLayer, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
 use crate::zarr::StoreMap;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
-use crate::viewport::{DataCoord, ScreenCoord, unproject};
-
-/// Serializable representation of picking results
-/// from a single plotted layer.
-#[derive(Serialize, Deserialize)]
-pub struct LayerPickingResult {
-    pub layer_id: String,
-    pub info: HashMap<String, String>, // Additional info about the picked element (e.g., index in data array, value, etc.)
-    // TODO: include a "picking result type" as part of the picking result:
-    // Whether the picked item was a data point, axis element, axis label,
-    // axis category, axis quantity, legend element, legend label,
-    // legend category, legend quantity, title element, etc.
-}
+use crate::viewport::{DataCoord, DataVertices, ScreenCoord, ScreenVertices, unproject};
 
 /// Serializable representation of brushing results
 /// from a single plotted layer.
 #[derive(Serialize, Deserialize)]
 pub struct LayerBrushingResult {
     pub layer_id: String,
-    pub info: HashMap<String, String>, // Additional info about the picked elements (e.g., index in data array, value, etc.)
-    // TODO: include a "picking result type" as part of the picking result:
-    // Whether the picked item was a data point, axis element, axis label,
-    // axis category, axis quantity, legend element, legend label,
-    // legend category, legend quantity, title element, etc.
+    pub info: HashMap<String, String>, // Any top-level info about the brushed region.
+    pub element_info: HashMap<String, Vec<String>>, // Per-element info about the brushed elements (e.g., index in data array, value, etc.)
+    // TODO: include "snapped vertices" as part of the picking result if relevant.
 }
 
-/// Serializable representation of picking results
+/// Serializable representation of brushing results
 /// from one or more plotted layers.
 #[derive(Serialize, Deserialize)]
-pub struct PickingResult {
-    pub data_coord: Option<DataCoord>,
-    pub screen_coord: ScreenCoord,
-    pub layer_results: Vec<LayerPickingResult>,
+pub struct BrushingResult {
+    pub layer_results: Vec<LayerBrushingResult>,
 }
 
-/// Identify the data point(s) at (or nearby) the given plotted coordinate.
-pub async fn pick(params: RenderParams, stores: Option<StoreMap>, screen_coord: ScreenCoord) -> PickingResult {
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BrushParams {
+    // The brushed polygon expressed in screen vertices, regardless of the unitsMode below.
+    // Depending on the unitsModes below, we can always convert screen-space (pixels units) to normalized or data units,
+    // given the RenderParams (width/height/camera_view).
+    pub screen_vertices: ScreenVertices,
+    pub brush_units_mode_x: UnitsMode,
+    pub brush_units_mode_y: UnitsMode,
+    pub brush_mode: BrushMode,
+}
+
+/// Identify the data point(s) within the brushed region (rect or polygon).
+pub async fn brush(params: RenderParams, stores: Option<StoreMap>, brush_params: BrushParams) -> BrushingResult {
     // TODO: the stuff up to layer.prepare is duplicated from render(). Refactor to avoid duplication.
     let width = params.width;
     let height = params.height;
@@ -107,15 +103,20 @@ pub async fn pick(params: RenderParams, stores: Option<StoreMap>, screen_coord: 
     let prepare_results = futures::future::join_all(prepare_futures).await;
     // let prepare_bailed_early = prepare_results.iter().any(|r| r.bailed_early);
 
-    let data_coord = unproject(&view_params, None, screen_coord);
 
-    let layer_results: Vec<LayerPickingResult> = layers.iter_mut()
-        .filter_map(|layer| layer.pick(screen_coord, data_coord))
+    // Convert the brushed screen vertices to data ("world") coordinates, one-by-one.
+    // If any vertex falls outside the plotted region (e.g., within the margins),
+    // unproject returns None for that vertex, and we treat the whole conversion as
+    // unavailable rather than silently dropping vertices and distorting the brushed shape.
+    let data_vertices: Option<DataVertices> = brush_params.screen_vertices.iter()
+        .map(|&screen_coord| unproject(&view_params, None, screen_coord))
         .collect();
 
-    return PickingResult {
-        data_coord,
-        screen_coord,
+    let layer_results: Vec<LayerBrushingResult> = layers.iter_mut()
+        .filter_map(|layer| layer.brush(brush_params.clone(), data_vertices.clone()))
+        .collect();
+
+    return BrushingResult {
         layer_results,
     };
 }

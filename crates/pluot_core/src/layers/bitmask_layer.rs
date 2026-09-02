@@ -41,7 +41,7 @@ use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu,
-    DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
+    BrushableLayer, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
     ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -1860,6 +1860,8 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for BitmaskLayer {}
 
 impl PickableLayer for BitmaskLayer {
     /// Pick the object id under the given data coordinate, for each channel.
