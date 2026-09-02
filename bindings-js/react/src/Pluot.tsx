@@ -12,7 +12,7 @@ import {
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
-import { useBrush } from "./useBrush.js";
+import { useBrush } from "./use-brush.js";
 import type {
   HoverInfo, PickingResult, PluotProps, RawPickingResult, RenderParams, TooltipContent,
 } from "./types.js";
