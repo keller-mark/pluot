@@ -103,6 +103,7 @@ export function Pluot(props: PluotProps) {
     maybeBrushDelay = 250,
     persistBrush = false,
     brushMode = "Rect",
+    brushColor = "#3b6ea5",
     // An omitted `brush` means uncontrolled; a controlled parent signals the
     // empty state with `NO_BRUSH`, never `undefined`.
     brush = null,
@@ -646,6 +647,7 @@ export function Pluot(props: PluotProps) {
           height={height}
           overlayRef={brushOverlayRef}
           geometry={brushGeometry}
+          color={brushColor}
           brushState={brushState}
           pressProgress={pressProgress}
           isBrushHovered={isBrushHovered}

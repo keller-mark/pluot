@@ -11,8 +11,8 @@ const PRESS_INDICATOR_RADIUS_PX = 10;
 /** How wide a side's invisible grab target is. Kept generous, since a side is 1.5px of ink. */
 const EDGE_HANDLE_WIDTH_PX = 9;
 
-const BRUSH_STROKE = "#3b6ea5";
-const BRUSH_FILL = "rgba(59, 110, 165, 0.15)";
+/** Opacity of the brush's fill, relative to `color`; the stroke and handles stay fully opaque. */
+const BRUSH_FILL_OPACITY = 0.15;
 const HANDLE_FILL = "#ffffff";
 const CLEAR_FILL = "#b34040";
 
@@ -27,6 +27,8 @@ export type BrushOverlayProps = {
   overlayRef: RefObject<SVGSVGElement | null>;
   /** Supplies the brushable region, which everything drawn here is clipped to. */
   geometry: BrushGeometry;
+  /** Stroke color of the brush outline/handles; the fill uses the same color at reduced opacity. */
+  color: string;
   brushState: BrushState | undefined;
   pressProgress: BrushPressProgress | null;
   /** Whether to draw the clear button (the pointer is over the brush and `enableBrushClear`). */
@@ -73,6 +75,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
     width, height,
     overlayRef,
     geometry,
+    color,
     brushState,
     pressProgress,
     isBrushHovered,
@@ -151,8 +154,9 @@ export function BrushOverlay(props: BrushOverlayProps) {
         {pathData ? (
           <path
             d={pathData}
-            fill={isClosed ? BRUSH_FILL : "none"}
-            stroke={BRUSH_STROKE}
+            fill={isClosed ? color : "none"}
+            fillOpacity={isClosed ? BRUSH_FILL_OPACITY : undefined}
+            stroke={color}
             strokeWidth={1.5}
             strokeDasharray={brushState?.status === "Drawing" ? "4 3" : undefined}
           />
@@ -186,7 +190,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
             cy={vertex.y_pixels}
             r={VERTEX_HANDLE_RADIUS_PX}
             fill={HANDLE_FILL}
-            stroke={BRUSH_STROKE}
+            stroke={color}
             strokeWidth={1.5}
             style={{
               pointerEvents: enableBrushEdit ? "auto" : "none",
@@ -226,7 +230,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
               cy={pressProgress.yPixels}
               r={PRESS_INDICATOR_RADIUS_PX}
               fill="rgba(255, 255, 255, 0.6)"
-              stroke={BRUSH_STROKE}
+              stroke={color}
               strokeWidth={1.5}
             />
             <path
@@ -236,7 +240,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
                 PRESS_INDICATOR_RADIUS_PX,
                 pressProgress.fraction,
               )}
-              fill={BRUSH_STROKE}
+              fill={color}
             />
           </g>
         ) : null}

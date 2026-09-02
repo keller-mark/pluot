@@ -345,6 +345,10 @@ export type PluotProps = {
   // Which shape the user draws. By default, "Rect".
   brushMode?: BrushMode;
 
+  // Color of the brush overlay (outline and vertex/edge handles). The fill uses
+  // this same color at reduced opacity. By default, "#3b6ea5".
+  brushColor?: string;
+
   // For brushing, we support both controlled and uncontrolled (similar to the cameraMatrix/setCameraMatrix).
   // When controlled, the parent provides the brush state (rect/polygon vertices) or `NO_BRUSH`.
   // When uncontrolled, the value of `brush` is `null` (or the prop is omitted), so the brush state will be managed internally.
