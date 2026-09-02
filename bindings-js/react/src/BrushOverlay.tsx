@@ -126,6 +126,10 @@ export function BrushOverlay(props: BrushOverlayProps) {
         position: "absolute",
         top: 0,
         left: 0,
+        marginTop: 0,
+        marginLeft: 0,
+        marginRight: 0,
+        marginBottom: 0,
         pointerEvents: "none",
         // Sit above the canvas/SVG plot and the camera element.
         zIndex: 1,
