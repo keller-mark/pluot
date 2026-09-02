@@ -4,7 +4,7 @@ import {
   type BrushEdge, type BrushGeometry,
 } from "./brush.js";
 import type { BrushState } from "./types.js";
-import { CLEAR_BUTTON_RADIUS_PX, type BrushPressProgress } from "./useBrush.js";
+import { CLEAR_BUTTON_RADIUS_PX, type BrushPressProgress } from "./use-brush.js";
 
 const VERTEX_HANDLE_RADIUS_PX = 4;
 const PRESS_INDICATOR_RADIUS_PX = 10;

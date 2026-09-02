@@ -392,6 +392,11 @@ export function getEdgeDragCorners(edge: BrushEdge, boundingBox: BrushBoundingBo
  * Whether a container-pixel position lies inside a brush, used to decide when to
  * reveal the clear button. Hit-testing is done here rather than with SVG pointer
  * events so that the overlay never swallows camera pan/zoom interactions.
+ * TODO: replace this by using the regular onHover events in the brush overlay SVG.
+ * The challenge with using the regular onHover events in the overlay is that
+ * it makes it tricky to avoid absorbing the hover/mouse events which the camera pan/zoom need.
+ * An alternative/intermediate optimization would be to compute the polygon bounding box
+ * upon the polygon creation/modification, and do hit-testing against that cached bounding box instead.
  */
 export function isPointInBrush(xPixels: number, yPixels: number, vertices: BrushVertex[]): boolean {
   if (vertices.length < 3) {
