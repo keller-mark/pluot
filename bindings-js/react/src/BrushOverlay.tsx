@@ -93,11 +93,7 @@ export function BrushOverlay(props: BrushOverlayProps) {
     return `M ${points}${isClosed ? " Z" : ""}`;
   }, [vertices, isClosed]);
 
-  const boundingBox = useMemo(() => getVerticesBoundingBox(vertices), [vertices]);
-
-  const clearButtonCenter = boundingBox
-    ? getClearButtonCenter(boundingBox, CLEAR_BUTTON_RADIUS_PX, geometry)
-    : null;
+  const clearButtonCenter = getClearButtonCenter(vertices, CLEAR_BUTTON_RADIUS_PX, geometry);
 
   // `useId` emits colons, which are legal in an id but awkward inside `url(#...)`.
   const clipPathId = `pluot-brush-clip-${useId().replace(/:/g, "")}`;
@@ -108,9 +104,13 @@ export function BrushOverlay(props: BrushOverlayProps) {
 
   // Sides are draggable only once the shape is settled, and only for the
   // axis-aligned shapes; a lasso has no meaningful sides.
-  const editableEdges = enableBrushEdit && isClosed && brushState && boundingBox
+  const editableEdges = enableBrushEdit && isClosed && brushState
     ? getEditableEdges(brushState.shape)
     : [];
+
+  // The side handles are the only thing here that needs the extent, so it is not
+  // computed for a lasso or for a brush whose sides are not draggable.
+  const edgeBoundingBox = editableEdges.length > 0 ? getVerticesBoundingBox(vertices) : null;
 
   return (
     <svg
@@ -155,8 +155,8 @@ export function BrushOverlay(props: BrushOverlayProps) {
         ) : null}
         {/* Drawn before the corner handles, so a press near a corner grabs the
             corner rather than one of the two sides meeting there. */}
-        {editableEdges.map(edge => {
-          const [x1, y1, x2, y2] = getEdgeLine(edge, boundingBox!);
+        {edgeBoundingBox === null ? null : editableEdges.map(edge => {
+          const [x1, y1, x2, y2] = getEdgeLine(edge, edgeBoundingBox);
           return (
             <line
               key={edge}

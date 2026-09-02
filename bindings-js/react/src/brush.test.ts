@@ -222,21 +222,58 @@ describe('getClearButtonCenter', () => {
   // Brushable region spans 50..350 on both axes.
   const geom = getBrushGeometry(baseParams({ brushUnitsModeX: "Pixels", brushUnitsModeY: "Pixels" }));
   const radius = 9;
+  const offset = radius + 3;
 
-  it('sits just outside the top-right corner of the brush', () => {
-    expect(getClearButtonCenter({ left: 100, top: 120, right: 200, bottom: 220 }, radius, geom))
-      .toEqual([209, 111]);
+  function makeVertices(points: number[][]) {
+    return points.map(([x, y]) => vertexFromPixels(x!, y!, geom));
+  }
+
+  it('returns null for an empty brush', () => {
+    expect(getClearButtonCenter([], radius, geom)).toBeNull();
+  });
+
+  it("sits adjacent to a rect's first vertex, outside the rect", () => {
+    // rectVerticesFromCorners orders corners clockwise from the top-left, so the
+    // first vertex is the top-left one and the button goes up and to the left.
+    const vertices = rectVerticesFromCorners(100, 120, 200, 220, geom);
+    const center = getClearButtonCenter(vertices, radius, geom)!;
+    expect(center[0]).toBeCloseTo(100 - offset * Math.SQRT1_2, 4);
+    expect(center[1]).toBeCloseTo(120 - offset * Math.SQRT1_2, 4);
+  });
+
+  it("sits adjacent to a lasso's first vertex, where the drag started", () => {
+    // Centroid is (200, 200); the first vertex is straight above it.
+    const center = getClearButtonCenter(makeVertices([[200, 100], [100, 250], [300, 250]]), radius, geom)!;
+    expect(center[0]).toBeCloseTo(200, 4);
+    expect(center[1]).toBeCloseTo(100 - offset, 4);
+  });
+
+  it('stays pinned to the start as a lasso grows, rather than trailing the cursor', () => {
+    // The centroid shifts as vertices are appended, so the outward direction
+    // rotates, but the button never leaves the neighbourhood of the first vertex.
+    const start: number[][] = [[200, 100], [100, 250]];
+    for (const points of [start, [...start, [300, 250]], [...start, [300, 250], [260, 180]]]) {
+      const center = getClearButtonCenter(makeVertices(points), radius, geom)!;
+      expect(Math.hypot(center[0] - 200, center[1] - 100)).toBeCloseTo(offset, 4);
+    }
+  });
+
+  it('falls back to a fixed diagonal when there is no interior to move away from', () => {
+    const center = getClearButtonCenter(makeVertices([[200, 200], [200, 200]]), radius, geom)!;
+    expect(center[0]).toBeCloseTo(200 + offset * Math.SQRT1_2, 4);
+    expect(center[1]).toBeCloseTo(200 - offset * Math.SQRT1_2, 4);
   });
 
   it('stays inside the brushable region when the brush reaches its edges', () => {
-    // Without clamping this would land at (359, 41), outside the clipped overlay
-    // and so both invisible and unclickable.
-    expect(getClearButtonCenter({ left: 50, top: 50, right: 350, bottom: 350 }, radius, geom))
-      .toEqual([341, 59]);
+    // Unclamped this would land beyond the region, where the clipped overlay
+    // would make it both invisible and unclickable.
+    const center = getClearButtonCenter(makeVertices([[200, 200], [350, 350]]), radius, geom)!;
+    expect(center[0]).toBeLessThanOrEqual(geom.brushRight - radius);
+    expect(center[1]).toBeLessThanOrEqual(geom.brushBottom - radius);
   });
 
   it('clamps a brush that has scrolled out of the region entirely', () => {
-    const center = getClearButtonCenter({ left: -900, top: -900, right: -800, bottom: -800 }, radius, geom);
+    const center = getClearButtonCenter(makeVertices([[-800, -800], [-900, -900]]), radius, geom)!;
     expect(center[0]).toBeGreaterThanOrEqual(geom.brushLeft + radius);
     expect(center[1]).toBeGreaterThanOrEqual(geom.brushTop + radius);
   });

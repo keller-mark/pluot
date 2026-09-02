@@ -279,21 +279,50 @@ export function isDegenerateBrush(state: BrushState): boolean {
   return brushWidth < MIN_BRUSH_EXTENT_PX || brushHeight < MIN_BRUSH_EXTENT_PX;
 }
 
+/** How much clear air to leave between the brush's last vertex and the clear button. */
+const CLEAR_BUTTON_GAP_PX = 3;
+
 /**
- * Where the clear button sits: just outside the top-right corner of the brush's
- * bounding box, so that it does not obscure the brushed content.
+ * Where the clear button sits: adjacent to the brush's first vertex — the
+ * top-left corner of a rect, or the point a lasso was started from.
  *
- * Kept within the brushable region, since the overlay is clipped to that region
- * and a button pushed outside it would be both invisible and unclickable.
+ * Anchoring to the first vertex keeps the button in one place while a lasso is
+ * being drawn, rather than trailing the cursor around the shape. It is pushed
+ * outwards along the ray from the centroid through that vertex, so it lands
+ * outside the brush and does not obscure the brushed content. Returns `null` for
+ * an empty brush.
+ *
+ * The result is kept within the brushable region, since the overlay is clipped to
+ * that region and a button pushed outside it would be invisible and unclickable.
  */
 export function getClearButtonCenter(
-  boundingBox: BrushBoundingBox,
+  vertices: BrushVertex[],
   radius: number,
   geom: BrushGeometry,
-): [number, number] {
+): [number, number] | null {
+  const firstVertex = vertices[0];
+  if (firstVertex === undefined) {
+    return null;
+  }
+
+  const centroidX = vertices.reduce((sum, v) => sum + v.x_pixels, 0) / vertices.length;
+  const centroidY = vertices.reduce((sum, v) => sum + v.y_pixels, 0) / vertices.length;
+  let directionX = firstVertex.x_pixels - centroidX;
+  let directionY = firstVertex.y_pixels - centroidY;
+  const length = Math.hypot(directionX, directionY);
+  if (length === 0) {
+    // No interior to move away from, so fall back to a fixed up-and-right diagonal.
+    directionX = Math.SQRT1_2;
+    directionY = -Math.SQRT1_2;
+  } else {
+    directionX /= length;
+    directionY /= length;
+  }
+
+  const offset = radius + CLEAR_BUTTON_GAP_PX;
   return [
-    Math.min(Math.max(boundingBox.right + radius, geom.brushLeft + radius), geom.brushRight - radius),
-    Math.min(Math.max(boundingBox.top - radius, geom.brushTop + radius), geom.brushBottom - radius),
+    Math.min(Math.max(firstVertex.x_pixels + directionX * offset, geom.brushLeft + radius), geom.brushRight - radius),
+    Math.min(Math.max(firstVertex.y_pixels + directionY * offset, geom.brushTop + radius), geom.brushBottom - radius),
   ];
 }
 
