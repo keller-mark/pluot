@@ -16,6 +16,10 @@ const BRUSH_FILL = "rgba(59, 110, 165, 0.15)";
 const HANDLE_FILL = "#ffffff";
 const CLEAR_FILL = "#b34040";
 
+// Note: we could alternatively render the brush overlay on the rust side, as a new layer type.
+// This would solve the problem of syncing the overlay (on the JS side) with the rendered visualization (on the rust side) upon camera interactions.
+// However this syncing problem only arises when the brush units mode is Data _and_ the brush overlay is persisted beyond the brush creation.
+
 export type BrushOverlayProps = {
   width: number;
   height: number;
