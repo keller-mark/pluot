@@ -140,14 +140,12 @@ Often, layers will implement picking by internally delegating to the `pick` func
 Picking may be performed in terms of data (i.e., world/camera-dependent) units or pixels/normalized (non-camera-dependent) units.
 
 
-How to respond to pick events is left to the interactive adapter or its parent.
-For example, the Pluot React component provides an `enableTooltip` prop.
-When `true`, `<Pluot/>` internally calls `pick` upon hover events, and renders the dictionary of returned values within a tooltip element.
-
-
-The Pluot React component also provides `onClick` and `onHover` props, which allow the parent to determine how to respond to pick events.
+How to respond to pick events is mostly left to the parent of the interactive adapter.
+The exception is the `enableTooltip` prop: when `true`, `<Pluot/>` internally calls `pick` upon hover events, and renders the dictionary of returned values within a tooltip element.
+The Pluot React component also provides `onClick` and `onHover` props.
 The return value of `pick` is passed as a parameter to these callbacks upon click/hover events.
 For example, the parent could update the plotting parameters passed into `<Pluot/>`, or the parent could trigger external UI updates or side effects.
+
 
 ### Brushing
 
