@@ -1,4 +1,13 @@
 
+## 0.1.17
+
+### Patch Changes
+
+- Implemented brushing for the `Pluot` react component. (`@pluot/react`) ([#310](https://github.com/keller-mark/pluot/pull/310))
+
+- Apply clippy lints. (`@pluot/core`) ([#311](https://github.com/keller-mark/pluot/pull/311))
+
+
 ## 0.1.16
 
 ### Patch Changes
