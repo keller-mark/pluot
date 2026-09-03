@@ -82,6 +82,15 @@ pub enum ViewMode {
     // Reference: https://github.com/mikolalysenko/3d-view
 }
 
+/// The brushing mode
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum BrushMode {
+    Rect,
+    RangeX,
+    RangeY,
+    Polygon,
+}
+
 /// Layer parameters in their raw serde Value form.
 ///
 /// Layers register themselves via `inventory::submit!` with

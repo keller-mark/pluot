@@ -59,6 +59,18 @@ export function PluotWrapper(props) {
     enableVector = true,
 
     onHover = null, // Pass through to Pluot component
+
+    // Brushing props, passed through to the Pluot component.
+    brushMode,
+    brushUnitsModeX,
+    brushUnitsModeY,
+    enableBrushCreate = false,
+    enableBrushEdit = false,
+    enableBrushClear = false,
+    brush,
+    onBrush,
+    onBrushEnd,
+    onBrushClear,
   } = props;
 
   const defaultOptions = {
@@ -325,6 +337,16 @@ export function PluotWrapper(props) {
           backgroundColor={"#fff"}
           onHover={onHover}
           onClick={defaultOnClick}
+          brushMode={brushMode}
+          brushUnitsModeX={brushUnitsModeX}
+          brushUnitsModeY={brushUnitsModeY}
+          enableBrushCreate={enableBrushCreate}
+          enableBrushEdit={enableBrushEdit}
+          enableBrushClear={enableBrushClear}
+          brush={brush}
+          onBrush={onBrush}
+          onBrushEnd={onBrushEnd}
+          onBrushClear={onBrushClear}
         />
       </div>
       <PlotControls

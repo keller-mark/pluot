@@ -23,7 +23,12 @@ The non-Rust language *calls* these.
 
 - `render`: Render a plot to a graphical output, returning bytes that represent either pixels or an SVG string.
 
-- `pick`: Perform "picking" to look-up the value at a specific (relative) screen coordinate. Used during hover and click event handling (e.g., to show tooltips).
+- `render_to_script`: Render a plot to a code output, returning a string that enables reproducible rendering of the plot using the specified programming language.
+
+- `pick`: Perform "picking" to look-up the value at a specific plot coordinate. Used during hover and click event handling (e.g., to show tooltips).
+
+- `brush`: Perform "brushing" to select or annotate a specific plot region. Used during rectangular and polygonal (i.e., lasso) event handling.
+
 
 ### Bindings _from_ (the non-Rust program)
 
@@ -124,6 +129,38 @@ By extension, Pluot is agnostic to any particular implementation of coordinated 
 This enables developers to use their favorite state management library, and decouples Pluot from the state management library du jour.
 
 For example, when using Pluot as a React component in a web application, you could implement CMV with [Use-Coordination](https://github.com/keller-mark/use-coordination). Alternatively, you could use plain React `useState`.
+
+### Picking
+
+Picking refers to looking up the data point at a specific plot coordinate, typically performed upon hover or click interactions (e.g., to show a tooltip or to respond to click events).
+Pluot enables picking by allowing each layer (see the Layer-based API section below) to define a `pick` function.
+Upon a picking event (hover or click), the interactive adapter calls the top-level bound `pick` function, which internally calls the `pick` function of each plotted layer.
+The layer can return a dictionary of any values it deems relevant.
+Often, layers will implement picking by internally delegating to the `pick` function of a rendered sub-layer.
+Picking may be performed in terms of data (i.e., world/camera-dependent) units or pixels/normalized (non-camera-dependent) units.
+
+
+How to respond to pick events is mostly left to the parent of the interactive adapter.
+The exception is the `enableTooltip` prop: when `true`, `<Pluot/>` internally calls `pick` upon hover events, and renders the dictionary of returned values within a tooltip element.
+The Pluot React component also provides `onClick` and `onHover` props.
+The return value of `pick` is passed as a parameter to these callbacks upon click/hover events.
+For example, the parent could update the plotting parameters passed into `<Pluot/>`, or the parent could trigger external UI updates or side effects.
+
+
+### Brushing
+
+[Brushing](https://d3js.org/d3-brush) refers to drawing a shape on a plot, typically used to make selections or to author annotations of plotted regions.
+Pluot supports drawing rectangular and polygonal brushes, with the latter being used to support lasso-like interactions.
+Upon brushing interactions, the interactive adapter calls the top-level bound `brush` function, which internally calls the `brush` function of each plotted layer (similar to picking).
+The layer can return a dictionary of any values it deems relevant.
+Upon a brush interaction, the layer can also optionally return a new rectangle or polygon, which the interactive adapter can "snap to" when rendering a brush overlay.
+This type of snapping, or quantization, can be useful when brushing along a categorical/ordinal axis, in which selection of a partial rendered element is not meaningful (e.g., brushing horizontally along the x-axis of a vertical bar chart).
+
+
+How to respond to brush events is left to the parent of the interactive adapter.
+For example, the parent could listen for `onBrush`/`onBrushEnd`/`onBrushClear` events, and respond by modifying the plotting parameters in order to select or filter to the elements within the brushed region upon the subsequent render.
+Alternatively, the parent could perform a side effect, such as defining the brushed polygon as an annotation, perhaps persisting such annotations of regions-of-interest stored in an external system or database.
+
 
 ## Layer-based API
 

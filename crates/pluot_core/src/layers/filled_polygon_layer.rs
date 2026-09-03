@@ -15,7 +15,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    BrushableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -277,6 +277,8 @@ impl DrawToSvg for FilledPolygonLayer {
         update_svg(ctx, &svg_elements);
     }
 }
+
+impl BrushableLayer for FilledPolygonLayer {}
 
 impl PickableLayer for FilledPolygonLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

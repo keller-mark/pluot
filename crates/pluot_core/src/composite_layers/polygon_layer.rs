@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    BrushableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::numeric_data::NumericData;
@@ -255,6 +255,8 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for PolygonLayer {}
 
 impl PickableLayer for PolygonLayer {
     // Delegate to the sub-layers, which own the actual polygon geometry.

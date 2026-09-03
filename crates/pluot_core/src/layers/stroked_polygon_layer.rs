@@ -21,7 +21,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    BrushableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -704,6 +704,8 @@ impl DrawToSvg for StrokedPolygonLayer {
         update_svg(ctx, &svg_elements);
     }
 }
+
+impl BrushableLayer for StrokedPolygonLayer {}
 
 impl PickableLayer for StrokedPolygonLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
