@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use pluot_core::{maybe_timeout, FutureExt, Duration, log};
 
 use pluot_core::wgpu;
-use pluot_core::cache::use_memo_vec_f32;
+use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
@@ -13,6 +13,8 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
+
+use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
 /// Layer params struct for [`ZarrHistogramLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -108,21 +110,18 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         // Returns [data_min, data_max, bin_count_0, ..., bin_count_{num_bins-1}]
         let hist_future = use_memo_vec_f32(async || {
-            // Nested caching: cache the raw data array.
-            let quant_arr = use_memo_vec_f32(async || {
-                let array_path = &self.layer_params.data_key;
-                let array = zarrs::array::Array::async_open(store.clone(), array_path).await.unwrap();
-                let subset = array.subset_all();
-                // TODO: generalize to support alternative dtypes
-                let arr_raw = array.async_retrieve_array_subset::<Vec<f64>>(&subset).await?;
-                let arr_inner: Vec<f32> = arr_raw.iter().map(|&x| x as f32).collect();
-                Ok::<Vec<f32>, zarrs::array::ArrayError>(arr_inner)
-
+            // Nested caching: cache the raw data array in its native dtype
+            // (any dtype supported by NumericData). The reducers below consume
+            // NumericData directly, so the values are never cast to a single
+            // dtype on the way in.
+            let quant_arr = use_memo_numeric_data(async || {
+                load_arr_as_numeric_data(store.clone(), &self.layer_params.data_key).await
             }, &quant_future_deps, self.view_params.cache_enabled && self.layer_params.cache_data)
                 .await?;
 
             // Nested caching: cache the extent.
-            let quant_arr_for_extent = quant_arr.clone();
+            // Cloning a `NumericData` clones the inner `Arc<Vec<T>>`, not the data.
+            let quant_arr_for_extent = quant_arr.as_ref().clone();
             let extent = use_memo_vec_f32(async || {
                 let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent, &[], &[]).await.background;
                 Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
@@ -132,7 +131,7 @@ impl PreparedLayer for ZarrHistogramLayer {
 
             let bin_counts = reduce_histogram_with_known_extent(
                 gpu_context,
-                quant_arr,
+                quant_arr.as_ref().clone(),
                 num_bins,
                 extent[0],
                 extent[1],
