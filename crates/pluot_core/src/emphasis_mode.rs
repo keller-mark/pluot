@@ -140,8 +140,8 @@ pub fn prepare_emphasis_criteria(
                         .define("criteria_data_var", &term_var_name)
                         .define_bidx("criteria_data", binding)
                         .inject_texture_sample_type("criteria_data", dtype)
-                        .define("criteria_min_value", &wgsl_float(params.min.unwrap_or(f32::MIN)))
-                        .define("criteria_max_value", &wgsl_float(params.max.unwrap_or(f32::MAX)))
+                        .define("criteria_min_value", &wgsl_float(params.min.unwrap_or(f32::MIN / 10.0)))
+                        .define("criteria_max_value", &wgsl_float(params.max.unwrap_or(f32::MAX / 10.0)))
                         .build(),
                 );
                 textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });

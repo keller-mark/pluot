@@ -153,9 +153,8 @@ impl PreparedLayer for ZarrHistogramLayer {
         let store = self.store.clone();
         let num_bins = self.layer_params.num_bins;
 
-        // Criteria are resolved (zarr arrays loaded) inside the memoized
-        // closure below, but the histogram result depends on their *values*,
-        // so a serialized snapshot must be part of the outer cache key.
+        // TODO: this to_string produces a key that is too granular - it contains more than the zarr array key,
+        // and causes bailing early despite the array(s) corresponding to the codes_key/values_key already being memoized.
         let filtering_criteria_key = serde_json::to_string(&self.layer_params.filtering_criteria).unwrap_or_default();
         let selection_criteria_key = serde_json::to_string(&self.layer_params.selection_criteria).unwrap_or_default();
 
@@ -166,7 +165,6 @@ impl PreparedLayer for ZarrHistogramLayer {
             num_bins.to_string(),
             filtering_criteria_key.clone(),
             selection_criteria_key,
-            // TODO: data_min and data_max layer_params here?
         ];
 
         let quant_future_deps = vec!["histogram_input_arr".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone()];
@@ -194,6 +192,7 @@ impl PreparedLayer for ZarrHistogramLayer {
                 &filtering_criteria_future_deps,
                 self.view_params.cache_enabled,
             ).await?;
+
             let selection_criteria = resolve_zarr_emphasis_criteria(
                 store.clone(),
                 &self.layer_params.selection_criteria,
@@ -208,6 +207,9 @@ impl PreparedLayer for ZarrHistogramLayer {
             // boundaries and stay comparable.
             let quant_arr_for_extent = quant_arr.as_ref().clone();
             let filtering_criteria_for_extent = filtering_criteria.clone();
+
+            // TODO: extent should not depend on the selection_criteria, only on filtering_criteria.
+            // If the filtering criteria is an empty vec, we want to reuse the memoized extent value.
             let extent = use_memo_vec_f32(async || {
                 let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent, &filtering_criteria_for_extent, &[]).await.background;
                 Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
