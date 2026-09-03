@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use pluot_core::{maybe_timeout, FutureExt, Duration, log};
+use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult};
 
 use pluot_core::wgpu;
 use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32};
 use pluot_core::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
+use pluot_core::params::BrushMode;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
@@ -16,6 +18,7 @@ use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_ext
 use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
 use pluot_core::d3::scale::ScaleLinear;
+use pluot_core::viewport::DataVertices;
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
@@ -341,7 +344,46 @@ impl DrawToSvg for ZarrHistogramLayer {
 }
 
 impl BrushableLayer for ZarrHistogramLayer {
-    // TODO: implement a brush function which expects a RangeX brush mode and returns the min/max values of the range according to the x-axis linear scale's domain.
+    fn brush(&self, brush_params: BrushParams, _data_vertices: Option<DataVertices>) -> Option<LayerBrushingResult> {
+        // The value axis runs along X for a vertical histogram, and along Y
+        // for a horizontal one, so only a brush of the matching mode applies.
+        let expected_brush_mode = match self.layer_params.orientation {
+            BarOrientation::Vertical => BrushMode::RangeX,
+            BarOrientation::Horizontal => BrushMode::RangeY,
+        };
+        if brush_params.brush_mode != expected_brush_mode {
+            return None;
+        }
+
+        let value_scale = self.value_scale.as_ref()?;
+
+        let screen_positions: Vec<f32> = match self.layer_params.orientation {
+            BarOrientation::Vertical => brush_params.screen_vertices.iter().map(|v| v.x).collect(),
+            BarOrientation::Horizontal => brush_params.screen_vertices.iter().map(|v| v.y).collect(),
+        };
+
+        let px_min = screen_positions.iter().cloned().fold(f32::INFINITY, f32::min);
+        let px_max = screen_positions.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        if !px_min.is_finite() || !px_max.is_finite() {
+            return None;
+        }
+
+        // The scale's range may be reversed relative to the raw screen
+        // coordinates, so invert both ends and re-sort rather than assume order.
+        let value_a = value_scale.invert(px_min as f64);
+        let value_b = value_scale.invert(px_max as f64);
+        let (value_min, value_max) = if value_a <= value_b { (value_a, value_b) } else { (value_b, value_a) };
+
+        let mut info = HashMap::new();
+        info.insert("min".to_string(), value_min.to_string());
+        info.insert("max".to_string(), value_max.to_string());
+
+        Some(LayerBrushingResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            info,
+            element_info: HashMap::new(),
+        })
+    }
 }
 
 impl PickableLayer for ZarrHistogramLayer {}

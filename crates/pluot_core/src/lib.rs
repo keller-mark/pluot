@@ -53,6 +53,7 @@ pub use crate::render::{render, stores_from_params};
 pub use crate::zarr::{AsyncZarritaStore, StoreMap};
 pub use crate::render_script::{render_to_script, render_to_script_aux};
 pub use crate::picking::{pick, PickingResult, LayerPickingResult};
+pub use crate::brushing::{brush, BrushParams, BrushingResult, LayerBrushingResult};
 pub use crate::viewport::{project, unproject, get_bounds, camera_matrix_to_zoom_and_translation};
 pub use crate::numeric_data::NumericData;
 
