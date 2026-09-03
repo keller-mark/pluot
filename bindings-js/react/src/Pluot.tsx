@@ -215,7 +215,12 @@ export function Pluot(props: PluotProps) {
   // Runs the brush query against the wasm module for a given brush state,
   // analogous to `pick` below (defined here, ahead of `pick`, since `useBrush`
   // needs it immediately).
-  const runBrush = useEffectEvent(async (state: BrushState): Promise<BrushingResult> => {
+  const runBrush = useEffectEvent(async (state: BrushState): Promise<BrushingResult|undefined> => {
+
+    if (!isWasmReady) {
+      return;
+    }
+
     const renderParams: RenderParams = {
       schema_version: schemaVersion,
       width,
@@ -275,7 +280,7 @@ export function Pluot(props: PluotProps) {
     brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
     enableBrushCreate, enableBrushEdit, enableBrushClear,
     brushDelay, maybeBrushDelay, persistBrush, brushMode,
-    brush, onBrush, onBrushEnd, onBrushClear, brush_wasm: runBrush,
+    brush, onBrush, onBrushEnd, onBrushClear, runBrush,
   });
 
   useLayoutEffect(() => {

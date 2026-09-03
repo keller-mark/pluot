@@ -53,7 +53,7 @@ export type UseBrushParams = Pick<PluotProps,
   aspectRatioAlignmentMode: AspectRatioAlignmentMode;
   cameraMatrix: CameraMatrix;
   /** Runs the brush query (via `brush_wasm`) for the given brush state. */
-  brush_wasm: (state: BrushState) => BrushingResult | Promise<BrushingResult>;
+  runBrush: (state: BrushState) => Promise<BrushingResult|undefined>;
 };
 
 export type UseBrushResult = {
@@ -115,7 +115,7 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     onBrush,
     onBrushEnd,
     onBrushClear,
-    brush_wasm,
+    runBrush,
   } = params;
 
   // `null` (or an omitted prop) means uncontrolled; a BrushState or `NO_BRUSH`
@@ -198,7 +198,7 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     if (!isControlledBrush) {
       setUncontrolledBrush(nextBrush);
     }
-    const brushingResult = await brush_wasm(nextBrush);
+    const brushingResult = await runBrush(nextBrush);
     if (isEnd) {
       onBrushEnd?.(nextBrush, brushingResult);
       // `persistBrush` only applies when uncontrolled; when controlled, the brush

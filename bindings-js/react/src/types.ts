@@ -399,9 +399,9 @@ export type PluotProps = {
   // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush, if enableBrushEdit is true).
   // `brushingResult` is the result of running the brush query (via `brush_wasm`)
   // against the current `state`.
-  onBrush?: (state: BrushState, brushingResult: BrushingResult) => BrushResult,
+  onBrush?: (state: BrushState, brushingResult: BrushingResult|undefined) => BrushResult,
   // Called at the conclusion of the drag interaction, with the final (i.e., complete) brush rect/polygon.
-  onBrushEnd?: (state: BrushState, brushingResult: BrushingResult) => BrushResult,
+  onBrushEnd?: (state: BrushState, brushingResult: BrushingResult|undefined) => BrushResult,
 
   // Called upon the user cancelling the brush, e.g., by clicking a clear button which appears when hovering the drawn rect/polygon.
   onBrushClear?: (state: BrushState) => void,

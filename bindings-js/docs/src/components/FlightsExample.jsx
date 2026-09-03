@@ -23,15 +23,34 @@ export function FlightsExample(props) {
           max: distMax,
         },
       },
+      {
+        criteria_mode: "Quantitative",
+        criteria_params: {
+          values_key: "/obs/DEP_TIME",
+          min: timeMin,
+          max: timeMax,
+        },
+      },
     ];
   }, [distMin, distMax, delayMin, delayMax, timeMin, timeMax]);
 
+  console.log(selectionCriteria);
   // TODO: onBrushDelay, onBrushTime
+  //
+  const onBrushTime = useCallback((brush, brushResult) => {
+    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
+    if (min && max) {
+      setTimeMin(parseFloat(min));
+      setTimeMax(parseFloat(max));
+    }
+  });
 
   const onBrushDist = useCallback((brush, brushResult) => {
     const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    setDistMin(parseFloat(min));
-    setDistMax(parseFloat(max));
+    if (min && max) {
+      setDistMin(parseFloat(min));
+      setDistMax(parseFloat(max));
+    }
   });
 
   return (
@@ -108,6 +127,19 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
+
+        enableBrushCreate
+        enableBrushEdit
+        enableBrushClear
+        brushMode="RangeX"
+        brushUnitsModeX="Pixels"
+        persistBrush
+        onBrush={onBrushTime}
+        onBrushEnd={onBrushTime}
+        onBrushClear={() => {
+          setTimeMin(null);
+          setTimeMax(null);
+        }}
       />
       <p>Flight Distance (miles):</p>
       <Pluot
@@ -152,6 +184,11 @@ export function FlightsExample(props) {
         brushUnitsModeX="Pixels"
         persistBrush
         onBrush={onBrushDist}
+        onBrushEnd={onBrushDist}
+        onBrushClear={() => {
+          setDistMin(null);
+          setDistMax(null);
+        }}
       />
     </>
   );
