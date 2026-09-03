@@ -48,6 +48,13 @@ pub struct BarPlotLayerParams {
 
     // How to color the bars. See [`ColorMode`].
     pub fill_color: Option<ColorMode>,
+
+    /// When Some(false), skip building the internal [`AxisBandLayer`] that
+    /// labels the categorical (identifier) dimension, so a caller can render
+    /// its own axis for that dimension instead. When None (the default),
+    /// the categorical axis is rendered as usual.
+    pub render_categorical_axis: Option<bool>,
+
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin
@@ -96,6 +103,8 @@ impl BarPlotLayer {
         let mut scale_band = ScaleBand::new();
         scale_band.set_domain(self.layer_params.identifier.as_ref().clone());
 
+        let render_categorical_axis = self.layer_params.render_categorical_axis.unwrap_or(true);
+
         match self.layer_params.orientation {
             BarOrientation::Vertical => {
                 // Categorical on X (pixels), quantitative on Y (data units)
@@ -110,7 +119,7 @@ impl BarPlotLayer {
                     position_y1.push(self.layer_params.quantity[i]);
                 }
 
-                return vec![
+                let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = vec![
                     Box::new(RectLayer::new(
                         self.view_params.clone(),
                         RectLayerParams {
@@ -137,15 +146,18 @@ impl BarPlotLayer {
                             ..Default::default()
                         }
                     )),
-                    Box::new(AxisBandLayer::new(
+                ];
+                if render_categorical_axis {
+                    sublayers.push(Box::new(AxisBandLayer::new(
                         self.view_params.clone(),
                         AxisBandLayerParams {
                             layer_id: format!("{}_bar_plot_layer_categorical_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Bottom,
                             domain: self.layer_params.identifier.clone()
                         }
-                    ))
-                ];
+                    )));
+                }
+                return sublayers;
             }
             BarOrientation::Horizontal => {
                 // Categorical on Y (pixels), quantitative on X (data units)
@@ -160,7 +172,7 @@ impl BarPlotLayer {
                     position_y1.push(band_start + bandwidth as f32 - (DEFAULT_BAR_MARGIN / 2.0) as f32);
                 }
 
-                return vec![
+                let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = vec![
                     Box::new(RectLayer::new(
                         self.view_params.clone(),
                         RectLayerParams {
@@ -187,15 +199,18 @@ impl BarPlotLayer {
                             ..Default::default()
                         }
                     )),
-                    Box::new(AxisBandLayer::new(
+                ];
+                if render_categorical_axis {
+                    sublayers.push(Box::new(AxisBandLayer::new(
                         self.view_params.clone(),
                         AxisBandLayerParams {
                             layer_id: format!("{}_bar_plot_layer_categorical_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Left,
                             domain: self.layer_params.identifier.clone()
                         }
-                    ))
-                ];
+                    )));
+                }
+                return sublayers;
             }
         }
     }

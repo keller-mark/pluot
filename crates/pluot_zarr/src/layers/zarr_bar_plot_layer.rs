@@ -133,6 +133,7 @@ impl PreparedLayer for ZarrBarPlotLayer {
                 identifier: cat_arr,
                 quantity: quant_arr,
                 fill_color: self.layer_params.fill_color.clone(),
+                render_categorical_axis: None,
             }
         );
         sublayer.prepare(gpu_context).await;

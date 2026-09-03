@@ -14,6 +14,8 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
+use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
+use pluot_core::d3::scale::ScaleLinear;
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
@@ -75,6 +77,12 @@ pub struct ZarrHistogramLayer {
 
     // TODO: switch to `inner: Option<BarPlotLayer>`?
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
+
+    // The linear scale backing the rendered value axis, mapping the binned
+    // value domain (data_min, data_max) to the axis's pixel range. Kept
+    // around so that a brush selection along this axis can be resolved back
+    // to a data value range.
+    value_scale: Option<ScaleLinear>,
 }
 
 impl ZarrHistogramLayer {
@@ -88,7 +96,39 @@ impl ZarrHistogramLayer {
             store,
             store_name,
             sub_layer_instances: Vec::new(),
+            value_scale: None,
         }
+    }
+
+    /// The [`AxisPosition`] at which the value axis (the axis spanning the
+    /// binned value domain) is rendered, given the histogram's orientation.
+    fn value_axis_position(orientation: &BarOrientation) -> AxisPosition {
+        match orientation {
+            BarOrientation::Vertical => AxisPosition::Bottom,
+            BarOrientation::Horizontal => AxisPosition::Left,
+        }
+    }
+
+    /// Build the linear scale mapping the binned value domain to the pixel
+    /// range of the value axis, matching the range that [`AxisLinearLayer`]
+    /// itself would compute for this position.
+    fn build_value_scale(view_params: &ViewParams, orientation: &BarOrientation, domain: (f64, f64)) -> ScaleLinear {
+        let margins = &view_params.margins;
+        let margin_top = margins.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
+        let margin_right = margins.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
+        let margin_bottom = margins.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
+        let margin_left = margins.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
+
+        let viewport_w = view_params.width as f64;
+        let viewport_h = view_params.height as f64;
+
+        let mut scale = ScaleLinear::new();
+        scale.set_domain(domain);
+        match orientation {
+            BarOrientation::Vertical => scale.set_range((margin_left, viewport_w - margin_right)),
+            BarOrientation::Horizontal => scale.set_range((margin_bottom, viewport_h - margin_top)),
+        }
+        scale
     }
 
     fn bin_labels(data_min: f32, data_max: f32, num_bins: u32) -> Vec<String> {
@@ -232,6 +272,9 @@ impl PreparedLayer for ZarrHistogramLayer {
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
                 )),
+                // The value axis is rendered by ZarrHistogramLayer itself (see below),
+                // using the real continuous value domain rather than per-bin labels.
+                render_categorical_axis: Some(false),
             },
         );
 
@@ -248,10 +291,24 @@ impl PreparedLayer for ZarrHistogramLayer {
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.fill_color.unwrap_or((76, 120, 168)),
                 )),
+                render_categorical_axis: Some(false),
             },
         );
 
-        self.sub_layer_instances = vec![Box::new(background_bar_layer), Box::new(foreground_bar_layer)];
+        let value_scale = Self::build_value_scale(&self.view_params, &self.layer_params.orientation, (data_min as f64, data_max as f64));
+        self.value_scale = Some(value_scale);
+
+        let value_axis_layer = AxisLinearLayer::new(
+            self.view_params.clone(),
+            AxisLinearLayerParams {
+                layer_id: format!("{}_value_axis_sublayer", self.layer_params.layer_id),
+                position: Self::value_axis_position(&self.layer_params.orientation),
+                domain: Some((data_min as f64, data_max as f64)),
+                ..Default::default()
+            },
+        );
+
+        self.sub_layer_instances = vec![Box::new(background_bar_layer), Box::new(foreground_bar_layer), Box::new(value_axis_layer)];
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare(gpu_context).await;
