@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
+use crate::render_traits::{BrushableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
@@ -885,6 +885,8 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for LineLayer {}
 
 impl PickableLayer for LineLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

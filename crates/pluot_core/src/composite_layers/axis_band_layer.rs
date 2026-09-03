@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, SizeMode, UnitsMode, FontWeight, FontStyle};
+use crate::render_traits::{BrushableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, SizeMode, UnitsMode, FontWeight, FontStyle};
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
@@ -277,6 +277,8 @@ impl DrawToSvg for AxisBandLayer {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
+
+impl BrushableLayer for AxisBandLayer {}
 
 impl PickableLayer for AxisBandLayer {}
 

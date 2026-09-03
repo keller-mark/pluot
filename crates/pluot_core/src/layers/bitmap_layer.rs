@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::GpuContext;
@@ -851,6 +851,8 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for BitmapLayer {}
 
 impl PickableLayer for BitmapLayer {
     /// Pick the image pixel under the given data coordinate.

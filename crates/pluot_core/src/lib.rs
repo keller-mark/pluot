@@ -16,6 +16,7 @@ pub mod positioning;
 pub mod numeric_data;
 pub mod viewport;
 mod picking;
+mod brushing;
 pub mod layers;
 pub(crate) mod curve_and_polygon_utils;
 pub(crate) mod picking_geometry;

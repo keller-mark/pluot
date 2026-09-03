@@ -1,9 +1,25 @@
-import React from "react";
+import React, { type ReactNode } from "react";
+import type { TooltipProps } from "./types.js";
 
 
 const boxShadow = '5px 5px 15px rgb(0 0 0 / 20%)';
 
-export function Tooltip(props) {
+// Table cell values come from arbitrary onHover return objects, so narrow
+// them to something React can actually render.
+function renderCell(value: unknown): ReactNode {
+  if (value === null || value === undefined || typeof value === "boolean") {
+    return null;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return value;
+  }
+  if (React.isValidElement(value)) {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+export function Tooltip(props: TooltipProps) {
   const {
     content,
     asTable = false,
@@ -24,7 +40,7 @@ export function Tooltip(props) {
             {Object.entries(content).map(([key, value]) => (
               <tr key={key}>
                 <th style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', textAlign: 'left' }}>{key}</th>
-                <td style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', textAlign: 'left' }}>{value}</td>
+                <td style={{ border: 'none', fontSize: '12px', outline: 0, padding: '0 2px', textAlign: 'left' }}>{renderCell(value)}</td>
               </tr>
             ))}
           </tbody>

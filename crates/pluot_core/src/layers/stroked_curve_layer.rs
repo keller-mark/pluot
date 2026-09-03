@@ -16,7 +16,7 @@ use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    BrushableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
@@ -719,6 +719,8 @@ impl DrawToSvg for StrokedCurveLayer {
         update_svg(ctx, &svg_elements);
     }
 }
+
+impl BrushableLayer for StrokedCurveLayer {}
 
 impl PickableLayer for StrokedCurveLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
