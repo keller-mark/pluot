@@ -592,10 +592,10 @@ impl DrawToSvg for StrokedPolygonLayer {
                 x, y,
                 layer_w, layer_h,
                 &camera_view,
-                layer_params.data_unit_mode_x.clone(),
-                layer_params.data_unit_mode_y.clone(),
-                view_params.aspect_ratio_mode.clone(),
-                view_params.aspect_ratio_alignment_mode.clone(),
+                layer_params.data_unit_mode_x,
+                layer_params.data_unit_mode_y,
+                view_params.aspect_ratio_mode,
+                view_params.aspect_ratio_alignment_mode,
                 layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
             );
             (px as f64, (layer_h - py) as f64)
@@ -657,10 +657,10 @@ impl DrawToSvg for StrokedPolygonLayer {
                     layer_w,
                     layer_h,
                     &camera_view,
-                    layer_params.data_unit_mode_x.clone(),
-                    layer_params.data_unit_mode_y.clone(),
-                    view_params.aspect_ratio_mode.clone(),
-                    view_params.aspect_ratio_alignment_mode.clone(),
+                    layer_params.data_unit_mode_x,
+                    layer_params.data_unit_mode_y,
+                    view_params.aspect_ratio_mode,
+                    view_params.aspect_ratio_alignment_mode,
                     layer_params.model_matrix.as_ref().map(|m| m.as_slice()),
                 );
                 sy.abs()

@@ -155,9 +155,9 @@ impl PolygonLayer {
             Some(StrokedPolygonLayer::new(view_params.clone(), StrokedPolygonLayerParams {
                 layer_id: format!("{}_stroked", layer_params.layer_id),
                 bounds: layer_params.bounds.clone(),
-                data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
-                data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
-                stroke_width_unit_mode: layer_params.stroke_width_unit_mode.clone(),
+                data_unit_mode_x: layer_params.data_unit_mode_x,
+                data_unit_mode_y: layer_params.data_unit_mode_y,
+                stroke_width_unit_mode: layer_params.stroke_width_unit_mode,
                 model_matrix: layer_params.model_matrix,
                 polygons: layer_params.polygons.clone(),
                 polygon_offsets: layer_params.polygon_offsets.clone(),
@@ -181,8 +181,8 @@ impl PolygonLayer {
             Some(FilledPolygonLayer::new(view_params.clone(), FilledPolygonLayerParams {
                 layer_id: format!("{}_filled", layer_params.layer_id),
                 bounds: layer_params.bounds.clone(),
-                data_unit_mode_x: layer_params.data_unit_mode_x.clone(),
-                data_unit_mode_y: layer_params.data_unit_mode_y.clone(),
+                data_unit_mode_x: layer_params.data_unit_mode_x,
+                data_unit_mode_y: layer_params.data_unit_mode_y,
                 model_matrix: layer_params.model_matrix,
                 polygons: layer_params.polygons.clone(),
                 polygon_offsets: layer_params.polygon_offsets.clone(),

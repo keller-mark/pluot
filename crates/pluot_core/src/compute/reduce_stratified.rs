@@ -134,7 +134,6 @@ async fn read_back_u32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) ->
 /// `reduce_stratified.wgsl`'s header for what each slot holds per mode);
 /// `Histogram` returns `2 * num_bins` counts per stratum — background bins
 /// then foreground bins.
-#[allow(clippy::too_many_arguments)]
 async fn dispatch_reduce_stratified(
     gpu_context: &GpuContext<'_>,
     input_view: &wgpu::TextureView,

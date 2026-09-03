@@ -200,9 +200,8 @@ impl PointLayer {
         for filtering_criteria in &layer_params.filtering_criteria {
             filtering_criteria.validate_len(n);
         }
-        for (name, len) in [
-            ("position_y", layer_params.position_y.len()),
-        ] {
+        {
+            let (name, len) = ("position_y", layer_params.position_y.len());
             assert_eq!(
                 len, n,
                 "{name} has length {len} but position_x has length {n}",

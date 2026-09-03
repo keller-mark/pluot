@@ -124,7 +124,7 @@ pub fn get_point_position(
     // However, we want to output to pixel coordinates within the layer area.
 
     let model_matrix = model_matrix_raw
-        .map(|m| Mat4::from_column_slice(m))
+        .map(Mat4::from_column_slice)
         .unwrap_or(Mat4::identity());
 
 
@@ -239,7 +239,7 @@ pub fn get_point_size(
     model_matrix_raw: Option<&[f32]>,
 ) -> (f32, f32) {
     let model_matrix = model_matrix_raw
-        .map(|m| Mat4::from_column_slice(m))
+        .map(Mat4::from_column_slice)
         .unwrap_or(Mat4::identity());
 
     let mut pixel_output = (0.0_f32, 0.0_f32);
