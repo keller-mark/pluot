@@ -1,0 +1,56 @@
+---
+title: Taxi
+description: Taxi example.
+sidebar:
+    order: 800
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+Taxi example, reproducing the [NYC Taxi Rides example from Mosaic](https://idl.uw.edu/mosaic/examples/nyc-taxi-rides.html).
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"taxi-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/nyc-rides-2010.adata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "ZarrPointLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
+            point_shape_mode: "Circle",
+            point_radius: null,
+            bounds: null,
+            point_opacity: null,
+            model_matrix: [
+              277280.782739, 158.270457, 0, 0,
+              -207.957329, 364329.680242, 0, 0,
+              0, 0, 1, 0,
+              21511491.787490, -14622204.589828, 0, 1
+            ],
+
+            x_key: "/obs/pickup_longitude",
+            y_key: "/obs/pickup_latitude",
+            color_key: "/obs/passenger_count",
+          }
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    enableVector={false}
+    cameraMatrix={[
+      0.000027623773348750547, 0, 0, 0,
+      0, 0.000027623773348750547, 0, 0,
+      0, 0, 0.004999999888241291, 0,
+      -54.476478576660156, -11.740765571594238, 0, 1
+    ]}
+/>
