@@ -4,6 +4,7 @@ use pluot_core::{maybe_timeout, FutureExt, Duration, log};
 
 use pluot_core::wgpu;
 use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32};
+use pluot_core::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
@@ -15,6 +16,8 @@ use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_ext
 use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
+use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
+
 
 /// Layer params struct for [`ZarrHistogramLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -37,6 +40,13 @@ pub struct ZarrHistogramLayerParams {
     pub cache_data: bool,
 
     pub fill_color: Option<(u8, u8, u8)>,
+
+    // Criteria AND-ed together to determine the selected ("foreground") /
+    // filtered-in ("background") set of data items used when computing the histogram.
+    pub selection_criteria: Vec<ZarrEmphasisCriteria>,
+    pub filtering_criteria: Vec<ZarrEmphasisCriteria>,
+
+    pub background_fill_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for ZarrHistogramLayerParams {
@@ -50,6 +60,9 @@ impl Default for ZarrHistogramLayerParams {
             num_bins: 50,
             cache_data: true,
             fill_color: None,
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
         }
     }
 }
@@ -97,18 +110,28 @@ impl PreparedLayer for ZarrHistogramLayer {
         let store = self.store.clone();
         let num_bins = self.layer_params.num_bins;
 
+        // Criteria are resolved (zarr arrays loaded) inside the memoized
+        // closure below, but the histogram result depends on their *values*,
+        // so a serialized snapshot must be part of the outer cache key.
+        let filtering_criteria_key = serde_json::to_string(&self.layer_params.filtering_criteria).unwrap_or_default();
+        let selection_criteria_key = serde_json::to_string(&self.layer_params.selection_criteria).unwrap_or_default();
+
         let hist_future_deps = vec![
             "histogram_result".to_string(),
             self.store_name.clone(),
             self.layer_params.layer_id.clone(),
             num_bins.to_string(),
+            filtering_criteria_key.clone(),
+            selection_criteria_key,
             // TODO: data_min and data_max layer_params here?
         ];
 
         let quant_future_deps = vec!["histogram_input_arr".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone()];
-        let extent_future_deps = vec!["histogram_input_extent".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone()];
+        let extent_future_deps = vec!["histogram_input_extent".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone(), filtering_criteria_key];
+        let filtering_criteria_future_deps = vec!["histogram_filter_criteria".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone()];
+        let selection_criteria_future_deps = vec!["histogram_select_criteria".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone()];
 
-        // Returns [data_min, data_max, bin_count_0, ..., bin_count_{num_bins-1}]
+        // Returns [data_min, data_max, bg_bin_0, ..., bg_bin_{num_bins-1}, fg_bin_0, ..., fg_bin_{num_bins-1}]
         let hist_future = use_memo_vec_f32(async || {
             // Nested caching: cache the raw data array in its native dtype
             // (any dtype supported by NumericData). The reducers below consume
@@ -119,11 +142,31 @@ impl PreparedLayer for ZarrHistogramLayer {
             }, &quant_future_deps, self.view_params.cache_enabled && self.layer_params.cache_data)
                 .await?;
 
+            // Resolve filtering/selection criteria: each criterion's `codes_key`/
+            // `values_key` zarr array is loaded (and independently memoized) into
+            // an `EmphasisCriteria`.
+            let filtering_criteria = resolve_zarr_emphasis_criteria(
+                store.clone(),
+                &self.layer_params.filtering_criteria,
+                &filtering_criteria_future_deps,
+                self.view_params.cache_enabled,
+            ).await?;
+            let selection_criteria = resolve_zarr_emphasis_criteria(
+                store.clone(),
+                &self.layer_params.selection_criteria,
+                &selection_criteria_future_deps,
+                self.view_params.cache_enabled,
+            ).await?;
+
             // Nested caching: cache the extent.
             // Cloning a `NumericData` clones the inner `Arc<Vec<T>>`, not the data.
+            // The extent is derived from the filter-included ("background") set
+            // alone, so the background and foreground histograms share bin
+            // boundaries and stay comparable.
             let quant_arr_for_extent = quant_arr.as_ref().clone();
+            let filtering_criteria_for_extent = filtering_criteria.clone();
             let extent = use_memo_vec_f32(async || {
-                let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent, &[], &[]).await.background;
+                let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent, &filtering_criteria_for_extent, &[]).await.background;
                 Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
             }, &extent_future_deps, self.view_params.cache_enabled)
                 .await
@@ -135,12 +178,13 @@ impl PreparedLayer for ZarrHistogramLayer {
                 num_bins,
                 extent[0],
                 extent[1],
-                &[],
-                &[],
-            ).await.background;
+                &filtering_criteria,
+                &selection_criteria,
+            ).await;
 
             let mut result = vec![extent[0], extent[1]];
-            result.extend(bin_counts.iter().map(|&c| c as f32));
+            result.extend(bin_counts.background.iter().map(|&c| c as f32));
+            result.extend(bin_counts.foreground.iter().map(|&c| c as f32));
             Ok(result)
         }, &hist_future_deps, self.view_params.cache_enabled);
 
@@ -165,27 +209,49 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         let data_min = hist_data[0];
         let data_max = hist_data[1];
-        let hist_arr: Arc<Vec<f32>> = Arc::new(hist_data[2..].to_vec());
+        let bins_start = 2;
+        let bins_end = bins_start + num_bins as usize;
+        let background_arr: Arc<Vec<f32>> = Arc::new(hist_data[bins_start..bins_end].to_vec());
+        let foreground_arr: Arc<Vec<f32>> = Arc::new(hist_data[bins_end..bins_end + num_bins as usize].to_vec());
 
-        let labels = Self::bin_labels(data_min, data_max, num_bins);
+        let labels = Arc::new(Self::bin_labels(data_min, data_max, num_bins));
 
-        let bar_layer = BarPlotLayer::new(
+        // Render the filter-included ("background") bars first, so the
+        // filter-and-selection-included ("foreground") bars drawn afterward
+        // appear in front of them.
+        let background_bar_layer = BarPlotLayer::new(
             self.view_params.clone(),
             BarPlotLayerParams {
-                layer_id: format!("{}_bar_plot_sublayer", self.layer_params.layer_id),
+                layer_id: format!("{}_bar_plot_sublayer_background", self.layer_params.layer_id),
                 bounds: self.layer_params.bounds.clone(),
                 data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
                 data_unit_mode_for_quantity_dim: UnitsMode::Data,
                 orientation: self.layer_params.orientation.clone(),
-                identifier: Arc::new(labels),
-                quantity: hist_arr,
+                identifier: labels.clone(),
+                quantity: background_arr,
+                fill_color: Some(ColorMode::UniformRgb(
+                    self.layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
+                )),
+            },
+        );
+
+        let foreground_bar_layer = BarPlotLayer::new(
+            self.view_params.clone(),
+            BarPlotLayerParams {
+                layer_id: format!("{}_bar_plot_sublayer_foreground", self.layer_params.layer_id),
+                bounds: self.layer_params.bounds.clone(),
+                data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
+                data_unit_mode_for_quantity_dim: UnitsMode::Data,
+                orientation: self.layer_params.orientation.clone(),
+                identifier: labels,
+                quantity: foreground_arr,
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.fill_color.unwrap_or((76, 120, 168)),
                 )),
             },
         );
 
-        self.sub_layer_instances = vec![Box::new(bar_layer)];
+        self.sub_layer_instances = vec![Box::new(background_bar_layer), Box::new(foreground_bar_layer)];
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare(gpu_context).await;

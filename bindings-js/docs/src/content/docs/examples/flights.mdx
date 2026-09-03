@@ -9,6 +9,17 @@ import { Aside } from '@astrojs/starlight/components';
 
 Flights example, reproducing the [Cross-filter flights example from Mosaic](https://idl.uw.edu/mosaic/examples/flights-10m.html).
 
+export const SELECTION_CRITERIA = [
+  {
+    criteria_mode: "Quantitative",
+    criteria_params: {
+      values_key: "/obs/DISTANCE",
+      min: 1000,
+      max: 3000,
+    },
+  },
+];
+
 Arrival delay (minutes):
 
 <PluotWrapper
@@ -30,6 +41,7 @@ Arrival delay (minutes):
             num_bins: 30,
             cache_data: false,
             fill_color: null,
+            selection_criteria: SELECTION_CRITERIA,
           }
         }
       ]
@@ -72,6 +84,7 @@ Departure time (hours):
             num_bins: 30,
             cache_data: false,
             fill_color: null,
+            selection_criteria: SELECTION_CRITERIA,
           }
         }
       ]
@@ -114,6 +127,7 @@ Flight Distance (miles):
             num_bins: 30,
             cache_data: false,
             fill_color: null,
+            selection_criteria: SELECTION_CRITERIA,
           }
         }
       ]
