@@ -1,1 +1,0 @@
-# adata_pl CLI
