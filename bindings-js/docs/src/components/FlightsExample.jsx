@@ -1,25 +1,46 @@
-import React from 'react';
-import { PluotWrapper } from './PluotWrapper.jsx';
-
-const SELECTION_CRITERIA = [
-  {
-    criteria_mode: "Quantitative",
-    criteria_params: {
-      values_key: "/obs/DISTANCE",
-      min: 1000,
-      max: 3000,
-    },
-  },
-];
+import React, { useState, useMemo, useCallback } from 'react';
+import { Pluot } from '@pluot/react';
 
 export function FlightsExample(props) {
+
+  const [distMin, setDistMin] = useState();
+  const [distMax, setDistMax] = useState();
+  // Arrival delay
+  const [delayMin, setDelayMin] = useState();
+  const [delayMax, setDelayMax] = useState();
+
+  // Departure time
+  const [timeMin, setTimeMin] = useState();
+  const [timeMax, setTimeMax] = useState();
+
+  const selectionCriteria = useMemo(() => {
+    return [
+      {
+        criteria_mode: "Quantitative",
+        criteria_params: {
+          values_key: "/obs/DISTANCE",
+          min: distMin,
+          max: distMax,
+        },
+      },
+    ];
+  }, [distMin, distMax, delayMin, delayMax, timeMin, timeMax]);
+
+  // TODO: onBrushDelay, onBrushTime
+
+  const onBrushDist = useCallback((brush, brushResult) => {
+    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
+    setDistMin(parseFloat(min));
+    setDistMax(parseFloat(max));
+  });
+
   return (
     <>
       <p>Arrival delay (minutes):</p>
-      <PluotWrapper
+      <Pluot
         plotId={"flights-example-arr-delay"}
         plotType={"LayeredPlot"}
-        storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
+        store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
         plotParams={{
           layers: [
             {
@@ -32,7 +53,7 @@ export function FlightsExample(props) {
                 num_bins: 30,
                 cache_data: false,
                 fill_color: null,
-                selection_criteria: SELECTION_CRITERIA,
+                selection_criteria: selectionCriteria,
               }
             }
           ]
@@ -50,13 +71,13 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
-        showControls={false}
+
       />
       <p>Departure time (hours):</p>
-      <PluotWrapper
+      <Pluot
         plotId={"flights-example-dep-time"}
         plotType={"LayeredPlot"}
-        storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
+        store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
         plotParams={{
           layers: [
             {
@@ -69,7 +90,7 @@ export function FlightsExample(props) {
                 num_bins: 30,
                 cache_data: false,
                 fill_color: null,
-                selection_criteria: SELECTION_CRITERIA,
+                selection_criteria: selectionCriteria,
               }
             }
           ]
@@ -87,13 +108,12 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
-        showControls={false}
       />
       <p>Flight Distance (miles):</p>
-      <PluotWrapper
+      <Pluot
         plotId={"flights-example-dist"}
         plotType={"LayeredPlot"}
-        storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
+        store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
         plotParams={{
           layers: [
             {
@@ -106,7 +126,7 @@ export function FlightsExample(props) {
                 num_bins: 30,
                 cache_data: false,
                 fill_color: null,
-                selection_criteria: SELECTION_CRITERIA,
+                selection_criteria: selectionCriteria,
               }
             }
           ]
@@ -124,7 +144,14 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
-        showControls={false}
+
+        enableBrushCreate
+        enableBrushEdit
+        enableBrushClear
+        brushMode="RangeX"
+        brushUnitsModeX="Pixels"
+        persistBrush
+        onBrush={onBrushDist}
       />
     </>
   );

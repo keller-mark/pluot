@@ -3,7 +3,7 @@ import lzs from "lz-string";
 import { throttle } from "lodash-es";
 import {
   initialize, getIsWasmReady,
-  render_wasm, pick_wasm,
+  render_wasm, pick_wasm, brush_wasm,
   normalizeStores, getStore,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
@@ -14,7 +14,8 @@ import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
 import { useBrush } from "./use-brush.js";
 import type {
-  HoverInfo, PickingResult, PluotProps, RawPickingResult, RenderParams, TooltipContent,
+  BrushingResult, BrushState, HoverInfo, PickingResult, PluotProps, RawBrushingResult, RawPickingResult,
+  RenderParams, TooltipContent,
 } from "./types.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -54,6 +55,21 @@ function normalizePickingResult(data: RawPickingResult): PickingResult {
       // This is needed because serde-wasm-bindgen
       // converts Rust HashMap to JS Map.
       info: Object.fromEntries(info),
+    })),
+  };
+}
+
+// `brush_wasm` is typed `any` by wasm-bindgen, so `RawBrushingResult` is what
+// documents its wire format (see types.ts).
+function normalizeBrushingResult(data: RawBrushingResult): BrushingResult {
+  return {
+    ...data,
+    layer_results: data.layer_results.map(({ layer_id, info, element_info }) => ({
+      layer_id,
+      // This is needed because serde-wasm-bindgen
+      // converts Rust HashMap to JS Map.
+      info: Object.fromEntries(info),
+      element_info: Object.fromEntries(element_info),
     })),
   };
 }
@@ -196,6 +212,49 @@ export function Pluot(props: PluotProps) {
 
   const progressBarId = useId();
 
+  // Runs the brush query against the wasm module for a given brush state,
+  // analogous to `pick` below (defined here, ahead of `pick`, since `useBrush`
+  // needs it immediately).
+  const runBrush = useEffectEvent(async (state: BrushState): Promise<BrushingResult> => {
+    const renderParams: RenderParams = {
+      schema_version: schemaVersion,
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+      view_mode: viewMode,
+      pickable: false,
+      camera_view: cameraMatrix,
+      plot_id: plotId,
+      plot_type: plotType,
+      stores,
+      plot_params: plotParams,
+      timeout: currentTimeout.current,
+      wait_for_store_gets: false,
+      cache_enabled: true,
+      svg_compression_enabled: true,
+      svg_include_document: false,
+    };
+
+    // Brush vertices are container-relative pixels with Y increasing downwards;
+    // the wasm side expects screen coordinates with Y increasing upwards (as
+    // with the `screenCoordX`/`screenCoordY` passed to `pick_wasm` below).
+    const brushParams = {
+      screen_vertices: state.vertices.map((vertex) => ({ x: vertex.x_pixels, y: height - vertex.y_pixels })),
+      brush_units_mode_x: brushUnitsModeX,
+      brush_units_mode_y: brushUnitsModeY,
+      brush_mode: state.shape,
+    };
+
+    return normalizeBrushingResult(await brush_wasm(renderParams, brushParams));
+  });
+
   const {
     brushState,
     overlayRef: brushOverlayRef,
@@ -216,7 +275,7 @@ export function Pluot(props: PluotProps) {
     brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
     enableBrushCreate, enableBrushEdit, enableBrushClear,
     brushDelay, maybeBrushDelay, persistBrush, brushMode,
-    brush, onBrush, onBrushEnd, onBrushClear,
+    brush, onBrush, onBrushEnd, onBrushClear, brush_wasm: runBrush,
   });
 
   useLayoutEffect(() => {
