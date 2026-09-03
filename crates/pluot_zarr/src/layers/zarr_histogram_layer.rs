@@ -283,6 +283,8 @@ impl DrawToSvg for ZarrHistogramLayer {
     }
 }
 
-impl BrushableLayer for ZarrHistogramLayer {}
+impl BrushableLayer for ZarrHistogramLayer {
+    // TODO: implement a brush function which expects a RangeX brush mode and returns the min/max values of the range according to the x-axis linear scale's domain.
+}
 
 impl PickableLayer for ZarrHistogramLayer {}
