@@ -20,7 +20,7 @@ use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinea
 use pluot_core::d3::scale::ScaleLinear;
 use pluot_core::viewport::DataVertices;
 
-use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized};
+use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 
@@ -145,19 +145,6 @@ impl ZarrHistogramLayer {
             .collect()
     }
 
-    /// Logs one memoization key used by `prepare`, along with whether caching is
-    /// actually enabled for it.
-    ///
-    /// Every `use_memo_*` call in `prepare` is logged this way, so that an
-    /// unexpected re-fetch across renders can be traced to whichever key
-    /// fragment changed — or to a `false` here, which means the memo is bypassed
-    /// entirely and its work redone on every render regardless of the key.
-    fn log_cache_key(label: &str, keys: &[String], cache_enabled: bool) {
-        log(&format!(
-            "[ZarrHistogramLayer] memo key ({label}, cache_enabled={cache_enabled}): {keys:?}"
-        ));
-    }
-
     /// Unwraps one `maybe_timeout!`-wrapped memo result from `prepare`, returning
     /// `None` when the layer should bail early — either the wall-clock timeout
     /// elapsed (the outer `Err`) or the store timed out mid-fetch. Any other
@@ -226,32 +213,7 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         let extent_future_deps = vec!["histogram_input_extent".to_string(), self.store_name.clone(), self.layer_params.data_key.clone(), filtering_criteria_key];
 
-        // Log every key this layer memoizes against, including the ones owned by
-        // the shared zarr-array loader, so a re-fetch across renders can be
-        // attributed to a specific changed fragment (or to caching being off).
         let quant_cache_enabled = self.view_params.cache_enabled && self.layer_params.cache_data;
-        Self::log_cache_key("background", &background_future_deps, self.view_params.cache_enabled);
-        Self::log_cache_key("foreground", &foreground_future_deps, self.view_params.cache_enabled);
-        Self::log_cache_key("extent", &extent_future_deps, self.view_params.cache_enabled);
-        Self::log_cache_key(
-            "data array",
-            &arr_cache_key(&self.store_name, &self.layer_params.data_key),
-            quant_cache_enabled,
-        );
-        for (i, criteria) in self.layer_params.filtering_criteria.iter().enumerate() {
-            Self::log_cache_key(
-                &format!("filtering criteria array {i}"),
-                &arr_cache_key(&self.store_name, criteria.array_path()),
-                self.view_params.cache_enabled,
-            );
-        }
-        for (i, criteria) in self.layer_params.selection_criteria.iter().enumerate() {
-            Self::log_cache_key(
-                &format!("selection criteria array {i}"),
-                &arr_cache_key(&self.store_name, criteria.array_path()),
-                self.view_params.cache_enabled,
-            );
-        }
 
         // Returns [data_min, data_max, bg_bin_0, ..., bg_bin_{num_bins-1}]
         let background_future = use_memo_vec_f32(async || {
@@ -370,15 +332,16 @@ impl PreparedLayer for ZarrHistogramLayer {
             Ok(bin_counts.foreground.iter().map(|&c| c as f32).collect())
         }, &foreground_future_deps, self.view_params.cache_enabled);
 
-        let foreground_arr = match Self::unwrap_or_bail(
+        // Not unwrapped with an early return: everything below except the
+        // foreground bars is derived from the background histogram alone, so a
+        // not-yet-ready foreground only omits that one sublayer. The background
+        // bars and the value axis are still built and prepared, which lets the
+        // histogram render (and stay rendered, rather than blanking) while a
+        // brush move re-computes the foreground counts.
+        let foreground_arr = Self::unwrap_or_bail(
             maybe_timeout!(foreground_future, self.view_params.timeout).await,
             "foreground histogram",
-        ) {
-            Some(data) => data,
-            None => return PrepareResult { bailed_early: true },
-        };
-
-
+        );
 
         let labels = Arc::new(Self::bin_labels(data_min, data_max, num_bins));
 
@@ -404,22 +367,25 @@ impl PreparedLayer for ZarrHistogramLayer {
             },
         );
 
-        let foreground_bar_layer = BarPlotLayer::new(
-            self.view_params.clone(),
-            BarPlotLayerParams {
-                layer_id: format!("{}_bar_plot_sublayer_foreground", self.layer_params.layer_id),
-                bounds: self.layer_params.bounds.clone(),
-                data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
-                data_unit_mode_for_quantity_dim: UnitsMode::Data,
-                orientation: self.layer_params.orientation.clone(),
-                identifier: labels,
-                quantity: foreground_arr,
-                fill_color: Some(ColorMode::UniformRgb(
-                    self.layer_params.fill_color.unwrap_or((76, 120, 168)),
-                )),
-                render_categorical_axis: Some(false),
-            },
-        );
+        let foreground_bar_layer = foreground_arr.map(|foreground_arr| {
+            BarPlotLayer::new(
+                self.view_params.clone(),
+                BarPlotLayerParams {
+                    layer_id: format!("{}_bar_plot_sublayer_foreground", self.layer_params.layer_id),
+                    bounds: self.layer_params.bounds.clone(),
+                    data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
+                    data_unit_mode_for_quantity_dim: UnitsMode::Data,
+                    orientation: self.layer_params.orientation.clone(),
+                    identifier: labels,
+                    quantity: foreground_arr,
+                    fill_color: Some(ColorMode::UniformRgb(
+                        self.layer_params.fill_color.unwrap_or((76, 120, 168)),
+                    )),
+                    render_categorical_axis: Some(false),
+                },
+            )
+        });
+        let bailed_early = foreground_bar_layer.is_none();
 
         let value_axis_layer = AxisLinearLayer::new(
             self.view_params.clone(),
@@ -431,13 +397,18 @@ impl PreparedLayer for ZarrHistogramLayer {
             },
         );
 
-        self.sub_layer_instances = vec![Box::new(background_bar_layer), Box::new(foreground_bar_layer), Box::new(value_axis_layer)];
+        let mut sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = vec![Box::new(background_bar_layer)];
+        if let Some(foreground_bar_layer) = foreground_bar_layer {
+            sub_layer_instances.push(Box::new(foreground_bar_layer));
+        }
+        sub_layer_instances.push(Box::new(value_axis_layer));
+        self.sub_layer_instances = sub_layer_instances;
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare(gpu_context).await;
         }
 
-        PrepareResult { bailed_early: false }
+        PrepareResult { bailed_early }
     }
 }
 

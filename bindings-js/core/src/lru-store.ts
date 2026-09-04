@@ -145,6 +145,11 @@ const withLruCache = zarr.defineStoreExtension(
         return promiseStates.get(cacheKey);
       },
 
+      // TODO: when multiple plots that use the same data are rendered on the same page,
+      // this causes slightly staggered subsequent requests to result in cache misses,
+      // despite the data being loaded successfully for a prior plot rendering.
+      // To address this: implement a slight delay for each cache member -- if this item is not reused within the specified duration, then clear it.
+      // Alternatively, implement an LRU strategy.
       clearCache() {
         // Use AbortSignal in clearCache for promises that have not yet been resolved.
         cache.forEach(([promise, controller]) => {

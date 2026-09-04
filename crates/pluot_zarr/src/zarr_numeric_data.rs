@@ -38,10 +38,6 @@ pub async fn load_arr_as_numeric_data_memoized(
     let keys = arr_cache_key(store_name, array_path);
     use_memo_numeric_data(
         async || {
-            // Only reached on a cache miss (or with caching off), so this line
-            // marks every real fetch — pair it with the callers' key logging to
-            // see which key was expected to hit but didn't.
-            log(&format!("[zarr_numeric_data] fetching array, memo key: {keys:?}"));
             load_arr_as_numeric_data(store, array_path).await
         },
         &keys,

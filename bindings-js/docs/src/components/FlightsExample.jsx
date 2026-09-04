@@ -17,34 +17,33 @@ export function FlightsExample(props) {
 
   const selectionCriteria = useMemo(() => {
     return [
-      {
+      ...(distMin || distMax ? [{
         criteria_mode: "Quantitative",
         criteria_params: {
           values_key: "/obs/DISTANCE",
           min: distMin,
           max: distMax,
         },
-      },
-      {
+      }] : []),
+      ...(timeMin || timeMax ? [{
         criteria_mode: "Quantitative",
         criteria_params: {
           values_key: "/obs/DEP_TIME",
           min: timeMin,
           max: timeMax,
         },
-      },
-      {
+      }] : []),
+      ...(delayMin || delayMax ? [{
         criteria_mode: "Quantitative",
         criteria_params: {
           values_key: "/obs/ARR_DELAY",
           min: delayMin,
           max: delayMax,
         },
-      },
+      }] : []),
     ];
   }, [distMin, distMax, delayMin, delayMax, timeMin, timeMax]);
 
-  console.log(selectionCriteria);
 
   const onBrushDelay = useCallback((brush, brushResult) => {
     const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
@@ -75,6 +74,7 @@ export function FlightsExample(props) {
       <p>Arrival delay (minutes):</p>
       <Pluot
         plotId={"flights-example-arr-delay"}
+        format={"Vector"}
         plotType={"LayeredPlot"}
         store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
         plotParams={{
@@ -128,6 +128,7 @@ export function FlightsExample(props) {
       <p>Departure time (hours):</p>
       <Pluot
         plotId={"flights-example-dep-time"}
+        format={"Vector"}
         plotType={"LayeredPlot"}
         store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
         plotParams={{
@@ -180,6 +181,7 @@ export function FlightsExample(props) {
       <p>Flight Distance (miles):</p>
       <Pluot
         plotId={"flights-example-dist"}
+        format={"Vector"}
         plotType={"LayeredPlot"}
         store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
         plotParams={{
