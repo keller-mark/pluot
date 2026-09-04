@@ -1,0 +1,56 @@
+---
+title: SpatialData Labels
+description: Bitmask without controls.
+draft: false
+sidebar:
+    order: 20
+---
+import { PluotWrapper } from '../../../components/PluotWrapper.jsx';
+
+An example of rendering a SpatialData multi-scale label image (segmentation bitmask) from [blobs](https://spatialdata.scverse.org/en/stable/api/datasets.html#spatialdata.datasets.blobs).
+
+
+<PluotWrapper
+    client:load
+    client:only="react"
+
+    plotId={"sdata-blobs-simple"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/blobs.sdata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "bottom_axis",
+            position: "Bottom",
+          }
+        },
+        {
+          layer_type: "AxisLinearLayer",
+          layer_params: {
+            layer_id: "left_axis",
+            position: "Left",
+          }
+        },
+        {
+          layer_type: "OmeZarrBitmaskMultiscaleLayer",
+          layer_params: {
+            layer_id: "ome_zarr_multiscale_layer",
+            group_path: "/labels/blobs_multiscale_labels",
+            channel_settings: [
+              {
+                c_index: 0,
+              }
+            ],
+            opacity: 1.0,
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={100}
+    marginTop={0}
+    marginRight={0}
+    marginBottom={100}
+/>
