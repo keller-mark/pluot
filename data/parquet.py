@@ -12,6 +12,7 @@
 from os.path import join
 
 import pandas as pd
+import numpy as np
 from anndata import AnnData
 
 # Flights data
@@ -28,6 +29,15 @@ flights_adata.write_zarr(flights_adata_path)
 # Reference: https://idl.uw.edu/mosaic/examples/nyc-taxi-rides.html
 taxi_path = join("out", "nyc-rides-2010.parquet")
 taxi_df = pd.read_parquet(taxi_path)
+
+
+def dt_to_hour(datetime_series):
+    dt = pd.to_datetime(datetime_series, format="%Y-%m-%d %H:%M:%S")
+    return dt.dt.hour + dt.dt.minute / 60 + dt.dt.second / 3600
+
+# Convert datetime strings to an hour float value between 0 and 24
+taxi_df["pickup_hour"] = dt_to_hour(taxi_df["pickup_datetime"]).astype(np.dtype("f4"))
+taxi_df["dropoff_hour"] = dt_to_hour(taxi_df["dropoff_datetime"]).astype(np.dtype("f4"))
 
 taxi_adata = AnnData(obs=taxi_df)
 
