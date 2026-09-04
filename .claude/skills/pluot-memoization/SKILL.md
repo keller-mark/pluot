@@ -100,7 +100,7 @@ When a `use_memo` operation (initializer function body) is more than a few lines
 When a memo can't complete in time, decide per-value whether the layer should bail or degrade:
 
 - If the layer can render a partial result (e.g., certain sub-layers), then instantiate these sublayers and prepare them (call `sublayer.prepare()`), but still return `bailed_early: true` at the conclusion of the prepare function so that the client will know to trigger a re-render.
-- If the layer cannot render even a partial result due to the lack of a value, only then is it acceptable to return early with `bailed_early: true`
+- If the layer cannot render even a partial result due to the lack of a value, then we can simply return early with `bailed_early: true`
 
 
 ## Prefer progressive loading via per-chunk sublayers
