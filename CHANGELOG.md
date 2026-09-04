@@ -1,4 +1,11 @@
 
+## 0.1.18
+
+### Patch Changes
+
+- Add flights and taxi examples. Update histogram to support selection criteria and brushing. (`@pluot/core`) ([#318](https://github.com/keller-mark/pluot/pull/318))
+
+
 ## 0.1.17
 
 ### Patch Changes
