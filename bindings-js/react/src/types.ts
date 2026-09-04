@@ -406,4 +406,7 @@ export type PluotProps = {
   // Called upon the user cancelling the brush, e.g., by clicking a clear button which appears when hovering the drawn rect/polygon.
   onBrushClear?: (state: BrushState) => void,
 
+
+  shouldClearCache?: boolean,
+
 };

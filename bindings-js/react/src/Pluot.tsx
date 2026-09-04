@@ -126,6 +126,9 @@ export function Pluot(props: PluotProps) {
     onBrush,
     onBrushEnd,
     onBrushClear,
+
+    // Temporary workaround. See comments in LruStore.clearCache.
+    shouldClearCache = true,
   } = props;
 
   const onClick: (result: PickingResult) => void = typeof onClickProp === 'function' ? onClickProp : noop;
@@ -565,7 +568,7 @@ export function Pluot(props: PluotProps) {
       // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
       Object.keys(stores ?? {}).forEach(storeName => {
         const storeUsed = getStore(storeName);
-        if (storeUsed && typeof storeUsed.clearCache === 'function') {
+        if (storeUsed && typeof storeUsed.clearCache === 'function' && shouldClearCache) {
           storeUsed.clearCache();
         }
       });

@@ -3,6 +3,10 @@ import { Pluot } from '@pluot/react';
 
 const NOOP = () => { };
 
+const STORES = {
+  "flights-10m": "https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr",
+};
+
 export function FlightsExample(props) {
 
   const [distMin, setDistMin] = useState();
@@ -76,7 +80,8 @@ export function FlightsExample(props) {
         plotId={"flights-example-arr-delay"}
         format={"Vector"}
         plotType={"LayeredPlot"}
-        store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
+        stores={STORES}
+        shouldClearCache={false}
         plotParams={{
           layers: [
             {
@@ -138,7 +143,8 @@ export function FlightsExample(props) {
         plotId={"flights-example-dep-time"}
         format={"Vector"}
         plotType={"LayeredPlot"}
-        store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
+        stores={STORES}
+        shouldClearCache={false}
         plotParams={{
           layers: [
             {
@@ -191,7 +197,8 @@ export function FlightsExample(props) {
         plotId={"flights-example-dist"}
         format={"Vector"}
         plotType={"LayeredPlot"}
-        store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/flights-10m.adata.zarr"}
+        stores={STORES}
+        shouldClearCache={false}
         plotParams={{
           layers: [
             {

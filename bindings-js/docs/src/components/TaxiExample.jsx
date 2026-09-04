@@ -18,6 +18,10 @@ const MODEL_MATRIX = [
 
 const NOOP = () => { };
 
+const STORES = {
+  "nyc-rides-2010": "https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/nyc-rides-2010.adata.zarr",
+};
+
 export function TaxiExample(props) {
   const [cameraMatrix, setCameraMatrix] = useState(INITIAL_CAMERA);
 
@@ -60,7 +64,8 @@ export function TaxiExample(props) {
             marginBottom={0}
             plotId={"taxi-example"}
             plotType={"LayeredPlot"}
-            store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/nyc-rides-2010.adata.zarr"}
+            stores={STORES}
+            shouldClearCache={false}
             plotParams={{
               layers: [
                 {
@@ -120,7 +125,8 @@ export function TaxiExample(props) {
             marginBottom={0}
             plotId={"taxi-example-2"}
             plotType={"LayeredPlot"}
-            store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/nyc-rides-2010.adata.zarr"}
+            stores={STORES}
+            shouldClearCache={false}
             plotParams={{
               layers: [
                 {
@@ -176,7 +182,8 @@ export function TaxiExample(props) {
           plotId={"taxi-example-pickup-hist"}
           format={"Vector"}
           plotType={"LayeredPlot"}
-          store={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/nyc-rides-2010.adata.zarr"}
+          stores={STORES}
+          shouldClearCache={false}
           plotParams={{
             layers: [
               {
