@@ -150,6 +150,8 @@ const withLruCache = zarr.defineStoreExtension(
       // despite the data being loaded successfully for a prior plot rendering.
       // To address this: implement a slight delay for each cache member -- if this item is not reused within the specified duration, then clear it.
       // Alternatively, update the LRU strategy to keep track of the sizes of the cached byte arrays (the current maxSize value does not effectively restrict the overall memory footprint).
+      // Alternatively, associate each request with a plotId, and only clear things specific to this plotId and this plotId alone. If a request for the same zarr key was made by a different plotId, keep it in the cache; just un-associate the zarr key with the current plotId.
+      // Alternatively, on the Rust side, rather than cacheing the result of an async loading operation, can we cache the future, or somehow indicate that this cache key was already requested, so that we avoid making the duplicate requests from the Rust side? Then we would not need to modify the clearCache logic here.
       clearCache() {
         // Use AbortSignal in clearCache for promises that have not yet been resolved.
         cache.forEach(([promise, controller]) => {
