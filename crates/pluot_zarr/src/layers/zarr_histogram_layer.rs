@@ -179,20 +179,13 @@ impl PreparedLayer for ZarrHistogramLayer {
         let store = self.store.clone();
         let num_bins = self.layer_params.num_bins;
 
-        // Cache-key fragments for the two criteria lists. The full JSON is used
-        // rather than just the referenced `codes_key`/`values_key` array paths,
-        // because a reduced result depends on each criterion's thresholds
-        // (`included_codes`/`min`/`max`) as well as on the array it reads.
-        // Keeping the two lists in separate fragments is what lets the memos
-        // below key on only the list each of them actually depends on.
+        // TODO: do not convert the vec to string using serde_json; extract the properties individually instead.
         let filtering_criteria_key = serde_json::to_string(&self.layer_params.filtering_criteria).unwrap_or_default();
         let selection_criteria_key = serde_json::to_string(&self.layer_params.selection_criteria).unwrap_or_default();
 
         // The extent and the "background" bin counts are derived from the
         // filter-included set alone, so their keys deliberately omit the
-        // selection criteria. Brushing moves only the selection thresholds, so
-        // it leaves them memoized and `foreground_future_deps` is the only key
-        // that changes.
+        // selection criteria.
         let background_future_deps = vec![
             "histogram_background".to_string(),
             self.store_name.clone(),
@@ -242,8 +235,7 @@ impl PreparedLayer for ZarrHistogramLayer {
             // Nested caching: cache the extent.
             // Cloning a `NumericData` clones the inner `Arc<Vec<T>>`, not the data.
             // The extent is derived from the filter-included ("background") set
-            // alone, so the background and foreground histograms share bin
-            // boundaries and stay comparable.
+            // alone, so the background and foreground histograms share bin boundaries.
             let quant_arr_for_extent = quant_arr.as_ref().clone();
             let filtering_criteria_for_extent = filtering_criteria.clone();
 
@@ -288,10 +280,7 @@ impl PreparedLayer for ZarrHistogramLayer {
         let value_scale = Self::build_value_scale(&self.view_params, &self.layer_params.orientation, (data_min as f64, data_max as f64));
         self.value_scale = Some(value_scale);
 
-        // The foreground ("selected") bin counts get their own memo, keyed by the
-        // selection criteria on top of everything the background memo is keyed by.
-        // The bin edges resolved above are passed in rather than recomputed, so the
-        // two histograms share bin boundaries and stay comparable.
+        // The foreground ("selected") bin counts get their own memo.
         let foreground_future = use_memo_vec_f32(async || {
             let quant_arr = load_arr_as_numeric_data_memoized(
                 store.clone(),
@@ -332,12 +321,6 @@ impl PreparedLayer for ZarrHistogramLayer {
             Ok(bin_counts.foreground.iter().map(|&c| c as f32).collect())
         }, &foreground_future_deps, self.view_params.cache_enabled);
 
-        // Not unwrapped with an early return: everything below except the
-        // foreground bars is derived from the background histogram alone, so a
-        // not-yet-ready foreground only omits that one sublayer. The background
-        // bars and the value axis are still built and prepared, which lets the
-        // histogram render (and stay rendered, rather than blanking) while a
-        // brush move re-computes the foreground counts.
         let foreground_arr = Self::unwrap_or_bail(
             maybe_timeout!(foreground_future, self.view_params.timeout).await,
             "foreground histogram",

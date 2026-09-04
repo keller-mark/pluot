@@ -323,20 +323,10 @@ pub mod is_included {
     pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_is_included/categorical.wgsl");
 
     /// Per-element scalar value tested against a two-sided `[min, max]` range.
-    /// Substitute `{{criteria_min_op}}`/`{{criteria_max_op}}` with each bound's
-    /// comparison operator (`>=`/`>` and `<=`/`<`, depending on whether the
-    /// bound is inclusive or exclusive) and `{{criteria_min_value}}`/
-    /// `{{criteria_max_value}}` with the bounds themselves.
     pub const QUANTITATIVE_RANGE: &str =
         include_str!("wgsl_functions/get_is_included/quantitative_range.wgsl");
 
-    /// Per-element scalar value tested against a single bound — used when only
-    /// `min` or only `max` is set, so that the unbounded side costs no
-    /// comparison. Substitute `{{criteria_op}}` with the comparison operator
-    /// (`>=`/`>` for a lower bound, `<=`/`<` for an upper one) and
-    /// `{{criteria_value}}` with the bound. A criteria with *neither* bound set
-    /// includes every item, so no snippet (and no value texture) is emitted for
-    /// it at all.
+    /// Per-element scalar value tested against either a lower or upper bound but not both.
     pub const QUANTITATIVE_ONE_SIDED: &str =
         include_str!("wgsl_functions/get_is_included/quantitative_one_sided.wgsl");
 }

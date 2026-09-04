@@ -180,22 +180,6 @@ pub fn prepare_emphasis_criteria(
 /// texture named `var_name` at `binding` (of sampled type `dtype`), or `None`
 /// when the criteria is unbounded (`min` and `max` both omitted) and so needs
 /// no test at all.
-///
-/// Which of the two templates is used, and which comparison operators are
-/// baked in, follows from the bounds:
-///
-/// - both bounds: [`is_included::QUANTITATIVE_RANGE`](is_included_wgsl::QUANTITATIVE_RANGE),
-///   with each bound's operator (`>=`/`>`, `<=`/`<`) chosen by
-///   [`QuantitativeCriteriaParams::min_wgsl_op`] /
-///   [`max_wgsl_op`](QuantitativeCriteriaParams::max_wgsl_op).
-/// - one bound: [`is_included::QUANTITATIVE_ONE_SIDED`](is_included_wgsl::QUANTITATIVE_ONE_SIDED),
-///   which compares against that bound alone — the omitted side is unbounded,
-///   rather than a +/-infinity sentinel compared against for nothing.
-///
-/// Split out of [`prepare_emphasis_criteria`] (which is where layers should
-/// reach for this) so that the assembled WGSL can be snapshot-tested without a
-/// `wgpu::Device`: everything here except the texture upload is
-/// GPU-independent.
 pub fn quantitative_criteria_wgsl(
     params: &QuantitativeCriteriaParams,
     fn_name: &str,
