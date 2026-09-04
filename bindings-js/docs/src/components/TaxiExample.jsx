@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { Pluot } from '@pluot/react';
 
 const INITIAL_CAMERA = [
-  0.000027623773348750547, 0, 0, 0,
-  0, 0.000027623773348750547, 0, 0,
+  0.000036549841752275825, 0, 0, 0,
+  0, 0.000036549841752275825, 0, 0,
   0, 0, 0.004999999888241291, 0,
-  -54.476478576660156, -11.740765571594238, 0, 1
+  -72.32178497314453, -14.90757942199707, 0, 1
 ];
 
 // Affine matrix which approximates the transformation from EPSG:4326 to ESRI:102718
