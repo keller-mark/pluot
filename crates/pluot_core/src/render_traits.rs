@@ -353,6 +353,8 @@ pub enum EmphasisCriteria {
     // A quantitative column (NumericData),
     // along with min and/or max (included values within this range) - omitted min/max implicitly means -inf/+inf.
     Quantitative(QuantitativeCriteriaParams),
+
+    // TODO: implement a boolean mask criteria
 }
 
 impl EmphasisCriteria {

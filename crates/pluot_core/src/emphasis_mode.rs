@@ -127,6 +127,8 @@ pub fn prepare_emphasis_criteria(
                         .define("criteria_data_var", &term_var_name)
                         .define_bidx("criteria_data", binding)
                         .inject_texture_sample_type("criteria_data", dtype)
+                        // TODO: inject the included codes as a texture, rather than an inline array.
+                        // Perhaps only when the number of included codes exceed some threshold? Or always.
                         .define_u32("criteria_included_len", params.included_codes.len() as u32)
                         .define("criteria_included_codes", &included_codes)
                         .build(),
