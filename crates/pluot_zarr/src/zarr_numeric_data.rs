@@ -16,7 +16,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 /// - the calling layer and, for criteria, the criterion's position in its list
 ///   and its thresholds (`included_codes`/`min`/`max`), so re-tuning a filter
 ///   or dragging a brush re-uses the already-loaded array.
-pub(crate) fn arr_cache_key(store_name: &str, array_path: &str) -> Vec<String> {
+pub fn arr_cache_key(store_name: &str, array_path: &str) -> Vec<String> {
     vec![
         "zarr_numeric_data_arr".to_string(),
         store_name.to_string(),

@@ -72,12 +72,12 @@ impl Default for ZarrPointLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            point_radius: Some(1.0),
+            point_radius: None,
             point_radius_unit_mode_x: UnitsMode::Pixels,
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
-            point_opacity: Some(1.0),
+            point_opacity: None,
             store_name: None,
             x_key: "".to_string(),
             y_key: "".to_string(),
@@ -208,7 +208,7 @@ fn get_point_opacity(
 
     // p (the pixel length/width of a point) is 1 for us, so it drops out.
     let alpha = ((rho * w * h) / n) * (y0 / y) * (x0 / x);
-    alpha.clamp(2.01 / 255.0, 1.0)
+    alpha.clamp(4.01 / 255.0, 1.0)
 }
 
 

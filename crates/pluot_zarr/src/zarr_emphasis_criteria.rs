@@ -44,7 +44,7 @@ pub struct ZarrQuantitativeCriteriaParams {
 }
 
 impl ZarrEmphasisCriteria {
-    pub(crate) fn array_path(&self) -> &str {
+    pub fn array_path(&self) -> &str {
         match self {
             ZarrEmphasisCriteria::Categorical(params) => &params.codes_key,
             ZarrEmphasisCriteria::Quantitative(params) => &params.values_key,
