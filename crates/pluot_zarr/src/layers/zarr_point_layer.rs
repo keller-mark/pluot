@@ -4,7 +4,7 @@ use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
 use pluot_core::wgpu;
-use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
+use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
@@ -19,7 +19,7 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 use pluot_core::viewport::get_bounds;
 
-use crate::zarr_numeric_data::load_arr_as_numeric_data;
+use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Layer params struct for [`ZarrPointLayer`].
@@ -219,10 +219,14 @@ impl PreparedLayer for ZarrPointLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
 
-        // TODO: include the layer type in the memoization dependencies?
-        // But what if we want multiple layers to be able to reuse the same cached data?
-        // Then we should also avoid including the layer_id...
-        let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
+        // Keyed by the array this reads rather than by the layer reading it, so
+        // that two layers colored by the same column share one cached copy and
+        // so that changing `color_key` doesn't reuse the previous column's codes.
+        let l_i32_future_deps = vec![
+            "l_bytes".to_string(),
+            self.store_name.clone(),
+            self.layer_params.color_key.clone().unwrap_or_default(),
+        ];
         let l_i32_future = use_memo_vec_i32(async || {
             let labels_array_path = &self.layer_params.color_key.as_ref().expect("Color key");
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
@@ -234,36 +238,41 @@ impl PreparedLayer for ZarrPointLayer {
             Ok(labels_i32)
         }, &l_i32_future_deps, self.view_params.cache_enabled);
 
-        // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
         // Load the X and Y coordinate arrays in their native dtype (any dtype
         // supported by NumericData); PointLayer uploads each to the GPU at its
-        // native width, so there is no per-element cast here.
-        let x_data_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let x_data_future = use_memo_numeric_data(async || {
-            load_arr_as_numeric_data(store.clone(), &self.layer_params.x_key).await
-        }, &x_data_future_deps, self.view_params.cache_enabled);
-
-        let y_data_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let y_data_future = use_memo_numeric_data(async || {
-            load_arr_as_numeric_data(store.clone(), &self.layer_params.y_key).await
-        }, &y_data_future_deps, self.view_params.cache_enabled);
-
-        // Resolve filtering/selection criteria: each criterion's `codes_key`/
-        // `values_key` zarr array is loaded (and independently memoized) into
-        // an `EmphasisCriteria`, ready to hand to the inner `PointLayer`.
-        let filtering_criteria_future_deps = vec!["filter_criteria".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let filtering_criteria_future = resolve_zarr_emphasis_criteria(
+        // native width, so there is no per-element cast here. Memoized by
+        // `(store_name, array_path)` alone, so the same coordinate array is
+        // fetched once no matter which layer — or which role, e.g. a filtering
+        // criterion's `values_key` — asks for it.
+        let x_data_future = load_arr_as_numeric_data_memoized(
             store.clone(),
-            &self.layer_params.filtering_criteria,
-            &filtering_criteria_future_deps,
+            &self.store_name,
+            &self.layer_params.x_key,
             self.view_params.cache_enabled,
         );
 
-        let selection_criteria_future_deps = vec!["select_criteria".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
+        let y_data_future = load_arr_as_numeric_data_memoized(
+            store.clone(),
+            &self.store_name,
+            &self.layer_params.y_key,
+            self.view_params.cache_enabled,
+        );
+
+        // Resolve filtering/selection criteria: each criterion's `codes_key`/
+        // `values_key` zarr array is loaded (and independently memoized, keyed
+        // only by store name and array path) into an `EmphasisCriteria`, ready
+        // to hand to the inner `PointLayer`.
+        let filtering_criteria_future = resolve_zarr_emphasis_criteria(
+            store.clone(),
+            &self.layer_params.filtering_criteria,
+            &self.store_name,
+            self.view_params.cache_enabled,
+        );
+
         let selection_criteria_future = resolve_zarr_emphasis_criteria(
             store.clone(),
             &self.layer_params.selection_criteria,
-            &selection_criteria_future_deps,
+            &self.store_name,
             self.view_params.cache_enabled,
         );
 

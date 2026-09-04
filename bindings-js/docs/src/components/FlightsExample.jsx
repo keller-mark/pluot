@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { Pluot } from '@pluot/react';
 
+const NOOP = () => { };
+
 export function FlightsExample(props) {
 
   const [distMin, setDistMin] = useState();
@@ -31,12 +33,27 @@ export function FlightsExample(props) {
           max: timeMax,
         },
       },
+      {
+        criteria_mode: "Quantitative",
+        criteria_params: {
+          values_key: "/obs/ARR_DELAY",
+          min: delayMin,
+          max: delayMax,
+        },
+      },
     ];
   }, [distMin, distMax, delayMin, delayMax, timeMin, timeMax]);
 
   console.log(selectionCriteria);
-  // TODO: onBrushDelay, onBrushTime
-  //
+
+  const onBrushDelay = useCallback((brush, brushResult) => {
+    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
+    if (min && max) {
+      setDelayMin(parseFloat(min));
+      setDelayMax(parseFloat(max));
+    }
+  });
+
   const onBrushTime = useCallback((brush, brushResult) => {
     const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
     if (min && max) {
@@ -70,7 +87,7 @@ export function FlightsExample(props) {
                 orientation: "Vertical",
                 data_key: "/obs/ARR_DELAY",
                 num_bins: 30,
-                cache_data: false,
+                cache_data: true,
                 fill_color: null,
                 selection_criteria: selectionCriteria,
               }
@@ -90,6 +107,22 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
+        setCameraMatrix={NOOP}
+
+        brushDelay={0}
+        maybeBrushDelay={0}
+        enableBrushCreate
+        enableBrushEdit
+        enableBrushClear
+        brushMode="RangeX"
+        brushUnitsModeX="Pixels"
+        persistBrush
+        //onBrush={onBrushDelay}
+        onBrushEnd={onBrushDelay}
+        onBrushClear={() => {
+          setDelayMin(null);
+          setDelayMax(null);
+        }}
 
       />
       <p>Departure time (hours):</p>
@@ -107,7 +140,7 @@ export function FlightsExample(props) {
                 orientation: "Vertical",
                 data_key: "/obs/DEP_TIME",
                 num_bins: 30,
-                cache_data: false,
+                cache_data: true,
                 fill_color: null,
                 selection_criteria: selectionCriteria,
               }
@@ -127,14 +160,17 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
+        setCameraMatrix={NOOP}
 
+        brushDelay={0}
+        maybeBrushDelay={0}
         enableBrushCreate
         enableBrushEdit
         enableBrushClear
         brushMode="RangeX"
         brushUnitsModeX="Pixels"
         persistBrush
-        onBrush={onBrushTime}
+        //onBrush={onBrushTime}
         onBrushEnd={onBrushTime}
         onBrushClear={() => {
           setTimeMin(null);
@@ -156,7 +192,7 @@ export function FlightsExample(props) {
                 orientation: "Vertical",
                 data_key: "/obs/DISTANCE",
                 num_bins: 30,
-                cache_data: false,
+                cache_data: true,
                 fill_color: null,
                 selection_criteria: selectionCriteria,
               }
@@ -176,14 +212,17 @@ export function FlightsExample(props) {
           0.0, 0.0, 1.0, 0.0,
           0.0, -1.0, 0.0, 1.0,
         ]}
+        setCameraMatrix={NOOP}
 
+        brushDelay={0}
+        maybeBrushDelay={0}
         enableBrushCreate
         enableBrushEdit
         enableBrushClear
         brushMode="RangeX"
         brushUnitsModeX="Pixels"
         persistBrush
-        onBrush={onBrushDist}
+        //onBrush={onBrushDist}
         onBrushEnd={onBrushDist}
         onBrushClear={() => {
           setDistMin(null);

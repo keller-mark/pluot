@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult};
 
 use pluot_core::wgpu;
-use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32};
+use pluot_core::cache::use_memo_vec_f32;
 use pluot_core::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
 use pluot_core::params::BrushMode;
 use pluot_core::zarr::is_timed_out_zarrs_error;
@@ -20,7 +20,7 @@ use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinea
 use pluot_core::d3::scale::ScaleLinear;
 use pluot_core::viewport::DataVertices;
 
-use crate::zarr_numeric_data::load_arr_as_numeric_data;
+use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized};
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 
@@ -144,6 +144,45 @@ impl ZarrHistogramLayer {
             })
             .collect()
     }
+
+    /// Logs one memoization key used by `prepare`, along with whether caching is
+    /// actually enabled for it.
+    ///
+    /// Every `use_memo_*` call in `prepare` is logged this way, so that an
+    /// unexpected re-fetch across renders can be traced to whichever key
+    /// fragment changed — or to a `false` here, which means the memo is bypassed
+    /// entirely and its work redone on every render regardless of the key.
+    fn log_cache_key(label: &str, keys: &[String], cache_enabled: bool) {
+        log(&format!(
+            "[ZarrHistogramLayer] memo key ({label}, cache_enabled={cache_enabled}): {keys:?}"
+        ));
+    }
+
+    /// Unwraps one `maybe_timeout!`-wrapped memo result from `prepare`, returning
+    /// `None` when the layer should bail early — either the wall-clock timeout
+    /// elapsed (the outer `Err`) or the store timed out mid-fetch. Any other
+    /// zarrs error is a genuine failure rather than a partial-render signal.
+    fn unwrap_or_bail<T, E: std::fmt::Debug>(
+        result: Result<Result<T, zarrs::array::ArrayError>, E>,
+        label: &str,
+    ) -> Option<T> {
+        match result {
+            Ok(Ok(value)) => Some(value),
+            Ok(Err(e)) => {
+                // Zarrs error from async_retrieve_array_subset.
+                if is_timed_out_zarrs_error(&e) {
+                    None
+                } else {
+                    panic!("Zarrs error during ZarrHistogramLayer prepare ({label}): {e:?}");
+                }
+            }
+            Err(e) => {
+                // Wall-clock timeout from maybe_timeout!
+                log(&format!("Other error during ZarrHistogramLayer prepare ({label}): {e:?}"));
+                None
+            }
+        }
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -153,50 +192,88 @@ impl PreparedLayer for ZarrHistogramLayer {
         let store = self.store.clone();
         let num_bins = self.layer_params.num_bins;
 
-        // TODO: this to_string produces a key that is too granular - it contains more than the zarr array key,
-        // and causes bailing early despite the array(s) corresponding to the codes_key/values_key already being memoized.
+        // Cache-key fragments for the two criteria lists. The full JSON is used
+        // rather than just the referenced `codes_key`/`values_key` array paths,
+        // because a reduced result depends on each criterion's thresholds
+        // (`included_codes`/`min`/`max`) as well as on the array it reads.
+        // Keeping the two lists in separate fragments is what lets the memos
+        // below key on only the list each of them actually depends on.
         let filtering_criteria_key = serde_json::to_string(&self.layer_params.filtering_criteria).unwrap_or_default();
         let selection_criteria_key = serde_json::to_string(&self.layer_params.selection_criteria).unwrap_or_default();
 
-        let hist_future_deps = vec![
-            "histogram_result".to_string(),
+        // The extent and the "background" bin counts are derived from the
+        // filter-included set alone, so their keys deliberately omit the
+        // selection criteria. Brushing moves only the selection thresholds, so
+        // it leaves them memoized and `foreground_future_deps` is the only key
+        // that changes.
+        let background_future_deps = vec![
+            "histogram_background".to_string(),
             self.store_name.clone(),
             self.layer_params.layer_id.clone(),
+            self.layer_params.data_key.clone(),
+            num_bins.to_string(),
+            filtering_criteria_key.clone(),
+        ];
+        let foreground_future_deps = vec![
+            "histogram_foreground".to_string(),
+            self.store_name.clone(),
+            self.layer_params.layer_id.clone(),
+            self.layer_params.data_key.clone(),
             num_bins.to_string(),
             filtering_criteria_key.clone(),
             selection_criteria_key,
         ];
 
-        let quant_future_deps = vec!["histogram_input_arr".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone()];
-        let extent_future_deps = vec!["histogram_input_extent".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone(), self.layer_params.data_key.clone(), filtering_criteria_key];
-        let filtering_criteria_future_deps = vec!["histogram_filter_criteria".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone()];
-        let selection_criteria_future_deps = vec!["histogram_select_criteria".to_string(), self.store_name.clone(), self.layer_params.layer_id.clone()];
+        let extent_future_deps = vec!["histogram_input_extent".to_string(), self.store_name.clone(), self.layer_params.data_key.clone(), filtering_criteria_key];
 
-        // Returns [data_min, data_max, bg_bin_0, ..., bg_bin_{num_bins-1}, fg_bin_0, ..., fg_bin_{num_bins-1}]
-        let hist_future = use_memo_vec_f32(async || {
+        // Log every key this layer memoizes against, including the ones owned by
+        // the shared zarr-array loader, so a re-fetch across renders can be
+        // attributed to a specific changed fragment (or to caching being off).
+        let quant_cache_enabled = self.view_params.cache_enabled && self.layer_params.cache_data;
+        Self::log_cache_key("background", &background_future_deps, self.view_params.cache_enabled);
+        Self::log_cache_key("foreground", &foreground_future_deps, self.view_params.cache_enabled);
+        Self::log_cache_key("extent", &extent_future_deps, self.view_params.cache_enabled);
+        Self::log_cache_key(
+            "data array",
+            &arr_cache_key(&self.store_name, &self.layer_params.data_key),
+            quant_cache_enabled,
+        );
+        for (i, criteria) in self.layer_params.filtering_criteria.iter().enumerate() {
+            Self::log_cache_key(
+                &format!("filtering criteria array {i}"),
+                &arr_cache_key(&self.store_name, criteria.array_path()),
+                self.view_params.cache_enabled,
+            );
+        }
+        for (i, criteria) in self.layer_params.selection_criteria.iter().enumerate() {
+            Self::log_cache_key(
+                &format!("selection criteria array {i}"),
+                &arr_cache_key(&self.store_name, criteria.array_path()),
+                self.view_params.cache_enabled,
+            );
+        }
+
+        // Returns [data_min, data_max, bg_bin_0, ..., bg_bin_{num_bins-1}]
+        let background_future = use_memo_vec_f32(async || {
             // Nested caching: cache the raw data array in its native dtype
             // (any dtype supported by NumericData). The reducers below consume
             // NumericData directly, so the values are never cast to a single
             // dtype on the way in.
-            let quant_arr = use_memo_numeric_data(async || {
-                load_arr_as_numeric_data(store.clone(), &self.layer_params.data_key).await
-            }, &quant_future_deps, self.view_params.cache_enabled && self.layer_params.cache_data)
-                .await?;
+            let quant_arr = load_arr_as_numeric_data_memoized(
+                store.clone(),
+                &self.store_name,
+                &self.layer_params.data_key,
+                quant_cache_enabled,
+            ).await?;
 
-            // Resolve filtering/selection criteria: each criterion's `codes_key`/
-            // `values_key` zarr array is loaded (and independently memoized) into
-            // an `EmphasisCriteria`.
+            // Resolve the filtering criteria: each criterion's `codes_key` /
+            // `values_key` zarr array is loaded (and independently memoized,
+            // keyed only by store name and array path) into an
+            // `EmphasisCriteria`.
             let filtering_criteria = resolve_zarr_emphasis_criteria(
                 store.clone(),
                 &self.layer_params.filtering_criteria,
-                &filtering_criteria_future_deps,
-                self.view_params.cache_enabled,
-            ).await?;
-
-            let selection_criteria = resolve_zarr_emphasis_criteria(
-                store.clone(),
-                &self.layer_params.selection_criteria,
-                &selection_criteria_future_deps,
+                &self.store_name,
                 self.view_params.cache_enabled,
             ).await?;
 
@@ -208,8 +285,6 @@ impl PreparedLayer for ZarrHistogramLayer {
             let quant_arr_for_extent = quant_arr.as_ref().clone();
             let filtering_criteria_for_extent = filtering_criteria.clone();
 
-            // TODO: extent should not depend on the selection_criteria, only on filtering_criteria.
-            // If the filtering criteria is an empty vec, we want to reuse the memoized extent value.
             let extent = use_memo_vec_f32(async || {
                 let (lo, hi) = reduce_extent(gpu_context, quant_arr_for_extent, &filtering_criteria_for_extent, &[]).await.background;
                 Ok::<Vec<f32>, std::convert::Infallible>(vec![lo, hi])
@@ -217,6 +292,10 @@ impl PreparedLayer for ZarrHistogramLayer {
                 .await
                 .expect("Extent computation failed in ZarrHistogramLayer.prepare");
 
+            // Passing no selection criteria makes the reducer's foreground pass
+            // an alias of its background pass (a single GPU dispatch either way,
+            // and a clone rather than a second scan on the CPU path). The real
+            // foreground counts come from `foreground_future` below.
             let bin_counts = reduce_histogram_with_known_extent(
                 gpu_context,
                 quant_arr.as_ref().clone(),
@@ -224,40 +303,82 @@ impl PreparedLayer for ZarrHistogramLayer {
                 extent[0],
                 extent[1],
                 &filtering_criteria,
-                &selection_criteria,
+                &[],
             ).await;
 
             let mut result = vec![extent[0], extent[1]];
             result.extend(bin_counts.background.iter().map(|&c| c as f32));
-            result.extend(bin_counts.foreground.iter().map(|&c| c as f32));
             Ok(result)
-        }, &hist_future_deps, self.view_params.cache_enabled);
+        }, &background_future_deps, self.view_params.cache_enabled);
 
-        let future_result = maybe_timeout!(hist_future, self.view_params.timeout).await;
-
-        let hist_data = match future_result {
-            Ok(Ok(hist_result)) => hist_result,
-            Ok(Err(e)) => {
-                // Zarrs error from async_retrieve_array_subset.
-                if is_timed_out_zarrs_error(&e) {
-                    return PrepareResult { bailed_early: true };
-                } else {
-                    panic!("Zarrs error during ZarrHistogramLayer prepare: {:?}", e);
-                }
-            }
-            Err(e) => {
-                log(&format!("Other error during ZarrHistogramLayer prepare: {:?}", e));
-                // Wall-clock timeout from maybe_timeout!
-                return PrepareResult { bailed_early: true };
-            }
+        let background_data = match Self::unwrap_or_bail(
+            maybe_timeout!(background_future, self.view_params.timeout).await,
+            "background histogram",
+        ) {
+            Some(data) => data,
+            None => return PrepareResult { bailed_early: true },
         };
 
-        let data_min = hist_data[0];
-        let data_max = hist_data[1];
-        let bins_start = 2;
-        let bins_end = bins_start + num_bins as usize;
-        let background_arr: Arc<Vec<f32>> = Arc::new(hist_data[bins_start..bins_end].to_vec());
-        let foreground_arr: Arc<Vec<f32>> = Arc::new(hist_data[bins_end..bins_end + num_bins as usize].to_vec());
+        let data_min = background_data[0];
+        let data_max = background_data[1];
+        let background_arr: Arc<Vec<f32>> = Arc::new(background_data[2..].to_vec());
+
+        let value_scale = Self::build_value_scale(&self.view_params, &self.layer_params.orientation, (data_min as f64, data_max as f64));
+        self.value_scale = Some(value_scale);
+
+        // The foreground ("selected") bin counts get their own memo, keyed by the
+        // selection criteria on top of everything the background memo is keyed by.
+        // The bin edges resolved above are passed in rather than recomputed, so the
+        // two histograms share bin boundaries and stay comparable.
+        let foreground_future = use_memo_vec_f32(async || {
+            let quant_arr = load_arr_as_numeric_data_memoized(
+                store.clone(),
+                &self.store_name,
+                &self.layer_params.data_key,
+                quant_cache_enabled,
+            ).await?;
+
+            // Both lists are needed here: the foreground is the filter-included
+            // *and* selection-included subset. The filtering arrays were already
+            // loaded by the background memo, and the selection arrays by the
+            // previous brush position, so on a brush move these are cache hits
+            // even though the thresholds have changed.
+            let filtering_criteria = resolve_zarr_emphasis_criteria(
+                store.clone(),
+                &self.layer_params.filtering_criteria,
+                &self.store_name,
+                self.view_params.cache_enabled,
+            ).await?;
+
+            let selection_criteria = resolve_zarr_emphasis_criteria(
+                store.clone(),
+                &self.layer_params.selection_criteria,
+                &self.store_name,
+                self.view_params.cache_enabled,
+            ).await?;
+
+            let bin_counts = reduce_histogram_with_known_extent(
+                gpu_context,
+                quant_arr.as_ref().clone(),
+                num_bins,
+                data_min,
+                data_max,
+                &filtering_criteria,
+                &selection_criteria,
+            ).await;
+
+            Ok(bin_counts.foreground.iter().map(|&c| c as f32).collect())
+        }, &foreground_future_deps, self.view_params.cache_enabled);
+
+        let foreground_arr = match Self::unwrap_or_bail(
+            maybe_timeout!(foreground_future, self.view_params.timeout).await,
+            "foreground histogram",
+        ) {
+            Some(data) => data,
+            None => return PrepareResult { bailed_early: true },
+        };
+
+
 
         let labels = Arc::new(Self::bin_labels(data_min, data_max, num_bins));
 
@@ -299,9 +420,6 @@ impl PreparedLayer for ZarrHistogramLayer {
                 render_categorical_axis: Some(false),
             },
         );
-
-        let value_scale = Self::build_value_scale(&self.view_params, &self.layer_params.orientation, (data_min as f64, data_max as f64));
-        self.value_scale = Some(value_scale);
 
         let value_axis_layer = AxisLinearLayer::new(
             self.view_params.clone(),

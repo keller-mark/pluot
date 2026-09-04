@@ -1,7 +1,54 @@
 use std::sync::Arc;
+use pluot_core::cache::use_memo_numeric_data;
+use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use zarrs::storage::AsyncReadableStorageTraits;
 
+
+/// The memoization key under which one zarr array's [`NumericData`] is cached.
+///
+/// Deliberately only `(store_name, array_path)`: what
+/// [`load_arr_as_numeric_data`] returns is fully determined by those two, so
+/// nothing else belongs in the key. In particular the key excludes
+/// - the role the array plays for the caller — a plotted data column, a
+///   filtering `codes_key`, a selection `values_key` — so an array used in
+///   several roles is fetched once;
+/// - the calling layer and, for criteria, the criterion's position in its list
+///   and its thresholds (`included_codes`/`min`/`max`), so re-tuning a filter
+///   or dragging a brush re-uses the already-loaded array.
+pub(crate) fn arr_cache_key(store_name: &str, array_path: &str) -> Vec<String> {
+    vec![
+        "zarr_numeric_data_arr".to_string(),
+        store_name.to_string(),
+        array_path.to_string(),
+    ]
+}
+
+/// [`load_arr_as_numeric_data`], memoized under [`arr_cache_key`].
+///
+/// Every zarr `NumericData` array a layer loads should go through this, so that
+/// all of them share one cache entry per `(store, path)` regardless of which
+/// layer or which role asked for it.
+pub async fn load_arr_as_numeric_data_memoized(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    array_path: &str,
+    cache_enabled: bool,
+) -> Result<Arc<NumericData>, zarrs::array::ArrayError> {
+    let keys = arr_cache_key(store_name, array_path);
+    use_memo_numeric_data(
+        async || {
+            // Only reached on a cache miss (or with caching off), so this line
+            // marks every real fetch — pair it with the callers' key logging to
+            // see which key was expected to hit but didn't.
+            log(&format!("[zarr_numeric_data] fetching array, memo key: {keys:?}"));
+            load_arr_as_numeric_data(store, array_path).await
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
+}
 
 /// Load a zarr array from the zarr store into a [`NumericData`] in the
 /// array's native dtype.
