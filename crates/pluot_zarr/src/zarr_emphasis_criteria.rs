@@ -37,10 +37,20 @@ pub struct ZarrCategoricalCriteriaParams {
 pub struct ZarrQuantitativeCriteriaParams {
     /// Zarr array path to a value per item.
     pub values_key: String,
-    /// Inclusive lower bound of included values. Omitted implies -infinity.
+    /// Lower bound of included values, inclusive unless `min_exclusive`.
+    /// Omitted implies -infinity.
     pub min: Option<f32>,
-    /// Inclusive upper bound of included values. Omitted implies +infinity.
+    /// Upper bound of included values, inclusive unless `max_exclusive`.
+    /// Omitted implies +infinity.
     pub max: Option<f32>,
+    /// Whether the lower bound excludes `min` itself. `None` (the default)
+    /// means inclusive. See [`QuantitativeCriteriaParams::min_exclusive`].
+    #[serde(default)]
+    pub min_exclusive: Option<bool>,
+    /// Whether the upper bound excludes `max` itself. `None` (the default)
+    /// means inclusive. See [`QuantitativeCriteriaParams::max_exclusive`].
+    #[serde(default)]
+    pub max_exclusive: Option<bool>,
 }
 
 impl ZarrEmphasisCriteria {
@@ -84,6 +94,8 @@ pub async fn resolve_zarr_emphasis_criteria(
                 values: data.as_ref().clone(),
                 min: params.min,
                 max: params.max,
+                min_exclusive: params.min_exclusive,
+                max_exclusive: params.max_exclusive,
             }),
         })
         .collect())
@@ -122,6 +134,8 @@ mod tests {
             values_key: "/n_1000/x_coords".to_string(),
             min: Some(0.0),
             max: None,
+            min_exclusive: None,
+            max_exclusive: None,
         });
 
         let value = serde_json::to_value(&criteria).unwrap();
@@ -133,9 +147,49 @@ mod tests {
                     "values_key": "/n_1000/x_coords",
                     "min": 0.0,
                     "max": null,
+                    "min_exclusive": null,
+                    "max_exclusive": null,
                 },
             })
         );
+    }
+
+    #[test]
+    fn quantitative_bound_exclusivity_defaults_to_inclusive() {
+        // `min_exclusive`/`max_exclusive` are `#[serde(default)]`, so JSON
+        // written before they existed (and any client that only cares about
+        // inclusive bounds) still deserializes, as inclusive.
+        let criteria: ZarrEmphasisCriteria = serde_json::from_value(serde_json::json!({
+            "criteria_mode": "Quantitative",
+            "criteria_params": {
+                "values_key": "/obs/DISTANCE",
+                "min": 0.0,
+                "max": 100.0,
+            },
+        }))
+        .unwrap();
+        let ZarrEmphasisCriteria::Quantitative(params) = &criteria else {
+            panic!("expected a quantitative criteria");
+        };
+        assert_eq!(params.min_exclusive, None);
+        assert_eq!(params.max_exclusive, None);
+
+        // And an explicitly half-open range round-trips.
+        let half_open: ZarrEmphasisCriteria = serde_json::from_value(serde_json::json!({
+            "criteria_mode": "Quantitative",
+            "criteria_params": {
+                "values_key": "/obs/DISTANCE",
+                "min": 0.0,
+                "max": 100.0,
+                "max_exclusive": true,
+            },
+        }))
+        .unwrap();
+        let ZarrEmphasisCriteria::Quantitative(params) = &half_open else {
+            panic!("expected a quantitative criteria");
+        };
+        assert_eq!(params.min_exclusive, None);
+        assert_eq!(params.max_exclusive, Some(true));
     }
 
     #[test]
@@ -146,11 +200,15 @@ mod tests {
             values_key: "/obs/DISTANCE".to_string(),
             min: Some(0.0),
             max: Some(100.0),
+            min_exclusive: None,
+            max_exclusive: None,
         });
         let wide = ZarrEmphasisCriteria::Quantitative(ZarrQuantitativeCriteriaParams {
             values_key: "/obs/DISTANCE".to_string(),
             min: Some(0.0),
             max: Some(5000.0),
+            min_exclusive: None,
+            max_exclusive: None,
         });
         assert_eq!(
             arr_cache_key("store", narrow.array_path()),
@@ -196,6 +254,8 @@ mod tests {
             values_key: "values".to_string(),
             min: None,
             max: None,
+            min_exclusive: None,
+            max_exclusive: None,
         });
         assert_eq!(quantitative.array_path(), "values");
     }

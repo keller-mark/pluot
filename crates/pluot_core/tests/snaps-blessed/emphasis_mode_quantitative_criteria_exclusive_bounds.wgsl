@@ -13,7 +13,7 @@ fn is_selected_in_0(instance_index: u32) -> bool {
         flat_texel_coord(instance_index, textureDimensions(select_data_0).x),
         0
     ).x);
-    return value >= 1e0 && value <= 2e0;
+    return value > 1e0 && value < 2e0;
 }
 
 fn is_selected_in(instance_index: u32) -> bool {

@@ -5,17 +5,13 @@
 // `quantitative_one_sided.wgsl` for the min-only/max-only variant, which omits
 // the comparison against the unbounded side entirely. Depends on
 // `flat_texel_coord` being injected.
-@group(0) @binding(7) var select_data_0: texture_2d<f32>;
+@group(0) @binding({{criteria_data_bidx}}) var {{criteria_data_var}}: texture_2d<{{criteria_data_dtype}}>;
 
-fn is_selected_in_0(instance_index: u32) -> bool {
+fn {{criteria_fn_name}}(instance_index: u32) -> bool {
     let value = f32(textureLoad(
-        select_data_0,
-        flat_texel_coord(instance_index, textureDimensions(select_data_0).x),
+        {{criteria_data_var}},
+        flat_texel_coord(instance_index, textureDimensions({{criteria_data_var}}).x),
         0
     ).x);
-    return value >= 1e0 && value <= 2e0;
-}
-
-fn is_selected_in(instance_index: u32) -> bool {
-    return is_selected_in_0(instance_index);
+    return value {{criteria_min_op}} {{criteria_min_value}} && value {{criteria_max_op}} {{criteria_max_value}};
 }

@@ -5,17 +5,13 @@
 // `>=`/`>` against `min` when `max` is omitted, `<=`/`<` against `max` when
 // `min` is omitted (e.g. a half-open histogram bin `[min, max)`). Depends on
 // `flat_texel_coord` being injected.
-@group(0) @binding(5) var filter_data_0: texture_2d<f32>;
+@group(0) @binding({{criteria_data_bidx}}) var {{criteria_data_var}}: texture_2d<{{criteria_data_dtype}}>;
 
-fn is_filtered_in_0(instance_index: u32) -> bool {
+fn {{criteria_fn_name}}(instance_index: u32) -> bool {
     let value = f32(textureLoad(
-        filter_data_0,
-        flat_texel_coord(instance_index, textureDimensions(filter_data_0).x),
+        {{criteria_data_var}},
+        flat_texel_coord(instance_index, textureDimensions({{criteria_data_var}}).x),
         0
     ).x);
-    return value >= 2e0;
-}
-
-fn is_filtered_in(instance_index: u32) -> bool {
-    return is_filtered_in_0(instance_index);
+    return value {{criteria_op}} {{criteria_value}};
 }

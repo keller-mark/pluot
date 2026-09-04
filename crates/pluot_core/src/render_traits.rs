@@ -397,10 +397,60 @@ pub struct CategoricalCriteriaParams {
 pub struct QuantitativeCriteriaParams {
     /// A value per item. Length must be equal to the number of instances.
     pub values: NumericData,
-    /// Inclusive lower bound of included values. Omitted implies -infinity.
+    /// Lower bound of included values, inclusive unless `min_exclusive`.
+    /// Omitted implies -infinity.
     pub min: Option<f32>,
-    /// Inclusive upper bound of included values. Omitted implies +infinity.
+    /// Upper bound of included values, inclusive unless `max_exclusive`.
+    /// Omitted implies +infinity.
     pub max: Option<f32>,
+    /// Whether the lower bound excludes `min` itself (`value > min` rather
+    /// than `value >= min`). `None` (the default) means inclusive. Ignored
+    /// when `min` is omitted.
+    #[serde(default)]
+    pub min_exclusive: Option<bool>,
+    /// Whether the upper bound excludes `max` itself (`value < max` rather
+    /// than `value <= max`). `None` (the default) means inclusive. Ignored
+    /// when `max` is omitted. Set this for half-open ranges, e.g. so that
+    /// adjacent histogram bins `[a, b)`, `[b, c)` do not both include `b`.
+    #[serde(default)]
+    pub max_exclusive: Option<bool>,
+}
+
+impl QuantitativeCriteriaParams {
+    /// Whether this criteria constrains anything: `false` when `min` and `max`
+    /// are both omitted, i.e. the range is (-infinity, +infinity) and every
+    /// item is included regardless of its value.
+    pub fn is_bounded(&self) -> bool {
+        self.min.is_some() || self.max.is_some()
+    }
+
+    /// Whether `value` falls within this criteria's bounds — the single
+    /// definition of the comparison semantics that
+    /// [`crate::emphasis_mode::cpu_is_included`] evaluates on the CPU and
+    /// [`crate::emphasis_mode::prepare_emphasis_criteria`] bakes into WGSL
+    /// (see [`min_wgsl_op`](Self::min_wgsl_op) /
+    /// [`max_wgsl_op`](Self::max_wgsl_op)).
+    pub fn includes(&self, value: f32) -> bool {
+        let above_min = self.min.is_none_or(|min| {
+            if self.min_exclusive == Some(true) { value > min } else { value >= min }
+        });
+        let below_max = self.max.is_none_or(|max| {
+            if self.max_exclusive == Some(true) { value < max } else { value <= max }
+        });
+        above_min && below_max
+    }
+
+    /// The WGSL comparison operator for the lower bound: `>` when exclusive,
+    /// `>=` otherwise (the default).
+    pub fn min_wgsl_op(&self) -> &'static str {
+        if self.min_exclusive == Some(true) { ">" } else { ">=" }
+    }
+
+    /// The WGSL comparison operator for the upper bound: `<` when exclusive,
+    /// `<=` otherwise (the default).
+    pub fn max_wgsl_op(&self) -> &'static str {
+        if self.max_exclusive == Some(true) { "<" } else { "<=" }
+    }
 }
 
 /// Specify the font style: normal, italique, or oblique.

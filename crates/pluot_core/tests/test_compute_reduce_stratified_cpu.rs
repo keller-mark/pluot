@@ -94,6 +94,8 @@ async fn test_stratified_selection_narrows_foreground_only() {
         values: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 0.0, 0.0, 100.0])),
         min: Some(50.0),
         max: None,
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     let result = reduce_stratified_sum(None, values(), &stratify_by_abc(), &[], &selection).await;
     assert_eq!(result.background, vec![90.0, 80.0, 40.0]);
@@ -108,6 +110,8 @@ async fn test_stratified_filtering_excludes_before_stratifying() {
         values: NumericData::Float32(Arc::new(vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.0])),
         min: None,
         max: Some(0.5),
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     let result = reduce_stratified_sum(None, values(), &stratify_by_abc(), &filtering, &[]).await;
     // A: 10 + 30 (50 filtered out) = 40, B: 80, C: 40.

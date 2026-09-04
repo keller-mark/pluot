@@ -93,6 +93,8 @@ async fn test_gpu_stratified_selection_narrows_foreground_only() {
         values: NumericData::Float32(Arc::new(vec![0.0, 0.0, 100.0, 0.0, 0.0, 100.0])),
         min: Some(50.0),
         max: None,
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     let result =
         reduce_stratified_sum(Some(&ctx), values(), &stratify_by_abc(), &[], &selection).await;

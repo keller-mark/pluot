@@ -118,6 +118,8 @@ async fn test_reduce_count_filtering_and_selection() {
         values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
         min: Some(50.0),
         max: None,
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     let result = reduce_count(None, input, &filtering, &selection).await;
     assert_eq!(result.background, 3.0);
@@ -291,6 +293,8 @@ async fn test_reduce_sum_selection_narrows_foreground_only() {
         values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
         min: Some(50.0),
         max: None,
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     let result = reduce_sum(None, input, &filtering, &selection).await;
     assert_eq!(result.background, 9.0);
@@ -305,6 +309,8 @@ async fn test_reduce_min_max_background_foreground_diverge() {
         values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 0.0, 0.0, 0.0])),
         min: None,
         max: Some(0.5),
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     // Further select only index 3 (value 3.0) as the foreground.
     let selection = vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
