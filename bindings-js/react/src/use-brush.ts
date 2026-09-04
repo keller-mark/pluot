@@ -16,7 +16,7 @@ import {
   type BrushGeometry,
 } from "./brush.js";
 import { NO_BRUSH } from "./types.js";
-import type { BrushState, BrushVertex, PluotProps } from "./types.js";
+import type { BrushingResult, BrushState, BrushVertex, PluotProps } from "./types.js";
 
 /** Cursor movement (in pixels) that cancels a pending long-click, since the user is panning instead. */
 const LONG_CLICK_CANCEL_PX = 4;
@@ -52,6 +52,8 @@ export type UseBrushParams = Pick<PluotProps,
   aspectRatioMode: AspectRatioMode;
   aspectRatioAlignmentMode: AspectRatioAlignmentMode;
   cameraMatrix: CameraMatrix;
+  /** Runs the brush query (via `brush_wasm`) for the given brush state. */
+  runBrush: (state: BrushState) => Promise<BrushingResult|undefined>;
 };
 
 export type UseBrushResult = {
@@ -113,6 +115,7 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     onBrush,
     onBrushEnd,
     onBrushClear,
+    runBrush,
   } = params;
 
   // `null` (or an omitted prop) means uncontrolled; a BrushState or `NO_BRUSH`
@@ -181,9 +184,9 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
   }, [containerRef]);
 
   // Push a brush update out: internally when uncontrolled, and to the parent in
-  // both cases. Until the Rust-side `Brushable` trait lands there is nothing to
-  // snap to, so the snapped state is the state and the `BrushResult` is unused.
-  const emitBrush = useEffectEvent((nextBrush: BrushState, isEnd: boolean) => {
+  // both cases. `brush_wasm` is run first, so the parent's `onBrush`/`onBrushEnd`
+  // is always handed the resulting `BrushingResult` alongside the drawn state.
+  const emitBrush = useEffectEvent(async (nextBrush: BrushState, isEnd: boolean) => {
     // The draft is always advanced, since the rest of the drag builds on it...
     draftRef.current = nextBrush;
     // ...but a brush that spans nothing is not a selection. Committing one would
@@ -195,8 +198,9 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
     if (!isControlledBrush) {
       setUncontrolledBrush(nextBrush);
     }
+    const brushingResult = await runBrush(nextBrush);
     if (isEnd) {
-      onBrushEnd?.(nextBrush, nextBrush);
+      onBrushEnd?.(nextBrush, brushingResult);
       // `persistBrush` only applies when uncontrolled; when controlled, the brush
       // persists for exactly as long as the parent keeps passing it.
       if (!isControlledBrush && !persistBrush) {
@@ -204,7 +208,7 @@ export function useBrush(params: UseBrushParams): UseBrushResult {
         draftRef.current = null;
       }
     } else {
-      onBrush?.(nextBrush, nextBrush);
+      onBrush?.(nextBrush, brushingResult);
     }
   });
 

@@ -19,10 +19,8 @@ fn is_filtered_in_0(instance_index: u32) -> bool {
     return false;
 }
 
-// EmphasisCriteria::Quantitative — per-element scalar value tested against an
-// inclusive [min, max] range. An omitted bound is baked in as +/- f32::MAX,
-// matching the -infinity/+infinity semantics. Depends on `flat_texel_coord`
-// being injected.
+// EmphasisCriteria::Quantitative with only one bound set. Both the operator and
+// the value are injected. Depends on `flat_texel_coord` being injected.
 @group(0) @binding(6) var filter_data_1: texture_2d<f32>;
 
 fn is_filtered_in_1(instance_index: u32) -> bool {
@@ -31,7 +29,7 @@ fn is_filtered_in_1(instance_index: u32) -> bool {
         flat_texel_coord(instance_index, textureDimensions(filter_data_1).x),
         0
     ).x);
-    return value >= 1e1 && value <= 3.4028235e38;
+    return value >= 1e1;
 }
 
 fn is_filtered_in(instance_index: u32) -> bool {

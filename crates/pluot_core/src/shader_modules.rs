@@ -322,8 +322,13 @@ pub mod is_included {
     /// Per-element category code tested against an inline array of included codes.
     pub const CATEGORICAL: &str = include_str!("wgsl_functions/get_is_included/categorical.wgsl");
 
-    /// Per-element scalar value tested against an inclusive [min, max] range.
-    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/get_is_included/quantitative.wgsl");
+    /// Per-element scalar value tested against a two-sided `[min, max]` range.
+    pub const QUANTITATIVE_RANGE: &str =
+        include_str!("wgsl_functions/get_is_included/quantitative_range.wgsl");
+
+    /// Per-element scalar value tested against either a lower or upper bound but not both.
+    pub const QUANTITATIVE_ONE_SIDED: &str =
+        include_str!("wgsl_functions/get_is_included/quantitative_one_sided.wgsl");
 }
 
 /// Colormap WGSL functions, embedded at compile time from

@@ -2,11 +2,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use pluot_core::cache::use_memo_numeric_data;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_traits::{CategoricalCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 
-use crate::zarr_numeric_data::load_arr_as_numeric_data;
+use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized};
 
 /// Filtering or selection criteria for a zarr-backed layer's data items.
 ///
@@ -38,14 +37,24 @@ pub struct ZarrCategoricalCriteriaParams {
 pub struct ZarrQuantitativeCriteriaParams {
     /// Zarr array path to a value per item.
     pub values_key: String,
-    /// Inclusive lower bound of included values. Omitted implies -infinity.
+    /// Lower bound of included values, inclusive unless `min_exclusive`.
+    /// Omitted implies -infinity.
     pub min: Option<f32>,
-    /// Inclusive upper bound of included values. Omitted implies +infinity.
+    /// Upper bound of included values, inclusive unless `max_exclusive`.
+    /// Omitted implies +infinity.
     pub max: Option<f32>,
+    /// Whether the lower bound excludes `min` itself. `None` (the default)
+    /// means inclusive. See [`QuantitativeCriteriaParams::min_exclusive`].
+    #[serde(default)]
+    pub min_exclusive: Option<bool>,
+    /// Whether the upper bound excludes `max` itself. `None` (the default)
+    /// means inclusive. See [`QuantitativeCriteriaParams::max_exclusive`].
+    #[serde(default)]
+    pub max_exclusive: Option<bool>,
 }
 
 impl ZarrEmphasisCriteria {
-    fn array_path(&self) -> &str {
+    pub fn array_path(&self) -> &str {
         match self {
             ZarrEmphasisCriteria::Categorical(params) => &params.codes_key,
             ZarrEmphasisCriteria::Quantitative(params) => &params.values_key,
@@ -54,37 +63,18 @@ impl ZarrEmphasisCriteria {
 }
 
 /// Resolve a list of [`ZarrEmphasisCriteria`] into [`EmphasisCriteria`] by
-/// loading each referenced zarr array. Each array is fetched (and
-/// independently cache-memoized via `use_memo_numeric_data`) concurrently.
-///
-/// `cache_key_prefix` should uniquely identify the calling layer/field (e.g.
-/// store name, layer id, and whether this is the filtering or selection
-/// list) so that memoization keys don't collide across layers or criteria
-/// lists that happen to reference the same array path.
+/// loading each referenced zarr array. Each array is fetched concurrently and
+/// memoized by `(store_name, array_path)` alone — see [`arr_cache_key`] — so a
+/// criterion's array is never re-loaded just because its thresholds, its
+/// position in the list, or the calling layer changed.
 pub async fn resolve_zarr_emphasis_criteria(
     store: Arc<dyn AsyncReadableStorageTraits>,
     criteria: &[ZarrEmphasisCriteria],
-    cache_key_prefix: &[String],
+    store_name: &str,
     cache_enabled: bool,
 ) -> Result<Vec<EmphasisCriteria>, zarrs::array::ArrayError> {
-    // Build the per-criterion cache key up front. These are owned and outlive
-    // the futures below, which borrow them.
-    let cache_keys: Vec<Vec<String>> = criteria
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let mut keys = cache_key_prefix.to_vec();
-            keys.push(i.to_string());
-            keys.push(c.array_path().to_string());
-            keys
-        })
-        .collect();
-
-    let futures = criteria.iter().zip(cache_keys.iter()).map(|(c, keys)| {
-        let store = store.clone();
-        use_memo_numeric_data(async move || {
-            load_arr_as_numeric_data(store, c.array_path()).await
-        }, keys, cache_enabled)
+    let futures = criteria.iter().map(|c| {
+        load_arr_as_numeric_data_memoized(store.clone(), store_name, c.array_path(), cache_enabled)
     });
 
     let resolved_data: Vec<Arc<NumericData>> = futures::future::join_all(futures)
@@ -104,6 +94,8 @@ pub async fn resolve_zarr_emphasis_criteria(
                 values: data.as_ref().clone(),
                 min: params.min,
                 max: params.max,
+                min_exclusive: params.min_exclusive,
+                max_exclusive: params.max_exclusive,
             }),
         })
         .collect())
@@ -142,6 +134,8 @@ mod tests {
             values_key: "/n_1000/x_coords".to_string(),
             min: Some(0.0),
             max: None,
+            min_exclusive: None,
+            max_exclusive: None,
         });
 
         let value = serde_json::to_value(&criteria).unwrap();
@@ -153,8 +147,98 @@ mod tests {
                     "values_key": "/n_1000/x_coords",
                     "min": 0.0,
                     "max": null,
+                    "min_exclusive": null,
+                    "max_exclusive": null,
                 },
             })
+        );
+    }
+
+    #[test]
+    fn quantitative_bound_exclusivity_defaults_to_inclusive() {
+        // `min_exclusive`/`max_exclusive` are `#[serde(default)]`, so JSON
+        // written before they existed (and any client that only cares about
+        // inclusive bounds) still deserializes, as inclusive.
+        let criteria: ZarrEmphasisCriteria = serde_json::from_value(serde_json::json!({
+            "criteria_mode": "Quantitative",
+            "criteria_params": {
+                "values_key": "/obs/DISTANCE",
+                "min": 0.0,
+                "max": 100.0,
+            },
+        }))
+        .unwrap();
+        let ZarrEmphasisCriteria::Quantitative(params) = &criteria else {
+            panic!("expected a quantitative criteria");
+        };
+        assert_eq!(params.min_exclusive, None);
+        assert_eq!(params.max_exclusive, None);
+
+        // And an explicitly half-open range round-trips.
+        let half_open: ZarrEmphasisCriteria = serde_json::from_value(serde_json::json!({
+            "criteria_mode": "Quantitative",
+            "criteria_params": {
+                "values_key": "/obs/DISTANCE",
+                "min": 0.0,
+                "max": 100.0,
+                "max_exclusive": true,
+            },
+        }))
+        .unwrap();
+        let ZarrEmphasisCriteria::Quantitative(params) = &half_open else {
+            panic!("expected a quantitative criteria");
+        };
+        assert_eq!(params.min_exclusive, None);
+        assert_eq!(params.max_exclusive, Some(true));
+    }
+
+    #[test]
+    fn criteria_arr_cache_key_ignores_thresholds() {
+        // Two brush positions over the same column must resolve to one cache
+        // entry, so dragging a brush never re-loads the underlying array.
+        let narrow = ZarrEmphasisCriteria::Quantitative(ZarrQuantitativeCriteriaParams {
+            values_key: "/obs/DISTANCE".to_string(),
+            min: Some(0.0),
+            max: Some(100.0),
+            min_exclusive: None,
+            max_exclusive: None,
+        });
+        let wide = ZarrEmphasisCriteria::Quantitative(ZarrQuantitativeCriteriaParams {
+            values_key: "/obs/DISTANCE".to_string(),
+            min: Some(0.0),
+            max: Some(5000.0),
+            min_exclusive: None,
+            max_exclusive: None,
+        });
+        assert_eq!(
+            arr_cache_key("store", narrow.array_path()),
+            arr_cache_key("store", wide.array_path()),
+        );
+
+        // Likewise for a categorical column as its included codes change.
+        let some_codes = ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
+            codes_key: "/obs/CARRIER".to_string(),
+            included_codes: vec![0, 2],
+        });
+        let other_codes = ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
+            codes_key: "/obs/CARRIER".to_string(),
+            included_codes: vec![],
+        });
+        assert_eq!(
+            arr_cache_key("store", some_codes.array_path()),
+            arr_cache_key("store", other_codes.array_path()),
+        );
+    }
+
+    #[test]
+    fn criteria_arr_cache_key_distinguishes_store_and_path() {
+        assert_ne!(
+            arr_cache_key("store_a", "/obs/DISTANCE"),
+            arr_cache_key("store_b", "/obs/DISTANCE"),
+        );
+        assert_ne!(
+            arr_cache_key("store", "/obs/DISTANCE"),
+            arr_cache_key("store", "/obs/DEP_TIME"),
         );
     }
 
@@ -170,6 +254,8 @@ mod tests {
             values_key: "values".to_string(),
             min: None,
             max: None,
+            min_exclusive: None,
+            max_exclusive: None,
         });
         assert_eq!(quantitative.array_path(), "values");
     }

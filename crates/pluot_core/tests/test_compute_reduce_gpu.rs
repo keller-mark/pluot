@@ -119,10 +119,71 @@ async fn test_gpu_reduce_count_filtering_and_selection() {
         values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
         min: Some(50.0),
         max: None,
+        min_exclusive: None,
+        max_exclusive: None,
     })];
     let result = reduce_count(Some(&ctx), input, &filtering, &selection).await;
     assert_eq!(result.background, 3.0);
     assert_eq!(result.foreground, 1.0);
+}
+
+#[tokio::test]
+async fn test_gpu_reduce_count_quantitative_exclusive_bounds() {
+    let (device, queue) = gpu_ctx().await;
+    let ctx = GpuContext { device: &device, queue: &queue };
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let values = NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0]));
+
+    // Half-open `[20, 40)`: keeps 20 and 30, drops 40 -- the case that makes
+    // adjacent histogram bins partition their items rather than double-count
+    // the shared edge.
+    let filtering = vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+        values: values.clone(),
+        min: Some(20.0),
+        max: Some(40.0),
+        min_exclusive: None,
+        max_exclusive: Some(true),
+    })];
+    // Selection is one-sided and exclusive: `> 20` keeps 30 of those two.
+    let selection = vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+        values,
+        min: Some(20.0),
+        max: None,
+        min_exclusive: Some(true),
+        max_exclusive: None,
+    })];
+    let result = reduce_count(Some(&ctx), input, &filtering, &selection).await;
+    assert_eq!(result.background, 2.0);
+    assert_eq!(result.foreground, 1.0);
+}
+
+#[tokio::test]
+async fn test_gpu_reduce_count_unbounded_quantitative_criteria_includes_everything() {
+    let (device, queue) = gpu_ctx().await;
+    let ctx = GpuContext { device: &device, queue: &queue };
+    let input: Arc<Vec<f32>> = Arc::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+
+    // A quantitative criteria with neither bound set includes every item, and
+    // so binds no value texture at all -- the categorical criteria AND-ed
+    // after it must still land on the binding index it expects (indices 0, 2,
+    // 4 --> 3 items).
+    let filtering = vec![
+        EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+            values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
+            min: None,
+            max: None,
+            min_exclusive: None,
+            max_exclusive: None,
+        }),
+        EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+            codes: NumericData::Int32(Arc::new(vec![0, 1, 0, 1, 0])),
+            included_codes: vec![0],
+        }),
+    ];
+    let result = reduce_count(Some(&ctx), input, &filtering, &[]).await;
+    assert_eq!(result.background, 3.0);
+    // No selection criteria --> foreground equals background.
+    assert_eq!(result.foreground, result.background);
 }
 
 // reduce_mean (GPU)
@@ -275,6 +336,8 @@ async fn test_gpu_reduce_sum_filtering_and_selection() {
         values: NumericData::Float32(Arc::new(vec![10.0, 20.0, 30.0, 40.0, 50.0])),
         min: Some(50.0),
         max: None,
+        min_exclusive: None,
+        max_exclusive: None,
     })];
 
     let result = reduce_sum(Some(&ctx), input, &filtering, &selection).await;
@@ -292,6 +355,8 @@ async fn test_gpu_reduce_extent_no_selection_matches_background() {
         values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 0.0, 0.0, 0.0])),
         min: None,
         max: Some(0.5),
+        min_exclusive: None,
+        max_exclusive: None,
     })];
 
     let result = reduce_extent(Some(&ctx), input, &filtering, &[]).await;

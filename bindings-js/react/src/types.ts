@@ -115,6 +115,37 @@ export type RawLayerPickingResult = Omit<LayerPickingResult, "info"> & {
   info: Map<string, string>;
 };
 
+/** Mirrors the Rust `LayerBrushingResult` struct. */
+export type LayerBrushingResult = {
+  layer_id: string;
+  info: Record<string, string>;
+  element_info: Record<string, string[]>;
+};
+
+/**
+ * Mirrors the Rust `BrushingResult` struct, after normalization of the `info`
+ * and `element_info` maps (produced by serde-wasm-bindgen) to plain objects.
+ */
+export type BrushingResult = {
+  layer_results: LayerBrushingResult[];
+};
+
+/**
+ * The un-normalized shape that `brush_wasm` actually resolves to. It is typed
+ * `any` on the wasm-bindgen side, so this type is what documents the wire
+ * format: `serde_wasm_bindgen` converts the Rust `HashMap`s behind `info` and
+ * `element_info` into JS `Map`s, which {@link BrushingResult} flattens to
+ * plain objects.
+ */
+export type RawLayerBrushingResult = Omit<LayerBrushingResult, "info" | "element_info"> & {
+  info: Map<string, string>;
+  element_info: Map<string, string[]>;
+};
+
+export type RawBrushingResult = Omit<BrushingResult, "layer_results"> & {
+  layer_results: RawLayerBrushingResult[];
+};
+
 export type RawPickingResult = Omit<PickingResult, "layer_results"> & {
   layer_results: RawLayerPickingResult[];
 };
@@ -366,13 +397,16 @@ export type PluotProps = {
 
   // Called on drag interactions, as the user is drawing the brush rect/polygon.
   // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush, if enableBrushEdit is true).
-  // Note: until the Rust `Brushable` trait exists, there is nothing to snap to, so
-  // `snappedState` is the same object as `state` and the returned `BrushResult` is ignored.
-  onBrush?: (state: BrushState, snappedState: BrushState) => BrushResult,
+  // `brushingResult` is the result of running the brush query (via `brush_wasm`)
+  // against the current `state`.
+  onBrush?: (state: BrushState, brushingResult: BrushingResult|undefined) => BrushResult,
   // Called at the conclusion of the drag interaction, with the final (i.e., complete) brush rect/polygon.
-  onBrushEnd?: (state: BrushState, snappedState: BrushState) => BrushResult,
+  onBrushEnd?: (state: BrushState, brushingResult: BrushingResult|undefined) => BrushResult,
 
   // Called upon the user cancelling the brush, e.g., by clicking a clear button which appears when hovering the drawn rect/polygon.
   onBrushClear?: (state: BrushState) => void,
+
+
+  shouldClearCache?: boolean,
 
 };

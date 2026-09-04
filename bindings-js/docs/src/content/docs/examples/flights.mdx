@@ -1,0 +1,17 @@
+---
+title: Flights
+description: Flights example.
+sidebar:
+    order: 801
+---
+import { FlightsExample } from '../../../components/FlightsExample.jsx';
+import { Aside } from '@astrojs/starlight/components';
+
+Flights example, adapted from the [Cross-Filter Flights (10M) example from Mosaic](https://idl.uw.edu/mosaic/examples/flights-10m.html).
+
+Click and drag to cross-filter the 10 million flight records.
+
+<FlightsExample
+    client:load
+    client:only="react"
+/>

@@ -4,8 +4,8 @@
 
 use glam::Vec4;
 
-use crate::render_traits::EmphasisCriteria;
-use crate::shader_modules::{is_included as is_included_wgsl, ShaderBuilder};
+use crate::render_traits::{EmphasisCriteria, QuantitativeCriteriaParams};
+use crate::shader_modules::{is_included as is_included_wgsl, ShaderBuilder, TextureDtype};
 use crate::wgpu;
 
 /// Fill/stroke color used for filter-included, but selection-excluded
@@ -62,8 +62,11 @@ pub struct PreparedEmphasisTexture {
 /// criteria in the list.
 pub struct PreparedEmphasisCriteria {
     /// Per-element codes/values texture(s), in binding order. One per
-    /// criteria that carries per-element data (i.e. every criteria except an
-    /// empty-`included_codes` categorical, which needs no texture).
+    /// criteria whose per-element data is actually read — every criteria
+    /// except the two that resolve to a constant on the CPU and so need no
+    /// texture: an empty-`included_codes` categorical (nothing included) and
+    /// an unbounded quantitative, i.e. `min` and `max` both omitted
+    /// (everything included).
     pub textures: Vec<PreparedEmphasisTexture>,
     /// Assembled WGSL: the value texture bindings plus the
     /// `fn_name(instance_index: u32) -> bool` getter, which ANDs together the
@@ -124,34 +127,42 @@ pub fn prepare_emphasis_criteria(
                         .define("criteria_data_var", &term_var_name)
                         .define_bidx("criteria_data", binding)
                         .inject_texture_sample_type("criteria_data", dtype)
+                        // TODO: inject the included codes as a texture, rather than an inline array.
+                        // Perhaps only when the number of included codes exceed some threshold? Or always.
                         .define_u32("criteria_included_len", params.included_codes.len() as u32)
                         .define("criteria_included_codes", &included_codes)
                         .build(),
                 );
                 textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });
             }
+            // An unbounded criteria — neither `min` nor `max` set, i.e. the
+            // range is (-infinity, +infinity) — includes every item, so it
+            // needs no term function and, checked before touching the GPU, no
+            // value texture: a whole per-element column would otherwise be
+            // uploaded and never read.
+            EmphasisCriteria::Quantitative(params) if !params.is_bounded() => continue,
             EmphasisCriteria::Quantitative(params) => {
                 let (view, dtype) = params.values.create_data_texture(
                     device, queue, &format!("{term_fn_name} values Texture"),
                 );
-                wgsl_parts.push(
-                    ShaderBuilder::new(is_included_wgsl::QUANTITATIVE)
-                        .define("criteria_fn_name", &term_fn_name)
-                        .define("criteria_data_var", &term_var_name)
-                        .define_bidx("criteria_data", binding)
-                        .inject_texture_sample_type("criteria_data", dtype)
-                        .define("criteria_min_value", &wgsl_float(params.min.unwrap_or(f32::MIN)))
-                        .define("criteria_max_value", &wgsl_float(params.max.unwrap_or(f32::MAX)))
-                        .build(),
-                );
+                let Some(term_wgsl) =
+                    quantitative_criteria_wgsl(params, &term_fn_name, &term_var_name, binding, dtype)
+                else {
+                    // `is_bounded` above is exactly the condition under which
+                    // the helper returns `Some`.
+                    unreachable!("a bounded quantitative criteria emits a term function");
+                };
+                wgsl_parts.push(term_wgsl);
                 textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });
             }
         }
         term_fn_names.push(term_fn_name);
     }
 
-    // Wrapper function ANDing every per-criteria predicate together. An empty
-    // `criteria` list vacuously ANDs to `true` (every item is included).
+    // Wrapper function ANDing every per-criteria predicate together. With no
+    // term functions -- an empty `criteria` list, or one holding nothing but
+    // unbounded quantitative criteria -- this vacuously ANDs to `true` (every
+    // item is included).
     let and_expr = if term_fn_names.is_empty() {
         "true".to_string()
     } else {
@@ -164,9 +175,45 @@ pub fn prepare_emphasis_criteria(
     PreparedEmphasisCriteria { textures, wgsl: wgsl_parts.join("\n") }
 }
 
+/// Assemble the WGSL term function testing one
+/// [`QuantitativeCriteriaParams`], reading its per-element values from the
+/// texture named `var_name` at `binding` (of sampled type `dtype`), or `None`
+/// when the criteria is unbounded (`min` and `max` both omitted) and so needs
+/// no test at all.
+pub fn quantitative_criteria_wgsl(
+    params: &QuantitativeCriteriaParams,
+    fn_name: &str,
+    var_name: &str,
+    binding: u32,
+    dtype: TextureDtype,
+) -> Option<String> {
+    let builder = match (params.min, params.max) {
+        (Some(min), Some(max)) => ShaderBuilder::new(is_included_wgsl::QUANTITATIVE_RANGE)
+            .define("criteria_min_op", params.min_wgsl_op())
+            .define("criteria_min_value", &wgsl_float(min))
+            .define("criteria_max_op", params.max_wgsl_op())
+            .define("criteria_max_value", &wgsl_float(max)),
+        (Some(min), None) => ShaderBuilder::new(is_included_wgsl::QUANTITATIVE_ONE_SIDED)
+            .define("criteria_op", params.min_wgsl_op())
+            .define("criteria_value", &wgsl_float(min)),
+        (None, Some(max)) => ShaderBuilder::new(is_included_wgsl::QUANTITATIVE_ONE_SIDED)
+            .define("criteria_op", params.max_wgsl_op())
+            .define("criteria_value", &wgsl_float(max)),
+        (None, None) => return None,
+    };
+    Some(
+        builder
+            .define("criteria_fn_name", fn_name)
+            .define("criteria_data_var", var_name)
+            .define_bidx("criteria_data", binding)
+            .inject_texture_sample_type("criteria_data", dtype)
+            .build(),
+    )
+}
+
 /// Format an `f32` as a WGSL floating-point literal, e.g. `1e30` or
-/// `-3.4028235e38`. Always includes an exponent so the omitted-bound sentinels
-/// (`f32::MIN`/`f32::MAX`) stay compact.
+/// `-3.4028235e38`. Always includes an exponent so that very large or very
+/// small bounds stay compact.
 fn wgsl_float(value: f32) -> String {
     format!("{value:e}")
 }
@@ -181,9 +228,6 @@ pub fn cpu_is_included(criteria: &[EmphasisCriteria], index: usize) -> bool {
             let code = params.codes.get_f32(index) as i64;
             params.included_codes.contains(&code)
         }
-        EmphasisCriteria::Quantitative(params) => {
-            let value = params.values.get_f32(index);
-            params.min.is_none_or(|min| value >= min) && params.max.is_none_or(|max| value <= max)
-        }
+        EmphasisCriteria::Quantitative(params) => params.includes(params.values.get_f32(index)),
     })
 }

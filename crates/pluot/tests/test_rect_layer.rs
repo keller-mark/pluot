@@ -953,6 +953,8 @@ async fn test_rect_layer_square_contain_filtering_quantitative_range() {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
                 min: Some(1.0),
                 max: Some(2.0),
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_rects_data()
         }),
@@ -974,6 +976,8 @@ async fn test_rect_layer_square_contain_filtering_quantitative_min_only() {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0])),
                 min: Some(2.0),
                 max: None,
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_rects_data()
         }),
@@ -1039,6 +1043,8 @@ async fn test_rect_layer_square_contain_selection_quantitative_range() {
                 values: NumericData::Float32(Arc::new(vec![0.0, 10.0, 20.0, 30.0])),
                 min: Some(10.0),
                 max: Some(20.0),
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_rects_data()
         }),
@@ -1069,6 +1075,8 @@ async fn test_rect_layer_square_contain_selection_orthogonal_to_filtering() {
                 values: NumericData::Float32(Arc::new(vec![5.0, 25.0, 15.0, 8.0])),
                 min: Some(15.0),
                 max: None,
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_rects_data()
         }),
@@ -1098,6 +1106,8 @@ async fn test_rect_layer_square_contain_filtering_multiple_criteria_and() {
                     values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
                     min: Some(10.0),
                     max: None,
+                    min_exclusive: None,
+                    max_exclusive: None,
                 }),
             ],
             ..criteria_rects_data()
@@ -1128,6 +1138,8 @@ async fn test_rect_layer_square_contain_selection_multiple_criteria_and() {
                     values: NumericData::Float32(Arc::new(vec![0.0, 5.0, 15.0, 25.0])),
                     min: Some(10.0),
                     max: None,
+                    min_exclusive: None,
+                    max_exclusive: None,
                 }),
             ],
             ..criteria_rects_data()

@@ -736,6 +736,8 @@ async fn test_polygon_layer_square_contain_filtering_quantitative_range() {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
                 min: Some(0.0),
                 max: Some(0.0),
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_polygons_data()
         }),
@@ -757,6 +759,8 @@ async fn test_polygon_layer_square_contain_filtering_quantitative_min_only() {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
                 min: Some(1.0),
                 max: None,
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_polygons_data()
         }),
@@ -824,6 +828,8 @@ async fn test_polygon_layer_square_contain_selection_quantitative_range() {
                 values: NumericData::Float32(Arc::new(vec![0.0, 1.0])),
                 min: Some(1.0),
                 max: Some(1.0),
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_polygons_data()
         }),
@@ -853,6 +859,8 @@ async fn test_polygon_layer_square_contain_selection_orthogonal_to_filtering() {
                 values: NumericData::Float32(Arc::new(vec![5.0, 25.0])),
                 min: Some(10.0),
                 max: None,
+                min_exclusive: None,
+                max_exclusive: None,
             })],
             ..criteria_polygons_data()
         }),
@@ -882,6 +890,8 @@ async fn test_polygon_layer_square_contain_filtering_multiple_criteria_and() {
                     values: NumericData::Float32(Arc::new(vec![0.0, 25.0])),
                     min: Some(10.0),
                     max: None,
+                    min_exclusive: None,
+                    max_exclusive: None,
                 }),
             ],
             ..criteria_polygons_data()
@@ -912,6 +922,8 @@ async fn test_polygon_layer_square_contain_selection_multiple_criteria_and() {
                     values: NumericData::Float32(Arc::new(vec![0.0, 25.0])),
                     min: Some(10.0),
                     max: None,
+                    min_exclusive: None,
+                    max_exclusive: None,
                 }),
             ],
             ..criteria_polygons_data()

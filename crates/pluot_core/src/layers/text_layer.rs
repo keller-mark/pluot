@@ -234,19 +234,42 @@ fn build_internal_text_layer_data(
         };
     }
 
-    // Rasterize each glyph and measure atlas size (row pack)
-    let mut atlas_width: usize = 0;
-    let mut atlas_height: usize = 0;
+    // Rasterize each glyph.
     let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
-
     for g in glyphs {
-        let w1 = g.width;
-        let h1 = g.height;
         let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-        atlas_width += 2 * H_PADDING + metrics.width.max(1);
-        atlas_height = atlas_height.max(2 * V_PADDING + metrics.height.max(1));
         rasters.push((metrics, bitmap));
     }
+
+    // Shelf-pack glyphs into a bounded-width atlas. WebGPU guarantees only an
+    // 8192px max texture dimension, so once the combined width of every glyph
+    // across every label (e.g. many histogram bin labels) would exceed that
+    // in a single row, wrap into additional rows instead of growing the
+    // texture past the limit (which produces an invalid GPU texture).
+    const MAX_ATLAS_WIDTH: usize = 8192;
+
+    let mut glyph_cell: Vec<(usize, usize)> = Vec::with_capacity(rasters.len()); // (cell_x, row_top_y)
+    let mut cursor_x: usize = 0;
+    let mut cursor_y: usize = 0;
+    let mut row_height: usize = 0;
+    let mut atlas_width: usize = 0;
+
+    for (metrics, _bitmap) in rasters.iter() {
+        let cell_w = 2 * H_PADDING + metrics.width.max(1);
+        let cell_h = 2 * V_PADDING + metrics.height.max(1);
+
+        if cursor_x > 0 && cursor_x + cell_w > MAX_ATLAS_WIDTH {
+            cursor_y += row_height;
+            cursor_x = 0;
+            row_height = 0;
+        }
+
+        glyph_cell.push((cursor_x, cursor_y));
+        atlas_width = atlas_width.max(cursor_x + cell_w);
+        row_height = row_height.max(cell_h);
+        cursor_x += cell_w;
+    }
+    let atlas_height = cursor_y + row_height;
 
     if atlas_width == 0 || atlas_height == 0 {
         return CachedInternalTextLayerData {
@@ -259,7 +282,6 @@ fn build_internal_text_layer_data(
 
     // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
     let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
-    let mut x_cursor: usize = 0; // First glyph starts at 0; ClampToEdge handles the left boundary
 
     // Now process each text element individually to generate instance data
     let mut all_instance_data: Vec<f32> = Vec::new();
@@ -304,9 +326,6 @@ fn build_internal_text_layer_data(
 
         let element_glyphs = element_layout.glyphs();
 
-        // Track our position in the atlas for this text element
-        let mut element_cursor = x_cursor;
-
         // Precompute exact x-positions for all glyphs in this element.
         // fontdue's layout uses ceil(advance_width) for cursor advancement,
         // which causes character spacing to be slightly wider than SVG's.
@@ -326,7 +345,9 @@ fn build_internal_text_layer_data(
 
         // Iterate over each glyph in the string.
         for (i, g) in element_glyphs.iter().enumerate() {
-            let (m, bmp) = &rasters[total_instances as usize + i];
+            let flat_idx = total_instances as usize + i;
+            let (m, bmp) = &rasters[flat_idx];
+            let (cell_x, row_top_y) = glyph_cell[flat_idx];
 
             // Actual bitmap dimensions
             let gw = m.width.max(0);
@@ -336,7 +357,7 @@ fn build_internal_text_layer_data(
             if gw > 0 && gh > 0 {
                 for row in 0..gh {
                     let src = &bmp[row * gw..row * gw + gw];
-                    let dst_start = (V_PADDING + row) * atlas_width + element_cursor;
+                    let dst_start = (row_top_y + V_PADDING + row) * atlas_width + cell_x;
                     atlas[dst_start..dst_start + gw].copy_from_slice(src);
                 }
             }
@@ -352,10 +373,10 @@ fn build_internal_text_layer_data(
             let h_px: f32 = g.height as f32 / RASTER_SCALE;
 
             // UV: no vertical padding, relies on ClampToEdge at v=0 for correct top-edge sampling
-            let u0 = (element_cursor as f32) / (atlas_width as f32);
-            let v0 = (V_PADDING as f32) / (atlas_height as f32);
-            let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
-            let v1 = ((V_PADDING + gh) as f32) / (atlas_height as f32);
+            let u0 = (cell_x as f32) / (atlas_width as f32);
+            let v0 = ((row_top_y + V_PADDING) as f32) / (atlas_height as f32);
+            let u1 = ((cell_x + gw) as f32) / (atlas_width as f32);
+            let v1 = ((row_top_y + V_PADDING + gh) as f32) / (atlas_height as f32);
 
             if gw > 0 && gh > 0 {
                 all_instance_data.extend_from_slice(&[
@@ -365,12 +386,8 @@ fn build_internal_text_layer_data(
                     elem_i as f32, // Index of the text element this glyph belongs to, for per-element color lookups.
                 ]);
             }
-
-            // Advance cursor by glyph width + padding for next glyph
-            element_cursor += gw + 2 * H_PADDING;
         }
 
-        x_cursor = element_cursor;
         total_instances += element_glyphs.len() as u32;
     }
 

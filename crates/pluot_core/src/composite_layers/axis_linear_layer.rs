@@ -56,6 +56,11 @@ pub struct AxisLinearLayerParams {
     /// (We could alternatively implement by rendering multiple textLayers, but not ideal).
     pub fit_outer_ticks: bool,
 
+    /// Explicit (min, max) domain for the scale, overriding the domain
+    /// otherwise derived from the visible camera bounds. When None (the
+    /// default), the domain is derived from `get_bounds(view_params)`.
+    pub domain: Option<(f64, f64)>,
+
     // TODO: support a data_unit_mode param.
 }
 
@@ -67,6 +72,7 @@ impl Default for AxisLinearLayerParams {
             tick_values: None,
             tick_labels: None,
             fit_outer_ticks: false,
+            domain: None,
         }
     }
 }
@@ -137,7 +143,7 @@ impl AxisLinearLayer {
         match self.layer_params.position {
             AxisPosition::Bottom => {
                 let mut scale = ScaleLinear::new();
-                scale.set_domain((min_x, max_x));
+                scale.set_domain(self.layer_params.domain.unwrap_or((min_x, max_x)));
                 scale.set_range((margin_left, viewport_w - margin_right));
 
                 let ticks = self.resolve_ticks(&scale);
@@ -164,7 +170,7 @@ impl AxisLinearLayer {
             }
             AxisPosition::Top => {
                 let mut scale = ScaleLinear::new();
-                scale.set_domain((min_x, max_x));
+                scale.set_domain(self.layer_params.domain.unwrap_or((min_x, max_x)));
                 scale.set_range((margin_left, viewport_w - margin_right));
 
                 let ticks = self.resolve_ticks(&scale);
@@ -190,7 +196,7 @@ impl AxisLinearLayer {
             }
             AxisPosition::Left => {
                 let mut scale = ScaleLinear::new();
-                scale.set_domain((min_y, max_y));
+                scale.set_domain(self.layer_params.domain.unwrap_or((min_y, max_y)));
                 scale.set_range((margin_bottom, viewport_h - margin_top)); // TODO: verify lack of inversion here
 
                 let ticks = self.resolve_ticks(&scale);
@@ -216,7 +222,7 @@ impl AxisLinearLayer {
             }
             AxisPosition::Right => {
                 let mut scale = ScaleLinear::new();
-                scale.set_domain((min_y, max_y));
+                scale.set_domain(self.layer_params.domain.unwrap_or((min_y, max_y)));
                 scale.set_range((margin_bottom, viewport_h - margin_top)); // TODO: verify lack of inversion here
 
                 let ticks = self.resolve_ticks(&scale);

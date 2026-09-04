@@ -3,7 +3,7 @@ import { lru, type LruStore } from "./lru-store.js";
 import type { AsyncReadable } from "zarrita";
 import { FontStore } from "./fonts.js";
 
-export const { render_wasm, render_to_script_wasm, pick_wasm } = wasm;
+export const { render_wasm, render_to_script_wasm, pick_wasm, brush_wasm } = wasm;
 
 // Global stores singleton.
 const stores: Record<string, LruStore<AsyncReadable>> = {};

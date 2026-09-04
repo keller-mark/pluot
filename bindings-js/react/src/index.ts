@@ -20,5 +20,7 @@ export type {
   BrushVertex,
   BrushState,
   BrushResult,
+  LayerBrushingResult,
+  BrushingResult,
   NoBrush,
 } from "./types.js";

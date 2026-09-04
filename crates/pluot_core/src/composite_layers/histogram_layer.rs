@@ -132,6 +132,7 @@ impl PreparedLayer for HistogramLayer {
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.fill_color.unwrap_or((76, 120, 168)),
                 )),
+                render_categorical_axis: None,
             },
         );
 

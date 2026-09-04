@@ -353,6 +353,8 @@ pub enum EmphasisCriteria {
     // A quantitative column (NumericData),
     // along with min and/or max (included values within this range) - omitted min/max implicitly means -inf/+inf.
     Quantitative(QuantitativeCriteriaParams),
+
+    // TODO: implement a boolean mask criteria
 }
 
 impl EmphasisCriteria {
@@ -397,10 +399,46 @@ pub struct CategoricalCriteriaParams {
 pub struct QuantitativeCriteriaParams {
     /// A value per item. Length must be equal to the number of instances.
     pub values: NumericData,
-    /// Inclusive lower bound of included values. Omitted implies -infinity.
+    /// Lower bound of included values. Omitted implies a one-sided test.
     pub min: Option<f32>,
-    /// Inclusive upper bound of included values. Omitted implies +infinity.
+    /// Upper bound of included values. Omitted implies a one-sided test.
     pub max: Option<f32>,
+    /// `None` (the default) means inclusive. Ignored
+    /// when `min` is omitted.
+    #[serde(default)]
+    pub min_exclusive: Option<bool>,
+    /// `None` (the default) means inclusive. Ignored
+    /// when `max` is omitted.
+    #[serde(default)]
+    pub max_exclusive: Option<bool>,
+}
+
+impl QuantitativeCriteriaParams {
+    /// Whether this criteria constrains anything.
+    pub fn is_bounded(&self) -> bool {
+        self.min.is_some() || self.max.is_some()
+    }
+
+    /// Whether `value` falls within this criteria's bounds.
+    pub fn includes(&self, value: f32) -> bool {
+        let above_min = self.min.is_none_or(|min| {
+            if self.min_exclusive == Some(true) { value > min } else { value >= min }
+        });
+        let below_max = self.max.is_none_or(|max| {
+            if self.max_exclusive == Some(true) { value < max } else { value <= max }
+        });
+        above_min && below_max
+    }
+
+    /// The WGSL comparison operator for the lower bound.
+    pub fn min_wgsl_op(&self) -> &'static str {
+        if self.min_exclusive == Some(true) { ">" } else { ">=" }
+    }
+
+    /// The WGSL comparison operator for the upper bound.
+    pub fn max_wgsl_op(&self) -> &'static str {
+        if self.max_exclusive == Some(true) { "<" } else { "<=" }
+    }
 }
 
 /// Specify the font style: normal, italique, or oblique.
