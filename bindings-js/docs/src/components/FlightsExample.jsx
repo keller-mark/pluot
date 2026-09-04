@@ -90,6 +90,14 @@ export function FlightsExample(props) {
                 cache_data: true,
                 fill_color: null,
                 selection_criteria: selectionCriteria,
+                filtering_criteria: [{
+                  criteria_mode: "Quantitative",
+                  criteria_params: {
+                    values_key: "/obs/ARR_DELAY",
+                    min: -50,
+                    max: 200,
+                  },
+                }],
               }
             }
           ]

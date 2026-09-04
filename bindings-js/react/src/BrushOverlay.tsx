@@ -106,8 +106,12 @@ export function BrushOverlay(props: BrushOverlayProps) {
   const clipPathId = `pluot-brush-clip-${useId().replace(/:/g, "")}`;
 
   // While drawing a lasso, the intermediate vertices are too dense to be useful
-  // as handles, and they are not editable until the drag completes.
-  const shouldShowVertexHandles = isClosed;
+  // as handles, and they are not editable until the drag completes. RangeX/RangeY
+  // brushes only resize along one axis via their edges, so their corners are not
+  // meaningful drag handles either.
+  const shouldShowVertexHandles = isClosed
+    && brushState?.shape !== "RangeX"
+    && brushState?.shape !== "RangeY";
 
   // Sides are draggable only once the shape is settled, and only for the
   // axis-aligned shapes; a lasso has no meaningful sides.
