@@ -1,4 +1,13 @@
 
+## 0.1.19
+
+### Patch Changes
+
+- Ensure font files are copied into the npm package directories within the github actions release workflow. (`@pluot/core`) ([#321](https://github.com/keller-mark/pluot/pull/321))
+
+- Do not render an axis layer for the foreground bar plot in zarr_histogram_layer. (`@pluot/core`) ([#322](https://github.com/keller-mark/pluot/pull/322))
+
+
 ## 0.1.18
 
 ### Patch Changes
