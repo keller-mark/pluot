@@ -49,17 +49,12 @@ pub struct BarPlotLayerParams {
     // How to color the bars. See [`ColorMode`].
     pub fill_color: Option<ColorMode>,
 
-    /// When Some(false), skip building the internal [`AxisBandLayer`] that
-    /// labels the categorical (identifier) dimension, so a caller can render
-    /// its own axis for that dimension instead. When None (the default),
-    /// the categorical axis is rendered as usual.
+    /// When false, skip rendering the internal [`AxisBandLayer`].
+    /// By default, true.
     pub render_categorical_axis: Option<bool>,
 
-    /// When Some(false), skip building the internal [`AxisLinearLayer`] that
-    /// labels the quantitative (quantity) dimension, so a caller can render
-    /// its own axis for that dimension instead (e.g. to avoid a duplicate
-    /// axis when overlaying multiple `BarPlotLayer`s). When None (the
-    /// default), the quantitative axis is rendered as usual.
+    /// When false, skip rendering the internal [`AxisLinearLayer`].
+    /// By default, true.
     pub render_quantitative_axis: Option<bool>,
 
     // TODO: stacked bars (here or own layer?)
