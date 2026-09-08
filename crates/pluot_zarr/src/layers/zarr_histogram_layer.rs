@@ -344,9 +344,10 @@ impl PreparedLayer for ZarrHistogramLayer {
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
                 )),
-                // The value axis is rendered by ZarrHistogramLayer itself (see below),
-                // using the real continuous value domain rather than per-bin labels.
+                // We render our own axis along the continuous value domain,
+                // overriding the categorical per-bin labels.
                 render_categorical_axis: Some(false),
+                render_quantitative_axis: Some(true),
             },
         );
 
@@ -365,6 +366,9 @@ impl PreparedLayer for ZarrHistogramLayer {
                         self.layer_params.fill_color.unwrap_or((76, 120, 168)),
                     )),
                     render_categorical_axis: Some(false),
+                    // We do not want to render a duplicate quantitative axis,
+                    // as the background bar plot layer already renders one.
+                    render_quantitative_axis: Some(false),
                 },
             )
         });
