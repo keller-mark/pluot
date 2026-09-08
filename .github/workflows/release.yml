@@ -61,7 +61,9 @@ jobs:
       with:
         run_install: true
     - name: For JS - Build and bundle the JS packages
-      run: pnpm run build && pnpm run bundle
+      run: |
+        cd bindings-js/core && pnpm run copy-fonts && cd -
+        pnpm run build && pnpm run bundle
 
     - name: Create release pull request or Publish to NPM
       if: github.repository == 'keller-mark/pluot'
