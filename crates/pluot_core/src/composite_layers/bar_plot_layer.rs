@@ -55,11 +55,35 @@ pub struct BarPlotLayerParams {
     /// the categorical axis is rendered as usual.
     pub render_categorical_axis: Option<bool>,
 
+    /// When Some(false), skip building the internal [`AxisLinearLayer`] that
+    /// labels the quantitative (quantity) dimension, so a caller can render
+    /// its own axis for that dimension instead (e.g. to avoid a duplicate
+    /// axis when overlaying multiple `BarPlotLayer`s). When None (the
+    /// default), the quantitative axis is rendered as usual.
+    pub render_quantitative_axis: Option<bool>,
+
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin
     // TODO: configurable axis layer positioning?
 
+}
+
+impl Default for BarPlotLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            orientation: BarOrientation::Vertical,
+            data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
+            data_unit_mode_for_quantity_dim: UnitsMode::Data,
+            identifier: Arc::new(vec![]),
+            quantity: Arc::new(vec![]),
+            fill_color: None,
+            render_categorical_axis: Some(true),
+            render_quantitative_axis: Some(true)
+        }
+    }
 }
 
 pub struct BarPlotLayer {
@@ -104,6 +128,7 @@ impl BarPlotLayer {
         scale_band.set_domain(self.layer_params.identifier.as_ref().clone());
 
         let render_categorical_axis = self.layer_params.render_categorical_axis.unwrap_or(true);
+        let render_quantitative_axis = self.layer_params.render_quantitative_axis.unwrap_or(true);
 
         match self.layer_params.orientation {
             BarOrientation::Vertical => {
@@ -138,15 +163,17 @@ impl BarPlotLayer {
                             ..Default::default()
                         }
                     )),
-                    Box::new(AxisLinearLayer::new(
+                ];
+                if render_quantitative_axis {
+                    sublayers.push(Box::new(AxisLinearLayer::new(
                         self.view_params.clone(),
                         AxisLinearLayerParams {
                             layer_id: format!("{}_bar_plot_layer_quantitative_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Left,
                             ..Default::default()
                         }
-                    )),
-                ];
+                    )));
+                }
                 if render_categorical_axis {
                     sublayers.push(Box::new(AxisBandLayer::new(
                         self.view_params.clone(),
@@ -191,15 +218,17 @@ impl BarPlotLayer {
                             ..Default::default()
                         }
                     )),
-                    Box::new(AxisLinearLayer::new(
+                ];
+                if render_quantitative_axis {
+                    sublayers.push(Box::new(AxisLinearLayer::new(
                         self.view_params.clone(),
                         AxisLinearLayerParams {
                             layer_id: format!("{}_bar_plot_layer_quantitative_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Bottom,
                             ..Default::default()
                         }
-                    )),
-                ];
+                    )));
+                }
                 if render_categorical_axis {
                     sublayers.push(Box::new(AxisBandLayer::new(
                         self.view_params.clone(),

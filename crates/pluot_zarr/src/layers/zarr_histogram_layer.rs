@@ -344,9 +344,14 @@ impl PreparedLayer for ZarrHistogramLayer {
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
                 )),
-                // The value axis is rendered by ZarrHistogramLayer itself (see below),
-                // using the real continuous value domain rather than per-bin labels.
+                // Per-bin labels are not wanted; the value axis (below) labels
+                // the underlying data values instead.
                 render_categorical_axis: Some(false),
+                // The value axis is rendered by ZarrHistogramLayer itself (see
+                // below) using the real (data_min, data_max) domain, rather
+                // than the view's zoom/pan-derived domain that BarPlotLayer's
+                // own quantitative axis would otherwise show.
+                render_quantitative_axis: Some(true),
             },
         );
 
@@ -365,6 +370,9 @@ impl PreparedLayer for ZarrHistogramLayer {
                         self.layer_params.fill_color.unwrap_or((76, 120, 168)),
                     )),
                     render_categorical_axis: Some(false),
+                    // We do not want to render a duplicate quantitative axis,
+                    // as the background bar plot layer already renders one.
+                    render_quantitative_axis: Some(false),
                 },
             )
         });
