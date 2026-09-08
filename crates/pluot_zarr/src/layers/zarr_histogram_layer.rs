@@ -344,13 +344,9 @@ impl PreparedLayer for ZarrHistogramLayer {
                 fill_color: Some(ColorMode::UniformRgb(
                     self.layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
                 )),
-                // Per-bin labels are not wanted; the value axis (below) labels
-                // the underlying data values instead.
+                // We render our own axis along the continuous value domain,
+                // overriding the categorical per-bin labels.
                 render_categorical_axis: Some(false),
-                // The value axis is rendered by ZarrHistogramLayer itself (see
-                // below) using the real (data_min, data_max) domain, rather
-                // than the view's zoom/pan-derived domain that BarPlotLayer's
-                // own quantitative axis would otherwise show.
                 render_quantitative_axis: Some(true),
             },
         );
