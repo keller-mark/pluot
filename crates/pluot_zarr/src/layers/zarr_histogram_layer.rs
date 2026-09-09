@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult};
+use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult, LayerExtentResult};
 
 use pluot_core::wgpu;
 use pluot_core::cache::use_memo_vec_f32;
@@ -10,7 +10,7 @@ use pluot_core::params::BrushMode;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
@@ -86,6 +86,11 @@ pub struct ZarrHistogramLayer {
     // around so that a brush selection along this axis can be resolved back
     // to a data value range.
     value_scale: Option<ScaleLinear>,
+
+    // The largest "background" (filter-included) bin count, i.e. the upper
+    // bound of the count axis. Kept around so `extent` can report it without
+    // re-deriving the histogram.
+    max_count: Option<f32>,
 }
 
 impl ZarrHistogramLayer {
@@ -100,6 +105,7 @@ impl ZarrHistogramLayer {
             store_name,
             sub_layer_instances: Vec::new(),
             value_scale: None,
+            max_count: None,
         }
     }
 
@@ -279,6 +285,7 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         let value_scale = Self::build_value_scale(&self.view_params, &self.layer_params.orientation, (data_min as f64, data_max as f64));
         self.value_scale = Some(value_scale);
+        self.max_count = Some(background_arr.iter().cloned().fold(0.0f32, f32::max));
 
         // The foreground ("selected") bin counts get their own memo.
         let foreground_future = use_memo_vec_f32(async || {
@@ -465,3 +472,29 @@ impl BrushableLayer for ZarrHistogramLayer {
 }
 
 impl PickableLayer for ZarrHistogramLayer {}
+
+impl ExtentableLayer for ZarrHistogramLayer {
+    fn extent(&self) -> Option<LayerExtentResult> {
+        let (data_min, data_max) = self.value_scale.as_ref()?.get_domain();
+        let (data_min, data_max) = (data_min as f32, data_max as f32);
+        let max_count = self.max_count?;
+
+        // The value axis (binned value domain) runs along X for a vertical
+        // histogram, and along Y for a horizontal one; the count axis (bin
+        // heights, which always start at zero) takes the other axis.
+        let (x_min, x_max, y_min, y_max) = match self.layer_params.orientation {
+            BarOrientation::Vertical => (data_min, data_max, 0.0, max_count),
+            BarOrientation::Horizontal => (0.0, max_count, data_min, data_max),
+        };
+
+        Some(LayerExtentResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            z_min: None,
+            z_max: None,
+        })
+    }
+}
