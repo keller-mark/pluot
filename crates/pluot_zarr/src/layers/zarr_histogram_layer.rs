@@ -482,19 +482,16 @@ impl ExtentableLayer for ZarrHistogramLayer {
         // The value axis (binned value domain) runs along X for a vertical
         // histogram, and along Y for a horizontal one; the count axis (bin
         // heights, which always start at zero) takes the other axis.
-        let (x_min, x_max, y_min, y_max) = match self.layer_params.orientation {
-            BarOrientation::Vertical => (data_min, data_max, 0.0, max_count),
-            BarOrientation::Horizontal => (0.0, max_count, data_min, data_max),
+        let (x, y) = match self.layer_params.orientation {
+            BarOrientation::Vertical => ((data_min, data_max), (0.0, max_count)),
+            BarOrientation::Horizontal => ((0.0, max_count), (data_min, data_max)),
         };
 
         Some(LayerExtentResult {
             layer_id: self.layer_params.layer_id.clone(),
-            x_min,
-            x_max,
-            y_min,
-            y_max,
-            z_min: None,
-            z_max: None,
+            x,
+            y,
+            z: None,
         })
     }
 }

@@ -13,13 +13,10 @@ use crate::zarr::StoreMap;
 #[derive(Serialize, Deserialize)]
 pub struct LayerExtentResult {
     pub layer_id: String,
-    pub x_min: f32,
-    pub x_max: f32,
-    pub y_min: f32,
-    pub y_max: f32,
+    pub x: (f32, f32),
+    pub y: (f32, f32),
     // Only present for layers plotted in a 3D coordinate system.
-    pub z_min: Option<f32>,
-    pub z_max: Option<f32>,
+    pub z: Option<(f32, f32)>,
 }
 
 /// Serializable representation of the data extents
