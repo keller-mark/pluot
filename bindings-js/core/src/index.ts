@@ -5,6 +5,7 @@ export {
   render_to_script_wasm,
   pick_wasm,
   brush_wasm,
+  extent_wasm,
   setStore,
   setStoreByName,
   getStore,

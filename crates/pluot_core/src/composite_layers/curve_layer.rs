@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{BrushableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
+use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
@@ -245,6 +245,8 @@ inventory::submit! {
 }
 
 impl BrushableLayer for CurveLayer {}
+
+impl ExtentableLayer for CurveLayer {}
 
 impl PickableLayer for CurveLayer {
     // Delegate to the sub-layers, which own the actual curve geometry. The

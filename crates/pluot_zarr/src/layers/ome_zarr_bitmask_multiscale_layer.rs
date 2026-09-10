@@ -10,7 +10,7 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::render_traits::{
-    BrushableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
+    BrushableLayer, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::multiscale_utils::{
@@ -584,6 +584,8 @@ impl DrawToSvg for OmeZarrBitmaskMultiscaleLayer {
 }
 
 impl BrushableLayer for OmeZarrBitmaskMultiscaleLayer {}
+
+impl ExtentableLayer for OmeZarrBitmaskMultiscaleLayer {}
 
 impl PickableLayer for OmeZarrBitmaskMultiscaleLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

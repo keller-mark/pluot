@@ -8,6 +8,7 @@ pub use crate::render::{render, stores_from_params};
 pub use crate::render_script::render_to_script;
 pub use crate::picking::{pick, PickingResult};
 pub use crate::brushing::{brush, BrushParams, BrushingResult};
+pub use crate::extent::{extent, ExtentResult};
 pub use crate::viewport::ScreenCoord;
 pub use crate::zarr_types::ZarrPeekResult;
 
@@ -15,7 +16,7 @@ pub use crate::zarr_types::ZarrPeekResult;
 // == WASM Bindings ===
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
-    use super::{render, render_to_script, stores_from_params, pick, brush, RenderParams, ScreenCoord, BrushParams, ZarrPeekResult, CodeFormat};
+    use super::{render, render_to_script, stores_from_params, pick, brush, extent, RenderParams, ScreenCoord, BrushParams, ZarrPeekResult, CodeFormat};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -289,6 +290,17 @@ export function zarr_get_range_from_end_status(store_name, key, suffix_length) {
 
         serde_wasm_bindgen::to_value(&result).expect("Failed to serialize BrushingResult")
     }
+
+    #[wasm_bindgen]
+    pub async fn extent_wasm(params: JsValue) -> JsValue {
+        let params: RenderParams =
+            serde_wasm_bindgen::from_value(params).expect("Invalid parameters");
+
+        let stores = stores_from_params(&params);
+        let result = extent(params, stores).await;
+
+        serde_wasm_bindgen::to_value(&result).expect("Failed to serialize ExtentResult")
+    }
 }
 
 // === Python Bindings ===
@@ -303,7 +315,7 @@ pub mod python {
     use pyo3_log::{Caching, Logger};
     use pythonize::depythonize;
 
-    use super::{render, render_to_script, stores_from_params, pick, brush, RenderParams, ScreenCoord, BrushParams, ZarrPeekResult, CodeFormat};
+    use super::{render, render_to_script, stores_from_params, pick, brush, extent, RenderParams, ScreenCoord, BrushParams, ZarrPeekResult, CodeFormat};
 
     #[pyfunction]
     pub fn log_info(s: &str) {
@@ -510,6 +522,27 @@ pub mod python {
 
     #[pyfunction]
     #[pyo3(signature = (**kwds))]
+    pub fn extent_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
+        let params: RenderParams = if let Some(dict) = kwds {
+            depythonize::<RenderParams>(&dict.into_bound(py)).unwrap()
+        } else {
+            RenderParams::default()
+        };
+
+        let stores = stores_from_params(&params);
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = extent(params, stores).await;
+            Python::attach(|py| {
+                pythonize::pythonize(py, &result)
+                    .map(|v| v.unbind())
+                    .map_err(|e| PyErr::from(e))
+            })
+        })
+    }
+
+    #[pyfunction]
+    #[pyo3(signature = (**kwds))]
     pub fn render_py(py: Python, kwds: Option<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
         // Use the py parameter directly instead of Python::with_gil
         let params: RenderParams = if let Some(dict) = kwds {
@@ -563,6 +596,7 @@ pub mod python {
         m.add_function(wrap_pyfunction!(render_py, m)?)?;
         m.add_function(wrap_pyfunction!(pick_py, m)?)?;
         m.add_function(wrap_pyfunction!(brush_py, m)?)?;
+        m.add_function(wrap_pyfunction!(extent_py, m)?)?;
         m.add_function(wrap_pyfunction!(render_to_script_py, m)?)?;
         Ok(())
     }

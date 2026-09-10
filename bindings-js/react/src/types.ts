@@ -150,6 +150,25 @@ export type RawPickingResult = Omit<PickingResult, "layer_results"> & {
   layer_results: RawLayerPickingResult[];
 };
 
+// === Extent ===
+
+/**
+ * Mirrors the Rust `LayerExtentResult` struct. `z` is only present for layers
+ * plotted in a 3D coordinate system; `serde_wasm_bindgen` serializes a Rust
+ * `None` as `undefined` (not `null`), so it is absent rather than null for 2D layers.
+ */
+export type LayerExtentResult = {
+  layer_id: string;
+  x: [number, number];
+  y: [number, number];
+  z: [number, number] | undefined;
+};
+
+/** Mirrors the Rust `ExtentResult` struct, as returned by `extent_wasm`. */
+export type ExtentResult = {
+  layer_results: LayerExtentResult[];
+};
+
 // === Tooltip ===
 
 /**
@@ -322,6 +341,14 @@ export type PluotProps = {
   cameraMatrix?: CameraMatrix | null;
   /** Provide to take control of the camera matrix. */
   setCameraMatrix?: ((cameraMatrix: CameraMatrix) => void) | null;
+
+  // Mutually exclusive from specifying a camera matrix,
+  // the user can specify xLim and/or yLim props in 2D.
+  // Then, we can use extent_wasm to fill in the camera matrix for the unspecified dimension(s).
+  // Note: when the camera matrix is fully specified, or both xLim AND yLim are defined,
+  // we never need to call extent_wasm.
+  xLim?: [number, number] | null;
+  yLim?: [number, number] | null;
 
   /** Whether clicking should run a picking query and call `onClick`. */
   enableClick?: boolean;
