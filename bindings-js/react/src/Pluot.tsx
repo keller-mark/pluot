@@ -3,18 +3,19 @@ import lzs from "lz-string";
 import { throttle } from "lodash-es";
 import {
   initialize, getIsWasmReady,
-  render_wasm, pick_wasm, brush_wasm,
+  render_wasm, pick_wasm, brush_wasm, extent_wasm,
   normalizeStores, getStore,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
-  type CameraMatrix,
+  getCameraMatrixFromBounds,
+  type CameraMatrix, type Bounds,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
 import { useBrush } from "./use-brush.js";
 import type {
-  BrushingResult, BrushState, HoverInfo, PickingResult, PluotProps, RawBrushingResult, RawPickingResult,
+  BrushingResult, BrushState, ExtentResult, HoverInfo, PickingResult, PluotProps, RawBrushingResult, RawPickingResult,
   RenderParams, TooltipContent,
 } from "./types.js";
 
@@ -102,6 +103,8 @@ export function Pluot(props: PluotProps) {
     backgroundColor = undefined,
     cameraMatrix: controlledCameraMatrix = null,
     setCameraMatrix: setControlledCameraMatrix = null,
+    xLim = null,
+    yLim = null,
     enableClick = false,
     enableTooltip = false,
     onClick: onClickProp = null,
@@ -289,6 +292,112 @@ export function Pluot(props: PluotProps) {
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
+
+  // Runs the extent query against the wasm module, analogous to `runBrush` above.
+  const runExtent = useEffectEvent(async (): Promise<ExtentResult | undefined> => {
+    if (!isWasmReady) {
+      return undefined;
+    }
+
+    const renderParams: RenderParams = {
+      schema_version: schemaVersion,
+      width,
+      height,
+      format: format,
+      margin_bottom: marginBottom,
+      margin_left: marginLeft,
+      margin_top: marginTop,
+      margin_right: marginRight,
+      device_pixel_ratio: window.devicePixelRatio,
+      aspect_ratio_mode: aspectRatioMode,
+      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+      view_mode: viewMode,
+      pickable: false,
+      camera_view: cameraMatrix,
+      plot_id: plotId,
+      plot_type: plotType,
+      stores,
+      plot_params: plotParams,
+      timeout: currentTimeout.current,
+      wait_for_store_gets: false,
+      cache_enabled: true,
+      svg_compression_enabled: true,
+      svg_include_document: false,
+    };
+
+    // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
+    // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
+    // normalization step is needed.
+    return await extent_wasm(renderParams) as ExtentResult;
+  });
+
+  // The union (bounding box) of every layer's reported extent, in each axis
+  // independently. `null` for an axis when no layer in the plot reports an
+  // extent for it (e.g. none of them implement `ExtentableLayer` yet).
+  const unionExtent = (result: ExtentResult | undefined): { x: [number, number] | null, y: [number, number] | null } => {
+    if (!result || result.layer_results.length === 0) {
+      return { x: null, y: null };
+    }
+    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    for (const { x, y } of result.layer_results) {
+      xMin = Math.min(xMin, x[0]);
+      xMax = Math.max(xMax, x[1]);
+      yMin = Math.min(yMin, y[0]);
+      yMax = Math.max(yMax, y[1]);
+    }
+    return { x: [xMin, xMax], y: [yMin, yMax] };
+  };
+
+  // Applies `xLim`/`yLim` to the camera matrix, reading the latest `cameraMatrix`/
+  // `setCameraMatrix` (via useEffectEvent) rather than reacting to their changes,
+  // since this effect is the one calling `setCameraMatrix` and must not re-fire
+  // because of its own update.
+  const applyLim = useEffectEvent(async () => {
+    // Mutually exclusive with a user-controlled camera matrix (see the `xLim`/
+    // `yLim` prop docs), and a no-op when neither limit is specified.
+    if (controlledCameraMatrix !== null || (xLim == null && yLim == null)) {
+      return;
+    }
+
+    let x = xLim;
+    let y = yLim;
+
+    // Only the omitted dimension needs the full data extent (to "fit" it);
+    // when both are given, they fully determine the bounds on their own.
+    if (x == null || y == null) {
+      const fullExtent = unionExtent(await runExtent());
+      console.log(fullExtent);
+      if (x == null) x = fullExtent.x;
+      if (y == null) y = fullExtent.y;
+    }
+
+    if (x == null && y == null) {
+      return;
+    }
+
+    const bounds: Bounds = {};
+    if (x != null) {
+      bounds.xMin = x[0];
+      bounds.xMax = x[1];
+    }
+    if (y != null) {
+      bounds.yMin = y[0];
+      bounds.yMax = y[1];
+    }
+
+    setCameraMatrix(getCameraMatrixFromBounds(bounds, cameraMatrix, {
+      width, height, aspectRatioMode, aspectRatioAlignmentMode,
+      margins: { marginTop, marginRight, marginBottom, marginLeft },
+    }));
+  });
+
+  useEffect(() => {
+    applyLim();
+  }, [
+    isWasmReady, xLim, yLim, plotId, plotType, plotParams, stores,
+    width, height, aspectRatioMode, aspectRatioAlignmentMode,
+    marginTop, marginRight, marginBottom, marginLeft,
+  ]);
 
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
