@@ -103,8 +103,8 @@ export function Pluot(props: PluotProps) {
     backgroundColor = undefined,
     cameraMatrix: controlledCameraMatrix = null,
     setCameraMatrix: setControlledCameraMatrix = null,
-    xLim = null,
-    yLim = null,
+    xLim: xLimProp = null,
+    yLim: yLimProp = null,
     enableClick = false,
     enableTooltip = false,
     onClick: onClickProp = null,
@@ -318,7 +318,7 @@ export function Pluot(props: PluotProps) {
       plot_type: plotType,
       stores,
       plot_params: plotParams,
-      timeout: currentTimeout.current,
+      timeout: null, // Note: no timeout
       wait_for_store_gets: false,
       cache_enabled: true,
       svg_compression_enabled: true,
@@ -338,6 +338,7 @@ export function Pluot(props: PluotProps) {
     if (!result || result.layer_results.length === 0) {
       return { x: null, y: null };
     }
+    console.log(result)
     let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
     for (const { x, y } of result.layer_results) {
       xMin = Math.min(xMin, x[0]);
@@ -353,48 +354,68 @@ export function Pluot(props: PluotProps) {
   // since this effect is the one calling `setCameraMatrix` and must not re-fire
   // because of its own update.
   const applyLim = useEffectEvent(async () => {
+    // TODO: make this more like a useMemo (but it is async, which complicates things).
+
+    console.log(controlledCameraMatrix);
     // Mutually exclusive with a user-controlled camera matrix (see the `xLim`/
     // `yLim` prop docs), and a no-op when neither limit is specified.
-    if (controlledCameraMatrix !== null || (xLim == null && yLim == null)) {
-      return;
-    }
-
-    let x = xLim;
-    let y = yLim;
-
-    // Only the omitted dimension needs the full data extent (to "fit" it);
-    // when both are given, they fully determine the bounds on their own.
-    if (x == null || y == null) {
-      const fullExtent = unionExtent(await runExtent());
-      console.log(fullExtent);
-      if (x == null) x = fullExtent.x;
-      if (y == null) y = fullExtent.y;
-    }
-
-    if (x == null && y == null) {
+    if (controlledCameraMatrix !== null) {
       return;
     }
 
     const bounds: Bounds = {};
-    if (x != null) {
-      bounds.xMin = x[0];
-      bounds.xMax = x[1];
-    }
-    if (y != null) {
-      bounds.yMin = y[0];
-      bounds.yMax = y[1];
+
+    // TODO: generalize to 3D
+    // TODO: validate the contents of xLimProp/yLimProp (arrays with two numeric elements).
+    if (xLimProp !== null && yLimProp !== null) {
+      // Both xLim and yLim are specified explicitly via props,
+      // so we can use getCameraMatrixFromBounds without the need to call runExtent.
+      bounds.xMin = xLimProp[0];
+      bounds.xMax = xLimProp[1];
+      bounds.yMin = yLimProp[0];
+      bounds.yMax = yLimProp[1];
+    } else {
+      const fullExtent = unionExtent(await runExtent());
+      if (xLimProp === null) {
+        if(fullExtent.x) {
+          bounds.xMin = fullExtent.x[0];
+          bounds.xMax = fullExtent.x[1];
+        } else {
+          console.log("Warning: fullExtent.x was not computed.");
+        }
+      }
+      if (yLimProp === null) {
+        if(fullExtent.y) {
+          bounds.yMin = fullExtent.y[0];
+          bounds.yMax = fullExtent.y[1];
+        } else {
+          console.log("Warning: fullExtent.y was not computed.");
+        }
+      }
     }
 
-    setCameraMatrix(getCameraMatrixFromBounds(bounds, cameraMatrix, {
+    console.log(bounds);
+
+    const computedCameraMatrix = getCameraMatrixFromBounds(bounds, cameraMatrix, {
       width, height, aspectRatioMode, aspectRatioAlignmentMode,
       margins: { marginTop, marginRight, marginBottom, marginLeft },
-    }));
+    });
+    console.log(computedCameraMatrix);
+
+    setCameraMatrix(computedCameraMatrix);
+    // TODO: rather than workarounds to force a re-render,
+    // solve this issue by preventing the first render until the camera matrix
+    // has been fully specified (i.e., the useMemo comment above).
+    incBacklogIteration();
   });
 
   useEffect(() => {
     applyLim();
   }, [
-    isWasmReady, xLim, yLim, plotId, plotType, plotParams, stores,
+    isWasmReady, xLimProp, yLimProp,
+    plotId, // Note: for now, plotId must be modified to invalidate the cached extent.
+    // TODO: add a dedicated "extent invalidation key" prop?
+    // plotType, plotParams, stores, // Note: these are not `extent` dependencies.
     width, height, aspectRatioMode, aspectRatioAlignmentMode,
     marginTop, marginRight, marginBottom, marginLeft,
   ]);
