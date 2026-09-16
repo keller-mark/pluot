@@ -331,6 +331,8 @@ export type PluotProps = {
   minTimeout?: number;
   /** Upper bound (in ms) of the exponential backoff between bailed-early renders. */
   maxTimeout?: number;
+  /** Number of times a bailed-early render may retry before giving up. */
+  maxBailedEarlyRetries?: number;
   /** Whether a new render may start while a previous one is still in flight. */
   allowSimultaneousRenders?: boolean;
 

@@ -1,6 +1,7 @@
-import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useReducer, useId, type CSSProperties } from "react";
+import React, { useLayoutEffect, useEffect, useEffectEvent, useRef, useState, useMemo, useId, type CSSProperties } from "react";
 import lzs from "lz-string";
 import { throttle } from "lodash-es";
+import { useQuery, useQueryClient, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   initialize, getIsWasmReady,
   render_wasm, pick_wasm, brush_wasm, extent_wasm,
@@ -9,14 +10,14 @@ import {
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
   getCameraMatrixFromBounds,
-  type CameraMatrix, type Bounds,
+  type CameraMatrix, type Bounds, type AspectRatioMode, type AspectRatioAlignmentMode,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
 import { useBrush } from "./use-brush.js";
 import type {
-  BrushingResult, BrushState, ExtentResult, HoverInfo, PickingResult, PluotProps, RawBrushingResult, RawPickingResult,
-  RenderParams, TooltipContent,
+  BrushingResult, BrushState, ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
+  PluotProps, RawBrushingResult, RawPickingResult, RenderParams, TooltipContent,
 } from "./types.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -45,6 +46,50 @@ const noop = () => { };
 // Mouse movement (in pixels) beyond which a mousedown-to-click is
 // considered a drag rather than a click, so that picking is skipped.
 const DRAG_THRESHOLD_PX = 3;
+
+// How often rapid-fire prop changes (e.g. `cameraMatrix` while dragging) are
+// coalesced into a single render_wasm call; see `throttledSetRenderParamsSnapshot`.
+const RENDER_PARAMS_THROTTLE_MS = 16; // ~60fps
+
+// Thrown by the render `useQuery`'s `queryFn` when a frame bails early (still
+// waiting on underlying store fetches), so that react-query's own `retry`/
+// `retryDelay` drive the "keep re-rendering with a growing backoff" loop,
+// rather than a manually-managed poll.
+class RenderBailedEarlyError extends Error {
+  constructor() {
+    super("Render bailed early: still waiting on data.");
+    this.name = "RenderBailedEarlyError";
+  }
+}
+
+// The subset of render/pick/brush params that determine what gets drawn,
+// snapshotted (and throttled, see `throttledSetRenderParamsSnapshot`) so that
+// rapid-fire prop changes (e.g. `cameraMatrix` during a drag) collapse into
+// at most one render_wasm call per `RENDER_PARAMS_THROTTLE_MS`.
+type RenderParamsSnapshot = {
+  plotId: string;
+  plotType: PlotType;
+  plotParams: PlotParams;
+  stores: RenderParams["stores"];
+  format: GraphicsFormat;
+  width: number;
+  height: number;
+  aspectRatioMode: AspectRatioMode;
+  aspectRatioAlignmentMode: AspectRatioAlignmentMode;
+  marginLeft: number;
+  marginRight: number;
+  marginTop: number;
+  marginBottom: number;
+  cameraMatrix: number[];
+};
+
+// The same params, plus the screen coordinates being picked: a pick result is
+// a pure function of these, so a click/hover at the same coordinates with the
+// same render params can reuse a cached result instead of re-invoking wasm.
+type PickParamsSnapshot = RenderParamsSnapshot & {
+  screenCoordX: number;
+  screenCoordY: number;
+};
 
 // `pick_wasm` is typed `any` by wasm-bindgen, so `RawPickingResult` is what
 // documents its wire format (see types.ts).
@@ -76,7 +121,7 @@ function normalizeBrushingResult(data: RawBrushingResult): BrushingResult {
 }
 
 
-export function Pluot(props: PluotProps) {
+function PluotInner(props: PluotProps) {
   const {
     schemaVersion = null,
     width: widthProp,
@@ -98,6 +143,7 @@ export function Pluot(props: PluotProps) {
     format = "Raster", // "Raster", "Vector"
     minTimeout = 32,
     maxTimeout = 5000,
+    maxBailedEarlyRetries = 300,
     allowSimultaneousRenders = true,
     debugMargins = false,
     backgroundColor = undefined,
@@ -194,19 +240,15 @@ export function Pluot(props: PluotProps) {
   const tempButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // We may want to update these things without triggering a re-render.
-  const isRenderingRef = useRef(false);
+  // Shared "render budget" read by render_wasm/pick_wasm/brush_wasm: grows
+  // (via renderQuery's retryDelay backoff below) while renders keep bailing
+  // early, and resets once a render succeeds or plot params change.
   const currentTimeout = useRef(minTimeout);
 
   // Used to distinguish a plain click from a click that ends a drag
   // (e.g. panning), so that dragging does not trigger picking.
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const didDragRef = useRef(false);
-
-  // TODO: do we want to use the backlog approach or not?
-  // (Similar to the one used in the Vitessce heatmap)
-  // Reference: https://github.com/vitessce/vitessce/blob/71f17fb605768e0428fb15ed87b3ea34bcbb4803/packages/view-types/heatmap/src/Heatmap.js#L368
-  //const backlogRef = useRef([]);
-  const [backlogIteration, incBacklogIteration] = useReducer((i: number) => i + 1, 0);
 
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [didFirstRender, setDidFirstRender] = useState(false);
@@ -293,42 +335,54 @@ export function Pluot(props: PluotProps) {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
 
-  // Runs the extent query against the wasm module, analogous to `runBrush` above.
-  const runExtent = useEffectEvent(async (): Promise<ExtentResult | undefined> => {
-    if (!isWasmReady) {
-      return undefined;
-    }
+  // Whether we actually need the fetched full extent to compute the camera
+  // bounds below: not when the camera is user-controlled, and not when both
+  // `xLim`/`yLim` are already given explicitly.
+  const extentQueryEnabled = isWasmReady
+    && controlledCameraMatrix === null
+    && !(xLimProp !== null && yLimProp !== null);
 
-    const renderParams: RenderParams = {
-      schema_version: schemaVersion,
-      width,
-      height,
-      format: format,
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
-      device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
-      view_mode: viewMode,
-      pickable: false,
-      camera_view: cameraMatrix,
-      plot_id: plotId,
-      plot_type: plotType,
-      stores,
-      plot_params: plotParams,
-      timeout: null, // Note: no timeout
-      wait_for_store_gets: false,
-      cache_enabled: true,
-      svg_compression_enabled: true,
-      svg_include_document: false,
-    };
+  // Runs the extent query against the wasm module, analogous to `runBrush` above,
+  // but (unlike picking/brushing) driven by a dependency list rather than a user
+  // action, so it's a `useQuery` rather than a `useMutation`. Excludes `plotType`/
+  // `plotParams`/`stores` from the key: for now, `plotId` alone is used to
+  // invalidate the extent (see the `applyLim`-triggering effect below).
+  const extentQuery = useQuery({
+    queryKey: ['pluot-extent', plotId, width, height, aspectRatioMode, aspectRatioAlignmentMode,
+      marginTop, marginRight, marginBottom, marginLeft],
+    queryFn: async (): Promise<ExtentResult> => {
+      const renderParams: RenderParams = {
+        schema_version: schemaVersion,
+        width,
+        height,
+        format: format,
+        margin_bottom: marginBottom,
+        margin_left: marginLeft,
+        margin_top: marginTop,
+        margin_right: marginRight,
+        device_pixel_ratio: window.devicePixelRatio,
+        aspect_ratio_mode: aspectRatioMode,
+        aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+        view_mode: viewMode,
+        pickable: false,
+        camera_view: cameraMatrix,
+        plot_id: plotId,
+        plot_type: plotType,
+        stores,
+        plot_params: plotParams,
+        timeout: null, // Note: no timeout
+        wait_for_store_gets: false,
+        cache_enabled: true,
+        svg_compression_enabled: true,
+        svg_include_document: false,
+      };
 
-    // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
-    // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
-    // normalization step is needed.
-    return await extent_wasm(renderParams) as ExtentResult;
+      // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
+      // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
+      // normalization step is needed.
+      return await extent_wasm(renderParams) as ExtentResult;
+    },
+    enabled: extentQueryEnabled,
   });
 
   // The union (bounding box) of every layer's reported extent, in each axis
@@ -349,13 +403,12 @@ export function Pluot(props: PluotProps) {
     return { x: [xMin, xMax], y: [yMin, yMax] };
   };
 
-  // Applies `xLim`/`yLim` to the camera matrix, reading the latest `cameraMatrix`/
-  // `setCameraMatrix` (via useEffectEvent) rather than reacting to their changes,
-  // since this effect is the one calling `setCameraMatrix` and must not re-fire
-  // because of its own update.
-  const applyLim = useEffectEvent(async () => {
-    // TODO: make this more like a useMemo (but it is async, which complicates things).
-
+  // Applies `xLim`/`yLim` (falling back to the fetched full extent for whichever
+  // axis isn't explicitly limited) to the camera matrix, reading the latest
+  // `cameraMatrix`/`setCameraMatrix` (via useEffectEvent) rather than reacting
+  // to their changes, since this effect is the one calling `setCameraMatrix`
+  // and must not re-fire because of its own update.
+  const applyLim = useEffectEvent((extentResult: ExtentResult | undefined) => {
     console.log(controlledCameraMatrix);
     // Mutually exclusive with a user-controlled camera matrix (see the `xLim`/
     // `yLim` prop docs), and a no-op when neither limit is specified.
@@ -369,13 +422,13 @@ export function Pluot(props: PluotProps) {
     // TODO: validate the contents of xLimProp/yLimProp (arrays with two numeric elements).
     if (xLimProp !== null && yLimProp !== null) {
       // Both xLim and yLim are specified explicitly via props,
-      // so we can use getCameraMatrixFromBounds without the need to call runExtent.
+      // so we can use getCameraMatrixFromBounds without the need for the extent query.
       bounds.xMin = xLimProp[0];
       bounds.xMax = xLimProp[1];
       bounds.yMin = yLimProp[0];
       bounds.yMax = yLimProp[1];
     } else {
-      const fullExtent = unionExtent(await runExtent());
+      const fullExtent = unionExtent(extentResult);
       if (xLimProp === null) {
         if(fullExtent.x) {
           bounds.xMin = fullExtent.x[0];
@@ -403,16 +456,20 @@ export function Pluot(props: PluotProps) {
     console.log(computedCameraMatrix);
 
     setCameraMatrix(computedCameraMatrix);
-    // TODO: rather than workarounds to force a re-render,
-    // solve this issue by preventing the first render until the camera matrix
-    // has been fully specified (i.e., the useMemo comment above).
-    incBacklogIteration();
   });
 
   useEffect(() => {
-    applyLim();
+    if (!isWasmReady) {
+      return;
+    }
+    // Wait for the extent query (when it's actually needed) before applying,
+    // rather than applying with a stale/undefined extent.
+    if (extentQueryEnabled && extentQuery.data === undefined) {
+      return;
+    }
+    applyLim(extentQuery.data);
   }, [
-    isWasmReady, xLimProp, yLimProp,
+    isWasmReady, extentQueryEnabled, extentQuery.data, xLimProp, yLimProp,
     plotId, // Note: for now, plotId must be modified to invalidate the cached extent.
     // TODO: add a dedicated "extent invalidation key" prop?
     // plotType, plotParams, stores, // Note: these are not `extent` dependencies.
@@ -458,29 +515,40 @@ export function Pluot(props: PluotProps) {
     setCameraMatrix(nextCameraMatrix);
   });
 
-  // Runs the picking query against the wasm module and returns the normalized result.
-  // Shared by the click (pickFrame) and hover (hoverFrame) callbacks below.
-  const pick = useEffectEvent(async (screenCoordX: number, screenCoordY: number): Promise<PickingResult> => {
+  // Builds the params snapshot for a pick at the given screen coordinates,
+  // capturing the current render-affecting props plus the coordinates.
+  const buildPickParamsSnapshot = (screenCoordX: number, screenCoordY: number): PickParamsSnapshot => ({
+    plotId, plotType, plotParams, stores, format, width, height,
+    aspectRatioMode, aspectRatioAlignmentMode,
+    marginLeft, marginRight, marginTop, marginBottom,
+    cameraMatrix: Array.from(cameraMatrix),
+    screenCoordX, screenCoordY,
+  });
+
+  // Runs one pick_wasm call for a given params snapshot. Reads `schemaVersion`,
+  // `viewMode`, and `currentTimeout` directly from the enclosing scope rather
+  // than the snapshot (matching the render query's `renderFrame`), since a
+  // fresh closure is handed to `useQuery` on every render.
+  const runPick = async (params: PickParamsSnapshot): Promise<PickingResult> => {
     const renderParams: RenderParams = {
       schema_version: schemaVersion,
-      width,
-      height,
-      format: format,
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
+      width: params.width,
+      height: params.height,
+      format: params.format,
+      margin_bottom: params.marginBottom,
+      margin_left: params.marginLeft,
+      margin_top: params.marginTop,
+      margin_right: params.marginRight,
       device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+      aspect_ratio_mode: params.aspectRatioMode,
+      aspect_ratio_alignment_mode: params.aspectRatioAlignmentMode,
       view_mode: viewMode,
       pickable: false,
-      // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
-      camera_view: cameraMatrix,
-      plot_id: plotId,
-      plot_type: plotType,
-      stores,
-      plot_params: plotParams,
+      camera_view: Float32Array.from(params.cameraMatrix),
+      plot_id: params.plotId,
+      plot_type: params.plotType,
+      stores: params.stores,
+      plot_params: params.plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
       wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
@@ -489,7 +557,7 @@ export function Pluot(props: PluotProps) {
       svg_include_document: false,
     };
 
-    const layerHeight = height - marginTop - marginBottom;
+    const layerHeight = params.height - params.marginTop - params.marginBottom;
 
     // TODO: wrap pick_wasm in a try/catch
 
@@ -497,26 +565,69 @@ export function Pluot(props: PluotProps) {
       renderParams,
       // The coordinates are relative to the "layer" (the camera region), not the full width/height.
       // We also need to flip the Y coordinate so that positive is up.
-      screenCoordX + marginLeft,
-      marginBottom + (layerHeight - screenCoordY)
+      params.screenCoordX + params.marginLeft,
+      params.marginBottom + (layerHeight - params.screenCoordY)
     ));
+  };
+
+  // The most recently requested click/hover pick. Kept (rather than reset to
+  // null once consumed below) so that a repeated pick at the same coordinates
+  // with the same render params can be served from the query cache.
+  const [clickPickParams, setClickPickParams] = useState<PickParamsSnapshot | null>(null);
+  const [hoverPickParams, setHoverPickParams] = useState<PickParamsSnapshot | null>(null);
+
+  const clickPickQuery = useQuery({
+    queryKey: ['pluot-pick', clickPickParams],
+    queryFn: () => runPick(clickPickParams!),
+    enabled: clickPickParams !== null,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+    gcTime: 0,
   });
+
+  const hoverPickQuery = useQuery({
+    queryKey: ['pluot-pick', hoverPickParams],
+    queryFn: () => runPick(hoverPickParams!),
+    enabled: hoverPickParams !== null,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+    gcTime: 0,
+  });
+
+  // Fires the click callback once the query for the latest click resolves.
+  // Since `clickPickQuery` tracks whichever key `clickPickParams` currently
+  // holds, a click that becomes stale (superseded by a newer one before it
+  // resolves) never reaches here: its result would land on a cache entry this
+  // query has already stopped observing.
+  useEffect(() => {
+    if (clickPickParams !== null && clickPickQuery.data !== undefined) {
+      onClick(clickPickQuery.data);
+    }
+  }, [clickPickParams, clickPickQuery.data]);
 
   // The click-picking callback.
-  const pickFrame = useEffectEvent(async (screenCoordX: number, screenCoordY: number) => {
-    onClick(await pick(screenCoordX, screenCoordY));
+  const pickFrame = useEffectEvent((screenCoordX: number, screenCoordY: number) => {
+    setClickPickParams(buildPickParamsSnapshot(screenCoordX, screenCoordY));
   });
 
+  // Fires the hover callback once the query for the latest hover resolves.
+  useEffect(() => {
+    if (hoverPickParams !== null && hoverPickQuery.data !== undefined) {
+      setHoverInfo({
+        content: onHover(hoverPickQuery.data),
+        // Convert from cameraEl-relative coordinates to outer-container-relative
+        // coordinates, since the tooltip is positioned within the outer container.
+        mouseX: hoverPickParams.screenCoordX + hoverPickParams.marginLeft,
+        mouseY: hoverPickParams.screenCoordY + hoverPickParams.marginTop,
+      });
+    }
+  }, [hoverPickParams, hoverPickQuery.data]);
+
   // The hover-picking callback.
-  const hoverFrame = useEffectEvent(async (screenCoordX: number, screenCoordY: number) => {
-    const result = await pick(screenCoordX, screenCoordY);
-    setHoverInfo({
-      content: onHover(result),
-      // Convert from cameraEl-relative coordinates to outer-container-relative
-      // coordinates, since the tooltip is positioned within the outer container.
-      mouseX: screenCoordX + marginLeft,
-      mouseY: screenCoordY + marginTop,
-    });
+  const hoverFrame = useEffectEvent((screenCoordX: number, screenCoordY: number) => {
+    setHoverPickParams(buildPickParamsSnapshot(screenCoordX, screenCoordY));
   });
 
   const throttledHoverFrame = useMemo(
@@ -607,33 +718,45 @@ export function Pluot(props: PluotProps) {
   }, [viewMode, enableClick, enableTooltip, throttledHoverFrame]);
 
 
-  // The renderFrame callback.
-  // We use useEffectEvent because we want to "see"
-  // the latest values of viewMatrix, plotProps, etc.
-  const renderFrame = useEffectEvent(async () => {
-    isRenderingRef.current = true;
+  // The params that determine what gets drawn, snapshotted so that a burst of
+  // prop changes (e.g. `cameraMatrix` while dragging) collapses into at most
+  // one render_wasm call per `RENDER_PARAMS_THROTTLE_MS` (see the throttled
+  // setter below) and drives the render `useQuery`'s key.
+  const [renderParamsSnapshot, setRenderParamsSnapshot] = useState<RenderParamsSnapshot>(() => ({
+    plotId, plotType, plotParams, stores, format, width, height,
+    aspectRatioMode, aspectRatioAlignmentMode,
+    marginLeft, marginRight, marginTop, marginBottom,
+    cameraMatrix: Array.from(cameraMatrix),
+  }));
+
+  // Runs one render_wasm call for a given params snapshot, throwing
+  // `RenderBailedEarlyError` when the frame bails early so that `renderQuery`'s
+  // `retry`/`retryDelay` (below) take over re-rendering. Reads `schemaVersion`
+  // and `viewMode` directly from props rather than the snapshot (matching prior
+  // behavior) since a fresh closure is handed to `useQuery` on every render, so
+  // it always sees their latest values regardless of the query's cache key.
+  const renderFrame = async (params: RenderParamsSnapshot): Promise<null> => {
     console.log('wasm.render');
 
     const renderParams: RenderParams = {
       schema_version: schemaVersion,
-      width,
-      height,
-      format: format,
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
+      width: params.width,
+      height: params.height,
+      format: params.format,
+      margin_bottom: params.marginBottom,
+      margin_left: params.marginLeft,
+      margin_top: params.marginTop,
+      margin_right: params.marginRight,
       device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
+      aspect_ratio_mode: params.aspectRatioMode,
+      aspect_ratio_alignment_mode: params.aspectRatioAlignmentMode,
       view_mode: viewMode,
       pickable: false,
-      // Should see the latest viewMatrix here, since renderFrame is wrapped in useEffectEvent.
-      camera_view: cameraMatrix,
-      plot_id: plotId,
-      plot_type: plotType,
-      stores,
-      plot_params: plotParams,
+      camera_view: Float32Array.from(params.cameraMatrix),
+      plot_id: params.plotId,
+      plot_type: params.plotType,
+      stores: params.stores,
+      plot_params: params.plotParams,
       // Reduce the timeout value to improve responsiveness during data loading (bailed-early renders)?
       timeout: currentTimeout.current, // in ms // Note: will not have any effect when wait_for_store_gets is false.
       wait_for_store_gets: false, // TODO: lift this value up to pass/use it in the window.zarr_ functions as well?
@@ -642,17 +765,14 @@ export function Pluot(props: PluotProps) {
       svg_include_document: false,
     };
 
-    // Wrap render_wasm in try/catch, to handle Rust panics.
+    // Wrap render_wasm in try/catch, to handle Rust panics; rethrow so the
+    // query is marked errored rather than silently treated as a success.
     let arr: Uint8Array;
     try {
       arr = await render_wasm(renderParams);
-
-      isRenderingRef.current = false;
     } catch (error) {
       console.error("Error during wasm.render_wasm:", error);
-      // Cleanup
-      isRenderingRef.current = false;
-      return;
+      throw error;
     }
 
     const frameBailedEarly = arr.at(-1) === 1;
@@ -674,45 +794,75 @@ export function Pluot(props: PluotProps) {
           // E.g., write to a webgl texture? or is this fast enough already?
           const imageData = new ImageData(
             new Uint8ClampedArray(graphicsArr),
-            width,
-            height,
+            params.width,
+            params.height,
           );
           ctx.putImageData(imageData, 0, 0);
         }
       }
     }
 
+    setDidFirstRender(true);
+
     if (frameBailedEarly) {
-      // We multiply the current timeout by two to implement an exponential backoff
-      // while the Rust side is bailing early.
-      // A downstream useEffect restarts the exponential backoff from scratch
-      // if any other plotting parameters change.
-      currentTimeout.current = Math.min(currentTimeout.current * 2, maxTimeout);
-      incBacklogIteration(); // Increment this to force a re-render.
       setBailedEarly(true); // Update this to show the loading indicator.
-    } else {
-      // Successful render.
-      currentTimeout.current = minTimeout;
-      setBailedEarly(false); // Update this to hide the loading indicator.
-
-      // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
-      Object.keys(stores ?? {}).forEach(storeName => {
-        const storeUsed = getStore(storeName);
-        if (storeUsed && typeof storeUsed.clearCache === 'function' && shouldClearCache) {
-          storeUsed.clearCache();
-        }
-      });
-
+      throw new RenderBailedEarlyError();
     }
 
-    setDidFirstRender(true);
+    // Successful render.
+    currentTimeout.current = minTimeout;
+    setBailedEarly(false); // Update this to hide the loading indicator.
+
+    // Clear the LRU cache for the store (via its store_name) corresponding to the rendered plot.
+    Object.keys(params.stores ?? {}).forEach(storeName => {
+      const storeUsed = getStore(storeName);
+      if (storeUsed && typeof storeUsed.clearCache === 'function' && shouldClearCache) {
+        storeUsed.clearCache();
+      }
+    });
+
+    return null;
+  };
+
+  const queryClient = useQueryClient();
+
+  const renderQuery = useQuery({
+    queryKey: ['pluot-render', renderParamsSnapshot],
+    queryFn: () => renderFrame(renderParamsSnapshot),
+    enabled: isWasmReady,
+    // Keep retrying while the frame is bailing early, up to `maxBailedEarlyRetries`;
+    // any other thrown error (e.g. a Rust panic) is left alone.
+    retry: (failureCount, error) => error instanceof RenderBailedEarlyError && failureCount < maxBailedEarlyRetries,
+    // Exponential backoff, doubling on every bailed-early retry: also used as
+    // the `timeout` given to the *next* render_wasm/pick_wasm/brush_wasm call
+    // (via the shared `currentTimeout` ref), so wasm is given roughly as long
+    // to wait for the underlying store fetches as react-query waits to retry.
+    retryDelay: (failureCount) => {
+      const nextTimeout = Math.min(minTimeout * 2 ** failureCount, maxTimeout);
+      currentTimeout.current = nextTimeout;
+      return nextTimeout;
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    gcTime: 0,
   });
 
-
-  const throttledRender = useMemo(
+  const throttledSetRenderParamsSnapshot = useMemo(
     () => throttle(
-      renderFrame,
-      16, // ~60fps
+      // Reset the backoff timeout synchronously with every params change (rather
+      // than in a separate effect keyed on `renderParamsSnapshot`), so the next
+      // sequence of bailed-early renders starts from the minimum again before
+      // react-query can act on the new snapshot, with no ordering race between
+      // the two.
+      (nextSnapshot: RenderParamsSnapshot) => {
+        currentTimeout.current = minTimeout;
+        // Evict prior render cache entries explicitly (on top of `gcTime: 0`,
+        // which only collects them once no longer observed) so a params
+        // change never risks serving a stale cached render.
+        queryClient.invalidateQueries({ queryKey: ['pluot-render'] });
+        setRenderParamsSnapshot(nextSnapshot);
+      },
+      RENDER_PARAMS_THROTTLE_MS,
       // When both leading and trailing are true (the default):
       // - First call -> executes immediately (leading edge)
       // - Calls during the wait window -> ignored, but the most recent one is remembered.
@@ -721,20 +871,9 @@ export function Pluot(props: PluotProps) {
     ), []);
 
   useEffect(() => {
-    return () => throttledRender.cancel();
-  }, [throttledRender]);
+    return () => throttledSetRenderParamsSnapshot.cancel();
+  }, [throttledSetRenderParamsSnapshot]);
 
-  // Reset the backoff timeout whenever plot parameters change so the next
-  // sequence of bailed-early renders starts from the minimum again.
-  useEffect(() => {
-    currentTimeout.current = minTimeout;
-  }, [plotId, plotType, plotParams, stores, format,
-    width, height, aspectRatioMode, aspectRatioAlignmentMode,
-    marginLeft, marginRight, marginTop, marginBottom,
-    cameraMatrix,
-  ]);
-
-  // TODO: use react-query?
   useEffect(() => {
     if (!isWasmReady) {
       return;
@@ -744,14 +883,19 @@ export function Pluot(props: PluotProps) {
     // much smoother. However, we allow for users to opt-out, and we also
     // need to prevent simultaneous renders prior to the first render, as the first
     // render initializes cached values and stuff.
-    if (isRenderingRef.current && (!didFirstRender || bailedEarly || !allowSimultaneousRenders)) {
+    if (renderQuery.isFetching && (!didFirstRender || !allowSimultaneousRenders)) {
       // Prevent multiple render calls prior to the first successful render.
       return;
     }
 
-    // Render on the next animation frame.
-    throttledRender();
-  }, [isWasmReady, didFirstRender, cameraMatrix, backlogIteration, plotId, plotType, plotParams, stores, format,
+    throttledSetRenderParamsSnapshot({
+      plotId, plotType, plotParams, stores, format, width, height,
+      aspectRatioMode, aspectRatioAlignmentMode,
+      marginLeft, marginRight, marginTop, marginBottom,
+      cameraMatrix: Array.from(cameraMatrix),
+    });
+  }, [isWasmReady, renderQuery.isFetching, didFirstRender, bailedEarly, allowSimultaneousRenders,
+    cameraMatrix, plotId, plotType, plotParams, stores, format,
     width, height, aspectRatioMode, aspectRatioAlignmentMode, marginLeft, marginRight, marginTop, marginBottom]);
 
   // Position the hover tooltip so that it grows diagonally away from whichever
@@ -861,5 +1005,17 @@ export function Pluot(props: PluotProps) {
       </div>
       <button ref={tempButtonRef} style={{ display: 'none' }}>Try lookAt</button>
     </>
+  );
+}
+
+// `PluotInner` uses react-query internally to drive rendering, so it needs a
+// `QueryClientProvider` ancestor; consumers shouldn't have to set one up
+// themselves, so each `Pluot` instance brings its own isolated `QueryClient`.
+export function Pluot(props: PluotProps) {
+  const [queryClient] = useState(() => new QueryClient());
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PluotInner {...props} />
+    </QueryClientProvider>
   );
 }
