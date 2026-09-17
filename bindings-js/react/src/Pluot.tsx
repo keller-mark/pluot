@@ -120,6 +120,24 @@ function normalizeBrushingResult(data: RawBrushingResult): BrushingResult {
   };
 }
 
+// The union (bounding box) of every layer's reported extent, in each axis
+// independently. `null` for an axis when no layer in the plot reports an
+// extent for it (e.g. none of them implement `ExtentableLayer` yet).
+function unionExtent(result: ExtentResult | undefined): { x: [number, number] | null, y: [number, number] | null } {
+  if (!result || result.layer_results.length === 0) {
+    return { x: null, y: null };
+  }
+
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+  for (const { x, y } of result.layer_results) {
+    xMin = Math.min(xMin, x[0]);
+    xMax = Math.max(xMax, x[1]);
+    yMin = Math.min(yMin, y[0]);
+    yMax = Math.max(yMax, y[1]);
+  }
+  return { x: [xMin, xMax], y: [yMin, yMax] };
+}
+
 
 function PluotInner(props: PluotProps) {
   const {
@@ -147,10 +165,9 @@ function PluotInner(props: PluotProps) {
     allowSimultaneousRenders = true,
     debugMargins = false,
     backgroundColor = undefined,
-    cameraMatrix: controlledCameraMatrix = null,
-    setCameraMatrix: setControlledCameraMatrix = null,
-    xLim: xLimProp = null,
-    yLim: yLimProp = null,
+    cameraMatrix: cameraMatrixProp = null,
+    setCameraMatrix: setCameraMatrixProp = null,
+    enableExtentQuery = true,
     enableClick = false,
     enableTooltip = false,
     onClick: onClickProp = null,
@@ -180,64 +197,21 @@ function PluotInner(props: PluotProps) {
     shouldClearCache = true,
   } = props;
 
-  const onClick: (result: PickingResult) => void = typeof onClickProp === 'function' ? onClickProp : noop;
-  const onHover: (result: PickingResult) => TooltipContent = typeof onHoverProp === 'function' ? onHoverProp : identity;
-
-
-
-  // If cameraMatrix is not provided, then we manage the camera matrix internally.
-  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix>(
-    // Note: We use an initializer function here to avoid
-    // sharing the same Float32Array among multiple Pluot
-    // component instances that may be rendered on the same page.
-    () => Float32Array.from(
-      // If the cameraMatrix prop was provided, use that for the initial camera matrix;
-      // otherwise use the default matrix.
-      controlledCameraMatrix === null
-        ? (viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW)
-        : controlledCameraMatrix
-    )
-  );
-
-  // Decide which camera matrix and setter to use.
-  // If the user provides the cameraMatrix prop but NOT the setCameraMatrix setter,
-  // then interpret the prop as the "initial" camera settings, but still treat as uncontrolled.
-  const isControlledCamera = typeof setControlledCameraMatrix === "function";
-  // Alternatively, if the user provides the setCameraMatrix setter, but NOT
-  // the cameraMatrix, interpret this as they want to use the default camera
-  // value initially, but they still want a controlled camera matrix.
-  const cameraMatrix = isControlledCamera && controlledCameraMatrix !== null
-    ? controlledCameraMatrix
-    : uncontrolledCameraMatrix;
-  const setCameraMatrix: (nextCameraMatrix: CameraMatrix) => void = isControlledCamera
-    ? setControlledCameraMatrix
-    : setUncontrolledCameraMatrix;
-
   const width = Math.floor(widthProp);
   const height = Math.floor(heightProp);
 
   const isVector = format === "Vector";
 
-  // Build the top-level `stores` map that RenderParams expects: a mapping from
-  // store name to its derived `ZarrStoreInfo` metadata.
-  const stores = useMemo(() => normalizeStores({
-    stores: storesProp,
-    store: storeProp,
-    storeName: storeNameProp,
-    plotId,
-    register: registerStores,
-  }), [storeNameProp, storeProp, storesProp, plotId, registerStores]);
+  const onClick: (result: PickingResult) => void = typeof onClickProp === 'function' ? onClickProp : noop;
+  const onHover: (result: PickingResult) => TooltipContent = typeof onHoverProp === 'function' ? onHoverProp : identity;
 
+  const [isWasmReady, setIsWasmReady] = useState(false);
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const cameraElementRef = useRef<HTMLDivElement | null>(null);
-  // The outer (width x height) element, which is the coordinate space that both
-  // the brush overlay and the hover tooltip are positioned within.
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  const tempButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Initialize the WASM module.
+  useLayoutEffect(() => {
+    initialize().then(() => setIsWasmReady(getIsWasmReady()));
+  }, []);
 
   // We may want to update these things without triggering a re-render.
   // Shared "render budget" read by render_wasm/pick_wasm/brush_wasm: grows
@@ -245,106 +219,23 @@ function PluotInner(props: PluotProps) {
   // early, and resets once a render succeeds or plot params change.
   const currentTimeout = useRef(minTimeout);
 
-  // Used to distinguish a plain click from a click that ends a drag
-  // (e.g. panning), so that dragging does not trigger picking.
-  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
-  const didDragRef = useRef(false);
-
-  const [isWasmReady, setIsWasmReady] = useState(false);
-  const [didFirstRender, setDidFirstRender] = useState(false);
-  const [bailedEarly, setBailedEarly] = useState(true);
-
-  // hoverInfo.mouseX/mouseY are in the coordinate space of the outer
-  // (width x height) container, used to position the hover tooltip.
-  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
-
-  const progressBarId = useId();
-
-  // Runs the brush query against the wasm module for a given brush state,
-  // analogous to `pick` below (defined here, ahead of `pick`, since `useBrush`
-  // needs it immediately).
-  const runBrush = useEffectEvent(async (state: BrushState): Promise<BrushingResult|undefined> => {
-
-    if (!isWasmReady) {
-      return;
-    }
-
-    const renderParams: RenderParams = {
-      schema_version: schemaVersion,
-      width,
-      height,
-      format: format,
-      margin_bottom: marginBottom,
-      margin_left: marginLeft,
-      margin_top: marginTop,
-      margin_right: marginRight,
-      device_pixel_ratio: window.devicePixelRatio,
-      aspect_ratio_mode: aspectRatioMode,
-      aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
-      view_mode: viewMode,
-      pickable: false,
-      camera_view: cameraMatrix,
-      plot_id: plotId,
-      plot_type: plotType,
-      stores,
-      plot_params: plotParams,
-      timeout: currentTimeout.current,
-      wait_for_store_gets: false,
-      cache_enabled: true,
-      svg_compression_enabled: true,
-      svg_include_document: false,
-    };
-
-    // Brush vertices are container-relative pixels with Y increasing downwards;
-    // the wasm side expects screen coordinates with Y increasing upwards (as
-    // with the `screenCoordX`/`screenCoordY` passed to `pick_wasm` below).
-    const brushParams = {
-      screen_vertices: state.vertices.map((vertex) => ({ x: vertex.x_pixels, y: height - vertex.y_pixels })),
-      brush_units_mode_x: brushUnitsModeX,
-      brush_units_mode_y: brushUnitsModeY,
-      brush_mode: state.shape,
-    };
-
-    return normalizeBrushingResult(await brush_wasm(renderParams, brushParams));
-  });
-
-  const {
-    brushState,
-    overlayRef: brushOverlayRef,
-    geometry: brushGeometry,
-    pressProgress,
-    isBrushHovered,
-    isBrushingRef,
-    shouldSuppressClickRef,
-    onVertexMouseDown,
-    onEdgeMouseDown,
-    onClearClick,
-  } = useBrush({
-    containerRef,
-    width, height,
-    marginTop, marginRight, marginBottom, marginLeft,
-    aspectRatioMode, aspectRatioAlignmentMode, cameraMatrix,
-    brushUnitsModeX, brushUnitsModeY,
-    brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
-    enableBrushCreate, enableBrushEdit, enableBrushClear,
-    brushDelay, maybeBrushDelay, persistBrush, brushMode,
-    brush, onBrush, onBrushEnd, onBrushClear, runBrush,
-  });
-
-  useLayoutEffect(() => {
-    initialize().then(() => setIsWasmReady(getIsWasmReady()));
-  }, []);
+  // If this is false, then we need to wait for the extent_wasm result.
+  const hasCompleteCameraParams = (
+    cameraMatrixProp && (
+      // When false, the user has explicitly told us to use the identity camera matrix rather than extent_wasm.
+      !enableExtentQuery
+      // Camera matrix is provided OR both xLim and yLim are provided.
+      || ('camera' in cameraMatrixProp && Array.isArray(cameraMatrixProp.camera))
+      || ('xLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.xLim) && 'yLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.yLim))
+    )
+  );
 
   // Whether we actually need the fetched full extent to compute the camera
   // bounds below: not when the camera is user-controlled, and not when both
   // `xLim`/`yLim` are already given explicitly.
-  const extentQueryEnabled = isWasmReady
-    && controlledCameraMatrix === null
-    && !(xLimProp !== null && yLimProp !== null);
+  const extentQueryEnabled = enableExtentQuery && isWasmReady && !hasCompleteCameraParams;
 
-  // Runs the extent query against the wasm module, analogous to `runBrush` above,
-  // but (unlike picking/brushing) driven by a dependency list rather than a user
-  // action, so it's a `useQuery` rather than a `useMutation`. Excludes `plotType`/
+  // Runs the extent query against the wasm module. Excludes `plotType`/
   // `plotParams`/`stores` from the key: for now, `plotId` alone is used to
   // invalidate the extent (see the `applyLim`-triggering effect below).
   const extentQuery = useQuery({
@@ -365,7 +256,7 @@ function PluotInner(props: PluotProps) {
         aspect_ratio_alignment_mode: aspectRatioAlignmentMode,
         view_mode: viewMode,
         pickable: false,
-        camera_view: cameraMatrix,
+        camera_view: DEFAULT_VIEW,
         plot_id: plotId,
         plot_type: plotType,
         stores,
@@ -385,99 +276,195 @@ function PluotInner(props: PluotProps) {
     enabled: extentQueryEnabled,
   });
 
-  // The union (bounding box) of every layer's reported extent, in each axis
-  // independently. `null` for an axis when no layer in the plot reports an
-  // extent for it (e.g. none of them implement `ExtentableLayer` yet).
-  const unionExtent = (result: ExtentResult | undefined): { x: [number, number] | null, y: [number, number] | null } => {
-    if (!result || result.layer_results.length === 0) {
-      return { x: null, y: null };
+  const initialCameraMatrix = useMemo(() => {
+    if (cameraMatrixProp && 'camera' in cameraMatrixProp && Array.isArray(cameraMatrixProp.camera)) {
+      // Full camera matrix was provided up-front.
+      return Float32Array.from(cameraMatrixProp.camera);
     }
-    console.log(result)
-    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
-    for (const { x, y } of result.layer_results) {
-      xMin = Math.min(xMin, x[0]);
-      xMax = Math.max(xMax, x[1]);
-      yMin = Math.min(yMin, y[0]);
-      yMax = Math.max(yMax, y[1]);
-    }
-    return { x: [xMin, xMax], y: [yMin, yMax] };
-  };
 
-  // Applies `xLim`/`yLim` (falling back to the fetched full extent for whichever
-  // axis isn't explicitly limited) to the camera matrix, reading the latest
-  // `cameraMatrix`/`setCameraMatrix` (via useEffectEvent) rather than reacting
-  // to their changes, since this effect is the one calling `setCameraMatrix`
-  // and must not re-fire because of its own update.
-  const applyLim = useEffectEvent((extentResult: ExtentResult | undefined) => {
-    console.log(controlledCameraMatrix);
-    // Mutually exclusive with a user-controlled camera matrix (see the `xLim`/
-    // `yLim` prop docs), and a no-op when neither limit is specified.
-    if (controlledCameraMatrix !== null) {
-      return;
+    if (!enableExtentQuery && (!cameraMatrixProp || 'camera' in cameraMatrixProp && !cameraMatrixProp.camera)) {
+      // Camera matrix was not provided, but the user does not want to use extent_wasm.
+      return Float32Array.from(
+        viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW
+      );
     }
+
+    const hasXlim = cameraMatrixProp && 'xLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.xLim);
+    const hasYlim = cameraMatrixProp && 'yLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.yLim);
+
+    // If we have BOTH xlim and ylim, then we do not need the extent_was result at all.
+    const needsExtentResult = !hasXlim || !hasYlim;
+    const hasExtentResult = extentQuery.data && extentQuery.isSuccess;
 
     const bounds: Bounds = {};
 
-    // TODO: generalize to 3D
-    // TODO: validate the contents of xLimProp/yLimProp (arrays with two numeric elements).
-    if (xLimProp !== null && yLimProp !== null) {
-      // Both xLim and yLim are specified explicitly via props,
-      // so we can use getCameraMatrixFromBounds without the need for the extent query.
-      bounds.xMin = xLimProp[0];
-      bounds.xMax = xLimProp[1];
-      bounds.yMin = yLimProp[0];
-      bounds.yMax = yLimProp[1];
-    } else {
-      const fullExtent = unionExtent(extentResult);
-      if (xLimProp === null) {
-        if(fullExtent.x) {
-          bounds.xMin = fullExtent.x[0];
-          bounds.xMax = fullExtent.x[1];
-        } else {
-          console.log("Warning: fullExtent.x was not computed.");
-        }
-      }
-      if (yLimProp === null) {
-        if(fullExtent.y) {
-          bounds.yMin = fullExtent.y[0];
-          bounds.yMax = fullExtent.y[1];
-        } else {
-          console.log("Warning: fullExtent.y was not computed.");
-        }
-      }
+    if (hasXlim) {
+      bounds.xMin = cameraMatrixProp.xLim?.[0];
+      bounds.xMax = cameraMatrixProp.xLim?.[1];
     }
 
-    console.log(bounds);
+    if (hasYlim) {
+      bounds.yMin = cameraMatrixProp.yLim?.[0];
+      bounds.yMax = cameraMatrixProp.yLim?.[1];
+    }
 
-    const computedCameraMatrix = getCameraMatrixFromBounds(bounds, cameraMatrix, {
+    if (!needsExtentResult) {
+      const computedCameraMatrix = getCameraMatrixFromBounds(bounds, DEFAULT_VIEW, {
+        width, height, aspectRatioMode, aspectRatioAlignmentMode,
+        margins: { marginTop, marginRight, marginBottom, marginLeft },
+      });
+      return Float32Array.from(computedCameraMatrix);
+    }
+
+
+    // Needs extent result.
+    if (!hasExtentResult) {
+      return undefined;
+    }
+
+    // TODO: generalize to 3D
+    // TODO: validate the contents of xLimProp/yLimProp (arrays with two numeric elements).
+
+    const extentResult = extentQuery.data;
+    if (!extentResult || extentResult.layer_results.length === 0) {
+      return Float32Array.from(DEFAULT_VIEW);
+    }
+
+    const fullExtent = unionExtent(extentResult);
+    if (!hasXlim) {
+      if(fullExtent.x) {
+        bounds.xMin = fullExtent.x[0];
+        bounds.xMax = fullExtent.x[1];
+      } else {
+        console.log("Warning: fullExtent.x was not computed.");
+      }
+    }
+    if (!hasYlim) {
+      if(fullExtent.y) {
+        bounds.yMin = fullExtent.y[0];
+        bounds.yMax = fullExtent.y[1];
+      } else {
+        console.log("Warning: fullExtent.y was not computed.");
+      }
+    }
+    const computedCameraMatrix = getCameraMatrixFromBounds(bounds, DEFAULT_VIEW, {
       width, height, aspectRatioMode, aspectRatioAlignmentMode,
       margins: { marginTop, marginRight, marginBottom, marginLeft },
     });
-    console.log(computedCameraMatrix);
+    return Float32Array.from(computedCameraMatrix);
+  }, [extentQueryEnabled, hasCompleteCameraParams, extentQuery.data, extentQuery.isSuccess]);
 
-    setCameraMatrix(computedCameraMatrix);
-  });
+  const hasFullCameraMatrixProp = cameraMatrixProp && 'camera' in cameraMatrixProp && Array.isArray(cameraMatrixProp.camera);
+
+  // If cameraMatrix is not provided, then we manage the camera matrix internally.
+  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix | undefined>(initialCameraMatrix);
 
   useEffect(() => {
-    if (!isWasmReady) {
-      return;
-    }
-    // Wait for the extent query (when it's actually needed) before applying,
-    // rather than applying with a stale/undefined extent.
-    if (extentQueryEnabled && extentQuery.data === undefined) {
-      return;
-    }
-    applyLim(extentQuery.data);
-  }, [
-    isWasmReady, extentQueryEnabled, extentQuery.data, xLimProp, yLimProp,
-    plotId, // Note: for now, plotId must be modified to invalidate the cached extent.
-    // TODO: add a dedicated "extent invalidation key" prop?
-    // plotType, plotParams, stores, // Note: these are not `extent` dependencies.
-    width, height, aspectRatioMode, aspectRatioAlignmentMode,
+    setUncontrolledCameraMatrix(prev => prev === undefined ? initialCameraMatrix : prev);
+  }, [initialCameraMatrix]);
+
+  // Decide which camera matrix and setter to use.
+  // If the user provides the cameraMatrix prop but NOT the setCameraMatrix setter,
+  // then interpret the prop as the "initial" camera settings, but still treat as uncontrolled.
+  const isControlledCamera = typeof setCameraMatrixProp === "function";
+
+  // Alternatively, if the user provides the setCameraMatrix setter, but NOT
+  // the cameraMatrix, interpret this as they want to use the default camera
+  // value initially, but they still want a controlled camera matrix.
+  const cameraMatrix = isControlledCamera ? (
+    hasFullCameraMatrixProp
+    ? cameraMatrixProp.camera
+    : initialCameraMatrix
+  ) : uncontrolledCameraMatrix;
+
+  const setCameraMatrix: (nextCameraMatrix: CameraMatrix) => void = isControlledCamera
+    ? setCameraMatrixProp
+    : setUncontrolledCameraMatrix;
+
+  // If this is false, then we cannot render anything, as we are still awaiting the extent_wasm call.
+  const hasCameraMatrix = cameraMatrix !== undefined;
+
+  console.log(cameraMatrix, extentQuery.data, hasFullCameraMatrixProp, initialCameraMatrix);
+
+  // Build the top-level `stores` map that RenderParams expects: a mapping from
+  // store name to its derived `ZarrStoreInfo` metadata.
+  const stores = useMemo(() => normalizeStores({
+    stores: storesProp,
+    store: storeProp,
+    storeName: storeNameProp,
+    plotId,
+    register: registerStores,
+  }), [storeNameProp, storeProp, storesProp, plotId, registerStores]);
+
+
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cameraElementRef = useRef<HTMLDivElement | null>(null);
+  // The outer (width x height) element, which is the coordinate space that both
+  // the brush overlay and the hover tooltip are positioned within.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const tempButtonRef = useRef<HTMLButtonElement | null>(null);
+
+
+
+  // Used to distinguish a plain click from a click that ends a drag
+  // (e.g. panning), so that dragging does not trigger picking.
+  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const didDragRef = useRef(false);
+
+
+  const [didFirstRender, setDidFirstRender] = useState(false);
+  const [bailedEarly, setBailedEarly] = useState(true);
+
+  // hoverInfo.mouseX/mouseY are in the coordinate space of the outer
+  // (width x height) container, used to position the hover tooltip.
+  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+
+  const progressBarId = useId();
+
+  // Runs the brush query against the wasm module for a given brush state,
+  // analogous to `pick` below (defined here, ahead of `pick`, since `useBrush`
+  // needs it immediately).
+  const runBrush = useEffectEvent(async (state: BrushState): Promise<undefined> => {
+    // TODO: remove this
+
+  });
+
+  const {
+    brushState,
+    overlayRef: brushOverlayRef,
+    geometry: brushGeometry,
+    pressProgress,
+    isBrushHovered,
+    isBrushingRef,
+    shouldSuppressClickRef,
+    onVertexMouseDown,
+    onEdgeMouseDown,
+    onClearClick,
+  } = useBrush({
+    containerRef,
+    width, height,
     marginTop, marginRight, marginBottom, marginLeft,
-  ]);
+    aspectRatioMode, aspectRatioAlignmentMode,
+    // Note: the false branch should not be hit here either.
+    cameraMatrix: cameraMatrix ? cameraMatrix : DEFAULT_VIEW,
+    brushUnitsModeX, brushUnitsModeY,
+    brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
+    enableBrushCreate, enableBrushEdit, enableBrushClear,
+    brushDelay, maybeBrushDelay, persistBrush, brushMode,
+    brush, onBrush, onBrushEnd, onBrushClear, runBrush,
+  });
+
+
+
 
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
+    if (!cameraMatrix) {
+      // Still awaiting extent_wasm.
+      return;
+    }
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
     const nextCameraMatrix = onWheel({
         width,
@@ -495,6 +482,11 @@ function PluotInner(props: PluotProps) {
   });
 
   const mouseMoveHandler = useEffectEvent((event: MouseEvent) => {
+    if (!cameraMatrix) {
+      // Still awaiting extent_wasm.
+      return;
+    }
+
     // A drag that is drawing or editing a brush must not also pan/rotate the camera.
     if (isBrushingRef.current) {
       return;
@@ -521,7 +513,8 @@ function PluotInner(props: PluotProps) {
     plotId, plotType, plotParams, stores, format, width, height,
     aspectRatioMode, aspectRatioAlignmentMode,
     marginLeft, marginRight, marginTop, marginBottom,
-    cameraMatrix: Array.from(cameraMatrix),
+    // Note: The negative branch should never be reached here as long as we don't trigger picking when camera matrix is not yet defined.
+    cameraMatrix: cameraMatrix ? Array.from(cameraMatrix) : Array.from(DEFAULT_VIEW),
     screenCoordX, screenCoordY,
   });
 
@@ -579,7 +572,7 @@ function PluotInner(props: PluotProps) {
   const clickPickQuery = useQuery({
     queryKey: ['pluot-pick', clickPickParams],
     queryFn: () => runPick(clickPickParams!),
-    enabled: clickPickParams !== null,
+    enabled: clickPickParams !== null && cameraMatrix !== undefined,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
@@ -589,7 +582,7 @@ function PluotInner(props: PluotProps) {
   const hoverPickQuery = useQuery({
     queryKey: ['pluot-pick', hoverPickParams],
     queryFn: () => runPick(hoverPickParams!),
-    enabled: hoverPickParams !== null,
+    enabled: hoverPickParams !== null && cameraMatrix !== undefined,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
@@ -614,6 +607,9 @@ function PluotInner(props: PluotProps) {
 
   // Fires the hover callback once the query for the latest hover resolves.
   useEffect(() => {
+    if (!cameraMatrix) {
+      return;
+    }
     if (hoverPickParams !== null && hoverPickQuery.data !== undefined) {
       setHoverInfo({
         content: onHover(hoverPickQuery.data),
@@ -627,6 +623,9 @@ function PluotInner(props: PluotProps) {
 
   // The hover-picking callback.
   const hoverFrame = useEffectEvent((screenCoordX: number, screenCoordY: number) => {
+    if (!cameraMatrix) {
+      return;
+    }
     setHoverPickParams(buildPickParamsSnapshot(screenCoordX, screenCoordY));
   });
 
@@ -726,7 +725,8 @@ function PluotInner(props: PluotProps) {
     plotId, plotType, plotParams, stores, format, width, height,
     aspectRatioMode, aspectRatioAlignmentMode,
     marginLeft, marginRight, marginTop, marginBottom,
-    cameraMatrix: Array.from(cameraMatrix),
+    // Note: false branch should not be hit here, same as noted above.
+    cameraMatrix: cameraMatrix ? Array.from(cameraMatrix) : Array.from(DEFAULT_VIEW),
   }));
 
   // Runs one render_wasm call for a given params snapshot, throwing
@@ -829,7 +829,7 @@ function PluotInner(props: PluotProps) {
   const renderQuery = useQuery({
     queryKey: ['pluot-render', renderParamsSnapshot],
     queryFn: () => renderFrame(renderParamsSnapshot),
-    enabled: isWasmReady,
+    enabled: isWasmReady && cameraMatrix !== undefined,
     // Keep retrying while the frame is bailing early, up to `maxBailedEarlyRetries`;
     // any other thrown error (e.g. a Rust panic) is left alone.
     retry: (failureCount, error) => error instanceof RenderBailedEarlyError && failureCount < maxBailedEarlyRetries,
@@ -879,6 +879,10 @@ function PluotInner(props: PluotProps) {
       return;
     }
 
+    if (!cameraMatrix) {
+      return;
+    }
+
     // We want to allow for simultaneous renders, as this makes user interactions feel
     // much smoother. However, we allow for users to opt-out, and we also
     // need to prevent simultaneous renders prior to the first render, as the first
@@ -892,7 +896,8 @@ function PluotInner(props: PluotProps) {
       plotId, plotType, plotParams, stores, format, width, height,
       aspectRatioMode, aspectRatioAlignmentMode,
       marginLeft, marginRight, marginTop, marginBottom,
-      cameraMatrix: Array.from(cameraMatrix),
+      // Note: again, false branch should not be hit, as noted above.
+      cameraMatrix: cameraMatrix ? Array.from(cameraMatrix) : Array.from(DEFAULT_VIEW),
     });
   }, [isWasmReady, renderQuery.isFetching, didFirstRender, bailedEarly, allowSimultaneousRenders,
     cameraMatrix, plotId, plotType, plotParams, stores, format,
@@ -944,7 +949,7 @@ function PluotInner(props: PluotProps) {
             border: `${debugMargins ? 1 : 0}px solid red`,
           }}
         />
-        {bailedEarly ? (
+        {bailedEarly || cameraMatrix === undefined ? (
           <progress
             id={progressBarId}
             aria-label="Loading..."
