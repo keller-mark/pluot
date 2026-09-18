@@ -624,7 +624,6 @@ function PluotInner(props: PluotProps) {
 
   // Fires the hover callback once the query for the latest hover resolves.
   useEffect(() => {
-    console.log("useEffect: setHoverInfo")
     if (!cameraMatrix) {
       return;
     }
@@ -641,7 +640,6 @@ function PluotInner(props: PluotProps) {
 
   // The hover-picking callback.
   const hoverFrame = useEffectEvent((screenCoordX: number, screenCoordY: number) => {
-    console.log("useEffectEvent: setHoverPickParams");
     if (!cameraMatrix) {
       return;
     }
