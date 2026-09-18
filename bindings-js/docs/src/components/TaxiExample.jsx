@@ -23,7 +23,7 @@ const STORES = {
 };
 
 export function TaxiExample(props) {
-  const [cameraMatrix, setCameraMatrix] = useState(INITIAL_CAMERA);
+  const [cameraMatrix, setCameraMatrix] = useState({ camera: INITIAL_CAMERA });
 
   const [hourMin, setHourMin] = useState();
   const [hourMax, setHourMax] = useState();
@@ -112,7 +112,10 @@ export function TaxiExample(props) {
             }}
             viewMode={"2d"}
             cameraMatrix={cameraMatrix}
-            setCameraMatrix={setCameraMatrix}
+            setCameraMatrix={(val) => {
+              //console.log(val);
+              setCameraMatrix({ camera: val });
+            }}
           />
         </div>
         <div style={{ marginTop: 0, border: '1px solid silver' }}>
@@ -173,7 +176,7 @@ export function TaxiExample(props) {
             }}
             viewMode={"2d"}
             cameraMatrix={cameraMatrix}
-            setCameraMatrix={setCameraMatrix}
+            setCameraMatrix={(val) => setCameraMatrix({camera: val})}
           />
         </div>
       </div>
@@ -230,12 +233,7 @@ export function TaxiExample(props) {
           marginRight={10}
           width={600}
           height={200}
-          cameraMatrix={[
-            1, 0, 0, 0,
-            0, 0.000017185762771987356, 0, 0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, -1.0, 0.0, 1.0,
-          ]}
+
           setCameraMatrix={NOOP}
 
           brushDelay={0}

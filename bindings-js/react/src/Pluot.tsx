@@ -15,6 +15,7 @@ import {
 import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
 import { useBrush } from "./use-brush.js";
+import { useMemoCustomComparison } from "./use-memo-custom.js";
 import type {
   BrushingResult, BrushState, ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
   PluotProps, RawBrushingResult, RawPickingResult, RenderParams, TooltipContent,
@@ -138,6 +139,13 @@ function unionExtent(result: ExtentResult | undefined): { x: [number, number] | 
   return { x: [xMin, xMax], y: [yMin, yMax] };
 }
 
+function isArray(arr: any) {
+  // We use this when checking whether cameraMatrix.camera is an array,
+  // since the camera matrix may be a typed array,
+  // and Array.isArray returns false for typed arrays,
+  return Array.isArray(arr) || arr instanceof Float32Array;
+}
+
 
 function PluotInner(props: PluotProps) {
   const {
@@ -165,7 +173,7 @@ function PluotInner(props: PluotProps) {
     allowSimultaneousRenders = true,
     debugMargins = false,
     backgroundColor = undefined,
-    cameraMatrix: cameraMatrixProp = null,
+    cameraMatrix: cameraMatrixPropRaw = null,
     setCameraMatrix: setCameraMatrixProp = null,
     enableExtentQuery = true,
     enableClick = false,
@@ -208,15 +216,27 @@ function PluotInner(props: PluotProps) {
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
+  // Ensure that the cameraMatrix prop equality is not based on the object reference,
+  // as it may change on every render despite the internal camera property reference
+  // being stable.
+  const cameraMatrixProp = useMemoCustomComparison(() => {
+    return cameraMatrixPropRaw;
+  }, { cameraMatrixPropRaw }, (prevDeps, nextDeps) => {
+    const prevCamera = prevDeps.cameraMatrixPropRaw;
+    const nextCamera = nextDeps.cameraMatrixPropRaw;
+    if (prevCamera && 'camera' in prevCamera && nextCamera && 'camera' in nextCamera) {
+      return prevCamera.camera === nextCamera.camera;
+    }
+    // TODO: custom equality checks for xLim/yLim properties?
+    return prevCamera === nextCamera;
+  });
+
   // Initialize the WASM module.
   useLayoutEffect(() => {
     initialize().then(() => setIsWasmReady(getIsWasmReady()));
   }, []);
 
-  // We may want to update these things without triggering a re-render.
-  // Shared "render budget" read by render_wasm/pick_wasm/brush_wasm: grows
-  // (via renderQuery's retryDelay backoff below) while renders keep bailing
-  // early, and resets once a render succeeds or plot params change.
+  // We may want to update the timeout duration without triggering a re-render.
   const currentTimeout = useRef(minTimeout);
 
   // If this is false, then we need to wait for the extent_wasm result.
@@ -225,8 +245,8 @@ function PluotInner(props: PluotProps) {
       // When false, the user has explicitly told us to use the identity camera matrix rather than extent_wasm.
       !enableExtentQuery
       // Camera matrix is provided OR both xLim and yLim are provided.
-      || ('camera' in cameraMatrixProp && Array.isArray(cameraMatrixProp.camera))
-      || ('xLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.xLim) && 'yLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.yLim))
+      || ('camera' in cameraMatrixProp && isArray(cameraMatrixProp.camera))
+      || ('xLim' in cameraMatrixProp && isArray(cameraMatrixProp.xLim) && 'yLim' in cameraMatrixProp && isArray(cameraMatrixProp.yLim))
     )
   );
 
@@ -277,7 +297,8 @@ function PluotInner(props: PluotProps) {
   });
 
   const initialCameraMatrix = useMemo(() => {
-    if (cameraMatrixProp && 'camera' in cameraMatrixProp && Array.isArray(cameraMatrixProp.camera)) {
+    console.log("useMemo: initialCameraMatrix", cameraMatrixProp, enableExtentQuery);
+    if (cameraMatrixProp && 'camera' in cameraMatrixProp && isArray(cameraMatrixProp.camera)) {
       // Full camera matrix was provided up-front.
       return Float32Array.from(cameraMatrixProp.camera);
     }
@@ -289,8 +310,8 @@ function PluotInner(props: PluotProps) {
       );
     }
 
-    const hasXlim = cameraMatrixProp && 'xLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.xLim);
-    const hasYlim = cameraMatrixProp && 'yLim' in cameraMatrixProp && Array.isArray(cameraMatrixProp.yLim);
+    const hasXlim = cameraMatrixProp && 'xLim' in cameraMatrixProp && isArray(cameraMatrixProp.xLim);
+    const hasYlim = cameraMatrixProp && 'yLim' in cameraMatrixProp && isArray(cameraMatrixProp.yLim);
 
     // If we have BOTH xlim and ylim, then we do not need the extent_was result at all.
     const needsExtentResult = !hasXlim || !hasYlim;
@@ -354,12 +375,13 @@ function PluotInner(props: PluotProps) {
     return Float32Array.from(computedCameraMatrix);
   }, [extentQueryEnabled, hasCompleteCameraParams, extentQuery.data, extentQuery.isSuccess]);
 
-  const hasFullCameraMatrixProp = cameraMatrixProp && 'camera' in cameraMatrixProp && Array.isArray(cameraMatrixProp.camera);
+  const hasFullCameraMatrixProp = cameraMatrixProp && 'camera' in cameraMatrixProp && isArray(cameraMatrixProp.camera);
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
   const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix | undefined>(initialCameraMatrix);
 
   useEffect(() => {
+    console.log("useEffect: setUncontrolledCameraMatrix")
     setUncontrolledCameraMatrix(prev => prev === undefined ? initialCameraMatrix : prev);
   }, [initialCameraMatrix]);
 
@@ -384,8 +406,6 @@ function PluotInner(props: PluotProps) {
   // If this is false, then we cannot render anything, as we are still awaiting the extent_wasm call.
   const hasCameraMatrix = cameraMatrix !== undefined;
 
-  console.log(cameraMatrix, extentQuery.data, hasFullCameraMatrixProp, initialCameraMatrix);
-
   // Build the top-level `stores` map that RenderParams expects: a mapping from
   // store name to its derived `ZarrStoreInfo` metadata.
   const stores = useMemo(() => normalizeStores({
@@ -395,8 +415,6 @@ function PluotInner(props: PluotProps) {
     plotId,
     register: registerStores,
   }), [storeNameProp, storeProp, storesProp, plotId, registerStores]);
-
-
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -429,7 +447,6 @@ function PluotInner(props: PluotProps) {
   // needs it immediately).
   const runBrush = useEffectEvent(async (state: BrushState): Promise<undefined> => {
     // TODO: remove this
-
   });
 
   const {
@@ -456,8 +473,6 @@ function PluotInner(props: PluotProps) {
     brushDelay, maybeBrushDelay, persistBrush, brushMode,
     brush, onBrush, onBrushEnd, onBrushClear, runBrush,
   });
-
-
 
 
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
@@ -595,6 +610,7 @@ function PluotInner(props: PluotProps) {
   // resolves) never reaches here: its result would land on a cache entry this
   // query has already stopped observing.
   useEffect(() => {
+    console.log("useEffect: clickPickParams")
     if (clickPickParams !== null && clickPickQuery.data !== undefined) {
       onClick(clickPickQuery.data);
     }
@@ -602,11 +618,13 @@ function PluotInner(props: PluotProps) {
 
   // The click-picking callback.
   const pickFrame = useEffectEvent((screenCoordX: number, screenCoordY: number) => {
+    console.log("useEffectEvent: setClickPickParams");
     setClickPickParams(buildPickParamsSnapshot(screenCoordX, screenCoordY));
   });
 
   // Fires the hover callback once the query for the latest hover resolves.
   useEffect(() => {
+    console.log("useEffect: setHoverInfo")
     if (!cameraMatrix) {
       return;
     }
@@ -623,6 +641,7 @@ function PluotInner(props: PluotProps) {
 
   // The hover-picking callback.
   const hoverFrame = useEffectEvent((screenCoordX: number, screenCoordY: number) => {
+    console.log("useEffectEvent: setHoverPickParams");
     if (!cameraMatrix) {
       return;
     }
@@ -721,13 +740,7 @@ function PluotInner(props: PluotProps) {
   // prop changes (e.g. `cameraMatrix` while dragging) collapses into at most
   // one render_wasm call per `RENDER_PARAMS_THROTTLE_MS` (see the throttled
   // setter below) and drives the render `useQuery`'s key.
-  const [renderParamsSnapshot, setRenderParamsSnapshot] = useState<RenderParamsSnapshot>(() => ({
-    plotId, plotType, plotParams, stores, format, width, height,
-    aspectRatioMode, aspectRatioAlignmentMode,
-    marginLeft, marginRight, marginTop, marginBottom,
-    // Note: false branch should not be hit here, same as noted above.
-    cameraMatrix: cameraMatrix ? Array.from(cameraMatrix) : Array.from(DEFAULT_VIEW),
-  }));
+  const [renderParamsSnapshot, setRenderParamsSnapshot] = useState<RenderParamsSnapshot|undefined>();
 
   // Runs one render_wasm call for a given params snapshot, throwing
   // `RenderBailedEarlyError` when the frame bails early so that `renderQuery`'s
@@ -828,8 +841,10 @@ function PluotInner(props: PluotProps) {
 
   const renderQuery = useQuery({
     queryKey: ['pluot-render', renderParamsSnapshot],
-    queryFn: () => renderFrame(renderParamsSnapshot),
-    enabled: isWasmReady && cameraMatrix !== undefined,
+    queryFn: (ctx) => {
+      return renderFrame(renderParamsSnapshot);
+    },
+    enabled: isWasmReady && cameraMatrix !== undefined && renderParamsSnapshot !== undefined,
     // Keep retrying while the frame is bailing early, up to `maxBailedEarlyRetries`;
     // any other thrown error (e.g. a Rust panic) is left alone.
     retry: (failureCount, error) => error instanceof RenderBailedEarlyError && failureCount < maxBailedEarlyRetries,
@@ -859,7 +874,7 @@ function PluotInner(props: PluotProps) {
         // Evict prior render cache entries explicitly (on top of `gcTime: 0`,
         // which only collects them once no longer observed) so a params
         // change never risks serving a stale cached render.
-        queryClient.invalidateQueries({ queryKey: ['pluot-render'] });
+        //queryClient.invalidateQueries({ queryKey: ['pluot-render'] });
         setRenderParamsSnapshot(nextSnapshot);
       },
       RENDER_PARAMS_THROTTLE_MS,
