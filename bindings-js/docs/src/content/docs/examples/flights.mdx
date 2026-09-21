@@ -15,3 +15,13 @@ Click and drag to cross-filter the 10 million flight records.
     client:load
     client:only="react"
 />
+
+<details>
+<summary>How does Pluot differ from Mosaic?</summary>
+
+- Mosaic computes the histogram via the CPU using SQL and DuckDB, while Pluot computes the histogram via the GPU using a WebGPU compute shader.
+- The Mosaic example filters on every brush interaction, while the Pluot brush waits until the interaction finishes to perform filtering.
+- The Mosaic example re-scales the Y axis of each histogram upon brushing interactions, while Pluot retains the un-selected data points in "background" histogram bars.
+
+Open your browser network and memory tab, then reload each example page to check the memory and network overhead of each tool for yourself.
+</details>
