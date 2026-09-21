@@ -288,6 +288,8 @@ function PluotInner(props: PluotProps) {
         svg_include_document: false,
       };
 
+      console.log("extent_wasm");
+
       // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
       // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
       // normalization step is needed.

@@ -42,10 +42,12 @@ export function TaxiExample(props) {
   }, [hourMin, hourMax]);
 
   const onBrushHour = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setHourMin(parseFloat(min));
-      setHourMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setHourMin(xMin);
+      setHourMax(xMax);
     }
   });
 

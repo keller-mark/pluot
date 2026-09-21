@@ -50,26 +50,32 @@ export function FlightsExample(props) {
 
 
   const onBrushDelay = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setDelayMin(parseFloat(min));
-      setDelayMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setDelayMin(xMin);
+      setDelayMax(xMax);
     }
   });
 
   const onBrushTime = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setTimeMin(parseFloat(min));
-      setTimeMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setTimeMin(xMin);
+      setTimeMax(xMax);
     }
   });
 
   const onBrushDist = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setDistMin(parseFloat(min));
-      setDistMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setDistMin(xMin);
+      setDistMax(xMax);
     }
   });
 
