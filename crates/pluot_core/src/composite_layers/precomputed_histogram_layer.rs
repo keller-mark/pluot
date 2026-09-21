@@ -20,7 +20,7 @@ use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
 use crate::two::svg::SvgContext;
 use crate::viewport::get_bounds;
-use crate::{log, wgpu};
+use crate::wgpu;
 
 const DEFAULT_BAR_MARGIN: f32 = 1.0;
 const DEFAULT_FILL_COLOR: (u8, u8, u8) = (76, 120, 168);
