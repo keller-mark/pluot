@@ -114,6 +114,7 @@ export function FlightsExample(props) {
         marginRight={10}
         width={700}
         height={250}
+        aspectRatioMode="Ignore"
         cameraMatrix={[
           1, 0, 0, 0,
           0, 3.059022901652497e-7, 0, 0,
@@ -169,6 +170,7 @@ export function FlightsExample(props) {
         marginRight={10}
         width={700}
         height={250}
+        aspectRatioMode="Ignore"
         cameraMatrix={[
           1, 0, 0, 0,
           0, 0.0000016985858337648096, 0, 0,
@@ -223,6 +225,7 @@ export function FlightsExample(props) {
         marginRight={10}
         width={700}
         height={250}
+        aspectRatioMode="Ignore"
         cameraMatrix={[
           1, 0, 0, 0,
           0, 3.059022901652497e-7, 0, 0,

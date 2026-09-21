@@ -746,8 +746,12 @@ function PluotInner(props: PluotProps) {
   // and `viewMode` directly from props rather than the snapshot (matching prior
   // behavior) since a fresh closure is handed to `useQuery` on every render, so
   // it always sees their latest values regardless of the query's cache key.
-  const renderFrame = async (params: RenderParamsSnapshot): Promise<null> => {
+  const renderFrame = async (params: RenderParamsSnapshot | undefined): Promise<null> => {
     console.log('wasm.render');
+
+    if (!params) {
+      return null;
+    }
 
     const renderParams: RenderParams = {
       schema_version: schemaVersion,

@@ -134,6 +134,7 @@ impl PreparedLayer for HistogramLayer {
                 )),
                 render_categorical_axis: None,
                 render_quantitative_axis: None,
+                ..Default::default()
             },
         );
 

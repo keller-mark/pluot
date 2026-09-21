@@ -233,7 +233,7 @@ export function TaxiExample(props) {
           marginRight={10}
           width={600}
           height={200}
-
+          aspectRatioMode="Ignore"
           setCameraMatrix={NOOP}
 
           brushDelay={0}
