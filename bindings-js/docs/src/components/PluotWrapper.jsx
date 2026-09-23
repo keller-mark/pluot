@@ -330,8 +330,8 @@ export function PluotWrapper(props) {
           aspectRatioAlignmentMode={aspectRatioAlignmentMode}
           format={format}
           debugMargins={debugMargins}
-          cameraMatrix={enableCamera ? { camera: cameraMatrixProp } : null}
-          //setCameraMatrix={enableCamera ? setCameraMatrix : NOOP}
+          cameraMatrix={enableCamera && cameraMatrix ? cameraMatrix : null}
+          setCameraMatrix={setCameraMatrix}
           enableClick={enableClick}
           enableTooltip={enableTooltip}
           backgroundColor={"#fff"}

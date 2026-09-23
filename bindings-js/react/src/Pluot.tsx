@@ -140,10 +140,14 @@ function unionExtent(result: ExtentResult | undefined): { x: [number, number] | 
 }
 
 function isArray(arr: any) {
-  // We use this when checking whether cameraMatrix.camera is an array,
+  // We use this when checking whether cameraMatrix is an array,
   // since the camera matrix may be a typed array,
   // and Array.isArray returns false for typed arrays,
   return Array.isArray(arr) || arr instanceof Float32Array;
+}
+
+function isObject(arrOrObj: any) {
+  return typeof arrOrObj === 'object' && !isArray(arrOrObj) && arrOrObj !== null;
 }
 
 
@@ -224,8 +228,9 @@ function PluotInner(props: PluotProps) {
   }, { cameraMatrixPropRaw }, (prevDeps, nextDeps) => {
     const prevCamera = prevDeps.cameraMatrixPropRaw;
     const nextCamera = nextDeps.cameraMatrixPropRaw;
-    if (prevCamera && 'camera' in prevCamera && nextCamera && 'camera' in nextCamera) {
-      return prevCamera.camera === nextCamera.camera;
+    if (prevCamera && isArray(prevCamera) && nextCamera && isArray(nextCamera)) {
+      // TODO: use isEqual here?
+      return prevCamera === nextCamera;
     }
     // TODO: custom equality checks for xLim/yLim properties?
     return prevCamera === nextCamera;
@@ -245,8 +250,8 @@ function PluotInner(props: PluotProps) {
       // When false, the user has explicitly told us to use the identity camera matrix rather than extent_wasm.
       !enableExtentQuery
       // Camera matrix is provided OR both xLim and yLim are provided.
-      || ('camera' in cameraMatrixProp && isArray(cameraMatrixProp.camera))
-      || ('xLim' in cameraMatrixProp && isArray(cameraMatrixProp.xLim) && 'yLim' in cameraMatrixProp && isArray(cameraMatrixProp.yLim))
+      || (isArray(cameraMatrixProp))
+      || (isObject(cameraMatrixProp) && 'xLim' in cameraMatrixProp && isArray(cameraMatrixProp.xLim) && 'yLim' in cameraMatrixProp && isArray(cameraMatrixProp.yLim))
     )
   );
 
@@ -300,12 +305,12 @@ function PluotInner(props: PluotProps) {
 
   const initialCameraMatrix = useMemo(() => {
     console.log("useMemo: initialCameraMatrix", cameraMatrixProp, enableExtentQuery);
-    if (cameraMatrixProp && 'camera' in cameraMatrixProp && isArray(cameraMatrixProp.camera)) {
+    if (cameraMatrixProp && isArray(cameraMatrixProp)) {
       // Full camera matrix was provided up-front.
-      return Float32Array.from(cameraMatrixProp.camera);
+      return Float32Array.from(cameraMatrixProp);
     }
 
-    if (!enableExtentQuery && (!cameraMatrixProp || 'camera' in cameraMatrixProp && !cameraMatrixProp.camera)) {
+    if (!enableExtentQuery && !cameraMatrixProp) {
       // Camera matrix was not provided, but the user does not want to use extent_wasm.
       return Float32Array.from(
         viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW
@@ -350,7 +355,7 @@ function PluotInner(props: PluotProps) {
 
     const extentResult = extentQuery.data;
     if (!extentResult || extentResult.layer_results.length === 0) {
-      return Float32Array.from(DEFAULT_VIEW);
+      return Float32Array.from(viewMode === "2d" ? DEFAULT_VIEW : DEFAULT_3D_VIEW);
     }
 
     const fullExtent = unionExtent(extentResult);
@@ -377,7 +382,7 @@ function PluotInner(props: PluotProps) {
     return Float32Array.from(computedCameraMatrix);
   }, [extentQueryEnabled, hasCompleteCameraParams, extentQuery.data, extentQuery.isSuccess]);
 
-  const hasFullCameraMatrixProp = cameraMatrixProp && 'camera' in cameraMatrixProp && isArray(cameraMatrixProp.camera);
+  const hasFullCameraMatrixProp = cameraMatrixProp && isArray(cameraMatrixProp);
 
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
   const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix | undefined>(initialCameraMatrix);
@@ -397,7 +402,7 @@ function PluotInner(props: PluotProps) {
   // value initially, but they still want a controlled camera matrix.
   const cameraMatrix = isControlledCamera ? (
     hasFullCameraMatrixProp
-    ? cameraMatrixProp.camera
+    ? cameraMatrixProp
     : initialCameraMatrix
   ) : uncontrolledCameraMatrix;
 

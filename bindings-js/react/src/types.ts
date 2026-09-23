@@ -280,9 +280,7 @@ export type BrushResult = {
   // TODO: fill in the rest of this struct.
 };
 
-export type CameraOrExtent = {
-  camera: CameraMatrix | null
-} | {
+export type CameraOrExtent = CameraMatrix | {
   // If xLim or yLim is omitted, then we use extent_wasm to fill it in.
   // Once we have the limits (either provided directly or filled in via extent_wasm),
   // then we use getCameraMatrixFromBounds to obtain a fully-specified camera matrix.
