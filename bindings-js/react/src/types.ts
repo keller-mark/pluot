@@ -3,6 +3,7 @@ import type {
   AspectRatioMode,
   AspectRatioAlignmentMode,
   CameraMatrix,
+  CameraFilterFunction,
   StoreInput,
   StoresInput,
   StoresOutput,
@@ -289,6 +290,14 @@ export type CameraOrExtent = CameraMatrix | {
   yLim: [number, number] | null,
 };
 
+export type CameraFilterString = "fixX"
+  | "fixY"
+  | "fixXAxisAtYZero"
+  | "fixYAxisAtXZero"
+  | "fixXAndFixXAxisAtYZero"
+  | "fixYAndFixYAxisAtXZero";
+
+
 // === Component props ===
 
 export type PluotProps = {
@@ -353,6 +362,8 @@ export type PluotProps = {
   cameraMatrix?: CameraOrExtent | null;
   /** Provide to take control of the camera matrix. */
   setCameraMatrix?: ((cameraMatrix: CameraMatrix) => void) | null;
+
+  cameraFilter?: CameraFilterString | CameraFilterFunction | null;
 
   /** Whether clicking should run a picking query and call `onClick`. */
   enableClick?: boolean;

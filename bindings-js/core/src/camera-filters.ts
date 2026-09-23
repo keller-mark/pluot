@@ -1,6 +1,9 @@
 import { type CameraMatrix } from "./functional-dom-2d-camera.js";
 // These are 2D camera "filter" functions which can be used to modify the camera behavior when used prior to calling setCameraMatrix.
 
+
+export type CameraFilterFunction = (prevCameraMatrix: CameraMatrix, nextCameraMatrix: CameraMatrix) => CameraMatrix;
+
 // The matrices are column-major (gl-matrix), so row 0 (output X) lives at indices 0, 4, 8, 12
 // and row 1 (output Y) lives at indices 1, 5, 9, 13.
 const X_ROW_INDICES = [0, 4, 8, 12];
@@ -47,4 +50,16 @@ export function getFixXAxisAtYCoord(yCoord: number) {
 export function getFixYAxisAtXCoord(xCoord: number) {
   return (_prevCameraMatrix: CameraMatrix, nextCameraMatrix: CameraMatrix): CameraMatrix =>
     pinAxis(nextCameraMatrix, xCoord, X_SCALE_INDEX, X_TRANSLATION_INDEX);
+}
+
+// Convenience exports which use the above functions.
+export const fixXAxisAtYZero = getFixXAxisAtYCoord(0.0);
+export const fixYAxisAtXZero = getFixXAxisAtYCoord(0.0);
+
+export function fixXAndFixXAxisAtYZero(prev: CameraMatrix, next: CameraMatrix): CameraMatrix {
+  return fixXAxisAtYZero(prev, fixX(prev, next));
+}
+
+export function fixYAndFixYAxisAtXZero(prev: CameraMatrix, next: CameraMatrix): CameraMatrix {
+  return fixYAxisAtXZero(prev, fixY(prev, next));
 }

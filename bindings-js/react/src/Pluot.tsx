@@ -10,7 +10,10 @@ import {
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
   getCameraMatrixFromBounds,
+  fixX, fixY, fixXAxisAtYZero, fixYAxisAtXZero,
+  fixXAndFixXAxisAtYZero, fixYAndFixYAxisAtXZero,
   type CameraMatrix, type Bounds, type AspectRatioMode, type AspectRatioAlignmentMode,
+  type CameraFilterFunction,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
@@ -179,6 +182,7 @@ function PluotInner(props: PluotProps) {
     backgroundColor = undefined,
     cameraMatrix: cameraMatrixPropRaw = null,
     setCameraMatrix: setCameraMatrixProp = null,
+    cameraFilter: cameraFilterProp = null,
     enableExtentQuery = true,
     enableClick = false,
     enableTooltip = false,
@@ -219,6 +223,23 @@ function PluotInner(props: PluotProps) {
 
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
+
+  const cameraFilter: CameraFilterFunction = useMemo(() => {
+    if (cameraFilterProp && typeof cameraFilterProp === "string") {
+      switch (cameraFilterProp) {
+        case "fixX": return fixX;
+        case "fixY": return fixY;
+        case "fixXAxisAtYZero": return fixXAxisAtYZero;
+        case "fixYAxisAtXZero": return fixYAxisAtXZero;
+        case "fixXAndFixXAxisAtYZero": return fixXAndFixXAxisAtYZero;
+        case "fixYAndFixYAxisAtXZero": return fixYAndFixYAxisAtXZero;
+      }
+    } else if (cameraFilterProp && typeof cameraFilterProp === "function") {
+      return cameraFilterProp;
+    } else {
+      return (prev: CameraMatrix, next: CameraMatrix) => next;
+    }
+  }, [cameraFilterProp]);
 
   // Ensure that the cameraMatrix prop equality is not based on the object reference,
   // as it may change on every render despite the internal camera property reference
@@ -304,7 +325,6 @@ function PluotInner(props: PluotProps) {
   });
 
   const initialCameraMatrix = useMemo(() => {
-    console.log("useMemo: initialCameraMatrix", cameraMatrixProp, enableExtentQuery);
     if (cameraMatrixProp && isArray(cameraMatrixProp)) {
       // Full camera matrix was provided up-front.
       return Float32Array.from(cameraMatrixProp);
@@ -384,13 +404,21 @@ function PluotInner(props: PluotProps) {
 
   const hasFullCameraMatrixProp = cameraMatrixProp && isArray(cameraMatrixProp);
 
+  const filteredInitialCameraMatrix = useMemo(() => {
+    if (initialCameraMatrix) {
+      return cameraFilter(initialCameraMatrix, initialCameraMatrix);
+    }
+    // Was undefined.
+    return initialCameraMatrix;
+  }, [initialCameraMatrix]);
+
   // If cameraMatrix is not provided, then we manage the camera matrix internally.
-  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix | undefined>(initialCameraMatrix);
+  const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix | undefined>(filteredInitialCameraMatrix);
 
   useEffect(() => {
     console.log("useEffect: setUncontrolledCameraMatrix")
-    setUncontrolledCameraMatrix(prev => prev === undefined ? initialCameraMatrix : prev);
-  }, [initialCameraMatrix]);
+    setUncontrolledCameraMatrix(prev => prev === undefined ? filteredInitialCameraMatrix : prev);
+  }, [filteredInitialCameraMatrix]);
 
   // Decide which camera matrix and setter to use.
   // If the user provides the cameraMatrix prop but NOT the setCameraMatrix setter,
@@ -403,7 +431,7 @@ function PluotInner(props: PluotProps) {
   const cameraMatrix = isControlledCamera ? (
     hasFullCameraMatrixProp
     ? cameraMatrixProp
-    : initialCameraMatrix
+    : filteredInitialCameraMatrix
   ) : uncontrolledCameraMatrix;
 
   const setCameraMatrix: (nextCameraMatrix: CameraMatrix) => void = isControlledCamera
@@ -481,7 +509,6 @@ function PluotInner(props: PluotProps) {
     brush, onBrush, onBrushEnd, onBrushClear, runBrush,
   });
 
-
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
     if (!cameraMatrix) {
       // Still awaiting extent_wasm.
@@ -500,7 +527,7 @@ function PluotInner(props: PluotProps) {
           marginRight,
         },
       }, cameraMatrix, event);
-    setCameraMatrix(nextCameraMatrix);
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix));
   });
 
   const mouseMoveHandler = useEffectEvent((event: MouseEvent) => {
@@ -526,7 +553,7 @@ function PluotInner(props: PluotProps) {
           marginRight,
         },
       }, cameraMatrix, event);
-    setCameraMatrix(nextCameraMatrix);
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix));
   });
 
   // Builds the params snapshot for a pick at the given screen coordinates,

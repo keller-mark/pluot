@@ -122,7 +122,8 @@ export function FlightsExample(props) {
         height={250}
         aspectRatioMode="Ignore"
         cameraMatrix={null}
-        setCameraMatrix={NOOP}
+        //setCameraMatrix={NOOP}
+        cameraFilter="fixXAndFixXAxisAtYZero"
 
         brushDelay={0}
         maybeBrushDelay={0}
@@ -173,7 +174,8 @@ export function FlightsExample(props) {
         height={250}
         aspectRatioMode="Ignore"
         cameraMatrix={null}
-        setCameraMatrix={NOOP}
+        //setCameraMatrix={NOOP}
+        cameraFilter="fixXAndFixXAxisAtYZero"
 
         brushDelay={0}
         maybeBrushDelay={0}
@@ -223,7 +225,8 @@ export function FlightsExample(props) {
         height={250}
         aspectRatioMode="Ignore"
         cameraMatrix={null}
-        setCameraMatrix={NOOP}
+        //setCameraMatrix={NOOP}
+        cameraFilter="fixXAndFixXAxisAtYZero"
 
         brushDelay={0}
         maybeBrushDelay={0}
