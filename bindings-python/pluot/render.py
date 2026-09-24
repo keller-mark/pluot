@@ -2,8 +2,9 @@ from PIL import Image
 import numpy as np
 from zarr.abc.store import Store
 from pluot_core.zarr import store_instance_to_metadata, store_metadata_to_instance, http_store_from_url
+from pluot_core.viewport import Bounds, Margins, ViewportParams, get_camera_matrix_from_bounds
 from .zarr import GLOBAL_STORES
-from ._internal import render_py, render_to_script_py
+from ._internal import render_py, render_to_script_py, extent_py
 
 NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
 
@@ -103,22 +104,113 @@ _RENDER_DEFAULTS = dict(
     svg_include_document=True
 )
 
-async def render(**kwargs):
-    """Render to raw bytes."""
+def _check_lims(merged_params, x_lim, y_lim):
+    if merged_params.get("camera_view") is not None and (x_lim is not None or y_lim is not None):
+        raise ValueError("`camera_view` is mutually exclusive with `x_lim`/`y_lim`.")
+
+
+def _union_extent(extent_result):
+    """The bounding box of every layer's extent, or None when no layer reports one."""
+    layer_results = extent_result["layer_results"]
+    if not layer_results:
+        return None
+    x_lim = (min(r["x"][0] for r in layer_results), max(r["x"][1] for r in layer_results))
+    y_lim = (min(r["y"][0] for r in layer_results), max(r["y"][1] for r in layer_results))
+    return x_lim, y_lim
+
+
+def _camera_view_from_lims(merged_params, x_lim, y_lim):
+    viewport_params = ViewportParams(
+        width=merged_params["width"],
+        height=merged_params["height"],
+        aspect_ratio_mode=merged_params["aspect_ratio_mode"],
+        aspect_ratio_alignment_mode=merged_params["aspect_ratio_alignment_mode"],
+        margins=Margins(
+            margin_top=merged_params.get("margin_top") or 0.0,
+            margin_right=merged_params.get("margin_right") or 0.0,
+            margin_bottom=merged_params.get("margin_bottom") or 0.0,
+            margin_left=merged_params.get("margin_left") or 0.0,
+        ),
+    )
+    bounds = Bounds(x_min=x_lim[0], x_max=x_lim[1], y_min=y_lim[0], y_max=y_lim[1])
+    # The previous camera only fills in missing bounds, and all bounds are given.
+    identity = np.eye(4, dtype=np.float32).flatten()
+    return get_camera_matrix_from_bounds(bounds, identity, viewport_params).tolist()
+
+
+async def _resolve_camera_view(merged_params, x_lim, y_lim):
+    """Compute the camera matrix showing `x_lim`/`y_lim`, running the extent
+    query to fill in whichever of them is unspecified.
+
+    Returns None (the default camera) when the extent query is needed but no
+    layer reports an extent, or for 3D plots, which the bounds-to-camera
+    conversion does not yet support.
+    """
+    if merged_params["view_mode"] == "3d":
+        return None
+
+    if x_lim is None or y_lim is None:
+        extent_result = await extent_py(**{**merged_params, "camera_view": None})
+        union = _union_extent(extent_result)
+        if union is None:
+            return None
+        extent_x, extent_y = union
+        x_lim = x_lim if x_lim is not None else extent_x
+        y_lim = y_lim if y_lim is not None else extent_y
+
+    return _camera_view_from_lims(merged_params, x_lim, y_lim)
+
+
+async def extent(**kwargs):
+    """Compute the data extent of each layer.
+
+    Returns a dict ``{"layer_results": [{"layer_id", "x", "y", "z"}, ...]}``
+    where ``x``/``y``/``z`` are ``(min, max)`` pairs (``z`` is None for 2D layers).
+    """
+    new_kwargs = parse_kwargs(kwargs)
+
+    merged_params = {**_RENDER_DEFAULTS, **new_kwargs}
+
+    return await extent_py(**merged_params)
+
+
+async def render(x_lim=None, y_lim=None, **kwargs):
+    """Render to raw bytes.
+
+    The view is determined by ``camera_view`` (a 16-element camera matrix) or,
+    alternatively, by ``x_lim``/``y_lim`` (``(min, max)`` data ranges). When
+    ``camera_view`` is omitted, any unspecified limit is filled in from the
+    union of the layer extents.
+    """
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
 
     merged_params = {**_RENDER_DEFAULTS, **new_kwargs}
+
+    _check_lims(merged_params, x_lim, y_lim)
+    if merged_params.get("camera_view") is None:
+        merged_params["camera_view"] = await _resolve_camera_view(merged_params, x_lim, y_lim)
 
     result = await render_py(**merged_params)
     return result
 
-def render_to_script(**kwargs):
-    """Render to a code string."""
+def render_to_script(x_lim=None, y_lim=None, **kwargs):
+    """Render to a code string.
+
+    Unlike ``render``, both ``x_lim`` and ``y_lim`` must be given to replace
+    ``camera_view``, since filling in a missing limit requires the async
+    extent query.
+    """
     # We wrap the internal function here to be able to provide types, docstrings, etc.
     new_kwargs = parse_kwargs(kwargs)
 
     merged_params = {**_RENDER_DEFAULTS, **new_kwargs}
+
+    _check_lims(merged_params, x_lim, y_lim)
+    if (x_lim is None) != (y_lim is None):
+        raise ValueError("render_to_script requires both `x_lim` and `y_lim`, or neither.")
+    if x_lim is not None and merged_params["view_mode"] != "3d":
+        merged_params["camera_view"] = _camera_view_from_lims(merged_params, x_lim, y_lim)
 
     result = render_to_script_py(**merged_params)
     return result
