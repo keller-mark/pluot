@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use pluot::{
-    render, render_to_script, render_with_stores, AspectRatioMode, GraphicsFormat, LayerParams,
-    RenderParams, ViewMode, ZarrStoreInfo, ZarrStoreParams, HttpStoreParams, LocalStoreParams,
-    MemoryStoreParams, StoreMap, CodeFormat,
+    render, render_to_script, render_with_stores, extent, extent_with_stores,
+    get_camera_matrix_from_bounds, AspectRatioMode, GraphicsFormat, LayerParams, RenderParams,
+    ViewMode, ViewParams, MarginParams, DataBounds, ExtentResult, ZarrStoreInfo, ZarrStoreParams,
+    HttpStoreParams, LocalStoreParams, MemoryStoreParams, StoreMap, CodeFormat,
 };
 use zarrs_storage::storage_adapter::sync_to_async::{
     SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter
@@ -137,9 +138,18 @@ struct Args {
     view_mode: String,
 
     /// Camera view as 16 comma-separated floats (4x4 column-major matrix).
-    /// If omitted, no camera view override is applied.
-    #[arg(long)]
+    /// If omitted, the camera view is computed from --x-lim/--y-lim,
+    /// with any unspecified axis filled in from the union of the layer extents.
+    #[arg(long, conflicts_with_all = ["x_lim", "y_lim"])]
     camera_view: Option<String>,
+
+    /// Visible x-axis data range as two comma-separated floats (min,max).
+    #[arg(long, allow_hyphen_values = true)]
+    x_lim: Option<String>,
+
+    /// Visible y-axis data range as two comma-separated floats (min,max).
+    #[arg(long, allow_hyphen_values = true)]
+    y_lim: Option<String>,
 
     /// Unique plot identifier (used for caching intermediate computations).
     #[arg(long, default_value = "plot-0")]
@@ -300,6 +310,88 @@ fn parse_camera_view(s: &str) -> Result<[f32; 16], String> {
     Ok(matrix)
 }
 
+/// Parse a comma-separated `min,max` pair of floats.
+fn parse_lim(name: &str, s: &str) -> Result<(f32, f32), String> {
+    let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "{name} requires exactly 2 comma-separated floats, got {}.",
+            parts.len()
+        ));
+    }
+    let parse = |part: &str| {
+        part.trim()
+            .parse::<f32>()
+            .map_err(|e| format!("Failed to parse {name} element '{part}': {e}"))
+    };
+    Ok((parse(parts[0])?, parse(parts[1])?))
+}
+
+/// The union (bounding box) of every layer's reported extent,
+/// or `None` when no layer reports an extent.
+fn union_extent(result: &ExtentResult) -> Option<((f32, f32), (f32, f32))> {
+    result.layer_results.iter().fold(None, |acc, layer| {
+        Some(match acc {
+            None => (layer.x, layer.y),
+            Some((x, y)) => (
+                (x.0.min(layer.x.0), x.1.max(layer.x.1)),
+                (y.0.min(layer.y.0), y.1.max(layer.y.1)),
+            ),
+        })
+    })
+}
+
+/// Compute the camera matrix showing `x_lim`/`y_lim`, running the extent
+/// query to fill in whichever of them is unspecified.
+///
+/// Returns `None` (the default camera) when the extent query is needed but no
+/// layer reports an extent, or for 3D plots, which the bounds-to-camera
+/// conversion does not yet support.
+async fn resolve_camera_view(
+    params: &RenderParams,
+    store_map: Option<StoreMap>,
+    x_lim: Option<(f32, f32)>,
+    y_lim: Option<(f32, f32)>,
+) -> Option<[f32; 16]> {
+    if params.view_mode == ViewMode::ThreeD {
+        return None;
+    }
+
+    let (x_lim, y_lim) = match (x_lim, y_lim) {
+        (Some(x), Some(y)) => (x, y),
+        _ => {
+            let extent_params = RenderParams { camera_view: None, ..params.clone() };
+            let extent_result = match store_map {
+                Some(store_map) => extent_with_stores(extent_params, Some(store_map)).await,
+                None => extent(extent_params).await,
+            };
+            let (extent_x, extent_y) = union_extent(&extent_result)?;
+            (x_lim.unwrap_or(extent_x), y_lim.unwrap_or(extent_y))
+        }
+    };
+
+    let view_params = ViewParams {
+        width: params.width,
+        height: params.height,
+        aspect_ratio_mode: params.aspect_ratio_mode,
+        aspect_ratio_alignment_mode: params.aspect_ratio_alignment_mode,
+        margins: Some(MarginParams {
+            margin_top: params.margin_top,
+            margin_right: params.margin_right,
+            margin_bottom: params.margin_bottom,
+            margin_left: params.margin_left,
+        }),
+        ..Default::default()
+    };
+    let data_bounds = DataBounds {
+        x_min: x_lim.0,
+        x_max: x_lim.1,
+        y_min: y_lim.0,
+        y_max: y_lim.1,
+    };
+    Some(get_camera_matrix_from_bounds(&view_params, &data_bounds))
+}
+
 /// Parse a `--code-format` string into a `CodeFormat`.
 ///
 /// `CodeFormat` has no custom `Display`/`FromStr` and is otherwise only ever
@@ -414,6 +506,19 @@ async fn main() {
         None => None,
     };
 
+    let parse_optional_lim = |name: &str, s: &Option<String>| match s {
+        Some(s) => match parse_lim(name, s) {
+            Ok(lim) => Some(lim),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        },
+        None => None,
+    };
+    let x_lim = parse_optional_lim("x_lim", &args.x_lim);
+    let y_lim = parse_optional_lim("y_lim", &args.y_lim);
+
     // --- Read and parse JSON layers ---
 
     let json_str = match read_json(&args.input) {
@@ -440,7 +545,7 @@ async fn main() {
 
     // --- Build RenderParams ---
 
-    let params = RenderParams {
+    let mut params = RenderParams {
         layers,
         schema_version: args.schema_version,
         width: args.width,
@@ -480,6 +585,35 @@ async fn main() {
         pickable: false,
         ..Default::default()
     };
+
+    // When the input JSON declares `stores`, construct real Zarr store
+    // instances for them to pass to `extent_with_stores`/`render_with_stores`;
+    // otherwise fall back to plain `extent`/`render` (the placeholder
+    // MemoryStore above is only used for `store_name` bookkeeping, never
+    // actually read).
+    let store_map = match &stores_input {
+        Some(stores) => {
+            // `build_store_map` constructs a `reqwest::blocking::Client` (via
+            // `zarrs_http::HTTPStore::new`), which spins up its own private
+            // Tokio runtime internally. Doing that directly on a worker thread
+            // of the outer `#[tokio::main]` runtime panics ("Cannot drop a
+            // runtime in a context where blocking is not allowed"), since that
+            // worker thread disallows blocking. Running it via `spawn_blocking`
+            // moves it onto Tokio's blocking thread pool, where blocking is
+            // permitted.
+            let stores = stores.clone();
+            Some(
+                tokio::task::spawn_blocking(move || build_store_map(&stores))
+                    .await
+                    .unwrap(),
+            )
+        }
+        None => None,
+    };
+
+    if params.camera_view.is_none() {
+        params.camera_view = resolve_camera_view(&params, store_map.clone(), x_lim, y_lim).await;
+    }
 
     // --- Code-generation shortcut ---
     //
@@ -533,26 +667,8 @@ async fn main() {
     let height = params.height;
     let is_vector = params.format == GraphicsFormat::Vector;
 
-    // Render the plot. When the input JSON declares `stores`, construct real
-    // Zarr store instances for them and render via `render_with_stores`;
-    // otherwise fall back to plain `render` (the placeholder MemoryStore
-    // above is only used for `store_name` bookkeeping, never actually read).
-    let result_with_extra = match &stores_input {
-        Some(stores) => {
-            // `build_store_map` constructs a `reqwest::blocking::Client` (via
-            // `zarrs_http::HTTPStore::new`), which spins up its own private
-            // Tokio runtime internally. Doing that directly on a worker thread
-            // of the outer `#[tokio::main]` runtime panics ("Cannot drop a
-            // runtime in a context where blocking is not allowed"), since that
-            // worker thread disallows blocking. Running it via `spawn_blocking`
-            // moves it onto Tokio's blocking thread pool, where blocking is
-            // permitted.
-            let stores = stores.clone();
-            let store_map = tokio::task::spawn_blocking(move || build_store_map(&stores))
-                .await
-                .unwrap();
-            render_with_stores(params, Some(store_map)).await
-        }
+    let result_with_extra = match store_map {
+        Some(store_map) => render_with_stores(params, Some(store_map)).await,
         None => render(params).await,
     };
 
