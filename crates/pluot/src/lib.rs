@@ -20,6 +20,8 @@ pub use pluot_core::render_traits::{
 };
 pub use pluot_core::{RenderParams as RawRenderParams, LayerParams as RawLayerParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams, PlotParams as RawPlotParams};
 pub use pluot_core::{project, unproject, get_bounds};
+pub use pluot_core::viewport::{get_camera_matrix_from_bounds, DataBounds};
+pub use pluot_core::{ExtentResult, LayerExtentResult};
 pub use pluot_core::StoreMap;
 
 // Re-export layer param types for convenience.
@@ -60,7 +62,7 @@ pub use crate::render_params::{RenderParams, LayerParams};
 
 // Unified exports.
 mod render;
-pub use crate::render::{render, render_with_stores, render_to_script, render_to_script_aux};
+pub use crate::render::{render, render_with_stores, extent, extent_with_stores, render_to_script, render_to_script_aux};
 
 // Exports for WASM bindings.
 #[cfg(target_arch = "wasm32")]

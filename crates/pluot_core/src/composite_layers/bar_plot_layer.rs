@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
-    BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
@@ -289,6 +289,8 @@ inventory::submit! {
 }
 
 impl BrushableLayer for BarPlotLayer {}
+
+impl ExtentableLayer for BarPlotLayer {}
 
 impl PickableLayer for BarPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

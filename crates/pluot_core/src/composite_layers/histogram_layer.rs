@@ -1,11 +1,11 @@
-// The histogram layer wraps a BarPlotLayer. It runs the histogram reducer in
-// prepare() to convert raw f32 data into bin counts, then delegates rendering
-// to a BarPlotLayer built from those counts.
+// The histogram layer wraps a PrecomputedHistogramLayer. It runs the histogram
+// reducer in prepare() to convert raw f32 data into bin counts, then delegates
+// rendering to a PrecomputedHistogramLayer built from those counts.
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
-    BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    BrushableLayer, ExtentableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams
 };
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
@@ -15,7 +15,8 @@ use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_laye
 use crate::cache::use_memo_vec_f32;
 use crate::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 
-use super::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
+use super::bar_plot_layer::BarOrientation;
+use super::precomputed_histogram_layer::{PrecomputedHistogramLayer, PrecomputedHistogramLayerParams};
 
 
 /// Layer params struct for [`HistogramLayer`].
@@ -48,18 +49,6 @@ impl HistogramLayer {
             layer_params,
             sub_layer_instances: Vec::new(),
         }
-    }
-
-    /// Generate human-readable bin-edge labels, e.g. "0.00–10.00".
-    fn bin_labels(data_min: f32, data_max: f32, num_bins: u32) -> Vec<String> {
-        let step = (data_max - data_min) / num_bins as f32;
-        (0..num_bins)
-            .map(|i| {
-                let lo = data_min + step * i as f32;
-                let hi = lo + step;
-                format!("{lo:.2}\u{2013}{hi:.2}")
-            })
-            .collect()
     }
 }
 
@@ -116,28 +105,26 @@ impl PreparedLayer for HistogramLayer {
         .await
         .unwrap();
 
-        let labels = Self::bin_labels(data_min, data_max, num_bins);
+        let max_count = quantity.iter().cloned().fold(0.0f32, f32::max);
 
-        // Build a BarPlotLayer from the computed histogram data.
-        let bar_layer = BarPlotLayer::new(
+        let histogram_layer = PrecomputedHistogramLayer::new(
             self.view_params.clone(),
-            BarPlotLayerParams {
-                layer_id: self.layer_params.layer_id.clone(),
+            PrecomputedHistogramLayerParams {
+                layer_id: format!("{}_precomputed_histogram_sublayer", self.layer_params.layer_id),
                 bounds: self.layer_params.bounds.clone(),
-                data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
-                data_unit_mode_for_quantity_dim: UnitsMode::Data,
                 orientation: self.layer_params.orientation.clone(),
-                identifier: Arc::new(labels),
+                bin_min: data_min,
+                bin_max: data_max,
+                num_bins,
+                quantity_min: 0.0,
+                quantity_max: max_count,
                 quantity,
-                fill_color: Some(ColorMode::UniformRgb(
-                    self.layer_params.fill_color.unwrap_or((76, 120, 168)),
-                )),
-                render_categorical_axis: None,
-                render_quantitative_axis: None,
+                fill_color: self.layer_params.fill_color,
+                ..Default::default()
             },
         );
 
-        self.sub_layer_instances = vec![Box::new(bar_layer)];
+        self.sub_layer_instances = vec![Box::new(histogram_layer)];
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare(gpu_context).await;
@@ -180,5 +167,7 @@ inventory::submit! {
 }
 
 impl BrushableLayer for HistogramLayer {}
+
+impl ExtentableLayer for HistogramLayer {}
 
 impl PickableLayer for HistogramLayer {}

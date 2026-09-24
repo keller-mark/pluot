@@ -12,7 +12,7 @@ use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
@@ -276,6 +276,8 @@ impl DrawToSvg for FilledCurveLayer {
 }
 
 impl BrushableLayer for FilledCurveLayer {}
+
+impl ExtentableLayer for FilledCurveLayer {}
 
 impl PickableLayer for FilledCurveLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

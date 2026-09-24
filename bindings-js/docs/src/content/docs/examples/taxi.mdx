@@ -12,7 +12,26 @@ Taxi example, adapted from the [NYC Taxi Rides example from Mosaic](https://idl.
 
 > Pickup and dropoff points for 1M NYC taxi rides on Jan 1-3, 2010.
 
+Click and hold to begin brushing in either map.
+
+
 <TaxiExample
     client:load
     client:only="react"
 />
+
+
+<details>
+<summary>How does Pluot differ from Mosaic?</summary>
+
+- Mosaic performs rasterization of the lon/lat coordinates and renders as a static image, while Pluot directly plots each coordinate and renders as a scatterplot allowing zoom and pan interactions
+  - Can you find Newark airport? Where are passengers who are dropped off there picked up, and vice-versa?
+- The Mosaic example's histogram does not update in response to brushing in the map.
+  - Do rides to/from Brooklyn or Queens have the same temporal distribution as rides to/from Manhattan?
+- Mosaic computes the histogram via the CPU using SQL and DuckDB, while Pluot computes the histogram via the GPU using a WebGPU compute shader.
+- Mosaic uses the DuckDB spatial extension to perform the true map projection, while Pluot approximates the map projection using an affine transformation matrix.
+- The Mosaic example filters on every brush interaction, while the Pluot brush waits until the interaction finishes to perform filtering.
+- In the Pluot example, we color the points by the passenger count.
+
+Open your browser network and memory tab, then reload each example page to check the memory and network overhead of each tool for yourself.
+</details>
