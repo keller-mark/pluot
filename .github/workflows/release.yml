@@ -329,8 +329,34 @@ jobs:
     needs: prepare_docs_site
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - name: Install nightly wasm-bindgen CLI
+        run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
+      - name: Compile Rust code to WASM
+        run: wasm-pack build crates/pluot --release --target web
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: true
+      - name: Build the JS packages that pluot_widget bundles
+        run: |
+          cd bindings-js/core && pnpm run copy-fonts && cd -
+          pnpm run build-tsc
       - name: Build pluot_core and pluot_widget
         run: |
           uv build bindings-python/pluot_core --out-dir dist

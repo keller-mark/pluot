@@ -23,6 +23,7 @@ __pycache__/
 .venv/
 .ropeproject/
 __marimo__/
+bindings-python/pluot_widget/src/pluot_widget/static/
 .Rproj.user
 
 .astro/
