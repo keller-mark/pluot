@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pluot_core"
+version = "0.1.19"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+  {name = "Mark Keller"}
+]
+readme = "README.md"
+description = "Shared utilities used by the pluot and pluot_widget packages"
+dependencies = [
+  "numpy>=2",
+  "zarr>=3",
+  "obstore",
+]
+
+[project.urls]
+repository = "https://github.com/keller-mark/pluot"

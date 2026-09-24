@@ -1,7 +1,8 @@
 from PIL import Image
 import numpy as np
 from zarr.abc.store import Store
-from .zarr import GLOBAL_STORES, store_instance_to_metadata, store_metadata_to_instance, _http_store_from_url
+from pluot_core.zarr import store_instance_to_metadata, store_metadata_to_instance, http_store_from_url
+from .zarr import GLOBAL_STORES
 from ._internal import render_py, render_to_script_py
 
 NUM_EXTRA_BYTES = 1 # This needs to match on the rust side.
@@ -45,7 +46,7 @@ def parse_kwargs(kwargs):
         if isinstance(store_arg, str):
             # Assume `store_arg` is a URL; construct a remote store for it.
             name = single_store_name if single_store_name is not None else store_arg
-            instance = _http_store_from_url(store_arg)
+            instance = http_store_from_url(store_arg)
             GLOBAL_STORES[name] = instance
             stores_meta[name] = store_instance_to_metadata(instance)
         elif isinstance(store_arg, dict):

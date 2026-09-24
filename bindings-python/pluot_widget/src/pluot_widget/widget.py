@@ -13,11 +13,11 @@ import uuid
 from typing import Any
 
 import anywidget
-from pluot.zarr import store_instance_to_metadata
+from pluot_core.zarr import store_instance_to_metadata
+from pluot_core.sync_store import SyncStoreWrapper
 import traitlets
 from zarr.abc.store import RangeByteRequest, Store, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
-from .sync_store import SyncStoreWrapper
 
 
 DEFAULT_CAMERA_MATRIX_2D: list[float] = [
