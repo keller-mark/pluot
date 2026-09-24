@@ -16,6 +16,20 @@ const MODEL_MATRIX = [
   21511491.787490, -14622204.589828, 0, 1
 ];
 
+// Brush coordinates arrive in post-modelMatrix (world) units,
+// but filtering criteria operate on the raw lon/lat columns.
+function invertAffine2d(m) {
+  const [a, b, , , c, d, , , , , , , tx, ty] = m;
+  const det = a * d - b * c;
+  return (x, y) => {
+    const dx = x - tx;
+    const dy = y - ty;
+    return [(d * dx - c * dy) / det, (a * dy - b * dx) / det];
+  };
+}
+
+const worldToLonLat = invertAffine2d(MODEL_MATRIX);
+
 const NOOP = () => { };
 
 const STORES = {
@@ -23,12 +37,33 @@ const STORES = {
 };
 
 export function TaxiExample(props) {
-  const [cameraMatrix, setCameraMatrix] = useState(INITIAL_CAMERA);
+  const [pickupCameraMatrix, setPickupCameraMatrix] = useState(INITIAL_CAMERA);
+  const [dropoffCameraMatrixRaw, setDropoffCameraMatrixRaw] = useState(INITIAL_CAMERA);
+
+  const [isCameraCoordinated, setIsCameraCoordinated] = useState(true);
+
+  const dropoffCameraMatrix = isCameraCoordinated ? pickupCameraMatrix : dropoffCameraMatrixRaw;
+  const setDropoffCameraMatrix = isCameraCoordinated ? setPickupCameraMatrix : setDropoffCameraMatrixRaw;
+
+  const [isPointOpacityEnabled, setIsPointOpacityEnabled] = useState(false);
+  const [pointOpacity, setPointOpacity] = useState(0.5);
 
   const [hourMin, setHourMin] = useState();
   const [hourMax, setHourMax] = useState();
 
-  const selectionCriteria = useMemo(() => {
+  // To support rectangular brushing in the map region,
+  // we keep track of x/y min/max values for pickup and dropoff.
+  const [xMinPickup, setXMinPickup] = useState();
+  const [xMaxPickup, setXMaxPickup] = useState();
+  const [yMinPickup, setYMinPickup] = useState();
+  const [yMaxPickup, setYMaxPickup] = useState();
+
+  const [xMinDropoff, setXMinDropoff] = useState();
+  const [xMaxDropoff, setXMaxDropoff] = useState();
+  const [yMinDropoff, setYMinDropoff] = useState();
+  const [yMaxDropoff, setYMaxDropoff] = useState();
+
+  const hourCriteria = useMemo(() => {
     return [
       ...(hourMin || hourMax ? [{
         criteria_mode: "Quantitative",
@@ -41,11 +76,91 @@ export function TaxiExample(props) {
     ];
   }, [hourMin, hourMax]);
 
+  const pickupCriteria = useMemo(() => {
+    return [
+      ...(xMinPickup && xMaxPickup && yMinPickup && yMaxPickup ? [
+        {
+          criteria_mode: "Quantitative",
+          criteria_params: {
+            values_key: "/obs/pickup_longitude",
+            min: xMinPickup,
+            max: xMaxPickup,
+          },
+        },
+        {
+          criteria_mode: "Quantitative",
+          criteria_params: {
+            values_key: "/obs/pickup_latitude",
+            min: yMinPickup,
+            max: yMaxPickup,
+          },
+        }
+      ] : []),
+    ];
+  }, [xMinPickup, xMaxPickup, yMinPickup, yMaxPickup]);
+
+  const dropoffCriteria = useMemo(() => {
+    return [
+      ...(xMinDropoff && xMaxDropoff && yMinDropoff && yMaxDropoff ? [
+        {
+          criteria_mode: "Quantitative",
+          criteria_params: {
+            values_key: "/obs/dropoff_longitude",
+            min: xMinDropoff,
+            max: xMaxDropoff,
+          },
+        },
+        {
+          criteria_mode: "Quantitative",
+          criteria_params: {
+            values_key: "/obs/dropoff_latitude",
+            min: yMinDropoff,
+            max: yMaxDropoff,
+          },
+        }
+      ] : []),
+    ];
+  }, [xMinDropoff, xMaxDropoff, yMinDropoff, yMaxDropoff]);
+
   const onBrushHour = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setHourMin(parseFloat(min));
-      setHourMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setHourMin(xMin);
+      setHourMax(xMax);
+    }
+  });
+
+  const onBrushPickup = useCallback((brush, brushResult) => {
+    if (brush && brush.vertices.length > 2) {
+      const lonLatVertices = brush.vertices.map(obj => worldToLonLat(obj.x_data, obj.y_data));
+      const xVals = lonLatVertices.map(([lon, _lat]) => lon);
+      const yVals = lonLatVertices.map(([_lon, lat]) => lat);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      const yMin = Math.min(...yVals);
+      const yMax = Math.max(...yVals);
+      setXMinPickup(xMin);
+      setXMaxPickup(xMax);
+      setYMinPickup(yMin);
+      setYMaxPickup(yMax);
+    }
+  });
+
+  const onBrushDropoff = useCallback((brush, brushResult) => {
+    if (brush && brush.vertices.length > 2) {
+      const lonLatVertices = brush.vertices.map(obj => worldToLonLat(obj.x_data, obj.y_data));
+      const xVals = lonLatVertices.map(([lon, _lat]) => lon);
+      const yVals = lonLatVertices.map(([_lon, lat]) => lat);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      const yMin = Math.min(...yVals);
+      const yMax = Math.max(...yVals);
+      setXMinDropoff(xMin);
+      setXMaxDropoff(xMax);
+      setYMinDropoff(yMin);
+      setYMaxDropoff(yMax);
     }
   });
 
@@ -79,13 +194,19 @@ export function TaxiExample(props) {
                     point_shape_mode: "Circle",
                     point_radius: null,
                     bounds: null,
-                    point_opacity: null,
+                    point_opacity: isPointOpacityEnabled ? pointOpacity : null,
                     model_matrix: MODEL_MATRIX,
 
                     x_key: "/obs/pickup_longitude",
                     y_key: "/obs/pickup_latitude",
                     color_key: "/obs/passenger_count",
-                    filtering_criteria: selectionCriteria,
+                    filtering_criteria: [
+                      ...hourCriteria,
+                      ...dropoffCriteria,
+                    ],
+                    selection_criteria: [
+                      ...pickupCriteria,
+                    ],
                   }
                 },
                 {
@@ -111,8 +232,24 @@ export function TaxiExample(props) {
               ]
             }}
             viewMode={"2d"}
-            cameraMatrix={cameraMatrix}
-            setCameraMatrix={setCameraMatrix}
+            cameraMatrix={pickupCameraMatrix}
+            setCameraMatrix={setPickupCameraMatrix}
+
+            enableBrushCreate
+            enableBrushEdit
+            enableBrushClear
+            brushMode="Rect"
+            brushUnitsModeX="Data"
+            brushUnitsModeY="Data"
+            persistBrush
+            //onBrush={onBrushPickup}
+            onBrushEnd={onBrushPickup}
+            onBrushClear={() => {
+              setXMinPickup(null);
+              setXMaxPickup(null);
+              setYMinPickup(null);
+              setYMaxPickup(null);
+            }}
           />
         </div>
         <div style={{ marginTop: 0, border: '1px solid silver' }}>
@@ -140,13 +277,19 @@ export function TaxiExample(props) {
                     point_shape_mode: "Circle",
                     point_radius: null,
                     bounds: null,
-                    point_opacity: null,
+                    point_opacity: isPointOpacityEnabled ? pointOpacity : null,
                     model_matrix: MODEL_MATRIX,
 
                     x_key: "/obs/dropoff_longitude",
                     y_key: "/obs/dropoff_latitude",
                     color_key: "/obs/passenger_count",
-                    filtering_criteria: selectionCriteria,
+                    filtering_criteria: [
+                      ...hourCriteria,
+                      ...pickupCriteria,
+                    ],
+                    selection_criteria: [
+                      ...dropoffCriteria,
+                    ],
                   }
                 },
                 {
@@ -172,8 +315,24 @@ export function TaxiExample(props) {
               ]
             }}
             viewMode={"2d"}
-            cameraMatrix={cameraMatrix}
-            setCameraMatrix={setCameraMatrix}
+            cameraMatrix={dropoffCameraMatrix}
+            setCameraMatrix={setDropoffCameraMatrix}
+
+            enableBrushCreate
+            enableBrushEdit
+            enableBrushClear
+            brushMode="Rect"
+            brushUnitsModeX="Data"
+            brushUnitsModeY="Data"
+            persistBrush
+            //onBrush={onBrushDropoff}
+            onBrushEnd={onBrushDropoff}
+            onBrushClear={() => {
+              setXMinDropoff(null);
+              setXMaxDropoff(null);
+              setYMinDropoff(null);
+              setYMaxDropoff(null);
+            }}
           />
         </div>
       </div>
@@ -196,7 +355,11 @@ export function TaxiExample(props) {
                   num_bins: 30,
                   cache_data: true,
                   fill_color: null,
-                  selection_criteria: selectionCriteria,
+                  selection_criteria: [
+                    ...hourCriteria,
+                    ...pickupCriteria,
+                    ...dropoffCriteria,
+                  ],
                 }
               },
               {
@@ -230,13 +393,9 @@ export function TaxiExample(props) {
           marginRight={10}
           width={600}
           height={200}
-          cameraMatrix={[
-            1, 0, 0, 0,
-            0, 0.000017185762771987356, 0, 0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, -1.0, 0.0, 1.0,
-          ]}
-          setCameraMatrix={NOOP}
+          aspectRatioMode="Ignore"
+          //setCameraMatrix={NOOP}
+          cameraFilter="fixXAndFixXAxisAtYZero"
 
           brushDelay={0}
           maybeBrushDelay={0}
@@ -244,7 +403,7 @@ export function TaxiExample(props) {
           enableBrushEdit
           enableBrushClear
           brushMode="RangeX"
-          brushUnitsModeX="Pixels"
+          brushUnitsModeX="Data"
           persistBrush
           //onBrush={onBrushHour}
           onBrushEnd={onBrushHour}
@@ -255,6 +414,36 @@ export function TaxiExample(props) {
 
 
         />
+      </div>
+      <div>
+        <label>
+          <input
+            type="checkbox"
+            checked={!isPointOpacityEnabled}
+            onChange={e => setIsPointOpacityEnabled(!e.target.checked)}
+          />
+          &nbsp;Automatic point opacity
+        </label>
+        &nbsp;
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={pointOpacity}
+          disabled={!isPointOpacityEnabled}
+          onChange={e => setPointOpacity(Number(e.target.value))}
+        />
+        &nbsp;{isPointOpacityEnabled ? pointOpacity.toFixed(2) : null}
+        <br />
+        <label>
+          <input
+            type="checkbox"
+            checked={isCameraCoordinated}
+            onChange={e => setIsCameraCoordinated(e.target.checked)}
+          />
+          &nbsp;Coordinate map zoom/pan
+        </label>
       </div>
     </div>
   );

@@ -187,7 +187,7 @@ When the camera matrix is the identity matrix, and the plotted region (within th
 
 When the plotted region (within the margins) has a non-square aspect ratio, the behavior will depend on the aspect ratio mode.
 
-- `Ignore`: Squeeze/stretch the (0, 1) unit square so that no more and no less data is shown. The square aspect ratio of the (0, 1) unit square will NOT be preserved.
+- `Ignore`: Squeeze/stretch the (0, 1) unit square so that no more and no less data is shown. The square aspect ratio of the (0, 1) unit square will NOT be preserved. This mode is particularly useful for visualizations which use differing units along the X and Y axes.
 
 - `Contain` (a.k.a. "fit"): The square aspect ratio of the (0, 1) unit square will be preserved, by showing more data along the longer dimension of the rectangle.
 

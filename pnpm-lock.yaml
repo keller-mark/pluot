@@ -223,6 +223,9 @@ importers:
       '@pluot/core':
         specifier: workspace:*
         version: link:../core
+      '@tanstack/react-query':
+        specifier: ^5.103.1
+        version: 5.103.1(react@19.2.4)
       camera-2d-simple:
         specifier: ^3.0.0
         version: 3.0.0(gl-matrix@3.4.4)
@@ -1553,8 +1556,16 @@ packages:
     peerDependencies:
       react: '>= 16.3.0'
 
+  '@tanstack/query-core@5.103.1':
+    resolution: {integrity: sha512-rms8HqTGp6zA00dM+cUQ2eBcgzNJefuu5CAMB37i/6MiGT1zulPOytCFu2a0qjLqVR2n1jENPj9woqFQNuCzWA==}
+
   '@tanstack/query-core@5.99.0':
     resolution: {integrity: sha512-3Jv3WQG0BCcH7G+7lf/bP8QyBfJOXeY+T08Rin3GZ1bshvwlbPt7NrDHMEzGdKIOmOzvIQmxjk28YEQX60k7pQ==}
+
+  '@tanstack/react-query@5.103.1':
+    resolution: {integrity: sha512-rmAPPApNEK17VXRJhtE1rja53n23VV5w30C0saCgJhhX+EpdUnVqMGV/s5nnzV43X75KTHKzuoiuxSzGTBIkag==}
+    peerDependencies:
+      react: ^18 || ^19
 
   '@tanstack/react-query@5.99.0':
     resolution: {integrity: sha512-OY2bCqPemT1LlqJ8Y2CUau4KELnIhhG9Ol3ZndPbdnB095pRbPo1cHuXTndg8iIwtoHTgwZjyaDnQ0xD0mYwAw==}
@@ -5494,7 +5505,14 @@ snapshots:
     dependencies:
       react: 19.2.4
 
+  '@tanstack/query-core@5.103.1': {}
+
   '@tanstack/query-core@5.99.0': {}
+
+  '@tanstack/react-query@5.103.1(react@19.2.4)':
+    dependencies:
+      '@tanstack/query-core': 5.103.1
+      react: 19.2.4
 
   '@tanstack/react-query@5.99.0(react@19.2.4)':
     dependencies:

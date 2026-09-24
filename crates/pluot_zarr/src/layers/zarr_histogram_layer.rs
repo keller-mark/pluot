@@ -5,20 +5,19 @@ use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrus
 
 use pluot_core::wgpu;
 use pluot_core::cache::use_memo_vec_f32;
-use pluot_core::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
 use pluot_core::params::BrushMode;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
-use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
-use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
+use pluot_core::composite_layers::bar_plot_layer::BarOrientation;
+use pluot_core::composite_layers::precomputed_histogram_layer::{PrecomputedHistogramLayer, PrecomputedHistogramLayerParams};
 use pluot_core::d3::scale::ScaleLinear;
-use pluot_core::viewport::DataVertices;
+use pluot_core::viewport::{get_bounds, DataVertices};
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
@@ -81,11 +80,15 @@ pub struct ZarrHistogramLayer {
     // TODO: switch to `inner: Option<BarPlotLayer>`?
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
 
-    // The linear scale backing the rendered value axis, mapping the binned
-    // value domain (data_min, data_max) to the axis's pixel range. Kept
-    // around so that a brush selection along this axis can be resolved back
-    // to a data value range.
+    // The linear scale backing the rendered value axis, mapping the visible
+    // portion of the value domain to the axis's pixel range. Kept around so
+    // that a brush selection along this axis can be resolved back to a data
+    // value range.
     value_scale: Option<ScaleLinear>,
+
+    // The binned value domain (data_min, data_max), which the bars span in
+    // data units. Kept around so `extent` can report it.
+    value_domain: Option<(f32, f32)>,
 
     // The largest "background" (filter-included) bin count, i.e. the upper
     // bound of the count axis. Kept around so `extent` can report it without
@@ -105,23 +108,15 @@ impl ZarrHistogramLayer {
             store_name,
             sub_layer_instances: Vec::new(),
             value_scale: None,
+            value_domain: None,
             max_count: None,
         }
     }
 
-    /// The [`AxisPosition`] at which the value axis (the axis spanning the
-    /// binned value domain) is rendered, given the histogram's orientation.
-    fn value_axis_position(orientation: &BarOrientation) -> AxisPosition {
-        match orientation {
-            BarOrientation::Vertical => AxisPosition::Bottom,
-            BarOrientation::Horizontal => AxisPosition::Left,
-        }
-    }
-
-    /// Build the linear scale mapping the binned value domain to the pixel
-    /// range of the value axis, matching the range that [`AxisLinearLayer`]
-    /// itself would compute for this position.
-    fn build_value_scale(view_params: &ViewParams, orientation: &BarOrientation, domain: (f64, f64)) -> ScaleLinear {
+    /// Build the linear scale mapping the currently-visible portion of the value
+    /// domain to the pixel range of the value axis, matching the domain and range
+    /// that [`AxisLinearLayer`] itself would compute for this position.
+    fn build_value_scale(view_params: &ViewParams, orientation: &BarOrientation) -> ScaleLinear {
         let margins = &view_params.margins;
         let margin_top = margins.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
         let margin_right = margins.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
@@ -131,24 +126,20 @@ impl ZarrHistogramLayer {
         let viewport_w = view_params.width as f64;
         let viewport_h = view_params.height as f64;
 
+        let bounds = get_bounds(view_params);
+
         let mut scale = ScaleLinear::new();
-        scale.set_domain(domain);
         match orientation {
-            BarOrientation::Vertical => scale.set_range((margin_left, viewport_w - margin_right)),
-            BarOrientation::Horizontal => scale.set_range((margin_bottom, viewport_h - margin_top)),
+            BarOrientation::Vertical => {
+                scale.set_domain((bounds.x_min as f64, bounds.x_max as f64));
+                scale.set_range((margin_left, viewport_w - margin_right));
+            }
+            BarOrientation::Horizontal => {
+                scale.set_domain((bounds.y_min as f64, bounds.y_max as f64));
+                scale.set_range((margin_bottom, viewport_h - margin_top));
+            }
         }
         scale
-    }
-
-    fn bin_labels(data_min: f32, data_max: f32, num_bins: u32) -> Vec<String> {
-        let step = (data_max - data_min) / num_bins as f32;
-        (0..num_bins)
-            .map(|i| {
-                let lo = data_min + step * i as f32;
-                let hi = lo + step;
-                format!("{lo:.2}\u{2013}{hi:.2}")
-            })
-            .collect()
     }
 
     /// Unwraps one `maybe_timeout!`-wrapped memo result from `prepare`, returning
@@ -283,9 +274,10 @@ impl PreparedLayer for ZarrHistogramLayer {
         let data_max = background_data[1];
         let background_arr: Arc<Vec<f32>> = Arc::new(background_data[2..].to_vec());
 
-        let value_scale = Self::build_value_scale(&self.view_params, &self.layer_params.orientation, (data_min as f64, data_max as f64));
-        self.value_scale = Some(value_scale);
-        self.max_count = Some(background_arr.iter().cloned().fold(0.0f32, f32::max));
+        self.value_scale = Some(Self::build_value_scale(&self.view_params, &self.layer_params.orientation));
+        self.value_domain = Some((data_min, data_max));
+        let max_count = background_arr.iter().cloned().fold(0.0f32, f32::max);
+        self.max_count = Some(max_count);
 
         // The foreground ("selected") bin counts get their own memo.
         let foreground_future = use_memo_vec_f32(async || {
@@ -333,70 +325,30 @@ impl PreparedLayer for ZarrHistogramLayer {
             "foreground histogram",
         );
 
-        let labels = Arc::new(Self::bin_labels(data_min, data_max, num_bins));
+        let bailed_early = foreground_arr.is_none();
 
-        // Render the filter-included ("background") bars first, so the
-        // filter-and-selection-included ("foreground") bars drawn afterward
-        // appear in front of them.
-        let background_bar_layer = BarPlotLayer::new(
+        let histogram_layer = PrecomputedHistogramLayer::new(
             self.view_params.clone(),
-            BarPlotLayerParams {
-                layer_id: format!("{}_bar_plot_sublayer_background", self.layer_params.layer_id),
+            PrecomputedHistogramLayerParams {
+                layer_id: format!("{}_precomputed_histogram_sublayer", self.layer_params.layer_id),
                 bounds: self.layer_params.bounds.clone(),
-                data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
-                data_unit_mode_for_quantity_dim: UnitsMode::Data,
                 orientation: self.layer_params.orientation.clone(),
-                identifier: labels.clone(),
-                quantity: background_arr,
-                fill_color: Some(ColorMode::UniformRgb(
-                    self.layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR),
-                )),
-                // We render our own axis along the continuous value domain,
-                // overriding the categorical per-bin labels.
-                render_categorical_axis: Some(false),
-                render_quantitative_axis: Some(true),
+                bin_min: data_min,
+                bin_max: data_max,
+                num_bins,
+                quantity_min: 0.0,
+                quantity_max: max_count,
+                // While the foreground counts are still loading, only the
+                // filter-included ("background") bars are drawn.
+                quantity: foreground_arr.unwrap_or_else(|| Arc::new(vec![])),
+                background_quantity: Some(background_arr),
+                bar_margin: None,
+                fill_color: self.layer_params.fill_color,
+                background_fill_color: self.layer_params.background_fill_color,
             },
         );
 
-        let foreground_bar_layer = foreground_arr.map(|foreground_arr| {
-            BarPlotLayer::new(
-                self.view_params.clone(),
-                BarPlotLayerParams {
-                    layer_id: format!("{}_bar_plot_sublayer_foreground", self.layer_params.layer_id),
-                    bounds: self.layer_params.bounds.clone(),
-                    data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
-                    data_unit_mode_for_quantity_dim: UnitsMode::Data,
-                    orientation: self.layer_params.orientation.clone(),
-                    identifier: labels,
-                    quantity: foreground_arr,
-                    fill_color: Some(ColorMode::UniformRgb(
-                        self.layer_params.fill_color.unwrap_or((76, 120, 168)),
-                    )),
-                    render_categorical_axis: Some(false),
-                    // We do not want to render a duplicate quantitative axis,
-                    // as the background bar plot layer already renders one.
-                    render_quantitative_axis: Some(false),
-                },
-            )
-        });
-        let bailed_early = foreground_bar_layer.is_none();
-
-        let value_axis_layer = AxisLinearLayer::new(
-            self.view_params.clone(),
-            AxisLinearLayerParams {
-                layer_id: format!("{}_value_axis_sublayer", self.layer_params.layer_id),
-                position: Self::value_axis_position(&self.layer_params.orientation),
-                domain: Some((data_min as f64, data_max as f64)),
-                ..Default::default()
-            },
-        );
-
-        let mut sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = vec![Box::new(background_bar_layer)];
-        if let Some(foreground_bar_layer) = foreground_bar_layer {
-            sub_layer_instances.push(Box::new(foreground_bar_layer));
-        }
-        sub_layer_instances.push(Box::new(value_axis_layer));
-        self.sub_layer_instances = sub_layer_instances;
+        self.sub_layer_instances = vec![Box::new(histogram_layer)];
 
         for sub_layer in self.sub_layer_instances.iter_mut() {
             sub_layer.prepare(gpu_context).await;
@@ -475,8 +427,7 @@ impl PickableLayer for ZarrHistogramLayer {}
 
 impl ExtentableLayer for ZarrHistogramLayer {
     fn extent(&self) -> Option<LayerExtentResult> {
-        let (data_min, data_max) = self.value_scale.as_ref()?.get_domain();
-        let (data_min, data_max) = (data_min as f32, data_max as f32);
+        let (data_min, data_max) = self.value_domain?;
         let max_count = self.max_count?;
 
         // The value axis (binned value domain) runs along X for a vertical

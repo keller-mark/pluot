@@ -50,26 +50,32 @@ export function FlightsExample(props) {
 
 
   const onBrushDelay = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setDelayMin(parseFloat(min));
-      setDelayMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setDelayMin(xMin);
+      setDelayMax(xMax);
     }
   });
 
   const onBrushTime = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setTimeMin(parseFloat(min));
-      setTimeMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setTimeMin(xMin);
+      setTimeMax(xMax);
     }
   });
 
   const onBrushDist = useCallback((brush, brushResult) => {
-    const { min, max } = brushResult?.layer_results?.[0]?.info ?? {};
-    if (min && max) {
-      setDistMin(parseFloat(min));
-      setDistMax(parseFloat(max));
+    if (brush && brush.vertices.length > 2) {
+      const xVals = brush.vertices.map(obj => obj.x_data);
+      const xMin = Math.min(...xVals);
+      const xMax = Math.max(...xVals);
+      setDistMin(xMin);
+      setDistMax(xMax);
     }
   });
 
@@ -114,13 +120,10 @@ export function FlightsExample(props) {
         marginRight={10}
         width={700}
         height={250}
-        cameraMatrix={[
-          1, 0, 0, 0,
-          0, 3.059022901652497e-7, 0, 0,
-          0.0, 0.0, 1.0, 0.0,
-          0.0, -1.0, 0.0, 1.0,
-        ]}
-        setCameraMatrix={NOOP}
+        aspectRatioMode="Ignore"
+        cameraMatrix={null}
+        //setCameraMatrix={NOOP}
+        cameraFilter="fixXAndFixXAxisAtYZero"
 
         brushDelay={0}
         maybeBrushDelay={0}
@@ -169,13 +172,10 @@ export function FlightsExample(props) {
         marginRight={10}
         width={700}
         height={250}
-        cameraMatrix={[
-          1, 0, 0, 0,
-          0, 0.0000016985858337648096, 0, 0,
-          0.0, 0.0, 1.0, 0.0,
-          0.0, -1.0, 0.0, 1.0,
-        ]}
-        setCameraMatrix={NOOP}
+        aspectRatioMode="Ignore"
+        cameraMatrix={null}
+        //setCameraMatrix={NOOP}
+        cameraFilter="fixXAndFixXAxisAtYZero"
 
         brushDelay={0}
         maybeBrushDelay={0}
@@ -223,13 +223,10 @@ export function FlightsExample(props) {
         marginRight={10}
         width={700}
         height={250}
-        cameraMatrix={[
-          1, 0, 0, 0,
-          0, 3.059022901652497e-7, 0, 0,
-          0.0, 0.0, 1.0, 0.0,
-          0.0, -1.0, 0.0, 1.0,
-        ]}
-        setCameraMatrix={NOOP}
+        aspectRatioMode="Ignore"
+        cameraMatrix={null}
+        //setCameraMatrix={NOOP}
+        cameraFilter="fixXAndFixXAxisAtYZero"
 
         brushDelay={0}
         maybeBrushDelay={0}

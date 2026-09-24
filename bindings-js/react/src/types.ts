@@ -3,6 +3,7 @@ import type {
   AspectRatioMode,
   AspectRatioAlignmentMode,
   CameraMatrix,
+  CameraFilterFunction,
   StoreInput,
   StoresInput,
   StoresOutput,
@@ -169,6 +170,7 @@ export type ExtentResult = {
   layer_results: LayerExtentResult[];
 };
 
+
 // === Tooltip ===
 
 /**
@@ -279,6 +281,23 @@ export type BrushResult = {
   // TODO: fill in the rest of this struct.
 };
 
+export type CameraOrExtent = CameraMatrix | {
+  // If xLim or yLim is omitted, then we use extent_wasm to fill it in.
+  // Once we have the limits (either provided directly or filled in via extent_wasm),
+  // then we use getCameraMatrixFromBounds to obtain a fully-specified camera matrix.
+  // Also, if the user uses this data structure (xLim/yLim keys), then we emit the extent_wasm result via onExtent callback.
+  xLim: [number, number] | null,
+  yLim: [number, number] | null,
+};
+
+export type CameraFilterString = "fixX"
+  | "fixY"
+  | "fixXAxisAtYZero"
+  | "fixYAxisAtXZero"
+  | "fixXAndFixXAxisAtYZero"
+  | "fixYAndFixYAxisAtXZero";
+
+
 // === Component props ===
 
 export type PluotProps = {
@@ -331,6 +350,8 @@ export type PluotProps = {
   minTimeout?: number;
   /** Upper bound (in ms) of the exponential backoff between bailed-early renders. */
   maxTimeout?: number;
+  /** Number of times a bailed-early render may retry before giving up. */
+  maxBailedEarlyRetries?: number;
   /** Whether a new render may start while a previous one is still in flight. */
   allowSimultaneousRenders?: boolean;
 
@@ -338,17 +359,11 @@ export type PluotProps = {
    * The 4x4 camera matrix. Without `setCameraMatrix`, this is treated as the
    * initial value only, and the camera is managed internally.
    */
-  cameraMatrix?: CameraMatrix | null;
+  cameraMatrix?: CameraOrExtent | null;
   /** Provide to take control of the camera matrix. */
   setCameraMatrix?: ((cameraMatrix: CameraMatrix) => void) | null;
 
-  // Mutually exclusive from specifying a camera matrix,
-  // the user can specify xLim and/or yLim props in 2D.
-  // Then, we can use extent_wasm to fill in the camera matrix for the unspecified dimension(s).
-  // Note: when the camera matrix is fully specified, or both xLim AND yLim are defined,
-  // we never need to call extent_wasm.
-  xLim?: [number, number] | null;
-  yLim?: [number, number] | null;
+  cameraFilter?: CameraFilterString | CameraFilterFunction | null;
 
   /** Whether clicking should run a picking query and call `onClick`. */
   enableClick?: boolean;
@@ -356,6 +371,12 @@ export type PluotProps = {
   enableTooltip?: boolean;
   onClick?: ((result: PickingResult) => void) | null;
   onHover?: ((result: PickingResult) => TooltipContent) | null;
+
+  /** If provided, when extent_wasm is called then we use this callback to emit its return value. */
+  onExtent?: (result: ExtentResult) => void | null;
+
+  /* If false, we just fall back to using the identity camera matrix when the camera matrix is not fully specified for all dimensions. */
+  enableExtentQuery?: boolean,
 
   // Brushing supports both a rectangular brush and a lasso (i.e., polygonal) brush.
   // We draw a brush overlay as an SVG to indicate the drawn rect/polygon (both during the draw interactions and following completion).

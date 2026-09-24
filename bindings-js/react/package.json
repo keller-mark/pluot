@@ -52,7 +52,8 @@
     "mouse-event-offset": "^3.0.2",
     "mouse-wheel": "^1.0.2",
     "lz-string": "^1.5.0",
-    "lodash-es": "^4.17.23"
+    "lodash-es": "^4.17.23",
+    "@tanstack/react-query": "^5.103.1"
   },
   "devDependencies": {
     "vitest": "^3.2.4",

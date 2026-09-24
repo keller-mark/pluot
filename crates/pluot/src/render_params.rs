@@ -14,6 +14,7 @@ use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
+use pluot_core::composite_layers::precomputed_histogram_layer::PrecomputedHistogramLayerParams;
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 
@@ -60,6 +61,7 @@ pub enum LayerParams {
     // Plot-layers
     BarPlotLayer(BarPlotLayerParams),
     HistogramLayer(HistogramLayerParams),
+    PrecomputedHistogramLayer(PrecomputedHistogramLayerParams),
     LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
     LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
