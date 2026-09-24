@@ -37,7 +37,16 @@ const STORES = {
 };
 
 export function TaxiExample(props) {
-  const [cameraMatrix, setCameraMatrix] = useState(INITIAL_CAMERA);
+  const [pickupCameraMatrix, setPickupCameraMatrix] = useState(INITIAL_CAMERA);
+  const [dropoffCameraMatrixRaw, setDropoffCameraMatrixRaw] = useState(INITIAL_CAMERA);
+
+  const [isCameraCoordinated, setIsCameraCoordinated] = useState(true);
+
+  const dropoffCameraMatrix = isCameraCoordinated ? pickupCameraMatrix : dropoffCameraMatrixRaw;
+  const setDropoffCameraMatrix = isCameraCoordinated ? setPickupCameraMatrix : setDropoffCameraMatrixRaw;
+
+  const [isPointOpacityEnabled, setIsPointOpacityEnabled] = useState(false);
+  const [pointOpacity, setPointOpacity] = useState(0.5);
 
   const [hourMin, setHourMin] = useState();
   const [hourMax, setHourMax] = useState();
@@ -185,7 +194,7 @@ export function TaxiExample(props) {
                     point_shape_mode: "Circle",
                     point_radius: null,
                     bounds: null,
-                    point_opacity: null,
+                    point_opacity: isPointOpacityEnabled ? pointOpacity : null,
                     model_matrix: MODEL_MATRIX,
 
                     x_key: "/obs/pickup_longitude",
@@ -223,8 +232,8 @@ export function TaxiExample(props) {
               ]
             }}
             viewMode={"2d"}
-            cameraMatrix={cameraMatrix}
-            setCameraMatrix={setCameraMatrix}
+            cameraMatrix={pickupCameraMatrix}
+            setCameraMatrix={setPickupCameraMatrix}
 
             enableBrushCreate
             enableBrushEdit
@@ -268,7 +277,7 @@ export function TaxiExample(props) {
                     point_shape_mode: "Circle",
                     point_radius: null,
                     bounds: null,
-                    point_opacity: null,
+                    point_opacity: isPointOpacityEnabled ? pointOpacity : null,
                     model_matrix: MODEL_MATRIX,
 
                     x_key: "/obs/dropoff_longitude",
@@ -306,8 +315,8 @@ export function TaxiExample(props) {
               ]
             }}
             viewMode={"2d"}
-            cameraMatrix={cameraMatrix}
-            setCameraMatrix={setCameraMatrix}
+            cameraMatrix={dropoffCameraMatrix}
+            setCameraMatrix={setDropoffCameraMatrix}
 
             enableBrushCreate
             enableBrushEdit
@@ -405,6 +414,36 @@ export function TaxiExample(props) {
 
 
         />
+      </div>
+      <div>
+        <label>
+          <input
+            type="checkbox"
+            checked={!isPointOpacityEnabled}
+            onChange={e => setIsPointOpacityEnabled(!e.target.checked)}
+          />
+          &nbsp;Automatic point opacity
+        </label>
+        &nbsp;
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={pointOpacity}
+          disabled={!isPointOpacityEnabled}
+          onChange={e => setPointOpacity(Number(e.target.value))}
+        />
+        &nbsp;{isPointOpacityEnabled ? pointOpacity.toFixed(2) : null}
+        <br />
+        <label>
+          <input
+            type="checkbox"
+            checked={isCameraCoordinated}
+            onChange={e => setIsCameraCoordinated(e.target.checked)}
+          />
+          &nbsp;Coordinate map zoom/pan
+        </label>
       </div>
     </div>
   );
