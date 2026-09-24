@@ -16,7 +16,7 @@ use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use crate::adata_io::{read_dataframe_index, read_encoding, read_matrix_column_f32, read_string_array};
+use crate::adata_io::{read_dataframe_index, read_encoding, read_expr_matrix_metadata, read_matrix_column_f32, read_string_array, ExprMatrixMetadata};
 use crate::adata_metadata::AnnDataEncoding;
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
@@ -62,6 +62,7 @@ impl GeneSummary {
 
 thread_local! {
     static USE_MEMO_CACHE_GENE_SUMMARY: RefCell<Option<HashMap<Vec<String>, Arc<GeneSummary>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_EXPR_MATRIX_METADATA: RefCell<Option<HashMap<Vec<String>, Arc<ExprMatrixMetadata>>>> = const { RefCell::new(None) };
 }
 
 async fn use_memo_gene_summary(initializer: impl AsyncFnOnce() -> GeneSummary, keys: &[String], cache_enabled: bool) -> Arc<GeneSummary> {
@@ -79,6 +80,23 @@ async fn use_memo_gene_summary(initializer: impl AsyncFnOnce() -> GeneSummary, k
         cache.borrow_mut().get_or_insert_with(HashMap::new).insert(keys.to_vec(), summary.clone());
     });
     summary
+}
+
+async fn use_memo_expr_matrix_metadata(initializer: impl AsyncFnOnce() -> ExprMatrixMetadata, keys: &[String], cache_enabled: bool) -> Arc<ExprMatrixMetadata> {
+    if !cache_enabled {
+        return Arc::new(initializer().await);
+    }
+
+    let cached = USE_MEMO_CACHE_EXPR_MATRIX_METADATA.with(|cache| cache.borrow().as_ref().and_then(|map| map.get(keys).cloned()));
+    if let Some(metadata) = cached {
+        return metadata;
+    }
+
+    let metadata = Arc::new(initializer().await);
+    USE_MEMO_CACHE_EXPR_MATRIX_METADATA.with(|cache| {
+        cache.borrow_mut().get_or_insert_with(HashMap::new).insert(keys.to_vec(), metadata.clone());
+    });
+    metadata
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +146,15 @@ pub async fn load_obs_categorical(store: AdataStore, store_name: &str, groupby: 
     );
 
     futures::try_join!(categories_future, codes_future)
+}
+
+/// Loads (and caches) the expression matrix's `zarr.json` documents. Every gene's column read
+/// needs these and none of them depend on which gene is being read, so this is loaded once per
+/// matrix alongside the var names and the obs groupby column, rather than per gene.
+pub async fn load_expr_matrix_metadata(store: AdataStore, store_name: &str, layer: Option<&str>, cache_enabled: bool) -> Arc<ExprMatrixMetadata> {
+    let array_path = expr_array_path(layer);
+    let keys = vec!["dotplot_expr_matrix_metadata".to_string(), store_name.to_string(), array_path.clone()];
+    use_memo_expr_matrix_metadata(async || read_expr_matrix_metadata(store, &array_path).await, &keys, cache_enabled).await
 }
 
 /// Path of the expression matrix for `layer`: `/X` for `None`, else `/layers/<layer>`.
@@ -240,14 +267,14 @@ pub async fn load_gene_summaries_for_gene(
     var_colname: &str,
     gene_name: &str,
     col_index: u64,
-    layer: Option<&str>,
+    matrix: &ExprMatrixMetadata,
     groupby: &str,
     categories: &[String],
     rows_by_category: &HashMap<String, Vec<u32>>,
     expression_cutoff: f32,
     cache_enabled: bool,
 ) -> Option<Vec<GeneSummary>> {
-    let array_path = expr_array_path(layer);
+    let array_path = &matrix.matrix_path;
     let expr_keys = vec![
         "dotplot_expr".to_string(),
         store_name.to_string(),
@@ -256,7 +283,7 @@ pub async fn load_gene_summaries_for_gene(
         gene_name.to_string(),
     ];
     // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
-    let expr_values = match use_memo_vec_f32(async || read_matrix_column_f32(store.clone(), &array_path, col_index).await, &expr_keys, cache_enabled).await {
+    let expr_values = match use_memo_vec_f32(async || read_matrix_column_f32(store.clone(), matrix, col_index).await, &expr_keys, cache_enabled).await {
         Ok(expr) => expr,
         Err(error) => {
             if is_timed_out_zarrs_error(&error) {
@@ -292,13 +319,14 @@ pub async fn load_gene_summaries_for_gene(
 
 /// Loads one [`GeneSummary`] per (resolved gene, resolved obs category) pair, all at once.
 ///
-/// The var names and the obs groupby column are loaded in parallel (`try_join!`), since neither
-/// depends on the other. Once both are ready, each resolved gene is handled by its own
-/// [`load_gene_summaries_for_gene`] future; these run concurrently via `join_all` rather than
-/// `try_join_all`, so one gene's failed or slow read can never cancel another gene's in-flight
-/// read. This waits for every gene before returning; a caller that wants to render whatever has
-/// loaded so far without waiting for the rest should drive [`load_gene_summaries_for_gene`]
-/// directly instead (see `AdataZarrDotPlotLayer::prepare` for an example).
+/// The var names, the obs groupby column and the expression matrix's own `zarr.json` documents are
+/// loaded in parallel, since none depends on the others. Once all are ready, each resolved gene is
+/// handled by its own [`load_gene_summaries_for_gene`] future; these run concurrently via
+/// `join_all` rather than `try_join_all`, so one gene's failed or slow read can never cancel
+/// another gene's in-flight read. This waits for every gene before returning; a caller that wants
+/// to render whatever has loaded so far without waiting for the rest should drive
+/// [`load_gene_summaries_for_gene`] directly instead (see `AdataZarrDotPlotLayer::prepare` for an
+/// example).
 pub async fn load_gene_summaries(
     store: AdataStore,
     store_name: &str,
@@ -310,10 +338,14 @@ pub async fn load_gene_summaries(
     expression_cutoff: f32,
     cache_enabled: bool,
 ) -> Result<Vec<GeneSummary>, ArrayError> {
-    let (var_index_values, (obs_categories, obs_codes)) = futures::try_join!(
-        load_var_names(store.clone(), store_name, var_column, cache_enabled),
-        load_obs_categorical(store.clone(), store_name, groupby, cache_enabled),
-    )?;
+    let (matrix, columns) = futures::join!(
+        load_expr_matrix_metadata(store.clone(), store_name, layer, cache_enabled),
+        futures::future::try_join(
+            load_var_names(store.clone(), store_name, var_column, cache_enabled),
+            load_obs_categorical(store.clone(), store_name, groupby, cache_enabled),
+        ),
+    );
+    let (var_index_values, (obs_categories, obs_codes)) = columns?;
 
     let resolved_genes = resolve_gene_columns(var_names, &var_index_values);
     let rows_by_category = bucket_rows_by_category(categories, &obs_categories, &obs_codes);
@@ -326,7 +358,7 @@ pub async fn load_gene_summaries(
             &var_colname,
             gene_name,
             *col_index,
-            layer,
+            &matrix,
             groupby,
             categories,
             &rows_by_category,

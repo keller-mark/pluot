@@ -28,17 +28,127 @@ const MAX_ELEMENTS_PER_READ: u64 = MAX_BYTES_PER_READ / 8;
 /// element is a group (e.g. `dataframe`, `categorical`, `dict`) or an array
 /// (e.g. `array`, `string-array`).
 pub async fn read_encoding(store: Arc<dyn AsyncReadableStorageTraits>, path: &str) -> AnnDataEncoding {
-    let attributes = if let Ok(group) = zarrs::group::Group::async_open(store.clone(), path).await {
-        group.attributes().clone()
-    } else {
-        zarrs::array::Array::async_open(store, path)
-            .await
-            .unwrap_or_else(|e| panic!("Failed to open AnnData element at \"{path}\": {e}"))
-            .attributes()
-            .clone()
-    };
-    serde_json::from_value(serde_json::Value::Object(attributes))
+    if let Ok(group) = zarrs::group::Group::async_open(store.clone(), path).await {
+        return parse_encoding(group.attributes(), path);
+    }
+    let array = zarrs::array::Array::async_open(store, path)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to open AnnData element at \"{path}\": {e}"));
+    parse_encoding(array.attributes(), path)
+}
+
+fn parse_encoding(attributes: &serde_json::Map<String, serde_json::Value>, path: &str) -> AnnDataEncoding {
+    serde_json::from_value(serde_json::Value::Object(attributes.clone()))
         .unwrap_or_else(|e| panic!("Invalid AnnData encoding attributes at \"{path}\": {e}"))
+}
+
+/// The parts of an AnnData expression matrix (`X` or a `layers` entry) that live in `zarr.json`
+/// documents rather than in chunks: the matrix's own AnnData encoding, plus the zarr metadata of
+/// every array a column read opens.
+///
+/// Reading one gene's column opens exactly the same two to four arrays that reading any other
+/// gene's column opens, so letting each read open them itself refetches the same handful of
+/// `zarr.json` documents once per gene, per frame. Loading them once up front instead lets every
+/// read rebuild its arrays in memory via [`zarrs::array::Array::new_with_metadata`], the same way
+/// `OmeZarrBitmapLayer` reuses the array metadata its multiscale parent already loaded.
+#[derive(Clone, Debug)]
+pub struct ExprMatrixMetadata {
+    /// The matrix itself: a dense array, or a `csr_matrix`/`csc_matrix` group.
+    pub matrix_path: String,
+    pub encoding: AnnDataEncoding,
+    /// The matrix array itself when dense, else the sparse group's `data` sibling.
+    values: zarrs::array::ArrayMetadata,
+    /// The sparse group's `indptr` and `indices` siblings; `None` when the matrix is dense.
+    indptr: Option<zarrs::array::ArrayMetadata>,
+    indices: Option<zarrs::array::ArrayMetadata>,
+}
+
+impl ExprMatrixMetadata {
+    fn values_array(&self, store: Arc<dyn AsyncReadableStorageTraits>) -> zarrs::array::Array<dyn AsyncReadableStorageTraits> {
+        let path = match self.encoding {
+            AnnDataEncoding::Array { .. } => self.matrix_path.clone(),
+            _ => format!("{}/data", self.matrix_path),
+        };
+        array_with_metadata(store, &path, &self.values)
+    }
+
+    fn indptr_array(&self, store: Arc<dyn AsyncReadableStorageTraits>) -> zarrs::array::Array<dyn AsyncReadableStorageTraits> {
+        self.sparse_array(store, "indptr", self.indptr.as_ref())
+    }
+
+    fn indices_array(&self, store: Arc<dyn AsyncReadableStorageTraits>) -> zarrs::array::Array<dyn AsyncReadableStorageTraits> {
+        self.sparse_array(store, "indices", self.indices.as_ref())
+    }
+
+    fn sparse_array(&self, store: Arc<dyn AsyncReadableStorageTraits>, name: &str, metadata: Option<&zarrs::array::ArrayMetadata>) -> zarrs::array::Array<dyn AsyncReadableStorageTraits> {
+        let metadata = metadata.unwrap_or_else(|| panic!("Expected a sparse AnnData matrix at \"{}\", which would have a \"{name}\" array", self.matrix_path));
+        array_with_metadata(store, &format!("{}/{name}", self.matrix_path), metadata)
+    }
+
+    /// `n_obs`, from the logical `[n_obs, n_var]` shape in the sparse matrix's encoding attributes.
+    fn sparse_n_obs(&self) -> usize {
+        match &self.encoding {
+            AnnDataEncoding::CsrMatrix { shape, .. } | AnnDataEncoding::CscMatrix { shape, .. } => shape[0] as usize,
+            other => panic!("Expected a csr_matrix or csc_matrix encoding at \"{}\", got {other:?}", self.matrix_path),
+        }
+    }
+}
+
+fn array_with_metadata(store: Arc<dyn AsyncReadableStorageTraits>, path: &str, metadata: &zarrs::array::ArrayMetadata) -> zarrs::array::Array<dyn AsyncReadableStorageTraits> {
+    zarrs::array::Array::new_with_metadata(store, path, metadata.clone())
+        .unwrap_or_else(|e| panic!("Failed to rebuild zarr array at \"{path}\": {e}"))
+}
+
+/// Opens the zarr array at `path`, rebuilding it in memory when the caller already holds its
+/// `metadata` (no `zarr.json` fetch) and fetching that document otherwise.
+async fn open_array(store: Arc<dyn AsyncReadableStorageTraits>, path: &str, metadata: Option<&zarrs::array::ArrayMetadata>) -> zarrs::array::Array<dyn AsyncReadableStorageTraits> {
+    match metadata {
+        Some(metadata) => array_with_metadata(store, path, metadata),
+        None => zarrs::array::Array::async_open(store, path)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to open zarr array at \"{path}\": {e}")),
+    }
+}
+
+/// Reads every `zarr.json` that reading columns of the expression matrix at `matrix_path` needs.
+///
+/// A sparse matrix is a group whose `data`, `indptr` and `indices` arrays are fetched together;
+/// a dense one is an array, whose encoding attributes and zarr metadata both come from the single
+/// document that opening it already fetched.
+pub async fn read_expr_matrix_metadata(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str) -> ExprMatrixMetadata {
+    let Ok(group) = zarrs::group::Group::async_open(store.clone(), matrix_path).await else {
+        let array = zarrs::array::Array::async_open(store, matrix_path)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to open AnnData expression matrix at \"{matrix_path}\": {e}"));
+        return ExprMatrixMetadata {
+            matrix_path: matrix_path.to_string(),
+            encoding: parse_encoding(array.attributes(), matrix_path),
+            values: array.metadata().clone(),
+            indptr: None,
+            indices: None,
+        };
+    };
+
+    let (values, indptr, indices) = futures::join!(
+        read_array_metadata(store.clone(), format!("{matrix_path}/data")),
+        read_array_metadata(store.clone(), format!("{matrix_path}/indptr")),
+        read_array_metadata(store.clone(), format!("{matrix_path}/indices")),
+    );
+    ExprMatrixMetadata {
+        matrix_path: matrix_path.to_string(),
+        encoding: parse_encoding(group.attributes(), matrix_path),
+        values,
+        indptr: Some(indptr),
+        indices: Some(indices),
+    }
+}
+
+async fn read_array_metadata(store: Arc<dyn AsyncReadableStorageTraits>, path: String) -> zarrs::array::ArrayMetadata {
+    zarrs::array::Array::async_open(store, &path)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to open AnnData expression array at \"{path}\": {e}"))
+        .metadata()
+        .clone()
 }
 
 /// Reads a whole `string-array`-encoded zarr array.
@@ -87,8 +197,8 @@ pub async fn read_numeric_column(store: Arc<dyn AsyncReadableStorageTraits>, col
 /// Reads one column (all rows) of a dense 2D numeric zarr array (e.g. AnnData
 /// `X` or a `layers` entry) in its native dtype, given the zero-based column
 /// index. See [`load_arr_as_numeric_data`] for the whole-array equivalent.
-pub async fn read_dense_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
+pub async fn read_dense_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, array_metadata: Option<&zarrs::array::ArrayMetadata>, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let array = open_array(store, array_path, array_metadata).await;
     let n_obs = array.shape()[0];
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[0..n_obs, col_index..col_index + 1]);
 
@@ -119,8 +229,8 @@ pub async fn read_dense_column_numeric(store: Arc<dyn AsyncReadableStorageTraits
 
 /// Reads one column (all rows) of a dense 2D numeric zarr array (e.g. AnnData
 /// `X` or a `layers` entry) as `f32`, given the zero-based column index.
-pub async fn read_dense_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
+pub async fn read_dense_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, array_metadata: Option<&zarrs::array::ArrayMetadata>, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
+    let array = open_array(store, array_path, array_metadata).await;
     let n_obs = array.shape()[0];
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[0..n_obs, col_index..col_index + 1]);
 
@@ -135,15 +245,6 @@ pub async fn read_dense_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, a
         }
         other => panic!("Unsupported dtype \"{other}\" for AnnData expression array \"{array_path}\" (expected float32 or float64)"),
     })
-}
-
-/// Reads the logical `[n_obs, n_var]` shape of a CSR- or CSC-encoded sparse matrix from its
-/// group's AnnData encoding attributes.
-async fn read_sparse_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str) -> Vec<u64> {
-    match read_encoding(store, matrix_path).await {
-        AnnDataEncoding::CsrMatrix { shape, .. } | AnnDataEncoding::CscMatrix { shape, .. } => shape,
-        other => panic!("Expected a csr_matrix or csc_matrix encoding at \"{matrix_path}\", got {other:?}"),
-    }
 }
 
 /// A 1D integer zarr array, held in the dtype it was stored in.
@@ -203,10 +304,11 @@ impl IntArray {
     }
 }
 
-/// Reads `array_path[start..stop]` of an integer-typed 1D zarr array (e.g. a sparse matrix's
-/// `indptr` or `indices`) in its native signed/unsigned width.
-async fn read_int_array_range(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, start: u64, stop: u64) -> Result<IntArray, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
+/// Reads `array[start..stop]` of an integer-typed 1D zarr array (e.g. a sparse matrix's `indptr`
+/// or `indices`) in its native signed/unsigned width. Takes an already-opened array because a
+/// single column read calls this many times over the same two arrays.
+async fn read_int_array_range(array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>, start: u64, stop: u64) -> Result<IntArray, zarrs::array::ArrayError> {
+    let array_path = array.path();
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[start..stop]);
 
     use zarrs::plugin::ZarrVersion;
@@ -309,9 +411,9 @@ where
 /// from — and a span's `data` is fetched only once its `indices` have shown that the span holds
 /// something for this column, which for a single gene skips nearly every span.
 async fn read_csr_column_values<V>(
-    store: Arc<dyn AsyncReadableStorageTraits>,
-    matrix_path: &str,
     data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    indptr_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    indices_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
     col_index: u64,
     n_obs: usize,
     budget: u64,
@@ -319,20 +421,18 @@ async fn read_csr_column_values<V>(
 where
     V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
 {
-    let indptr_path = format!("{matrix_path}/indptr");
-    let indices_path = format!("{matrix_path}/indices");
     let elements_per_read = budget as usize;
 
     let mut column = vec![V::default(); n_obs];
     for first_row in (0..n_obs).step_by(elements_per_read) {
         let rows_in_block = elements_per_read.min(n_obs - first_row);
         // One offset per row of the block, plus the terminating offset that closes its last row.
-        let indptr_block = read_int_array_range(store.clone(), &indptr_path, first_row as u64, (first_row + rows_in_block) as u64 + 1).await?;
+        let indptr_block = read_int_array_range(indptr_array, first_row as u64, (first_row + rows_in_block) as u64 + 1).await?;
         let (block_start, block_stop) = (indptr_block.offset_at(0), indptr_block.offset_at(rows_in_block));
 
         for span_start in (block_start..block_stop).step_by(elements_per_read) {
             let span_stop = (span_start + budget).min(block_stop);
-            let indices_span = read_int_array_range(store.clone(), &indices_path, span_start, span_stop).await?;
+            let indices_span = read_int_array_range(indices_array, span_start, span_stop).await?;
             let matches = with_int_slice!(&indices_span, |indices| find_column_entries(indices, col_index));
             if matches.is_empty() {
                 continue;
@@ -354,28 +454,27 @@ where
 }
 
 /// Reads one column (single gene, all rows) of a CSC-sparse AnnData matrix (e.g. `X` or a
-/// `layers` entry) in its native dtype, given the zero-based column index. `matrix_path` is the
-/// path to the `csc_matrix`-encoded group, which has sibling `indptr`, `indices`, and `data`
-/// arrays. Since a CSC matrix's `indptr` is indexed by column, the requested column's non-zero
-/// entries live in one contiguous range of `indices`/`data`, so only that range is read (unlike
+/// `layers` entry) in its native dtype, given the zero-based column index. `matrix` describes the
+/// `csc_matrix`-encoded group, whose `indptr`, `indices` and `data` siblings this reads. Since a
+/// CSC matrix's `indptr` is indexed by column, the requested column's non-zero entries live in one
+/// contiguous range of `indices`/`data`, so only that range is read (unlike
 /// [`read_csr_column_numeric`]). See [`read_dense_column_numeric`] for the dense equivalent.
-pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
-    let n_obs = shape[0] as usize;
+pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix: &ExprMatrixMetadata, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let n_obs = matrix.sparse_n_obs();
 
-    let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
+    let indptr = read_int_array_range(&matrix.indptr_array(store.clone()), col_index, col_index + 2).await?;
     let (start, stop) = (indptr.offset_at(0), indptr.offset_at(1));
 
     // An all-zero column has no `indices`/`data` entries to read at all.
     let row_indices = if start != stop {
-        Some(read_int_array_range(store.clone(), &format!("{matrix_path}/indices"), start, stop).await?)
+        Some(read_int_array_range(&matrix.indices_array(store.clone()), start, stop).await?)
     } else {
         None
     };
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[start..stop]);
 
-    let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
+    let data_array = matrix.values_array(store);
+    let data_path = data_array.path().to_string();
 
     use zarrs::plugin::ZarrVersion;
     let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
@@ -409,20 +508,21 @@ pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 }
 
 /// Reads one column (single gene, all rows) of a CSR-sparse AnnData matrix (e.g. `X` or a
-/// `layers` entry) in its native dtype, given the zero-based column index. `matrix_path` is the
-/// path to the `csr_matrix`-encoded group, which has sibling `indptr`, `indices`, and `data`
-/// arrays. Unlike the CSC case, a CSR matrix's `indptr` is indexed by row rather than column, so
+/// `layers` entry) in its native dtype, given the zero-based column index. `matrix` describes the
+/// `csr_matrix`-encoded group, whose `indptr`, `indices` and `data` siblings this reads.
+/// Unlike the CSC case, a CSR matrix's `indptr` is indexed by row rather than column, so
 /// the requested column's non-zero entries are scattered across every row's range: there is no
 /// contiguous slice of `indices`/`data` to target, and finding them means traversing the whole
 /// matrix. [`read_csr_column_values`] does that traversal in fixed-size pieces, discarding each as
 /// soon as the entries it contributes have been written, so peak memory stays proportional to the
 /// `n_obs`-length output rather than to the size of the matrix.
-pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
-    let n_obs = shape[0] as usize;
+pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix: &ExprMatrixMetadata, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let n_obs = matrix.sparse_n_obs();
 
-    let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
+    let data_array = matrix.values_array(store.clone());
+    let indptr_array = matrix.indptr_array(store.clone());
+    let indices_array = matrix.indices_array(store);
+    let data_path = data_array.path().to_string();
 
     use zarrs::plugin::ZarrVersion;
     let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
@@ -430,7 +530,7 @@ pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
     macro_rules! extract {
         ($rust_ty:ty, $variant:ident) => {{
             let column = read_csr_column_values::<$rust_ty>(
-                store.clone(), matrix_path, &data_array, col_index, n_obs, MAX_ELEMENTS_PER_READ,
+                &data_array, &indptr_array, &indices_array, col_index, n_obs, MAX_ELEMENTS_PER_READ,
             ).await?;
             NumericData::$variant(Arc::new(column))
         }};
@@ -454,19 +554,22 @@ pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 /// Reads one column (single gene, all rows) of an AnnData expression matrix — `X` or a `layers`
 /// entry — as `f32`, given the zero-based column index.
 ///
-/// AnnData stores such a matrix in any of three layouts, and `matrix_path` may point at any of
-/// them: a dense `array`, or a `csr_matrix` or `csc_matrix` group. The layout is read from the
-/// element's own encoding metadata and dispatched to the matching reader, so callers that just
-/// want a gene's values need not know (or branch on) how the matrix happens to be stored.
+/// AnnData stores such a matrix in any of three layouts, and `matrix` may describe any of them: a
+/// dense `array`, or a `csr_matrix` or `csc_matrix` group. The layout is taken from the matrix's
+/// own encoding metadata and dispatched to the matching reader, so callers that just want a gene's
+/// values need not know (or branch on) how the matrix happens to be stored.
+///
+/// `matrix` is read once for the whole matrix (see [`read_expr_matrix_metadata`]) rather than per
+/// column, so reading many genes fetches no `zarr.json` at all.
 ///
 /// Values are converted to `f32` because that is what the GPU consumes; use
 /// [`read_dense_column_numeric`], [`read_csr_column_numeric`] or [`read_csc_column_numeric`]
 /// directly to keep a column in its stored dtype.
-pub async fn read_matrix_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
-    match read_encoding(store.clone(), matrix_path).await {
-        AnnDataEncoding::Array { .. } => read_dense_column_f32(store, matrix_path, col_index).await,
-        AnnDataEncoding::CsrMatrix { .. } => Ok(read_csr_column_numeric(store, matrix_path, col_index).await?.as_f32().into_owned()),
-        AnnDataEncoding::CscMatrix { .. } => Ok(read_csc_column_numeric(store, matrix_path, col_index).await?.as_f32().into_owned()),
-        other => panic!("Unsupported AnnData expression matrix encoding at \"{matrix_path}\": {other:?}"),
+pub async fn read_matrix_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, matrix: &ExprMatrixMetadata, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
+    match matrix.encoding {
+        AnnDataEncoding::Array { .. } => read_dense_column_f32(store, &matrix.matrix_path, Some(&matrix.values), col_index).await,
+        AnnDataEncoding::CsrMatrix { .. } => Ok(read_csr_column_numeric(store, matrix, col_index).await?.as_f32().into_owned()),
+        AnnDataEncoding::CscMatrix { .. } => Ok(read_csc_column_numeric(store, matrix, col_index).await?.as_f32().into_owned()),
+        ref other => panic!("Unsupported AnnData expression matrix encoding at \"{}\": {other:?}", matrix.matrix_path),
     }
 }

@@ -23,7 +23,7 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
-use crate::dotplot_data::{bucket_rows_by_category, load_gene_summaries_for_gene, load_obs_categorical, load_var_names, resolve_gene_columns, GeneSummary};
+use crate::dotplot_data::{bucket_rows_by_category, load_expr_matrix_metadata, load_gene_summaries_for_gene, load_obs_categorical, load_var_names, resolve_gene_columns, GeneSummary};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -135,15 +135,23 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let requested_categories = self.layer_params.categories.clone();
         let expression_cutoff = self.layer_params.expression_cutoff;
 
-        // Stage 1: the obs groupby column and the var names/column used to resolve gene
-        // columns. Neither depends on the other (`try_join`), and both are prerequisites for
-        // the group axis and every gene's points below -- but NOT for the gene axis, which is
-        // rendered further down directly from `var_names` (the requested gene list from the
-        // layer params) with no I/O at all.
-        let metadata_future = futures::future::try_join(
-            load_var_names(store.clone(), &store_name, var_column.as_deref(), cache_enabled),
-            load_obs_categorical(store.clone(), &store_name, &groupby, cache_enabled),
-        );
+        // Stage 1: the obs groupby column, the var names/column used to resolve gene columns, and
+        // the expression matrix's own `zarr.json` documents. None depends on the others, and all
+        // are prerequisites for the group axis and every gene's points below -- but NOT for the
+        // gene axis, which is rendered further down directly from `var_names` (the requested gene
+        // list from the layer params) with no I/O at all. The matrix metadata is loaded here, once,
+        // rather than inside each gene's future, which would refetch the same handful of documents
+        // once per gene.
+        let metadata_future = async {
+            let (matrix, columns) = futures::join!(
+                load_expr_matrix_metadata(store.clone(), &store_name, array_layer.as_deref(), cache_enabled),
+                futures::future::try_join(
+                    load_var_names(store.clone(), &store_name, var_column.as_deref(), cache_enabled),
+                    load_obs_categorical(store.clone(), &store_name, &groupby, cache_enabled),
+                ),
+            );
+            columns.map(|(var_index_values, obs)| (matrix, var_index_values, obs))
+        };
         let metadata = match maybe_timeout!(metadata_future, timeout).await {
             Ok(Ok(metadata)) => Some(metadata),
             Ok(Err(e)) => {
@@ -164,7 +172,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // the wall-clock timeout below cut the rest short before its turn) -- either way, it's
         // simply omitted from this round's dots rather than blocking the genes that did load.
         let (group_labels, gene_summaries, genes_bailed) = match &metadata {
-            Some((var_index_values, (obs_categories, obs_codes))) => {
+            Some((matrix, var_index_values, (obs_categories, obs_codes))) => {
                 // A `None` `categories` param means "every category of `groupby`", in its
                 // stored order -- matching `sc.pl.dotplot`'s own default and the behavior this
                 // layer had before `categories` became an explicit list. `Some(vec![])` means
@@ -180,7 +188,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     let store = store.clone();
                     let store_name = &store_name;
                     let var_colname = &var_colname;
-                    let array_layer = array_layer.as_deref();
+                    let matrix = matrix.as_ref();
                     let groupby = &groupby;
                     let requested_categories = &requested_categories;
                     let rows_by_category = &rows_by_category;
@@ -191,7 +199,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                             var_colname,
                             gene_name,
                             *col_index,
-                            array_layer,
+                            matrix,
                             groupby,
                             requested_categories,
                             rows_by_category,
