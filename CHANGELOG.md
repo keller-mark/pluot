@@ -1,4 +1,11 @@
 
+## 0.1.20
+
+### Patch Changes
+
+- Add an extent trait and extent_wasm bindings for obtaining initial camera settings when not fully specified up-front by the user. Update the histogram to use data units along its X-axis so that brushing can be performed in data-units. Update taxi and flights examples. Use react-query to manage the async wasm function calls in the Pluot React component. (`@pluot/react`, `@pluot/core`) ([#324](https://github.com/keller-mark/pluot/pull/324))
+
+
 ## 0.1.19
 
 ### Patch Changes
