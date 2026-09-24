@@ -188,6 +188,8 @@ function PluotInner(props: PluotProps) {
     enableTooltip = false,
     onClick: onClickProp = null,
     onHover: onHoverProp = null,
+    onExtent: onExtentProp = null,
+    extentKey = null,
     brushUnitsModeX = "Data",
     brushUnitsModeY = "Data",
     brushMarginTop,
@@ -286,7 +288,7 @@ function PluotInner(props: PluotProps) {
   // invalidate the extent (see the `applyLim`-triggering effect below).
   const extentQuery = useQuery({
     queryKey: ['pluot-extent', plotId, width, height, aspectRatioMode, aspectRatioAlignmentMode,
-      marginTop, marginRight, marginBottom, marginLeft],
+      marginTop, marginRight, marginBottom, marginLeft, extentKey],
     queryFn: async (): Promise<ExtentResult> => {
       const renderParams: RenderParams = {
         schema_version: schemaVersion,
@@ -319,7 +321,11 @@ function PluotInner(props: PluotProps) {
       // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
       // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
       // normalization step is needed.
-      return await extent_wasm(renderParams) as ExtentResult;
+      const extentResult = await extent_wasm(renderParams) as ExtentResult;
+      if (typeof onExtentProp === "function") {
+        onExtentProp(extentResult);
+      }
+      return extentResult;
     },
     enabled: extentQueryEnabled,
   });
@@ -400,7 +406,7 @@ function PluotInner(props: PluotProps) {
       margins: { marginTop, marginRight, marginBottom, marginLeft },
     });
     return Float32Array.from(computedCameraMatrix);
-  }, [extentQueryEnabled, hasCompleteCameraParams, extentQuery.data, extentQuery.isSuccess]);
+  }, [extentQueryEnabled, hasCompleteCameraParams, extentQuery.data, extentQuery.isSuccess, extentKey]);
 
   const hasFullCameraMatrixProp = cameraMatrixProp && isArray(cameraMatrixProp);
 
@@ -416,7 +422,6 @@ function PluotInner(props: PluotProps) {
   const [uncontrolledCameraMatrix, setUncontrolledCameraMatrix] = useState<CameraMatrix | undefined>(filteredInitialCameraMatrix);
 
   useEffect(() => {
-    console.log("useEffect: setUncontrolledCameraMatrix")
     setUncontrolledCameraMatrix(prev => prev === undefined ? filteredInitialCameraMatrix : prev);
   }, [filteredInitialCameraMatrix]);
 

@@ -375,6 +375,9 @@ export type PluotProps = {
   /** If provided, when extent_wasm is called then we use this callback to emit its return value. */
   onExtent?: (result: ExtentResult) => void | null;
 
+  /** If provided, this key will be used to invalidate previous extent results. */
+  extentKey?: string | null;
+
   /* If false, we just fall back to using the identity camera matrix when the camera matrix is not fully specified for all dimensions. */
   enableExtentQuery?: boolean,
 
