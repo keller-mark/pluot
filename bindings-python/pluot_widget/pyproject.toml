@@ -32,6 +32,8 @@ exclude = ["node_modules"]
 build-function = "hatch_jupyter_builder.npm_builder"
 ensured-targets = ["src/pluot_widget/static/widget.js"]
 skip-if-exists = ["src/pluot_widget/static/widget.js"]
+# Allows `uv sync` in environments without pnpm or the wasm/JS toolchain (e.g., CI jobs that only test the Rust-backed package).
+optional-editable-build = true
 dependencies = ["hatch-jupyter-builder>=0.5.0"]
 
 [tool.hatch.build.hooks.jupyter-builder.build-kwargs]
