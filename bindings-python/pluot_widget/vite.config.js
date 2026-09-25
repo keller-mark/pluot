@@ -3,6 +3,11 @@ import react from "@vitejs/plugin-react";
 import anywidget from "@anywidget/vite";
 
 export default defineConfig({
+  server: {
+    port: 5183,
+    // widget.py hardcodes this port for ANYWIDGET_HMR.
+    strictPort: true,
+  },
   build: {
     outDir: "src/pluot_widget/static",
     lib: {

@@ -37,7 +37,7 @@ DEFAULT_CAMERA_MATRIX_3D: list[float] = [
 ]
 
 if os.getenv("ANYWIDGET_HMR"):
-    _ESM = "http://localhost:5173/js/widget.tsx?anywidget"
+    _ESM = "http://localhost:5183/js/widget.tsx?anywidget"
 else:
     _ESM = pathlib.Path(__file__).parent / "static" / "widget.js"
 
