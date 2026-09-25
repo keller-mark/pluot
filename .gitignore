@@ -69,3 +69,4 @@ crates/**/CHANGELOG.md
 RELEASE_NOTES.md
 
 references/
+dist-py/

@@ -1398,7 +1398,7 @@ requires-dist = [
 
 [[package]]
 name = "pluot-core"
-version = "0.1.19"
+version = "0.1.20"
 source = { editable = "bindings-python/pluot_core" }
 dependencies = [
     { name = "numpy" },
@@ -1415,7 +1415,7 @@ requires-dist = [
 
 [[package]]
 name = "pluot-widget"
-version = "0.1.19"
+version = "0.1.20"
 source = { editable = "bindings-python/pluot_widget" }
 dependencies = [
     { name = "anywidget" },
