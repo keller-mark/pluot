@@ -1,4 +1,11 @@
 
+## 0.1.22
+
+### Patch Changes
+
+- Fix release issue in github actions workflow. (`@pluot/core`) ([#333](https://github.com/keller-mark/pluot/pull/333))
+
+
 ## 0.1.21
 
 ### Patch Changes
