@@ -18,7 +18,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "pluot_core==0.1.20",
+  "pluot_core==0.1.21",
   "numpy>=2",
   "zarr>=3",
   "pillow==11.3.0"
@@ -32,7 +32,7 @@ dev = [
   'jupyterlab>=3.0.0',
   "marimo",
   "pandas",
-  "pluot_widget==0.1.20",
+  "pluot_widget==0.1.21",
 ]
 
 [project.urls]
