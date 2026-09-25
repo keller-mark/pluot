@@ -11,10 +11,37 @@ import { LinkButton } from '@astrojs/starlight/components';
 Install the `pluot` Python package from [PyPI](https://pypi.org/project/pluot/).
 
 ```sh frame="none"
-pip install pluot
+pip install "pluot[bindings,widget]"
 ```
 
 <LinkButton href="https://github.com/keller-mark/pluot/tree/main/bindings-python/notebooks">View example notebooks</LinkButton>
+
+## Widget-only installation
+
+Specify only the `widget` extra to omit the Rust bindings during installation.
+
+```sh frame="none"
+pip install "pluot[widget]"
+```
+
+
+## Bindings-only installation
+
+Specify only the `bindings` extra to omit the widget during installation.
+
+```sh frame="none"
+pip install "pluot[bindings]"
+```
+
+<details>
+<summary>When to use widget-only or bindings-only installation?</summary>
+
+- The widget-only package is a lightweight **pure Python** package which renders interactive plots as notebook widgets via an exported [Anywidget](https://anywidget.dev/). The lack of Rust bindings can make installation easier in certain environments such as Pyodide, JupyterLite, and Marimo-WASM.
+
+- The Rust bindings package enables Python to render plots by directly calling the bound Rust functions. As the name suggests, the Rust bindings package is **not** pure Python, which may complicate installation in certain environments such as Pyodide, JupyterLite, and Marimo-WASM.
+
+</details>
+
 
 ## Zarr data
 

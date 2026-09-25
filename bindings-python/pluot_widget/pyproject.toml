@@ -11,7 +11,7 @@ authors = [
   {name = "Mark Keller"}
 ]
 readme = "README.md"
-description = "AnyWidget for rendering Pluot visualizations client-side via WebAssembly"
+description = "AnyWidget for rendering Pluot visualizations client-side via WebAssembly. Pure python package."
 dependencies = [
   "pluot_core==0.1.22",
   "zarr>=3",

@@ -6,7 +6,8 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image, render_to_svg, PluotWasmWidget
+    from pluot import render_to_image, render_to_svg
+    from pluot_widget import PluotWasmWidget
     import numpy as np
     import marimo as mo
     import json
@@ -25,7 +26,7 @@ def _():
 
 @app.cell
 def _():
-    from pluot.viewport import (
+    from pluot_core.viewport import (
         Bounds, ViewportParams, Margins,
         get_camera_matrix_from_bounds, get_bounds
     )

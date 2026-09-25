@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pluot import render_to_array
 from pluot_core.font import register_font
-from pluot.zarr import _RESULT_CACHE  # noqa: PLC2701 – cleared between tests
+from pluot_bound.zarr import _RESULT_CACHE  # noqa: PLC2701 – cleared between tests
 
 VENDOR_DIR = Path(__file__).parent.parent.parent / "vendor" / "urw-core35-fonts"
 

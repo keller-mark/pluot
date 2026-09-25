@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "pluot",
+#     "pluot[bindings]",
 # ]
 # ///
 from pluot import render_to_image

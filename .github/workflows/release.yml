@@ -357,8 +357,9 @@ jobs:
         run: |
           cd bindings-js/core && pnpm run copy-fonts && cd -
           pnpm run build && pnpm run bundle
-      - name: Build pluot_core and pluot_widget
+      - name: Build pluot, pluot_core, and pluot_widget
         run: |
+          uv build bindings-python/pluot --out-dir dist
           uv build bindings-python/pluot_core --out-dir dist
           uv build bindings-python/pluot_widget --out-dir dist
       - name: Upload packages

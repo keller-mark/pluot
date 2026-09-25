@@ -3,14 +3,14 @@ requires = ["maturin>=1.14,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "pluot"
+name = "pluot_bound"
 requires-python = ">=3.12"
 license-files = ["LICENSE", "NOTICE"]
 authors = [
   {name = "Mark Keller"}
 ]
-readme = "README.md"
-description = "This package provides functionality for rendering visualizations using Pluot"
+readme = "bindings-python/pluot_bound/README.md"
+description = "Rust bindings for rendering Pluot visualizations. Most users should install pluot[bindings] instead."
 classifiers = [
   "Programming Language :: Rust",
   "Programming Language :: Python :: Implementation :: CPython",
@@ -21,6 +21,7 @@ dependencies = [
   "pluot_core==0.1.22",
   "numpy>=2",
   "zarr>=3",
+  "obstore",
   "pillow==11.3.0"
 ]
 
@@ -32,6 +33,7 @@ dev = [
   'jupyterlab>=3.0.0',
   "marimo",
   "pandas",
+  "pluot==0.1.22",
   "pluot_widget==0.1.22",
 ]
 
@@ -42,7 +44,7 @@ repository = "https://github.com/keller-mark/pluot"
 [tool.maturin]
 features = ["pyo3/extension-module", "python", "embed_fonts"]
 # module-name = <package name>.<rust pymodule name>
-module-name = "pluot._internal"
+module-name = "pluot_bound._internal"
 # Reference: https://www.maturin.rs/project_layout.html#mixed-rustpython-project
 python-source = "bindings-python"
 
@@ -53,11 +55,14 @@ trusted-publishing = true
 
 [tool.uv.workspace]
 members = [
+  "bindings-python/pluot",
   "bindings-python/pluot_core",
   "bindings-python/pluot_widget",
 ]
 
 [tool.uv.sources]
+pluot = { workspace = true }
+pluot_bound = { workspace = true }
 pluot_core = { workspace = true }
 pluot_widget = { workspace = true }
 
