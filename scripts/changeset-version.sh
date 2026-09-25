@@ -25,4 +25,6 @@ cargo set-version --workspace $NEXT_VERSION
 # Set R package version by modifying DESCRIPTION
 perl -pi -e "s/^Version: .*/Version: ${NEXT_VERSION}/" bindings-r/DESCRIPTION
 
-# Note: python package version is already dynamic.
+# Note: the maturin-built pluot python package version is already dynamic.
+perl -pi -e "s/^version = .*/version = \"${NEXT_VERSION}\"/" bindings-python/pluot_core/pyproject.toml bindings-python/pluot_widget/pyproject.toml
+perl -pi -e "s/\"(pluot_core|pluot_widget)==[^\"]*\"/\"\$1==${NEXT_VERSION}\"/" pyproject.toml bindings-python/pluot_core/pyproject.toml bindings-python/pluot_widget/pyproject.toml

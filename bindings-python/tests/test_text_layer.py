@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from pluot import render_to_array
-from pluot.font import register_font
+from pluot_core.font import register_font
 from pluot.zarr import _RESULT_CACHE  # noqa: PLC2701 – cleared between tests
 
 VENDOR_DIR = Path(__file__).parent.parent.parent / "vendor" / "urw-core35-fonts"
@@ -88,5 +88,5 @@ async def test_text_layer_custom_ttf_font_file():
         assert arr.sum() > 0
     finally:
         # Clean up the override so other tests aren't affected.
-        from pluot.font import _FONT_OVERRIDES
+        from pluot_core.font import _FONT_OVERRIDES
         _FONT_OVERRIDES.pop("CustomTestFont", None)

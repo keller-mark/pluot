@@ -324,11 +324,54 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  build_pure_python_packages:
+    runs-on: ubuntu-latest
+    needs: prepare_docs_site
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - name: Install nightly wasm-bindgen CLI
+        run: cargo install --git https://github.com/rustwasm/wasm-bindgen --rev b766ac3e206a8efab2c7cf91923cd502b2bc77a5 wasm-bindgen-cli
+      - name: Compile Rust code to WASM
+        run: wasm-pack build crates/pluot --release --target web
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: true
+      - name: Build the JS packages that pluot_widget bundles
+        run: |
+          cd bindings-js/core && pnpm run copy-fonts && cd -
+          pnpm run build-tsc
+      - name: Build pluot_core and pluot_widget
+        run: |
+          uv build bindings-python/pluot_core --out-dir dist
+          uv build bindings-python/pluot_widget --out-dir dist
+      - name: Upload packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-pure-python
+          path: dist
+
   publish_wheels:
     name: Release
     runs-on: ubuntu-latest
     if: needs.prepare_docs_site.outputs.should-release == 'true'
-    needs: [prepare_docs_site, build_wheels_linux, build_wheels_musllinux, build_wheels_windows, build_wheels_macos, build_wheels_sdist]
+    needs: [prepare_docs_site, build_wheels_linux, build_wheels_musllinux, build_wheels_windows, build_wheels_macos, build_wheels_sdist, build_pure_python_packages]
     permissions:
       # Use to sign the release artifacts
       id-token: write

@@ -18,9 +18,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
+  "pluot_core==0.1.20",
   "numpy>=2",
   "zarr>=3",
-  "obstore",
   "pillow==11.3.0"
 ]
 
@@ -31,11 +31,8 @@ dev = [
   'pytest-asyncio>=1.1.0',
   'jupyterlab>=3.0.0',
   "marimo",
-  "pandas"
-]
-widget = [
-    "anywidget==0.11.0",
-    "traitlets"
+  "pandas",
+  "pluot_widget==0.1.20",
 ]
 
 [project.urls]
@@ -53,6 +50,16 @@ manifest-path = "crates/pluot/Cargo.toml"
 
 [tool.maturin.generate-ci.github]
 trusted-publishing = true
+
+[tool.uv.workspace]
+members = [
+  "bindings-python/pluot_core",
+  "bindings-python/pluot_widget",
+]
+
+[tool.uv.sources]
+pluot_core = { workspace = true }
+pluot_widget = { workspace = true }
 
 [tool.uv]
 # Rebuild package when any rust files change
