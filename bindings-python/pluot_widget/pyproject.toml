@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pluot_widget"
-version = "0.1.21"
+version = "0.1.22"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [
@@ -13,7 +13,7 @@ authors = [
 readme = "README.md"
 description = "AnyWidget for rendering Pluot visualizations client-side via WebAssembly"
 dependencies = [
-  "pluot_core==0.1.21",
+  "pluot_core==0.1.22",
   "zarr>=3",
   "anywidget==0.11.0",
   "traitlets",
