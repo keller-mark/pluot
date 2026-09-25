@@ -1,4 +1,11 @@
 
+## 0.1.23
+
+### Patch Changes
+
+- Move python with bindings to pluot_bound, and define pluot as top-level meta-package. (`@pluot/core`) ([#335](https://github.com/keller-mark/pluot/pull/335))
+
+
 ## 0.1.22
 
 ### Patch Changes
