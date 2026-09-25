@@ -1,3 +1,6 @@
+import sys
+
+
 def store_instance_to_metadata(store) -> dict:
     """Derive portable ``ZarrStoreInfo`` metadata from a zarr-python store instance.
 
@@ -103,19 +106,47 @@ def store_metadata_to_instance(info: dict):
 
 
 def http_store_from_url(url: str):
-    """Construct a remote (fsspec-backed) zarr store from a URL."""
-    from obstore.store import HTTPStore
-    from zarr.storage import ObjectStore
+    """Construct a read-only remote zarr store from a URL.
 
-    obs_store = HTTPStore.from_url(url)
-    return ObjectStore(obs_store, read_only=True)
+    Uses obstore when available, otherwise falls back to fsspec.
+    obstore is not pure Python, so it is only a dependency of pluot_bound.
+    """
+    try:
+        from obstore.store import HTTPStore
+    except ModuleNotFoundError as e:
+        if e.name != "obstore":
+            raise
+        if sys.platform == "emscripten":
+            return _pyodide_http_store_from_url(url)
+        from zarr.storage import FsspecStore
+        return FsspecStore.from_url(url, read_only=True)
+
+    from zarr.storage import ObjectStore
+    return ObjectStore(HTTPStore.from_url(url), read_only=True)
+
+
+def _pyodide_http_store_from_url(url: str):
+    # aiohttp cannot open sockets in Pyodide, so use fsspec's XMLHttpRequest-based filesystem.
+    # FsspecStore.from_url is avoided because it injects asynchronous=True into the
+    # filesystem options, which http_sync forwards to every request (raising a TypeError).
+    # Importing the http_sync module globally re-registers the http(s) protocols as a side effect.
+    from fsspec.implementations.asyn_wrapper import AsyncFileSystemWrapper
+    from fsspec.implementations.http_sync import HTTPFileSystem
+    from zarr.storage import FsspecStore
+
+    fs = AsyncFileSystemWrapper(HTTPFileSystem(), asynchronous=True)
+    return FsspecStore(fs=fs, path=url, read_only=True)
 
 
 def _derive_store_url(store):
-    """Best-effort extraction of a URL from a remote obstore-backed zarr store."""
-    # zarr.storage.ObjectStore's .store should contain an obstore HTTPStore.
-    obs_store = getattr(store, "store", None)
-    url = getattr(obs_store, "url", None)
-    if isinstance(url, str) and "://" in url:
-        return url
+    """Best-effort extraction of a URL from a remote obstore- or fsspec-backed zarr store."""
+    # zarr.storage.ObjectStore exposes the obstore HTTPStore (with a .url) as .store,
+    # while an HTTP-backed zarr.storage.FsspecStore keeps the full URL as its .path.
+    candidates = (
+        getattr(getattr(store, "store", None), "url", None),
+        getattr(store, "path", None) if hasattr(store, "fs") else None,
+    )
+    for url in candidates:
+        if isinstance(url, str) and "://" in url:
+            return url
     return None

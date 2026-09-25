@@ -4,7 +4,7 @@ from enum import IntEnum
 from pluot_core.font import FontStore
 
 # Global mapping from store_name to Zarr store objects.
-# The Rust bindings import this module by name ("pluot.zarr") to resolve store reads.
+# The Rust bindings import this module by name ("pluot_bound.zarr") to resolve store reads.
 
 GLOBAL_STORES: dict = {
     "__fonts__": FontStore(),

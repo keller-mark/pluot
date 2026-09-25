@@ -324,7 +324,7 @@ pub mod python {
 
     pub fn zarr_has_status(store_name: &str, key: &str) -> ZarrPeekResult {
         Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let result = zarr_module.call_method1("zarr_has_status", (store_name, key)).unwrap();
             let value: u8 = result.extract().unwrap();
             match value {
@@ -338,7 +338,7 @@ pub mod python {
 
     pub fn zarr_get_status(store_name: &str, key: &str) -> ZarrPeekResult {
         Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let result = zarr_module.call_method1("zarr_get_status", (store_name, key)).unwrap();
             let value: u8 = result.extract().unwrap();
             match value {
@@ -357,7 +357,7 @@ pub mod python {
         length: u32,
     ) -> ZarrPeekResult {
         Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let result = zarr_module
                 .call_method1("zarr_get_range_from_offset_status", (store_name, key, offset, length))
                 .unwrap();
@@ -377,7 +377,7 @@ pub mod python {
         suffix_length: u32,
     ) -> ZarrPeekResult {
         Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let result = zarr_module
                 .call_method1("zarr_get_range_from_end_status", (store_name, key, suffix_length))
                 .unwrap();
@@ -394,7 +394,7 @@ pub mod python {
     pub async fn zarr_has(store_name: &str, key: &str) -> bool {
         // Acquire the Python GIL. This must be done for all Python interactions.
         let py_obj = Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
 
             // Call the async function, which returns a coroutine
             let coroutine = zarr_module
@@ -414,7 +414,7 @@ pub mod python {
 
     pub async fn zarr_get(store_name: &str, key: &str) -> zarrs::storage::Bytes {
         let py_obj = Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let coroutine = zarr_module
                 .call_method1("zarr_get", (store_name, key))
                 .unwrap();
@@ -436,7 +436,7 @@ pub mod python {
         length: u32,
     ) -> zarrs::storage::Bytes {
         let py_obj = Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let coroutine = zarr_module
                 .call_method1(
                     "zarr_get_range_from_offset",
@@ -460,7 +460,7 @@ pub mod python {
         suffix_length: u32,
     ) -> zarrs::storage::Bytes {
         let py_obj = Python::attach(|py| {
-            let zarr_module = PyModule::import(py, "pluot.zarr").unwrap();
+            let zarr_module = PyModule::import(py, "pluot_bound.zarr").unwrap();
             let coroutine = zarr_module
                 .call_method1("zarr_get_range_from_end", (store_name, key, suffix_length))
                 .unwrap();

@@ -227,7 +227,7 @@ fn python_script(value: &Value) -> String {
         "# /// script\n\
          # requires-python = \">=3.12\"\n\
          # dependencies = [\n\
-         #     \"pluot{version_suffix}\",\n\
+         #     \"pluot[bindings]{version_suffix}\",\n\
          # ]\n\
          # ///\n\
          from pluot import {func}\n\

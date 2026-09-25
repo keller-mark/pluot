@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pluot_core"
+name = "pluot"
 version = "0.1.22"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -11,13 +11,17 @@ authors = [
   {name = "Mark Keller"}
 ]
 readme = "README.md"
-description = "Shared utilities used by the pluot_bound and pluot_widget packages. Pure python package."
+description = "Meta-package for Pluot. Install with the bindings and/or widget extras. Pure python package."
 dependencies = [
-  "numpy>=2",
-  "zarr>=3",
-  "fsspec[http]",
-  "requests",
-  "aiohttp"
+  "pluot_core==0.1.22",
+]
+
+[project.optional-dependencies]
+bindings = [
+  "pluot_bound==0.1.22",
+]
+widget = [
+  "pluot_widget==0.1.22",
 ]
 
 [project.urls]
