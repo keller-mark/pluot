@@ -11,11 +11,12 @@ authors = [
   {name = "Mark Keller"}
 ]
 readme = "README.md"
-description = "Shared utilities used by the pluot and pluot_widget packages"
+description = "Shared utilities used by the pluot and pluot_widget packages. Pure python package."
 dependencies = [
   "numpy>=2",
   "zarr>=3",
-  "obstore",
+  # TODO: add fsspec here, and fall back to that in http_store_from_url when obstore is not installed/available.
+  "obstore", # TODO: move obstore dependency to pluot_bound since this has rust deps (is not pure python).
 ]
 
 [project.urls]

@@ -1,1 +1,8 @@
-This pluot package depends on pluot_core for any common functionality that pluot_widget also relies on, such as zarr, font, and viewport utilities. This package is the only package among the three (pluot, pluot_core, pluot_widget) which requires the Rust bindings and allows for rendering plots via the Rust bindings.
+This is a meta-Python package which uses extras_require / optional dependencies metadata to allow a user to install either the Rust bindings, the Anywidget, or both:
+
+```sh
+pip install pluot # neither, only re-exports things from pluot_core
+pip install pluot[widget]
+pip install pluot[bindings]
+pip install pluot[widget,bindings] # both
+```

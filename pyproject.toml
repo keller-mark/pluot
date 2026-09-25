@@ -3,7 +3,7 @@ requires = ["maturin>=1.14,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "pluot"
+name = "pluot_bound"
 requires-python = ">=3.12"
 license-files = ["LICENSE", "NOTICE"]
 authors = [

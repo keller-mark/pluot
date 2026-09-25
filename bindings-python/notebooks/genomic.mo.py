@@ -16,7 +16,7 @@ def _():
 
 @app.cell
 def _():
-    from pluot.viewport import (
+    from pluot_core.viewport import (
         Bounds, ViewportParams, Margins,
         get_camera_matrix_from_bounds, get_bounds,
     )

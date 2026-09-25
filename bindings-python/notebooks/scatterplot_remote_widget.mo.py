@@ -6,7 +6,8 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from pluot import render_to_image, render_to_svg, PluotWasmWidget
+    from pluot import render_to_image, render_to_svg
+    from pluot_widget import PluotWasmWidget
     import numpy as np
     import marimo as mo
     import json
@@ -68,6 +69,7 @@ def _(PluotWasmWidget, camera_view, point_radius_slider, store):
                     y_key="/n_1000000/y_coords",
                     color_key="/n_1000000/class_labels",
                     point_radius=point_radius_slider.value,
+                    point_opacity=1.0
                   )
                 ),
                 dict(
