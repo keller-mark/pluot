@@ -1749,6 +1749,7 @@ requires-dist = [
 
 [[package]]
 name = "pluot-bound"
+version = "0.1.22"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -1792,15 +1793,19 @@ name = "pluot-core"
 version = "0.1.22"
 source = { editable = "bindings-python/pluot_core" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "fsspec", extra = ["http"] },
     { name = "numpy" },
+    { name = "requests" },
     { name = "zarr" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp" },
     { name = "fsspec", extras = ["http"] },
     { name = "numpy", specifier = ">=2" },
+    { name = "requests" },
     { name = "zarr", specifier = ">=3" },
 ]
 

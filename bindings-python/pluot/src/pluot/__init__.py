@@ -1,3 +1,5 @@
+import importlib.util
+
 from pluot_core.font import register_font
 from pluot_core.viewport import Bounds, Margins, ViewportParams, get_bounds, get_camera_matrix_from_bounds
 from pluot_core.zarr import register_store_extension
@@ -19,9 +21,14 @@ except ModuleNotFoundError as e:
     if e.name != "pluot_bound":
         raise
 
-try:
-    from pluot_widget import PluotWasmWidget
+if importlib.util.find_spec("pluot_widget") is not None:
     __all__ += ["PluotWasmWidget"]
-except ModuleNotFoundError as e:
-    if e.name != "pluot_widget":
-        raise
+
+
+# Deferred so that `import pluot` does not require the widget's built JS bundle
+# (absent in editable installs without the pnpm/wasm toolchain).
+def __getattr__(name):
+    if name == "PluotWasmWidget":
+        from pluot_widget import PluotWasmWidget
+        return PluotWasmWidget
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
