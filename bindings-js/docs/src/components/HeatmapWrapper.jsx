@@ -27,3 +27,6 @@ export function HeatmapWrapper(props) {
     <PluotWrapper {...props} onHover={onHoverHeatmap} enableTooltip />
   );
 }
+
+// TODO: use anndata.js to load the cell type categories and gene list on the JS side, and display multi-select inputs, which the plot params can depend on.
+// TODO: add a colormap selection option to the custom plotcontrols options for this plot.
