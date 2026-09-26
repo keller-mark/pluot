@@ -365,6 +365,9 @@ export type PluotProps = {
 
   cameraFilter?: CameraFilterString | CameraFilterFunction | null;
 
+  // TODO: If true, then use the limit-extent camera filter function as an additional filter applied to any provided cameraFilter (or use this as the only filter if no cameraFilter was provided/specified).
+  limitExtent?: boolean;
+
   /** Whether clicking should run a picking query and call `onClick`. */
   enableClick?: boolean;
   /** Whether hovering should run a picking query and show a tooltip via `onHover`. */

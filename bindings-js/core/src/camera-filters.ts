@@ -66,3 +66,5 @@ export function fixYAndFixYAxisAtXZero(prev: CameraMatrix, next: CameraMatrix): 
 
 // TODO: zoom-to-square function: given an aspect ratio, filter the camera so that we zoom along a single axis until the aspect ratio is a square,
 // then zoom along both axes keeping the square aspect ratio.
+
+// TODO: limit-extent function: given an xLim and/or yLim, prevent the camera from zooming or panning to show anything outside of the range(s) along this axis or these axes.
