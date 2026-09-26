@@ -63,3 +63,6 @@ export function fixXAndFixXAxisAtYZero(prev: CameraMatrix, next: CameraMatrix): 
 export function fixYAndFixYAxisAtXZero(prev: CameraMatrix, next: CameraMatrix): CameraMatrix {
   return fixYAxisAtXZero(prev, fixY(prev, next));
 }
+
+// TODO: zoom-to-square function: given an aspect ratio, filter the camera so that we zoom along a single axis until the aspect ratio is a square,
+// then zoom along both axes keeping the square aspect ratio.
