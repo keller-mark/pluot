@@ -92,6 +92,10 @@ pub async fn load_arr_as_numeric_data(
         "int64" => load!(i64, Int64),
         "float32" => load!(f32, Float32),
         "float64" => load!(f64, Float64),
+        "bool" => {
+            let data = array.async_retrieve_array_subset::<Vec<bool>>(&subset).await?;
+            NumericData::Uint8(Arc::new(data.into_iter().map(u8::from).collect()))
+        }
         _ => panic!("Unsupported zarr data type for point coordinates: {}", dtype_name),
     })
 }

@@ -257,81 +257,92 @@ impl NumericData {
         label: &str,
     ) -> (wgpu::TextureView, TextureDtype) {
         let (data_bytes, dtype) = self.as_texture_data();
+        (upload_data_texture(device, queue, &data_bytes, dtype, label), dtype)
+    }
+}
 
-        let bytes_per_texel = dtype.bytes_per_texel();
-        let num_texels = data_bytes.len() as u32 / bytes_per_texel;
-        let max_dim = device.limits().max_texture_dimension_2d;
-        let tex_width = num_texels.min(max_dim).max(1);
-        let tex_height = num_texels.div_ceil(tex_width).max(1);
-        if tex_height > max_dim {
-            log(&format!(
-                "{label}: data ({num_texels} texels) exceeds the maximum texture \
-                 size ({max_dim}x{max_dim}); it will be truncated. Consider \
-                 tiling or downsampling.",
-            ));
-        }
+/// The upload half of [`NumericData::create_data_texture`], for callers that
+/// already hold [`NumericData::as_texture_data`] bytes and want to upload a
+/// sub-range of them (e.g. one block of rows) without copying.
+pub fn upload_data_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data_bytes: &[u8],
+    dtype: TextureDtype,
+    label: &str,
+) -> wgpu::TextureView {
+    let bytes_per_texel = dtype.bytes_per_texel();
+    let num_texels = data_bytes.len() as u32 / bytes_per_texel;
+    let max_dim = device.limits().max_texture_dimension_2d;
+    let tex_width = num_texels.min(max_dim).max(1);
+    let tex_height = num_texels.div_ceil(tex_width).max(1);
+    if tex_height > max_dim {
+        log(&format!(
+            "{label}: data ({num_texels} texels) exceeds the maximum texture \
+             size ({max_dim}x{max_dim}); it will be truncated. Consider \
+             tiling or downsampling.",
+        ));
+    }
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(label),
-            size: wgpu::Extent3d {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: tex_width,
+            height: tex_height.min(max_dim),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: dtype.texture_format(),
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    // Upload the tightly-packed data. The full rows go in one copy; any
+    // trailing partial row goes in a second copy. (`queue.write_texture`
+    // imposes no bytes-per-row alignment, unlike buffer-to-texture copies.)
+    // Texels past the end of the data are never indexed by the shader.
+    let full_rows = num_texels / tex_width;
+    let remainder = num_texels % tex_width;
+    if full_rows > 0 {
+        queue.write_texture(
+            texture.as_image_copy(),
+            &data_bytes[..(full_rows * tex_width * bytes_per_texel) as usize],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(tex_width * bytes_per_texel),
+                rows_per_image: Some(full_rows),
+            },
+            wgpu::Extent3d {
                 width: tex_width,
-                height: tex_height.min(max_dim),
+                height: full_rows,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: dtype.texture_format(),
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        // Upload the tightly-packed data. The full rows go in one copy; any
-        // trailing partial row goes in a second copy. (`queue.write_texture`
-        // imposes no bytes-per-row alignment, unlike buffer-to-texture copies.)
-        // Texels past the end of the data are never indexed by the shader.
-        let full_rows = num_texels / tex_width;
-        let remainder = num_texels % tex_width;
-        if full_rows > 0 {
-            queue.write_texture(
-                texture.as_image_copy(),
-                &data_bytes[..(full_rows * tex_width * bytes_per_texel) as usize],
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(tex_width * bytes_per_texel),
-                    rows_per_image: Some(full_rows),
-                },
-                wgpu::Extent3d {
-                    width: tex_width,
-                    height: full_rows,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-        if remainder > 0 {
-            let row_start = (full_rows * tex_width * bytes_per_texel) as usize;
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: full_rows, z: 0 },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &data_bytes[row_start..],
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(remainder * bytes_per_texel),
-                    rows_per_image: Some(1),
-                },
-                wgpu::Extent3d {
-                    width: remainder,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        (view, dtype)
+        );
     }
+    if remainder > 0 {
+        let row_start = (full_rows * tex_width * bytes_per_texel) as usize;
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: full_rows, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data_bytes[row_start..],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(remainder * bytes_per_texel),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: remainder,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }

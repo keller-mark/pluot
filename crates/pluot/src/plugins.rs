@@ -9,6 +9,7 @@ use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::{OmeZarrBitmapMultisca
 use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayer, OmeZarrBitmaskLayerParams};
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::{OmeZarrBitmaskMultiscaleLayer, OmeZarrBitmaskMultiscaleLayerParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams};
+use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
 
 
 // Ideally we could just run inventory::submit! in the pluot_zarr crate,
@@ -99,6 +100,16 @@ inventory::submit! {
         create_layer: |value, view_params| {
             let params: AdataZarrDotPlotLayerParams = serde_json::from_value(value).unwrap();
             Box::new(AdataZarrDotPlotLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrHeatmapLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrHeatmapLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrHeatmapLayer::new(view_params.clone(), params))
         },
     }
 }

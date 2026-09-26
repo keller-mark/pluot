@@ -16,7 +16,7 @@ use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use crate::adata_io::{read_dataframe_index, read_encoding, read_matrix_column_f32, read_string_array};
+use crate::adata_io::{read_dataframe_column_strings, read_matrix_column_f32, read_string_array};
 use crate::adata_metadata::AnnDataEncoding;
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
@@ -89,23 +89,7 @@ async fn use_memo_gene_summary(initializer: impl AsyncFnOnce() -> GeneSummary, k
 /// `var` column (in its entirety).
 pub async fn load_var_names(store: AdataStore, store_name: &str, var_column: Option<&str>, cache_enabled: bool) -> Result<Arc<Vec<String>>, ArrayError> {
     let keys = vec!["dotplot_var_names".to_string(), store_name.to_string(), var_column.unwrap_or("index").to_string()];
-    use_memo_vec_string(
-        async || match var_column {
-            None => read_dataframe_index(store.clone(), "/var").await,
-            Some(column) => {
-                let column_path = format!("/var/{column}");
-                let values_path = match read_encoding(store.clone(), &column_path).await {
-                    AnnDataEncoding::NullableStringArray { .. } => format!("{column_path}/values"),
-                    AnnDataEncoding::StringArray { .. } => column_path,
-                    other => panic!("Unsupported var column encoding at \"{column_path}\": {other:?}"),
-                };
-                read_string_array(store, &values_path).await
-            }
-        },
-        &keys,
-        cache_enabled,
-    )
-    .await
+    use_memo_vec_string(async || read_dataframe_column_strings(store, "/var", var_column).await, &keys, cache_enabled).await
 }
 
 /// Loads (and caches) the `obs` groupby column's category labels and per-observation codes.

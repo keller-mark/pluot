@@ -18,6 +18,15 @@ use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized}
 pub enum ZarrEmphasisCriteria {
     Categorical(ZarrCategoricalCriteriaParams),
     Quantitative(ZarrQuantitativeCriteriaParams),
+    Boolean(ZarrBooleanCriteriaParams),
+}
+
+/// A boolean (or 0/1 integer) column, referenced by zarr array path. Items
+/// whose value is true are included.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZarrBooleanCriteriaParams {
+    /// Zarr array path to a boolean per item.
+    pub mask_key: String,
 }
 
 /// A categorical column in categories+codes format, referenced by zarr array
@@ -58,6 +67,7 @@ impl ZarrEmphasisCriteria {
         match self {
             ZarrEmphasisCriteria::Categorical(params) => &params.codes_key,
             ZarrEmphasisCriteria::Quantitative(params) => &params.values_key,
+            ZarrEmphasisCriteria::Boolean(params) => &params.mask_key,
         }
     }
 }
@@ -96,6 +106,10 @@ pub async fn resolve_zarr_emphasis_criteria(
                 max: params.max,
                 min_exclusive: params.min_exclusive,
                 max_exclusive: params.max_exclusive,
+            }),
+            ZarrEmphasisCriteria::Boolean(_) => EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: data.as_ref().clone(),
+                included_codes: vec![1],
             }),
         })
         .collect())

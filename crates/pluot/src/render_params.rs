@@ -1,4 +1,5 @@
 use pluot_zarr::layers::adata_zarr_dotplot_layer::AdataZarrDotPlotLayerParams;
+use pluot_zarr::layers::adata_zarr_heatmap_layer::AdataZarrHeatmapLayerParams;
 use serde::{Deserialize, Serialize};
 
 use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
@@ -9,6 +10,7 @@ use pluot_core::layers::rect_layer::{RectLayerParams};
 use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
 use pluot_core::layers::bitmask_layer::BitmaskLayerParams;
+use pluot_core::layers::heatmap_layer::HeatmapLayerParams;
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
@@ -51,6 +53,7 @@ pub enum LayerParams {
     TextLayer(TextLayerParams),
     BitmapLayer(BitmapLayerParams),
     BitmaskLayer(BitmaskLayerParams),
+    HeatmapLayer(HeatmapLayerParams),
 
     PolygonLayer(PolygonLayerParams),
     CurveLayer(CurveLayerParams),
@@ -74,6 +77,7 @@ pub enum LayerParams {
     OmeZarrBitmaskLayer(OmeZarrBitmaskLayerParams),
     OmeZarrBitmaskMultiscaleLayer(OmeZarrBitmaskMultiscaleLayerParams),
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
+    AdataZarrHeatmapLayer(AdataZarrHeatmapLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),

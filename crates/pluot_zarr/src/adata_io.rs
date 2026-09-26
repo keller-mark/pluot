@@ -1,6 +1,7 @@
 // Async I/O helpers for reading AnnData-Zarr elements, built on the
 // `AnnDataEncoding` types in `adata_metadata.rs`.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use pluot_core::numeric_data::NumericData;
@@ -66,6 +67,31 @@ pub async fn read_dataframe_index(store: Arc<dyn AsyncReadableStorageTraits>, da
         other => panic!("Unsupported dataframe index encoding at \"{index_path}\": {other:?}"),
     };
     read_string_array(store, &values_path).await
+}
+
+/// Reads a string column of an AnnData dataframe (e.g. `obs` or `var`): its
+/// index when `column` is `None`, else the named `string-array` or
+/// `nullable-string-array` column (ignoring the latter's mask).
+pub async fn read_dataframe_column_strings(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str, column: Option<&str>) -> Result<Vec<String>, zarrs::array::ArrayError> {
+    let Some(column) = column else {
+        return read_dataframe_index(store, dataframe_path).await;
+    };
+    let column_path = format!("{dataframe_path}/{column}");
+    let values_path = match read_encoding(store.clone(), &column_path).await {
+        AnnDataEncoding::NullableStringArray { .. } => format!("{column_path}/values"),
+        AnnDataEncoding::StringArray { .. } => column_path,
+        other => panic!("Unsupported string column encoding at \"{column_path}\": {other:?}"),
+    };
+    read_string_array(store, &values_path).await
+}
+
+/// Reads the `[n_obs, n_var]` shape of an AnnData expression matrix stored as a
+/// dense `array`, `csr_matrix` or `csc_matrix`.
+pub async fn read_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str) -> Vec<u64> {
+    match read_encoding(store.clone(), matrix_path).await {
+        AnnDataEncoding::CsrMatrix { shape, .. } | AnnDataEncoding::CscMatrix { shape, .. } => shape,
+        _ => zarrs::array::Array::async_open(store, matrix_path).await.unwrap().shape().to_vec(),
+    }
 }
 
 /// Reads an AnnData `categorical` column (e.g. an `obs` groupby column) as
@@ -468,5 +494,303 @@ pub async fn read_matrix_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, 
         AnnDataEncoding::CsrMatrix { .. } => Ok(read_csr_column_numeric(store, matrix_path, col_index).await?.as_f32().into_owned()),
         AnnDataEncoding::CscMatrix { .. } => Ok(read_csc_column_numeric(store, matrix_path, col_index).await?.as_f32().into_owned()),
         other => panic!("Unsupported AnnData expression matrix encoding at \"{matrix_path}\": {other:?}"),
+    }
+}
+
+/// Groups `(output_position, index)` pairs by the chunk that `index` falls in
+/// along `axis` of a 2D array.
+fn group_by_chunk(array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>, axis: usize, indices: &[u32]) -> Vec<Vec<(usize, u64)>> {
+    use zarrs::array::ChunkGridTraits;
+    let mut groups: BTreeMap<u64, Vec<(usize, u64)>> = BTreeMap::new();
+    for (position, &index) in indices.iter().enumerate() {
+        let mut array_indices = [0u64; 2];
+        array_indices[axis] = index as u64;
+        let chunk_indices = array
+            .chunk_grid()
+            .chunk_indices(&array_indices)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| panic!("Index {index} is out of bounds along axis {axis}"));
+        groups.entry(chunk_indices[axis]).or_default().push((position, index as u64));
+    }
+    groups.into_values().collect()
+}
+
+/// Reads the `rows x cols` submatrix of a dense 2D zarr array as a row-major
+/// `Vec<V>`, issuing one read per (row chunk, column chunk) pair that holds any
+/// requested element, each bounded to the requested extent within that chunk.
+async fn read_dense_subset_values<V>(
+    array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    rows: &[u32],
+    cols: &[u32],
+) -> Result<Vec<V>, zarrs::array::ArrayError>
+where
+    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
+{
+    let row_groups = group_by_chunk(array, 0, rows);
+    let col_groups = group_by_chunk(array, 1, cols);
+    let extent = |group: &[(usize, u64)]| {
+        let min = group.iter().map(|&(_, index)| index).min().unwrap();
+        let max = group.iter().map(|&(_, index)| index).max().unwrap();
+        min..max + 1
+    };
+
+    let reads = row_groups.iter().flat_map(|row_group| col_groups.iter().map(move |col_group| (row_group, col_group))).map(
+        |(row_group, col_group)| async move {
+            let (row_range, col_range) = (extent(row_group), extent(col_group));
+            let subset = zarrs::array::ArraySubset::new_with_ranges(&[row_range.clone(), col_range.clone()]);
+            let values = array.async_retrieve_array_subset::<Vec<V>>(&subset).await?;
+            Ok::<_, zarrs::array::ArrayError>((row_group, col_group, row_range, col_range, values))
+        },
+    );
+    let blocks = futures::future::try_join_all(reads).await?;
+
+    let mut out = vec![V::default(); rows.len() * cols.len()];
+    for (row_group, col_group, row_range, col_range, values) in blocks {
+        let block_width = col_range.end - col_range.start;
+        for &(out_row, row) in row_group {
+            for &(out_col, col) in col_group {
+                out[out_row * cols.len() + out_col] = values[((row - row_range.start) * block_width + (col - col_range.start)) as usize];
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The axis a compressed sparse matrix's `indptr` is indexed by: rows for CSR, columns for CSC.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CompressedAxis {
+    Rows,
+    Cols,
+}
+
+/// Reads the `rows x cols` submatrix of a CSR or CSC matrix as a dense,
+/// row-major `Vec<V>`.
+///
+/// The requested indices along the compressed axis are visited in ascending
+/// order and coalesced into spans of `indices`/`data` of at most `budget`
+/// entries (a single row or column holding more than that is read on its own),
+/// so a dense selection costs a few large reads rather than one per index.
+/// Entries whose index along the other axis was not requested are skipped.
+///
+/// `rows` and `cols` must not contain duplicates.
+async fn read_compressed_subset_values<V>(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    matrix_path: &str,
+    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    shape: &[u64],
+    rows: &[u32],
+    cols: &[u32],
+    compressed_axis: CompressedAxis,
+    budget: u64,
+) -> Result<Vec<V>, zarrs::array::ArrayError>
+where
+    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
+{
+    let (major, minor, minor_len) = match compressed_axis {
+        CompressedAxis::Rows => (rows, cols, shape[1]),
+        CompressedAxis::Cols => (cols, rows, shape[0]),
+    };
+    let mut out = vec![V::default(); rows.len() * cols.len()];
+    if major.is_empty() || minor.is_empty() {
+        return Ok(out);
+    }
+    let out_index = |major_position: usize, minor_position: usize| match compressed_axis {
+        CompressedAxis::Rows => major_position * cols.len() + minor_position,
+        CompressedAxis::Cols => minor_position * cols.len() + major_position,
+    };
+
+    let mut minor_positions = vec![u32::MAX; minor_len as usize];
+    for (position, &index) in minor.iter().enumerate() {
+        minor_positions[index as usize] = position as u32;
+    }
+
+    let mut sorted_major: Vec<(u32, usize)> = major.iter().enumerate().map(|(position, &index)| (index, position)).collect();
+    sorted_major.sort_unstable();
+    let first_major = sorted_major[0].0;
+    let last_major = sorted_major[sorted_major.len() - 1].0;
+    let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), first_major as u64, last_major as u64 + 2).await?;
+    let offset = |major_index: u32| indptr.offset_at((major_index - first_major) as usize);
+    let indices_path = format!("{matrix_path}/indices");
+
+    let mut span_first = 0;
+    while span_first < sorted_major.len() {
+        let span_start = offset(sorted_major[span_first].0);
+        let mut span_end = span_first + 1;
+        while span_end < sorted_major.len() && offset(sorted_major[span_end].0 + 1) - span_start <= budget {
+            span_end += 1;
+        }
+        let span_stop = offset(sorted_major[span_end - 1].0 + 1);
+
+        if span_stop > span_start {
+            let minor_indices = read_int_array_range(store.clone(), &indices_path, span_start, span_stop).await?;
+            let subset = zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]);
+            let values = data_array.async_retrieve_array_subset::<Vec<V>>(&subset).await?;
+            for &(major_index, major_position) in &sorted_major[span_first..span_end] {
+                let entries = (offset(major_index) - span_start) as usize..(offset(major_index + 1) - span_start) as usize;
+                with_int_slice!(&minor_indices, |minor_indices| {
+                    for entry in entries.clone() {
+                        let minor_index: usize = minor_indices[entry].try_into().ok().expect("Sparse matrix indices must be non-negative");
+                        let minor_position = minor_positions[minor_index];
+                        if minor_position != u32::MAX {
+                            out[out_index(major_position, minor_position as usize)] = values[entry];
+                        }
+                    }
+                });
+            }
+        }
+        span_first = span_end;
+    }
+    Ok(out)
+}
+
+/// Reads the `rows x cols` submatrix of an AnnData expression matrix — `X` or a
+/// `layers` entry, stored as a dense `array`, `csr_matrix` or `csc_matrix` — in
+/// its native dtype, as a row-major array. The output follows the order of
+/// `rows` and `cols`, which must not contain duplicates.
+pub async fn read_matrix_subset_numeric(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    matrix_path: &str,
+    rows: &[u32],
+    cols: &[u32],
+) -> Result<NumericData, zarrs::array::ArrayError> {
+    let encoding = read_encoding(store.clone(), matrix_path).await;
+    let compressed_axis = match encoding {
+        AnnDataEncoding::Array { .. } => None,
+        AnnDataEncoding::CsrMatrix { .. } => Some(CompressedAxis::Rows),
+        AnnDataEncoding::CscMatrix { .. } => Some(CompressedAxis::Cols),
+        other => panic!("Unsupported AnnData expression matrix encoding at \"{matrix_path}\": {other:?}"),
+    };
+
+    let (values_array, shape) = match compressed_axis {
+        None => (zarrs::array::Array::async_open(store.clone(), matrix_path).await.unwrap(), None),
+        Some(_) => (
+            zarrs::array::Array::async_open(store.clone(), &format!("{matrix_path}/data")).await.unwrap(),
+            Some(read_sparse_matrix_shape(store.clone(), matrix_path).await),
+        ),
+    };
+
+    use zarrs::plugin::ZarrVersion;
+    let dtype_name = values_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
+
+    macro_rules! read {
+        ($rust_ty:ty, $variant:ident) => {{
+            let values = match (compressed_axis, &shape) {
+                (Some(axis), Some(shape)) => {
+                    read_compressed_subset_values::<$rust_ty>(
+                        store.clone(), matrix_path, &values_array, shape, rows, cols, axis, MAX_ELEMENTS_PER_READ,
+                    ).await?
+                }
+                _ => read_dense_subset_values::<$rust_ty>(&values_array, rows, cols).await?,
+            };
+            NumericData::$variant(Arc::new(values))
+        }};
+    }
+
+    Ok(match dtype_name.as_str() {
+        "uint8" => read!(u8, Uint8),
+        "uint16" => read!(u16, Uint16),
+        "uint32" => read!(u32, Uint32),
+        "uint64" => read!(u64, Uint64),
+        "int8" => read!(i8, Int8),
+        "int16" => read!(i16, Int16),
+        "int32" => read!(i32, Int32),
+        "int64" => read!(i64, Int64),
+        "float32" => read!(f32, Float32),
+        "float64" => read!(f64, Float64),
+        other => panic!("Unsupported dtype \"{other}\" for AnnData expression matrix \"{matrix_path}\""),
+    })
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use zarrs::array::{data_type, ArrayBuilder};
+    use zarrs::group::GroupBuilder;
+    use zarrs::storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter};
+    use zarrs::storage::store::MemoryStore;
+
+    struct TokioSpawnBlocking;
+
+    impl SyncToAsyncSpawnBlocking for TokioSpawnBlocking {
+        async fn spawn_blocking<F, R>(&self, f: F) -> R
+        where
+            F: FnOnce() -> R + Send + 'static,
+            R: Send + 'static,
+        {
+            tokio::task::spawn_blocking(f).await.unwrap()
+        }
+    }
+
+    const DENSE: [[i32; 4]; 3] = [[0, 5, 0, 7], [0, 0, 0, 0], [3, 0, 8, 0]];
+
+    fn write_array(store: &Arc<MemoryStore>, path: &str, shape: Vec<u64>, chunk_shape: Vec<u64>, values: &[i32], attributes: serde_json::Value) {
+        let serde_json::Value::Object(attributes) = attributes else { unreachable!() };
+        let array = ArrayBuilder::new(shape, chunk_shape, data_type::int32(), 0i32)
+            .attributes(attributes)
+            .build(store.clone(), path)
+            .unwrap();
+        array.store_metadata().unwrap();
+        array.store_array_subset(&array.subset_all(), values).unwrap();
+    }
+
+    fn write_sparse(store: &Arc<MemoryStore>, path: &str, encoding: &str, indptr: &[i32], indices: &[i32], data: &[i32]) {
+        let serde_json::Value::Object(attributes) = json!({"encoding-type": encoding, "encoding-version": "0.1.0", "shape": [3, 4]}) else {
+            unreachable!()
+        };
+        GroupBuilder::new().attributes(attributes).build(store.clone(), path).unwrap().store_metadata().unwrap();
+        for (name, values) in [("indptr", indptr), ("indices", indices), ("data", data)] {
+            write_array(store, &format!("{path}/{name}"), vec![values.len() as u64], vec![2], values, json!({}));
+        }
+    }
+
+    fn fixture() -> Arc<dyn AsyncReadableStorageTraits> {
+        let store = Arc::new(MemoryStore::new());
+        let dense: Vec<i32> = DENSE.iter().flatten().copied().collect();
+        write_array(&store, "/dense", vec![3, 4], vec![2, 3], &dense, json!({"encoding-type": "array", "encoding-version": "0.2.0"}));
+        write_sparse(&store, "/csr", "csr_matrix", &[0, 2, 2, 4], &[1, 3, 0, 2], &[5, 7, 3, 8]);
+        write_sparse(&store, "/csc", "csc_matrix", &[0, 1, 2, 3, 4], &[2, 0, 2, 0], &[3, 5, 8, 7]);
+        Arc::new(SyncToAsyncStorageAdapter::new(store, TokioSpawnBlocking))
+    }
+
+    fn expected(rows: &[u32], cols: &[u32]) -> Vec<i32> {
+        rows.iter().flat_map(|&r| cols.iter().map(move |&c| DENSE[r as usize][c as usize])).collect()
+    }
+
+    const CASES: [(&[u32], &[u32]); 4] = [
+        (&[0, 1, 2], &[0, 1, 2, 3]),
+        (&[2, 0], &[3, 1, 2]),
+        (&[1], &[0, 3]),
+        (&[], &[1]),
+    ];
+
+    #[tokio::test]
+    async fn subsets_match_the_dense_matrix_for_every_encoding() {
+        let store = fixture();
+        for path in ["/dense", "/csr", "/csc"] {
+            for (rows, cols) in CASES {
+                let NumericData::Int32(values) = read_matrix_subset_numeric(store.clone(), path, rows, cols).await.unwrap() else {
+                    panic!("expected the stored int32 dtype");
+                };
+                assert_eq!(*values, expected(rows, cols), "{path} rows {rows:?} cols {cols:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn compressed_subsets_match_at_every_budget() {
+        let store = fixture();
+        for (path, axis) in [("/csr", CompressedAxis::Rows), ("/csc", CompressedAxis::Cols)] {
+            let data_array = zarrs::array::Array::async_open(store.clone(), &format!("{path}/data")).await.unwrap();
+            for budget in 1..=5 {
+                for (rows, cols) in CASES {
+                    let values = read_compressed_subset_values::<i32>(store.clone(), path, &data_array, &[3, 4], rows, cols, axis, budget)
+                        .await
+                        .unwrap();
+                    assert_eq!(values, expected(rows, cols), "{path} budget {budget} rows {rows:?} cols {cols:?}");
+                }
+            }
+        }
     }
 }

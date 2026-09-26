@@ -331,6 +331,18 @@ pub mod is_included {
         include_str!("wgsl_functions/get_is_included/quantitative_one_sided.wgsl");
 }
 
+/// `HeatmapLayer` cell-color snippets, each defining `fn get_cell_color(value:
+/// f32) -> vec3<f32>`. Assembled at runtime by
+/// `crate::layers::heatmap_layer`.
+pub mod heatmap_cell_color {
+    /// Cell values normalized against a domain and mapped through a
+    /// continuous colormap (injected separately, at `{{colormap_fn_name}}`).
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/heatmap/cell_color_quantitative.wgsl");
+
+    /// Cell values as integer codes indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/heatmap/cell_color_categorical.wgsl");
+}
+
 /// Colormap WGSL functions, embedded at compile time from
 /// `wgsl_functions/colormaps/`.
 ///

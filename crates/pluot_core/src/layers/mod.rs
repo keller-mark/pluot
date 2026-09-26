@@ -10,3 +10,4 @@ pub mod rect_layer;
 pub mod text_layer;
 pub mod bitmap_layer;
 pub mod bitmask_layer;
+pub mod heatmap_layer;
