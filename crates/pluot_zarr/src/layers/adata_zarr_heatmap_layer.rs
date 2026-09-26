@@ -12,9 +12,9 @@ use pluot_core::composite_layers::legend_colormap_quantitative_layer::{
     LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation,
 };
 use pluot_core::d3::scale::ScaleLinear;
-use pluot_core::layers::heatmap_layer::{HeatmapColormap, HeatmapLayer, HeatmapLayerParams};
+use pluot_core::compute::matrix_axis_extents::MatrixAxis as HeatmapAxis;
+use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams};
 use pluot_core::numeric_data::NumericData;
-use pluot_core::positioning::get_point_position;
 use pluot_core::render_traits::{
     resolve_store_name, BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams,
     PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams,
@@ -24,23 +24,17 @@ use pluot_core::two::svg::SvgContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::wgpu;
 use pluot_core::zarr::is_timed_out_zarrs_error;
-use pluot_core::{maybe_timeout, Duration, FutureExt, LayerPickingResult};
+use pluot_core::{maybe_timeout, Duration, FutureExt, LayerExtentResult, LayerPickingResult};
 
 use crate::heatmap_data::{
     indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_matrix_block,
-    load_matrix_block_extent, AxisCriteria, MatrixAxis, MatrixBlockKey,
+    load_matrix_block_axis_extents, load_matrix_block_extent, AxisCriteria, HeatmapNormalization, MatrixAxis,
+    MatrixBlockKey, MatrixCacheMode,
 };
 
 /// Upper bound on the number of matrix elements loaded (and cached) per row
 /// block. Each block is its own sublayer, so blocks appear as they load.
 const ELEMENTS_PER_BLOCK: usize = 1 << 22;
-
-const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0,
-];
 
 /// Layer params struct for [`AdataZarrHeatmapLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -79,11 +73,11 @@ pub struct AdataZarrHeatmapLayerParams {
     /// Title of the quantitative colormap legend. Defaults to "Expression".
     pub legend_title: Option<String>,
 
-    // TODO: add a flag which changes the behavior of how the matrix data is cached: cached as a single independent NumericData per gene, versus cached as the full expression matrix as a per-block NumericData.
-
-    // TODO: support whole-matrix, row-wise, or column-wise normalization.
-    // Compute the min/max value(s) on the GPU (via compute shader) or CPU.
-    // Modify the base heatmap_layer to allow providing a quantitative colormap domain globally or per-row or per-column.
+    /// How loaded matrix values are cached. Defaults to [`MatrixCacheMode::RowBlocks`].
+    pub cache_mode: Option<MatrixCacheMode>,
+    /// How a quantitative colormap without an explicit `domain` or
+    /// `axis_domains` is normalized. Defaults to [`HeatmapNormalization::Matrix`].
+    pub normalization: Option<HeatmapNormalization>,
 }
 
 impl Default for AdataZarrHeatmapLayerParams {
@@ -104,12 +98,13 @@ impl Default for AdataZarrHeatmapLayerParams {
             show_obs_labels: None,
             show_var_labels: None,
             legend_title: None,
+            cache_mode: None,
+            normalization: None,
         }
     }
 }
 
-/// Everything about the filtered axes that `pick` needs, kept from `prepare`.
-#[derive(Default)]
+/// Everything about the filtered axes that `pick` and `extent` need, kept from `prepare`.
 struct PreparedAxes {
     obs_indices: Arc<Vec<u32>>,
     var_indices: Arc<Vec<u32>>,
@@ -117,6 +112,8 @@ struct PreparedAxes {
     var_labels: Arc<Vec<String>>,
 }
 
+/// Each cell is drawn one data unit wide and tall, so fitting the camera to
+/// [`ExtentableLayer::extent`] frames the whole (filtered) heatmap.
 pub struct AdataZarrHeatmapLayer {
     view_params: ViewParams,
     layer_params: AdataZarrHeatmapLayerParams,
@@ -127,7 +124,8 @@ pub struct AdataZarrHeatmapLayer {
     /// The first filtered row of each heatmap sublayer, which are the first
     /// `block_first_rows.len()` entries of `sub_layer_instances`.
     block_first_rows: Vec<usize>,
-    axes: PreparedAxes,
+    /// `None` until a `prepare` has resolved the filtered axes.
+    axes: Option<PreparedAxes>,
 }
 
 impl AdataZarrHeatmapLayer {
@@ -141,7 +139,7 @@ impl AdataZarrHeatmapLayer {
             store_name,
             sub_layer_instances: Vec::new(),
             block_first_rows: Vec::new(),
-            axes: PreparedAxes::default(),
+            axes: None,
         }
     }
 
@@ -155,33 +153,19 @@ impl AdataZarrHeatmapLayer {
         (margin(|m| m.margin_top), margin(|m| m.margin_right), margin(|m| m.margin_bottom), margin(|m| m.margin_left))
     }
 
-    /// The model matrix that stretches a `display_w x display_h` grid of cells
-    /// over the whole layer when the camera is at identity, whatever the view's
-    /// aspect ratio mode.
-    fn fit_model_matrix(&self, display_w: usize, display_h: usize) -> [f32; 16] {
-        let (margin_top, margin_right, margin_bottom, margin_left) = self.margins();
-        let layer_w = self.view_params.width as f32 - (margin_left + margin_right);
-        let layer_h = self.view_params.height as f32 - (margin_top + margin_bottom);
-        let position = |x: f32, y: f32| {
-            get_point_position(
-                x, y, layer_w, layer_h, &IDENTITY_MATRIX, UnitsMode::Data, UnitsMode::Data,
-                self.view_params.aspect_ratio_mode, self.view_params.aspect_ratio_alignment_mode, None,
-            )
-        };
-        let (origin, unit) = (position(0.0, 0.0), position(1.0, 1.0));
-        let data_at = |px: f32, origin_px: f32, unit_px: f32| (px - origin_px) / (unit_px - origin_px);
-        let (x0, x1) = (data_at(0.0, origin.0, unit.0), data_at(layer_w, origin.0, unit.0));
-        let (y0, y1) = (data_at(0.0, origin.1, unit.1), data_at(layer_h, origin.1, unit.1));
-        [
-            (x1 - x0) / display_w.max(1) as f32, 0.0, 0.0, 0.0,
-            0.0, (y1 - y0) / display_h.max(1) as f32, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            x0, y0, 0.0, 1.0,
-        ]
-    }
 }
 
 type AxesData = (Arc<NumericData>, Arc<NumericData>, Option<Arc<NumericData>>, Option<Arc<NumericData>>, Arc<Vec<String>>, Arc<Vec<String>>);
+
+/// `(lo, hi)`, or `(0, 1)` when there were no finite values to take an extent over.
+fn finite_or_unit(lo: f32, hi: f32) -> (f32, f32) {
+    if lo.is_finite() && hi.is_finite() { (lo, hi) } else { (0.0, 1.0) }
+}
+
+fn axis_domains(axis: HeatmapAxis, mins: Vec<f32>, maxs: Vec<f32>) -> HeatmapAxisDomains {
+    let (mins, maxs): (Vec<f32>, Vec<f32>) = mins.into_iter().zip(maxs).map(|(lo, hi)| finite_or_unit(lo, hi)).unzip();
+    HeatmapAxisDomains { axis, min: NumericData::from(mins), max: NumericData::from(maxs) }
+}
 
 /// `None` when the store has not finished loading what was asked for yet.
 fn ok_unless_timed_out<T>(result: Result<T, ArrayError>, what: &str) -> Option<T> {
@@ -220,6 +204,7 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         let Some((obs_indices, var_indices, obs_mask, var_mask, obs_labels, var_labels)) = axes else {
             self.sub_layer_instances = Vec::new();
             self.block_first_rows = Vec::new();
+            self.axes = None;
             return PrepareResult { bailed_early: true };
         };
         let rows = indices_of(&obs_indices);
@@ -231,6 +216,7 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         let block_key = |block_index: usize| MatrixBlockKey {
             store_name: &store_name,
             matrix_path: &matrix_path,
+            cache_mode: params.cache_mode.unwrap_or_default(),
             obs_filtering: params.obs_filtering.as_ref(),
             var_filtering: params.var_filtering.as_ref(),
             rows_per_block,
@@ -249,8 +235,27 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         let _ = maybe_timeout!(futures::future::join_all(block_futures), timeout).await;
         let bailed_early = blocks.iter().any(Option::is_none);
 
-        let colormap = match params.colormap.clone().unwrap_or_default() {
-            HeatmapColormap::Quantitative(mut quantitative) if quantitative.domain.is_none() => {
+        let block_num_rows = |block_index: usize| rows_per_block.min(num_rows - block_first_rows[block_index]);
+        let colormap = params.colormap.clone().unwrap_or_default();
+        let normalization = match &colormap {
+            HeatmapColormap::Quantitative(quantitative) if quantitative.domain.is_none() && quantitative.axis_domains.is_none() => {
+                Some(params.normalization.unwrap_or_default())
+            }
+            _ => None,
+        };
+        let with_domains = |domain: Option<(f32, f32)>, axis_domains: Option<HeatmapAxisDomains>| match &colormap {
+            HeatmapColormap::Quantitative(quantitative) => {
+                let mut quantitative = quantitative.clone();
+                quantitative.domain = domain;
+                quantitative.axis_domains = axis_domains;
+                HeatmapColormap::Quantitative(quantitative)
+            }
+            other => other.clone(),
+        };
+        let mut block_colormaps: Vec<HeatmapColormap> = vec![colormap.clone(); blocks.len()];
+        match normalization {
+            None => {}
+            Some(HeatmapNormalization::Matrix) => {
                 let mut domain = (f32::INFINITY, f32::NEG_INFINITY);
                 for (block_index, block) in blocks.iter().enumerate() {
                     if let Some(block) = block {
@@ -258,22 +263,47 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                         domain = (domain.0.min(min), domain.1.max(max));
                     }
                 }
-                quantitative.domain = Some(if domain.0.is_finite() && domain.1.is_finite() { domain } else { (0.0, 1.0) });
-                HeatmapColormap::Quantitative(quantitative)
+                let (lo, hi) = finite_or_unit(domain.0, domain.1);
+                block_colormaps.fill(with_domains(Some((lo, hi)), None));
             }
-            colormap => colormap,
-        };
+            Some(HeatmapNormalization::PerObs) => {
+                for (block_index, block) in blocks.iter().enumerate() {
+                    if let Some(block) = block {
+                        let (mins, maxs) = load_matrix_block_axis_extents(
+                            gpu_context, &block_key(block_index), block, block_num_rows(block_index), num_cols, HeatmapAxis::Rows, cache_enabled,
+                        )
+                        .await;
+                        block_colormaps[block_index] = with_domains(None, Some(axis_domains(HeatmapAxis::Rows, mins, maxs)));
+                    }
+                }
+            }
+            Some(HeatmapNormalization::PerVar) => {
+                let (mut mins, mut maxs) = (vec![f32::INFINITY; num_cols], vec![f32::NEG_INFINITY; num_cols]);
+                for (block_index, block) in blocks.iter().enumerate() {
+                    if let Some(block) = block {
+                        let (block_mins, block_maxs) = load_matrix_block_axis_extents(
+                            gpu_context, &block_key(block_index), block, block_num_rows(block_index), num_cols, HeatmapAxis::Cols, cache_enabled,
+                        )
+                        .await;
+                        for col in 0..num_cols {
+                            mins[col] = mins[col].min(block_mins[col]);
+                            maxs[col] = maxs[col].max(block_maxs[col]);
+                        }
+                    }
+                }
+                block_colormaps.fill(with_domains(None, Some(axis_domains(HeatmapAxis::Cols, mins, maxs))));
+            }
+        }
 
         let swap_axes = params.swap_axes;
         let (display_w, display_h) = if swap_axes { (num_rows, num_cols) } else { (num_cols, num_rows) };
-        let model_matrix = self.fit_model_matrix(display_w, display_h);
 
         let mut sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
         let mut loaded_block_first_rows = Vec::new();
         for (block_index, block) in blocks.into_iter().enumerate() {
             let Some(block) = block else { continue };
             let first_row = block_first_rows[block_index];
-            let block_num_rows = rows_per_block.min(num_rows - first_row);
+            let block_num_rows = block_num_rows(block_index);
             let cell_offset = if swap_axes {
                 (first_row as f32, 0.0)
             } else {
@@ -289,12 +319,11 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                     layer_id: format!("{}_heatmap_sublayer_{block_index}", params.layer_id),
                     bounds: params.bounds.clone(),
                     cell_offset: Some(cell_offset),
-                    model_matrix: Some(model_matrix),
                     num_rows: block_num_rows as u32,
                     num_cols: num_cols as u32,
                     data: block.as_ref().clone(),
                     swap_axes,
-                    colormap: Some(colormap.clone()),
+                    colormap: Some(block_colormaps[block_index].clone()),
                     row_selection,
                     col_selection: var_mask.as_ref().map(|mask| mask.as_ref().clone()),
                     background_opacity: params.background_opacity,
@@ -317,7 +346,11 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         } else {
             (var_axis_labels, obs_axis_labels.into_iter().rev().collect(), params.show_var_labels, params.show_obs_labels)
         };
-        for (labels, shown, position, name) in [(x_labels, x_shown, AxisPosition::Bottom, "x"), (y_labels, y_shown, AxisPosition::Left, "y")] {
+        let axes = [
+            (x_labels, x_shown, AxisPosition::Bottom, "x", display_w),
+            (y_labels, y_shown, AxisPosition::Left, "y", display_h),
+        ];
+        for (labels, shown, position, name, num_cells) in axes {
             if !shown.unwrap_or(true) {
                 continue;
             }
@@ -327,18 +360,31 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                     layer_id: format!("{}_{name}_axis_sublayer", params.layer_id),
                     position,
                     domain: Arc::new(labels),
+                    data_range: Some((0.0, num_cells as f64)),
                 },
             );
             axis_layer.prepare(gpu_context).await;
             sub_layer_instances.push(Box::new(axis_layer));
         }
 
-        if let HeatmapColormap::Quantitative(quantitative) = &colormap {
+        if let HeatmapColormap::Quantitative(quantitative) = block_colormaps.first().unwrap_or(&colormap) {
             const LEGEND_PADDING_HORIZONTAL: f32 = 5.0;
             let (margin_top, margin_right, _, _) = self.margins();
-            let (lo, hi) = quantitative.domain.unwrap_or((0.0, 1.0));
-            let mut color_scale = ScaleLinear::new();
-            color_scale.set_domain((lo as f64, hi as f64));
+            // Per-obs or per-var domains have no single range to label, so the legend spans 0 to 1.
+            let color_scale = match (quantitative.domain, &quantitative.axis_domains) {
+                (_, Some(_)) => None,
+                (domain, None) => {
+                    let (lo, hi) = domain.unwrap_or((0.0, 1.0));
+                    let mut color_scale = ScaleLinear::new();
+                    color_scale.set_domain((lo as f64, hi as f64));
+                    Some(color_scale)
+                }
+            };
+            let default_title = match normalization {
+                Some(HeatmapNormalization::PerObs) => "Scaled per obs",
+                Some(HeatmapNormalization::PerVar) => "Scaled per var",
+                _ => "Expression",
+            };
             let mut legend_layer = LegendColormapQuantitativeLayer::new(
                 self.view_params.clone(),
                 LegendColormapQuantitativeLayerParams {
@@ -349,10 +395,10 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                         margin_top: Some(margin_top),
                         margin_bottom: Some(0.0),
                     }),
-                    title: params.legend_title.clone().unwrap_or_else(|| "Expression".to_string()),
+                    title: params.legend_title.clone().unwrap_or_else(|| default_title.to_string()),
                     colormap: quantitative.colormap,
                     reverse: quantitative.reverse,
-                    scale: Some(color_scale),
+                    scale: color_scale,
                     orientation: LegendOrientation::Horizontal,
                 },
             );
@@ -361,12 +407,12 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         }
 
         let owned_indices = |data: &NumericData| Arc::new(indices_of(data).to_vec());
-        self.axes = PreparedAxes {
+        self.axes = Some(PreparedAxes {
             obs_indices: owned_indices(&obs_indices),
             var_indices: owned_indices(&var_indices),
             obs_labels,
             var_labels,
-        };
+        });
         self.sub_layer_instances = sub_layer_instances;
         self.block_first_rows = loaded_block_first_rows;
         PrepareResult { bailed_early }
@@ -397,7 +443,21 @@ impl DrawToSvg for AdataZarrHeatmapLayer {
 
 impl BrushableLayer for AdataZarrHeatmapLayer {}
 
-impl ExtentableLayer for AdataZarrHeatmapLayer {}
+impl ExtentableLayer for AdataZarrHeatmapLayer {
+    /// The number of filtered cells along x and y, i.e. var and obs counts
+    /// (swapped when `swap_axes` is set), with zero as the minimum.
+    fn extent(&self) -> Option<LayerExtentResult> {
+        let axes = self.axes.as_ref()?;
+        let (num_obs, num_var) = (axes.obs_indices.len() as f32, axes.var_indices.len() as f32);
+        let (x_max, y_max) = if self.layer_params.swap_axes { (num_obs, num_var) } else { (num_var, num_obs) };
+        Some(LayerExtentResult {
+            layer_id: self.layer_params.layer_id.clone(),
+            x: (0.0, x_max),
+            y: (0.0, y_max),
+            z: None,
+        })
+    }
+}
 
 impl PickableLayer for AdataZarrHeatmapLayer {
     /// Returns the picked cell's "obs_name", "var_name", "obs_index", "var_index" and "value".
@@ -407,15 +467,28 @@ impl PickableLayer for AdataZarrHeatmapLayer {
         })?;
         let row: usize = block_first_row + cell.info.get("row")?.parse::<usize>().ok()?;
         let col: usize = cell.info.get("col")?.parse().ok()?;
-        let obs_index = *self.axes.obs_indices.get(row)? as usize;
-        let var_index = *self.axes.var_indices.get(col)? as usize;
+        let axes = self.axes.as_ref()?;
+        let obs_index = *axes.obs_indices.get(row)? as usize;
+        let var_index = *axes.var_indices.get(col)? as usize;
 
         let mut info = HashMap::new();
-        info.insert("obs_name".to_string(), self.axes.obs_labels.get(obs_index)?.clone());
-        info.insert("var_name".to_string(), self.axes.var_labels.get(var_index)?.clone());
+        info.insert("obs_name".to_string(), axes.obs_labels.get(obs_index)?.clone());
+        info.insert("var_name".to_string(), axes.var_labels.get(var_index)?.clone());
         info.insert("obs_index".to_string(), obs_index.to_string());
         info.insert("var_index".to_string(), var_index.to_string());
         info.insert("value".to_string(), cell.info.get("value")?.clone());
         Some(LayerPickingResult { layer_id: self.layer_params.layer_id.clone(), info })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn axis_domains_replace_empty_extents_with_the_unit_domain() {
+        let domains = axis_domains(HeatmapAxis::Cols, vec![1.0, f32::INFINITY], vec![5.0, f32::NEG_INFINITY]);
+        assert_eq!(domains.min.as_f32().as_ref(), &[1.0, 0.0]);
+        assert_eq!(domains.max.as_f32().as_ref(), &[5.0, 1.0]);
     }
 }

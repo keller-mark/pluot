@@ -478,6 +478,19 @@ pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 }
 
 /// Reads one column (single gene, all rows) of an AnnData expression matrix — `X` or a `layers`
+/// entry, stored as a dense `array`, `csr_matrix` or `csc_matrix` — in its native dtype.
+///
+/// For a CSR matrix this traverses the whole matrix; see [`read_csr_column_numeric`].
+pub async fn read_matrix_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    match read_encoding(store.clone(), matrix_path).await {
+        AnnDataEncoding::Array { .. } => read_dense_column_numeric(store, matrix_path, col_index).await,
+        AnnDataEncoding::CsrMatrix { .. } => read_csr_column_numeric(store, matrix_path, col_index).await,
+        AnnDataEncoding::CscMatrix { .. } => read_csc_column_numeric(store, matrix_path, col_index).await,
+        other => panic!("Unsupported AnnData expression matrix encoding at \"{matrix_path}\": {other:?}"),
+    }
+}
+
+/// Reads one column (single gene, all rows) of an AnnData expression matrix — `X` or a `layers`
 /// entry — as `f32`, given the zero-based column index.
 ///
 /// AnnData stores such a matrix in any of three layouts, and `matrix_path` may point at any of

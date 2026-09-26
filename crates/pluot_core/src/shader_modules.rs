@@ -332,7 +332,7 @@ pub mod is_included {
 }
 
 /// `HeatmapLayer` cell-color snippets, each defining `fn get_cell_color(value:
-/// f32) -> vec3<f32>`. Assembled at runtime by
+/// f32, row: u32, col: u32) -> vec3<f32>`, plus the quantitative domain lookups. Assembled at runtime by
 /// `crate::layers::heatmap_layer`.
 pub mod heatmap_cell_color {
     /// Cell values normalized against a domain and mapped through a
@@ -341,6 +341,13 @@ pub mod heatmap_cell_color {
 
     /// Cell values as integer codes indexed against a palette texture.
     pub const CATEGORICAL: &str = include_str!("wgsl_functions/heatmap/cell_color_categorical.wgsl");
+
+    /// `fn get_cell_domain(row, col) -> vec2<f32>` returning the uniform domain.
+    pub const DOMAIN_UNIFORM: &str = include_str!("wgsl_functions/heatmap/cell_domain_uniform.wgsl");
+
+    /// `fn get_cell_domain(row, col) -> vec2<f32>` reading per-row or
+    /// per-column domain textures, indexed by `{{domain_index}}`.
+    pub const DOMAIN_PER_AXIS: &str = include_str!("wgsl_functions/heatmap/cell_domain_per_axis.wgsl");
 }
 
 /// Colormap WGSL functions, embedded at compile time from

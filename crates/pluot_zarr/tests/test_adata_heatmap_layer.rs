@@ -8,12 +8,12 @@ use zarrs::filesystem::FilesystemStore;
 use zarrs::storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter};
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use pluot_core::render_traits::{AspectRatioMode, PickableLayer, PreparedLayer, ViewParams};
+use pluot_core::render_traits::{AspectRatioMode, ExtentableLayer, PickableLayer, PreparedLayer, ViewParams};
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::zarr::StoreMap;
 use pluot_zarr::adata_io::{read_dataframe_index, read_dense_column_numeric};
-use pluot_zarr::heatmap_data::{AxisCriteria, IdentifierCriteriaParams};
+use pluot_zarr::heatmap_data::{AxisCriteria, HeatmapNormalization, IdentifierCriteriaParams, MatrixCacheMode};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
 use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
@@ -84,11 +84,11 @@ async fn check_picks(layer: &AdataZarrHeatmapLayer, store: Arc<dyn AsyncReadable
     let (num_rows, num_cols) = (expected.obs_indices.len(), expected.var_names.len());
     for row in (0..num_rows).step_by(7) {
         for col in 0..num_cols {
-            let (display_x, display_y_from_top, display_w, display_h) =
-                if swap_axes { (row, col, num_rows, num_cols) } else { (col, row, num_cols, num_rows) };
+            let (display_x, display_y_from_top, display_h) =
+                if swap_axes { (row, col, num_cols) } else { (col, row, num_rows) };
             let data_coord = DataCoord::TwoD {
-                x: (display_x as f32 + 0.5) / display_w as f32,
-                y: 1.0 - (display_y_from_top as f32 + 0.5) / display_h as f32,
+                x: display_x as f32 + 0.5,
+                y: (display_h - display_y_from_top) as f32 - 0.5,
             };
             let info = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(data_coord)).expect("a cell is picked").info;
 
@@ -135,4 +135,50 @@ async fn gpu_filtering_matches_cpu_filtering() {
     let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
     assert!(!layer.prepare(Some(&gpu_context)).await.bailed_early);
     check_picks(&layer, store, &expected, false).await;
+}
+
+#[tokio::test]
+async fn var_columns_cache_mode_matches_row_blocks() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let params = AdataZarrHeatmapLayerParams { cache_mode: Some(MatrixCacheMode::VarColumns), ..params };
+
+    let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+    assert!(!layer.prepare(None).await.bailed_early);
+    check_picks(&layer, store, &expected, false).await;
+}
+
+#[tokio::test]
+async fn every_normalization_prepares_on_cpu_and_gpu() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
+        for gpu in [None, Some(&gpu_context)] {
+            let params = AdataZarrHeatmapLayerParams { normalization: Some(normalization), ..params.clone() };
+            let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+            assert!(!layer.prepare(gpu).await.bailed_early, "{normalization:?}");
+            check_picks(&layer, store.clone(), &expected, false).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn extent_is_the_filtered_cell_counts() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let (num_obs, num_var) = (expected.obs_indices.len() as f32, expected.var_names.len() as f32);
+
+    let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params.clone());
+    assert!(layer.extent().is_none(), "no extent before prepare");
+    layer.prepare(None).await;
+    let extent = layer.extent().unwrap();
+    assert_eq!((extent.x, extent.y, extent.z), ((0.0, num_var), (0.0, num_obs), None));
+
+    let mut swapped = AdataZarrHeatmapLayer::new(view_params(store), AdataZarrHeatmapLayerParams { swap_axes: true, ..params });
+    swapped.prepare(None).await;
+    let extent = swapped.extent().unwrap();
+    assert_eq!((extent.x, extent.y), ((0.0, num_obs), (0.0, num_var)));
 }

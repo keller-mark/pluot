@@ -1,0 +1,73 @@
+---
+title: Heatmap (AnnData)
+description: Heatmap example.
+sidebar:
+    order: 31
+---
+import { HeatmapWrapper } from '../../../components/HeatmapWrapper.jsx';
+
+This [heatmap](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.heatmap.html) displays single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+Each row is a cell and each column is a marker gene.
+The cells are filtered to four cell types (monocytes, B cells, NK cells, and dendritic cells) using the `bulk_labels` column of `obs`,
+the colormap is normalized separately for each gene, and the cells with at least 1,000 detected genes are selected (the others are faded).
+Scroll to zoom and drag to pan; the gene labels follow the camera.
+
+<HeatmapWrapper
+    client:load
+    client:only="react"
+
+    plotId={"heatmap-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrHeatmapLayer",
+          layer_params: {
+            layer_id: "heatmap",
+            layer: "X",
+            var_filtering: {
+              axis_criteria_mode: "Identifiers",
+              axis_criteria_params: {
+                identifiers: ['LYZ', 'CST3', 'S100A8', 'PSAP', 'C1QA', 'CD79A', 'CD79B', 'MS4A1', 'HLA-DRA', 'NKG7', 'GNLY'],
+              },
+            },
+            obs_filtering: {
+              axis_criteria_mode: "Criteria",
+              axis_criteria_params: [
+                {
+                  criteria_mode: "Categorical",
+                  // CD14+ Monocyte, CD19+ B, CD56+ NK, Dendritic
+                  criteria_params: { codes_key: "/obs/bulk_labels/codes", included_codes: [5, 6, 8, 9] },
+                },
+              ],
+            },
+            obs_selection: {
+              axis_criteria_mode: "Criteria",
+              axis_criteria_params: [
+                {
+                  criteria_mode: "Quantitative",
+                  criteria_params: { values_key: "/obs/n_genes", min: 1000 },
+                },
+              ],
+            },
+            colormap: {
+              colormap_mode: "Quantitative",
+              colormap_params: { colormap: "Viridis" },
+            },
+            normalization: "PerVar",
+            background_opacity: 0.35,
+            show_obs_labels: false,
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={40}
+    marginBottom={80}
+    marginTop={20}
+    marginRight={150}
+    width={700}
+    height={700}
+    aspectRatioMode="Ignore"
+/>

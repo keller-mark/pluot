@@ -7,6 +7,7 @@ use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::composite_layers::axis_linear_layer::AxisPosition;
+use crate::viewport::get_bounds;
 use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
@@ -26,7 +27,12 @@ pub struct AxisBandLayerParams {
     pub position: AxisPosition,
     pub domain: Arc<Vec<String>>,
 
-    // TODO: support a data_unit_mode param?
+    /// The span of data coordinates the bands cover along this axis, e.g.
+    /// `(0, n)` for `n` bands one data unit wide. When set, the bands follow
+    /// the camera, and bands whose center is outside the visible range are not
+    /// drawn. `None` (the default) spreads the bands across the layer in
+    /// pixels, ignoring the camera.
+    pub data_range: Option<(f64, f64)>,
 }
 
 impl Default for AxisBandLayerParams {
@@ -35,6 +41,7 @@ impl Default for AxisBandLayerParams {
             layer_id: "".to_string(),
             position: AxisPosition::Bottom,
             domain: Arc::new(vec![]),
+            data_range: None,
         }
     }
 }
@@ -73,9 +80,25 @@ impl AxisBandLayer {
         let mut scale = ScaleBand::new();
         scale.set_domain(self.layer_params.domain.to_vec());
 
+        let horizontal_px = (margin_left, viewport_w - margin_right);
+        let vertical_px = (margin_bottom, viewport_h - margin_top);
+        let visible_bounds = get_bounds(&self.view_params);
+        // The pixel span the bands cover: the whole layer, or the projection of
+        // `data_range` given the visible data bounds.
+        let band_range_px = |layer_px: (f64, f64), visible: (f32, f32)| match self.layer_params.data_range {
+            None => layer_px,
+            Some((start, end)) => {
+                let to_px = |value: f64| {
+                    layer_px.0 + (value - visible.0 as f64) / (visible.1 - visible.0) as f64 * (layer_px.1 - layer_px.0)
+                };
+                (to_px(start), to_px(end))
+            }
+        };
+        let is_visible = |px: f64, layer_px: (f64, f64)| px >= layer_px.0 && px <= layer_px.1;
+
         match self.layer_params.position {
             AxisPosition::Bottom => {
-                scale.set_range((margin_left, viewport_w - margin_right));
+                scale.set_range(band_range_px(horizontal_px, (visible_bounds.x_min, visible_bounds.x_max)));
                 let ticks = scale.ticks(None);
                 let bandwidth = scale.bandwidth();
                 let axis_y = margin_bottom;
@@ -85,7 +108,11 @@ impl AxisBandLayer {
                 line_target_positions.push([(viewport_w - margin_right) as f32, axis_y as f32]);
 
                 for tick in &ticks {
-                    let x = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let x_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(x_px, horizontal_px) {
+                        continue;
+                    }
+                    let x = x_px as f32;
                     let y = axis_y as f32;
 
                     // Tick line
@@ -98,7 +125,7 @@ impl AxisBandLayer {
                 }
             }
             AxisPosition::Top => {
-                scale.set_range((margin_left, viewport_w - margin_right));
+                scale.set_range(band_range_px(horizontal_px, (visible_bounds.x_min, visible_bounds.x_max)));
                 let ticks = scale.ticks(None);
                 let bandwidth = scale.bandwidth();
                 let axis_y = viewport_h - margin_top;
@@ -108,7 +135,11 @@ impl AxisBandLayer {
                 line_target_positions.push([(viewport_w - margin_right) as f32, axis_y as f32]);
 
                 for tick in &ticks {
-                    let x = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let x_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(x_px, horizontal_px) {
+                        continue;
+                    }
+                    let x = x_px as f32;
                     let y = axis_y as f32;
 
                     // Tick line (upward)
@@ -121,7 +152,7 @@ impl AxisBandLayer {
                 }
             }
             AxisPosition::Left => {
-                scale.set_range((margin_bottom, viewport_h - margin_top));
+                scale.set_range(band_range_px(vertical_px, (visible_bounds.y_min, visible_bounds.y_max)));
                 let ticks = scale.ticks(None);
                 let bandwidth = scale.bandwidth();
                 let axis_x = margin_left;
@@ -131,8 +162,12 @@ impl AxisBandLayer {
                 line_target_positions.push([axis_x as f32, (viewport_h - margin_top) as f32]);
 
                 for tick in &ticks {
+                    let y_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(y_px, vertical_px) {
+                        continue;
+                    }
                     let x = axis_x as f32;
-                    let y = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let y = y_px as f32;
 
                     // Tick line (leftward)
                     line_source_positions.push([x, y]);
@@ -144,7 +179,7 @@ impl AxisBandLayer {
                 }
             }
             AxisPosition::Right => {
-                scale.set_range((margin_bottom, viewport_h - margin_top));
+                scale.set_range(band_range_px(vertical_px, (visible_bounds.y_min, visible_bounds.y_max)));
                 let ticks = scale.ticks(None);
                 let bandwidth = scale.bandwidth();
                 let axis_x = viewport_w - margin_right;
@@ -154,8 +189,12 @@ impl AxisBandLayer {
                 line_target_positions.push([axis_x as f32, (viewport_h - margin_top) as f32]);
 
                 for tick in &ticks {
+                    let y_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(y_px, vertical_px) {
+                        continue;
+                    }
                     let x = axis_x as f32;
-                    let y = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let y = y_px as f32;
 
                     // Tick line (rightward)
                     line_source_positions.push([x, y]);

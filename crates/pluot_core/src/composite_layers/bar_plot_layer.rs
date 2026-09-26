@@ -175,7 +175,8 @@ impl BarPlotLayer {
                         AxisBandLayerParams {
                             layer_id: format!("{}_bar_plot_layer_categorical_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Bottom,
-                            domain: self.layer_params.identifier.clone()
+                            domain: self.layer_params.identifier.clone(),
+                            data_range: None,
                         }
                     )));
                 }
@@ -230,7 +231,8 @@ impl BarPlotLayer {
                         AxisBandLayerParams {
                             layer_id: format!("{}_bar_plot_layer_categorical_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Left,
-                            domain: self.layer_params.identifier.clone()
+                            domain: self.layer_params.identifier.clone(),
+                            data_range: None,
                         }
                     )));
                 }

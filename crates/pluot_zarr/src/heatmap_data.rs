@@ -14,12 +14,13 @@ use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::compute::included_indices::compute_included_indices;
+use pluot_core::compute::matrix_axis_extents::{reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::GpuContext;
 
-use crate::adata_io::{read_dataframe_column_strings, read_matrix_shape, read_matrix_subset_numeric};
+use crate::adata_io::{read_dataframe_column_strings, read_matrix_column_numeric, read_matrix_shape, read_matrix_subset_numeric};
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Which entries along one axis of the matrix (obs rows or var columns) are
@@ -249,10 +250,92 @@ pub async fn load_axis_selection_mask(
     Ok(Some(mask))
 }
 
+/// How the loaded matrix values are cached.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum MatrixCacheMode {
+    /// Cache each row block of the filtered submatrix as a whole. Loads only
+    /// the filter-included cells, but a change to either axis's filter
+    /// reloads every block.
+    #[default]
+    RowBlocks,
+    /// Cache each var's whole column (every obs) independently, and assemble
+    /// the row blocks from them. Changing the obs filter, or adding a var,
+    /// only loads columns not already cached. Reading a column of a CSR
+    /// matrix traverses the whole matrix.
+    VarColumns,
+}
+
+/// How the quantitative colormap's domain is derived from the loaded values.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum HeatmapNormalization {
+    /// One (min, max) over every loaded cell.
+    #[default]
+    Matrix,
+    /// One (min, max) per obs, over that obs's included vars.
+    PerObs,
+    /// One (min, max) per var, over that var's included obs.
+    PerVar,
+}
+
+/// Loads (and caches) one var's whole column of the matrix, in its stored
+/// dtype. Keyed independently of any filtering.
+pub async fn load_var_column(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    matrix_path: &str,
+    var_index: u32,
+    cache_enabled: bool,
+) -> Result<Arc<NumericData>, ArrayError> {
+    let keys = vec!["adata_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
+    use_memo_numeric_data(
+        async || read_matrix_column_numeric(store, matrix_path, var_index as u64).await,
+        &keys,
+        cache_enabled,
+    )
+    .await
+}
+
+/// The row-major `rows x columns.len()` matrix gathered from whole columns,
+/// in their stored dtype (which every column must share).
+pub fn gather_rows_from_columns(columns: &[Arc<NumericData>], rows: &[u32]) -> NumericData {
+    macro_rules! gather {
+        ($variant:ident) => {{
+            let columns: Vec<&[_]> = columns
+                .iter()
+                .map(|column| match column.as_ref() {
+                    NumericData::$variant(values) => values.as_slice(),
+                    _ => panic!("matrix columns must share one dtype"),
+                })
+                .collect();
+            let mut out = Vec::with_capacity(rows.len() * columns.len());
+            for &row in rows {
+                out.extend(columns.iter().map(|column| column[row as usize]));
+            }
+            NumericData::$variant(Arc::new(out))
+        }};
+    }
+    let Some(first) = columns.first() else {
+        return NumericData::Float32(Arc::new(vec![]));
+    };
+    match first.as_ref() {
+        NumericData::Uint8(_) => gather!(Uint8),
+        NumericData::Uint16(_) => gather!(Uint16),
+        NumericData::Uint32(_) => gather!(Uint32),
+        NumericData::Uint64(_) => gather!(Uint64),
+        NumericData::Int8(_) => gather!(Int8),
+        NumericData::Int16(_) => gather!(Int16),
+        NumericData::Int32(_) => gather!(Int32),
+        NumericData::Int64(_) => gather!(Int64),
+        NumericData::Float32(_) => gather!(Float32),
+        NumericData::Float64(_) => gather!(Float64),
+    }
+}
+
 /// Identifies one row block of a filtered submatrix, for memoization.
 pub struct MatrixBlockKey<'a> {
     pub store_name: &'a str,
     pub matrix_path: &'a str,
+    pub cache_mode: MatrixCacheMode,
     pub obs_filtering: Option<&'a AxisCriteria>,
     pub var_filtering: Option<&'a AxisCriteria>,
     pub rows_per_block: usize,
@@ -261,7 +344,12 @@ pub struct MatrixBlockKey<'a> {
 
 impl MatrixBlockKey<'_> {
     fn keys(&self, namespace: &str) -> Vec<String> {
-        let mut keys = vec![namespace.to_string(), self.store_name.to_string(), self.matrix_path.to_string()];
+        let mut keys = vec![
+            namespace.to_string(),
+            self.store_name.to_string(),
+            self.matrix_path.to_string(),
+            format!("{:?}", self.cache_mode),
+        ];
         keys.extend(axis_criteria_key(self.obs_filtering));
         keys.extend(axis_criteria_key(self.var_filtering));
         keys.push(self.rows_per_block.to_string());
@@ -280,7 +368,20 @@ pub async fn load_matrix_block(
     cache_enabled: bool,
 ) -> Result<Arc<NumericData>, ArrayError> {
     use_memo_numeric_data(
-        async || read_matrix_subset_numeric(store, key.matrix_path, rows, cols).await,
+        async || match key.cache_mode {
+            MatrixCacheMode::RowBlocks => read_matrix_subset_numeric(store, key.matrix_path, rows, cols).await,
+            MatrixCacheMode::VarColumns => {
+                // `join_all` rather than `try_join_all`, so that a column still loading
+                // does not cancel the others, which are then cached for the next attempt.
+                let columns = futures::future::join_all(
+                    cols.iter().map(|&var_index| load_var_column(store.clone(), key.store_name, key.matrix_path, var_index, cache_enabled)),
+                )
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+                Ok(gather_rows_from_columns(&columns, rows))
+            }
+        },
         &key.keys("adata_matrix_block"),
         cache_enabled,
     )
@@ -307,6 +408,33 @@ pub async fn load_matrix_block_extent(
     (extent[0], extent[1])
 }
 
+/// Computes (and caches) the `(mins, maxs)` of every row or column of the
+/// `num_rows x num_cols` block identified by `key`.
+pub async fn load_matrix_block_axis_extents(
+    gpu_context: Option<&GpuContext<'_>>,
+    key: &MatrixBlockKey<'_>,
+    block: &NumericData,
+    num_rows: usize,
+    num_cols: usize,
+    axis: HeatmapAxis,
+    cache_enabled: bool,
+) -> (Vec<f32>, Vec<f32>) {
+    let namespace = format!("adata_matrix_block_{axis:?}_extents");
+    let extents = use_memo_vec_f32(
+        async || {
+            let (mut mins, maxs) = reduce_matrix_axis_extents(gpu_context, block, num_rows, num_cols, axis).await;
+            mins.extend(maxs);
+            Ok::<_, std::convert::Infallible>(mins)
+        },
+        &key.keys(&namespace),
+        cache_enabled,
+    )
+    .await
+    .expect("infallible");
+    let (mins, maxs) = extents.split_at(extents.len() / 2);
+    (mins.to_vec(), maxs.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +445,15 @@ mod tests {
         let labels: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
         let requested: Vec<String> = ["c", "x", "a", "c"].iter().map(|s| s.to_string()).collect();
         assert_eq!(resolve_identifier_indices(&requested, &labels), vec![2, 0]);
+    }
+
+    #[test]
+    fn gathers_rows_from_columns_in_row_major_order() {
+        let columns = vec![Arc::new(NumericData::from(vec![1u16, 2, 3])), Arc::new(NumericData::from(vec![4u16, 5, 6]))];
+        let NumericData::Uint16(values) = gather_rows_from_columns(&columns, &[2, 0]) else {
+            panic!("expected the columns' dtype");
+        };
+        assert_eq!(*values, vec![3, 6, 1, 4]);
     }
 
     #[test]

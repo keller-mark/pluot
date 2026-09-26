@@ -6,8 +6,8 @@ mod test_utils;
 use test_utils::render_and_check_both_snapshots;
 
 use pluot::{
-    AspectRatioMode, CategoricalColormap, HeatmapColormap, HeatmapLayerParams, HeatmapQuantitativeColormapParams,
-    LayerParams, NumericData, QuantitativeColormap, RenderParams, UnitsMode,
+    AspectRatioMode, CategoricalColormap, HeatmapAxisDomains, HeatmapColormap, HeatmapLayerParams,
+    HeatmapQuantitativeColormapParams, LayerParams, MatrixAxis, NumericData, QuantitativeColormap, RenderParams, UnitsMode,
 };
 
 // Scales the 4x3 cell grid into data space (0, 1) so it fills the layer at the identity camera.
@@ -33,6 +33,7 @@ fn quantitative_heatmap() -> HeatmapLayerParams {
             colormap: QuantitativeColormap::Viridis,
             reverse: false,
             domain: Some((0.0, 10.0)),
+            axis_domains: None,
         })),
         ..Default::default()
     }
@@ -61,6 +62,7 @@ async fn test_heatmap_layer_quantitative_reversed_integer_data() {
             colormap: QuantitativeColormap::Plasma,
             reverse: true,
             domain: Some((0.0, 11.0)),
+            axis_domains: None,
         })),
         ..quantitative_heatmap()
     };
@@ -246,4 +248,50 @@ async fn test_heatmap_layer_tall_contain_zoom_in_pan() {
 #[tokio::test]
 async fn test_heatmap_layer_tall_ignore_pan() {
     check_aspect_ratio(100, 200, AspectRatioMode::Ignore, CAMERA_PAN_RIGHT_UP, "test_heatmap_layer_tall_ignore_pan").await;
+}
+
+fn with_axis_domains(axis: MatrixAxis, min: Vec<f32>, max: Vec<f32>) -> Option<HeatmapColormap> {
+    Some(HeatmapColormap::Quantitative(HeatmapQuantitativeColormapParams {
+        colormap: QuantitativeColormap::Viridis,
+        reverse: false,
+        domain: None,
+        axis_domains: Some(HeatmapAxisDomains { axis, min: NumericData::from(min), max: NumericData::from(max) }),
+    }))
+}
+
+// Each row spans its own (min, max), so every row runs through the whole colormap.
+#[tokio::test]
+async fn test_heatmap_layer_per_row_domains() {
+    let heatmap = HeatmapLayerParams {
+        colormap: with_axis_domains(MatrixAxis::Rows, vec![0.0, 4.0, 8.0], vec![3.0, 7.0, 11.0]),
+        ..quantitative_heatmap()
+    };
+    render_and_check_both_snapshots(params(heatmap), "test_heatmap_layer_per_row_domains").await;
+}
+
+// Each column spans its own (min, max), so every column runs through the whole colormap.
+#[tokio::test]
+async fn test_heatmap_layer_per_col_domains() {
+    let heatmap = HeatmapLayerParams {
+        data: NumericData::Uint8(Arc::new((0..12).collect())),
+        colormap: with_axis_domains(MatrixAxis::Cols, vec![0.0, 1.0, 2.0, 3.0], vec![8.0, 9.0, 10.0, 11.0]),
+        ..quantitative_heatmap()
+    };
+    render_and_check_both_snapshots(params(heatmap), "test_heatmap_layer_per_col_domains").await;
+}
+
+#[tokio::test]
+async fn test_heatmap_layer_per_col_domains_swap_axes() {
+    let heatmap = HeatmapLayerParams {
+        swap_axes: true,
+        model_matrix: Some([
+            1.0 / 3.0, 0.0, 0.0, 0.0,
+            0.0, 0.25, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]),
+        colormap: with_axis_domains(MatrixAxis::Cols, vec![0.0, 1.0, 2.0, 3.0], vec![8.0, 9.0, 10.0, 11.0]),
+        ..quantitative_heatmap()
+    };
+    render_and_check_both_snapshots(params(heatmap), "test_heatmap_layer_per_col_domains_swap_axes").await;
 }

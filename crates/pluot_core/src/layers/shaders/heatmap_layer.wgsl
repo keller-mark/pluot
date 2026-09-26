@@ -42,6 +42,8 @@ struct VSOut {
 
 {{colormap_fn_source}}
 
+{{cell_domain}}
+
 {{cell_color}}
 
 {{row_selection}}
@@ -117,5 +119,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let row = u.block_first_row + local_row;
     let is_selected = is_row_selected(row) && is_col_selected(col);
     let alpha = u.opacity * select(u.background_opacity, 1.0, is_selected);
-    return vec4<f32>(get_cell_color(value), alpha);
+    return vec4<f32>(get_cell_color(value, row, col), alpha);
 }

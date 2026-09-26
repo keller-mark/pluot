@@ -99,7 +99,7 @@ pub struct ReduceUniforms {
 /// Maps `download_buffer` for reading, copies its contents into a `Vec<f32>`
 /// (interpreting the raw bytes as `f32`), then unmaps it so the buffer can be
 /// reused or dropped.
-async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) -> Vec<f32> {
+pub(super) async fn read_back_f32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) -> Vec<f32> {
     let buffer_slice = download_buffer.slice(..);
 
     #[cfg(target_arch = "wasm32")]
@@ -522,7 +522,7 @@ async fn compute_reduce_fg_bg(
 
 /// Casts one scalar of a supported numeric dtype to f32. Applied only to
 /// reduction outputs — never to convert the input array.
-trait ScalarToF32: Copy {
+pub(super) trait ScalarToF32: Copy {
     fn scalar_to_f32(self) -> f32;
 }
 macro_rules! impl_scalar_to_f32 {
@@ -551,6 +551,7 @@ macro_rules! dispatch_cpu {
         }
     };
 }
+pub(super) use dispatch_cpu;
 
 fn cpu_reduce_min<T: ScalarToF32 + PartialOrd>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
     input

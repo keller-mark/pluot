@@ -34,6 +34,7 @@ use std::sync::Arc;
 use crate::color_mode::create_palette_texture;
 use crate::colormaps_categorical;
 use crate::colormaps_quantitative;
+use crate::compute::matrix_axis_extents::MatrixAxis;
 use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
 use crate::numeric_data::{upload_data_texture, NumericData};
 use crate::picking::LayerPickingResult;
@@ -71,6 +72,19 @@ pub struct HeatmapQuantitativeColormapParams {
     /// from the matrix values, since that would cost a CPU pass over them.
     #[serde(default)]
     pub domain: Option<(f32, f32)>,
+    /// One (min, max) domain per row or per column, taking precedence over `domain`.
+    #[serde(default)]
+    pub axis_domains: Option<HeatmapAxisDomains>,
+}
+
+/// One (min, max) normalization domain per row or per column of the matrix.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct HeatmapAxisDomains {
+    pub axis: MatrixAxis,
+    /// One lower bound per entry along `axis`.
+    pub min: NumericData,
+    /// One upper bound per entry along `axis`.
+    pub max: NumericData,
 }
 
 /// How to map each matrix value to a color.
@@ -94,6 +108,7 @@ impl Default for HeatmapColormap {
             colormap: QuantitativeColormap::Viridis,
             reverse: false,
             domain: None,
+            axis_domains: None,
         })
     }
 }
@@ -116,12 +131,23 @@ impl HeatmapColormap {
         }
     }
 
+    fn axis_domains(&self) -> Option<&HeatmapAxisDomains> {
+        match self {
+            HeatmapColormap::Quantitative(params) => params.axis_domains.as_ref(),
+            _ => None,
+        }
+    }
+
     /// CPU mirror of the `get_cell_color` WGSL snippets.
-    fn cpu_color(&self, value: f32) -> [u8; 3] {
+    fn cpu_color(&self, value: f32, row: u32, col: u32) -> [u8; 3] {
         let to_u8 = |c: f32| (c * 255.0).round().clamp(0.0, 255.0) as u8;
         let rgba = match self {
             HeatmapColormap::Quantitative(params) => {
-                let ((lo, hi), reverse) = self.quantitative_domain_and_reverse();
+                let ((mut lo, mut hi), reverse) = self.quantitative_domain_and_reverse();
+                if let Some(domains) = &params.axis_domains {
+                    let i = if domains.axis == MatrixAxis::Rows { row } else { col } as usize;
+                    (lo, hi) = (domains.min.get_f32(i), domains.max.get_f32(i));
+                }
                 let x = ((value - lo) / (hi - lo).max(1e-20)).clamp(0.0, 1.0);
                 colormaps_quantitative::sample(params.colormap, if reverse { 1.0 - x } else { x })
             }
@@ -267,6 +293,14 @@ impl HeatmapLayer {
         for criteria in layer_params.col_selection_criteria() {
             criteria.validate_len(layer_params.num_cols as usize);
         }
+        if let Some(domains) = layer_params.colormap.as_ref().and_then(HeatmapColormap::axis_domains) {
+            let expected_len = if domains.axis == MatrixAxis::Rows { layer_params.num_rows } else { layer_params.num_cols } as usize;
+            assert!(
+                domains.min.len() == expected_len && domains.max.len() == expected_len,
+                "HeatmapLayer {:?} domains have lengths ({}, {}) but the matrix has {expected_len} {:?}",
+                domains.axis, domains.min.len(), domains.max.len(), domains.axis,
+            );
+        }
         Self { view_params, layer_params }
     }
 
@@ -316,7 +350,9 @@ struct HeatmapLayerUniforms {
 
 const MATRIX_DATA_BINDING: u32 = 1;
 const PALETTE_BINDING: u32 = 2;
-const FIRST_SELECTION_BINDING: u32 = 3;
+const DOMAIN_MIN_BINDING: u32 = 3;
+const DOMAIN_MAX_BINDING: u32 = 4;
+const FIRST_SELECTION_BINDING: u32 = 5;
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -333,6 +369,12 @@ impl DrawToRasterGpu for HeatmapLayer {
         let (data_bytes, data_dtype) = layer_params.data.as_texture_data();
 
         let palette_view = colormap.palette().map(|colors| create_palette_texture(device, queue, &colors));
+        let domain_textures = colormap.axis_domains().map(|domains| {
+            (
+                domains.min.create_data_texture(device, queue, "Heatmap Domain Min Texture"),
+                domains.max.create_data_texture(device, queue, "Heatmap Domain Max Texture"),
+            )
+        });
 
         let row_selection = prepare_emphasis_criteria(
             device, queue, &layer_params.row_selection_criteria(), "is_row_selected", "row_selection", FIRST_SELECTION_BINDING,
@@ -349,6 +391,19 @@ impl DrawToRasterGpu for HeatmapLayer {
             }
             _ => (heatmap_cell_color::CATEGORICAL, "", ""),
         };
+        let cell_domain_wgsl = match (&colormap, colormap.axis_domains(), &domain_textures) {
+            (HeatmapColormap::Quantitative(_), Some(domains), Some(((_, min_dtype), (_, max_dtype)))) => {
+                ShaderBuilder::new(heatmap_cell_color::DOMAIN_PER_AXIS)
+                    .define_bidx("domain_min", DOMAIN_MIN_BINDING)
+                    .define_bidx("domain_max", DOMAIN_MAX_BINDING)
+                    .inject_texture_sample_type("domain_min", *min_dtype)
+                    .inject_texture_sample_type("domain_max", *max_dtype)
+                    .define("domain_index", if domains.axis == MatrixAxis::Rows { "row" } else { "col" })
+                    .build()
+            }
+            (HeatmapColormap::Quantitative(_), _, _) => heatmap_cell_color::DOMAIN_UNIFORM.to_string(),
+            _ => String::new(),
+        };
         let shader_source = ShaderBuilder::new(include_str!("shaders/heatmap_layer.wgsl"))
             .inject_function("scale", common::SCALE)
             .inject_function("translate", common::TRANSLATE)
@@ -356,6 +411,7 @@ impl DrawToRasterGpu for HeatmapLayer {
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
             .inject_texture_sample_type("matrix_data", data_dtype)
             .inject_function("colormap_fn_source", colormap_fn_source)
+            .inject_function("cell_domain", &cell_domain_wgsl)
             .inject_function("cell_color", cell_color_wgsl)
             .define("colormap_fn_name", colormap_fn_name)
             .define_bidx("palette", PALETTE_BINDING)
@@ -392,6 +448,10 @@ impl DrawToRasterGpu for HeatmapLayer {
         ];
         if palette_view.is_some() {
             layout_entries.push(texture_entry(PALETTE_BINDING, wgpu::TextureSampleType::Float { filterable: false }));
+        }
+        if let Some(((_, min_dtype), (_, max_dtype))) = &domain_textures {
+            layout_entries.push(texture_entry(DOMAIN_MIN_BINDING, min_dtype.binding_sample_type()));
+            layout_entries.push(texture_entry(DOMAIN_MAX_BINDING, max_dtype.binding_sample_type()));
         }
         let selection_textures: Vec<_> = row_selection.textures.iter().chain(col_selection.textures.iter()).collect();
         for (i, texture) in selection_textures.iter().enumerate() {
@@ -508,6 +568,10 @@ impl DrawToRasterGpu for HeatmapLayer {
             if let Some(palette_view) = &palette_view {
                 entries.push(wgpu::BindGroupEntry { binding: PALETTE_BINDING, resource: wgpu::BindingResource::TextureView(palette_view) });
             }
+            if let Some(((min_view, _), (max_view, _))) = &domain_textures {
+                entries.push(wgpu::BindGroupEntry { binding: DOMAIN_MIN_BINDING, resource: wgpu::BindingResource::TextureView(min_view) });
+                entries.push(wgpu::BindGroupEntry { binding: DOMAIN_MAX_BINDING, resource: wgpu::BindingResource::TextureView(max_view) });
+            }
             for (i, texture) in selection_textures.iter().enumerate() {
                 entries.push(wgpu::BindGroupEntry {
                     binding: FIRST_SELECTION_BINDING + i as u32,
@@ -558,7 +622,7 @@ impl DrawToSvg for HeatmapLayer {
                 let is_selected = cpu_is_included(&row_selection, row as usize) && cpu_is_included(&col_selection, col as usize);
                 let alpha = if is_selected { 1.0 } else { background_alpha };
                 let pixel = ((y * img_w + x) * 4) as usize;
-                rgba[pixel..pixel + 3].copy_from_slice(&colormap.cpu_color(value));
+                rgba[pixel..pixel + 3].copy_from_slice(&colormap.cpu_color(value, row, col));
                 rgba[pixel + 3] = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
             }
         }
@@ -708,8 +772,8 @@ mod tests {
     #[test]
     fn categorical_cpu_color_wraps_codes() {
         let colormap = HeatmapColormap::CategoricalCustom(vec![(255, 0, 0), (0, 255, 0)]);
-        assert_eq!(colormap.cpu_color(1.0), [0, 255, 0]);
-        assert_eq!(colormap.cpu_color(-1.0), [0, 255, 0]);
-        assert_eq!(colormap.cpu_color(2.0), [255, 0, 0]);
+        assert_eq!(colormap.cpu_color(1.0, 0, 0), [0, 255, 0]);
+        assert_eq!(colormap.cpu_color(-1.0, 0, 0), [0, 255, 0]);
+        assert_eq!(colormap.cpu_color(2.0, 0, 0), [255, 0, 0]);
     }
 }
