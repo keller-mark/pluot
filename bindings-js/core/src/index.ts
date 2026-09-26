@@ -43,7 +43,7 @@ export type {
   NormalizeStoresParam,
 } from './store-normalization.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
-export { getBounds, getCameraMatrixFromBounds } from './viewport.js';
+export { getBounds, getCameraMatrixFromBounds, refitCameraMatrixForViewport } from './viewport.js';
 export type {
   AspectRatioMode,
   AspectRatioAlignmentMode,

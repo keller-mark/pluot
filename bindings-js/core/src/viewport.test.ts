@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getBounds, getCameraMatrixFromBounds } from './viewport.js';
+import { getBounds, getCameraMatrixFromBounds, refitCameraMatrixForViewport } from './viewport.js';
 import type { AspectRatioMode, AspectRatioAlignmentMode, ViewportParams } from './viewport.js';
 
 function identityCamera(): Float32Array {
@@ -252,5 +252,37 @@ describe('getBounds / getCameraMatrixFromBounds roundtrip', () => {
     const bounds = getBounds(identityCamera(), viewport);
     const camera = getCameraMatrixFromBounds(bounds, identityCamera(), viewport);
     expectArrayCloseTo(camera, identityCamera());
+  });
+});
+
+describe('refitCameraMatrixForViewport', () => {
+  // Fitted under "Ignore" to show x in [0, 10] and y in [0, 100], i.e. zooming x and y differently.
+  const ignoreViewport = makeViewport(400, 200, 'Ignore');
+  const ignoreCamera = getCameraMatrixFromBounds({ xMin: 0, xMax: 10, yMin: 0, yMax: 100 }, identityCamera(), ignoreViewport);
+
+  it('zooms both axes equally when switching to Contain or Cover', () => {
+    for (const mode of ['Contain', 'Cover'] as const) {
+      const camera = refitCameraMatrixForViewport(ignoreCamera, ignoreViewport, makeViewport(400, 200, mode));
+      expect(camera[0]).toBeCloseTo(camera[5]);
+    }
+  });
+
+  it('keeps the previously visible bounds within view under Contain', () => {
+    const containViewport = makeViewport(400, 200, 'Contain');
+    const camera = refitCameraMatrixForViewport(ignoreCamera, ignoreViewport, containViewport);
+    const bounds = getBounds(camera, containViewport);
+    expect(bounds.xMin).toBeLessThanOrEqual(0 + 1e-4);
+    expect(bounds.xMax).toBeGreaterThanOrEqual(10 - 1e-4);
+    expect(bounds.yMin).toBeCloseTo(0);
+    expect(bounds.yMax).toBeCloseTo(100);
+  });
+
+  it('is a no-op when the viewport settings are unchanged', () => {
+    const containViewport = makeViewport(400, 200, 'Contain');
+    const camera = zoomAndTranslateCamera(0.5, 0.2, -0.1);
+    const refit = refitCameraMatrixForViewport(camera, containViewport, containViewport);
+    for (let i = 0; i < 16; i++) {
+      expect(refit[i]).toBeCloseTo(camera[i]);
+    }
   });
 });

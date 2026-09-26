@@ -10,7 +10,7 @@ This [heatmap](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.heatm
 Each row is a cell and each column is a marker gene.
 The cells are filtered to four cell types (monocytes, B cells, NK cells, and dendritic cells) using the `bulk_labels` column of `obs`,
 the colormap is normalized separately for each gene, and the cells with at least 1,000 detected genes are selected (the others are faded).
-Scroll to zoom and drag to pan; the gene labels follow the camera.
+Scroll to zoom and drag to pan; the cell and gene labels follow the camera.
 
 <HeatmapWrapper
     client:load
@@ -57,13 +57,12 @@ Scroll to zoom and drag to pan; the gene labels follow the camera.
             },
             normalization: "PerVar",
             background_opacity: 0.35,
-            show_obs_labels: false,
           },
         }
       ]
     }}
     viewMode={"2d"}
-    marginLeft={40}
+    marginLeft={150}
     marginBottom={80}
     marginTop={20}
     marginRight={150}

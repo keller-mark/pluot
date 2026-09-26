@@ -9,7 +9,7 @@ import {
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
-  getCameraMatrixFromBounds,
+  getCameraMatrixFromBounds, refitCameraMatrixForViewport,
   fixX, fixY, fixXAxisAtYZero, fixYAxisAtXZero,
   fixXAndFixXAxisAtYZero, fixYAndFixYAxisAtXZero,
   type CameraMatrix, type Bounds, type AspectRatioMode, type AspectRatioAlignmentMode,
@@ -445,6 +445,33 @@ function PluotInner(props: PluotProps) {
 
   // If this is false, then we cannot render anything, as we are still awaiting the extent_wasm call.
   const hasCameraMatrix = cameraMatrix !== undefined;
+
+  // A camera matrix fitted under one aspect ratio mode can be wrong under another (e.g., one
+  // fitted under "Ignore" zooms x and y independently, stretching the data under "Contain"),
+  // so refit the camera to the same visible bounds whenever the aspect ratio settings change.
+  // A controlled camera without a full matrix prop is re-derived from the extent anyway.
+  const isCameraMatrixStateful = !isControlledCamera || hasFullCameraMatrixProp;
+  const prevAspectRatioSettingsRef = useRef({ aspectRatioMode, aspectRatioAlignmentMode });
+  const refitCameraForAspectRatioSettings = useEffectEvent(() => {
+    const prev = prevAspectRatioSettingsRef.current;
+    prevAspectRatioSettingsRef.current = { aspectRatioMode, aspectRatioAlignmentMode };
+    if (!cameraMatrix || !isCameraMatrixStateful || viewMode !== "2d") {
+      return;
+    }
+    const margins = { marginTop, marginRight, marginBottom, marginLeft };
+    const nextCameraMatrix = refitCameraMatrixForViewport(
+      Float32Array.from(cameraMatrix),
+      { width, height, margins, aspectRatioMode: prev.aspectRatioMode, aspectRatioAlignmentMode: prev.aspectRatioAlignmentMode },
+      { width, height, margins, aspectRatioMode, aspectRatioAlignmentMode },
+    );
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix));
+  });
+  useEffect(() => {
+    const prev = prevAspectRatioSettingsRef.current;
+    if (prev.aspectRatioMode !== aspectRatioMode || prev.aspectRatioAlignmentMode !== aspectRatioAlignmentMode) {
+      refitCameraForAspectRatioSettings();
+    }
+  }, [aspectRatioMode, aspectRatioAlignmentMode]);
 
   // Build the top-level `stores` map that RenderParams expects: a mapping from
   // store name to its derived `ZarrStoreInfo` metadata.

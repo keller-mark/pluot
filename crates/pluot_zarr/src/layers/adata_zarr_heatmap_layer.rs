@@ -66,10 +66,12 @@ pub struct AdataZarrHeatmapLayerParams {
     /// Opacity of cells whose obs or var is not selected.
     pub background_opacity: Option<f32>,
 
-    /// Whether to label each obs along its axis. Defaults to true.
-    pub show_obs_labels: Option<bool>,
-    /// Whether to label each var along its axis. Defaults to true.
-    pub show_var_labels: Option<bool>,
+    /// Whether to render the obs axis (a band axis with one tick and label
+    /// per filtered obs). Defaults to true.
+    pub show_obs_axis: Option<bool>,
+    /// Whether to render the var axis (a band axis with one tick and label
+    /// per filtered var). Defaults to true.
+    pub show_var_axis: Option<bool>,
     /// Title of the quantitative colormap legend. Defaults to "Expression".
     pub legend_title: Option<String>,
 
@@ -95,8 +97,8 @@ impl Default for AdataZarrHeatmapLayerParams {
             swap_axes: false,
             colormap: None,
             background_opacity: None,
-            show_obs_labels: None,
-            show_var_labels: None,
+            show_obs_axis: None,
+            show_var_axis: None,
             legend_title: None,
             cache_mode: None,
             normalization: None,
@@ -296,7 +298,6 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         }
 
         let swap_axes = params.swap_axes;
-        let (display_w, display_h) = if swap_axes { (num_rows, num_cols) } else { (num_cols, num_rows) };
 
         let mut sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = Vec::new();
         let mut loaded_block_first_rows = Vec::new();
@@ -335,25 +336,23 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
             loaded_block_first_rows.push(first_row);
         }
 
-        let filtered_labels = |labels: &[String], indices: &[u32]| -> Vec<String> {
-            indices.iter().map(|&index| labels[index as usize].clone()).collect()
-        };
-        let obs_axis_labels = filtered_labels(&obs_labels, rows);
-        let var_axis_labels = filtered_labels(&var_labels, cols);
-        // Band axes run bottom-to-top along y, whereas the first row/column is drawn at the top.
-        let (x_labels, y_labels, x_shown, y_shown) = if swap_axes {
-            (obs_axis_labels, var_axis_labels.into_iter().rev().collect(), params.show_obs_labels, params.show_var_labels)
-        } else {
-            (var_axis_labels, obs_axis_labels.into_iter().rev().collect(), params.show_var_labels, params.show_obs_labels)
-        };
+        // The obs axis runs along y (x when swapped) and the var axis along x
+        // (y when swapped). Band axes run bottom-to-top along y, whereas the
+        // first row/column is drawn at the top, so a y axis's labels are reversed.
         let axes = [
-            (x_labels, x_shown, AxisPosition::Bottom, "x", display_w),
-            (y_labels, y_shown, AxisPosition::Left, "y", display_h),
+            ("obs", params.show_obs_axis, obs_labels.as_slice(), rows, swap_axes),
+            ("var", params.show_var_axis, var_labels.as_slice(), cols, !swap_axes),
         ];
-        for (labels, shown, position, name, num_cells) in axes {
+        for (name, shown, all_labels, indices, along_x) in axes {
             if !shown.unwrap_or(true) {
                 continue;
             }
+            let mut labels: Vec<String> = indices.iter().map(|&index| all_labels[index as usize].clone()).collect();
+            let position = if along_x { AxisPosition::Bottom } else { AxisPosition::Left };
+            if !along_x {
+                labels.reverse();
+            }
+            let num_cells = labels.len();
             let mut axis_layer = AxisBandLayer::new(
                 self.view_params.clone(),
                 AxisBandLayerParams {
