@@ -75,6 +75,12 @@ pub struct AdataZarrHeatmapLayerParams {
     /// Title of the quantitative colormap legend. Defaults to "Expression".
     pub legend_title: Option<String>,
 
+    // TODO: axis label name for each axis.
+
+    // TODO: for each axis, a boolean flag param which, when true, enables automatically hiding axis tick labels when the current row/col size in pixels drops below the font size, to prevent the tick text from overlapping.
+    // Instead, when the ticks are hidden, we will only show an axis label text element.
+    // When the flag is false, we will always render the ticks.
+
     /// How loaded matrix values are cached. Defaults to [`MatrixCacheMode::RowBlocks`].
     pub cache_mode: Option<MatrixCacheMode>,
     /// How a quantitative colormap without an explicit `domain` or
