@@ -1,6 +1,6 @@
-import React, { useMemo } from "react";
-import { createRender, useModel, useModelState } from "@anywidget/react";
-import type { AnyModel } from "@anywidget/types";
+import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import { createRoot } from "react-dom/client";
+import type { AnyModel, Render } from "@anywidget/types";
 import * as uuid from "@lukeed/uuid";
 import {
   Pluot,
@@ -126,28 +126,39 @@ function createZarrGetter(model: AnyModel<WidgetModel>) {
 // AsyncReadable store that proxies all reads back to the Python kernel.
 function createKernelStore(zarrGet: ReturnType<typeof createZarrGetter>, storeName: string): AsyncReadable {
   return {
-    get: (key) => zarrGet([storeName, key]),
-    getRange: (key, rangeQuery) => zarrGet([storeName, key, rangeQuery]),
+    get: (key) => {
+      return zarrGet([storeName, key]);
+    },
+    getRange: (key, rangeQuery) => {
+      return zarrGet([storeName, key, rangeQuery])
+    },
   };
 }
 
-function PluotWidget() {
-  const model = useModel<WidgetModel>();
-  const [width] = useModelState<number>("width");
-  const [height] = useModelState<number>("height");
-  const [cameraView, setCameraView] = useModelState<number[]>("camera_view");
-  const [marginTop] = useModelState<number>("margin_top");
-  const [marginRight] = useModelState<number>("margin_right");
-  const [marginBottom] = useModelState<number>("margin_bottom");
-  const [marginLeft] = useModelState<number>("margin_left");
-  const [aspectRatioMode] = useModelState<AspectRatioMode>("aspect_ratio_mode");
-  const [aspectRatioAlignmentMode] = useModelState<AspectRatioAlignmentMode>("aspect_ratio_alignment_mode");
-  const [viewMode] = useModelState<ViewMode>("view_mode");
-  const [plotId] = useModelState<string>("plot_id");
-  const [plotType] = useModelState<PlotType>("plot_type");
-  const [storesMetadata] = useModelState<StoresInput>("stores_metadata");
-  const [plotParams] = useModelState<PlotParams>("plot_params");
-  const [format] = useModelState<GraphicsFormat>("format");
+function useModelValue<K extends keyof WidgetModel>(model: AnyModel<WidgetModel>, key: K): WidgetModel[K] {
+  const subscribe = useCallback((onChange: () => void) => {
+    model.on(`change:${key}`, onChange);
+    return () => model.off(`change:${key}`, onChange);
+  }, [model, key]);
+  return useSyncExternalStore(subscribe, () => model.get(key));
+}
+
+function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
+  const width = useModelValue(model, "width");
+  const height = useModelValue(model, "height");
+  const cameraView = useModelValue(model, "camera_view");
+  const marginTop = useModelValue(model, "margin_top");
+  const marginRight = useModelValue(model, "margin_right");
+  const marginBottom = useModelValue(model, "margin_bottom");
+  const marginLeft = useModelValue(model, "margin_left");
+  const aspectRatioMode = useModelValue(model, "aspect_ratio_mode");
+  const aspectRatioAlignmentMode = useModelValue(model, "aspect_ratio_alignment_mode");
+  const viewMode = useModelValue(model, "view_mode");
+  const plotId = useModelValue(model, "plot_id");
+  const plotType = useModelValue(model, "plot_type");
+  const storesMetadata = useModelValue(model, "stores_metadata");
+  const plotParams = useModelValue(model, "plot_params");
+  const format = useModelValue(model, "format");
 
   const zarrGet = useMemo(() => createZarrGetter(model), [model]);
 
@@ -159,10 +170,15 @@ function PluotWidget() {
     }
   }, [zarrGet, storesMetadata]);
 
-  const cameraMatrix = useMemo(() => Float32Array.from(cameraView), [cameraView]);
+  const cameraMatrix = useMemo(() => {
+    return Float32Array.from(cameraView);
+  }, [cameraView]);
 
   function setCameraMatrix(next: CameraMatrix) {
-    setCameraView(Array.from(next));
+    // TODO: try to throttle the camera state syncing,
+    // keeping/using a local copy of camera state between syncs with the python kernel.
+    model.set("camera_view", Array.from(next));
+    model.save_changes();
   }
 
   return (
@@ -184,8 +200,15 @@ function PluotWidget() {
       aspectRatioAlignmentMode={aspectRatioAlignmentMode}
       cameraMatrix={cameraMatrix}
       setCameraMatrix={setCameraMatrix}
+      minTimeout={1000}
     />
   );
 }
 
-export default { render: createRender(PluotWidget) };
+const render: Render<WidgetModel> = ({ model, el }) => {
+  const root = createRoot(el);
+  root.render(<PluotWidget model={model} />);
+  return () => root.unmount();
+};
+
+export default { render };
