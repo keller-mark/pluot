@@ -7,9 +7,10 @@
 # ]
 # ///
 #
+
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.25.1"
 app = marimo.App(width="medium")
 
 
@@ -20,7 +21,9 @@ def _():
     import marimo as mo
     import json
     import zarr
-    return PluotWasmWidget, mo, zarr
+
+    return PluotWasmWidget, mo
+
 
 @app.cell
 def _():
@@ -45,6 +48,44 @@ def _():
     return (camera_view,)
 
 
+@app.function
+def make_plot_params(point_radius):
+    return dict(
+        layers=[
+            dict(
+              layer_type="ZarrPointLayer",
+              layer_params=dict(
+                layer_id="zarr_layer",
+                data_unit_mode_x="Data",
+                data_unit_mode_y="Data",
+                point_radius_unit_mode_x="Pixels",
+                point_radius_unit_mode_y="Pixels",
+                point_shape_mode="Circle",
+                x_key="/n_1000/x_coords",
+                y_key="/n_1000/y_coords",
+                color_key="/n_1000/class_labels",
+                point_radius=point_radius,
+                point_opacity=1.0
+              )
+            ),
+            dict(
+                layer_type="AxisLinearLayer",
+                layer_params=dict(
+                    layer_id="left_axis",
+                    position="Left"
+                )
+            ),
+            dict(
+                layer_type="AxisLinearLayer",
+                layer_params=dict(
+                    layer_id="bottom_axis",
+                    position="Bottom"
+                )
+            )
+        ]
+    )
+
+
 @app.cell
 def _(mo):
     point_radius_slider = mo.ui.slider(start=0.1, stop=5.0, value=0.5, step=0.1)
@@ -53,47 +94,7 @@ def _(mo):
 
 
 @app.cell
-def _():
-    def make_plot_params(point_radius):
-        return dict(
-            layers=[
-                dict(
-                  layer_type="ZarrPointLayer",
-                  layer_params=dict(
-                    layer_id="zarr_layer",
-                    data_unit_mode_x="Data",
-                    data_unit_mode_y="Data",
-                    point_radius_unit_mode_x="Pixels",
-                    point_radius_unit_mode_y="Pixels",
-                    point_shape_mode="Circle",
-                    x_key="/n_1000/x_coords",
-                    y_key="/n_1000/y_coords",
-                    color_key="/n_1000/class_labels",
-                    point_radius=point_radius,
-                    point_opacity=1.0
-                  )
-                ),
-                dict(
-                    layer_type="AxisLinearLayer",
-                    layer_params=dict(
-                        layer_id="left_axis",
-                        position="Left"
-                    )
-                ),
-                dict(
-                    layer_type="AxisLinearLayer",
-                    layer_params=dict(
-                        layer_id="bottom_axis",
-                        position="Bottom"
-                    )
-                )
-            ]
-        )
-    return (make_plot_params,)
-
-
-@app.cell
-def _(PluotWasmWidget, camera_view, make_plot_params, store):
+def _(PluotWasmWidget, camera_view, store):
     # Must not depend on UI element values, or marimo re-runs this cell and
     # re-creates the widget. Updates are pushed via traitlets in the cell below.
     widget2 = PluotWasmWidget(
@@ -109,8 +110,28 @@ def _(PluotWasmWidget, camera_view, make_plot_params, store):
 
 
 @app.cell
-def _(make_plot_params, point_radius_slider, widget2):
+def _(point_radius_slider, widget2):
     widget2.plot_params = make_plot_params(point_radius_slider.value)
+    return
+
+
+@app.cell
+def _(widget2):
+    widget2.width = 600
+    return
+
+
+@app.cell
+def _(mo, widget2):
+    get_camera, set_camera = mo.state(widget2.camera_view)
+    widget2.observe(lambda _: set_camera(widget2.camera_view), names=["camera_view"])
+    return (get_camera,)
+
+
+@app.cell
+def _(get_camera, mo):
+    curr_camera_view = get_camera()
+    mo.md(f"Camera is at **{curr_camera_view}s**")
     return
 
 

@@ -73,6 +73,10 @@ class PluotWasmWidget(anywidget.AnyWidget):
     plot_params = traitlets.Dict(default_value={}).tag(sync=True)
     format = traitlets.Unicode("Raster").tag(sync=True)
     batch_zarr_gets = traitlets.Bool(False).tag(sync=True)
+    # Milliseconds.
+    min_timeout = traitlets.Int(300).tag(sync=True)
+    # Milliseconds.
+    camera_sync_interval = traitlets.Int(250).tag(sync=True)
 
     def __init__(self, stores: dict | None = None, store: Store | None = None, **kwargs: Any) -> None:
         self._stores: dict = dict(stores or {})

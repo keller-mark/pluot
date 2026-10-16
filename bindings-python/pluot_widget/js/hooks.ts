@@ -36,6 +36,10 @@ export type WidgetModel = {
   plot_params: PlotParams;
   format: GraphicsFormat;
   batch_zarr_gets: boolean;
+  // Milliseconds.
+  min_timeout: number;
+  // Milliseconds.
+  camera_sync_interval: number;
 };
 
 type PendingGet = {
@@ -141,8 +145,6 @@ export function useModelValue<K extends keyof WidgetModel>(model: AnyModel<Widge
   return useSyncExternalStore(subscribe, () => model.get(key));
 }
 
-const CAMERA_SYNC_INTERVAL_MS = 250;
-
 export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): [CameraMatrix, (next: CameraMatrix) => void] {
   const [cameraMatrix, setLocalCameraMatrix] = useState<CameraMatrix>(
     () => Float32Array.from(model.get("camera_view")),
@@ -177,7 +179,7 @@ export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): [CameraM
         return;
       }
       pendingRef.current = null;
-      timeoutRef.current = setTimeout(syncPending, CAMERA_SYNC_INTERVAL_MS);
+      timeoutRef.current = setTimeout(syncPending, model.get("camera_sync_interval"));
       lastSentRef.current = Array.from(pending);
       model.set("camera_view", lastSentRef.current);
       model.save_changes();

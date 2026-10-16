@@ -25,6 +25,7 @@ function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
   const storesMetadata = useModelValue(model, "stores_metadata");
   const plotParams = useModelValue(model, "plot_params");
   const format = useModelValue(model, "format");
+  const minTimeout = useModelValue(model, "min_timeout");
 
   const zarrGet = useMemo(() => createZarrGetter(model), [model]);
 
@@ -57,7 +58,7 @@ function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
       aspectRatioAlignmentMode={aspectRatioAlignmentMode}
       cameraMatrix={cameraMatrix}
       setCameraMatrix={setCameraMatrix}
-      minTimeout={250}
+      minTimeout={minTimeout}
     />
   );
 }
