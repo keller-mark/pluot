@@ -165,3 +165,47 @@ pnpm publish --filter='./bindings-js/**' --filter='./crates/pluot/pkg' --no-git-
 uv run maturin build --release
 uv run twine upload target/wheels/*
 ```
+
+### Testing local widget package in marimo-wasm notebooks
+
+Notebooks exported with `marimo export html-wasm` install their dependencies in the browser via micropip, so by default `pluot_widget` comes from PyPI rather than from the local checkout.
+To test local changes, build a wheel into a `public/` folder next to the notebook (marimo copies this folder into the export) and point the notebook's script metadata at it.
+
+```sh
+# 1. Build the JS packages (the widget bundles @pluot/react from its tsc output).
+#    Use NODE_ENV=development to keep React dev warnings and tilg (useTilg) logging, which are no-ops in production builds.
+pnpm run build-tsc
+NODE_ENV=development pnpm -C bindings-python/pluot_widget run build
+
+# 2. Build the wheel into the notebook's public/ folder (its contents are git-ignored).
+#    The hatch build hook skips the JS build when static/widget.js already exists, so step 1 determines which bundle is packaged.
+rm -rf bindings-python/notebooks/public
+uv build bindings-python/pluot_widget --wheel -o bindings-python/notebooks/public
+http-server --cors='*' --port 8001 -c-1 ./bindings-python/notebooks
+```
+
+Then, in the notebook's PEP 723 script metadata, replace the `pluot_widget` dependency with a URL to the wheel. marimo passes `name @ <url>` requirements to micropip as-is.
+
+```python
+# /// script
+# dependencies = [
+#     "pluot_widget @ http://localhost:8001/public/pluot_widget-0.1.23-py3-none-any.whl"
+# ]
+# ///
+```
+
+In a separate terminal, while the above http-server is still serving the notebooks directory:
+
+```sh
+# 3. Export and serve. The port must match the one in the wheel URL. -c-1 disables caching.
+rm -rf output_dir
+uv run marimo export html-wasm bindings-python/notebooks/widget_on_molab.mo.py -o output_dir --mode edit
+http-server --cors='*' --port 8000 -c-1 ./output_dir
+```
+
+Notes:
+- The wheel's own dependencies (e.g., `pluot_core`) are still resolved from PyPI, so changes to those packages must be published (or built into `public/` and referenced the same way).
+- Rebuilt wheels keep the same version number, so hard-refresh the browser after each rebuild.
+- Python-side logs written to `sys.__stderr__` appear in the browser console, since the Pyodide kernel runs in a web worker.
+- Pyodide cannot start threads, so code paths that rely on zarr's `sync()` (e.g., `SyncStoreWrapper`) fail in this context even though they work in regular marimo.
+- Revert the dependency to plain `pluot_widget` before committing the notebook.

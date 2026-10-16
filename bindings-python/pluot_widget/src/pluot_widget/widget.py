@@ -9,17 +9,19 @@ requested bytes from the registered zarr stores, and replies with
 
 from __future__ import annotations
 
+import asyncio
 import os
 import pathlib
+import sys
 import uuid
 from typing import Any
 
 import anywidget
 from pluot_core.zarr import store_instance_to_metadata
-from pluot_core.sync_store import SyncStoreWrapper
 import traitlets
 from zarr.abc.store import RangeByteRequest, Store, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
+from zarr.core.sync import sync as zarr_sync
 
 
 DEFAULT_CAMERA_MATRIX_2D: list[float] = [
@@ -90,6 +92,7 @@ class PluotWasmWidget(anywidget.AnyWidget):
             **kwargs, stores_metadata=stores_metadata,
         )
 
+        self._pending_commands: set[asyncio.Task] = set()
         self.on_msg(self._handle_msg)
 
     def add_store(self, name: str, store: Any) -> None:
@@ -117,43 +120,53 @@ class PluotWasmWidget(anywidget.AnyWidget):
             self._dispatch_command(content, buffers)
 
     def _dispatch_command(self, msg: dict, buffers: list[bytes]) -> None:
-        name = msg.get("name")
-        params = msg.get("msg")
         msg_id = msg.get("id")
-        try:
-            if name == "_zarr_get":
-                response, result_buffers = self._zarr_get(params, buffers)
-            elif name == "_zarr_get_range":
-                response, result_buffers = self._zarr_get_range(params, buffers)
-            elif name == "_zarr_get_multi":
-                response, result_buffers = self._zarr_get_multi(params, buffers)
-            else:
-                return
-        except Exception as exc:  # noqa: BLE001
-            self.send(
-                {"id": msg_id, "kind": "anywidget-command-response", "response": {"error": repr(exc)}},
-                [],
-            )
+        command = self._run_command(msg.get("name"), msg.get("msg"), buffers)
+        if sys.platform == "emscripten":
+            # zarr's sync() runs coroutines on a dedicated IO thread, and Pyodide cannot
+            # start threads. Schedule on the already-running WebLoop instead.
+            task = asyncio.ensure_future(command)
+            self._pending_commands.add(task)
+            task.add_done_callback(self._pending_commands.discard)
+            task.add_done_callback(lambda t: self._send_command_response(msg_id, t.result()))
+        else:
+            self._send_command_response(msg_id, zarr_sync(command))
+
+    def _send_command_response(self, msg_id: str, result: tuple | None) -> None:
+        if result is None:
             return
+        response, result_buffers = result
         self.send(
             {"id": msg_id, "kind": "anywidget-command-response", "response": response},
             result_buffers,
         )
 
-    def _zarr_get(self, params: list, _buffers: list[bytes]) -> tuple:
-        [store_name, key] = params
-        store = SyncStoreWrapper(self._stores[store_name])
+    async def _run_command(self, name: str, params: Any, buffers: list[bytes]) -> tuple | None:
         try:
-            buf = store.get(key.lstrip("/"), prototype=default_buffer_prototype())
+            if name == "_zarr_get":
+                return await self._zarr_get(params, buffers)
+            if name == "_zarr_get_range":
+                return await self._zarr_get_range(params, buffers)
+            if name == "_zarr_get_multi":
+                return await self._zarr_get_multi(params, buffers)
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return {"error": repr(exc)}, []
+
+    async def _zarr_get(self, params: list, _buffers: list[bytes]) -> tuple:
+        [store_name, key] = params
+        store = self._stores[store_name]
+        try:
+            buf = await store.get(key.lstrip("/"), prototype=default_buffer_prototype())
             if buf is None:
                 return {"success": False}, []
             return {"success": True}, [buf.to_bytes()]
         except Exception:  # noqa: BLE001
             return {"success": False}, []
 
-    def _zarr_get_range(self, params: list, _buffers: list[bytes]) -> tuple:
+    async def _zarr_get_range(self, params: list, _buffers: list[bytes]) -> tuple:
         [store_name, key, range_query] = params
-        store = SyncStoreWrapper(self._stores[store_name])
+        store = self._stores[store_name]
         try:
             if "suffixLength" in range_query:
                 byte_range = SuffixByteRequest(suffix=range_query["suffixLength"])
@@ -164,7 +177,7 @@ class PluotWasmWidget(anywidget.AnyWidget):
                 )
             else:
                 return {"success": False}, []
-            buf = store.get(
+            buf = await store.get(
                 key.lstrip("/"),
                 byte_range=byte_range,
                 prototype=default_buffer_prototype(),
@@ -175,18 +188,18 @@ class PluotWasmWidget(anywidget.AnyWidget):
         except Exception:  # noqa: BLE001
             return {"success": False}, []
 
-    def _zarr_get_multi(self, params_arr: list, buffers: list[bytes]) -> tuple:
-        result_dicts = []
-        result_buffers = []
-        for params in params_arr:
-            if len(params) == 2:
-                result_dict, result_buffer_arr = self._zarr_get(params, buffers)
-            elif len(params) == 3:
-                result_dict, result_buffer_arr = self._zarr_get_range(params, buffers)
-            else:
-                result_dict, result_buffer_arr = {"success": False}, []
-            result_dicts.append(result_dict)
-            result_buffers.append(
-                result_buffer_arr[0] if result_dict["success"] and result_buffer_arr else b""
-            )
+    async def _zarr_get_one(self, params: list, buffers: list[bytes]) -> tuple:
+        if len(params) == 2:
+            return await self._zarr_get(params, buffers)
+        if len(params) == 3:
+            return await self._zarr_get_range(params, buffers)
+        return {"success": False}, []
+
+    async def _zarr_get_multi(self, params_arr: list, buffers: list[bytes]) -> tuple:
+        results = await asyncio.gather(*(self._zarr_get_one(params, buffers) for params in params_arr))
+        result_dicts = [result_dict for result_dict, _ in results]
+        result_buffers = [
+            result_buffer_arr[0] if result_dict["success"] and result_buffer_arr else b""
+            for result_dict, result_buffer_arr in results
+        ]
         return result_dicts, result_buffers
