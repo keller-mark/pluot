@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import type { AnyModel, Render } from "@anywidget/types";
 import * as uuid from "@lukeed/uuid";
@@ -143,10 +143,57 @@ function useModelValue<K extends keyof WidgetModel>(model: AnyModel<WidgetModel>
   return useSyncExternalStore(subscribe, () => model.get(key));
 }
 
+const CAMERA_SYNC_INTERVAL_MS = 250;
+
+function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): [CameraMatrix, (next: CameraMatrix) => void] {
+  const [cameraMatrix, setLocalCameraMatrix] = useState<CameraMatrix>(
+    () => Float32Array.from(model.get("camera_view")),
+  );
+  const pendingRef = useRef<CameraMatrix | null>(null);
+  const lastSentRef = useRef<number[] | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function onCameraViewChange() {
+      const cameraView = model.get("camera_view");
+      // Kernel updates are ignored mid-interaction, otherwise stale echoes of
+      // earlier syncs would make the camera jump backwards.
+      if (timeoutRef.current !== null || cameraView === lastSentRef.current) return;
+      setLocalCameraMatrix(Float32Array.from(cameraView));
+    }
+    model.on("change:camera_view", onCameraViewChange);
+    return () => {
+      model.off("change:camera_view", onCameraViewChange);
+      if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
+    };
+  }, [model]);
+
+  const setCameraMatrix = useCallback((next: CameraMatrix) => {
+    setLocalCameraMatrix(next);
+    pendingRef.current = next;
+
+    function syncPending() {
+      const pending = pendingRef.current;
+      if (pending === null) {
+        timeoutRef.current = null;
+        return;
+      }
+      pendingRef.current = null;
+      timeoutRef.current = setTimeout(syncPending, CAMERA_SYNC_INTERVAL_MS);
+      lastSentRef.current = Array.from(pending);
+      model.set("camera_view", lastSentRef.current);
+      model.save_changes();
+    }
+
+    if (timeoutRef.current === null) syncPending();
+  }, [model]);
+
+  return [cameraMatrix, setCameraMatrix];
+}
+
 function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
   const width = useModelValue(model, "width");
   const height = useModelValue(model, "height");
-  const cameraView = useModelValue(model, "camera_view");
   const marginTop = useModelValue(model, "margin_top");
   const marginRight = useModelValue(model, "margin_right");
   const marginBottom = useModelValue(model, "margin_bottom");
@@ -170,16 +217,7 @@ function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
     }
   }, [zarrGet, storesMetadata]);
 
-  const cameraMatrix = useMemo(() => {
-    return Float32Array.from(cameraView);
-  }, [cameraView]);
-
-  function setCameraMatrix(next: CameraMatrix) {
-    // TODO: try to throttle the camera state syncing,
-    // keeping/using a local copy of camera state between syncs with the python kernel.
-    model.set("camera_view", Array.from(next));
-    model.save_changes();
-  }
+  const [cameraMatrix, setCameraMatrix] = useThrottledCameraMatrix(model);
 
   return (
     <Pluot
@@ -200,7 +238,7 @@ function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
       aspectRatioAlignmentMode={aspectRatioAlignmentMode}
       cameraMatrix={cameraMatrix}
       setCameraMatrix={setCameraMatrix}
-      minTimeout={1000}
+      minTimeout={250}
     />
   );
 }
