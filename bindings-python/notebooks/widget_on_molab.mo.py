@@ -3,7 +3,7 @@
 # dependencies = [
 #     "marimo>=0.25.1",
 #     "zarr>=3",
-#     "pluot_widget @ http://localhost:8001/public/pluot_widget-0.1.23-py3-none-any.whl"
+#     "pluot_widget"
 # ]
 # ///
 #
