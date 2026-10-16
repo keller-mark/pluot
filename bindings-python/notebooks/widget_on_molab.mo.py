@@ -123,6 +123,7 @@ def _(widget2):
 
 @app.cell
 def _(mo, widget2):
+    # Reference: https://github.com/marimo-team/marimo-pair/blob/main/skills/marimo-pair/reference/rich-representations.md#composing-with-the-notebook
     get_camera, set_camera = mo.state(widget2.camera_view)
     widget2.observe(lambda _: set_camera(widget2.camera_view), names=["camera_view"])
     return (get_camera,)
