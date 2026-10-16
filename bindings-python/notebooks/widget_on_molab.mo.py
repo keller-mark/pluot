@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "marimo>=0.25.1",
+#     "zarr>=3",
+#     "pluot_widget @ http://localhost:8001/public/pluot_widget-0.1.23-py3-none-any.whl"
+# ]
+# ///
+#
 import marimo
 
 __generated_with = "0.18.4"
@@ -44,14 +53,9 @@ def _(mo):
 
 
 @app.cell
-def _(PluotWasmWidget, camera_view, point_radius_slider, store):
-    widget2 = PluotWasmWidget(
-        camera_view=camera_view, width=1000, height=600, plot_id="test_store_instance", plot_type="LayeredPlot",
-        margin_left=100,
-        margin_bottom=100,
-        store=store,
-        store_name = "my_store",
-        plot_params=dict(
+def _():
+    def make_plot_params(point_radius):
+        return dict(
             layers=[
                 dict(
                   layer_type="ZarrPointLayer",
@@ -62,10 +66,10 @@ def _(PluotWasmWidget, camera_view, point_radius_slider, store):
                     point_radius_unit_mode_x="Pixels",
                     point_radius_unit_mode_y="Pixels",
                     point_shape_mode="Circle",
-                    x_key="/n_1000000/x_coords",
-                    y_key="/n_1000000/y_coords",
-                    color_key="/n_1000000/class_labels",
-                    point_radius=point_radius_slider.value,
+                    x_key="/n_1000/x_coords",
+                    y_key="/n_1000/y_coords",
+                    color_key="/n_1000/class_labels",
+                    point_radius=point_radius,
                     point_opacity=1.0
                   )
                 ),
@@ -84,9 +88,29 @@ def _(PluotWasmWidget, camera_view, point_radius_slider, store):
                     )
                 )
             ]
-        ),
+        )
+    return (make_plot_params,)
+
+
+@app.cell
+def _(PluotWasmWidget, camera_view, make_plot_params, store):
+    # Must not depend on UI element values, or marimo re-runs this cell and
+    # re-creates the widget. Updates are pushed via traitlets in the cell below.
+    widget2 = PluotWasmWidget(
+        camera_view=camera_view, width=1000, height=600, plot_id="test_store_instance", plot_type="LayeredPlot",
+        margin_left=100,
+        margin_bottom=100,
+        store=store,
+        store_name = "my_store",
+        plot_params=make_plot_params(0.5),
     )
     widget2
+    return (widget2,)
+
+
+@app.cell
+def _(make_plot_params, point_radius_slider, widget2):
+    widget2.plot_params = make_plot_params(point_radius_slider.value)
     return
 
 
