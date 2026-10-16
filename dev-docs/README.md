@@ -207,5 +207,5 @@ Notes:
 - The wheel's own dependencies (e.g., `pluot_core`) are still resolved from PyPI, so changes to those packages must be published (or built into `public/` and referenced the same way).
 - Rebuilt wheels keep the same version number, so hard-refresh the browser after each rebuild.
 - Python-side logs written to `sys.__stderr__` appear in the browser console, since the Pyodide kernel runs in a web worker.
-- Pyodide cannot start threads, so code paths that rely on zarr's `sync()` (e.g., `SyncStoreWrapper`) fail in this context even though they work in regular marimo.
+- Pyodide cannot start threads, so code paths that rely on zarr's `sync()` fail in this context even though they work in regular marimo.
 - Revert the dependency to plain `pluot_widget` before committing the notebook.
