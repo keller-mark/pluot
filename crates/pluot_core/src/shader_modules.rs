@@ -329,6 +329,9 @@ pub mod is_included {
     /// Per-element scalar value tested against either a lower or upper bound but not both.
     pub const QUANTITATIVE_ONE_SIDED: &str =
         include_str!("wgsl_functions/get_is_included/quantitative_one_sided.wgsl");
+
+    /// Per-element boolean (or 0/1) mask; nonzero items are included.
+    pub const BOOLEAN: &str = include_str!("wgsl_functions/get_is_included/boolean.wgsl");
 }
 
 /// `HeatmapLayer` cell-color snippets, each defining `fn get_cell_color(value:

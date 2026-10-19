@@ -41,12 +41,14 @@ fn band_axes(data_ranges: Option<((f64, f64), (f64, f64))>) -> Vec<LayerParams> 
             position: AxisPosition::Bottom,
             domain: labels("col", 4),
             data_range: data_ranges.map(|(x, _)| x),
+            ..Default::default()
         }),
         LayerParams::AxisBandLayer(AxisBandLayerParams {
             layer_id: "y_axis".to_string(),
             position: AxisPosition::Left,
             domain: Arc::new(row_labels),
             data_range: data_ranges.map(|(_, y)| y),
+            ..Default::default()
         }),
     ]
 }
@@ -112,4 +114,25 @@ async fn test_axis_band_layer_data_range_zoomed_out() {
     let mut layers = vec![heatmap()];
     layers.extend(band_axes(Some(((0.0, 4.0), (0.0, 3.0)))));
     render_and_check_both_snapshots(params(layers, Some(camera)), "test_axis_band_layer_data_range_zoomed_out").await;
+}
+
+// The 40 x-axis bands are narrower than the tick font, so only the x title is
+// drawn; the 3 y-axis bands are wide enough to keep their ticks.
+#[tokio::test]
+async fn test_axis_band_layer_titles_and_hidden_overlapping_ticks() {
+    let titled_axis = |layer_id: &str, position: AxisPosition, domain: Arc<Vec<String>>, title: &str| {
+        LayerParams::AxisBandLayer(AxisBandLayerParams {
+            layer_id: layer_id.to_string(),
+            position,
+            domain,
+            title: Some(title.to_string()),
+            hide_overlapping_ticks: Some(true),
+            ..Default::default()
+        })
+    };
+    let layers = vec![
+        titled_axis("x_axis", AxisPosition::Bottom, labels("col", 40), "Columns"),
+        titled_axis("y_axis", AxisPosition::Left, labels("r", 3), "Rows"),
+    ];
+    render_and_check_both_snapshots(params(layers, None), "test_axis_band_layer_titles_and_hidden_overlapping_ticks").await;
 }

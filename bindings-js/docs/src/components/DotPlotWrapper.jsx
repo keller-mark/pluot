@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { PluotWrapper } from './PluotWrapper.jsx';
+import { useColormapOption, resolvePlotParams } from './PlotControls.jsx';
 
 // The purpose of this wrapper component is to define a dotplot-specific
 // onHover function to transform the picking result into a tooltip dict.
@@ -27,11 +28,39 @@ function onHoverDotPlot(info) {
   }
 }
 
+const DOTPLOT_LAYER_TYPE = 'AdataZarrDotPlotLayer';
+
+function withDotPlotColormap(plotParams, cmap) {
+  return {
+    ...plotParams,
+    layers: plotParams.layers.map(layer => (layer.layer_type === DOTPLOT_LAYER_TYPE ? {
+      ...layer,
+      layer_params: { ...layer.layer_params, cmap },
+    } : layer)),
+  };
+}
+
 export function DotPlotWrapper(props) {
+  const { plotParams } = props;
+  const defaultColormap = plotParams?.layers
+    ?.find(layer => layer.layer_type === DOTPLOT_LAYER_TYPE)
+    ?.layer_params?.cmap;
+  const colormapOption = useColormapOption(defaultColormap);
+
+  const getPlotParams = useCallback(
+    controlValues => withDotPlotColormap(resolvePlotParams(plotParams, controlValues), controlValues.colormap),
+    [plotParams],
+  );
+
   return (
-    <PluotWrapper {...props} onHover={onHoverDotPlot} enableTooltip />
+    <PluotWrapper
+      {...props}
+      plotParams={getPlotParams}
+      plotSpecificOptions={colormapOption}
+      onHover={onHoverDotPlot}
+      enableTooltip
+    />
   );
 }
 
 // TODO: use anndata.js to load the cell type categories and gene list on the JS side, and display multi-select inputs, which the plot params can depend on.
-// TODO: add a colormap selection option to the custom plotcontrols options for this plot.

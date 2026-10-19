@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useControls, Leva, button, folder } from 'leva';
 
 const titleBar = {
@@ -23,6 +23,43 @@ const theme = {
     titleBarHeight: "30px"
   }
 };
+
+export const QUANTITATIVE_COLORMAPS = [
+  'Plasma',
+  'Viridis',
+  'Greys',
+  'Magma',
+  'Jet',
+  'Bone',
+  'Copper',
+  'Density',
+  'Inferno',
+  'Cool',
+  'Hot',
+  'Spring',
+  'Summer',
+  'Autumn',
+  'Winter',
+  'Blues',
+  'Greens',
+  'Oranges',
+  'Purples',
+  'Reds',
+];
+
+export function useColormapOption(defaultColormap) {
+  return useMemo(() => ({
+    colormap: {
+      value: defaultColormap ?? 'Viridis',
+      options: QUANTITATIVE_COLORMAPS,
+      label: 'Colormap',
+    },
+  }), [defaultColormap]);
+}
+
+export function resolvePlotParams(plotParams, controlValues) {
+  return typeof plotParams === 'function' ? plotParams(controlValues) : plotParams;
+}
 
 export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
   const { onFullscreen, onFullwindow, onRenderToScript, enableVector = true } = callbacks ?? {};

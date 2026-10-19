@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::numeric_data::NumericData;
-use pluot_core::render_traits::{CategoricalCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
+use pluot_core::render_traits::{BooleanCriteriaParams, CategoricalCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 
 use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized};
 
@@ -107,9 +107,8 @@ pub async fn resolve_zarr_emphasis_criteria(
                 min_exclusive: params.min_exclusive,
                 max_exclusive: params.max_exclusive,
             }),
-            ZarrEmphasisCriteria::Boolean(_) => EmphasisCriteria::Categorical(CategoricalCriteriaParams {
-                codes: data.as_ref().clone(),
-                included_codes: vec![1],
+            ZarrEmphasisCriteria::Boolean(_) => EmphasisCriteria::Boolean(BooleanCriteriaParams {
+                mask: data.as_ref().clone(),
             }),
         })
         .collect())

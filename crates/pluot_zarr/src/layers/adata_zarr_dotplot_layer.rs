@@ -360,6 +360,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 position: AxisPosition::Bottom,
                 domain: x_domain,
                 data_range: None,
+                ..Default::default()
             },
         );
         x_axis_layer.prepare(gpu_context).await;
@@ -371,6 +372,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 position: AxisPosition::Left,
                 domain: y_domain,
                 data_range: None,
+                ..Default::default()
             },
         );
         y_axis_layer.prepare(gpu_context).await;

@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use pluot_core::emphasis_mode::{cpu_is_included, quantitative_criteria_wgsl};
 use pluot_core::numeric_data::NumericData;
-use pluot_core::render_traits::{EmphasisCriteria, QuantitativeCriteriaParams};
+use pluot_core::render_traits::{BooleanCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 use pluot_core::shader_modules::{is_included, ShaderBuilder, TextureDtype};
 
 /// Trims trailing whitespace from each line before comparing. See
@@ -133,6 +133,19 @@ fn categorical_criteria_template_matches_expected() {
     let actual = [term, and_wrapper("is_filtered_in", &["is_filtered_in_0"])].join("\n");
     assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
     check_wgsl_snapshot(&actual, "emphasis_mode_categorical_criteria.wgsl");
+}
+
+#[test]
+fn boolean_criteria_template_matches_expected() {
+    let term = ShaderBuilder::new(is_included::BOOLEAN)
+        .define("criteria_fn_name", "is_selected_in_0")
+        .define("criteria_data_var", "select_data_0")
+        .define_bidx("criteria_data", 5)
+        .inject_texture_sample_type("criteria_data", TextureDtype::U32)
+        .build();
+    let actual = [term, and_wrapper("is_selected_in", &["is_selected_in_0"])].join("\n");
+    assert!(!actual.contains("{{"), "no placeholder should remain unsubstituted");
+    check_wgsl_snapshot(&actual, "emphasis_mode_boolean_criteria.wgsl");
 }
 
 #[test]
@@ -369,4 +382,12 @@ fn cpu_quantitative_unbounded_includes_everything() {
     // bounds change nothing.
     assert_eq!(cpu_included_indices(None, None, None, None), vec![0, 1, 2, 3]);
     assert_eq!(cpu_included_indices(None, None, Some(true), Some(true)), vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn cpu_boolean_includes_nonzero_items() {
+    let criteria = vec![EmphasisCriteria::Boolean(BooleanCriteriaParams {
+        mask: NumericData::Uint8(Arc::new(vec![1, 0, 0, 1])),
+    })];
+    assert_eq!((0..4).filter(|&i| cpu_is_included(&criteria, i)).collect::<Vec<_>>(), vec![0, 3]);
 }

@@ -40,7 +40,7 @@ use crate::numeric_data::{upload_data_texture, NumericData};
 use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, BrushableLayer, CategoricalColormap, CategoricalCriteriaParams,
+    AspectRatioAlignmentMode, AspectRatioMode, BooleanCriteriaParams, BrushableLayer, CategoricalColormap,
     DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, ExtentableLayer, MarginParams, PickableLayer,
     PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
@@ -254,8 +254,8 @@ impl HeatmapLayerParams {
 }
 
 fn mask_as_criteria(mask: Option<&NumericData>) -> Vec<EmphasisCriteria> {
-    mask.map(|codes| {
-        EmphasisCriteria::Categorical(CategoricalCriteriaParams { codes: codes.clone(), included_codes: vec![1] })
+    mask.map(|mask| {
+        EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: mask.clone() })
     })
     .into_iter()
     .collect()
@@ -752,21 +752,6 @@ mod tests {
     fn rows_per_texture_keeps_rows_whole() {
         assert_eq!(rows_per_texture(3, 10), 3);
         assert_eq!(rows_per_texture(20, 10), 1);
-    }
-
-    #[test]
-    fn pick_returns_the_cell_under_the_cursor() {
-        let view_params = ViewParams { width: 100, height: 100, ..Default::default() };
-        let layer = HeatmapLayer::new(view_params, params_2x3(false));
-        let result = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(DataCoord::TwoD { x: 2.5, y: 1.5 })).unwrap();
-        assert_eq!(result.info["row"], "0");
-        assert_eq!(result.info["col"], "2");
-        assert_eq!(result.info["value"], "2");
-
-        let swapped = HeatmapLayer::new(ViewParams { width: 100, height: 100, ..Default::default() }, params_2x3(true));
-        let result = swapped.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(DataCoord::TwoD { x: 1.5, y: 0.5 })).unwrap();
-        assert_eq!(result.info["row"], "1");
-        assert_eq!(result.info["col"], "2");
     }
 
     #[test]

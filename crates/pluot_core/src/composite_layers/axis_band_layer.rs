@@ -17,6 +17,7 @@ use crate::d3::scale::{ScaleBand, Scaleable, Tickable};
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
 const DEFAULT_FONT_SIZE: f64 = 12.0;
+const DEFAULT_TITLE_PADDING: f64 = 3.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 
 /// Layer params struct for [`AxisBandLayer`].
@@ -33,6 +34,13 @@ pub struct AxisBandLayerParams {
     /// drawn. `None` (the default) spreads the bands across the layer in
     /// pixels, ignoring the camera.
     pub data_range: Option<(f64, f64)>,
+
+    /// Text centered along the axis at the outer edge of the margin. `None` draws no title.
+    pub title: Option<String>,
+    /// When true, the ticks and tick labels are hidden while each band is
+    /// narrower (in pixels) than the tick label font size, so that the labels
+    /// never overlap. Defaults to false.
+    pub hide_overlapping_ticks: Option<bool>,
 }
 
 impl Default for AxisBandLayerParams {
@@ -42,6 +50,8 @@ impl Default for AxisBandLayerParams {
             position: AxisPosition::Bottom,
             domain: Arc::new(vec![]),
             data_range: None,
+            title: None,
+            hide_overlapping_ticks: None,
         }
     }
 }
@@ -59,6 +69,51 @@ impl AxisBandLayer {
             layer_params,
             sub_layer_instances: Vec::new(),
         }
+    }
+
+    fn shown_ticks(&self, scale: &ScaleBand) -> Vec<String> {
+        let ticks_overlap = scale.bandwidth().abs() < DEFAULT_FONT_SIZE;
+        if self.layer_params.hide_overlapping_ticks.unwrap_or(false) && ticks_overlap {
+            Vec::new()
+        } else {
+            scale.ticks(None)
+        }
+    }
+
+    fn build_title_sublayer(&self, sublayer_bounds: MarginParams) -> Option<Box<dyn PreparedAndDraw>> {
+        let title = self.layer_params.title.clone()?;
+        let bounds = self.view_params.margins.as_ref();
+        let margin = |f: fn(&MarginParams) -> Option<f32>| bounds.and_then(f).unwrap_or(0.0);
+        let (width, height) = (self.view_params.width as f32, self.view_params.height as f32);
+        let center_x = (margin(|m| m.margin_left) + width - margin(|m| m.margin_right)) / 2.0;
+        let center_y = (margin(|m| m.margin_bottom) + height - margin(|m| m.margin_top)) / 2.0;
+        let edge_offset = (DEFAULT_TITLE_PADDING + DEFAULT_FONT_SIZE / 2.0) as f32;
+        let (x, y, rotation) = match self.layer_params.position {
+            AxisPosition::Bottom => (center_x, edge_offset, 0.0),
+            AxisPosition::Top => (center_x, height - edge_offset, 0.0),
+            AxisPosition::Left => (edge_offset, center_y, -90.0),
+            AxisPosition::Right => (width - edge_offset, center_y, 90.0),
+        };
+        Some(Box::new(TextLayer::new(
+            self.view_params.clone(),
+            TextLayerParams {
+                layer_id: format!("{}_axis_band_layer_title_sublayer", self.layer_params.layer_id),
+                bounds: Some(sublayer_bounds),
+                data_unit_mode_x: UnitsMode::Pixels,
+                data_unit_mode_y: UnitsMode::Pixels,
+                text_size: DEFAULT_FONT_SIZE as f32,
+                text_size_unit_mode: UnitsMode::Pixels,
+                text_align_mode: TextAlignMode::Middle,
+                text_baseline_mode: TextBaselineMode::Middle,
+                text_rotation: Some(rotation),
+                font_weight: FontWeight::Normal,
+                font_style: FontStyle::Normal,
+                position_x: NumericData::Float32(Arc::new(vec![x])),
+                position_y: NumericData::Float32(Arc::new(vec![y])),
+                text_vec: Arc::new(vec![title]),
+                ..Default::default()
+            },
+        )))
     }
 
     fn build_sublayers(&self) -> Vec<Box<dyn PreparedAndDraw>> {
@@ -99,7 +154,7 @@ impl AxisBandLayer {
         match self.layer_params.position {
             AxisPosition::Bottom => {
                 scale.set_range(band_range_px(horizontal_px, (visible_bounds.x_min, visible_bounds.x_max)));
-                let ticks = scale.ticks(None);
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_y = margin_bottom;
 
@@ -126,7 +181,7 @@ impl AxisBandLayer {
             }
             AxisPosition::Top => {
                 scale.set_range(band_range_px(horizontal_px, (visible_bounds.x_min, visible_bounds.x_max)));
-                let ticks = scale.ticks(None);
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_y = viewport_h - margin_top;
 
@@ -153,7 +208,7 @@ impl AxisBandLayer {
             }
             AxisPosition::Left => {
                 scale.set_range(band_range_px(vertical_px, (visible_bounds.y_min, visible_bounds.y_max)));
-                let ticks = scale.ticks(None);
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_x = margin_left;
 
@@ -180,7 +235,7 @@ impl AxisBandLayer {
             }
             AxisPosition::Right => {
                 scale.set_range(band_range_px(vertical_px, (visible_bounds.y_min, visible_bounds.y_max)));
-                let ticks = scale.ticks(None);
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_x = viewport_w - margin_right;
 
@@ -250,6 +305,8 @@ impl AxisBandLayer {
             self.view_params.clone(),
             line_params,
         )));
+
+        sublayers.extend(self.build_title_sublayer(sublayer_bounds.clone()));
 
         // TextLayer for tick labels
         if !text_strings.is_empty() {

@@ -75,11 +75,18 @@ pub struct AdataZarrHeatmapLayerParams {
     /// Title of the quantitative colormap legend. Defaults to "Expression".
     pub legend_title: Option<String>,
 
-    // TODO: axis label name for each axis.
-
-    // TODO: for each axis, a boolean flag param which, when true, enables automatically hiding axis tick labels when the current row/col size in pixels drops below the font size, to prevent the tick text from overlapping.
-    // Instead, when the ticks are hidden, we will only show an axis label text element.
-    // When the flag is false, we will always render the ticks.
+    /// Title of the obs axis. `None` draws no title.
+    pub obs_axis_title: Option<String>,
+    /// Title of the var axis. `None` draws no title.
+    pub var_axis_title: Option<String>,
+    /// When true, the obs axis ticks and tick labels are hidden while rows (or
+    /// columns, when `swap_axes` is set) are narrower than the tick label font
+    /// size, leaving only `obs_axis_title`. Defaults to false.
+    pub hide_overlapping_obs_ticks: Option<bool>,
+    /// When true, the var axis ticks and tick labels are hidden while columns
+    /// (or rows, when `swap_axes` is set) are narrower than the tick label font
+    /// size, leaving only `var_axis_title`. Defaults to false.
+    pub hide_overlapping_var_ticks: Option<bool>,
 
     /// How loaded matrix values are cached. Defaults to [`MatrixCacheMode::RowBlocks`].
     pub cache_mode: Option<MatrixCacheMode>,
@@ -106,6 +113,10 @@ impl Default for AdataZarrHeatmapLayerParams {
             show_obs_axis: None,
             show_var_axis: None,
             legend_title: None,
+            obs_axis_title: None,
+            var_axis_title: None,
+            hide_overlapping_obs_ticks: None,
+            hide_overlapping_var_ticks: None,
             cache_mode: None,
             normalization: None,
         }
@@ -346,10 +357,10 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         // (y when swapped). Band axes run bottom-to-top along y, whereas the
         // first row/column is drawn at the top, so a y axis's labels are reversed.
         let axes = [
-            ("obs", params.show_obs_axis, obs_labels.as_slice(), rows, swap_axes),
-            ("var", params.show_var_axis, var_labels.as_slice(), cols, !swap_axes),
+            ("obs", params.show_obs_axis, &params.obs_axis_title, params.hide_overlapping_obs_ticks, obs_labels.as_slice(), rows, swap_axes),
+            ("var", params.show_var_axis, &params.var_axis_title, params.hide_overlapping_var_ticks, var_labels.as_slice(), cols, !swap_axes),
         ];
-        for (name, shown, all_labels, indices, along_x) in axes {
+        for (name, shown, title, hide_overlapping_ticks, all_labels, indices, along_x) in axes {
             if !shown.unwrap_or(true) {
                 continue;
             }
@@ -366,6 +377,8 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                     position,
                     domain: Arc::new(labels),
                     data_range: Some((0.0, num_cells as f64)),
+                    title: title.clone(),
+                    hide_overlapping_ticks,
                 },
             );
             axis_layer.prepare(gpu_context).await;

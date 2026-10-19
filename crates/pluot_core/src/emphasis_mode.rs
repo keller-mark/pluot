@@ -83,7 +83,7 @@ pub struct PreparedEmphasisCriteria {
 /// `is_selected_in`); `var_name` is the WGSL variable-name stem for the value
 /// textures and must be unique within the shader so that filtering and
 /// selection criteria can coexist without colliding (e.g. `filter_data` /
-/// `select_data`). Value textures (one per categorical/quantitative criteria)
+/// `select_data`). Value textures (one per categorical/quantitative/boolean criteria)
 /// are bound consecutively starting at `first_binding`.
 pub fn prepare_emphasis_criteria(
     device: &wgpu::Device,
@@ -153,6 +153,20 @@ pub fn prepare_emphasis_criteria(
                     unreachable!("a bounded quantitative criteria emits a term function");
                 };
                 wgsl_parts.push(term_wgsl);
+                textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });
+            }
+            EmphasisCriteria::Boolean(params) => {
+                let (view, dtype) = params.mask.create_data_texture(
+                    device, queue, &format!("{term_fn_name} mask Texture"),
+                );
+                wgsl_parts.push(
+                    ShaderBuilder::new(is_included_wgsl::BOOLEAN)
+                        .define("criteria_fn_name", &term_fn_name)
+                        .define("criteria_data_var", &term_var_name)
+                        .define_bidx("criteria_data", binding)
+                        .inject_texture_sample_type("criteria_data", dtype)
+                        .build(),
+                );
                 textures.push(PreparedEmphasisTexture { view, sample_type: dtype.binding_sample_type() });
             }
         }
@@ -229,5 +243,6 @@ pub fn cpu_is_included(criteria: &[EmphasisCriteria], index: usize) -> bool {
             params.included_codes.contains(&code)
         }
         EmphasisCriteria::Quantitative(params) => params.includes(params.values.get_f32(index)),
+        EmphasisCriteria::Boolean(params) => params.mask.get_f32(index) != 0.0,
     })
 }

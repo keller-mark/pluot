@@ -177,6 +177,7 @@ impl BarPlotLayer {
                             position: AxisPosition::Bottom,
                             domain: self.layer_params.identifier.clone(),
                             data_range: None,
+                            ..Default::default()
                         }
                     )));
                 }
@@ -233,6 +234,7 @@ impl BarPlotLayer {
                             position: AxisPosition::Left,
                             domain: self.layer_params.identifier.clone(),
                             data_range: None,
+                            ..Default::default()
                         }
                     )));
                 }
