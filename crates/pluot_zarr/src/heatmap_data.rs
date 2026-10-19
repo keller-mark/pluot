@@ -12,15 +12,19 @@ use serde::{Deserialize, Serialize};
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
+use pluot_core::cache::{use_memo_compressed_matrix, use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::compute::included_indices::compute_included_indices;
-use pluot_core::compute::matrix_axis_extents::{reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
+use pluot_core::compute::matrix_axis_extents::{reduce_compressed_matrix_axis_extents, reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::GpuContext;
+use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
 
-use crate::adata_io::{read_dataframe_column_strings, read_matrix_column_numeric, read_matrix_shape, read_matrix_subset_numeric};
+use crate::adata_io::{
+    read_compressed_column, read_compressed_subset, read_dataframe_column_strings, read_dense_column_numeric,
+    read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, MatrixLayout,
+};
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Which entries along one axis of the matrix (obs rows or var columns) are
@@ -131,6 +135,30 @@ pub async fn load_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, store
         unreachable!("matrix shapes are memoized as Uint64");
     };
     Ok([shape[0] as usize, shape[1] as usize])
+}
+
+/// Loads (and caches) how the matrix at `matrix_path` is stored.
+pub async fn load_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, matrix_path: &str, cache_enabled: bool) -> MatrixLayout {
+    let keys = vec!["adata_matrix_layout".to_string(), store_name.to_string(), matrix_path.to_string()];
+    let layout = use_memo_vec_string(
+        async || {
+            let layout = match read_matrix_layout(store, matrix_path).await {
+                MatrixLayout::Dense => "dense",
+                MatrixLayout::Compressed(CompressedAxis::Rows) => "csr",
+                MatrixLayout::Compressed(CompressedAxis::Cols) => "csc",
+            };
+            Ok::<_, std::convert::Infallible>(vec![layout.to_string()])
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
+    .expect("infallible");
+    match layout[0].as_str() {
+        "csr" => MatrixLayout::Compressed(CompressedAxis::Rows),
+        "csc" => MatrixLayout::Compressed(CompressedAxis::Cols),
+        _ => MatrixLayout::Dense,
+    }
 }
 
 /// Loads (and caches) a string column of the `axis` dataframe: its index when `column` is `None`.
@@ -277,8 +305,8 @@ pub enum HeatmapNormalization {
     PerVar,
 }
 
-/// Loads (and caches) one var's whole column of the matrix, in its stored
-/// dtype. Keyed independently of any filtering.
+/// Loads (and caches) one var's whole column of a dense matrix, in its
+/// stored dtype. Keyed independently of any filtering.
 pub async fn load_var_column(
     store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: &str,
@@ -288,7 +316,26 @@ pub async fn load_var_column(
 ) -> Result<Arc<NumericData>, ArrayError> {
     let keys = vec!["adata_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
     use_memo_numeric_data(
-        async || read_matrix_column_numeric(store, matrix_path, var_index as u64).await,
+        async || read_dense_column_numeric(store, matrix_path, var_index as u64).await,
+        &keys,
+        cache_enabled,
+    )
+    .await
+}
+
+/// Loads (and caches) the stored entries of one var's whole column of a
+/// sparse matrix, as a single-column CSC matrix. Keyed independently of any filtering.
+pub async fn load_compressed_var_column(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    matrix_path: &str,
+    compressed_axis: CompressedAxis,
+    var_index: u32,
+    cache_enabled: bool,
+) -> Result<Arc<CompressedMatrix>, ArrayError> {
+    let keys = vec!["adata_compressed_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
+    use_memo_compressed_matrix(
+        async || read_compressed_column(store, matrix_path, compressed_axis, var_index as u64).await,
         &keys,
         cache_enabled,
     )
@@ -331,6 +378,84 @@ pub fn gather_rows_from_columns(columns: &[Arc<NumericData>], rows: &[u32]) -> N
     }
 }
 
+/// `(entry, row)` for each entry of `row_indices` whose row is requested, by ascending row.
+fn requested_entries<I: Copy + TryInto<usize>>(row_indices: &[I], is_row_requested: &[bool]) -> Vec<(usize, u32)> {
+    let mut entries: Vec<(usize, u32)> = row_indices
+        .iter()
+        .enumerate()
+        .filter_map(|(entry, &row)| {
+            let row: usize = row.try_into().ok().expect("Sparse matrix row indices must be non-negative");
+            is_row_requested[row].then_some((entry, row as u32))
+        })
+        .collect();
+    // Non-canonical matrices may store a column's entries out of order.
+    entries.sort_by_key(|&(_, row)| row);
+    entries
+}
+
+/// The CSC matrix of `rows` (its `minor_subset`) and single-column `columns`,
+/// holding only the entries of requested rows, in their stored dtype (which
+/// every column must share). `rows` must not contain duplicates.
+pub fn gather_compressed_columns(columns: &[Arc<CompressedMatrix>], rows: &[u32], n_obs: usize) -> CompressedMatrix {
+    let mut is_row_requested = vec![false; n_obs];
+    for &row in rows {
+        is_row_requested[row as usize] = true;
+    }
+    let kept: Vec<Vec<(usize, u32)>> = columns
+        .iter()
+        .map(|column| match &column.indices {
+            NumericData::Uint8(v) => requested_entries(v, &is_row_requested),
+            NumericData::Uint16(v) => requested_entries(v, &is_row_requested),
+            NumericData::Uint32(v) => requested_entries(v, &is_row_requested),
+            NumericData::Uint64(v) => requested_entries(v, &is_row_requested),
+            NumericData::Int8(v) => requested_entries(v, &is_row_requested),
+            NumericData::Int16(v) => requested_entries(v, &is_row_requested),
+            NumericData::Int32(v) => requested_entries(v, &is_row_requested),
+            NumericData::Int64(v) => requested_entries(v, &is_row_requested),
+            NumericData::Float32(_) | NumericData::Float64(_) => panic!("Sparse matrix indices must be integers"),
+        })
+        .collect();
+
+    let mut indptr = Vec::with_capacity(columns.len() + 1);
+    indptr.push(0u32);
+    for column_kept in &kept {
+        indptr.push(indptr[indptr.len() - 1] + column_kept.len() as u32);
+    }
+    let indices: Vec<u32> = kept.iter().flatten().map(|&(_, row)| row).collect();
+
+    macro_rules! gather {
+        ($variant:ident) => {{
+            let mut out = Vec::with_capacity(indices.len());
+            for (column, column_kept) in columns.iter().zip(&kept) {
+                let NumericData::$variant(values) = &column.data else {
+                    panic!("matrix columns must share one dtype");
+                };
+                out.extend(column_kept.iter().map(|&(entry, _)| values[entry]));
+            }
+            NumericData::$variant(Arc::new(out))
+        }};
+    }
+    let data = match columns.first().map(|column| &column.data) {
+        None => NumericData::Float32(Arc::new(vec![])),
+        Some(NumericData::Uint8(_)) => gather!(Uint8),
+        Some(NumericData::Uint16(_)) => gather!(Uint16),
+        Some(NumericData::Uint32(_)) => gather!(Uint32),
+        Some(NumericData::Uint64(_)) => gather!(Uint64),
+        Some(NumericData::Int8(_)) => gather!(Int8),
+        Some(NumericData::Int16(_)) => gather!(Int16),
+        Some(NumericData::Int32(_)) => gather!(Int32),
+        Some(NumericData::Int64(_)) => gather!(Int64),
+        Some(NumericData::Float32(_)) => gather!(Float32),
+        Some(NumericData::Float64(_)) => gather!(Float64),
+    };
+    CompressedMatrix {
+        indptr: NumericData::from(indptr),
+        indices: NumericData::from(indices),
+        data,
+        minor_subset: Some(NumericData::from(rows.to_vec())),
+    }
+}
+
 /// Identifies one row block of a filtered submatrix, for memoization.
 pub struct MatrixBlockKey<'a> {
     pub store_name: &'a str,
@@ -358,46 +483,99 @@ impl MatrixBlockKey<'_> {
     }
 }
 
-/// Loads (and caches) the row-major `rows x cols` block of the matrix
-/// identified by `key`, in its stored dtype.
+/// One row block of a filtered submatrix: dense, or sparse in the stored
+/// compression (CSC when assembled from [`MatrixCacheMode::VarColumns`]).
+#[derive(Clone, Debug)]
+pub enum MatrixBlock {
+    /// Row-major values.
+    Dense(Arc<NumericData>),
+    Compressed(CompressedAxis, Arc<CompressedMatrix>),
+}
+
+/// Loads (and caches) the `rows x cols` block of the matrix identified by
+/// `key`, stored as `layout`, in its stored dtype. Sparse matrices stay sparse.
 pub async fn load_matrix_block(
     store: Arc<dyn AsyncReadableStorageTraits>,
     key: &MatrixBlockKey<'_>,
+    layout: MatrixLayout,
     rows: &[u32],
     cols: &[u32],
     cache_enabled: bool,
-) -> Result<Arc<NumericData>, ArrayError> {
-    use_memo_numeric_data(
-        async || match key.cache_mode {
-            MatrixCacheMode::RowBlocks => read_matrix_subset_numeric(store, key.matrix_path, rows, cols).await,
-            MatrixCacheMode::VarColumns => {
-                // `join_all` rather than `try_join_all`, so that a column still loading
-                // does not cancel the others, which are then cached for the next attempt.
-                let columns = futures::future::join_all(
-                    cols.iter().map(|&var_index| load_var_column(store.clone(), key.store_name, key.matrix_path, var_index, cache_enabled)),
-                )
-                .await
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()?;
-                Ok(gather_rows_from_columns(&columns, rows))
-            }
-        },
-        &key.keys("adata_matrix_block"),
-        cache_enabled,
-    )
-    .await
+) -> Result<MatrixBlock, ArrayError> {
+    let keys = key.keys("adata_matrix_block");
+    // `join_all` rather than `try_join_all`, so that a column still loading
+    // does not cancel the others, which are then cached for the next attempt.
+    match (layout, key.cache_mode) {
+        (MatrixLayout::Dense, MatrixCacheMode::RowBlocks) => {
+            let block = use_memo_numeric_data(async || read_dense_subset_numeric(store, key.matrix_path, rows, cols).await, &keys, cache_enabled).await?;
+            Ok(MatrixBlock::Dense(block))
+        }
+        (MatrixLayout::Dense, MatrixCacheMode::VarColumns) => {
+            let block = use_memo_numeric_data(
+                async || {
+                    let columns = futures::future::join_all(
+                        cols.iter().map(|&var_index| load_var_column(store.clone(), key.store_name, key.matrix_path, var_index, cache_enabled)),
+                    )
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()?;
+                    Ok::<_, ArrayError>(gather_rows_from_columns(&columns, rows))
+                },
+                &keys,
+                cache_enabled,
+            )
+            .await?;
+            Ok(MatrixBlock::Dense(block))
+        }
+        (MatrixLayout::Compressed(axis), MatrixCacheMode::RowBlocks) => {
+            let block = use_memo_compressed_matrix(
+                async || read_compressed_subset(store, key.matrix_path, axis, rows, cols).await,
+                &keys,
+                cache_enabled,
+            )
+            .await?;
+            Ok(MatrixBlock::Compressed(axis, block))
+        }
+        (MatrixLayout::Compressed(axis), MatrixCacheMode::VarColumns) => {
+            let block = use_memo_compressed_matrix(
+                async || {
+                    let n_obs = load_matrix_shape(store.clone(), key.store_name, key.matrix_path, cache_enabled).await?[0];
+                    let columns = futures::future::join_all(cols.iter().map(|&var_index| {
+                        load_compressed_var_column(store.clone(), key.store_name, key.matrix_path, axis, var_index, cache_enabled)
+                    }))
+                    .await
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()?;
+                    Ok::<_, ArrayError>(gather_compressed_columns(&columns, rows, n_obs))
+                },
+                &keys,
+                cache_enabled,
+            )
+            .await?;
+            Ok(MatrixBlock::Compressed(CompressedAxis::Cols, block))
+        }
+    }
 }
 
-/// Computes (and caches) the `(min, max)` of the block identified by `key`.
+/// Computes (and caches) the `(min, max)` of the `num_rows x num_cols` block
+/// identified by `key`, counting a sparse block's implicit zeros.
 pub async fn load_matrix_block_extent(
     gpu_context: Option<&GpuContext<'_>>,
     key: &MatrixBlockKey<'_>,
-    block: &NumericData,
+    block: &MatrixBlock,
+    num_rows: usize,
+    num_cols: usize,
     cache_enabled: bool,
 ) -> (f32, f32) {
     let extent = use_memo_vec_f32(
         async || {
-            let (min, max) = reduce_extent(gpu_context, block.clone(), &[], &[]).await.background;
+            let (min, max) = match block {
+                MatrixBlock::Dense(values) => reduce_extent(gpu_context, values.as_ref().clone(), &[], &[]).await.background,
+                MatrixBlock::Compressed(_, matrix) => {
+                    let (min, max) = reduce_extent(gpu_context, matrix.data.clone(), &[], &[]).await.background;
+                    if matrix.data.len() < num_rows * num_cols { (min.min(0.0), max.max(0.0)) } else { (min, max) }
+                }
+            };
             Ok::<_, std::convert::Infallible>(vec![min, max])
         },
         &key.keys("adata_matrix_block_extent"),
@@ -413,7 +591,7 @@ pub async fn load_matrix_block_extent(
 pub async fn load_matrix_block_axis_extents(
     gpu_context: Option<&GpuContext<'_>>,
     key: &MatrixBlockKey<'_>,
-    block: &NumericData,
+    block: &MatrixBlock,
     num_rows: usize,
     num_cols: usize,
     axis: HeatmapAxis,
@@ -422,7 +600,12 @@ pub async fn load_matrix_block_axis_extents(
     let namespace = format!("adata_matrix_block_{axis:?}_extents");
     let extents = use_memo_vec_f32(
         async || {
-            let (mut mins, maxs) = reduce_matrix_axis_extents(gpu_context, block, num_rows, num_cols, axis).await;
+            let (mut mins, maxs) = match block {
+                MatrixBlock::Dense(values) => reduce_matrix_axis_extents(gpu_context, values, num_rows, num_cols, axis).await,
+                MatrixBlock::Compressed(compressed_axis, matrix) => {
+                    reduce_compressed_matrix_axis_extents(gpu_context, matrix, *compressed_axis, num_rows, num_cols, axis).await
+                }
+            };
             mins.extend(maxs);
             Ok::<_, std::convert::Infallible>(mins)
         },
@@ -454,6 +637,28 @@ mod tests {
             panic!("expected the columns' dtype");
         };
         assert_eq!(*values, vec![3, 6, 1, 4]);
+    }
+
+    #[test]
+    fn gathers_compressed_columns_keeping_only_requested_rows() {
+        let column = |rows: Vec<i64>, values: Vec<u16>| {
+            Arc::new(CompressedMatrix {
+                indptr: NumericData::from(vec![0u32, rows.len() as u32]),
+                indices: NumericData::from(rows),
+                data: NumericData::from(values),
+                minor_subset: None,
+            })
+        };
+        let columns = vec![column(vec![0, 2, 3], vec![1, 2, 3]), column(vec![1], vec![4])];
+        let matrix = gather_compressed_columns(&columns, &[3, 0], 4);
+        matrix.validate(CompressedAxis::Cols, 2, 2);
+        let NumericData::Uint16(data) = &matrix.data else {
+            panic!("expected the columns' dtype");
+        };
+        assert_eq!(**data, vec![1, 3]);
+        assert_eq!(matrix.value_at(CompressedAxis::Cols, 0, 0), 3.0);
+        assert_eq!(matrix.value_at(CompressedAxis::Cols, 1, 0), 1.0);
+        assert_eq!(matrix.value_at(CompressedAxis::Cols, 0, 1), 0.0);
     }
 
     #[test]

@@ -13,6 +13,7 @@ use pluot_core::composite_layers::legend_colormap_quantitative_layer::{
 };
 use pluot_core::d3::scale::ScaleLinear;
 use pluot_core::compute::matrix_axis_extents::MatrixAxis as HeatmapAxis;
+use pluot_core::layers::heatmap_compressed_layer::{CompressedHeatmapLayerParams, HeatmapCscLayer, HeatmapCsrLayer};
 use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_traits::{
@@ -20,16 +21,18 @@ use pluot_core::render_traits::{
     PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use pluot_core::sparse_matrix::CompressedAxis;
 use pluot_core::two::svg::SvgContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::wgpu;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::{maybe_timeout, Duration, FutureExt, LayerExtentResult, LayerPickingResult};
 
+use crate::adata_io::MatrixLayout;
 use crate::heatmap_data::{
     indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_matrix_block,
-    load_matrix_block_axis_extents, load_matrix_block_extent, AxisCriteria, HeatmapNormalization, MatrixAxis,
-    MatrixBlockKey, MatrixCacheMode,
+    load_matrix_block_axis_extents, load_matrix_block_extent, load_matrix_layout, AxisCriteria, HeatmapNormalization,
+    MatrixAxis, MatrixBlock, MatrixBlockKey, MatrixCacheMode,
 };
 
 /// Upper bound on the number of matrix elements loaded (and cached) per row
@@ -174,7 +177,7 @@ impl AdataZarrHeatmapLayer {
 
 }
 
-type AxesData = (Arc<NumericData>, Arc<NumericData>, Option<Arc<NumericData>>, Option<Arc<NumericData>>, Arc<Vec<String>>, Arc<Vec<String>>);
+type AxesData = (Arc<NumericData>, Arc<NumericData>, Option<Arc<NumericData>>, Option<Arc<NumericData>>, Arc<Vec<String>>, Arc<Vec<String>>, MatrixLayout);
 
 /// `(lo, hi)`, or `(0, 1)` when there were no finite values to take an extent over.
 fn finite_or_unit(lo: f32, hi: f32) -> (f32, f32) {
@@ -214,13 +217,14 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                 load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), params.var_selection.as_ref(), cache_enabled),
                 load_axis_labels(store.clone(), &store_name, MatrixAxis::Obs, None, cache_enabled),
                 load_axis_labels(store.clone(), &store_name, MatrixAxis::Var, params.gene_symbols.as_deref(), cache_enabled),
+                async { Ok(load_matrix_layout(store.clone(), &store_name, &matrix_path, cache_enabled).await) },
             )
         };
         let axes: Option<AxesData> = match maybe_timeout!(axes_future, timeout).await {
             Ok(result) => ok_unless_timed_out(result, "axis indices, masks and labels"),
             Err(_) => None,
         };
-        let Some((obs_indices, var_indices, obs_mask, var_mask, obs_labels, var_labels)) = axes else {
+        let Some((obs_indices, var_indices, obs_mask, var_mask, obs_labels, var_labels, layout)) = axes else {
             self.sub_layer_instances = Vec::new();
             self.block_first_rows = Vec::new();
             self.axes = None;
@@ -242,13 +246,13 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
             block_index,
         };
 
-        let mut blocks: Vec<Option<Arc<NumericData>>> = vec![None; block_first_rows.len()];
+        let mut blocks: Vec<Option<MatrixBlock>> = vec![None; block_first_rows.len()];
         let block_futures = blocks.iter_mut().zip(&block_first_rows).enumerate().map(|(block_index, (slot, &first_row))| {
             let store = store.clone();
             let key = block_key(block_index);
             let block_rows = &rows[first_row..(first_row + rows_per_block).min(num_rows)];
             async move {
-                *slot = ok_unless_timed_out(load_matrix_block(store, &key, block_rows, cols, cache_enabled).await, "a matrix block");
+                *slot = ok_unless_timed_out(load_matrix_block(store, &key, layout, block_rows, cols, cache_enabled).await, "a matrix block");
             }
         });
         let _ = maybe_timeout!(futures::future::join_all(block_futures), timeout).await;
@@ -278,7 +282,7 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                 let mut domain = (f32::INFINITY, f32::NEG_INFINITY);
                 for (block_index, block) in blocks.iter().enumerate() {
                     if let Some(block) = block {
-                        let (min, max) = load_matrix_block_extent(gpu_context, &block_key(block_index), block, cache_enabled).await;
+                        let (min, max) = load_matrix_block_extent(gpu_context, &block_key(block_index), block, block_num_rows(block_index), num_cols, cache_enabled).await;
                         domain = (domain.0.min(min), domain.1.max(max));
                     }
                 }
@@ -331,25 +335,50 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
                 NumericData::Uint8(mask) => NumericData::from(mask[first_row..first_row + block_num_rows].to_vec()),
                 _ => unreachable!("selection masks are memoized as Uint8"),
             });
-            let mut heatmap_layer = HeatmapLayer::new(
-                self.view_params.clone(),
-                HeatmapLayerParams {
-                    layer_id: format!("{}_heatmap_sublayer_{block_index}", params.layer_id),
-                    bounds: params.bounds.clone(),
-                    cell_offset: Some(cell_offset),
-                    num_rows: block_num_rows as u32,
-                    num_cols: num_cols as u32,
-                    data: block.as_ref().clone(),
-                    swap_axes,
-                    colormap: Some(block_colormaps[block_index].clone()),
-                    row_selection,
-                    col_selection: var_mask.as_ref().map(|mask| mask.as_ref().clone()),
-                    background_opacity: params.background_opacity,
-                    ..Default::default()
-                },
-            );
+            let layer_id = format!("{}_heatmap_sublayer_{block_index}", params.layer_id);
+            let col_selection = var_mask.as_ref().map(|mask| mask.as_ref().clone());
+            let colormap = Some(block_colormaps[block_index].clone());
+            let mut heatmap_layer: Box<dyn PreparedAndDraw> = match block {
+                MatrixBlock::Dense(values) => Box::new(HeatmapLayer::new(
+                    self.view_params.clone(),
+                    HeatmapLayerParams {
+                        layer_id,
+                        bounds: params.bounds.clone(),
+                        cell_offset: Some(cell_offset),
+                        num_rows: block_num_rows as u32,
+                        num_cols: num_cols as u32,
+                        data: values.as_ref().clone(),
+                        swap_axes,
+                        colormap,
+                        row_selection,
+                        col_selection,
+                        background_opacity: params.background_opacity,
+                        ..Default::default()
+                    },
+                )),
+                MatrixBlock::Compressed(compressed_axis, matrix) => {
+                    let compressed_params = CompressedHeatmapLayerParams {
+                        layer_id,
+                        bounds: params.bounds.clone(),
+                        cell_offset: Some(cell_offset),
+                        num_rows: block_num_rows as u32,
+                        num_cols: num_cols as u32,
+                        matrix: matrix.as_ref().clone(),
+                        swap_axes,
+                        colormap,
+                        row_selection,
+                        col_selection,
+                        background_opacity: params.background_opacity,
+                        ..Default::default()
+                    };
+                    match compressed_axis {
+                        CompressedAxis::Rows => Box::new(HeatmapCsrLayer::new(self.view_params.clone(), compressed_params)),
+                        CompressedAxis::Cols => Box::new(HeatmapCscLayer::new(self.view_params.clone(), compressed_params)),
+                    }
+                }
+            };
             heatmap_layer.prepare(gpu_context).await;
-            sub_layer_instances.push(Box::new(heatmap_layer));
+            sub_layer_instances.push(heatmap_layer);
             loaded_block_first_rows.push(first_row);
         }
 

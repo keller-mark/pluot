@@ -45,7 +45,7 @@ use crate::render_traits::{
     PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
-use crate::shader_modules::{colormaps as wgsl_colormaps, common, heatmap_cell_color, ShaderBuilder};
+use crate::shader_modules::{colormaps as wgsl_colormaps, common, heatmap_cell_color, matrix_value, ShaderBuilder, TextureDtype};
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -222,6 +222,55 @@ impl Default for HeatmapLayerParams {
 }
 
 impl HeatmapLayerParams {
+    pub(crate) fn common(&self) -> HeatmapCommon<'_> {
+        HeatmapCommon {
+            layer_id: &self.layer_id,
+            bounds: self.bounds.as_ref(),
+            data_unit_mode_x: self.data_unit_mode_x,
+            data_unit_mode_y: self.data_unit_mode_y,
+            cell_offset: self.cell_offset,
+            model_matrix: self.model_matrix,
+            num_rows: self.num_rows,
+            num_cols: self.num_cols,
+            swap_axes: self.swap_axes,
+            colormap: self.colormap.as_ref(),
+            row_selection: self.row_selection.as_ref(),
+            col_selection: self.col_selection.as_ref(),
+            background_opacity: self.background_opacity,
+            opacity: self.opacity,
+        }
+    }
+}
+
+/// The params shared by every heatmap layer, whatever the storage layout of
+/// its matrix values. See [`HeatmapLayerParams`] for what each one means.
+pub(crate) struct HeatmapCommon<'a> {
+    pub layer_id: &'a str,
+    pub bounds: Option<&'a MarginParams>,
+    pub data_unit_mode_x: UnitsMode,
+    pub data_unit_mode_y: UnitsMode,
+    pub cell_offset: Option<(f32, f32)>,
+    pub model_matrix: Option<[f32; 16]>,
+    pub num_rows: u32,
+    pub num_cols: u32,
+    pub swap_axes: bool,
+    pub colormap: Option<&'a HeatmapColormap>,
+    pub row_selection: Option<&'a NumericData>,
+    pub col_selection: Option<&'a NumericData>,
+    pub background_opacity: Option<f32>,
+    pub opacity: f32,
+}
+
+/// The matrix values that one draw call of [`HeatmapCommon::draw_gpu`]
+/// reads, covering rows `first_row..first_row + num_rows`.
+pub(crate) struct HeatmapValueBlock {
+    pub first_row: u32,
+    pub num_rows: u32,
+    /// Bound consecutively from [`MATRIX_VALUE_FIRST_BINDING`].
+    pub textures: Vec<(wgpu::TextureView, TextureDtype)>,
+}
+
+impl HeatmapCommon<'_> {
     /// Width and height of the whole matrix, in cell units.
     fn display_size(&self) -> (u32, u32) {
         if self.swap_axes { (self.num_rows, self.num_cols) } else { (self.num_cols, self.num_rows) }
@@ -245,128 +294,62 @@ impl HeatmapLayerParams {
     }
 
     fn row_selection_criteria(&self) -> Vec<EmphasisCriteria> {
-        mask_as_criteria(self.row_selection.as_ref())
+        mask_as_criteria(self.row_selection)
     }
 
     fn col_selection_criteria(&self) -> Vec<EmphasisCriteria> {
-        mask_as_criteria(self.col_selection.as_ref())
+        mask_as_criteria(self.col_selection)
     }
-}
 
-fn mask_as_criteria(mask: Option<&NumericData>) -> Vec<EmphasisCriteria> {
-    mask.map(|mask| {
-        EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: mask.clone() })
-    })
-    .into_iter()
-    .collect()
-}
-
-/// How many whole matrix rows fit in one texture of at most `max_texels` texels.
-fn rows_per_texture(num_cols: u32, max_texels: u64) -> u32 {
-    (max_texels / num_cols.max(1) as u64).clamp(1, u32::MAX as u64) as u32
-}
-
-fn units_mode_u32(mode: UnitsMode) -> u32 {
-    match mode {
-        UnitsMode::Pixels => 0,
-        UnitsMode::Data => 1,
-        UnitsMode::Normalized => 2,
-    }
-}
-
-pub struct HeatmapLayer {
-    view_params: ViewParams,
-    layer_params: HeatmapLayerParams,
-}
-
-impl HeatmapLayer {
-    pub fn new(view_params: ViewParams, layer_params: HeatmapLayerParams) -> Self {
-        let expected_len = layer_params.num_rows as usize * layer_params.num_cols as usize;
-        assert_eq!(
-            layer_params.data.len(), expected_len,
-            "HeatmapLayer data has length {} but num_rows * num_cols is {expected_len}",
-            layer_params.data.len(),
-        );
-        for criteria in layer_params.row_selection_criteria() {
-            criteria.validate_len(layer_params.num_rows as usize);
+    /// Panics if a selection mask or per-axis domain does not match the matrix shape.
+    pub(crate) fn validate(&self) {
+        for criteria in self.row_selection_criteria() {
+            criteria.validate_len(self.num_rows as usize);
         }
-        for criteria in layer_params.col_selection_criteria() {
-            criteria.validate_len(layer_params.num_cols as usize);
+        for criteria in self.col_selection_criteria() {
+            criteria.validate_len(self.num_cols as usize);
         }
-        if let Some(domains) = layer_params.colormap.as_ref().and_then(HeatmapColormap::axis_domains) {
-            let expected_len = if domains.axis == MatrixAxis::Rows { layer_params.num_rows } else { layer_params.num_cols } as usize;
+        if let Some(domains) = self.colormap.and_then(HeatmapColormap::axis_domains) {
+            let expected_len = if domains.axis == MatrixAxis::Rows { self.num_rows } else { self.num_cols } as usize;
             assert!(
                 domains.min.len() == expected_len && domains.max.len() == expected_len,
-                "HeatmapLayer {:?} domains have lengths ({}, {}) but the matrix has {expected_len} {:?}",
+                "Heatmap {:?} domains have lengths ({}, {}) but the matrix has {expected_len} {:?}",
                 domains.axis, domains.min.len(), domains.max.len(), domains.axis,
             );
         }
-        Self { view_params, layer_params }
     }
 
     /// (margin_left, margin_top, layer_w, layer_h)
-    fn layer_rect(&self) -> (f32, f32, f32, f32) {
-        let bounds = self.layer_params.bounds.as_ref().or(self.view_params.margins.as_ref());
+    fn layer_rect(&self, view_params: &ViewParams) -> (f32, f32, f32, f32) {
+        let bounds = self.bounds.or(view_params.margins.as_ref());
         let margin = |f: fn(&MarginParams) -> Option<f32>| bounds.and_then(f).unwrap_or(0.0);
         let (left, right) = (margin(|m| m.margin_left), margin(|m| m.margin_right));
         let (top, bottom) = (margin(|m| m.margin_top), margin(|m| m.margin_bottom));
         (
             left,
             top,
-            self.view_params.width as f32 - (left + right),
-            self.view_params.height as f32 - (top + bottom),
+            view_params.width as f32 - (left + right),
+            view_params.height as f32 - (top + bottom),
         )
     }
-}
 
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl PreparedLayer for HeatmapLayer {
-    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
-        PrepareResult { bailed_early: false }
-    }
-}
-
-#[derive(ShaderType, Debug)]
-struct HeatmapLayerUniforms {
-    layer_size: Vec2,
-    camera_view: Mat4,
-    data_unit_mode_x: u32,
-    data_unit_mode_y: u32,
-    aspect_ratio_mode: u32,
-    aspect_ratio_alignment_mode: u32,
-    model_matrix: Mat4,
-    quad_origin: Vec2,
-    quad_size: Vec2,
-    num_cols: u32,
-    block_first_row: u32,
-    block_num_rows: u32,
-    swap_axes: u32,
-    domain: Vec2,
-    reverse: u32,
-    opacity: f32,
-    background_opacity: f32,
-}
-
-const MATRIX_DATA_BINDING: u32 = 1;
-const PALETTE_BINDING: u32 = 2;
-const DOMAIN_MIN_BINDING: u32 = 3;
-const DOMAIN_MAX_BINDING: u32 = 4;
-const FIRST_SELECTION_BINDING: u32 = 5;
-
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterGpu for HeatmapLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    /// Draws one quad per block, where `matrix_value_wgsl` defines
+    /// `get_matrix_value(local_row, col)` over each block's textures.
+    pub(crate) fn draw_gpu(
+        &self,
+        view_params: &ViewParams,
+        gpu_context: &GpuContext<'_>,
+        pass: &mut wgpu::RenderPass,
+        matrix_value_wgsl: &str,
+        blocks: &[HeatmapValueBlock],
+    ) {
         let GpuContext { device, queue } = gpu_context;
-        let Self { layer_params, view_params } = self;
-        if layer_params.num_rows == 0 || layer_params.num_cols == 0 {
+        let Some(first_block) = blocks.first() else {
             return;
-        }
+        };
 
-        let colormap = layer_params.colormap.clone().unwrap_or_default();
+        let colormap = self.colormap.cloned().unwrap_or_default();
         let ((domain_lo, domain_hi), reverse) = colormap.quantitative_domain_and_reverse();
-        let (data_bytes, data_dtype) = layer_params.data.as_texture_data();
 
         let palette_view = colormap.palette().map(|colors| create_palette_texture(device, queue, &colors));
         let domain_textures = colormap.axis_domains().map(|domains| {
@@ -377,10 +360,10 @@ impl DrawToRasterGpu for HeatmapLayer {
         });
 
         let row_selection = prepare_emphasis_criteria(
-            device, queue, &layer_params.row_selection_criteria(), "is_row_selected", "row_selection", FIRST_SELECTION_BINDING,
+            device, queue, &self.row_selection_criteria(), "is_row_selected", "row_selection", FIRST_SELECTION_BINDING,
         );
         let col_selection = prepare_emphasis_criteria(
-            device, queue, &layer_params.col_selection_criteria(), "is_col_selected", "col_selection",
+            device, queue, &self.col_selection_criteria(), "is_col_selected", "col_selection",
             FIRST_SELECTION_BINDING + row_selection.textures.len() as u32,
         );
 
@@ -409,7 +392,7 @@ impl DrawToRasterGpu for HeatmapLayer {
             .inject_function("translate", common::TRANSLATE)
             .inject_function("get_aspect_ratio_mat", common::GET_ASPECT_RATIO_MAT)
             .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-            .inject_texture_sample_type("matrix_data", data_dtype)
+            .inject_function("matrix_value", matrix_value_wgsl)
             .inject_function("colormap_fn_source", colormap_fn_source)
             .inject_function("cell_domain", &cell_domain_wgsl)
             .inject_function("cell_color", cell_color_wgsl)
@@ -433,19 +416,19 @@ impl DrawToRasterGpu for HeatmapLayer {
             },
             count: None,
         };
-        let mut layout_entries = vec![
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
+        let mut layout_entries = vec![wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
             },
-            texture_entry(MATRIX_DATA_BINDING, data_dtype.binding_sample_type()),
-        ];
+            count: None,
+        }];
+        for (i, (_, dtype)) in first_block.textures.iter().enumerate() {
+            layout_entries.push(texture_entry(MATRIX_VALUE_FIRST_BINDING + i as u32, dtype.binding_sample_type()));
+        }
         if palette_view.is_some() {
             layout_entries.push(texture_entry(PALETTE_BINDING, wgpu::TextureSampleType::Float { filterable: false }));
         }
@@ -507,27 +490,20 @@ impl DrawToRasterGpu for HeatmapLayer {
             multiview_mask: None,
         });
 
-        let (margin_left, margin_top, layer_w, layer_h) = self.layer_rect();
+        let (margin_left, margin_top, layer_w, layer_h) = self.layer_rect(view_params);
         pass.set_viewport(margin_left, margin_top, layer_w, layer_h, 0.0, 1.0);
         pass.set_scissor_rect(margin_left as u32, margin_top as u32, layer_w as u32, layer_h as u32);
         pass.set_pipeline(&render_pipeline);
 
         let camera_view = view_params.camera_view.unwrap_or(IDENTITY_MATRIX);
-        let max_dim = device.limits().max_texture_dimension_2d as u64;
-        let block_rows = rows_per_texture(layer_params.num_cols, max_dim * max_dim);
-        let bytes_per_row = layer_params.num_cols as usize * data_dtype.bytes_per_texel() as usize;
-
-        for block_first_row in (0..layer_params.num_rows).step_by(block_rows as usize) {
-            let block_num_rows = block_rows.min(layer_params.num_rows - block_first_row);
-            let block_bytes = &data_bytes[block_first_row as usize * bytes_per_row..(block_first_row + block_num_rows) as usize * bytes_per_row];
-            let block_view = upload_data_texture(device, queue, block_bytes, data_dtype, "Heatmap Matrix Texture");
-            let (quad_origin, quad_size) = layer_params.row_block_quad(block_first_row, block_num_rows);
+        for block in blocks {
+            let (quad_origin, quad_size) = self.row_block_quad(block.first_row, block.num_rows);
 
             let uniforms = HeatmapLayerUniforms {
                 layer_size: Vec2::new(layer_w, layer_h),
                 camera_view: Mat4::from_cols_array(&camera_view),
-                data_unit_mode_x: units_mode_u32(layer_params.data_unit_mode_x),
-                data_unit_mode_y: units_mode_u32(layer_params.data_unit_mode_y),
+                data_unit_mode_x: units_mode_u32(self.data_unit_mode_x),
+                data_unit_mode_y: units_mode_u32(self.data_unit_mode_y),
                 aspect_ratio_mode: match view_params.aspect_ratio_mode {
                     AspectRatioMode::Ignore => 0,
                     AspectRatioMode::Contain => 1,
@@ -538,17 +514,17 @@ impl DrawToRasterGpu for HeatmapLayer {
                     AspectRatioAlignmentMode::Start => 1,
                     AspectRatioAlignmentMode::End => 2,
                 },
-                model_matrix: Mat4::from_cols_array(&layer_params.model_matrix.unwrap_or(IDENTITY_MATRIX)),
+                model_matrix: Mat4::from_cols_array(&self.model_matrix.unwrap_or(IDENTITY_MATRIX)),
                 quad_origin,
                 quad_size,
-                num_cols: layer_params.num_cols,
-                block_first_row,
-                block_num_rows,
-                swap_axes: layer_params.swap_axes as u32,
+                num_cols: self.num_cols,
+                block_first_row: block.first_row,
+                block_num_rows: block.num_rows,
+                swap_axes: self.swap_axes as u32,
                 domain: Vec2::new(domain_lo, domain_hi),
                 reverse: reverse as u32,
-                opacity: layer_params.opacity,
-                background_opacity: layer_params.background_opacity.unwrap_or(DEFAULT_BACKGROUND_OPACITY),
+                opacity: self.opacity,
+                background_opacity: self.background_opacity.unwrap_or(DEFAULT_BACKGROUND_OPACITY),
             };
             let mut uniform_buffer_contents = UniformBuffer::new(Vec::<u8>::new());
             uniform_buffer_contents.write(&uniforms).unwrap();
@@ -561,10 +537,13 @@ impl DrawToRasterGpu for HeatmapLayer {
             });
             queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
 
-            let mut entries = vec![
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: MATRIX_DATA_BINDING, resource: wgpu::BindingResource::TextureView(&block_view) },
-            ];
+            let mut entries = vec![wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() }];
+            for (i, (view, _)) in block.textures.iter().enumerate() {
+                entries.push(wgpu::BindGroupEntry {
+                    binding: MATRIX_VALUE_FIRST_BINDING + i as u32,
+                    resource: wgpu::BindingResource::TextureView(view),
+                });
+            }
             if let Some(palette_view) = &palette_view {
                 entries.push(wgpu::BindGroupEntry { binding: PALETTE_BINDING, resource: wgpu::BindingResource::TextureView(palette_view) });
             }
@@ -588,34 +567,25 @@ impl DrawToRasterGpu for HeatmapLayer {
             pass.draw(0..4, 0..1);
         }
     }
-}
 
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToRasterCpu for HeatmapLayer {
-    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
-}
-
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-impl DrawToSvg for HeatmapLayer {
-    async fn draw(&self, ctx: &mut SvgContext) {
-        let Self { layer_params, view_params } = self;
-        let (img_w, img_h) = layer_params.display_size();
+    /// Draws the matrix as one pixelated image, reading each cell's value
+    /// (NaN for none) from `value_at(row, col)`.
+    pub(crate) async fn draw_svg(&self, view_params: &ViewParams, ctx: &mut SvgContext, value_at: impl Fn(u32, u32) -> f32) {
+        let (img_w, img_h) = self.display_size();
         if img_w == 0 || img_h == 0 {
             return;
         }
 
-        let colormap = layer_params.colormap.clone().unwrap_or_default();
-        let row_selection = layer_params.row_selection_criteria();
-        let col_selection = layer_params.col_selection_criteria();
-        let background_alpha = layer_params.background_opacity.unwrap_or(DEFAULT_BACKGROUND_OPACITY);
+        let colormap = self.colormap.cloned().unwrap_or_default();
+        let row_selection = self.row_selection_criteria();
+        let col_selection = self.col_selection_criteria();
+        let background_alpha = self.background_opacity.unwrap_or(DEFAULT_BACKGROUND_OPACITY);
 
         let mut rgba = vec![0u8; (img_w * img_h * 4) as usize];
         for y in 0..img_h {
             for x in 0..img_w {
-                let (row, col) = layer_params.cell_at_display(x, y);
-                let value = layer_params.data.get_f32((row * layer_params.num_cols + col) as usize);
+                let (row, col) = self.cell_at_display(x, y);
+                let value = value_at(row, col);
                 if value.is_nan() {
                     continue;
                 }
@@ -634,18 +604,18 @@ impl DrawToSvg for HeatmapLayer {
         let href = format!("data:image/png;base64,{}", BASE64_STANDARD.encode(&png));
 
         let camera_view = view_params.camera_view.unwrap_or(IDENTITY_MATRIX);
-        let model_matrix = layer_params.model_matrix.unwrap_or(IDENTITY_MATRIX);
-        let (margin_left, margin_top, layer_w, layer_h) = self.layer_rect();
-        let (offset_x, offset_y) = layer_params.cell_offset.unwrap_or((0.0, 0.0));
+        let model_matrix = self.model_matrix.unwrap_or(IDENTITY_MATRIX);
+        let (margin_left, margin_top, layer_w, layer_h) = self.layer_rect(view_params);
+        let (offset_x, offset_y) = self.cell_offset.unwrap_or((0.0, 0.0));
         let (px, py) = get_point_position(
             offset_x, offset_y, layer_w, layer_h, &camera_view,
-            layer_params.data_unit_mode_x, layer_params.data_unit_mode_y,
+            self.data_unit_mode_x, self.data_unit_mode_y,
             view_params.aspect_ratio_mode, view_params.aspect_ratio_alignment_mode,
             Some(&model_matrix),
         );
         let (sw, sh) = get_point_size(
             img_w as f32, img_h as f32, layer_w, layer_h, &camera_view,
-            layer_params.data_unit_mode_x, layer_params.data_unit_mode_y,
+            self.data_unit_mode_x, self.data_unit_mode_y,
             view_params.aspect_ratio_mode, view_params.aspect_ratio_alignment_mode,
             Some(&model_matrix),
         );
@@ -657,7 +627,7 @@ impl DrawToSvg for HeatmapLayer {
                 width: img_w as f64,
                 height: img_h as f64,
                 href,
-                opacity: layer_params.opacity as f64,
+                opacity: self.opacity as f64,
                 image_rendering_style: Some(TwoImageRenderingStyle::Pixelated),
             })],
             translate: Some((px as f64, (layer_h - py - sh) as f64)),
@@ -668,10 +638,166 @@ impl DrawToSvg for HeatmapLayer {
         update_svg(ctx, &[TwoElement::Group(TwoGroup {
             elements: vec![image],
             translate: Some((margin_left as f64, margin_top as f64)),
-            layer_id: Some(layer_params.layer_id.clone()),
+            layer_id: Some(self.layer_id.to_string()),
             clip_rect: Some((0.0, 0.0, layer_w as f64, layer_h as f64)),
             ..Default::default()
         })]);
+    }
+
+    /// The (row, col) of the cell at `data_coord`, if any.
+    pub(crate) fn pick_cell(&self, data_coord: Option<DataCoord>) -> Option<(u32, u32)> {
+        let DataCoord::TwoD { x, y } = data_coord? else {
+            return None;
+        };
+        if self.data_unit_mode_x != UnitsMode::Data || self.data_unit_mode_y != UnitsMode::Data {
+            return None;
+        }
+
+        let model_matrix = DMat4::from_cols_array(&self.model_matrix.unwrap_or(IDENTITY_MATRIX).map(|v| v as f64));
+        if model_matrix.determinant() == 0.0 {
+            return None;
+        }
+        let local = model_matrix.inverse() * DVec4::new(x as f64, y as f64, 0.0, 1.0);
+        let (offset_x, offset_y) = self.cell_offset.unwrap_or((0.0, 0.0));
+        let (cell_x, cell_y) = (local.x - offset_x as f64, local.y - offset_y as f64);
+        let (img_w, img_h) = self.display_size();
+        if cell_x < 0.0 || cell_x >= img_w as f64 || cell_y <= 0.0 || cell_y > img_h as f64 {
+            return None;
+        }
+        Some(self.cell_at_display(cell_x.floor() as u32, (img_h as f64 - cell_y).floor() as u32))
+    }
+
+    /// The picking result for the cell at (`row`, `col`) holding `value`.
+    pub(crate) fn picking_result(&self, row: u32, col: u32, value: String) -> LayerPickingResult {
+        let mut info = HashMap::new();
+        info.insert("row".to_string(), row.to_string());
+        info.insert("col".to_string(), col.to_string());
+        info.insert("value".to_string(), value);
+        LayerPickingResult { layer_id: self.layer_id.to_string(), info }
+    }
+}
+
+fn mask_as_criteria(mask: Option<&NumericData>) -> Vec<EmphasisCriteria> {
+    mask.map(|mask| {
+        EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: mask.clone() })
+    })
+    .into_iter()
+    .collect()
+}
+
+/// How many whole matrix rows fit in one texture of at most `max_texels` texels.
+fn rows_per_texture(num_cols: u32, max_texels: u64) -> u32 {
+    (max_texels / num_cols.max(1) as u64).clamp(1, u32::MAX as u64) as u32
+}
+
+fn units_mode_u32(mode: UnitsMode) -> u32 {
+    match mode {
+        UnitsMode::Pixels => 0,
+        UnitsMode::Data => 1,
+        UnitsMode::Normalized => 2,
+    }
+}
+
+pub struct HeatmapLayer {
+    view_params: ViewParams,
+    layer_params: HeatmapLayerParams,
+}
+
+impl HeatmapLayer {
+    pub fn new(view_params: ViewParams, layer_params: HeatmapLayerParams) -> Self {
+        let expected_len = layer_params.num_rows as usize * layer_params.num_cols as usize;
+        assert_eq!(
+            layer_params.data.len(), expected_len,
+            "HeatmapLayer data has length {} but num_rows * num_cols is {expected_len}",
+            layer_params.data.len(),
+        );
+        layer_params.common().validate();
+        Self { view_params, layer_params }
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl PreparedLayer for HeatmapLayer {
+    async fn prepare(&mut self, _gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        PrepareResult { bailed_early: false }
+    }
+}
+
+#[derive(ShaderType, Debug)]
+struct HeatmapLayerUniforms {
+    layer_size: Vec2,
+    camera_view: Mat4,
+    data_unit_mode_x: u32,
+    data_unit_mode_y: u32,
+    aspect_ratio_mode: u32,
+    aspect_ratio_alignment_mode: u32,
+    model_matrix: Mat4,
+    quad_origin: Vec2,
+    quad_size: Vec2,
+    num_cols: u32,
+    block_first_row: u32,
+    block_num_rows: u32,
+    swap_axes: u32,
+    domain: Vec2,
+    reverse: u32,
+    opacity: f32,
+    background_opacity: f32,
+}
+
+/// The first of the (up to four, for a sparse matrix) bindings of a heatmap's matrix value textures.
+pub(crate) const MATRIX_VALUE_FIRST_BINDING: u32 = 1;
+const PALETTE_BINDING: u32 = 5;
+const DOMAIN_MIN_BINDING: u32 = 6;
+const DOMAIN_MAX_BINDING: u32 = 7;
+const FIRST_SELECTION_BINDING: u32 = 8;
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterGpu for HeatmapLayer {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+        let GpuContext { device, queue } = gpu_context;
+        let layer_params = &self.layer_params;
+        if layer_params.num_rows == 0 || layer_params.num_cols == 0 {
+            return;
+        }
+
+        let (data_bytes, data_dtype) = layer_params.data.as_texture_data();
+        let max_dim = device.limits().max_texture_dimension_2d as u64;
+        let block_rows = rows_per_texture(layer_params.num_cols, max_dim * max_dim);
+        let bytes_per_row = layer_params.num_cols as usize * data_dtype.bytes_per_texel() as usize;
+        let blocks: Vec<HeatmapValueBlock> = (0..layer_params.num_rows)
+            .step_by(block_rows as usize)
+            .map(|first_row| {
+                let num_rows = block_rows.min(layer_params.num_rows - first_row);
+                let block_bytes = &data_bytes[first_row as usize * bytes_per_row..(first_row + num_rows) as usize * bytes_per_row];
+                let view = upload_data_texture(device, queue, block_bytes, data_dtype, "Heatmap Matrix Texture");
+                HeatmapValueBlock { first_row, num_rows, textures: vec![(view, data_dtype)] }
+            })
+            .collect();
+
+        let matrix_value_wgsl = ShaderBuilder::new(matrix_value::DENSE)
+            .define_bidx("matrix_data", MATRIX_VALUE_FIRST_BINDING)
+            .inject_texture_sample_type("matrix_data", data_dtype)
+            .define("num_cols", "u.num_cols")
+            .build();
+        layer_params.common().draw_gpu(&self.view_params, gpu_context, pass, &matrix_value_wgsl, &blocks);
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToRasterCpu for HeatmapLayer {
+    async fn draw(&self, _cpu_context: &CpuContext<'_>, _pass: &mut CpuRenderPass) {}
+}
+
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+impl DrawToSvg for HeatmapLayer {
+    async fn draw(&self, ctx: &mut SvgContext) {
+        let layer_params = &self.layer_params;
+        let value_at = |row: u32, col: u32| layer_params.data.get_f32((row * layer_params.num_cols + col) as usize);
+        layer_params.common().draw_svg(&self.view_params, ctx, value_at).await;
     }
 }
 
@@ -692,32 +818,10 @@ impl ExtentableLayer for HeatmapLayer {}
 impl PickableLayer for HeatmapLayer {
     /// Returns the picked cell's "row", "col" and "value".
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
-        let DataCoord::TwoD { x, y } = data_coord? else {
-            return None;
-        };
-        let params = &self.layer_params;
-        if params.data_unit_mode_x != UnitsMode::Data || params.data_unit_mode_y != UnitsMode::Data {
-            return None;
-        }
-
-        let model_matrix = DMat4::from_cols_array(&params.model_matrix.unwrap_or(IDENTITY_MATRIX).map(|v| v as f64));
-        if model_matrix.determinant() == 0.0 {
-            return None;
-        }
-        let local = model_matrix.inverse() * DVec4::new(x as f64, y as f64, 0.0, 1.0);
-        let (offset_x, offset_y) = params.cell_offset.unwrap_or((0.0, 0.0));
-        let (cell_x, cell_y) = (local.x - offset_x as f64, local.y - offset_y as f64);
-        let (img_w, img_h) = params.display_size();
-        if cell_x < 0.0 || cell_x >= img_w as f64 || cell_y <= 0.0 || cell_y > img_h as f64 {
-            return None;
-        }
-
-        let (row, col) = params.cell_at_display(cell_x.floor() as u32, (img_h as f64 - cell_y).floor() as u32);
-        let mut info = HashMap::new();
-        info.insert("row".to_string(), row.to_string());
-        info.insert("col".to_string(), col.to_string());
-        info.insert("value".to_string(), params.data.format_element((row * params.num_cols + col) as usize));
-        Some(LayerPickingResult { layer_id: params.layer_id.clone(), info })
+        let common = self.layer_params.common();
+        let (row, col) = common.pick_cell(data_coord)?;
+        let value = self.layer_params.data.format_element((row * self.layer_params.num_cols + col) as usize);
+        Some(common.picking_result(row, col, value))
     }
 }
 
@@ -738,14 +842,14 @@ mod tests {
     #[test]
     fn row_blocks_stack_top_to_bottom() {
         let params = HeatmapLayerParams { num_rows: 5, ..params_2x3(false) };
-        assert_eq!(params.row_block_quad(0, 2), (Vec2::new(0.0, 3.0), Vec2::new(3.0, 2.0)));
-        assert_eq!(params.row_block_quad(2, 3), (Vec2::new(0.0, 0.0), Vec2::new(3.0, 3.0)));
+        assert_eq!(params.common().row_block_quad(0, 2), (Vec2::new(0.0, 3.0), Vec2::new(3.0, 2.0)));
+        assert_eq!(params.common().row_block_quad(2, 3), (Vec2::new(0.0, 0.0), Vec2::new(3.0, 3.0)));
     }
 
     #[test]
     fn swapped_row_blocks_run_left_to_right() {
         let params = HeatmapLayerParams { num_rows: 5, ..params_2x3(true) };
-        assert_eq!(params.row_block_quad(2, 3), (Vec2::new(2.0, 0.0), Vec2::new(3.0, 3.0)));
+        assert_eq!(params.common().row_block_quad(2, 3), (Vec2::new(2.0, 0.0), Vec2::new(3.0, 3.0)));
     }
 
     #[test]

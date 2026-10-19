@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::numeric_data::NumericData;
+use crate::sparse_matrix::CompressedMatrix;
 use crate::zarr::AsyncZarritaStore;
 
 // Note: this store cache is no longer needed, as the store does cacheing internally now.
@@ -32,6 +33,7 @@ thread_local! {
     static USE_MEMO_CACHE_VEC_STRING: RefCell<Option<HashMap<Vec<String>, Arc<Vec<String>>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_INTERNAL_TEXT_LAYER_DATA: RefCell<Option<HashMap<Vec<String>, Arc<CachedInternalTextLayerData>>>> = const { RefCell::new(None) };
     static USE_MEMO_CACHE_NUMERIC_DATA: RefCell<Option<HashMap<Vec<String>, Arc<NumericData>>>> = const { RefCell::new(None) };
+    static USE_MEMO_CACHE_COMPRESSED_MATRIX: RefCell<Option<HashMap<Vec<String>, Arc<CompressedMatrix>>>> = const { RefCell::new(None) };
 }
 
 async fn init_gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
@@ -280,6 +282,40 @@ pub async fn use_memo_numeric_data<E>(
     let data = Arc::new(initializer().await?);
 
     USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
+        let mut map_ref = map.borrow_mut();
+
+        if map_ref.is_none() {
+            *map_ref = Some(HashMap::new());
+        }
+
+        map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
+    });
+
+    Ok(data)
+}
+
+pub async fn use_memo_compressed_matrix<E>(
+    initializer: impl AsyncFnOnce() -> Result<CompressedMatrix, E>,
+    keys: &[String],
+    cache_enabled: bool
+) -> Result<Arc<CompressedMatrix>, E> {
+    if !cache_enabled {
+        return Ok(Arc::new(initializer().await?));
+    }
+
+    let data_exists = USE_MEMO_CACHE_COMPRESSED_MATRIX.with(|map| {
+        map.borrow()
+            .as_ref()
+            .and_then(|m| m.get(keys).cloned())
+    });
+
+    if let Some(data) = data_exists {
+        return Ok(data);
+    }
+
+    let data = Arc::new(initializer().await?);
+
+    USE_MEMO_CACHE_COMPRESSED_MATRIX.with(|map| {
         let mut map_ref = map.borrow_mut();
 
         if map_ref.is_none() {

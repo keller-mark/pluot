@@ -8,14 +8,21 @@
 # ]
 # ///
 
+import numpy as np
 import scanpy as sc
 from os.path import join
+from scipy import sparse
 import matplotlib.pyplot as plt
 
 adata = sc.datasets.pbmc68k_reduced()
 
 # Run t-SNE to be able to demonstrate sc.pl.tsne.
 sc.tl.tsne(adata)
+
+# Sparse copies of X, with its small values zeroed, to test sparse matrix loading.
+X_thresholded = np.where(adata.X > 1, adata.X, 0)
+adata.layers["csr"] = sparse.csr_matrix(X_thresholded)
+adata.layers["csc"] = sparse.csc_matrix(X_thresholded)
 
 adata_path = join("out", "pbmc68k.adata.zarr")
 adata.write_zarr(adata_path)

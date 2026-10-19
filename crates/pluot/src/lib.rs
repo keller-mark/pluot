@@ -35,6 +35,8 @@ pub use pluot_core::render_traits::{FontWeight, FontStyle};
 pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder};
 pub use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskChannelSettings};
 pub use pluot_core::layers::heatmap_layer::{HeatmapLayerParams, HeatmapColormap, HeatmapQuantitativeColormapParams, HeatmapAxisDomains};
+pub use pluot_core::layers::heatmap_compressed_layer::{CompressedHeatmapLayerParams, HeatmapCsrLayerParams, HeatmapCscLayerParams};
+pub use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
 pub use pluot_core::compute::matrix_axis_extents::MatrixAxis;
 pub use pluot_core::numeric_data::NumericData;
 pub use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};

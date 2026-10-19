@@ -334,6 +334,30 @@ pub mod is_included {
     pub const BOOLEAN: &str = include_str!("wgsl_functions/get_is_included/boolean.wgsl");
 }
 
+/// `fn get_matrix_value(row: u32, col: u32) -> f32` snippets, one per matrix
+/// storage layout, shared by the heatmap layers and matrix compute shaders.
+/// Each assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod matrix_value {
+    /// Row-major dense values.
+    pub const DENSE: &str = include_str!("wgsl_functions/matrix_value/dense.wgsl");
+
+    /// CSR values. Depends on [`COMPRESSED_LOOKUP`].
+    pub const CSR: &str = include_str!("wgsl_functions/matrix_value/csr.wgsl");
+
+    /// CSC values. Depends on [`COMPRESSED_LOOKUP`].
+    pub const CSC: &str = include_str!("wgsl_functions/matrix_value/csc.wgsl");
+
+    /// `fn get_compressed_value(major, minor_position) -> f32`. Depends on one
+    /// of the `MINOR_SUBSET_*` snippets.
+    pub const COMPRESSED_LOOKUP: &str = include_str!("wgsl_functions/matrix_value/compressed_lookup.wgsl");
+
+    /// `fn get_minor_index(minor_position) -> u32` showing every minor index.
+    pub const MINOR_SUBSET_IDENTITY: &str = include_str!("wgsl_functions/matrix_value/minor_subset_identity.wgsl");
+
+    /// `fn get_minor_index(minor_position) -> u32` reading a subset texture.
+    pub const MINOR_SUBSET_TEXTURE: &str = include_str!("wgsl_functions/matrix_value/minor_subset_texture.wgsl");
+}
+
 /// `HeatmapLayer` cell-color snippets, each defining `fn get_cell_color(value:
 /// f32, row: u32, col: u32) -> vec3<f32>`, plus the quantitative domain lookups. Assembled at runtime by
 /// `crate::layers::heatmap_layer`.

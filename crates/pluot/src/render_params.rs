@@ -11,6 +11,7 @@ use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselin
 use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
 use pluot_core::layers::bitmask_layer::BitmaskLayerParams;
 use pluot_core::layers::heatmap_layer::HeatmapLayerParams;
+use pluot_core::layers::heatmap_compressed_layer::{HeatmapCscLayerParams, HeatmapCsrLayerParams};
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::Point3dLayerParams;
@@ -54,6 +55,8 @@ pub enum LayerParams {
     BitmapLayer(BitmapLayerParams),
     BitmaskLayer(BitmaskLayerParams),
     HeatmapLayer(HeatmapLayerParams),
+    HeatmapCsrLayer(HeatmapCsrLayerParams),
+    HeatmapCscLayer(HeatmapCscLayerParams),
 
     PolygonLayer(PolygonLayerParams),
     CurveLayer(CurveLayerParams),

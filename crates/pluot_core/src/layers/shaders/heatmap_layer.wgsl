@@ -37,8 +37,9 @@ struct VSOut {
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
-// This block's rows of the row-major matrix, wrapped into texture rows (see `flat_texel_coord`).
-@group(0) @binding(1) var matrix_data: texture_2d<{{matrix_data_dtype}}>;
+
+// `get_matrix_value(local_row, col)`, reading this block's matrix values.
+{{matrix_value}}
 
 {{colormap_fn_source}}
 
@@ -110,8 +111,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let local_row = min(u32(floor(along_rows * f32(u.block_num_rows))), u.block_num_rows - 1u);
     let col = min(u32(floor(along_cols * f32(u.num_cols))), u.num_cols - 1u);
 
-    let flat_idx = local_row * u.num_cols + col;
-    let value = f32(textureLoad(matrix_data, flat_texel_coord(flat_idx, textureDimensions(matrix_data).x), 0).x);
+    let value = get_matrix_value(local_row, col);
     if (value != value) {
         discard;
     }

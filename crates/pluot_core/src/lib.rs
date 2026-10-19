@@ -14,6 +14,7 @@ pub mod render_script;
 mod render_post;
 pub mod positioning;
 pub mod numeric_data;
+pub mod sparse_matrix;
 pub mod viewport;
 mod picking;
 mod brushing;

@@ -12,8 +12,14 @@ use pluot_core::render_traits::{AspectRatioMode, ExtentableLayer, PickableLayer,
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::zarr::StoreMap;
-use pluot_zarr::adata_io::{read_dataframe_index, read_dense_column_numeric};
-use pluot_zarr::heatmap_data::{AxisCriteria, HeatmapNormalization, IdentifierCriteriaParams, MatrixCacheMode};
+use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_numeric};
+use pluot_core::compute::matrix_axis_extents::{reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
+use pluot_core::numeric_data::NumericData;
+use pluot_zarr::adata_io::read_matrix_layout;
+use pluot_zarr::heatmap_data::{
+    load_matrix_block, load_matrix_block_axis_extents, load_matrix_block_extent, AxisCriteria, HeatmapNormalization,
+    IdentifierCriteriaParams, MatrixBlock, MatrixBlockKey, MatrixCacheMode,
+};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
 use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
@@ -79,6 +85,16 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
 
 /// Picks the center of every `stride`-th cell and checks it against the matrix read directly.
 async fn check_picks(layer: &AdataZarrHeatmapLayer, store: Arc<dyn AsyncReadableStorageTraits>, expected: &Expected, swap_axes: bool) {
+    check_picks_of(layer, store, "/X", expected, swap_axes).await;
+}
+
+async fn check_picks_of(
+    layer: &AdataZarrHeatmapLayer,
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    matrix_path: &str,
+    expected: &Expected,
+    swap_axes: bool,
+) {
     let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
     let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
     let (num_rows, num_cols) = (expected.obs_indices.len(), expected.var_names.len());
@@ -94,7 +110,7 @@ async fn check_picks(layer: &AdataZarrHeatmapLayer, store: Arc<dyn AsyncReadable
 
             let obs_index = expected.obs_indices[row];
             let var_index_of_col = var_index.iter().position(|name| *name == expected.var_names[col]).unwrap();
-            let column = read_dense_column_numeric(store.clone(), "/X", var_index_of_col as u64).await.unwrap();
+            let column = read_matrix_column_numeric(store.clone(), matrix_path, var_index_of_col as u64).await.unwrap();
             assert_eq!(info["obs_index"], obs_index.to_string());
             assert_eq!(info["obs_name"], obs_names[obs_index]);
             assert_eq!(info["var_name"], expected.var_names[col]);
@@ -181,4 +197,98 @@ async fn extent_is_the_filtered_cell_counts() {
     swapped.prepare(None).await;
     let extent = swapped.extent().unwrap();
     assert_eq!((extent.x, extent.y), ((0.0, num_obs), (0.0, num_var)));
+}
+
+// `layers/csr` and `layers/csc` hold the same thresholded copy of X, mostly zeros.
+#[tokio::test]
+async fn sparse_matrices_are_picked_with_their_matrix_values() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for layer_name in ["csr", "csc"] {
+        for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
+            for swap_axes in [false, true] {
+                for gpu in [None, Some(&gpu_context)] {
+                    let params = AdataZarrHeatmapLayerParams {
+                        layer: layer_name.to_string(),
+                        cache_mode: Some(cache_mode),
+                        swap_axes,
+                        ..params.clone()
+                    };
+                    let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+                    assert!(!layer.prepare(gpu).await.bailed_early, "{layer_name} {cache_mode:?}");
+                    check_picks_of(&layer, store.clone(), &format!("/layers/{layer_name}"), &expected, swap_axes).await;
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for layer_name in ["csr", "csc"] {
+        for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
+            for gpu in [None, Some(&gpu_context)] {
+                let params = AdataZarrHeatmapLayerParams { layer: layer_name.to_string(), normalization: Some(normalization), ..params.clone() };
+                let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+                assert!(!layer.prepare(gpu).await.bailed_early, "{layer_name} {normalization:?}");
+                check_picks_of(&layer, store.clone(), &format!("/layers/{layer_name}"), &expected, false).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn sparse_block_extents_match_the_dense_cells() {
+    let store = pbmc_store();
+    let (_, expected) = layer_params_and_expected(store.clone()).await;
+    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let rows: Vec<u32> = expected.obs_indices.iter().map(|&i| i as u32).collect();
+    let cols: Vec<u32> = expected.var_names.iter().map(|name| var_index.iter().position(|v| v == name).unwrap() as u32).collect();
+    let (num_rows, num_cols) = (rows.len(), cols.len());
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    let matrix_path = "/layers/csr";
+    let mut dense_cells = Vec::with_capacity(num_rows * num_cols);
+    let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(store.clone(), matrix_path, col as u64))).await;
+    let columns: Vec<_> = columns.into_iter().map(Result::unwrap).collect();
+    for &row in &rows {
+        dense_cells.extend(columns.iter().map(|column| column.get_f32(row as usize)));
+    }
+    let dense = NumericData::from(dense_cells);
+    let dense_extent = dense.as_f32().iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+
+    for matrix_path in ["/layers/csr", "/layers/csc"] {
+        let layout = read_matrix_layout(store.clone(), matrix_path).await;
+        for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
+            let key = MatrixBlockKey {
+                store_name: "pbmc",
+                matrix_path,
+                cache_mode,
+                obs_filtering: None,
+                var_filtering: None,
+                rows_per_block: num_rows,
+                block_index: 0,
+            };
+            let block = load_matrix_block(store.clone(), &key, layout, &rows, &cols, false).await.unwrap();
+            assert!(matches!(block, MatrixBlock::Compressed(..)), "{matrix_path} {cache_mode:?} stays sparse");
+            for gpu in [None, Some(&gpu_context)] {
+                let extent = load_matrix_block_extent(gpu, &key, &block, num_rows, num_cols, false).await;
+                assert_eq!(extent, dense_extent, "{matrix_path} {cache_mode:?}");
+                for axis in [HeatmapAxis::Rows, HeatmapAxis::Cols] {
+                    let sparse = load_matrix_block_axis_extents(gpu, &key, &block, num_rows, num_cols, axis, false).await;
+                    let reference = reduce_matrix_axis_extents(None, &dense, num_rows, num_cols, axis).await;
+                    assert_eq!(sparse, reference, "{matrix_path} {cache_mode:?} {axis:?} gpu={}", gpu.is_some());
+                }
+            }
+        }
+    }
 }
