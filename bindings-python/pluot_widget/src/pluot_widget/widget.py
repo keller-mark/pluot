@@ -45,37 +45,65 @@ else:
 
 
 class PluotWasmWidget(anywidget.AnyWidget):
-    """AnyWidget that renders a Pluot plot client-side using the WASM bindings."""
+    """AnyWidget that renders a Pluot plot client-side using the WASM bindings.
+
+    Every traitlet below is synced and described by its ``help``, so it can be
+    passed to the constructor as a keyword argument, and changing it from Python
+    updates the plot. Traitlets
+    that the plot updates in response to user interactions (``camera_view``,
+    ``extent``, ``click_result``, ``brush``, and ``brushing_result``) can be
+    observed via ``widget.observe``.
+    """
 
     _esm = _ESM
 
-    # Synced: layout and camera state.
-    width = traitlets.Int(800).tag(sync=True)
-    height = traitlets.Int(800).tag(sync=True)
-    # None fits the camera to x_lim/y_lim, after which the fitted matrix is
-    # synced back here. Setting it to None again refits.
+    # Layout and camera state.
+    width = traitlets.Int(800, help="Width of the plot, in pixels.").tag(sync=True)
+    height = traitlets.Int(800, help="Height of the plot, in pixels.").tag(sync=True)
     camera_view = traitlets.List(
         trait=traitlets.Float(),
         default_value=None,
         allow_none=True,
+        help=(
+            "The 4x4 camera matrix, flattened in column-major order. None fits the camera to x_lim/y_lim, "
+            "after which the fitted matrix is synced back here. Setting it to None again refits."
+        ),
     ).tag(sync=True)
-    # Data limits as [min, max]. An omitted axis is fit to the data extent.
-    # Changing either one refits the camera, overriding camera_view.
     x_lim = traitlets.List(
         trait=traitlets.Float(), minlen=2, maxlen=2, default_value=None, allow_none=True,
+        help=(
+            "X data limits as [min, max]. None fits this axis to the data extent. "
+            "Changing x_lim or y_lim refits the camera, overriding camera_view."
+        ),
     ).tag(sync=True)
     y_lim = traitlets.List(
         trait=traitlets.Float(), minlen=2, maxlen=2, default_value=None, allow_none=True,
+        help=(
+            "Y data limits as [min, max]. None fits this axis to the data extent. "
+            "Changing x_lim or y_lim refits the camera, overriding camera_view."
+        ),
     ).tag(sync=True)
-    # The ExtentResult from the most recent fit that needed the data extent.
-    extent = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
-    margin_top = traitlets.Float(0.0).tag(sync=True)
-    margin_right = traitlets.Float(0.0).tag(sync=True)
-    margin_bottom = traitlets.Float(0.0).tag(sync=True)
-    margin_left = traitlets.Float(0.0).tag(sync=True)
-    aspect_ratio_mode = traitlets.Unicode("Contain").tag(sync=True)
-    aspect_ratio_alignment_mode = traitlets.Unicode("Center").tag(sync=True)
-    view_mode = traitlets.Unicode("2d").tag(sync=True)
+    extent = traitlets.Dict(
+        default_value=None, allow_none=True,
+        help="The ExtentResult from the most recent fit that needed the data extent.",
+    ).tag(sync=True)
+    margin_top = traitlets.Float(0.0, help="Top margin around the plot area, in pixels, e.g., to make room for an axis.").tag(sync=True)
+    margin_right = traitlets.Float(0.0, help="Right margin around the plot area, in pixels, e.g., to make room for an axis.").tag(sync=True)
+    margin_bottom = traitlets.Float(0.0, help="Bottom margin around the plot area, in pixels, e.g., to make room for an axis.").tag(sync=True)
+    margin_left = traitlets.Float(0.0, help="Left margin around the plot area, in pixels, e.g., to make room for an axis.").tag(sync=True)
+    aspect_ratio_mode = traitlets.Unicode(
+        "Contain",
+        help=(
+            'How the aspect ratio of the plot area is reconciled with that of the data: "Contain" preserves it by showing '
+            'more data along the longer dimension, "Cover" preserves it by clipping data along the shorter '
+            'dimension, and "Ignore" stretches the data to fill the plot area.'
+        ),
+    ).tag(sync=True)
+    aspect_ratio_alignment_mode = traitlets.Unicode(
+        "Center",
+        help='Where the data is aligned within the plot area under "Contain" or "Cover": "Center", "Start", or "End".',
+    ).tag(sync=True)
+    view_mode = traitlets.Unicode("2d", help='"2d" or "3d".').tag(sync=True)
     camera_filter = traitlets.Enum(
         [
             "fixX",
@@ -87,69 +115,153 @@ class PluotWasmWidget(anywidget.AnyWidget):
         ],
         default_value=None,
         allow_none=True,
+        help=(
+            'Constrains camera interactions. "fixX"/"fixY" prevent zooming and panning along X/Y. '
+            '"fixXAxisAtYZero"/"fixYAxisAtXZero" keep data zero pinned to the edge of the plot area, '
+            "so that an axis stays at zero. The remaining options combine the two."
+        ),
     ).tag(sync=True)
-    debug_margins = traitlets.Bool(False).tag(sync=True)
-    # Any CSS color.
-    background_color = traitlets.Unicode(None, allow_none=True).tag(sync=True)
+    debug_margins = traitlets.Bool(False, help="Outlines the margin box and the plot area, to help debug layout.").tag(sync=True)
+    background_color = traitlets.Unicode(
+        None, allow_none=True, help="Any CSS color. None leaves the background transparent.",
+    ).tag(sync=True)
 
-    # Synced: picking.
-    enable_click = traitlets.Bool(False).tag(sync=True)
-    enable_tooltip = traitlets.Bool(False).tag(sync=True)
-    # The PickingResult of the most recent click, when enable_click is set.
-    click_result = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
+    # Picking.
+    enable_click = traitlets.Bool(False, help="Whether clicking runs a picking query and updates click_result.").tag(sync=True)
+    enable_tooltip = traitlets.Bool(False, help="Whether hovering runs a picking query and shows a tooltip.").tag(sync=True)
+    click_result = traitlets.Dict(
+        default_value=None, allow_none=True,
+        help="The PickingResult of the most recent click, when enable_click is set.",
+    ).tag(sync=True)
 
-    # Synced: brushing.
-    enable_brush_create = traitlets.Bool(False).tag(sync=True)
-    enable_brush_edit = traitlets.Bool(False).tag(sync=True)
-    enable_brush_clear = traitlets.Bool(False).tag(sync=True)
-    brush_mode = traitlets.Enum(["Rect", "Polygon", "RangeX", "RangeY"], default_value="Rect").tag(sync=True)
-    brush_units_mode_x = traitlets.Enum(["Pixels", "Data", "Normalized"], default_value="Data").tag(sync=True)
-    brush_units_mode_y = traitlets.Enum(["Pixels", "Data", "Normalized"], default_value="Data").tag(sync=True)
-    # None falls back to the corresponding plot margin.
-    brush_margin_top = traitlets.Float(None, allow_none=True).tag(sync=True)
-    brush_margin_right = traitlets.Float(None, allow_none=True).tag(sync=True)
-    brush_margin_bottom = traitlets.Float(None, allow_none=True).tag(sync=True)
-    brush_margin_left = traitlets.Float(None, allow_none=True).tag(sync=True)
-    brush_color = traitlets.Unicode("#3b6ea5").tag(sync=True)
-    # Milliseconds.
-    brush_delay = traitlets.Int(1500).tag(sync=True)
-    # Milliseconds.
-    maybe_brush_delay = traitlets.Int(250).tag(sync=True)
-    # The BrushState, updated when the user finishes drawing/editing or clears it.
-    # Can also be set from Python to draw a brush; None means nothing is brushed.
-    brush = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
-    # The BrushingResult for `brush`. Only recomputed for user interactions, not
-    # when `brush` is set from Python.
-    brushing_result = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
+    # Brushing.
+    enable_brush_create = traitlets.Bool(
+        False, help="Whether the user can draw a brush by long-clicking and then dragging.",
+    ).tag(sync=True)
+    enable_brush_edit = traitlets.Bool(
+        False, help="Whether the user can modify the brush by dragging its vertices or sides.",
+    ).tag(sync=True)
+    enable_brush_clear = traitlets.Bool(False, help="Whether hovering the brush shows a button that clears it.").tag(sync=True)
+    brush_mode = traitlets.Enum(
+        ["Rect", "Polygon", "RangeX", "RangeY"], default_value="Rect",
+        help="The shape of brush that the user draws.",
+    ).tag(sync=True)
+    brush_units_mode_x = traitlets.Enum(
+        ["Pixels", "Data", "Normalized"], default_value="Data",
+        help='Units of the brush X coordinates. With "Data", the brush is tied to the data and moves on screen as the camera changes.',
+    ).tag(sync=True)
+    brush_units_mode_y = traitlets.Enum(
+        ["Pixels", "Data", "Normalized"], default_value="Data",
+        help='Units of the brush Y coordinates. With "Data", the brush is tied to the data and moves on screen as the camera changes.',
+    ).tag(sync=True)
+    brush_margin_top = traitlets.Float(
+        None, allow_none=True,
+        help='Top margin of the brushable region, in pixels. None falls back to margin_top. Ignored when brush_units_mode_y is "Data".',
+    ).tag(sync=True)
+    brush_margin_right = traitlets.Float(
+        None, allow_none=True,
+        help='Right margin of the brushable region, in pixels. None falls back to margin_right. Ignored when brush_units_mode_x is "Data".',
+    ).tag(sync=True)
+    brush_margin_bottom = traitlets.Float(
+        None, allow_none=True,
+        help='Bottom margin of the brushable region, in pixels. None falls back to margin_bottom. Ignored when brush_units_mode_y is "Data".',
+    ).tag(sync=True)
+    brush_margin_left = traitlets.Float(
+        None, allow_none=True,
+        help='Left margin of the brushable region, in pixels. None falls back to margin_left. Ignored when brush_units_mode_x is "Data".',
+    ).tag(sync=True)
+    brush_color = traitlets.Unicode(
+        "#3b6ea5", help="CSS color of the brush overlay. The fill uses it at reduced opacity.",
+    ).tag(sync=True)
+    brush_delay = traitlets.Int(
+        1500, help="How long, in milliseconds, the user must long-click to start drawing a brush.",
+    ).tag(sync=True)
+    maybe_brush_delay = traitlets.Int(
+        250, help="How long, in milliseconds, the user must click-and-hold before a progress indicator for brush_delay appears.",
+    ).tag(sync=True)
+    brush = traitlets.Dict(
+        default_value=None, allow_none=True,
+        help=(
+            "The BrushState, updated when the user finishes drawing or editing the brush, or clears it. "
+            "Can also be set from Python to draw a brush. None means nothing is brushed."
+        ),
+    ).tag(sync=True)
+    brushing_result = traitlets.Dict(
+        default_value=None, allow_none=True,
+        help="The BrushingResult for brush. Only recomputed for user interactions, not when brush is set from Python.",
+    ).tag(sync=True)
 
-    # Synced: plot config forwarded to render_wasm.
-    plot_id = traitlets.Unicode("plot").tag(sync=True)
-    plot_type = traitlets.Unicode("LayeredPlot").tag(sync=True)
-    store_name = traitlets.Unicode("").tag(sync=True)
-    # The serializable stores metadata dict.
-    stores_metadata = traitlets.Dict(default_value={}).tag(sync=True)
-    plot_params = traitlets.Dict(default_value={}).tag(sync=True)
-    format = traitlets.Unicode("Raster").tag(sync=True)
-    batch_zarr_gets = traitlets.Bool(False).tag(sync=True)
-    # Milliseconds.
-    min_timeout = traitlets.Int(300).tag(sync=True)
-    # Milliseconds.
-    max_timeout = traitlets.Int(5000).tag(sync=True)
-    max_bailed_early_retries = traitlets.Int(300).tag(sync=True)
-    allow_simultaneous_renders = traitlets.Bool(True).tag(sync=True)
-    # Milliseconds.
-    camera_sync_interval = traitlets.Int(250).tag(sync=True)
-    # The following are only read when the widget is rendered.
-    # Loads development builds of React, for React dev warnings. A page shares one React
-    # instance, so the first widget rendered on the page decides this.
-    js_dev_mode = traitlets.Bool(False).tag(sync=True)
-    # Version of the @pluot/react NPM package to load. Empty uses the version the widget was built against.
-    js_package_version = traitlets.Unicode("").tag(sync=True)
-    # URL of an ES module build of @pluot/react (e.g., a local `pnpm run bundle` output)
-    # to load instead of the published version. Takes precedence over js_package_version.
-    custom_js_url = traitlets.Unicode("").tag(sync=True)
+    # Plot config forwarded to render_wasm.
+    plot_id = traitlets.Unicode(
+        "plot", help="Plot ID, unique per page, used to key caches of intermediate values.",
+    ).tag(sync=True)
+    plot_type = traitlets.Unicode("LayeredPlot", help="The type of plot that plot_params describes.").tag(sync=True)
+    store_name = traitlets.Unicode("", help="The name that the constructor's store is registered under.").tag(sync=True)
+    stores_metadata = traitlets.Dict(
+        default_value={},
+        help="Portable ZarrStoreInfo metadata for each registered store, keyed by store name. Derived from the constructor's stores/store.",
+    ).tag(sync=True)
+    plot_params = traitlets.Dict(
+        default_value={}, help='The plot parameters, e.g., {"layers": [...]} for a "LayeredPlot".',
+    ).tag(sync=True)
+    format = traitlets.Unicode(
+        "Raster",
+        help='"Raster" renders to a canvas via WebGPU. "Vector" renders to SVG, which does not require a GPU.',
+    ).tag(sync=True)
+    batch_zarr_gets = traitlets.Bool(
+        False, help="Whether zarr reads requested in the same animation frame are sent to the kernel as a single message.",
+    ).tag(sync=True)
+    min_timeout = traitlets.Int(
+        300, help="Lower bound, in milliseconds, of the exponential backoff between retries of renders that bailed early.",
+    ).tag(sync=True)
+    max_timeout = traitlets.Int(
+        5000, help="Upper bound, in milliseconds, of the exponential backoff between retries of renders that bailed early.",
+    ).tag(sync=True)
+    max_bailed_early_retries = traitlets.Int(
+        300, help="Number of times a render that bailed early may retry before giving up.",
+    ).tag(sync=True)
+    allow_simultaneous_renders = traitlets.Bool(
+        True, help="Whether a new render may start while a previous one is still in flight.",
+    ).tag(sync=True)
+    camera_sync_interval = traitlets.Int(
+        250, help="Minimum time, in milliseconds, between syncs of camera_view back to the kernel during camera interactions.",
+    ).tag(sync=True)
+
+    # JS dependency loading. Only read when the widget is rendered.
+    js_dev_mode = traitlets.Bool(
+        False,
+        help=(
+            "Whether to load development builds of React, for React dev warnings. A page shares "
+            "one React instance, so the first widget rendered on the page decides this."
+        ),
+    ).tag(sync=True)
+    js_package_version = traitlets.Unicode(
+        "", help="Version of the @pluot/react NPM package to load. Empty uses the version the widget was built against.",
+    ).tag(sync=True)
+    custom_js_url = traitlets.Unicode(
+        "",
+        help=(
+            "URL of an ES module build of @pluot/react (e.g., a local `pnpm run bundle` output) "
+            "to load instead of the published version. Takes precedence over js_package_version."
+        ),
+    ).tag(sync=True)
 
     def __init__(self, stores: dict | None = None, store: Store | None = None, **kwargs: Any) -> None:
+        """Create the widget and register the zarr stores that its layers read from.
+
+        Parameters
+        ----------
+        stores : dict of str to zarr.abc.store.Store, optional
+            Zarr stores keyed by store name.
+        store : zarr.abc.store.Store, optional
+            A single zarr store, registered in addition to ``stores``. It is
+            registered under ``store_name`` if given, and otherwise under a
+            generated name, which is then available as ``widget.store_name``.
+        **kwargs
+            Initial values for any of the traitlets defined on the class,
+            e.g., ``width``, ``height``, or ``plot_params``. Use help(PluotWasmWidget)
+            to list the available kwargs and their descriptions.
+        """
         self._stores: dict = dict(stores or {})
         if store is not None:
             store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
@@ -171,6 +283,20 @@ class PluotWasmWidget(anywidget.AnyWidget):
         self.on_msg(self._handle_msg)
 
     def add_store(self, name: str, store: Any) -> None:
+        """Register another zarr store for the kernel to serve reads from.
+
+        Parameters
+        ----------
+        name : str
+            The store name, which layer parameters can use to refer to it.
+        store : zarr.abc.store.Store
+            The zarr store.
+
+        Notes
+        -----
+        This does not update ``stores_metadata``, so the browser only reads from
+        this store if it already knows the name, e.g., from the constructor.
+        """
         self._stores[name] = store
 
     def _handle_msg(self, *args) -> None:
