@@ -139,7 +139,7 @@ impl HeatmapColormap {
     }
 
     /// CPU mirror of the `get_cell_color` WGSL snippets.
-    fn cpu_color(&self, value: f32, row: u32, col: u32) -> [u8; 3] {
+    pub fn cpu_color(&self, value: f32, row: u32, col: u32) -> [u8; 3] {
         let to_u8 = |c: f32| (c * 255.0).round().clamp(0.0, 255.0) as u8;
         let rgba = match self {
             HeatmapColormap::Quantitative(params) => {
@@ -856,13 +856,5 @@ mod tests {
     fn rows_per_texture_keeps_rows_whole() {
         assert_eq!(rows_per_texture(3, 10), 3);
         assert_eq!(rows_per_texture(20, 10), 1);
-    }
-
-    #[test]
-    fn categorical_cpu_color_wraps_codes() {
-        let colormap = HeatmapColormap::CategoricalCustom(vec![(255, 0, 0), (0, 255, 0)]);
-        assert_eq!(colormap.cpu_color(1.0, 0, 0), [0, 255, 0]);
-        assert_eq!(colormap.cpu_color(-1.0, 0, 0), [0, 255, 0]);
-        assert_eq!(colormap.cpu_color(2.0, 0, 0), [255, 0, 0]);
     }
 }

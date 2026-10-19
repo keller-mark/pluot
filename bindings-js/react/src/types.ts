@@ -372,6 +372,12 @@ export type PluotProps = {
    */
   limitExtent?: boolean;
 
+  /**
+   * Whether to refit the camera when `aspectRatioMode` or `aspectRatioAlignmentMode`
+   * changes, so that the same data bounds remain visible. Defaults to true.
+   */
+  refitCameraOnAspectRatioChange?: boolean;
+
   /** Whether clicking should run a picking query and call `onClick`. */
   enableClick?: boolean;
   /** Whether hovering should run a picking query and show a tooltip via `onHover`. */

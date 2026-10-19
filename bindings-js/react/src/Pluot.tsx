@@ -185,6 +185,7 @@ function PluotInner(props: PluotProps) {
     setCameraMatrix: setCameraMatrixProp = null,
     cameraFilter: cameraFilterProp = null,
     limitExtent = false,
+    refitCameraOnAspectRatioChange = true,
     enableExtentQuery = true,
     enableClick = false,
     enableTooltip = false,
@@ -476,7 +477,7 @@ function PluotInner(props: PluotProps) {
   const refitCameraForAspectRatioSettings = useEffectEvent(() => {
     const prev = prevAspectRatioSettingsRef.current;
     prevAspectRatioSettingsRef.current = { aspectRatioMode, aspectRatioAlignmentMode };
-    if (!cameraMatrix || !isCameraMatrixStateful || viewMode !== "2d") {
+    if (!refitCameraOnAspectRatioChange || !cameraMatrix || !isCameraMatrixStateful || viewMode !== "2d") {
       return;
     }
     const margins = { marginTop, marginRight, marginBottom, marginLeft };
