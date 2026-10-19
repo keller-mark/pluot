@@ -295,7 +295,8 @@ export type CameraFilterString = "fixX"
   | "fixXAxisAtYZero"
   | "fixYAxisAtXZero"
   | "fixXAndFixXAxisAtYZero"
-  | "fixYAndFixYAxisAtXZero";
+  | "fixYAndFixYAxisAtXZero"
+  | "zoomToSquare";
 
 
 // === Component props ===
@@ -365,7 +366,10 @@ export type PluotProps = {
 
   cameraFilter?: CameraFilterString | CameraFilterFunction | null;
 
-  // TODO: If true, then use the limit-extent camera filter function as an additional filter applied to any provided cameraFilter (or use this as the only filter if no cameraFilter was provided/specified).
+  /**
+   * Prevent zooming or panning beyond the extent returned by `extent_wasm`.
+   * Applied after `cameraFilter`.
+   */
   limitExtent?: boolean;
 
   /** Whether clicking should run a picking query and call `onClick`. */

@@ -53,6 +53,7 @@ export function PluotWrapper(props) {
     plotSpecificOptions = null,
     cameraMatrix: cameraMatrixProp = null,
     cameraFilter = null,
+    limitExtent = false,
     enableClick = true,
     enableTooltip = false,
     enableCamera = true,
@@ -334,6 +335,7 @@ export function PluotWrapper(props) {
           cameraMatrix={enableCamera && cameraMatrix ? cameraMatrix : null}
           setCameraMatrix={setCameraMatrix}
           cameraFilter={cameraFilter}
+          limitExtent={limitExtent}
           enableClick={enableClick}
           enableTooltip={enableTooltip}
           backgroundColor={"#fff"}
