@@ -139,6 +139,15 @@ class PluotWasmWidget(anywidget.AnyWidget):
     allow_simultaneous_renders = traitlets.Bool(True).tag(sync=True)
     # Milliseconds.
     camera_sync_interval = traitlets.Int(250).tag(sync=True)
+    # The following are only read when the widget is rendered.
+    # Loads development builds of React, for React dev warnings. A page shares one React
+    # instance, so the first widget rendered on the page decides this.
+    js_dev_mode = traitlets.Bool(False).tag(sync=True)
+    # Version of the @pluot/react NPM package to load. Empty uses the version the widget was built against.
+    js_package_version = traitlets.Unicode("").tag(sync=True)
+    # URL of an ES module build of @pluot/react (e.g., a local `pnpm run bundle` output)
+    # to load instead of the published version. Takes precedence over js_package_version.
+    custom_js_url = traitlets.Unicode("").tag(sync=True)
 
     def __init__(self, stores: dict | None = None, store: Store | None = None, **kwargs: Any) -> None:
         self._stores: dict = dict(stores or {})

@@ -1,7 +1,5 @@
-import React, { useMemo } from "react";
-import { createRoot } from "react-dom/client";
 import type { AnyModel, Render } from "@anywidget/types";
-import { Pluot, setStoreByName } from "@pluot/react";
+import { loadDeps, React, ReactDOMClient, type PluotReactModule } from "./deps";
 import {
   createKernelStore,
   createZarrGetter,
@@ -13,7 +11,8 @@ import {
   type WidgetModel,
 } from "./hooks";
 
-function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
+function PluotWidget({ model, pluotReact }: { model: AnyModel<WidgetModel>; pluotReact: PluotReactModule }) {
+  const { Pluot, setStoreByName } = pluotReact;
   const width = useModelValue(model, "width");
   const height = useModelValue(model, "height");
   const marginTop = useModelValue(model, "margin_top");
@@ -51,11 +50,11 @@ function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
   const brushDelay = useModelValue(model, "brush_delay");
   const maybeBrushDelay = useModelValue(model, "maybe_brush_delay");
 
-  const zarrGet = useMemo(() => createZarrGetter(model), [model]);
+  const zarrGet = React.useMemo(() => createZarrGetter(model), [model]);
 
   // Registered during render rather than in an effect, so that the kernel-backed
   // stores exist before <Pluot/> issues its first read.
-  useMemo(() => {
+  React.useMemo(() => {
     for (const storeName of Object.keys(storesMetadata ?? {})) {
       setStoreByName(storeName, createKernelStore(zarrGet, storeName));
     }
@@ -66,61 +65,64 @@ function PluotWidget({ model }: { model: AnyModel<WidgetModel> }) {
   const onClick = useClickResult(model);
   const { brush, onBrush, onBrushEnd, onBrushClear } = useModelBrush(model);
 
-  return (
-    <Pluot
-      width={width}
-      height={height}
-      plotId={plotId}
-      plotType={plotType}
-      plotParams={plotParams}
-      stores={storesMetadata}
-      registerStores={false}
-      viewMode={viewMode}
-      format={format}
-      marginTop={marginTop}
-      marginRight={marginRight}
-      marginBottom={marginBottom}
-      marginLeft={marginLeft}
-      aspectRatioMode={aspectRatioMode}
-      aspectRatioAlignmentMode={aspectRatioAlignmentMode}
-      cameraMatrix={cameraMatrix}
-      setCameraMatrix={setCameraMatrix}
-      extentKey={extentKey}
-      onExtent={onExtent}
-      cameraFilter={cameraFilter}
-      debugMargins={debugMargins}
-      backgroundColor={backgroundColor ?? undefined}
-      minTimeout={minTimeout}
-      maxTimeout={maxTimeout}
-      maxBailedEarlyRetries={maxBailedEarlyRetries}
-      allowSimultaneousRenders={allowSimultaneousRenders}
-      enableClick={enableClick}
-      onClick={onClick}
-      enableTooltip={enableTooltip}
-      enableBrushCreate={enableBrushCreate}
-      enableBrushEdit={enableBrushEdit}
-      enableBrushClear={enableBrushClear}
-      brushMode={brushMode}
-      brushUnitsModeX={brushUnitsModeX}
-      brushUnitsModeY={brushUnitsModeY}
-      brushMarginTop={brushMarginTop ?? undefined}
-      brushMarginRight={brushMarginRight ?? undefined}
-      brushMarginBottom={brushMarginBottom ?? undefined}
-      brushMarginLeft={brushMarginLeft ?? undefined}
-      brushColor={brushColor}
-      brushDelay={brushDelay}
-      maybeBrushDelay={maybeBrushDelay}
-      brush={brush}
-      onBrush={onBrush}
-      onBrushEnd={onBrushEnd}
-      onBrushClear={onBrushClear}
-    />
-  );
+  return React.createElement(Pluot, {
+    width,
+    height,
+    plotId,
+    plotType,
+    plotParams,
+    stores: storesMetadata,
+    registerStores: false,
+    viewMode,
+    format,
+    marginTop,
+    marginRight,
+    marginBottom,
+    marginLeft,
+    aspectRatioMode,
+    aspectRatioAlignmentMode,
+    cameraMatrix,
+    setCameraMatrix,
+    extentKey,
+    onExtent,
+    cameraFilter,
+    debugMargins,
+    backgroundColor: backgroundColor ?? undefined,
+    minTimeout,
+    maxTimeout,
+    maxBailedEarlyRetries,
+    allowSimultaneousRenders,
+    enableClick,
+    onClick,
+    enableTooltip,
+    enableBrushCreate,
+    enableBrushEdit,
+    enableBrushClear,
+    brushMode,
+    brushUnitsModeX,
+    brushUnitsModeY,
+    brushMarginTop: brushMarginTop ?? undefined,
+    brushMarginRight: brushMarginRight ?? undefined,
+    brushMarginBottom: brushMarginBottom ?? undefined,
+    brushMarginLeft: brushMarginLeft ?? undefined,
+    brushColor,
+    brushDelay,
+    maybeBrushDelay,
+    brush,
+    onBrush,
+    onBrushEnd,
+    onBrushClear,
+  });
 }
 
-const render: Render<WidgetModel> = ({ model, el }) => {
-  const root = createRoot(el);
-  root.render(<PluotWidget model={model} />);
+const render: Render<WidgetModel> = async ({ model, el }) => {
+  const pluotReact = await loadDeps({
+    jsDevMode: model.get("js_dev_mode"),
+    jsPackageVersion: model.get("js_package_version"),
+    customJsUrl: model.get("custom_js_url"),
+  });
+  const root = ReactDOMClient.createRoot(el);
+  root.render(React.createElement(PluotWidget, { model, pluotReact }));
   return () => root.unmount();
 };
 

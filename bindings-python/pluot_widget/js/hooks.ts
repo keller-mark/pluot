@@ -1,28 +1,30 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AnyModel } from "@anywidget/types";
 import * as uuid from "@lukeed/uuid";
-import {
-  NO_BRUSH,
+import type {
   setStoreByName,
-  type AspectRatioAlignmentMode,
-  type AspectRatioMode,
-  type BrushingResult,
-  type BrushMode,
-  type BrushResult,
-  type BrushState,
-  type BrushUnitsMode,
-  type CameraMatrix,
-  type CameraOrExtent,
-  type ExtentResult,
-  type GraphicsFormat,
-  type NoBrush,
-  type PickingResult,
-  type PlotParams,
-  type PlotType,
-  type PluotProps,
-  type StoresInput,
-  type ViewMode,
+  AspectRatioAlignmentMode,
+  AspectRatioMode,
+  BrushingResult,
+  BrushMode,
+  BrushResult,
+  BrushState,
+  BrushUnitsMode,
+  CameraMatrix,
+  CameraOrExtent,
+  ExtentResult,
+  GraphicsFormat,
+  NoBrush,
+  PickingResult,
+  PlotParams,
+  PlotType,
+  PluotProps,
+  StoresInput,
+  ViewMode,
 } from "@pluot/react";
+import { React } from "./deps";
+
+// @pluot/react is only loaded at render time, since its version and URL are widget options.
+const NO_BRUSH: NoBrush = "NoBrush";
 
 type AsyncReadable = Parameters<typeof setStoreByName>[1];
 type RangeQuery = Parameters<NonNullable<AsyncReadable["getRange"]>>[1];
@@ -81,6 +83,9 @@ export type WidgetModel = {
   allow_simultaneous_renders: boolean;
   // Milliseconds.
   camera_sync_interval: number;
+  js_dev_mode: boolean;
+  js_package_version: string;
+  custom_js_url: string;
 };
 
 type PendingGet = {
@@ -179,15 +184,15 @@ export function createKernelStore(zarrGet: ReturnType<typeof createZarrGetter>, 
 }
 
 export function useModelValue<K extends keyof WidgetModel>(model: AnyModel<WidgetModel>, key: K): WidgetModel[K] {
-  const subscribe = useCallback((onChange: () => void) => {
+  const subscribe = React.useCallback((onChange: () => void) => {
     model.on(`change:${key}`, onChange);
     return () => model.off(`change:${key}`, onChange);
   }, [model, key]);
-  return useSyncExternalStore(subscribe, () => model.get(key));
+  return React.useSyncExternalStore(subscribe, () => model.get(key));
 }
 
 export function useClickResult(model: AnyModel<WidgetModel>): (result: PickingResult) => void {
-  return useCallback((result: PickingResult) => {
+  return React.useCallback((result: PickingResult) => {
     model.set("click_result", result);
     model.save_changes();
   }, [model]);
@@ -203,9 +208,9 @@ type ModelBrush = {
 // The brush is always controlled, so that a brush set from the kernel is drawn.
 // Only completed brushes are synced, since mid-drag states would flood the kernel.
 export function useModelBrush(model: AnyModel<WidgetModel>): ModelBrush {
-  const [brush, setBrush] = useState<BrushState | NoBrush>(() => model.get("brush") ?? NO_BRUSH);
+  const [brush, setBrush] = React.useState<BrushState | NoBrush>(() => model.get("brush") ?? NO_BRUSH);
 
-  useEffect(() => {
+  React.useEffect(() => {
     function onModelBrushChange() {
       setBrush(model.get("brush") ?? NO_BRUSH);
     }
@@ -213,12 +218,12 @@ export function useModelBrush(model: AnyModel<WidgetModel>): ModelBrush {
     return () => model.off("change:brush", onModelBrushChange);
   }, [model]);
 
-  const onBrush = useCallback((state: BrushState) => {
+  const onBrush = React.useCallback((state: BrushState) => {
     setBrush(state);
     return {};
   }, []);
 
-  const onBrushEnd = useCallback((state: BrushState, brushingResult: BrushingResult | undefined) => {
+  const onBrushEnd = React.useCallback((state: BrushState, brushingResult: BrushingResult | undefined) => {
     setBrush(state);
     model.set("brush", state);
     model.set("brushing_result", brushingResult ?? null);
@@ -226,7 +231,7 @@ export function useModelBrush(model: AnyModel<WidgetModel>): ModelBrush {
     return {};
   }, [model]);
 
-  const onBrushClear = useCallback(() => {
+  const onBrushClear = React.useCallback(() => {
     setBrush(NO_BRUSH);
     model.set("brush", null);
     model.set("brushing_result", null);
@@ -251,16 +256,16 @@ function getLimits(model: AnyModel<WidgetModel>): CameraOrExtent {
 // camera to the limits, using the data extent for any omitted axis. The fitted
 // matrix is then synced back to camera_view.
 export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): ModelCamera {
-  const [cameraMatrix, setLocalCameraMatrix] = useState<CameraOrExtent>(() => {
+  const [cameraMatrix, setLocalCameraMatrix] = React.useState<CameraOrExtent>(() => {
     const cameraView = model.get("camera_view");
     return cameraView === null ? getLimits(model) : Float32Array.from(cameraView);
   });
-  const [fitCount, setFitCount] = useState(0);
-  const pendingRef = useRef<CameraMatrix | null>(null);
-  const lastSentRef = useRef<number[] | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fitCount, setFitCount] = React.useState(0);
+  const pendingRef = React.useRef<CameraMatrix | null>(null);
+  const lastSentRef = React.useRef<number[] | null>(null);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     function refit() {
       pendingRef.current = null;
       setLocalCameraMatrix(getLimits(model));
@@ -288,7 +293,7 @@ export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): ModelCam
     };
   }, [model]);
 
-  const setCameraMatrix = useCallback((next: CameraMatrix) => {
+  const setCameraMatrix = React.useCallback((next: CameraMatrix) => {
     setLocalCameraMatrix(next);
     pendingRef.current = next;
 
@@ -312,7 +317,7 @@ export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): ModelCam
 }
 
 export function useExtentResult(model: AnyModel<WidgetModel>): (result: ExtentResult) => void {
-  return useCallback((result: ExtentResult) => {
+  return React.useCallback((result: ExtentResult) => {
     model.set("extent", result);
     model.save_changes();
   }, [model]);

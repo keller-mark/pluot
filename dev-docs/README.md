@@ -171,16 +171,23 @@ uv run twine upload target/wheels/*
 Notebooks exported with `marimo export html-wasm` install their dependencies in the browser via micropip, so by default `pluot_widget` comes from PyPI rather than from the local checkout.
 To test local changes, build a wheel into a `public/` folder next to the notebook (marimo copies this folder into the export) and point the notebook's script metadata at it.
 
-```sh
-# 1. Build the JS packages (the widget bundles @pluot/react from its tsc output).
-#    Use NODE_ENV=development to keep React dev warnings and tilg (useTilg) logging, which are no-ops in production builds.
-pnpm run build-tsc
-NODE_ENV=development pnpm -C bindings-python/pluot_widget run build
+The widget's JS bundle does not include `react`, `react-dom`, or `@pluot/react`; it loads them from CDNs at runtime (see `bindings-python/pluot_widget/js/deps.ts`).
+By default this is the published `@pluot/react` version matching the one in `node_modules`, so testing local `@pluot/react` changes also requires bundling it and passing its URL via `custom_js_url`.
 
-# 2. Build the wheel into the notebook's public/ folder (its contents are git-ignored).
-#    The hatch build hook skips the JS build when static/widget.js already exists, so step 1 determines which bundle is packaged.
+```sh
+# 1. Build the widget JS and the wheel into the notebook's public/ folder (its contents are git-ignored).
+#    The hatch build hook skips the JS build when static/widget.js already exists, so rebuild it explicitly after changing js/.
+pnpm -C bindings-python/pluot_widget run build
 rm -rf bindings-python/notebooks/public
 uv build bindings-python/pluot_widget --wheel -o bindings-python/notebooks/public
+
+# 2. (Only to test local @pluot/react changes) Bundle @pluot/react and copy it next to the wheel.
+#    The bundle keeps react external, so it shares the widget's React instance.
+pnpm run build-tsc
+pnpm -C bindings-js/react run bundle
+mkdir -p bindings-python/notebooks/public/pluot-react
+cp bindings-js/react/dist/*.js bindings-python/notebooks/public/pluot-react/
+
 http-server --cors='*' --port 8001 -c-1 ./bindings-python/notebooks
 ```
 
@@ -192,6 +199,15 @@ Then, in the notebook's PEP 723 script metadata, replace the `pluot_widget` depe
 #     "pluot_widget @ http://localhost:8001/public/pluot_widget-0.1.23-py3-none-any.whl"
 # ]
 # ///
+```
+
+If you did step 2, also pass the bundle's URL to the widget:
+
+```python
+PluotWasmWidget(
+    ...,
+    custom_js_url="http://localhost:8001/public/pluot-react/index.js",
+)
 ```
 
 In a separate terminal, while the above http-server is still serving the notebooks directory:
@@ -208,4 +224,23 @@ Notes:
 - Rebuilt wheels keep the same version number, so hard-refresh the browser after each rebuild.
 - Python-side logs written to `sys.__stderr__` appear in the browser console, since the Pyodide kernel runs in a web worker.
 - Pyodide cannot start threads, so code paths that rely on zarr's `sync()` fail in this context even though they work in regular marimo.
-- Revert the dependency to plain `pluot_widget` before committing the notebook.
+- React is loaded as a production build from the CDN by default. Pass `js_dev_mode=True` to the widget to load development builds for React dev warnings.
+- Revert the dependency to plain `pluot_widget` and remove `custom_js_url` before committing the notebook.
+
+## Memory usage of PluotWasmWidget in marimo-wasm notebooks
+
+**Issue:** rendering the widget in a marimo-wasm notebook appeared to grow browser memory by ~2 GB.
+
+**Profiling:** exported notebook variants (`marimo export html-wasm`) were loaded in headless Chrome and measured with `performance.measureUserAgentSpecificMemory()`. The page was served with COOP/COEP headers to enable that API, which also counts the Pyodide worker. Process RSS was too noisy to rely on (1.2–2.7 GB across identical runs).
+
+**Root cause:** the Python dependencies are not the problem. The cost comes from passing the 16.6 MB `_esm` bundle (WASM inlined as base64) through Python:
+
+- A few non-ASCII characters make CPython store it at 2 bytes/char (31.7 MB).
+- marimo then encodes it, hashes it, and wraps it in a base64 `data:` URL, since virtual files are unsupported under Pyodide.
+- Pyodide's heap grows to hold these copies and never shrinks.
+
+marimo/anywidget passes an http(s) `_esm` URL through as-is, which avoids the need to store large JS strings on the Python side.
+
+**Potential solutions:** 
+- Publish the full widget ESM to NPM and load via a CDN URL
+- Load only `react`, `react-dom` and `@pluot/react` via CDN URL
