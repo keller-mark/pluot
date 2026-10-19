@@ -443,6 +443,14 @@ function PluotInner(props: PluotProps) {
     ? setCameraMatrixProp
     : setUncontrolledCameraMatrix;
 
+  // A controlled parent that passed xLim/yLim (or nothing) has no other way to
+  // learn the camera matrix that was resolved from them.
+  useEffect(() => {
+    if (isControlledCamera && !hasFullCameraMatrixProp && filteredInitialCameraMatrix) {
+      setCameraMatrixProp(filteredInitialCameraMatrix);
+    }
+  }, [filteredInitialCameraMatrix]);
+
   // If this is false, then we cannot render anything, as we are still awaiting the extent_wasm call.
   const hasCameraMatrix = cameraMatrix !== undefined;
 

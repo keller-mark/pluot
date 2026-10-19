@@ -52,10 +52,23 @@ class PluotWasmWidget(anywidget.AnyWidget):
     # Synced: layout and camera state.
     width = traitlets.Int(800).tag(sync=True)
     height = traitlets.Int(800).tag(sync=True)
+    # None fits the camera to x_lim/y_lim, after which the fitted matrix is
+    # synced back here. Setting it to None again refits.
     camera_view = traitlets.List(
         trait=traitlets.Float(),
-        default_value=DEFAULT_CAMERA_MATRIX_2D,
+        default_value=None,
+        allow_none=True,
     ).tag(sync=True)
+    # Data limits as [min, max]. An omitted axis is fit to the data extent.
+    # Changing either one refits the camera, overriding camera_view.
+    x_lim = traitlets.List(
+        trait=traitlets.Float(), minlen=2, maxlen=2, default_value=None, allow_none=True,
+    ).tag(sync=True)
+    y_lim = traitlets.List(
+        trait=traitlets.Float(), minlen=2, maxlen=2, default_value=None, allow_none=True,
+    ).tag(sync=True)
+    # The ExtentResult from the most recent fit that needed the data extent.
+    extent = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
     margin_top = traitlets.Float(0.0).tag(sync=True)
     margin_right = traitlets.Float(0.0).tag(sync=True)
     margin_bottom = traitlets.Float(0.0).tag(sync=True)
@@ -63,6 +76,51 @@ class PluotWasmWidget(anywidget.AnyWidget):
     aspect_ratio_mode = traitlets.Unicode("Contain").tag(sync=True)
     aspect_ratio_alignment_mode = traitlets.Unicode("Center").tag(sync=True)
     view_mode = traitlets.Unicode("2d").tag(sync=True)
+    camera_filter = traitlets.Enum(
+        [
+            "fixX",
+            "fixY",
+            "fixXAxisAtYZero",
+            "fixYAxisAtXZero",
+            "fixXAndFixXAxisAtYZero",
+            "fixYAndFixYAxisAtXZero",
+        ],
+        default_value=None,
+        allow_none=True,
+    ).tag(sync=True)
+    debug_margins = traitlets.Bool(False).tag(sync=True)
+    # Any CSS color.
+    background_color = traitlets.Unicode(None, allow_none=True).tag(sync=True)
+
+    # Synced: picking.
+    enable_click = traitlets.Bool(False).tag(sync=True)
+    enable_tooltip = traitlets.Bool(False).tag(sync=True)
+    # The PickingResult of the most recent click, when enable_click is set.
+    click_result = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
+
+    # Synced: brushing.
+    enable_brush_create = traitlets.Bool(False).tag(sync=True)
+    enable_brush_edit = traitlets.Bool(False).tag(sync=True)
+    enable_brush_clear = traitlets.Bool(False).tag(sync=True)
+    brush_mode = traitlets.Enum(["Rect", "Polygon", "RangeX", "RangeY"], default_value="Rect").tag(sync=True)
+    brush_units_mode_x = traitlets.Enum(["Pixels", "Data", "Normalized"], default_value="Data").tag(sync=True)
+    brush_units_mode_y = traitlets.Enum(["Pixels", "Data", "Normalized"], default_value="Data").tag(sync=True)
+    # None falls back to the corresponding plot margin.
+    brush_margin_top = traitlets.Float(None, allow_none=True).tag(sync=True)
+    brush_margin_right = traitlets.Float(None, allow_none=True).tag(sync=True)
+    brush_margin_bottom = traitlets.Float(None, allow_none=True).tag(sync=True)
+    brush_margin_left = traitlets.Float(None, allow_none=True).tag(sync=True)
+    brush_color = traitlets.Unicode("#3b6ea5").tag(sync=True)
+    # Milliseconds.
+    brush_delay = traitlets.Int(1500).tag(sync=True)
+    # Milliseconds.
+    maybe_brush_delay = traitlets.Int(250).tag(sync=True)
+    # The BrushState, updated when the user finishes drawing/editing or clears it.
+    # Can also be set from Python to draw a brush; None means nothing is brushed.
+    brush = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
+    # The BrushingResult for `brush`. Only recomputed for user interactions, not
+    # when `brush` is set from Python.
+    brushing_result = traitlets.Dict(default_value=None, allow_none=True).tag(sync=True)
 
     # Synced: plot config forwarded to render_wasm.
     plot_id = traitlets.Unicode("plot").tag(sync=True)
@@ -75,6 +133,10 @@ class PluotWasmWidget(anywidget.AnyWidget):
     batch_zarr_gets = traitlets.Bool(False).tag(sync=True)
     # Milliseconds.
     min_timeout = traitlets.Int(300).tag(sync=True)
+    # Milliseconds.
+    max_timeout = traitlets.Int(5000).tag(sync=True)
+    max_bailed_early_retries = traitlets.Int(300).tag(sync=True)
+    allow_simultaneous_renders = traitlets.Bool(True).tag(sync=True)
     # Milliseconds.
     camera_sync_interval = traitlets.Int(250).tag(sync=True)
 

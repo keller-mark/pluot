@@ -2,13 +2,24 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import type { AnyModel } from "@anywidget/types";
 import * as uuid from "@lukeed/uuid";
 import {
+  NO_BRUSH,
   setStoreByName,
   type AspectRatioAlignmentMode,
   type AspectRatioMode,
+  type BrushingResult,
+  type BrushMode,
+  type BrushResult,
+  type BrushState,
+  type BrushUnitsMode,
   type CameraMatrix,
+  type CameraOrExtent,
+  type ExtentResult,
   type GraphicsFormat,
+  type NoBrush,
+  type PickingResult,
   type PlotParams,
   type PlotType,
+  type PluotProps,
   type StoresInput,
   type ViewMode,
 } from "@pluot/react";
@@ -22,7 +33,10 @@ type CommandResponse = { success: boolean };
 export type WidgetModel = {
   width: number;
   height: number;
-  camera_view: number[];
+  camera_view: number[] | null;
+  x_lim: [number, number] | null;
+  y_lim: [number, number] | null;
+  extent: ExtentResult | null;
   margin_top: number;
   margin_right: number;
   margin_bottom: number;
@@ -30,6 +44,29 @@ export type WidgetModel = {
   aspect_ratio_mode: AspectRatioMode;
   aspect_ratio_alignment_mode: AspectRatioAlignmentMode;
   view_mode: ViewMode;
+  camera_filter: Extract<PluotProps["cameraFilter"], string> | null;
+  debug_margins: boolean;
+  background_color: string | null;
+  enable_click: boolean;
+  enable_tooltip: boolean;
+  click_result: PickingResult | null;
+  enable_brush_create: boolean;
+  enable_brush_edit: boolean;
+  enable_brush_clear: boolean;
+  brush_mode: BrushMode;
+  brush_units_mode_x: BrushUnitsMode;
+  brush_units_mode_y: BrushUnitsMode;
+  brush_margin_top: number | null;
+  brush_margin_right: number | null;
+  brush_margin_bottom: number | null;
+  brush_margin_left: number | null;
+  brush_color: string;
+  // Milliseconds.
+  brush_delay: number;
+  // Milliseconds.
+  maybe_brush_delay: number;
+  brush: BrushState | null;
+  brushing_result: BrushingResult | null;
   plot_id: string;
   plot_type: PlotType;
   stores_metadata: StoresInput;
@@ -38,6 +75,10 @@ export type WidgetModel = {
   batch_zarr_gets: boolean;
   // Milliseconds.
   min_timeout: number;
+  // Milliseconds.
+  max_timeout: number;
+  max_bailed_early_retries: number;
+  allow_simultaneous_renders: boolean;
   // Milliseconds.
   camera_sync_interval: number;
 };
@@ -145,25 +186,104 @@ export function useModelValue<K extends keyof WidgetModel>(model: AnyModel<Widge
   return useSyncExternalStore(subscribe, () => model.get(key));
 }
 
-export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): [CameraMatrix, (next: CameraMatrix) => void] {
-  const [cameraMatrix, setLocalCameraMatrix] = useState<CameraMatrix>(
-    () => Float32Array.from(model.get("camera_view")),
-  );
+export function useClickResult(model: AnyModel<WidgetModel>): (result: PickingResult) => void {
+  return useCallback((result: PickingResult) => {
+    model.set("click_result", result);
+    model.save_changes();
+  }, [model]);
+}
+
+type ModelBrush = {
+  brush: BrushState | NoBrush;
+  onBrush: (state: BrushState) => BrushResult;
+  onBrushEnd: (state: BrushState, brushingResult: BrushingResult | undefined) => BrushResult;
+  onBrushClear: () => void;
+};
+
+// The brush is always controlled, so that a brush set from the kernel is drawn.
+// Only completed brushes are synced, since mid-drag states would flood the kernel.
+export function useModelBrush(model: AnyModel<WidgetModel>): ModelBrush {
+  const [brush, setBrush] = useState<BrushState | NoBrush>(() => model.get("brush") ?? NO_BRUSH);
+
+  useEffect(() => {
+    function onModelBrushChange() {
+      setBrush(model.get("brush") ?? NO_BRUSH);
+    }
+    model.on("change:brush", onModelBrushChange);
+    return () => model.off("change:brush", onModelBrushChange);
+  }, [model]);
+
+  const onBrush = useCallback((state: BrushState) => {
+    setBrush(state);
+    return {};
+  }, []);
+
+  const onBrushEnd = useCallback((state: BrushState, brushingResult: BrushingResult | undefined) => {
+    setBrush(state);
+    model.set("brush", state);
+    model.set("brushing_result", brushingResult ?? null);
+    model.save_changes();
+    return {};
+  }, [model]);
+
+  const onBrushClear = useCallback(() => {
+    setBrush(NO_BRUSH);
+    model.set("brush", null);
+    model.set("brushing_result", null);
+    model.save_changes();
+  }, [model]);
+
+  return { brush, onBrush, onBrushEnd, onBrushClear };
+}
+
+type ModelCamera = {
+  cameraMatrix: CameraOrExtent;
+  setCameraMatrix: (next: CameraMatrix) => void;
+  // Bumped on every refit, since <Pluot/> otherwise reuses its earlier fit.
+  extentKey: string;
+};
+
+function getLimits(model: AnyModel<WidgetModel>): CameraOrExtent {
+  return { xLim: model.get("x_lim"), yLim: model.get("y_lim") };
+}
+
+// A null camera_view, or a change to x_lim/y_lim, asks <Pluot/> to fit the
+// camera to the limits, using the data extent for any omitted axis. The fitted
+// matrix is then synced back to camera_view.
+export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): ModelCamera {
+  const [cameraMatrix, setLocalCameraMatrix] = useState<CameraOrExtent>(() => {
+    const cameraView = model.get("camera_view");
+    return cameraView === null ? getLimits(model) : Float32Array.from(cameraView);
+  });
+  const [fitCount, setFitCount] = useState(0);
   const pendingRef = useRef<CameraMatrix | null>(null);
   const lastSentRef = useRef<number[] | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    function refit() {
+      pendingRef.current = null;
+      setLocalCameraMatrix(getLimits(model));
+      setFitCount(count => count + 1);
+    }
     function onCameraViewChange() {
       const cameraView = model.get("camera_view");
+      if (cameraView === null) {
+        refit();
+        return;
+      }
       // Kernel updates are ignored mid-interaction, otherwise stale echoes of
       // earlier syncs would make the camera jump backwards.
       if (timeoutRef.current !== null || cameraView === lastSentRef.current) return;
       setLocalCameraMatrix(Float32Array.from(cameraView));
     }
     model.on("change:camera_view", onCameraViewChange);
+    model.on("change:x_lim", refit);
+    model.on("change:y_lim", refit);
     return () => {
       model.off("change:camera_view", onCameraViewChange);
+      model.off("change:x_lim", refit);
+      model.off("change:y_lim", refit);
       if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
     };
   }, [model]);
@@ -188,5 +308,12 @@ export function useThrottledCameraMatrix(model: AnyModel<WidgetModel>): [CameraM
     if (timeoutRef.current === null) syncPending();
   }, [model]);
 
-  return [cameraMatrix, setCameraMatrix];
+  return { cameraMatrix, setCameraMatrix, extentKey: String(fitCount) };
+}
+
+export function useExtentResult(model: AnyModel<WidgetModel>): (result: ExtentResult) => void {
+  return useCallback((result: ExtentResult) => {
+    model.set("extent", result);
+    model.save_changes();
+  }, [model]);
 }

@@ -23,4 +23,7 @@ export type {
   LayerBrushingResult,
   BrushingResult,
   NoBrush,
+  CameraOrExtent,
+  LayerExtentResult,
+  ExtentResult,
 } from "./types.js";

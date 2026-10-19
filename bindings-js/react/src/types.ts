@@ -360,7 +360,11 @@ export type PluotProps = {
    * initial value only, and the camera is managed internally.
    */
   cameraMatrix?: CameraOrExtent | null;
-  /** Provide to take control of the camera matrix. */
+  /**
+   * Provide to take control of the camera matrix. When `cameraMatrix` is not a
+   * full matrix, this is also called with the matrix resolved from xLim/yLim
+   * and the data extent.
+   */
   setCameraMatrix?: ((cameraMatrix: CameraMatrix) => void) | null;
 
   cameraFilter?: CameraFilterString | CameraFilterFunction | null;
