@@ -14,8 +14,12 @@ use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::cache::{use_memo_compressed_matrix, use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::compute::included_indices::compute_included_indices;
-use pluot_core::compute::matrix_axis_extents::{reduce_compressed_matrix_axis_extents, reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
-use pluot_core::compute::reduce::reduce_extent;
+use pluot_core::compute::histogram_percentile::{histogram_bin, PercentileSearch};
+use pluot_core::compute::matrix_axis_extents::{
+    reduce_compressed_matrix_axis_extents, reduce_compressed_matrix_axis_histograms, reduce_matrix_axis_extents, reduce_matrix_axis_histograms,
+    MatrixAxis as HeatmapAxis,
+};
+use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::GpuContext;
@@ -616,4 +620,215 @@ pub async fn load_matrix_block_axis_extents(
     .expect("infallible");
     let (mins, maxs) = extents.split_at(extents.len() / 2);
     (mins.to_vec(), maxs.to_vec())
+}
+
+/// The most bins the histogram reductions support, which percentile searches use.
+const PERCENTILE_NUM_BINS: u32 = 256;
+/// Each pass after the first narrows a percentile's range by up to `PERCENTILE_NUM_BINS` times.
+const PERCENTILE_NUM_PASSES: usize = 2;
+
+fn range_keys(ranges: &[(f32, f32)]) -> impl Iterator<Item = String> + '_ {
+    ranges.iter().flat_map(|&(lo, hi)| [lo.to_bits().to_string(), hi.to_bits().to_string()])
+}
+
+fn counts_of(data: &NumericData) -> &[u32] {
+    match data {
+        NumericData::Uint32(counts) => counts,
+        _ => unreachable!("histograms are memoized as Uint32"),
+    }
+}
+
+/// One loaded row block of the filtered matrix.
+pub struct LoadedMatrixBlock<'a> {
+    pub key: MatrixBlockKey<'a>,
+    pub block: &'a MatrixBlock,
+    pub num_rows: usize,
+}
+
+/// Computes (and caches) a `num_bins`-bin histogram over `range` of every
+/// value of the `num_rows x num_cols` block identified by `key`, counting a
+/// sparse block's implicit zeros.
+pub async fn load_matrix_block_histogram(
+    gpu_context: Option<&GpuContext<'_>>,
+    key: &MatrixBlockKey<'_>,
+    block: &MatrixBlock,
+    num_rows: usize,
+    num_cols: usize,
+    range: (f32, f32),
+    num_bins: u32,
+    cache_enabled: bool,
+) -> Arc<NumericData> {
+    let mut keys = key.keys("adata_matrix_block_histogram");
+    keys.push(num_bins.to_string());
+    keys.extend(range_keys(&[range]));
+    use_memo_numeric_data(
+        async || {
+            let (lo, hi) = range;
+            let counts = match block {
+                MatrixBlock::Dense(values) => reduce_histogram_with_known_extent(gpu_context, values.as_ref().clone(), num_bins, lo, hi, &[], &[]).await.background,
+                MatrixBlock::Compressed(_, matrix) => {
+                    let mut counts = reduce_histogram_with_known_extent(gpu_context, matrix.data.clone(), num_bins, lo, hi, &[], &[]).await.background;
+                    counts[histogram_bin(0.0, lo, hi, num_bins)] += (num_rows * num_cols - matrix.data.len()) as u32;
+                    counts
+                }
+            };
+            Ok::<_, std::convert::Infallible>(NumericData::from(counts))
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
+    .expect("infallible")
+}
+
+/// Computes (and caches) a `num_bins`-bin histogram of every row or column
+/// of the `num_rows x num_cols` block identified by `key`, each over its own `ranges` entry.
+#[allow(clippy::too_many_arguments)]
+pub async fn load_matrix_block_axis_histograms(
+    gpu_context: Option<&GpuContext<'_>>,
+    key: &MatrixBlockKey<'_>,
+    block: &MatrixBlock,
+    num_rows: usize,
+    num_cols: usize,
+    axis: HeatmapAxis,
+    ranges: &[(f32, f32)],
+    num_bins: u32,
+    cache_enabled: bool,
+) -> Arc<NumericData> {
+    let mut keys = key.keys(&format!("adata_matrix_block_{axis:?}_histograms"));
+    keys.push(num_bins.to_string());
+    keys.extend(range_keys(ranges));
+    use_memo_numeric_data(
+        async || {
+            let counts = match block {
+                MatrixBlock::Dense(values) => reduce_matrix_axis_histograms(gpu_context, values, num_rows, num_cols, axis, ranges, num_bins).await,
+                MatrixBlock::Compressed(compressed_axis, matrix) => {
+                    reduce_compressed_matrix_axis_histograms(gpu_context, matrix, *compressed_axis, num_rows, num_cols, axis, ranges, num_bins).await
+                }
+            };
+            Ok::<_, std::convert::Infallible>(NumericData::from(counts))
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
+    .expect("infallible")
+}
+
+async fn summed_block_histogram(
+    gpu_context: Option<&GpuContext<'_>>,
+    blocks: &[LoadedMatrixBlock<'_>],
+    num_cols: usize,
+    range: (f32, f32),
+    cache_enabled: bool,
+) -> Vec<u32> {
+    let mut counts = vec![0u32; PERCENTILE_NUM_BINS as usize];
+    for loaded in blocks {
+        let block_counts = load_matrix_block_histogram(gpu_context, &loaded.key, loaded.block, loaded.num_rows, num_cols, range, PERCENTILE_NUM_BINS, cache_enabled).await;
+        counts.iter_mut().zip(counts_of(&block_counts)).for_each(|(count, block_count)| *count += block_count);
+    }
+    counts
+}
+
+async fn matrix_percentile(
+    gpu_context: Option<&GpuContext<'_>>,
+    blocks: &[LoadedMatrixBlock<'_>],
+    num_cols: usize,
+    extent: (f32, f32),
+    percentile: f32,
+    cache_enabled: bool,
+) -> f32 {
+    if percentile <= 0.0 {
+        return extent.0;
+    }
+    if percentile >= 100.0 {
+        return extent.1;
+    }
+    let mut search = PercentileSearch::new(extent, percentile);
+    for _ in 1..PERCENTILE_NUM_PASSES {
+        search.narrow(&summed_block_histogram(gpu_context, blocks, num_cols, search.range(), cache_enabled).await);
+    }
+    search.estimate(&summed_block_histogram(gpu_context, blocks, num_cols, search.range(), cache_enabled).await)
+}
+
+/// The `(lower, upper)` percentiles of every value of `blocks`, whose `(min, max)` is `extent`.
+pub async fn load_matrix_percentile_domain(
+    gpu_context: Option<&GpuContext<'_>>,
+    blocks: &[LoadedMatrixBlock<'_>],
+    num_cols: usize,
+    extent: (f32, f32),
+    (lower, upper): (f32, f32),
+    cache_enabled: bool,
+) -> (f32, f32) {
+    (
+        matrix_percentile(gpu_context, blocks, num_cols, extent, lower, cache_enabled).await,
+        matrix_percentile(gpu_context, blocks, num_cols, extent, upper, cache_enabled).await,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn summed_block_axis_histograms(
+    gpu_context: Option<&GpuContext<'_>>,
+    blocks: &[LoadedMatrixBlock<'_>],
+    num_cols: usize,
+    axis: HeatmapAxis,
+    searches: &[PercentileSearch],
+    num_bins: u32,
+    cache_enabled: bool,
+) -> Vec<u32> {
+    let ranges: Vec<(f32, f32)> = searches.iter().map(PercentileSearch::range).collect();
+    let mut counts = vec![0u32; ranges.len() * num_bins as usize];
+    for loaded in blocks {
+        let block_counts =
+            load_matrix_block_axis_histograms(gpu_context, &loaded.key, loaded.block, loaded.num_rows, num_cols, axis, &ranges, num_bins, cache_enabled).await;
+        counts.iter_mut().zip(counts_of(&block_counts)).for_each(|(count, block_count)| *count += block_count);
+    }
+    counts
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn axis_percentiles(
+    gpu_context: Option<&GpuContext<'_>>,
+    blocks: &[LoadedMatrixBlock<'_>],
+    num_cols: usize,
+    axis: HeatmapAxis,
+    (mins, maxs): (&[f32], &[f32]),
+    percentile: f32,
+    num_bins: u32,
+    cache_enabled: bool,
+) -> Vec<f32> {
+    if percentile <= 0.0 {
+        return mins.to_vec();
+    }
+    if percentile >= 100.0 {
+        return maxs.to_vec();
+    }
+    let mut searches: Vec<PercentileSearch> = mins.iter().zip(maxs).map(|(&lo, &hi)| PercentileSearch::new((lo, hi), percentile)).collect();
+    for _ in 1..PERCENTILE_NUM_PASSES {
+        let counts = summed_block_axis_histograms(gpu_context, blocks, num_cols, axis, &searches, num_bins, cache_enabled).await;
+        searches.iter_mut().zip(counts.chunks(num_bins as usize)).for_each(|(search, counts)| search.narrow(counts));
+    }
+    let counts = summed_block_axis_histograms(gpu_context, blocks, num_cols, axis, &searches, num_bins, cache_enabled).await;
+    searches.iter().zip(counts.chunks(num_bins as usize)).map(|(search, counts)| search.estimate(counts)).collect()
+}
+
+/// The `(lower, upper)` percentiles of every row or column of `blocks`, whose
+/// `(mins, maxs)` are given. Every block's histograms are summed, so for
+/// [`HeatmapAxis::Rows`], `blocks` must hold a single block.
+#[allow(clippy::too_many_arguments)]
+pub async fn load_matrix_axis_percentile_domains(
+    gpu_context: Option<&GpuContext<'_>>,
+    blocks: &[LoadedMatrixBlock<'_>],
+    num_cols: usize,
+    axis: HeatmapAxis,
+    extents: (&[f32], &[f32]),
+    (lower, upper): (f32, f32),
+    cache_enabled: bool,
+) -> (Vec<f32>, Vec<f32>) {
+    let values_per_segment = if axis == HeatmapAxis::Rows { num_cols } else { blocks.iter().map(|loaded| loaded.num_rows).sum() };
+    let num_bins = PERCENTILE_NUM_BINS.min(values_per_segment as u32).max(1);
+    (
+        axis_percentiles(gpu_context, blocks, num_cols, axis, extents, lower, num_bins, cache_enabled).await,
+        axis_percentiles(gpu_context, blocks, num_cols, axis, extents, upper, num_bins, cache_enabled).await,
+    )
 }

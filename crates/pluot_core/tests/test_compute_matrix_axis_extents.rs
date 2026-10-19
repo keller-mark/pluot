@@ -85,3 +85,51 @@ async fn gpu_extents_match_cpu() {
         assert_eq!(gpu, cpu, "{axis:?}");
     }
 }
+
+#[tokio::test]
+async fn cpu_axis_histograms_bin_each_segment_within_its_range() {
+    use pluot_core::compute::matrix_axis_extents::reduce_matrix_axis_histograms;
+
+    let rows = reduce_matrix_axis_histograms(None, &matrix(), 2, 3, MatrixAxis::Rows, &[(-1.0, 3.0), (0.0, 8.0)], 2).await;
+    assert_eq!(rows, vec![1, 1, 1, 1]);
+    let cols = reduce_matrix_axis_histograms(None, &matrix(), 2, 3, MatrixAxis::Cols, &[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)], 2).await;
+    assert_eq!(cols, vec![0, 2, 1, 1, 0, 0]);
+}
+
+#[tokio::test]
+async fn cpu_compressed_axis_histograms_count_implicit_zeros() {
+    use pluot_core::compute::matrix_axis_extents::reduce_compressed_matrix_axis_histograms;
+
+    let ranges = [(-2.0, 6.0); 3];
+    let rows = reduce_compressed_matrix_axis_histograms(None, &compressed(), CompressedAxis::Rows, 3, 3, MatrixAxis::Rows, &ranges, 4).await;
+    assert_eq!(rows, vec![0, 1, 0, 1, 1, 2, 0, 0, 0, 3, 0, 0]);
+}
+
+#[cfg(not(feature = "lacks_gpu"))]
+#[tokio::test]
+async fn gpu_axis_histograms_match_cpu() {
+    use pluot_core::compute::matrix_axis_extents::{reduce_compressed_matrix_axis_histograms, reduce_matrix_axis_histograms};
+    use pluot_core::render_types::GpuContext;
+
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+    for axis in [MatrixAxis::Rows, MatrixAxis::Cols] {
+        let ranges = if axis == MatrixAxis::Rows { vec![(-1.0, 3.0), (0.0, 8.0)] } else { vec![(0.0, 4.0), (-1.0, 7.0), (0.0, 1.0)] };
+        let gpu = reduce_matrix_axis_histograms(Some(&gpu_context), &matrix(), 2, 3, axis, &ranges, 3).await;
+        let cpu = reduce_matrix_axis_histograms(None, &matrix(), 2, 3, axis, &ranges, 3).await;
+        assert_eq!(gpu, cpu, "{axis:?}");
+    }
+    let subset = CompressedMatrix { minor_subset: Some(NumericData::from(vec![2u32, 0])), ..compressed() };
+    for (matrix, num_cols) in [(compressed(), 3), (subset, 2)] {
+        for compressed_axis in [CompressedAxis::Rows, CompressedAxis::Cols] {
+            let (num_rows, num_cols) = if compressed_axis == CompressedAxis::Rows { (3, num_cols) } else { (num_cols, 3) };
+            for axis in [MatrixAxis::Rows, MatrixAxis::Cols] {
+                let num_segments = if axis == MatrixAxis::Rows { num_rows } else { num_cols };
+                let ranges = vec![(-2.0, 6.0); num_segments];
+                let gpu = reduce_compressed_matrix_axis_histograms(Some(&gpu_context), &matrix, compressed_axis, num_rows, num_cols, axis, &ranges, 4).await;
+                let cpu = reduce_compressed_matrix_axis_histograms(None, &matrix, compressed_axis, num_rows, num_cols, axis, &ranges, 4).await;
+                assert_eq!(gpu, cpu, "{compressed_axis:?} {axis:?}");
+            }
+        }
+    }
+}

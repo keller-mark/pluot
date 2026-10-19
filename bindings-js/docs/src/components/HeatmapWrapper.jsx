@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { PluotWrapper } from './PluotWrapper.jsx';
 import { useColormapOption, resolvePlotParams } from './PlotControls.jsx';
 
@@ -25,7 +25,7 @@ function onHoverHeatmap(info) {
 
 const HEATMAP_LAYER_TYPE = 'AdataZarrHeatmapLayer';
 
-function withHeatmapColormap(plotParams, colormap) {
+function withHeatmapControls(plotParams, { colormap, reverseColormap, normalization, lowerPercentile, upperPercentile }) {
   return {
     ...plotParams,
     layers: plotParams.layers.map((layer) => {
@@ -40,9 +40,12 @@ function withHeatmapColormap(plotParams, colormap) {
         ...layer,
         layer_params: {
           ...layer.layer_params,
+          normalization,
+          normalization_lower_percentile: lowerPercentile,
+          normalization_upper_percentile: upperPercentile,
           colormap: {
             colormap_mode: 'Quantitative',
-            colormap_params: { ...prevQuantitativeParams, colormap },
+            colormap_params: { ...prevQuantitativeParams, colormap, reverse: reverseColormap },
           },
         },
       };
@@ -50,15 +53,42 @@ function withHeatmapColormap(plotParams, colormap) {
   };
 }
 
+function percentileOption(value, label) {
+  return { value, min: 0, max: 100, step: 0.5, label };
+}
+
 export function HeatmapWrapper(props) {
   const { plotParams } = props;
-  const defaultColormap = plotParams?.layers
+  const defaultLayerParams = plotParams?.layers
     ?.find(layer => layer.layer_type === HEATMAP_LAYER_TYPE)
-    ?.layer_params?.colormap?.colormap_params?.colormap;
-  const colormapOption = useColormapOption(defaultColormap);
+    ?.layer_params;
+  const colormapOption = useColormapOption(defaultLayerParams?.colormap?.colormap_params?.colormap);
+
+  const defaultReverseColormap = defaultLayerParams?.colormap?.colormap_params?.reverse ?? false;
+  const defaultNormalization = defaultLayerParams?.normalization ?? 'Matrix';
+  const defaultLowerPercentile = defaultLayerParams?.normalization_lower_percentile ?? 0;
+  const defaultUpperPercentile = defaultLayerParams?.normalization_upper_percentile ?? 100;
+  const plotSpecificOptions = useMemo(() => ({
+    ...colormapOption,
+    reverseColormap: {
+      value: defaultReverseColormap,
+      label: 'Reverse Colormap',
+    },
+    normalization: {
+      value: defaultNormalization,
+      options: {
+        'Whole matrix': 'Matrix',
+        'Per obs': 'PerObs',
+        'Per var': 'PerVar',
+      },
+      label: 'Normalization',
+    },
+    lowerPercentile: percentileOption(defaultLowerPercentile, 'Lower Percentile'),
+    upperPercentile: percentileOption(defaultUpperPercentile, 'Upper Percentile'),
+  }), [colormapOption, defaultReverseColormap, defaultNormalization, defaultLowerPercentile, defaultUpperPercentile]);
 
   const getPlotParams = useCallback(
-    controlValues => withHeatmapColormap(resolvePlotParams(plotParams, controlValues), controlValues.colormap),
+    controlValues => withHeatmapControls(resolvePlotParams(plotParams, controlValues), controlValues),
     [plotParams],
   );
 
@@ -66,7 +96,7 @@ export function HeatmapWrapper(props) {
     <PluotWrapper
       {...props}
       plotParams={getPlotParams}
-      plotSpecificOptions={colormapOption}
+      plotSpecificOptions={plotSpecificOptions}
       onHover={onHoverHeatmap}
       enableTooltip
     />

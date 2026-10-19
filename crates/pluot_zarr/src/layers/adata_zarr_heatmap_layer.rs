@@ -31,8 +31,9 @@ use pluot_core::{maybe_timeout, Duration, FutureExt, LayerExtentResult, LayerPic
 use crate::adata_io::MatrixLayout;
 use crate::heatmap_data::{
     indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_matrix_block,
-    load_matrix_block_axis_extents, load_matrix_block_extent, load_matrix_layout, AxisCriteria, HeatmapNormalization,
-    MatrixAxis, MatrixBlock, MatrixBlockKey, MatrixCacheMode,
+    load_matrix_axis_percentile_domains, load_matrix_block_axis_extents, load_matrix_block_extent, load_matrix_layout,
+    load_matrix_percentile_domain, AxisCriteria, HeatmapNormalization, LoadedMatrixBlock, MatrixAxis, MatrixBlock, MatrixBlockKey,
+    MatrixCacheMode,
 };
 
 /// Upper bound on the number of matrix elements loaded (and cached) per row
@@ -96,6 +97,13 @@ pub struct AdataZarrHeatmapLayerParams {
     /// How a quantitative colormap without an explicit `domain` or
     /// `axis_domains` is normalized. Defaults to [`HeatmapNormalization::Matrix`].
     pub normalization: Option<HeatmapNormalization>,
+    /// The percentile (from 0 to 100) of each normalized set of values that
+    /// maps to the start of the colormap, so that low outliers do not compress
+    /// the colors of the other values. Defaults to 0 (the minimum).
+    pub normalization_lower_percentile: Option<f32>,
+    /// The percentile (from 0 to 100) of each normalized set of values that
+    /// maps to the end of the colormap. Defaults to 100 (the maximum).
+    pub normalization_upper_percentile: Option<f32>,
 }
 
 impl Default for AdataZarrHeatmapLayerParams {
@@ -122,6 +130,8 @@ impl Default for AdataZarrHeatmapLayerParams {
             hide_overlapping_var_ticks: None,
             cache_mode: None,
             normalization: None,
+            normalization_lower_percentile: None,
+            normalization_upper_percentile: None,
         }
     }
 }
@@ -276,47 +286,62 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
             other => other.clone(),
         };
         let mut block_colormaps: Vec<HeatmapColormap> = vec![colormap.clone(); blocks.len()];
+        let loaded_blocks: Vec<LoadedMatrixBlock> = blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(block_index, block)| {
+                block.as_ref().map(|block| LoadedMatrixBlock { key: block_key(block_index), block, num_rows: block_num_rows(block_index) })
+            })
+            .collect();
+        let percentiles = (params.normalization_lower_percentile.unwrap_or(0.0), params.normalization_upper_percentile.unwrap_or(100.0));
+        let clips_to_percentiles = percentiles.0 > 0.0 || percentiles.1 < 100.0;
         match normalization {
             None => {}
             Some(HeatmapNormalization::Matrix) => {
                 let mut domain = (f32::INFINITY, f32::NEG_INFINITY);
-                for (block_index, block) in blocks.iter().enumerate() {
-                    if let Some(block) = block {
-                        let (min, max) = load_matrix_block_extent(gpu_context, &block_key(block_index), block, block_num_rows(block_index), num_cols, cache_enabled).await;
-                        domain = (domain.0.min(min), domain.1.max(max));
-                    }
+                for loaded in &loaded_blocks {
+                    let (min, max) = load_matrix_block_extent(gpu_context, &loaded.key, loaded.block, loaded.num_rows, num_cols, cache_enabled).await;
+                    domain = (domain.0.min(min), domain.1.max(max));
+                }
+                if clips_to_percentiles && domain.0.is_finite() && domain.1.is_finite() {
+                    domain = load_matrix_percentile_domain(gpu_context, &loaded_blocks, num_cols, domain, percentiles, cache_enabled).await;
                 }
                 let (lo, hi) = finite_or_unit(domain.0, domain.1);
                 block_colormaps.fill(with_domains(Some((lo, hi)), None));
             }
             Some(HeatmapNormalization::PerObs) => {
-                for (block_index, block) in blocks.iter().enumerate() {
-                    if let Some(block) = block {
-                        let (mins, maxs) = load_matrix_block_axis_extents(
-                            gpu_context, &block_key(block_index), block, block_num_rows(block_index), num_cols, HeatmapAxis::Rows, cache_enabled,
+                for loaded in &loaded_blocks {
+                    let (mut mins, mut maxs) =
+                        load_matrix_block_axis_extents(gpu_context, &loaded.key, loaded.block, loaded.num_rows, num_cols, HeatmapAxis::Rows, cache_enabled).await;
+                    if clips_to_percentiles {
+                        (mins, maxs) = load_matrix_axis_percentile_domains(
+                            gpu_context, std::slice::from_ref(loaded), num_cols, HeatmapAxis::Rows, (&mins, &maxs), percentiles, cache_enabled,
                         )
                         .await;
-                        block_colormaps[block_index] = with_domains(None, Some(axis_domains(HeatmapAxis::Rows, mins, maxs)));
                     }
+                    block_colormaps[loaded.key.block_index] = with_domains(None, Some(axis_domains(HeatmapAxis::Rows, mins, maxs)));
                 }
             }
             Some(HeatmapNormalization::PerVar) => {
                 let (mut mins, mut maxs) = (vec![f32::INFINITY; num_cols], vec![f32::NEG_INFINITY; num_cols]);
-                for (block_index, block) in blocks.iter().enumerate() {
-                    if let Some(block) = block {
-                        let (block_mins, block_maxs) = load_matrix_block_axis_extents(
-                            gpu_context, &block_key(block_index), block, block_num_rows(block_index), num_cols, HeatmapAxis::Cols, cache_enabled,
-                        )
-                        .await;
-                        for col in 0..num_cols {
-                            mins[col] = mins[col].min(block_mins[col]);
-                            maxs[col] = maxs[col].max(block_maxs[col]);
-                        }
+                for loaded in &loaded_blocks {
+                    let (block_mins, block_maxs) =
+                        load_matrix_block_axis_extents(gpu_context, &loaded.key, loaded.block, loaded.num_rows, num_cols, HeatmapAxis::Cols, cache_enabled).await;
+                    for col in 0..num_cols {
+                        mins[col] = mins[col].min(block_mins[col]);
+                        maxs[col] = maxs[col].max(block_maxs[col]);
                     }
+                }
+                if clips_to_percentiles {
+                    (mins, maxs) = load_matrix_axis_percentile_domains(
+                        gpu_context, &loaded_blocks, num_cols, HeatmapAxis::Cols, (&mins, &maxs), percentiles, cache_enabled,
+                    )
+                    .await;
                 }
                 block_colormaps.fill(with_domains(None, Some(axis_domains(HeatmapAxis::Cols, mins, maxs))));
             }
         }
+        drop(loaded_blocks);
 
         let swap_axes = params.swap_axes;
 

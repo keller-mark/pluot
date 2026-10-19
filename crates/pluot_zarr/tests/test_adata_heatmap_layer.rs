@@ -17,8 +17,9 @@ use pluot_core::compute::matrix_axis_extents::{reduce_matrix_axis_extents, Matri
 use pluot_core::numeric_data::NumericData;
 use pluot_zarr::adata_io::read_matrix_layout;
 use pluot_zarr::heatmap_data::{
-    load_matrix_block, load_matrix_block_axis_extents, load_matrix_block_extent, AxisCriteria, HeatmapNormalization,
-    IdentifierCriteriaParams, MatrixBlock, MatrixBlockKey, MatrixCacheMode,
+    load_matrix_axis_percentile_domains, load_matrix_block, load_matrix_block_axis_extents, load_matrix_block_extent,
+    load_matrix_percentile_domain, AxisCriteria, HeatmapNormalization, IdentifierCriteriaParams, LoadedMatrixBlock, MatrixBlock,
+    MatrixBlockKey, MatrixCacheMode,
 };
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
 use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
@@ -172,11 +173,18 @@ async fn every_normalization_prepares_on_cpu_and_gpu() {
     let gpu_context = GpuContext { device: &device, queue: &queue };
 
     for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
-        for gpu in [None, Some(&gpu_context)] {
-            let params = AdataZarrHeatmapLayerParams { normalization: Some(normalization), ..params.clone() };
-            let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
-            assert!(!layer.prepare(gpu).await.bailed_early, "{normalization:?}");
-            check_picks(&layer, store.clone(), &expected, false).await;
+        for (lower, upper) in [(None, None), (Some(2.0), Some(98.0))] {
+            for gpu in [None, Some(&gpu_context)] {
+                let params = AdataZarrHeatmapLayerParams {
+                    normalization: Some(normalization),
+                    normalization_lower_percentile: lower,
+                    normalization_upper_percentile: upper,
+                    ..params.clone()
+                };
+                let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+                assert!(!layer.prepare(gpu).await.bailed_early, "{normalization:?} {lower:?} {upper:?}");
+                check_picks(&layer, store.clone(), &expected, false).await;
+            }
         }
     }
 }
@@ -236,7 +244,12 @@ async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
     for layer_name in ["csr", "csc"] {
         for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
             for gpu in [None, Some(&gpu_context)] {
-                let params = AdataZarrHeatmapLayerParams { layer: layer_name.to_string(), normalization: Some(normalization), ..params.clone() };
+                let params = AdataZarrHeatmapLayerParams {
+                    layer: layer_name.to_string(),
+                    normalization: Some(normalization),
+                    normalization_upper_percentile: Some(99.0),
+                    ..params.clone()
+                };
                 let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
                 assert!(!layer.prepare(gpu).await.bailed_early, "{layer_name} {normalization:?}");
                 check_picks_of(&layer, store.clone(), &format!("/layers/{layer_name}"), &expected, false).await;
@@ -287,6 +300,73 @@ async fn sparse_block_extents_match_the_dense_cells() {
                     let sparse = load_matrix_block_axis_extents(gpu, &key, &block, num_rows, num_cols, axis, false).await;
                     let reference = reduce_matrix_axis_extents(None, &dense, num_rows, num_cols, axis).await;
                     assert_eq!(sparse, reference, "{matrix_path} {cache_mode:?} {axis:?} gpu={}", gpu.is_some());
+                }
+            }
+        }
+    }
+}
+
+/// Asserts that `estimate` is within a final bin width of the `percentile` of `values`.
+fn assert_near_percentile(values: &[f32], percentile: f32, estimate: f32, num_bins: usize, context: &str) {
+    let mut sorted: Vec<f32> = values.to_vec();
+    sorted.sort_by(f32::total_cmp);
+    let n = sorted.len();
+    let rank = (percentile / 100.0 * n as f32).floor() as usize;
+    let (lo, hi) = (sorted[rank.saturating_sub(1)], sorted[rank.min(n - 1)]);
+    let tolerance = (sorted[n - 1] - sorted[0]) / (num_bins * num_bins) as f32 + 1e-4;
+    assert!(lo - tolerance <= estimate && estimate <= hi + tolerance, "{context}: p{percentile} {estimate} not within [{lo}, {hi}]");
+}
+
+#[tokio::test]
+async fn percentile_domains_match_the_sorted_cells() {
+    let store = pbmc_store();
+    let (_, expected) = layer_params_and_expected(store.clone()).await;
+    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let rows: Vec<u32> = expected.obs_indices.iter().map(|&i| i as u32).collect();
+    let cols: Vec<u32> = expected.var_names.iter().map(|name| var_index.iter().position(|v| v == name).unwrap() as u32).collect();
+    let (num_rows, num_cols) = (rows.len(), cols.len());
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+    let percentiles = (5.0, 95.0);
+
+    for matrix_path in ["/X", "/layers/csr", "/layers/csc"] {
+        let layout = read_matrix_layout(store.clone(), matrix_path).await;
+        let key = MatrixBlockKey {
+            store_name: "pbmc",
+            matrix_path,
+            cache_mode: MatrixCacheMode::RowBlocks,
+            obs_filtering: None,
+            var_filtering: None,
+            rows_per_block: num_rows,
+            block_index: 0,
+        };
+        let block = load_matrix_block(store.clone(), &key, layout, &rows, &cols, false).await.unwrap();
+        let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(store.clone(), matrix_path, col as u64))).await;
+        let columns: Vec<_> = columns.into_iter().map(Result::unwrap).collect();
+        let cell = |row: usize, col: usize| columns[col].get_f32(rows[row] as usize);
+        let cells: Vec<f32> = (0..num_rows).flat_map(|row| (0..num_cols).map(move |col| (row, col))).map(|(row, col)| cell(row, col)).collect();
+
+        for gpu in [None, Some(&gpu_context)] {
+            let context = format!("{matrix_path} gpu={}", gpu.is_some());
+            let extent = load_matrix_block_extent(gpu, &key, &block, num_rows, num_cols, false).await;
+            let blocks = [LoadedMatrixBlock { key: MatrixBlockKey { ..key }, block: &block, num_rows }];
+
+            let (lower, upper) = load_matrix_percentile_domain(gpu, &blocks, num_cols, extent, percentiles, false).await;
+            assert_near_percentile(&cells, percentiles.0, lower, 256, &context);
+            assert_near_percentile(&cells, percentiles.1, upper, 256, &context);
+
+            for axis in [HeatmapAxis::Rows, HeatmapAxis::Cols] {
+                let (mins, maxs) = load_matrix_block_axis_extents(gpu, &key, &block, num_rows, num_cols, axis, false).await;
+                let (lowers, uppers) =
+                    load_matrix_axis_percentile_domains(gpu, &blocks, num_cols, axis, (&mins, &maxs), percentiles, false).await;
+                let (num_segments, segment_len) = if axis == HeatmapAxis::Rows { (num_rows, num_cols) } else { (num_cols, num_rows) };
+                for segment in 0..num_segments {
+                    let values: Vec<f32> = (0..segment_len)
+                        .map(|j| if axis == HeatmapAxis::Rows { cell(segment, j) } else { cell(j, segment) })
+                        .collect();
+                    let context = format!("{context} {axis:?} {segment}");
+                    assert_near_percentile(&values, percentiles.0, lowers[segment], segment_len.min(256), &context);
+                    assert_near_percentile(&values, percentiles.1, uppers[segment], segment_len.min(256), &context);
                 }
             }
         }
