@@ -222,7 +222,7 @@ impl Default for HeatmapLayerParams {
 }
 
 impl HeatmapLayerParams {
-    pub(crate) fn common(&self) -> HeatmapCommon<'_> {
+    pub fn common(&self) -> HeatmapCommon<'_> {
         HeatmapCommon {
             layer_id: &self.layer_id,
             bounds: self.bounds.as_ref(),
@@ -244,7 +244,7 @@ impl HeatmapLayerParams {
 
 /// The params shared by every heatmap layer, whatever the storage layout of
 /// its matrix values. See [`HeatmapLayerParams`] for what each one means.
-pub(crate) struct HeatmapCommon<'a> {
+pub struct HeatmapCommon<'a> {
     pub layer_id: &'a str,
     pub bounds: Option<&'a MarginParams>,
     pub data_unit_mode_x: UnitsMode,
@@ -278,7 +278,7 @@ impl HeatmapCommon<'_> {
 
     /// Bottom-left corner and size, in cell units, of the quad covering rows
     /// `first_row..first_row + num_rows`.
-    fn row_block_quad(&self, first_row: u32, num_rows: u32) -> (Vec2, Vec2) {
+    pub fn row_block_quad(&self, first_row: u32, num_rows: u32) -> (Vec2, Vec2) {
         let (offset_x, offset_y) = self.cell_offset.unwrap_or((0.0, 0.0));
         if self.swap_axes {
             (Vec2::new(offset_x + first_row as f32, offset_y), Vec2::new(num_rows as f32, self.num_cols as f32))
@@ -686,7 +686,7 @@ fn mask_as_criteria(mask: Option<&NumericData>) -> Vec<EmphasisCriteria> {
 }
 
 /// How many whole matrix rows fit in one texture of at most `max_texels` texels.
-fn rows_per_texture(num_cols: u32, max_texels: u64) -> u32 {
+pub fn rows_per_texture(num_cols: u32, max_texels: u64) -> u32 {
     (max_texels / num_cols.max(1) as u64).clamp(1, u32::MAX as u64) as u32
 }
 
@@ -822,39 +822,5 @@ impl PickableLayer for HeatmapLayer {
         let (row, col) = common.pick_cell(data_coord)?;
         let value = self.layer_params.data.format_element((row * self.layer_params.num_cols + col) as usize);
         Some(common.picking_result(row, col, value))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn params_2x3(swap_axes: bool) -> HeatmapLayerParams {
-        HeatmapLayerParams {
-            num_rows: 2,
-            num_cols: 3,
-            data: NumericData::Float32(Arc::new(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0])),
-            swap_axes,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn row_blocks_stack_top_to_bottom() {
-        let params = HeatmapLayerParams { num_rows: 5, ..params_2x3(false) };
-        assert_eq!(params.common().row_block_quad(0, 2), (Vec2::new(0.0, 3.0), Vec2::new(3.0, 2.0)));
-        assert_eq!(params.common().row_block_quad(2, 3), (Vec2::new(0.0, 0.0), Vec2::new(3.0, 3.0)));
-    }
-
-    #[test]
-    fn swapped_row_blocks_run_left_to_right() {
-        let params = HeatmapLayerParams { num_rows: 5, ..params_2x3(true) };
-        assert_eq!(params.common().row_block_quad(2, 3), (Vec2::new(2.0, 0.0), Vec2::new(3.0, 3.0)));
-    }
-
-    #[test]
-    fn rows_per_texture_keeps_rows_whole() {
-        assert_eq!(rows_per_texture(3, 10), 3);
-        assert_eq!(rows_per_texture(20, 10), 1);
     }
 }

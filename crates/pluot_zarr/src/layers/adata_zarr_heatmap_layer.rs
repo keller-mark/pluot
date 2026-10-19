@@ -184,7 +184,7 @@ fn finite_or_unit(lo: f32, hi: f32) -> (f32, f32) {
     if lo.is_finite() && hi.is_finite() { (lo, hi) } else { (0.0, 1.0) }
 }
 
-fn axis_domains(axis: HeatmapAxis, mins: Vec<f32>, maxs: Vec<f32>) -> HeatmapAxisDomains {
+pub fn axis_domains(axis: HeatmapAxis, mins: Vec<f32>, maxs: Vec<f32>) -> HeatmapAxisDomains {
     let (mins, maxs): (Vec<f32>, Vec<f32>) = mins.into_iter().zip(maxs).map(|(lo, hi)| finite_or_unit(lo, hi)).unzip();
     HeatmapAxisDomains { axis, min: NumericData::from(mins), max: NumericData::from(maxs) }
 }
@@ -525,17 +525,5 @@ impl PickableLayer for AdataZarrHeatmapLayer {
         info.insert("var_index".to_string(), var_index.to_string());
         info.insert("value".to_string(), cell.info.get("value")?.clone());
         Some(LayerPickingResult { layer_id: self.layer_params.layer_id.clone(), info })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn axis_domains_replace_empty_extents_with_the_unit_domain() {
-        let domains = axis_domains(HeatmapAxis::Cols, vec![1.0, f32::INFINITY], vec![5.0, f32::NEG_INFINITY]);
-        assert_eq!(domains.min.as_f32().as_ref(), &[1.0, 0.0]);
-        assert_eq!(domains.max.as_f32().as_ref(), &[5.0, 1.0]);
     }
 }
