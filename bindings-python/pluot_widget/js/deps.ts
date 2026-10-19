@@ -8,6 +8,7 @@ declare const __PLUOT_REACT_VERSION__: string;
 
 const importUrl = (url: string): Promise<any> => import(/* @vite-ignore */ url);
 
+// Reference: https://github.com/vitessce/vitessce-python/blob/1fdcf8a238a5e22cdfad21ef2f679c03154f000c/src/vitessce/widget.py#L162
 let importWithMap: ImportWithMap;
 try {
   importWithMap = (await importUrl("https://unpkg.com/dynamic-importmap@0.1.0")).importWithMap;

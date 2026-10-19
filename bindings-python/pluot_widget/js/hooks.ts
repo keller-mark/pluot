@@ -1,5 +1,4 @@
 import type { AnyModel } from "@anywidget/types";
-import * as uuid from "@lukeed/uuid";
 import type {
   setStoreByName,
   AspectRatioAlignmentMode,
@@ -94,6 +93,24 @@ type PendingGet = {
   reject: (reason: unknown) => void;
 };
 
+// Fallback UUID for non-secure (http://) contexts where crypto.randomUUID is unavailable.
+// Reference: https://stackoverflow.com/a/8809472
+function generateId(): string {
+  let d = new Date().getTime();
+  let d2 = (typeof performance !== "undefined" && performance.now && performance.now() * 1000) || 0;
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    let r = Math.random() * 16;
+    if (d > 0) {
+      r = (d + r) % 16 | 0;
+      d = Math.floor(d / 16);
+    } else {
+      r = (d2 + r) % 16 | 0;
+      d2 = Math.floor(d2 / 16);
+    }
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 // Custom invoke matching the anywidget-command protocol implemented on the Python side.
 function invoke<T>(
   model: AnyModel<WidgetModel>,
@@ -101,8 +118,7 @@ function invoke<T>(
   msg: unknown,
   signal: AbortSignal = AbortSignal.timeout(30000),
 ): Promise<[T, DataView[]]> {
-  // crypto.randomUUID is unavailable in non-secure (http://) contexts.
-  const id = uuid.v4();
+  const id = generateId();
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(signal.reason);
