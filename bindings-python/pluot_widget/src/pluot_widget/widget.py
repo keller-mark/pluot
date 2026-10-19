@@ -49,10 +49,53 @@ class PluotWasmWidget(anywidget.AnyWidget):
 
     Every traitlet below is synced and described by its ``help``, so it can be
     passed to the constructor as a keyword argument, and changing it from Python
-    updates the plot. Traitlets
-    that the plot updates in response to user interactions (``camera_view``,
-    ``extent``, ``click_result``, ``brush``, and ``brushing_result``) can be
-    observed via ``widget.observe``.
+    updates the plot. Traitlets that the plot updates in response to user
+    interactions (``camera_view``, ``extent``, ``click_result``, ``brush``, and
+    ``brushing_result``) can be observed via ``widget.observe``.
+
+    Examples
+    --------
+    Create a widget that reads point coordinates from a zarr store. Layers refer
+    to arrays by their keys within the store.
+
+    >>> from zarr.storage import LocalStore
+    >>> def make_plot_params(point_radius):
+    ...     return dict(layers=[dict(
+    ...         layer_type="ZarrPointLayer",
+    ...         layer_params=dict(
+    ...             layer_id="points",
+    ...             x_key="/x",
+    ...             y_key="/y",
+    ...             point_radius=point_radius,
+    ...         ),
+    ...     )])
+    >>> widget = PluotWasmWidget(
+    ...     store=LocalStore("points.zarr"),
+    ...     store_name="points",
+    ...     width=600,
+    ...     height=400,
+    ...     plot_params=make_plot_params(3.0),
+    ... )
+    >>> widget  # Display it as the last expression of a notebook cell.
+
+    Update the plot by assigning traitlets, rather than by creating a new widget.
+    In marimo, this means that the cell which creates the widget must not
+    depend on UI element values, since marimo would re-run it and re-create
+    the widget. Instead, assign the values in a separate cell:
+
+    >>> widget.plot_params = make_plot_params(point_radius_slider.value)
+    >>> widget.width = 800
+
+    React to user interactions by observing the traitlets that the plot syncs
+    back, such as the camera matrix after the user zooms or pans:
+
+    >>> widget.observe(lambda change: print(change["new"]), names=["camera_view"])
+
+    In marimo, route the observed value through ``mo.state``, so that cells
+    which read it re-run when it changes:
+
+    >>> get_camera, set_camera = mo.state(widget.camera_view)
+    >>> widget.observe(lambda _: set_camera(widget.camera_view), names=["camera_view"])
     """
 
     _esm = _ESM
@@ -259,7 +302,7 @@ class PluotWasmWidget(anywidget.AnyWidget):
             generated name, which is then available as ``widget.store_name``.
         **kwargs
             Initial values for any of the traitlets defined on the class,
-            e.g., ``width``, ``height``, or ``plot_params``. Use help(PluotWasmWidget)
+            e.g., ``width``, ``height``, or ``plot_params``. Use ``help(PluotWasmWidget)``
             to list the available kwargs and their descriptions.
         """
         self._stores: dict = dict(stores or {})
