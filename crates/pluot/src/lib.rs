@@ -16,7 +16,7 @@ pub use pluot_core::render_traits::{
     InstancedOpacityParams,
 };
 pub use pluot_core::render_traits::{
-    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams,
+    EmphasisCriteria, CategoricalCriteriaParams, QuantitativeCriteriaParams, BooleanCriteriaParams,
 };
 pub use pluot_core::{RenderParams as RawRenderParams, LayerParams as RawLayerParams, LayeredPlotRenderParams as RawLayeredPlotRenderParams, PlotParams as RawPlotParams};
 pub use pluot_core::{project, unproject, get_bounds};
@@ -34,6 +34,10 @@ pub use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBas
 pub use pluot_core::render_traits::{FontWeight, FontStyle};
 pub use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings, DimensionOrder};
 pub use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskChannelSettings};
+pub use pluot_core::layers::heatmap_layer::{HeatmapLayerParams, HeatmapColormap, HeatmapQuantitativeColormapParams, HeatmapAxisDomains};
+pub use pluot_core::layers::heatmap_compressed_layer::{CompressedHeatmapLayerParams, HeatmapCsrLayerParams, HeatmapCscLayerParams};
+pub use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
+pub use pluot_core::compute::matrix_axis_extents::MatrixAxis;
 pub use pluot_core::numeric_data::NumericData;
 pub use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 pub use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
@@ -52,6 +56,9 @@ pub use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
 pub use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 pub use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 pub use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
+pub use pluot_zarr::layers::adata_zarr_heatmap_layer::AdataZarrHeatmapLayerParams;
+pub use pluot_zarr::heatmap_data::{AxisCriteria, IdentifierCriteriaParams, MatrixCacheMode, HeatmapNormalization};
+pub use pluot_zarr::zarr_emphasis_criteria::{ZarrEmphasisCriteria, ZarrCategoricalCriteriaParams, ZarrQuantitativeCriteriaParams, ZarrBooleanCriteriaParams};
 
 mod render_params;
 

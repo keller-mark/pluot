@@ -7,6 +7,7 @@ use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::composite_layers::axis_linear_layer::AxisPosition;
+use crate::viewport::get_bounds;
 use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_types::GpuContext;
@@ -16,6 +17,7 @@ use crate::d3::scale::{ScaleBand, Scaleable, Tickable};
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
 const DEFAULT_FONT_SIZE: f64 = 12.0;
+const DEFAULT_TITLE_PADDING: f64 = 3.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 
 /// Layer params struct for [`AxisBandLayer`].
@@ -26,7 +28,19 @@ pub struct AxisBandLayerParams {
     pub position: AxisPosition,
     pub domain: Arc<Vec<String>>,
 
-    // TODO: support a data_unit_mode param?
+    /// The span of data coordinates the bands cover along this axis, e.g.
+    /// `(0, n)` for `n` bands one data unit wide. When set, the bands follow
+    /// the camera, and bands whose center is outside the visible range are not
+    /// drawn. `None` (the default) spreads the bands across the layer in
+    /// pixels, ignoring the camera.
+    pub data_range: Option<(f64, f64)>,
+
+    /// Text centered along the axis at the outer edge of the margin. `None` draws no title.
+    pub title: Option<String>,
+    /// When true, the ticks and tick labels are hidden while each band is
+    /// narrower (in pixels) than the tick label font size, so that the labels
+    /// never overlap. Defaults to false.
+    pub hide_overlapping_ticks: Option<bool>,
 }
 
 impl Default for AxisBandLayerParams {
@@ -35,6 +49,9 @@ impl Default for AxisBandLayerParams {
             layer_id: "".to_string(),
             position: AxisPosition::Bottom,
             domain: Arc::new(vec![]),
+            data_range: None,
+            title: None,
+            hide_overlapping_ticks: None,
         }
     }
 }
@@ -52,6 +69,51 @@ impl AxisBandLayer {
             layer_params,
             sub_layer_instances: Vec::new(),
         }
+    }
+
+    fn shown_ticks(&self, scale: &ScaleBand) -> Vec<String> {
+        let ticks_overlap = scale.bandwidth().abs() < DEFAULT_FONT_SIZE;
+        if self.layer_params.hide_overlapping_ticks.unwrap_or(false) && ticks_overlap {
+            Vec::new()
+        } else {
+            scale.ticks(None)
+        }
+    }
+
+    fn build_title_sublayer(&self, sublayer_bounds: MarginParams) -> Option<Box<dyn PreparedAndDraw>> {
+        let title = self.layer_params.title.clone()?;
+        let bounds = self.view_params.margins.as_ref();
+        let margin = |f: fn(&MarginParams) -> Option<f32>| bounds.and_then(f).unwrap_or(0.0);
+        let (width, height) = (self.view_params.width as f32, self.view_params.height as f32);
+        let center_x = (margin(|m| m.margin_left) + width - margin(|m| m.margin_right)) / 2.0;
+        let center_y = (margin(|m| m.margin_bottom) + height - margin(|m| m.margin_top)) / 2.0;
+        let edge_offset = (DEFAULT_TITLE_PADDING + DEFAULT_FONT_SIZE / 2.0) as f32;
+        let (x, y, rotation) = match self.layer_params.position {
+            AxisPosition::Bottom => (center_x, edge_offset, 0.0),
+            AxisPosition::Top => (center_x, height - edge_offset, 0.0),
+            AxisPosition::Left => (edge_offset, center_y, -90.0),
+            AxisPosition::Right => (width - edge_offset, center_y, 90.0),
+        };
+        Some(Box::new(TextLayer::new(
+            self.view_params.clone(),
+            TextLayerParams {
+                layer_id: format!("{}_axis_band_layer_title_sublayer", self.layer_params.layer_id),
+                bounds: Some(sublayer_bounds),
+                data_unit_mode_x: UnitsMode::Pixels,
+                data_unit_mode_y: UnitsMode::Pixels,
+                text_size: DEFAULT_FONT_SIZE as f32,
+                text_size_unit_mode: UnitsMode::Pixels,
+                text_align_mode: TextAlignMode::Middle,
+                text_baseline_mode: TextBaselineMode::Middle,
+                text_rotation: Some(rotation),
+                font_weight: FontWeight::Normal,
+                font_style: FontStyle::Normal,
+                position_x: NumericData::Float32(Arc::new(vec![x])),
+                position_y: NumericData::Float32(Arc::new(vec![y])),
+                text_vec: Arc::new(vec![title]),
+                ..Default::default()
+            },
+        )))
     }
 
     fn build_sublayers(&self) -> Vec<Box<dyn PreparedAndDraw>> {
@@ -73,10 +135,26 @@ impl AxisBandLayer {
         let mut scale = ScaleBand::new();
         scale.set_domain(self.layer_params.domain.to_vec());
 
+        let horizontal_px = (margin_left, viewport_w - margin_right);
+        let vertical_px = (margin_bottom, viewport_h - margin_top);
+        let visible_bounds = get_bounds(&self.view_params);
+        // The pixel span the bands cover: the whole layer, or the projection of
+        // `data_range` given the visible data bounds.
+        let band_range_px = |layer_px: (f64, f64), visible: (f32, f32)| match self.layer_params.data_range {
+            None => layer_px,
+            Some((start, end)) => {
+                let to_px = |value: f64| {
+                    layer_px.0 + (value - visible.0 as f64) / (visible.1 - visible.0) as f64 * (layer_px.1 - layer_px.0)
+                };
+                (to_px(start), to_px(end))
+            }
+        };
+        let is_visible = |px: f64, layer_px: (f64, f64)| px >= layer_px.0 && px <= layer_px.1;
+
         match self.layer_params.position {
             AxisPosition::Bottom => {
-                scale.set_range((margin_left, viewport_w - margin_right));
-                let ticks = scale.ticks(None);
+                scale.set_range(band_range_px(horizontal_px, (visible_bounds.x_min, visible_bounds.x_max)));
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_y = margin_bottom;
 
@@ -85,7 +163,11 @@ impl AxisBandLayer {
                 line_target_positions.push([(viewport_w - margin_right) as f32, axis_y as f32]);
 
                 for tick in &ticks {
-                    let x = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let x_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(x_px, horizontal_px) {
+                        continue;
+                    }
+                    let x = x_px as f32;
                     let y = axis_y as f32;
 
                     // Tick line
@@ -98,8 +180,8 @@ impl AxisBandLayer {
                 }
             }
             AxisPosition::Top => {
-                scale.set_range((margin_left, viewport_w - margin_right));
-                let ticks = scale.ticks(None);
+                scale.set_range(band_range_px(horizontal_px, (visible_bounds.x_min, visible_bounds.x_max)));
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_y = viewport_h - margin_top;
 
@@ -108,7 +190,11 @@ impl AxisBandLayer {
                 line_target_positions.push([(viewport_w - margin_right) as f32, axis_y as f32]);
 
                 for tick in &ticks {
-                    let x = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let x_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(x_px, horizontal_px) {
+                        continue;
+                    }
+                    let x = x_px as f32;
                     let y = axis_y as f32;
 
                     // Tick line (upward)
@@ -121,8 +207,8 @@ impl AxisBandLayer {
                 }
             }
             AxisPosition::Left => {
-                scale.set_range((margin_bottom, viewport_h - margin_top));
-                let ticks = scale.ticks(None);
+                scale.set_range(band_range_px(vertical_px, (visible_bounds.y_min, visible_bounds.y_max)));
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_x = margin_left;
 
@@ -131,8 +217,12 @@ impl AxisBandLayer {
                 line_target_positions.push([axis_x as f32, (viewport_h - margin_top) as f32]);
 
                 for tick in &ticks {
+                    let y_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(y_px, vertical_px) {
+                        continue;
+                    }
                     let x = axis_x as f32;
-                    let y = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let y = y_px as f32;
 
                     // Tick line (leftward)
                     line_source_positions.push([x, y]);
@@ -144,8 +234,8 @@ impl AxisBandLayer {
                 }
             }
             AxisPosition::Right => {
-                scale.set_range((margin_bottom, viewport_h - margin_top));
-                let ticks = scale.ticks(None);
+                scale.set_range(band_range_px(vertical_px, (visible_bounds.y_min, visible_bounds.y_max)));
+                let ticks = self.shown_ticks(&scale);
                 let bandwidth = scale.bandwidth();
                 let axis_x = viewport_w - margin_right;
 
@@ -154,8 +244,12 @@ impl AxisBandLayer {
                 line_target_positions.push([axis_x as f32, (viewport_h - margin_top) as f32]);
 
                 for tick in &ticks {
+                    let y_px = scale.scale(tick) + bandwidth / 2.0;
+                    if !is_visible(y_px, vertical_px) {
+                        continue;
+                    }
                     let x = axis_x as f32;
-                    let y = (scale.scale(tick) + bandwidth / 2.0) as f32;
+                    let y = y_px as f32;
 
                     // Tick line (rightward)
                     line_source_positions.push([x, y]);
@@ -211,6 +305,8 @@ impl AxisBandLayer {
             self.view_params.clone(),
             line_params,
         )));
+
+        sublayers.extend(self.build_title_sublayer(sublayer_bounds.clone()));
 
         // TextLayer for tick labels
         if !text_strings.is_empty() {

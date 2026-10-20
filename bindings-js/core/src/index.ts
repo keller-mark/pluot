@@ -43,7 +43,7 @@ export type {
   NormalizeStoresParam,
 } from './store-normalization.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
-export { getBounds, getCameraMatrixFromBounds } from './viewport.js';
+export { getBounds, getCameraMatrixFromBounds, refitCameraMatrixForViewport } from './viewport.js';
 export type {
   AspectRatioMode,
   AspectRatioAlignmentMode,
@@ -54,7 +54,7 @@ export type {
 export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';
 export type { CameraMatrix } from './functional-dom-2d-camera.js';
 export { onMouseMove as onMouseMove3d, onWheel as onWheel3d } from './functional-3d-view-controls.js';
-export type { CameraFilterFunction } from "./camera-filters.js";
+export type { CameraFilterFunction, CameraFilterContext } from "./camera-filters.js";
 export {
   fixX,
   fixY,
@@ -64,4 +64,6 @@ export {
   fixYAxisAtXZero,
   fixXAndFixXAxisAtYZero,
   fixYAndFixYAxisAtXZero,
+  limitExtent,
+  zoomToSquare,
 } from './camera-filters.js';

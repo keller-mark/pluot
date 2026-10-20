@@ -295,7 +295,8 @@ export type CameraFilterString = "fixX"
   | "fixXAxisAtYZero"
   | "fixYAxisAtXZero"
   | "fixXAndFixXAxisAtYZero"
-  | "fixYAndFixYAxisAtXZero";
+  | "fixYAndFixYAxisAtXZero"
+  | "zoomToSquare";
 
 
 // === Component props ===
@@ -368,6 +369,18 @@ export type PluotProps = {
   setCameraMatrix?: ((cameraMatrix: CameraMatrix) => void) | null;
 
   cameraFilter?: CameraFilterString | CameraFilterFunction | null;
+
+  /**
+   * Prevent zooming or panning beyond the extent returned by `extent_wasm`.
+   * Applied after `cameraFilter`.
+   */
+  limitExtent?: boolean;
+
+  /**
+   * Whether to refit the camera when `aspectRatioMode` or `aspectRatioAlignmentMode`
+   * changes, so that the same data bounds remain visible. Defaults to true.
+   */
+  refitCameraOnAspectRatioChange?: boolean;
 
   /** Whether clicking should run a picking query and call `onClick`. */
   enableClick?: boolean;

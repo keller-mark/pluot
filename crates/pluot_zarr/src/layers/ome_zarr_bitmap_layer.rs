@@ -17,6 +17,7 @@ use pluot_core::layers::bitmap_layer::{
     BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder,
 };
 use pluot_core::numeric_data::NumericData;
+use crate::zarr_numeric_data::retrieve_numeric_subset;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
@@ -182,9 +183,6 @@ impl OmeZarrBitmapLayer {
             format!("t_{:?}", target_t),
         ];
 
-        let num_channels = channel_settings.len();
-        let tile_num_elements = num_channels * tile_h as usize * tile_w as usize;
-
         // Open the array once; it is reused by every per-channel fetch below.
         // When `array_metadata` is provided (the common multiscale path) this is a
         // cheap in-memory construction with no storage I/O.
@@ -200,14 +198,6 @@ impl OmeZarrBitmapLayer {
                     panic!("Failed to open array at {}: {:?}", array_path, e)
                 })
         };
-
-        // Detect the array's data type to load in the native dtype.
-        use zarrs::plugin::{ExtensionName, ZarrVersion};
-        let dtype_name = array
-            .data_type()
-            .name(ZarrVersion::V3)
-            .expect("Array data type must have a V3 name")
-            .to_string();
 
         // Build the per-channel cache key and array subset for each channel up front.
         // These are owned and outlive the futures below, which borrow them.
@@ -250,31 +240,9 @@ impl OmeZarrBitmapLayer {
 
         // Fetch (and independently cache) each channel's slice concurrently.
         let array = &array;
-        let dtype_name = &dtype_name;
         let channel_futures = channel_requests.iter().map(|(channel_keys, subset)| {
             use_memo_numeric_data(async || {
-                macro_rules! load_channel_data {
-                    ($rust_ty:ty, $variant:ident) => {{
-                        let chunk = array
-                            .async_retrieve_array_subset::<Vec<$rust_ty>>(subset)
-                            .await?;
-                        NumericData::$variant(Arc::new(chunk))
-                    }};
-                }
-
-                Ok::<NumericData, zarrs::array::ArrayError>(match dtype_name.as_str() {
-                    "uint8" => load_channel_data!(u8, Uint8),
-                    "uint16" => load_channel_data!(u16, Uint16),
-                    "uint32" => load_channel_data!(u32, Uint32),
-                    "uint64" => load_channel_data!(u64, Uint64),
-                    "int8" => load_channel_data!(i8, Int8),
-                    "int16" => load_channel_data!(i16, Int16),
-                    "int32" => load_channel_data!(i32, Int32),
-                    "int64" => load_channel_data!(i64, Int64),
-                    "float32" => load_channel_data!(f32, Float32),
-                    "float64" => load_channel_data!(f64, Float64),
-                    _ => panic!("Unsupported zarr data type: {}", dtype_name),
-                })
+                retrieve_numeric_subset(array, subset).await
             }, channel_keys, cache_enabled)
         });
 
@@ -283,36 +251,9 @@ impl OmeZarrBitmapLayer {
             .into_iter()
             .collect::<Result<_, _>>()?;
 
-        // Concatenate the per-channel slices into one contiguous tile buffer on-the-fly.
         // The concatenated result is intentionally not cached, since the underlying
-        // per-channel data is already cached above. All channels share the array's
-        // data type, so we match on it once.
-        macro_rules! concat_channels {
-            ($rust_ty:ty, $variant:ident) => {{
-                let mut combined: Vec<$rust_ty> = Vec::with_capacity(tile_num_elements);
-                for part in &channel_parts {
-                    match &**part {
-                        NumericData::$variant(v) => combined.extend_from_slice(v),
-                        _ => unreachable!("All channels share the array's data type"),
-                    }
-                }
-                NumericData::$variant(Arc::new(combined))
-            }};
-        }
-
-        Ok(match dtype_name.as_str() {
-            "uint8" => concat_channels!(u8, Uint8),
-            "uint16" => concat_channels!(u16, Uint16),
-            "uint32" => concat_channels!(u32, Uint32),
-            "uint64" => concat_channels!(u64, Uint64),
-            "int8" => concat_channels!(i8, Int8),
-            "int16" => concat_channels!(i16, Int16),
-            "int32" => concat_channels!(i32, Int32),
-            "int64" => concat_channels!(i64, Int64),
-            "float32" => concat_channels!(f32, Float32),
-            "float64" => concat_channels!(f64, Float64),
-            _ => panic!("Unsupported zarr data type: {}", dtype_name),
-        })
+        // per-channel data is already cached above.
+        Ok(NumericData::concat(&channel_parts))
     }
 }
 

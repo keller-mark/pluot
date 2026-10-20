@@ -9,11 +9,12 @@ import {
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
   onMouseMove3d, onWheel3d,
-  getCameraMatrixFromBounds,
+  getCameraMatrixFromBounds, refitCameraMatrixForViewport,
   fixX, fixY, fixXAxisAtYZero, fixYAxisAtXZero,
   fixXAndFixXAxisAtYZero, fixYAndFixYAxisAtXZero,
+  limitExtent as limitExtentFilter, zoomToSquare,
   type CameraMatrix, type Bounds, type AspectRatioMode, type AspectRatioAlignmentMode,
-  type CameraFilterFunction,
+  type CameraFilterFunction, type CameraFilterContext,
 } from '@pluot/core';
 import { Tooltip } from "./Tooltip.js";
 import { BrushOverlay } from "./BrushOverlay.js";
@@ -183,6 +184,8 @@ function PluotInner(props: PluotProps) {
     cameraMatrix: cameraMatrixPropRaw = null,
     setCameraMatrix: setCameraMatrixProp = null,
     cameraFilter: cameraFilterProp = null,
+    limitExtent = false,
+    refitCameraOnAspectRatioChange = true,
     enableExtentQuery = true,
     enableClick = false,
     enableTooltip = false,
@@ -226,7 +229,7 @@ function PluotInner(props: PluotProps) {
   const [isWasmReady, setIsWasmReady] = useState(false);
   const [supportsWebGpu, supportsWebGpuMessage] = useMemo(checkWebGpuFeatureDetection, []);
 
-  const cameraFilter: CameraFilterFunction = useMemo(() => {
+  const baseCameraFilter: CameraFilterFunction = useMemo(() => {
     if (cameraFilterProp && typeof cameraFilterProp === "string") {
       switch (cameraFilterProp) {
         case "fixX": return fixX;
@@ -235,6 +238,7 @@ function PluotInner(props: PluotProps) {
         case "fixYAxisAtXZero": return fixYAxisAtXZero;
         case "fixXAndFixXAxisAtYZero": return fixXAndFixXAxisAtYZero;
         case "fixYAndFixYAxisAtXZero": return fixYAndFixYAxisAtXZero;
+        case "zoomToSquare": return zoomToSquare;
       }
     } else if (cameraFilterProp && typeof cameraFilterProp === "function") {
       return cameraFilterProp;
@@ -242,6 +246,13 @@ function PluotInner(props: PluotProps) {
       return (prev: CameraMatrix, next: CameraMatrix) => next;
     }
   }, [cameraFilterProp]);
+
+  const cameraFilter: CameraFilterFunction = useMemo(() => {
+    if (!limitExtent) {
+      return baseCameraFilter;
+    }
+    return (prev, next, context) => limitExtentFilter(prev, baseCameraFilter(prev, next, context), context);
+  }, [baseCameraFilter, limitExtent]);
 
   // Ensure that the cameraMatrix prop equality is not based on the object reference,
   // as it may change on every render despite the internal camera property reference
@@ -280,8 +291,9 @@ function PluotInner(props: PluotProps) {
 
   // Whether we actually need the fetched full extent to compute the camera
   // bounds below: not when the camera is user-controlled, and not when both
-  // `xLim`/`yLim` are already given explicitly.
-  const extentQueryEnabled = enableExtentQuery && isWasmReady && !hasCompleteCameraParams;
+  // `xLim`/`yLim` are already given explicitly, unless a camera filter needs it.
+  const cameraFilterNeedsExtent = limitExtent || cameraFilterProp === "zoomToSquare";
+  const extentQueryEnabled = enableExtentQuery && isWasmReady && (!hasCompleteCameraParams || cameraFilterNeedsExtent);
 
   // Runs the extent query against the wasm module. Excludes `plotType`/
   // `plotParams`/`stores` from the key: for now, `plotId` alone is used to
@@ -410,9 +422,19 @@ function PluotInner(props: PluotProps) {
 
   const hasFullCameraMatrixProp = cameraMatrixProp && isArray(cameraMatrixProp);
 
+  const cameraFilterContext: CameraFilterContext = useMemo(() => {
+    const fullExtent = unionExtent(extentQuery.data);
+    return {
+      width, height, aspectRatioMode, aspectRatioAlignmentMode,
+      margins: { marginTop, marginRight, marginBottom, marginLeft },
+      xExtent: fullExtent.x,
+      yExtent: fullExtent.y,
+    };
+  }, [width, height, aspectRatioMode, aspectRatioAlignmentMode, marginTop, marginRight, marginBottom, marginLeft, extentQuery.data]);
+
   const filteredInitialCameraMatrix = useMemo(() => {
     if (initialCameraMatrix) {
-      return cameraFilter(initialCameraMatrix, initialCameraMatrix);
+      return cameraFilter(initialCameraMatrix, initialCameraMatrix, cameraFilterContext);
     }
     // Was undefined.
     return initialCameraMatrix;
@@ -453,6 +475,33 @@ function PluotInner(props: PluotProps) {
 
   // If this is false, then we cannot render anything, as we are still awaiting the extent_wasm call.
   const hasCameraMatrix = cameraMatrix !== undefined;
+
+  // A camera matrix fitted under one aspect ratio mode can be wrong under another (e.g., one
+  // fitted under "Ignore" zooms x and y independently, stretching the data under "Contain"),
+  // so refit the camera to the same visible bounds whenever the aspect ratio settings change.
+  // A controlled camera without a full matrix prop is re-derived from the extent anyway.
+  const isCameraMatrixStateful = !isControlledCamera || hasFullCameraMatrixProp;
+  const prevAspectRatioSettingsRef = useRef({ aspectRatioMode, aspectRatioAlignmentMode });
+  const refitCameraForAspectRatioSettings = useEffectEvent(() => {
+    const prev = prevAspectRatioSettingsRef.current;
+    prevAspectRatioSettingsRef.current = { aspectRatioMode, aspectRatioAlignmentMode };
+    if (!refitCameraOnAspectRatioChange || !cameraMatrix || !isCameraMatrixStateful || viewMode !== "2d") {
+      return;
+    }
+    const margins = { marginTop, marginRight, marginBottom, marginLeft };
+    const nextCameraMatrix = refitCameraMatrixForViewport(
+      Float32Array.from(cameraMatrix),
+      { width, height, margins, aspectRatioMode: prev.aspectRatioMode, aspectRatioAlignmentMode: prev.aspectRatioAlignmentMode },
+      { width, height, margins, aspectRatioMode, aspectRatioAlignmentMode },
+    );
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
+  });
+  useEffect(() => {
+    const prev = prevAspectRatioSettingsRef.current;
+    if (prev.aspectRatioMode !== aspectRatioMode || prev.aspectRatioAlignmentMode !== aspectRatioAlignmentMode) {
+      refitCameraForAspectRatioSettings();
+    }
+  }, [aspectRatioMode, aspectRatioAlignmentMode]);
 
   // Build the top-level `stores` map that RenderParams expects: a mapping from
   // store name to its derived `ZarrStoreInfo` metadata.
@@ -540,7 +589,7 @@ function PluotInner(props: PluotProps) {
           marginRight,
         },
       }, cameraMatrix, event);
-    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix));
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
   });
 
   const mouseMoveHandler = useEffectEvent((event: MouseEvent) => {
@@ -566,7 +615,7 @@ function PluotInner(props: PluotProps) {
           marginRight,
         },
       }, cameraMatrix, event);
-    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix));
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
   });
 
   // Builds the params snapshot for a pick at the given screen coordinates,

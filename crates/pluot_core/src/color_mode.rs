@@ -275,7 +275,7 @@ fn palette_texture(view: wgpu::TextureView) -> PreparedColorTexture {
 /// Upload a palette as a 1-row `Rgba32Float` texture, one texel per color, and
 /// return a view of it. WGSL textures cannot have zero width, so an empty
 /// palette falls back to a single opaque-black texel.
-fn create_palette_texture(
+pub(crate) fn create_palette_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     colors: &[[f32; 4]],

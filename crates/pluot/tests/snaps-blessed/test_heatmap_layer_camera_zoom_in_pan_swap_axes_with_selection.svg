@@ -1,0 +1,16 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_heatmap_layer_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#my_heatmap_layer_clip_path)" transform="translate(0,0)">
+<g transform="translate(0,-166.66668701171875) scale(50,66.66667175292969)">
+<image height="4" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAAECAYAAABLLYUHAAAAP0lEQVR4AQE0AMv/AEQBVDMrc47/ds9T/wBHJnUzIZCN/7DdMf8AQEOFMyapg//95yX/ADZcjDNIvm7//ecl/02sGP7BiCQNAAAAAElFTkSuQmCC" opacity="1" style="image-rendering: pixelated" width="3" x="0" y="0"/>
+</g>
+</g>
+</g>
+</g>
+</svg>

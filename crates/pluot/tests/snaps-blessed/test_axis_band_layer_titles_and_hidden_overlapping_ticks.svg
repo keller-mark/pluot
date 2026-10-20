@@ -1,0 +1,41 @@
+<svg height="200" width="200" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="x_axis_axis_band_layer_line_sublayer_clip_path">
+<rect height="200" width="200" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="200" width="200">
+<g clip-path="url(#x_axis_axis_band_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="40" x2="200" y1="160" y2="160"/>
+</g>
+<g clip-path="url(#x_axis_axis_band_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(0 120 191)" x="120" y="191">
+Columns
+</text>
+</g>
+<g clip-path="url(#x_axis_axis_band_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="40" x2="40" y1="160" y2="0"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="40" x2="34" y1="133.33334350585938" y2="133.33334350585938"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="40" x2="34" y1="80" y2="80"/>
+<line opacity="1" stroke="rgb(0, 0, 0)" stroke-width="1" x1="40" x2="34" y1="26.666671752929688" y2="26.666671752929688"/>
+</g>
+<g clip-path="url(#x_axis_axis_band_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="middle" transform="rotate(-90 9 80)" x="9" y="80">
+Rows
+</text>
+</g>
+<g clip-path="url(#x_axis_axis_band_layer_line_sublayer_clip_path)" transform="translate(0,0)">
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 31 133.33334350585938)" x="31" y="133.33334350585938">
+r0
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 31 80)" x="31" y="80">
+r1
+</text>
+<text dominant-baseline="middle" fill="rgb(0, 0, 0)" font-family="Helvetica" font-size="12" font-style="normal" font-weight="normal" opacity="1" text-anchor="end" transform="rotate(0 31 26.666671752929688)" x="31" y="26.666671752929688">
+r2
+</text>
+</g>
+</g>
+</g>
+</svg>

@@ -231,3 +231,21 @@ export function getCameraMatrixFromBounds(bounds: Bounds, prevCameraMatrix: Floa
     translateX, translateY, 0.0, 1.0,
   ]);
 }
+
+/**
+ * Convert a 2D camera matrix that was fitted under one viewport's aspect ratio
+ * settings into the equivalent camera matrix for another, keeping the same
+ * visible data bounds.
+ *
+ * Under "Contain" and "Cover", the result zooms both axes equally (see
+ * {@link getCameraMatrixFromBounds}), so a camera that was fitted under
+ * "Ignore" (which zooms each axis independently) no longer stretches the data.
+ */
+export function refitCameraMatrixForViewport(
+  cameraMatrix: Float32Array,
+  prevViewportParams: ViewportParams,
+  nextViewportParams: ViewportParams,
+): Float32Array {
+  const visibleBounds = getBounds(cameraMatrix, prevViewportParams);
+  return getCameraMatrixFromBounds(visibleBounds, cameraMatrix, nextViewportParams);
+}

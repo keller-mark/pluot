@@ -327,6 +327,12 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         let bailed_early = foreground_arr.is_none();
 
+        let background_quantity = if self.layer_params.filtering_criteria.is_empty() {
+            None
+        } else {
+            Some(background_arr)
+        };
+
         let histogram_layer = PrecomputedHistogramLayer::new(
             self.view_params.clone(),
             PrecomputedHistogramLayerParams {
@@ -338,10 +344,8 @@ impl PreparedLayer for ZarrHistogramLayer {
                 num_bins,
                 quantity_min: 0.0,
                 quantity_max: max_count,
-                // While the foreground counts are still loading, only the
-                // filter-included ("background") bars are drawn.
                 quantity: foreground_arr.unwrap_or_else(|| Arc::new(vec![])),
-                background_quantity: Some(background_arr),
+                background_quantity,
                 bar_margin: None,
                 fill_color: self.layer_params.fill_color,
                 background_fill_color: self.layer_params.background_fill_color,

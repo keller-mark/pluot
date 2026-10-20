@@ -64,8 +64,76 @@ macro_rules! impl_from_for_numeric_data {
                     NumericData::$variant(Arc::new(v))
                 }
             }
+            impl NumericElement for $t {
+                fn slice_of(data: &NumericData) -> Option<&[Self]> {
+                    match data {
+                        NumericData::$variant(v) => Some(v),
+                        _ => None,
+                    }
+                }
+            }
         )*
     };
+}
+
+/// A Rust element type held by exactly one [`NumericData`] variant.
+pub trait NumericElement: Copy + Default + 'static {
+    /// The values of `data`, if it holds this element type.
+    fn slice_of(data: &NumericData) -> Option<&[Self]>;
+}
+
+/// Evaluates `$body` with `$values` bound to the native `&Arc<Vec<T>>` that a `&NumericData`
+/// holds, so that code stays generic over the dtype without converting it. Every arm must
+/// evaluate to the same type, so `$body` is typically a call to a function generic over `T`.
+#[macro_export]
+macro_rules! with_numeric_slice {
+    ($data:expr, |$values:ident| $body:expr) => {
+        match $data {
+            $crate::numeric_data::NumericData::Uint8($values) => $body,
+            $crate::numeric_data::NumericData::Uint16($values) => $body,
+            $crate::numeric_data::NumericData::Uint32($values) => $body,
+            $crate::numeric_data::NumericData::Uint64($values) => $body,
+            $crate::numeric_data::NumericData::Int8($values) => $body,
+            $crate::numeric_data::NumericData::Int16($values) => $body,
+            $crate::numeric_data::NumericData::Int32($values) => $body,
+            $crate::numeric_data::NumericData::Int64($values) => $body,
+            $crate::numeric_data::NumericData::Float32($values) => $body,
+            $crate::numeric_data::NumericData::Float64($values) => $body,
+        }
+    };
+}
+
+/// [`with_numeric_slice`] for data that must hold integers, such as a sparse matrix's `indptr`
+/// or `indices`. Panics on float data.
+#[macro_export]
+macro_rules! with_int_slice {
+    ($data:expr, |$values:ident| $body:expr) => {
+        match $data {
+            $crate::numeric_data::NumericData::Uint8($values) => $body,
+            $crate::numeric_data::NumericData::Uint16($values) => $body,
+            $crate::numeric_data::NumericData::Uint32($values) => $body,
+            $crate::numeric_data::NumericData::Uint64($values) => $body,
+            $crate::numeric_data::NumericData::Int8($values) => $body,
+            $crate::numeric_data::NumericData::Int16($values) => $body,
+            $crate::numeric_data::NumericData::Int32($values) => $body,
+            $crate::numeric_data::NumericData::Int64($values) => $body,
+            $crate::numeric_data::NumericData::Float32(_) | $crate::numeric_data::NumericData::Float64(_) => {
+                panic!("Expected integer NumericData, got floats")
+            }
+        }
+    };
+}
+
+fn concat_as<T: NumericElement>(first: &[T], parts: &[impl AsRef<NumericData>]) -> NumericData
+where
+    NumericData: From<Vec<T>>,
+{
+    let mut combined = Vec::with_capacity(parts.iter().map(|part| part.as_ref().len()).sum());
+    combined.extend_from_slice(first);
+    for part in &parts[1..] {
+        combined.extend_from_slice(T::slice_of(part.as_ref()).expect("Concatenated NumericData must share one dtype"));
+    }
+    NumericData::from(combined)
 }
 
 impl_from_for_numeric_data! {
@@ -101,6 +169,14 @@ impl NumericData {
     /// Whether the array is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// The elements of every one of `parts`, which must share one dtype, end to end.
+    pub fn concat(parts: &[impl AsRef<NumericData>]) -> NumericData {
+        let Some(first) = parts.first() else {
+            return NumericData::Float32(Arc::new(Vec::new()));
+        };
+        with_numeric_slice!(first.as_ref(), |values| concat_as(values, parts))
     }
 
     /// Get element at index as f32.
@@ -257,81 +333,92 @@ impl NumericData {
         label: &str,
     ) -> (wgpu::TextureView, TextureDtype) {
         let (data_bytes, dtype) = self.as_texture_data();
+        (upload_data_texture(device, queue, &data_bytes, dtype, label), dtype)
+    }
+}
 
-        let bytes_per_texel = dtype.bytes_per_texel();
-        let num_texels = data_bytes.len() as u32 / bytes_per_texel;
-        let max_dim = device.limits().max_texture_dimension_2d;
-        let tex_width = num_texels.min(max_dim).max(1);
-        let tex_height = num_texels.div_ceil(tex_width).max(1);
-        if tex_height > max_dim {
-            log(&format!(
-                "{label}: data ({num_texels} texels) exceeds the maximum texture \
-                 size ({max_dim}x{max_dim}); it will be truncated. Consider \
-                 tiling or downsampling.",
-            ));
-        }
+/// The upload half of [`NumericData::create_data_texture`], for callers that
+/// already hold [`NumericData::as_texture_data`] bytes and want to upload a
+/// sub-range of them (e.g. one block of rows) without copying.
+pub fn upload_data_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data_bytes: &[u8],
+    dtype: TextureDtype,
+    label: &str,
+) -> wgpu::TextureView {
+    let bytes_per_texel = dtype.bytes_per_texel();
+    let num_texels = data_bytes.len() as u32 / bytes_per_texel;
+    let max_dim = device.limits().max_texture_dimension_2d;
+    let tex_width = num_texels.min(max_dim).max(1);
+    let tex_height = num_texels.div_ceil(tex_width).max(1);
+    if tex_height > max_dim {
+        log(&format!(
+            "{label}: data ({num_texels} texels) exceeds the maximum texture \
+             size ({max_dim}x{max_dim}); it will be truncated. Consider \
+             tiling or downsampling.",
+        ));
+    }
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(label),
-            size: wgpu::Extent3d {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: tex_width,
+            height: tex_height.min(max_dim),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: dtype.texture_format(),
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+
+    // Upload the tightly-packed data. The full rows go in one copy; any
+    // trailing partial row goes in a second copy. (`queue.write_texture`
+    // imposes no bytes-per-row alignment, unlike buffer-to-texture copies.)
+    // Texels past the end of the data are never indexed by the shader.
+    let full_rows = num_texels / tex_width;
+    let remainder = num_texels % tex_width;
+    if full_rows > 0 {
+        queue.write_texture(
+            texture.as_image_copy(),
+            &data_bytes[..(full_rows * tex_width * bytes_per_texel) as usize],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(tex_width * bytes_per_texel),
+                rows_per_image: Some(full_rows),
+            },
+            wgpu::Extent3d {
                 width: tex_width,
-                height: tex_height.min(max_dim),
+                height: full_rows,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: dtype.texture_format(),
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        // Upload the tightly-packed data. The full rows go in one copy; any
-        // trailing partial row goes in a second copy. (`queue.write_texture`
-        // imposes no bytes-per-row alignment, unlike buffer-to-texture copies.)
-        // Texels past the end of the data are never indexed by the shader.
-        let full_rows = num_texels / tex_width;
-        let remainder = num_texels % tex_width;
-        if full_rows > 0 {
-            queue.write_texture(
-                texture.as_image_copy(),
-                &data_bytes[..(full_rows * tex_width * bytes_per_texel) as usize],
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(tex_width * bytes_per_texel),
-                    rows_per_image: Some(full_rows),
-                },
-                wgpu::Extent3d {
-                    width: tex_width,
-                    height: full_rows,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-        if remainder > 0 {
-            let row_start = (full_rows * tex_width * bytes_per_texel) as usize;
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: full_rows, z: 0 },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &data_bytes[row_start..],
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(remainder * bytes_per_texel),
-                    rows_per_image: Some(1),
-                },
-                wgpu::Extent3d {
-                    width: remainder,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        (view, dtype)
+        );
     }
+    if remainder > 0 {
+        let row_start = (full_rows * tex_width * bytes_per_texel) as usize;
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: full_rows, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data_bytes[row_start..],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(remainder * bytes_per_texel),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: remainder,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }

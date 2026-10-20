@@ -78,7 +78,7 @@ fn scalar_output_identity(mode: &ReduceMode) -> (u32, u32) {
 /// then unmaps it. See `reduce.rs`'s `read_back_f32` (same shape, `u32`
 /// instead of `f32` since every value this module reads back — bit-packed
 /// floats, order-keys, or plain counts — is stored as a raw `u32`).
-async fn read_back_u32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) -> Vec<u32> {
+pub(super) async fn read_back_u32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) -> Vec<u32> {
     let buffer_slice = download_buffer.slice(..);
 
     #[cfg(target_arch = "wasm32")]

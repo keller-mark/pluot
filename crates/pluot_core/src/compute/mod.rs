@@ -1,6 +1,9 @@
 //! Module where functions that perform GPGPU compute operations (and their CPU fallbacks) are defined.
 pub mod reduce;
 pub mod reduce_stratified;
+pub mod included_indices;
+pub mod matrix_axis_extents;
+pub mod histogram_percentile;
 
 /// Paired background/foreground result of a compute operation run with
 /// filtering/selection criteria.

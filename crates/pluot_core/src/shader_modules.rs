@@ -329,6 +329,52 @@ pub mod is_included {
     /// Per-element scalar value tested against either a lower or upper bound but not both.
     pub const QUANTITATIVE_ONE_SIDED: &str =
         include_str!("wgsl_functions/get_is_included/quantitative_one_sided.wgsl");
+
+    /// Per-element boolean (or 0/1) mask; nonzero items are included.
+    pub const BOOLEAN: &str = include_str!("wgsl_functions/get_is_included/boolean.wgsl");
+}
+
+/// `fn get_matrix_value(row: u32, col: u32) -> f32` snippets, one per matrix
+/// storage layout, shared by the heatmap layers and matrix compute shaders.
+/// Each assumes [`common::FLAT_TEXEL_COORD`] is also injected.
+pub mod matrix_value {
+    /// Row-major dense values.
+    pub const DENSE: &str = include_str!("wgsl_functions/matrix_value/dense.wgsl");
+
+    /// CSR values. Depends on [`COMPRESSED_LOOKUP`].
+    pub const CSR: &str = include_str!("wgsl_functions/matrix_value/csr.wgsl");
+
+    /// CSC values. Depends on [`COMPRESSED_LOOKUP`].
+    pub const CSC: &str = include_str!("wgsl_functions/matrix_value/csc.wgsl");
+
+    /// `fn get_compressed_value(major, minor_position) -> f32`. Depends on one
+    /// of the `MINOR_SUBSET_*` snippets.
+    pub const COMPRESSED_LOOKUP: &str = include_str!("wgsl_functions/matrix_value/compressed_lookup.wgsl");
+
+    /// `fn get_minor_index(minor_position) -> u32` showing every minor index.
+    pub const MINOR_SUBSET_IDENTITY: &str = include_str!("wgsl_functions/matrix_value/minor_subset_identity.wgsl");
+
+    /// `fn get_minor_index(minor_position) -> u32` reading a subset texture.
+    pub const MINOR_SUBSET_TEXTURE: &str = include_str!("wgsl_functions/matrix_value/minor_subset_texture.wgsl");
+}
+
+/// `HeatmapLayer` cell-color snippets, each defining `fn get_cell_color(value:
+/// f32, row: u32, col: u32) -> vec3<f32>`, plus the quantitative domain lookups. Assembled at runtime by
+/// `crate::layers::heatmap_layer`.
+pub mod heatmap_cell_color {
+    /// Cell values normalized against a domain and mapped through a
+    /// continuous colormap (injected separately, at `{{colormap_fn_name}}`).
+    pub const QUANTITATIVE: &str = include_str!("wgsl_functions/heatmap/cell_color_quantitative.wgsl");
+
+    /// Cell values as integer codes indexed against a palette texture.
+    pub const CATEGORICAL: &str = include_str!("wgsl_functions/heatmap/cell_color_categorical.wgsl");
+
+    /// `fn get_cell_domain(row, col) -> vec2<f32>` returning the uniform domain.
+    pub const DOMAIN_UNIFORM: &str = include_str!("wgsl_functions/heatmap/cell_domain_uniform.wgsl");
+
+    /// `fn get_cell_domain(row, col) -> vec2<f32>` reading per-row or
+    /// per-column domain textures, indexed by `{{domain_index}}`.
+    pub const DOMAIN_PER_AXIS: &str = include_str!("wgsl_functions/heatmap/cell_domain_per_axis.wgsl");
 }
 
 /// Colormap WGSL functions, embedded at compile time from

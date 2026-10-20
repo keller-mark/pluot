@@ -355,7 +355,7 @@ pub enum EmphasisCriteria {
     // along with min and/or max (included values within this range) - omitted min/max implicitly means -inf/+inf.
     Quantitative(QuantitativeCriteriaParams),
 
-    // TODO: implement a boolean mask criteria
+    Boolean(BooleanCriteriaParams),
 }
 
 impl EmphasisCriteria {
@@ -378,8 +378,22 @@ impl EmphasisCriteria {
                     params.values.len(),
                 );
             }
+            EmphasisCriteria::Boolean(params) => {
+                assert_eq!(
+                    params.mask.len(), expected,
+                    "EmphasisCriteria mask has length {} but layer has {expected} elements",
+                    params.mask.len(),
+                );
+            }
         }
     }
+}
+
+/// A boolean (or 0/1 integer) column, where items with a nonzero value are included.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BooleanCriteriaParams {
+    /// A boolean per item. Length must be equal to the number of instances.
+    pub mask: NumericData,
 }
 
 /// A categorical column in categories+codes format (one category code per

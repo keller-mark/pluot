@@ -3,4 +3,5 @@ pub mod zarr_emphasis_criteria;
 pub mod adata_metadata;
 pub mod adata_io;
 pub mod dotplot_data;
+pub mod heatmap_data;
 pub mod layers;
