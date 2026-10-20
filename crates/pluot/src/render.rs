@@ -1,6 +1,8 @@
 use pluot_core::{LayerParams as RawLayerParams, RenderParams as RawRenderParams, StoreMap};
 use pluot_core::{
     render as raw_render,
+    extent as raw_extent,
+    ExtentResult,
     render_to_script as raw_render_to_script,
     render_to_script_aux as raw_render_to_script_aux,
     stores_from_params
@@ -70,6 +72,20 @@ pub async fn render(render_params: RenderParams) -> Vec<u8> {
 pub async fn render_with_stores(render_params: RenderParams, stores: Option<StoreMap>) -> Vec<u8> {
     let raw_params = to_raw_render_params(render_params);
     raw_render(raw_params, stores).await
+}
+
+/// Determine the data extent reported by each layer.
+pub async fn extent(render_params: RenderParams) -> ExtentResult {
+    let raw_params = to_raw_render_params(render_params);
+    let stores = stores_from_params(&raw_params);
+    raw_extent(raw_params, stores).await
+}
+
+/// Similar to [`extent`], but also lets the caller pass Zarr store instances
+/// via a [`StoreMap`].
+pub async fn extent_with_stores(render_params: RenderParams, stores: Option<StoreMap>) -> ExtentResult {
+    let raw_params = to_raw_render_params(render_params);
+    raw_extent(raw_params, stores).await
 }
 
 /// Given plotting parameters as input, "render" them to code which can be used to reproduce the plot.

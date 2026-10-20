@@ -52,6 +52,7 @@ export function PluotWrapper(props) {
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
     plotSpecificOptions = null,
     cameraMatrix: cameraMatrixProp = null,
+    cameraFilter = null,
     enableClick = true,
     enableTooltip = false,
     enableCamera = true,
@@ -59,6 +60,18 @@ export function PluotWrapper(props) {
     enableVector = true,
 
     onHover = null, // Pass through to Pluot component
+
+    // Brushing props, passed through to the Pluot component.
+    brushMode,
+    brushUnitsModeX,
+    brushUnitsModeY,
+    enableBrushCreate = false,
+    enableBrushEdit = false,
+    enableBrushClear = false,
+    brush,
+    onBrush,
+    onBrushEnd,
+    onBrushClear,
   } = props;
 
   const defaultOptions = {
@@ -318,13 +331,24 @@ export function PluotWrapper(props) {
           aspectRatioAlignmentMode={aspectRatioAlignmentMode}
           format={format}
           debugMargins={debugMargins}
-          cameraMatrix={enableCamera ? cameraMatrix : IDENTITY_CAMERA}
-          setCameraMatrix={enableCamera ? setCameraMatrix : NOOP}
+          cameraMatrix={enableCamera && cameraMatrix ? cameraMatrix : null}
+          setCameraMatrix={setCameraMatrix}
+          cameraFilter={cameraFilter}
           enableClick={enableClick}
           enableTooltip={enableTooltip}
           backgroundColor={"#fff"}
           onHover={onHover}
           onClick={defaultOnClick}
+          brushMode={brushMode}
+          brushUnitsModeX={brushUnitsModeX}
+          brushUnitsModeY={brushUnitsModeY}
+          enableBrushCreate={enableBrushCreate}
+          enableBrushEdit={enableBrushEdit}
+          enableBrushClear={enableBrushClear}
+          brush={brush}
+          onBrush={onBrush}
+          onBrushEnd={onBrushEnd}
+          onBrushClear={onBrushClear}
         />
       </div>
       <PlotControls

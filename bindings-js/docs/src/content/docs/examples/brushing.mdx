@@ -1,0 +1,58 @@
+---
+title: Brushing
+description: Scatterplot example with brush selection (rect, lasso, and range).
+sidebar:
+    order: 99
+---
+import { BrushWrapper } from '../../../components/BrushWrapper.jsx';
+
+
+This example demonstrates the brushing features supported by the `<Pluot/>` React component.
+The component supports both controlled (the brush state is managed by the parent component) and uncontrolled (the brush state is managed internally by Pluot and changes are emitted via `onBrush` and `onBrushEnd` callback props).
+The following props control brushing interactions:
+- `brushMode`: determines the brush shape (`Rect`, `Polygon` lasso, `RangeX`, or `RangeY`)
+- `brushUnitsModeX` and `brushUnitsModeY`: determine whether the brush shape is defined in terms of `Data` coordinates (responding to camera zoom/pan interactions), `Pixels`, or `Normalized` (0-to-1) coordinates
+- `enableBrushCreate`, `enableBrushEdit`, and `enableBrushClear` determine which interactions are allowed
+- `brush`: used when the brush state is managed by the parent component
+- Additional props control long-press duration, the color of the brush overlay, the margins/bounds of the brushable region, and whether uncontrolled brush states are persisted.
+
+Try it: long-click (1.5s) inside the plot, then drag to start brushing.
+The design of this long-press-to-initiate-brushing interaction is inspired by [regl-scatterplot](https://github.com/flekschas/regl-scatterplot).
+
+
+<BrushWrapper
+    client:load
+    client:only="react"
+
+    plotId={"brushing-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "ZarrPointLayer",
+          layer_params: {
+            layer_id: "layer_1",
+            data_unit_mode_x: "Data",
+            data_unit_mode_y: "Data",
+            point_radius_unit_mode_x: "Pixels",
+            point_radius_unit_mode_y: "Pixels",
+            point_shape_mode: "Circle",
+            point_radius: 2.0,
+            bounds: null,
+            point_opacity: 0.4,
+
+            x_key: "/n_1000/x_coords",
+            y_key: "/n_1000/y_coords",
+            color_key: "/n_1000/class_labels",
+          }
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    enableVector={false}
+/>
+
+
+{/*When brushing in `Data` units mode, the brush overlay and the rendered plot may be a few milliseconds out-of-sync upon camera interactions.
+This occurs because the brush overlay is rendered via JavaScript, on top of the Rust-rendered plot.**/}

@@ -194,7 +194,6 @@ pub fn prepare_fill_opacity_mode(
 /// template; otherwise the values are uploaded as a texture and the instanced
 /// template is specialized with the texture's binding index and sampled type
 /// (`var_prefix` is the shared WGSL variable-name stem, e.g. `point_radius_values`).
-#[allow(clippy::too_many_arguments)]
 fn prepare_scalar_mode(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

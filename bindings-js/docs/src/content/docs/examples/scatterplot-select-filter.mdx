@@ -1,0 +1,26 @@
+---
+title: Scatterplot, select/filter
+description: Scatterplot example with filtering and selection controls.
+sidebar:
+    order: 12
+---
+import { ScatterplotSelectFilterWrapper } from '../../../components/ScatterplotSelectFilterWrapper.jsx';
+
+
+This scatterplot renders 1 million points, colored by the `/n_1000000/class_labels` column (integer
+values 0-4). The "Filtered labels" checkboxes control the point layer's filtering criteria: points
+whose label is unchecked are omitted from rendering entirely. The "Selected labels" checkboxes control
+the selection criteria: filter-included points whose label is unchecked are still rendered, but
+de-emphasized. Filtering and selection are independent; a label can be selected without being
+filtered-in, and vice versa.
+
+<ScatterplotSelectFilterWrapper
+    client:load
+    client:only="react"
+
+    plotId={"scatterplot-select-filter-example"}
+    colorKey={"/n_1000000/class_labels"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/gaussian_quantiles.zarr"}
+    viewMode={"2d"}
+    enableVector={false}
+/>

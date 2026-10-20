@@ -8,7 +8,7 @@ use pluot_core::wgpu;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
@@ -318,7 +318,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // reflects exactly the range the dots are normalized against in the shader.
         let fill_color_params = QuantitativeParams {
             values: NumericData::Float32(Arc::new(mean_expression_values)),
-            colormap: self.layer_params.cmap.clone(),
+            colormap: self.layer_params.cmap,
             reverse: false,
             domain: Some(expression_domain),
         };
@@ -393,7 +393,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     margin_bottom: Some(0.0),
                 }),
                 title: "Mean expression".to_string(),
-                colormap: self.layer_params.cmap.clone(),
+                colormap: self.layer_params.cmap,
                 reverse: false,
                 scale: Some(color_scale),
                 orientation: LegendOrientation::Horizontal,
@@ -449,6 +449,10 @@ impl DrawToSvg for AdataZarrDotPlotLayer {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
+
+impl BrushableLayer for AdataZarrDotPlotLayer {}
+
+impl ExtentableLayer for AdataZarrDotPlotLayer {}
 
 impl PickableLayer for AdataZarrDotPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

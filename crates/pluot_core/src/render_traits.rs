@@ -1,6 +1,8 @@
 use crate::picking::LayerPickingResult;
+use crate::brushing::{LayerBrushingResult, BrushParams};
+use crate::extent::LayerExtentResult;
 use crate::numeric_data::NumericData;
-use crate::viewport::{DataCoord, ScreenCoord};
+use crate::viewport::{DataCoord, DataVertices, ScreenCoord};
 use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -338,6 +340,108 @@ impl ColorMode {
     }
 }
 
+/// Filtering or selection criteria for a layer's data items.
+///
+/// Serialized as an adjacently-tagged enum, e.g.
+/// `{"criteria_mode": "Categorical", "criteria_params": {...}}`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "criteria_mode", content = "criteria_params")]
+pub enum EmphasisCriteria {
+    // A categorical column (categories+codes format with NumericData, similar to ColorMode),
+    // along with a set of included categories
+    Categorical(CategoricalCriteriaParams),
+
+    // A quantitative column (NumericData),
+    // along with min and/or max (included values within this range) - omitted min/max implicitly means -inf/+inf.
+    Quantitative(QuantitativeCriteriaParams),
+
+    // TODO: implement a boolean mask criteria
+}
+
+impl EmphasisCriteria {
+    /// Panics if the per-element [`NumericData`] this criteria is defined
+    /// over has a length that doesn't match `expected` (the layer's element
+    /// count).
+    pub fn validate_len(&self, expected: usize) {
+        match self {
+            EmphasisCriteria::Categorical(params) => {
+                assert_eq!(
+                    params.codes.len(), expected,
+                    "EmphasisCriteria codes has length {} but layer has {expected} elements",
+                    params.codes.len(),
+                );
+            }
+            EmphasisCriteria::Quantitative(params) => {
+                assert_eq!(
+                    params.values.len(), expected,
+                    "EmphasisCriteria values has length {} but layer has {expected} elements",
+                    params.values.len(),
+                );
+            }
+        }
+    }
+}
+
+/// A categorical column in categories+codes format (one category code per
+/// item, similar to [`ColorMode::Categorical`]), along with the set of
+/// category codes that are included.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CategoricalCriteriaParams {
+    /// A category code per item. Length must be equal to the number of instances.
+    pub codes: NumericData,
+    /// The category codes to include. An explicit empty list means nothing is included.
+    pub included_codes: Vec<i64>,
+}
+
+/// A quantitative column (one value per item), along with the included
+/// range. Omitting `min` or `max` implicitly means -infinity/+infinity in
+/// that direction.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QuantitativeCriteriaParams {
+    /// A value per item. Length must be equal to the number of instances.
+    pub values: NumericData,
+    /// Lower bound of included values. Omitted implies a one-sided test.
+    pub min: Option<f32>,
+    /// Upper bound of included values. Omitted implies a one-sided test.
+    pub max: Option<f32>,
+    /// `None` (the default) means inclusive. Ignored
+    /// when `min` is omitted.
+    #[serde(default)]
+    pub min_exclusive: Option<bool>,
+    /// `None` (the default) means inclusive. Ignored
+    /// when `max` is omitted.
+    #[serde(default)]
+    pub max_exclusive: Option<bool>,
+}
+
+impl QuantitativeCriteriaParams {
+    /// Whether this criteria constrains anything.
+    pub fn is_bounded(&self) -> bool {
+        self.min.is_some() || self.max.is_some()
+    }
+
+    /// Whether `value` falls within this criteria's bounds.
+    pub fn includes(&self, value: f32) -> bool {
+        let above_min = self.min.is_none_or(|min| {
+            if self.min_exclusive == Some(true) { value > min } else { value >= min }
+        });
+        let below_max = self.max.is_none_or(|max| {
+            if self.max_exclusive == Some(true) { value < max } else { value <= max }
+        });
+        above_min && below_max
+    }
+
+    /// The WGSL comparison operator for the lower bound.
+    pub fn min_wgsl_op(&self) -> &'static str {
+        if self.min_exclusive == Some(true) { ">" } else { ">=" }
+    }
+
+    /// The WGSL comparison operator for the upper bound.
+    pub fn max_wgsl_op(&self) -> &'static str {
+        if self.max_exclusive == Some(true) { "<" } else { "<=" }
+    }
+}
+
 /// Specify the font style: normal, italique, or oblique.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FontStyle {
@@ -533,6 +637,28 @@ pub trait PickableLayer {
     }
 }
 
+/// Identify which data point(s) are located within the given brushed region (rect or polygon).
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+pub trait BrushableLayer {
+    // TODO: should this be async?
+    fn brush(&self, brush_params: BrushParams, data_vertices: Option<DataVertices>) -> Option<LayerBrushingResult> {
+        // Default implementation: not brushable, return empty result.
+        None
+    }
+}
+
+/// Report the layer's data extent: the min/max bounds along the x and y axes (and z, if 3D).
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+pub trait ExtentableLayer {
+    // TODO: should this be async?
+    fn extent(&self) -> Option<LayerExtentResult> {
+        // Default implementation: extent unknown, return None.
+        None
+    }
+}
+
 
 // Stub trait for CPU-based compute operations.
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
@@ -560,8 +686,8 @@ pub trait PreparedAndDrawToRasterCpu: PreparedLayer + DrawToRasterCpu + MaybeSen
 impl<T: PreparedLayer + DrawToRasterCpu + MaybeSend + MaybeSync> PreparedAndDrawToRasterCpu for T {}
 
 // Trait for layers that can prepare and render to all output formats.
-pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + MaybeSend + MaybeSync {}
-impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + MaybeSend + MaybeSync> PreparedAndDraw for T {}
+pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + BrushableLayer + ExtentableLayer + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + BrushableLayer + ExtentableLayer + MaybeSend + MaybeSync> PreparedAndDraw for T {}
 
 
 

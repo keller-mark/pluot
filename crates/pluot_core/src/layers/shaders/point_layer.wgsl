@@ -34,6 +34,20 @@ struct PointLayerUniforms {
     stroke_color_reverse: u32, // 1 = reverse the quantitative colormap
     stroke_color_domain: vec2<f32>, // (min, max) normalization domain for quantitative mode
     stroke_opacity: f32, // stroke opacity used by the UniformOpacity mode
+    background_fill_color: vec4<f32>, // rgba fill color used for filter-included, selection-excluded ("background") points
+    background_stroke_color: vec4<f32>, // rgba stroke color used for filter-included, selection-excluded ("background") points
+    background_fill_opacity: f32, // fill opacity used for "background" points, when enable_background_fill_opacity is set
+    background_stroke_opacity: f32, // stroke opacity used for "background" points, when enable_background_stroke_opacity is set
+    background_point_radius: f32, // point radius used for "background" points, when enable_background_point_radius is set
+    background_stroke_width: f32, // stroke width used for "background" points, when enable_background_stroke_width is set
+    // Each flag is pre-resolved on the CPU to also require the corresponding
+    // background_* param to be non-default, so the shader only checks `== 1u`.
+    enable_background_fill_color: u32,
+    enable_background_stroke_color: u32,
+    enable_background_fill_opacity: u32,
+    enable_background_stroke_opacity: u32,
+    enable_background_point_radius: u32,
+    enable_background_stroke_width: u32,
 };
 
 struct VSOut {
@@ -91,6 +105,20 @@ struct FSOut {
 // Assembled by `crate::scalar_mode::prepare_stroke_opacity_mode`.
 {{stroke_opacity_module}}
 
+// Filtering module: an optional per-element codes/values texture plus
+// `fn is_filtered_in(instance_index: u32) -> bool`. Filter-excluded items are
+// not rendered at all (see fs_main). Assembled by
+// `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{filtering_module}}
+
+// Selection module: the selection counterpart, defining
+// `fn is_selected_in(instance_index: u32) -> bool`. Filter-included but
+// selection-excluded items are de-emphasized (color/opacity in fs_main,
+// radius/stroke-width in vs_main) rather than not rendered, for each
+// visual encoding whose `enable_background_*` flag is set.
+// Assembled by `crate::emphasis_mode::prepare_emphasis_criteria`.
+{{selection_module}}
+
 
 // 4 corners of a unit quad for triangle strip: (-1,-1), (1,-1), (-1,1), (1,1)
 const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
@@ -116,9 +144,19 @@ fn vs_main(
     let y_val = f32(textureLoad(y_coords, flat_texel_coord(instance_index, y_tex_width), 0).x);
     let point_pos_orig = u.model_matrix * vec4f(x_val, y_val, 0.0, 1.0);
 
+    // Filter-included but selection-excluded ("background") points may use an
+    // overridden radius/stroke-width (see below); resolved once here since both
+    // depend on selection membership.
+    let is_selected = is_selected_in(instance_index);
+
     // Per-instance radius (uniform or instanced, depending on the injected size
     // module). Resolved once here and used for all radius computations below.
-    let point_radius = get_point_radius(instance_index);
+    // Background points use `background_point_radius` instead when
+    // `enable_background_point_radius` is set.
+    var point_radius = get_point_radius(instance_index);
+    if (!is_selected && u.enable_background_point_radius == 1u) {
+        point_radius = u.background_point_radius;
+    }
 
     let corner = QUAD[vertex_index & 3u]; // vertex_index % 4
 
@@ -187,7 +225,14 @@ fn vs_main(
     // Data-coordinate mode (== 1): transform it through the same pipeline as the
     // radius, with w = 0 so translations cancel (it is a delta/size, not a
     // position), and take the average of the x/y screen extents.
-    let stroke_width = get_stroke_width(instance_index);
+    // Background points use `background_stroke_width` instead when
+    // `enable_background_stroke_width` is set — this can draw a stroke for
+    // background points even when the layer-level `stroke_width` is None
+    // (`get_stroke_width` then resolves to 0, i.e. no stroke for foreground points).
+    var stroke_width = get_stroke_width(instance_index);
+    if (!is_selected && u.enable_background_stroke_width == 1u) {
+        stroke_width = u.background_stroke_width;
+    }
     var stroke_width_px: f32 = stroke_width;
     if (u.stroke_width_unit_mode == 1u) {
         let sw_orig_data = u.model_matrix * vec4f(stroke_width, stroke_width, 0.0, 0.0);
@@ -323,16 +368,41 @@ fn fs_main(
     @location(3) @interpolate(flat) stroke_width_px: f32,
 ) -> FSOut {
 
+    // Filter-excluded points are not rendered at all: not as data points, not
+    // in picking, not in any visual encoding.
+    if (!is_filtered_in(instance_index)) {
+        discard;
+    }
+
     // The color / opacity modules resolve the per-instance value for the active
     // mode (static, instanced RGB, categorical or quantitative for color; static
     // or instanced for opacity). Interior fragments use the fill; fragments within
     // the stroke band (the outermost `stroke_width_px` of the point) use the
     // stroke. The stroke is drawn inward, so the point's outer bound stays at
     // `point_radius_px` regardless of stroke width.
-    let fill_color = get_fill_color(instance_index);
-    let fill_opacity = get_fill_opacity(instance_index);
-    let stroke_color = get_stroke_color(instance_index);
-    let stroke_opacity = get_stroke_opacity(instance_index);
+    //
+    // Filter-included but selection-excluded ("background") points still
+    // render, but may be de-emphasized in place of their configured fill/stroke
+    // color and opacity — each only overridden when its `enable_background_*`
+    // flag is set (see `PointLayerParams`).
+    let is_selected = is_selected_in(instance_index);
+
+    var fill_color = get_fill_color(instance_index);
+    if (!is_selected && u.enable_background_fill_color == 1u) {
+        fill_color = u.background_fill_color.rgb;
+    }
+    var fill_opacity = get_fill_opacity(instance_index);
+    if (!is_selected && u.enable_background_fill_opacity == 1u) {
+        fill_opacity = u.background_fill_opacity;
+    }
+    var stroke_color = get_stroke_color(instance_index);
+    if (!is_selected && u.enable_background_stroke_color == 1u) {
+        stroke_color = u.background_stroke_color.rgb;
+    }
+    var stroke_opacity = get_stroke_opacity(instance_index);
+    if (!is_selected && u.enable_background_stroke_opacity == 1u) {
+        stroke_opacity = u.background_stroke_opacity;
+    }
 
     // Radius of the inner boundary between fill and stroke.
     let inner_radius_px = point_radius_px - stroke_width_px;

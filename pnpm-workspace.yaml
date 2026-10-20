@@ -4,3 +4,4 @@ packages:
   - 'bindings-js/react'
   - 'bindings-js/demo'
   - 'bindings-js/docs'
+  - 'bindings-python/pluot_widget'

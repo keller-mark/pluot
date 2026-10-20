@@ -1,0 +1,16 @@
+<svg height="100" width="100" xmlns="http://www.w3.org/2000/svg">
+<g>
+<defs>
+<clipPath id="my_bitmask_layer_clip_path">
+<rect height="100" width="100" x="0" y="0"/>
+</clipPath>
+</defs>
+<g height="100" width="100">
+<g clip-path="url(#my_bitmask_layer_clip_path)" transform="translate(0,0)">
+<g transform="translate(48.4375,1.5625) scale(3.125,3.125)">
+<image height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABD0lEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1S/496HyAA/6pJ83wDO+5M3F8+HP2jGAPmdPXIF4pgd90s+bB3jGl7y5eAB/1o55AH3OngAC4EGf9PPmuTzok37e/MsIXgT+rB3zXPxZOwYIgGd8yZuL5/KML3lz8S8jeKZnfMmbi2d6xpe8uXjRIP59CP59qDzAi3/3ixvg79/778UDPO5RjzbPx2Of+AQF/z5UgBf/7hc3D/Di3/3iBvj79/578QCPfeITBPC4Rz3aXEHw74N4gBf/7hc3wN+/99+LB3jcox5tno/HPvEJCv59EP8+/CPrvTqe6nBFwQAAAABJRU5ErkJggg==" opacity="1" style="image-rendering: pixelated" width="16" x="0" y="0"/>
+</g>
+</g>
+</g>
+</g>
+</svg>

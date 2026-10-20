@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pluot"
+version = "0.1.23"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [
+  {name = "Mark Keller"}
+]
+readme = "README.md"
+description = "Meta-package for Pluot. Install with the bindings and/or widget extras. Pure python package."
+dependencies = [
+  "pluot_core==0.1.23",
+]
+
+[project.optional-dependencies]
+bindings = [
+  "pluot_bound==0.1.23",
+]
+widget = [
+  "pluot_widget==0.1.23",
+]
+
+[project.urls]
+repository = "https://github.com/keller-mark/pluot"

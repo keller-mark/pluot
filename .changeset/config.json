@@ -5,7 +5,7 @@
     { "repo": "keller-mark/pluot" }
   ],
   "fixed": [["@pluot/*"]],
-  "ignore": ["docs", "demo"],
+  "ignore": ["docs", "demo", "pluot_widget"],
   "commit": false,
   "access": "public",
   "baseBranch": "main",

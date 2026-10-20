@@ -1,4 +1,71 @@
 
+## 0.1.23
+
+### Patch Changes
+
+- Move python with bindings to pluot_bound, and define pluot as top-level meta-package. (`@pluot/core`) ([#335](https://github.com/keller-mark/pluot/pull/335))
+
+
+## 0.1.22
+
+### Patch Changes
+
+- Fix release issue in github actions workflow. (`@pluot/core`) ([#333](https://github.com/keller-mark/pluot/pull/333))
+
+
+## 0.1.21
+
+### Patch Changes
+
+- Refactor the Pluot python package into three packages: pluot (bindings to Rust), pluot_widget (WASM-based anywidget, without dependency on Rust bindings), and pluot_core (shared functions for both pluot and pluot_widget). (`pluot_widget`) ([#329](https://github.com/keller-mark/pluot/pull/329))
+
+
+## 0.1.20
+
+### Patch Changes
+
+- Add an extent trait and extent_wasm bindings for obtaining initial camera settings when not fully specified up-front by the user. Update the histogram to use data units along its X-axis so that brushing can be performed in data-units. Update taxi and flights examples. Use react-query to manage the async wasm function calls in the Pluot React component. (`@pluot/react`, `@pluot/core`) ([#324](https://github.com/keller-mark/pluot/pull/324))
+
+
+## 0.1.19
+
+### Patch Changes
+
+- Ensure font files are copied into the npm package directories within the github actions release workflow. (`@pluot/core`) ([#321](https://github.com/keller-mark/pluot/pull/321))
+
+- Do not render an axis layer for the foreground bar plot in zarr_histogram_layer. (`@pluot/core`) ([#322](https://github.com/keller-mark/pluot/pull/322))
+
+
+## 0.1.18
+
+### Patch Changes
+
+- Add flights and taxi examples. Update histogram to support selection criteria and brushing. (`@pluot/core`) ([#318](https://github.com/keller-mark/pluot/pull/318))
+
+
+## 0.1.17
+
+### Patch Changes
+
+- Implemented brushing for the `Pluot` react component. (`@pluot/react`) ([#310](https://github.com/keller-mark/pluot/pull/310))
+
+- Apply clippy lints. (`@pluot/core`) ([#311](https://github.com/keller-mark/pluot/pull/311))
+
+
+## 0.1.16
+
+### Patch Changes
+
+- Update docs.rs metadata to try to resolve oom issue. (`@pluot/core`) ([#307](https://github.com/keller-mark/pluot/pull/307))
+
+
+## 0.1.15
+
+### Patch Changes
+
+- Implement selection and filtering logic for layers. (`@pluot/core`) ([#296](https://github.com/keller-mark/pluot/pull/296))
+
+
 ## 0.1.14
 
 ### Patch Changes

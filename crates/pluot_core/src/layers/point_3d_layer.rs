@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
+use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
@@ -41,6 +41,8 @@ pub struct Point3dLayerParams {
     pub position_x: NumericData,
     pub position_y: NumericData,
     pub position_z: NumericData,
+
+    // TODO: support filtering/selection criteria, analogous to PointLayer.
 }
 
 impl Default for Point3dLayerParams {
@@ -408,6 +410,10 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for Point3dLayer {}
+
+impl ExtentableLayer for Point3dLayer {}
 
 impl PickableLayer for Point3dLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

@@ -49,6 +49,7 @@ export function CmvExample() {
                                 point_radius_unit_mode_y: "Pixels",
                                 point_shape_mode: "Square",
                                 point_radius: pointRadius,
+                                point_opacity: 1.0,
                                 bounds: null,
 
                                 x_key: "/n_10000/x_coords",
@@ -86,6 +87,7 @@ export function CmvExample() {
                                 point_radius_unit_mode_y: "Pixels",
                                 point_shape_mode: "Circle",
                                 point_radius: pointRadius,
+                                point_opacity: 1.0,
                                 bounds: null,
 
                                 x_key: "/n_1000/x_coords",

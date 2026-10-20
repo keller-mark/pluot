@@ -82,6 +82,15 @@ pub enum ViewMode {
     // Reference: https://github.com/mikolalysenko/3d-view
 }
 
+/// The brushing mode
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum BrushMode {
+    Rect,
+    RangeX,
+    RangeY,
+    Polygon,
+}
+
 /// Layer parameters in their raw serde Value form.
 ///
 /// Layers register themselves via `inventory::submit!` with
@@ -164,6 +173,7 @@ pub struct HttpStoreParams {
 /// A serializable, cross-platform representation of a Zarr store.
 ///
 /// Serializes to `{"store_type": "HttpStore", "store_params": {...}}`
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "store_type", content = "store_params")]
 pub enum ZarrStoreParams {

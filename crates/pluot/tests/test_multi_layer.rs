@@ -61,6 +61,7 @@ fn cross_lines() -> LineLayerParams {
         source_position_y: NumericData::Float32(Arc::new(vec![0.0, 0.0])),
         target_position_x: NumericData::Float32(Arc::new(vec![1.0, 0.0])),
         target_position_y: NumericData::Float32(Arc::new(vec![1.0, 1.0])),
+        ..Default::default()
     }
 }
 
@@ -88,6 +89,7 @@ fn corner_labels() -> TextLayerParams {
             "C".to_string(),
             "D".to_string(),
         ]),
+        ..Default::default()
     }
 }
 

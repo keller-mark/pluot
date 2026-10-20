@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use crate::render_traits::{
-    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
@@ -48,11 +48,37 @@ pub struct BarPlotLayerParams {
 
     // How to color the bars. See [`ColorMode`].
     pub fill_color: Option<ColorMode>,
+
+    /// When false, skip rendering the internal [`AxisBandLayer`].
+    /// By default, true.
+    pub render_categorical_axis: Option<bool>,
+
+    /// When false, skip rendering the internal [`AxisLinearLayer`].
+    /// By default, true.
+    pub render_quantitative_axis: Option<bool>,
+
     // TODO: stacked bars (here or own layer?)
     // TODO: grouped bars (here or own layer?)
     // TODO: configurable bar margin
     // TODO: configurable axis layer positioning?
 
+}
+
+impl Default for BarPlotLayerParams {
+    fn default() -> Self {
+        Self {
+            layer_id: "".to_string(),
+            bounds: None,
+            orientation: BarOrientation::Vertical,
+            data_unit_mode_for_identifier_dim: UnitsMode::Pixels,
+            data_unit_mode_for_quantity_dim: UnitsMode::Data,
+            identifier: Arc::new(vec![]),
+            quantity: Arc::new(vec![]),
+            fill_color: None,
+            render_categorical_axis: Some(true),
+            render_quantitative_axis: Some(true)
+        }
+    }
 }
 
 pub struct BarPlotLayer {
@@ -96,6 +122,9 @@ impl BarPlotLayer {
         let mut scale_band = ScaleBand::new();
         scale_band.set_domain(self.layer_params.identifier.as_ref().clone());
 
+        let render_categorical_axis = self.layer_params.render_categorical_axis.unwrap_or(true);
+        let render_quantitative_axis = self.layer_params.render_quantitative_axis.unwrap_or(true);
+
         match self.layer_params.orientation {
             BarOrientation::Vertical => {
                 // Categorical on X (pixels), quantitative on Y (data units)
@@ -110,7 +139,7 @@ impl BarPlotLayer {
                     position_y1.push(self.layer_params.quantity[i]);
                 }
 
-                return vec![
+                let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = vec![
                     Box::new(RectLayer::new(
                         self.view_params.clone(),
                         RectLayerParams {
@@ -129,23 +158,28 @@ impl BarPlotLayer {
                             ..Default::default()
                         }
                     )),
-                    Box::new(AxisLinearLayer::new(
+                ];
+                if render_quantitative_axis {
+                    sublayers.push(Box::new(AxisLinearLayer::new(
                         self.view_params.clone(),
                         AxisLinearLayerParams {
                             layer_id: format!("{}_bar_plot_layer_quantitative_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Left,
                             ..Default::default()
                         }
-                    )),
-                    Box::new(AxisBandLayer::new(
+                    )));
+                }
+                if render_categorical_axis {
+                    sublayers.push(Box::new(AxisBandLayer::new(
                         self.view_params.clone(),
                         AxisBandLayerParams {
                             layer_id: format!("{}_bar_plot_layer_categorical_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Bottom,
                             domain: self.layer_params.identifier.clone()
                         }
-                    ))
-                ];
+                    )));
+                }
+                return sublayers;
             }
             BarOrientation::Horizontal => {
                 // Categorical on Y (pixels), quantitative on X (data units)
@@ -160,7 +194,7 @@ impl BarPlotLayer {
                     position_y1.push(band_start + bandwidth as f32 - (DEFAULT_BAR_MARGIN / 2.0) as f32);
                 }
 
-                return vec![
+                let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = vec![
                     Box::new(RectLayer::new(
                         self.view_params.clone(),
                         RectLayerParams {
@@ -179,23 +213,28 @@ impl BarPlotLayer {
                             ..Default::default()
                         }
                     )),
-                    Box::new(AxisLinearLayer::new(
+                ];
+                if render_quantitative_axis {
+                    sublayers.push(Box::new(AxisLinearLayer::new(
                         self.view_params.clone(),
                         AxisLinearLayerParams {
                             layer_id: format!("{}_bar_plot_layer_quantitative_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Bottom,
                             ..Default::default()
                         }
-                    )),
-                    Box::new(AxisBandLayer::new(
+                    )));
+                }
+                if render_categorical_axis {
+                    sublayers.push(Box::new(AxisBandLayer::new(
                         self.view_params.clone(),
                         AxisBandLayerParams {
                             layer_id: format!("{}_bar_plot_layer_categorical_axis_sublayer", self.layer_params.layer_id),
                             position: AxisPosition::Left,
                             domain: self.layer_params.identifier.clone()
                         }
-                    ))
-                ];
+                    )));
+                }
+                return sublayers;
             }
         }
     }
@@ -248,6 +287,10 @@ inventory::submit! {
         },
     }
 }
+
+impl BrushableLayer for BarPlotLayer {}
+
+impl ExtentableLayer for BarPlotLayer {}
 
 impl PickableLayer for BarPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
-use crate::render_traits::{ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, SizeMode, UnitsMode, FontWeight, FontStyle};
+use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, SizeMode, UnitsMode, FontWeight, FontStyle};
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
@@ -205,6 +205,7 @@ impl AxisBandLayer {
             source_position_y: NumericData::Float32(Arc::new(line_source_position_y)),
             target_position_x: NumericData::Float32(Arc::new(line_target_position_x)),
             target_position_y: NumericData::Float32(Arc::new(line_target_position_y)),
+            ..Default::default()
         };
         sublayers.push(Box::new(LineLayer::new(
             self.view_params.clone(),
@@ -234,6 +235,7 @@ impl AxisBandLayer {
                 position_x: NumericData::Float32(Arc::new(text_position_x)),
                 position_y: NumericData::Float32(Arc::new(text_position_y)),
                 text_vec: Arc::new(text_strings),
+                ..Default::default()
             };
             sublayers.push(Box::new(TextLayer::new(
                 self.view_params.clone(),
@@ -275,6 +277,10 @@ impl DrawToSvg for AxisBandLayer {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
     }
 }
+
+impl BrushableLayer for AxisBandLayer {}
+
+impl ExtentableLayer for AxisBandLayer {}
 
 impl PickableLayer for AxisBandLayer {}
 

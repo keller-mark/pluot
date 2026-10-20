@@ -107,6 +107,34 @@ impl ScaleLinear {
         self.range = range;
     }
 
+    /// Given a value from the range, returns the corresponding value in the domain.
+    /// This is the inverse of [`Scaleable::scale`], and is intended for converting a
+    /// pixel position (e.g. from a brush selection) back into a data value.
+    pub fn invert(&self, y: f64) -> f64 {
+        let (d0, d1) = self.domain;
+        let (r0, r1) = self.range;
+
+        let y_clamped = if self.clamp {
+            if r0 > r1 {
+                y.max(r1).min(r0)
+            } else {
+                y.max(r0).min(r1)
+            }
+        } else {
+            y
+        };
+
+        if r1 < r0 {
+            let normalize = normalize(r1, r0);
+            let interpolate = interpolate_number(d1, d0);
+            interpolate(normalize(y_clamped))
+        } else {
+            let normalize = normalize(r0, r1);
+            let interpolate = interpolate_number(d0, d1);
+            interpolate(normalize(y_clamped))
+        }
+    }
+
     /// Gets the scale's clamp status.
     pub fn get_clamp(&self) -> bool {
         self.clamp
@@ -513,6 +541,33 @@ mod tests {
         s.set_range((10.0, 20.0));
         assert_eq!(s.scale(&2.0), 20.0);
         assert_eq!(s.scale(&-1.0), 10.0);
+    }
+
+    #[test]
+    fn test_linear_invert_is_inverse_of_scale() {
+        let mut s = ScaleLinear::new();
+        s.set_domain((10.0, 20.0));
+        s.set_range((100.0, 300.0));
+        assert_eq!(s.invert(200.0), 15.0);
+        assert_eq!(s.invert(s.scale(&17.5)), 17.5);
+    }
+
+    #[test]
+    fn test_linear_invert_handles_reversed_range() {
+        let mut s = ScaleLinear::new();
+        s.set_domain((0.0, 10.0));
+        s.set_range((100.0, 0.0));
+        assert_eq!(s.invert(25.0), 7.5);
+    }
+
+    #[test]
+    fn test_linear_invert_clamp_true_restricts_output_to_domain() {
+        let mut s = ScaleLinear::new();
+        s.set_clamp(true);
+        s.set_domain((10.0, 20.0));
+        s.set_range((0.0, 100.0));
+        assert_eq!(s.invert(150.0), 20.0);
+        assert_eq!(s.invert(-50.0), 10.0);
     }
 
     #[test]

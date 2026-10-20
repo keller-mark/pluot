@@ -11,13 +11,14 @@ use serde::{Deserialize, Serialize};
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
+use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, DEFAULT_BACKGROUND_COLOR};
 use crate::wgpu;
 use crate::wgpu::util::DeviceExt; // This import enables usage of device.create_buffer_init
 use crate::cache::{use_memo_internal_text_layer_data, CachedInternalTextLayerData};
@@ -233,19 +234,42 @@ fn build_internal_text_layer_data(
         };
     }
 
-    // Rasterize each glyph and measure atlas size (row pack)
-    let mut atlas_width: usize = 0;
-    let mut atlas_height: usize = 0;
+    // Rasterize each glyph.
     let mut rasters: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(glyphs.len());
-
     for g in glyphs {
-        let w1 = g.width;
-        let h1 = g.height;
         let (metrics, bitmap) = font_atlas.font.rasterize_config(g.key);
-        atlas_width += 2 * H_PADDING + metrics.width.max(1);
-        atlas_height = atlas_height.max(2 * V_PADDING + metrics.height.max(1));
         rasters.push((metrics, bitmap));
     }
+
+    // Shelf-pack glyphs into a bounded-width atlas. WebGPU guarantees only an
+    // 8192px max texture dimension, so once the combined width of every glyph
+    // across every label (e.g. many histogram bin labels) would exceed that
+    // in a single row, wrap into additional rows instead of growing the
+    // texture past the limit (which produces an invalid GPU texture).
+    const MAX_ATLAS_WIDTH: usize = 8192;
+
+    let mut glyph_cell: Vec<(usize, usize)> = Vec::with_capacity(rasters.len()); // (cell_x, row_top_y)
+    let mut cursor_x: usize = 0;
+    let mut cursor_y: usize = 0;
+    let mut row_height: usize = 0;
+    let mut atlas_width: usize = 0;
+
+    for (metrics, _bitmap) in rasters.iter() {
+        let cell_w = 2 * H_PADDING + metrics.width.max(1);
+        let cell_h = 2 * V_PADDING + metrics.height.max(1);
+
+        if cursor_x > 0 && cursor_x + cell_w > MAX_ATLAS_WIDTH {
+            cursor_y += row_height;
+            cursor_x = 0;
+            row_height = 0;
+        }
+
+        glyph_cell.push((cursor_x, cursor_y));
+        atlas_width = atlas_width.max(cursor_x + cell_w);
+        row_height = row_height.max(cell_h);
+        cursor_x += cell_w;
+    }
+    let atlas_height = cursor_y + row_height;
 
     if atlas_width == 0 || atlas_height == 0 {
         return CachedInternalTextLayerData {
@@ -258,7 +282,6 @@ fn build_internal_text_layer_data(
 
     // Build the atlas RGBA (actually single channel) row - initialize with zeros for padding
     let mut atlas: Vec<u8> = vec![0u8; atlas_width * atlas_height];
-    let mut x_cursor: usize = 0; // First glyph starts at 0; ClampToEdge handles the left boundary
 
     // Now process each text element individually to generate instance data
     let mut all_instance_data: Vec<f32> = Vec::new();
@@ -303,9 +326,6 @@ fn build_internal_text_layer_data(
 
         let element_glyphs = element_layout.glyphs();
 
-        // Track our position in the atlas for this text element
-        let mut element_cursor = x_cursor;
-
         // Precompute exact x-positions for all glyphs in this element.
         // fontdue's layout uses ceil(advance_width) for cursor advancement,
         // which causes character spacing to be slightly wider than SVG's.
@@ -325,7 +345,9 @@ fn build_internal_text_layer_data(
 
         // Iterate over each glyph in the string.
         for (i, g) in element_glyphs.iter().enumerate() {
-            let (m, bmp) = &rasters[total_instances as usize + i];
+            let flat_idx = total_instances as usize + i;
+            let (m, bmp) = &rasters[flat_idx];
+            let (cell_x, row_top_y) = glyph_cell[flat_idx];
 
             // Actual bitmap dimensions
             let gw = m.width.max(0);
@@ -335,7 +357,7 @@ fn build_internal_text_layer_data(
             if gw > 0 && gh > 0 {
                 for row in 0..gh {
                     let src = &bmp[row * gw..row * gw + gw];
-                    let dst_start = (V_PADDING + row) * atlas_width + element_cursor;
+                    let dst_start = (row_top_y + V_PADDING + row) * atlas_width + cell_x;
                     atlas[dst_start..dst_start + gw].copy_from_slice(src);
                 }
             }
@@ -351,10 +373,10 @@ fn build_internal_text_layer_data(
             let h_px: f32 = g.height as f32 / RASTER_SCALE;
 
             // UV: no vertical padding, relies on ClampToEdge at v=0 for correct top-edge sampling
-            let u0 = (element_cursor as f32) / (atlas_width as f32);
-            let v0 = (V_PADDING as f32) / (atlas_height as f32);
-            let u1 = ((element_cursor + gw) as f32) / (atlas_width as f32);
-            let v1 = ((V_PADDING + gh) as f32) / (atlas_height as f32);
+            let u0 = (cell_x as f32) / (atlas_width as f32);
+            let v0 = ((row_top_y + V_PADDING) as f32) / (atlas_height as f32);
+            let u1 = ((cell_x + gw) as f32) / (atlas_width as f32);
+            let v1 = ((row_top_y + V_PADDING + gh) as f32) / (atlas_height as f32);
 
             if gw > 0 && gh > 0 {
                 all_instance_data.extend_from_slice(&[
@@ -364,12 +386,8 @@ fn build_internal_text_layer_data(
                     elem_i as f32, // Index of the text element this glyph belongs to, for per-element color lookups.
                 ]);
             }
-
-            // Advance cursor by glyph width + padding for next glyph
-            element_cursor += gw + 2 * H_PADDING;
         }
 
-        x_cursor = element_cursor;
         total_instances += element_glyphs.len() as u32;
     }
 
@@ -439,6 +457,21 @@ pub struct TextLayerParams {
     pub position_x: NumericData,
     pub position_y: NumericData,
     pub text_vec: Arc<Vec<String>>,
+
+    // Criteria AND-ed together to determine the selected ("foreground") /
+    // filtered-in ("background") set of text elements (one per entry of
+    // `text_vec`, not per glyph). An empty list means every element is
+    // included.
+    pub selection_criteria: Vec<EmphasisCriteria>,
+    pub filtering_criteria: Vec<EmphasisCriteria>,
+
+    // Fill color used for filter-included, but selection-excluded
+    // ("background") text elements, in place of `fill_color`.
+    pub background_fill_color: Option<(u8, u8, u8)>,
+
+    // When true, "background" text elements have the fill color specified via
+    // `background_fill_color`.
+    pub enable_background_fill_color: bool,
 }
 
 impl Default for TextLayerParams {
@@ -461,6 +494,10 @@ impl Default for TextLayerParams {
             position_x: NumericData::Float32(Arc::new(vec![])),
             position_y: NumericData::Float32(Arc::new(vec![])),
             text_vec: Arc::new(vec![]),
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
+            enable_background_fill_color: true,
         }
     }
 }
@@ -495,6 +532,12 @@ impl TextLayer {
         let n = layer_params.text_vec.len();
         if let Some(fill_color) = &layer_params.fill_color {
             fill_color.validate_len(n);
+        }
+        for selection_criteria in &layer_params.selection_criteria {
+            selection_criteria.validate_len(n);
+        }
+        for filtering_criteria in &layer_params.filtering_criteria {
+            filtering_criteria.validate_len(n);
         }
         for (name, len) in [
             ("position_x", layer_params.position_x.len()),
@@ -672,6 +715,8 @@ struct TextLayerUniforms {
     fill_color: Vec4,         // rgba color used by the UniformRgb mode
     fill_color_reverse: u32,  // 1 = reverse the quantitative colormap
     fill_color_domain: Vec2,  // (min, max) normalization domain for quantitative mode
+    background_fill_color: Vec4, // rgba fill color used for filter-included, selection-excluded ("background") text elements
+    enable_background_fill_color: u32,
 }
 
 // First bind-group binding index used for color-mode value/palette texture(s).
@@ -746,6 +791,18 @@ pub async fn base_draw_text_layer(
     // instance data before looking up the color.
     let color = prepare_color_mode(device, queue, layer_params.fill_color.as_ref(), COLOR_BINDING_START);
 
+    // Filtering and selection criteria (fragment stage only: filter-excluded
+    // text elements are discarded, selection-excluded elements are re-colored
+    // with `background_fill_color`; see fs_main). Per-element here means per
+    // text element (matching `position_x`/`position_y`), not per glyph.
+    let filter_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
+    let filtering = prepare_emphasis_criteria(
+        device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
+    );
+    let select_binding_start = filter_binding_start + filtering.textures.len() as u32;
+    let selection = prepare_emphasis_criteria(
+        device, queue, &layer_params.selection_criteria, "is_selected_in", "select_data", select_binding_start,
+    );
 
     // Upload atlas as a single-channel R8Unorm texture
     let atlas_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -840,6 +897,8 @@ pub async fn base_draw_text_layer(
         fill_color: Vec4::from_array(color.static_color),
         fill_color_reverse: color.reverse,
         fill_color_domain: Vec2::from_array(color.domain),
+        background_fill_color: background_color_vec4(layer_params.background_fill_color),
+        enable_background_fill_color: layer_params.enable_background_fill_color as u32,
     };
 
     let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -895,6 +954,33 @@ pub async fn base_draw_text_layer(
             count: None,
         });
     }
+    // Filtering/selection codes or values textures (fragment stage only;
+    // see `is_filtered_in`/`is_selected_in` in the shader), one per criteria
+    // that carries per-element data.
+    for (i, tex) in filtering.textures.iter().enumerate() {
+        bgl_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: filter_binding_start + i as u32,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: tex.sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+    }
+    for (i, tex) in selection.textures.iter().enumerate() {
+        bgl_entries.push(wgpu::BindGroupLayoutEntry {
+            binding: select_binding_start + i as u32,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: tex.sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        });
+    }
     let bind_group_layout = device
         .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Text BGL"),
@@ -921,6 +1007,18 @@ pub async fn base_draw_text_layer(
             resource: wgpu::BindingResource::TextureView(&tex.view),
         });
     }
+    for (i, tex) in filtering.textures.iter().enumerate() {
+        bg_entries.push(wgpu::BindGroupEntry {
+            binding: filter_binding_start + i as u32,
+            resource: wgpu::BindingResource::TextureView(&tex.view),
+        });
+    }
+    for (i, tex) in selection.textures.iter().enumerate() {
+        bg_entries.push(wgpu::BindGroupEntry {
+            binding: select_binding_start + i as u32,
+            resource: wgpu::BindingResource::TextureView(&tex.view),
+        });
+    }
     let bind_group = device
         .create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Text BG"),
@@ -938,6 +1036,11 @@ pub async fn base_draw_text_layer(
         // assembled color module (bindings + `get_fill_color`).
         .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
         .define("color_module", &color.wgsl)
+        // Filtering/selection specialization: each contributes its
+        // `is_filtered_in` / `is_selected_in` predicate (plus a codes/values
+        // texture binding when the criteria carries per-element data).
+        .define("filtering_module", &filtering.wgsl)
+        .define("selection_module", &selection.wgsl)
         .build();
     let shader = device
         .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1147,6 +1250,15 @@ pub fn base_draw_text_layer_svg(
 
     let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(n);
     for i in 0..n {
+        // Filter-excluded text elements are not rendered at all.
+        if !cpu_is_included(&layer_params.filtering_criteria, i) {
+            continue;
+        }
+        // Filter-included but selection-excluded ("background") text elements
+        // still render, but de-emphasized with `background_fill_color` in
+        // place of their configured fill color.
+        let is_selected = cpu_is_included(&layer_params.selection_criteria, i);
+
         let x = layer_params.position_x.get_f32(i);
         let y = layer_params.position_y.get_f32(i);
 
@@ -1164,7 +1276,11 @@ pub fn base_draw_text_layer_svg(
             Some(&model_matrix_raw),
         );
 
-        let fill = TwoColor::Rgb(cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain));
+        let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
+            cpu_fill_color(layer_params.fill_color.as_ref(), i, quant_domain)
+        } else {
+            layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+        });
 
         svg_elements.push(TwoElement::Text(TwoText {
             x: px as f64,
@@ -1239,6 +1355,10 @@ inventory::submit! {
     }
 }
 
+impl BrushableLayer for TextLayer {}
+
+impl ExtentableLayer for TextLayer {}
+
 impl PickableLayer for TextLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
@@ -1269,17 +1389,22 @@ impl PickableLayer for TextLayer {
         // per-glyph text metrics), mirroring PointLayer's nearest-neighbor
         // approach.
         let mut min_dist_sq = f32::MAX;
-        let mut closest_idx = 0usize;
+        let mut closest_idx: Option<usize> = None;
         for i in 0..n {
+            // Filter-excluded text elements are ignored in picking.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, i) {
+                continue;
+            }
             let dx = self.layer_params.position_x.get_f32(i) - cx;
             let dy = self.layer_params.position_y.get_f32(i) - cy;
             let dist_sq = dx * dx + dy * dy;
             if dist_sq < min_dist_sq {
                 min_dist_sq = dist_sq;
-                closest_idx = i;
+                closest_idx = Some(i);
             }
         }
 
+        let closest_idx = closest_idx?;
         let mut info = HashMap::new();
         info.insert("index".to_string(), closest_idx.to_string());
         info.insert("text".to_string(), self.layer_params.text_vec[closest_idx].clone());

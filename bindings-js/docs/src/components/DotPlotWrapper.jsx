@@ -13,6 +13,11 @@ const numFormatter = new Intl.NumberFormat('en-US', {
 // across platforms, which would remove the need for this DotPlot-specific Wrapper component.
 function onHoverDotPlot(info) {
   const dotPlotInfo = info?.layer_results?.[0]?.info;
+  if (!dotPlotInfo) {
+    // It is possible that the dot plot layer has not yet rendered/prepared,
+    // so there is not yet any returned info.
+    return undefined;
+  }
   // Note: Sort the dict based on the keys, since rust returns hashmap in any order
   return {
     'Cell Type': dotPlotInfo.obs_value,

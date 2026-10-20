@@ -84,6 +84,14 @@ fn channel_dispatch(template: &str, stroke_or_fill_property: &str, n: usize) -> 
         .build()
 }
 
+/// Mirrors the WGSL `crate::emphasis_mode::prepare_emphasis_criteria` emits
+/// for an empty (no) criteria list: a predicate that always returns `true`,
+/// with no texture bindings. Used to stand in for a channel's
+/// `filtering_criteria`/`selection_criteria`, which default to empty.
+fn empty_criteria_wgsl(fn_name: &str) -> String {
+    format!("fn {fn_name}(instance_index: u32) -> bool {{\n    return true;\n}}\n")
+}
+
 #[test]
 fn uniform_rgb_template_matches_expected() {
     // Mirrors `prepare_channel_color`'s `None` / `ColorMode::UniformRgb` arm.
@@ -246,6 +254,8 @@ fn full_shader_assembly_matches_snapshot() {
             .define("stroke_or_fill_property", "stroke_width")
             .define("c_idx", "0")
             .build(),
+        empty_criteria_wgsl("get_channel_is_filtered_in_0"),
+        empty_criteria_wgsl("get_channel_is_selected_in_0"),
     ]
     .join("\n");
     let channel_1 = [
@@ -274,6 +284,8 @@ fn full_shader_assembly_matches_snapshot() {
             .define_bidx("values", 3)
             .inject_texture_sample_type("values", TextureDtype::F32)
             .build(),
+        empty_criteria_wgsl("get_channel_is_filtered_in_1"),
+        empty_criteria_wgsl("get_channel_is_selected_in_1"),
     ]
     .join("\n");
     let channel_functions = format!("{channel_0}\n{channel_1}");
@@ -286,6 +298,8 @@ fn full_shader_assembly_matches_snapshot() {
         channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "fill_opacity", 2),
         channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_opacity", 2),
         channel_dispatch(bitmask_channel::CHANNEL_SCALAR_DISPATCH, "stroke_width", 2),
+        channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_filtered_in", 2),
+        channel_dispatch(bitmask_channel::CHANNEL_BOOL_DISPATCH, "is_selected_in", 2),
     ]
     .join("\n");
 

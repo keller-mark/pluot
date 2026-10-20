@@ -8,7 +8,7 @@ use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::render_types::GpuContext;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
@@ -133,6 +133,8 @@ impl PreparedLayer for ZarrBarPlotLayer {
                 identifier: cat_arr,
                 quantity: quant_arr,
                 fill_color: self.layer_params.fill_color.clone(),
+                render_categorical_axis: None,
+                render_quantitative_axis: None,
             }
         );
         sublayer.prepare(gpu_context).await;
@@ -169,6 +171,10 @@ impl DrawToSvg for ZarrBarPlotLayer {
         }
     }
 }
+
+impl BrushableLayer for ZarrBarPlotLayer {}
+
+impl ExtentableLayer for ZarrBarPlotLayer {}
 
 impl PickableLayer for ZarrBarPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {

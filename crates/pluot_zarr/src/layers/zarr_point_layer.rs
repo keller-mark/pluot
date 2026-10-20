@@ -4,12 +4,12 @@ use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
 use pluot_core::wgpu;
-use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32, use_memo_numeric_data};
+use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_i32};
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
+use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -19,7 +19,8 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 use pluot_core::viewport::get_bounds;
 
-use crate::zarr_numeric_data::load_arr_as_numeric_data;
+use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
+use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Layer params struct for [`ZarrPointLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -49,6 +50,19 @@ pub struct ZarrPointLayerParams {
     // We still need the sibling params however, to know things like categorical vs. quantitative, interleaved vs not, and the specified colormap, etc.
     // We should also make the parameter names here in the zarr layers more consistent with the non-zarr layers', including removing the _key suffices, for consistency.
     pub color_key: Option<String>,
+
+    // Criteria AND-ed together to determine the selected ("foreground") /
+    // filtered-in ("background") set of points. An empty list means every
+    // point is included. Each criterion references its categorical/quantitative
+    // column by zarr array path (see [`ZarrEmphasisCriteria`]), rather than
+    // supplying the column data inline.
+    pub selection_criteria: Vec<ZarrEmphasisCriteria>,
+    pub filtering_criteria: Vec<ZarrEmphasisCriteria>,
+
+    // Fill/stroke colors used for filter-included, but selection-excluded
+    // ("background") points, in place of the color derived from `color_key`.
+    pub background_fill_color: Option<(u8, u8, u8)>,
+    pub background_stroke_color: Option<(u8, u8, u8)>,
 }
 
 impl Default for ZarrPointLayerParams {
@@ -58,16 +72,20 @@ impl Default for ZarrPointLayerParams {
             bounds: None,
             data_unit_mode_x: UnitsMode::Data,
             data_unit_mode_y: UnitsMode::Data,
-            point_radius: Some(1.0),
+            point_radius: None,
             point_radius_unit_mode_x: UnitsMode::Pixels,
             point_radius_unit_mode_y: UnitsMode::Pixels,
             point_shape_mode: PointShapeMode::Circle,
             model_matrix: None,
-            point_opacity: Some(1.0),
+            point_opacity: None,
             store_name: None,
             x_key: "".to_string(),
             y_key: "".to_string(),
             color_key: None,
+            selection_criteria: vec![],
+            filtering_criteria: vec![],
+            background_fill_color: None,
+            background_stroke_color: None,
         }
     }
 }
@@ -190,7 +208,7 @@ fn get_point_opacity(
 
     // p (the pixel length/width of a point) is 1 for us, so it drops out.
     let alpha = ((rho * w * h) / n) * (y0 / y) * (x0 / x);
-    alpha.clamp(2.01 / 255.0, 1.0)
+    alpha.clamp(4.01 / 255.0, 1.0)
 }
 
 
@@ -201,10 +219,14 @@ impl PreparedLayer for ZarrPointLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let store = self.store.clone();
 
-        // TODO: include the layer type in the memoization dependencies?
-        // But what if we want multiple layers to be able to reuse the same cached data?
-        // Then we should also avoid including the layer_id...
-        let l_i32_future_deps = vec!["l_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
+        // Keyed by the array this reads rather than by the layer reading it, so
+        // that two layers colored by the same column share one cached copy and
+        // so that changing `color_key` doesn't reuse the previous column's codes.
+        let l_i32_future_deps = vec![
+            "l_bytes".to_string(),
+            self.store_name.clone(),
+            self.layer_params.color_key.clone().unwrap_or_default(),
+        ];
         let l_i32_future = use_memo_vec_i32(async || {
             let labels_array_path = &self.layer_params.color_key.as_ref().expect("Color key");
             let labels_array_future = zarrs::array::Array::async_open(store.clone(), labels_array_path);
@@ -216,19 +238,43 @@ impl PreparedLayer for ZarrPointLayer {
             Ok(labels_i32)
         }, &l_i32_future_deps, self.view_params.cache_enabled);
 
-        // TODO: improve the keys / memoization dependencies to at least include the plot_id and store_name.
         // Load the X and Y coordinate arrays in their native dtype (any dtype
         // supported by NumericData); PointLayer uploads each to the GPU at its
-        // native width, so there is no per-element cast here.
-        let x_data_future_deps = vec!["x_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let x_data_future = use_memo_numeric_data(async || {
-            load_arr_as_numeric_data(store.clone(), &self.layer_params.x_key).await
-        }, &x_data_future_deps, self.view_params.cache_enabled);
+        // native width, so there is no per-element cast here. Memoized by
+        // `(store_name, array_path)` alone, so the same coordinate array is
+        // fetched once no matter which layer — or which role, e.g. a filtering
+        // criterion's `values_key` — asks for it.
+        let x_data_future = load_arr_as_numeric_data_memoized(
+            store.clone(),
+            &self.store_name,
+            &self.layer_params.x_key,
+            self.view_params.cache_enabled,
+        );
 
-        let y_data_future_deps = vec!["y_bytes".to_string(), self.store_name.clone(), self.layer_params.layer_id.to_string()];
-        let y_data_future = use_memo_numeric_data(async || {
-            load_arr_as_numeric_data(store.clone(), &self.layer_params.y_key).await
-        }, &y_data_future_deps, self.view_params.cache_enabled);
+        let y_data_future = load_arr_as_numeric_data_memoized(
+            store.clone(),
+            &self.store_name,
+            &self.layer_params.y_key,
+            self.view_params.cache_enabled,
+        );
+
+        // Resolve filtering/selection criteria: each criterion's `codes_key`/
+        // `values_key` zarr array is loaded (and independently memoized, keyed
+        // only by store name and array path) into an `EmphasisCriteria`, ready
+        // to hand to the inner `PointLayer`.
+        let filtering_criteria_future = resolve_zarr_emphasis_criteria(
+            store.clone(),
+            &self.layer_params.filtering_criteria,
+            &self.store_name,
+            self.view_params.cache_enabled,
+        );
+
+        let selection_criteria_future = resolve_zarr_emphasis_criteria(
+            store.clone(),
+            &self.layer_params.selection_criteria,
+            &self.store_name,
+            self.view_params.cache_enabled,
+        );
 
         // Await in parallel: Use futures::join, similar to Promise.all in JS.
         //let (x_data, y_data, l_i32) = futures::join!(x_data_future, y_data_future, l_i32_future);
@@ -237,6 +283,8 @@ impl PreparedLayer for ZarrPointLayer {
             maybe_timeout!(x_data_future, self.view_params.timeout),
             maybe_timeout!(y_data_future, self.view_params.timeout),
             maybe_timeout!(l_i32_future, self.view_params.timeout),
+            maybe_timeout!(filtering_criteria_future, self.view_params.timeout),
+            maybe_timeout!(selection_criteria_future, self.view_params.timeout),
         );
 
         // TODO: load image data as vec of individual chunks (rather than requesting the full slice)
@@ -244,12 +292,13 @@ impl PreparedLayer for ZarrPointLayer {
         // We want to render the chunks that have loaded prior to the timeout (if there was a timeout specified).
         // First convert the requested slice to the chunk keys?
 
-        let (x_data, y_data, l_i32) = match futures_try_join_result {
-            Ok((x_data_result, y_data_result, l_i32_result)) => {
-                // x/y are Result<Arc<NumericData>, ArrayError>; labels are Result<Arc<Vec<i32>>, ArrayError>.
-                match (x_data_result, y_data_result, l_i32_result) {
-                    (Ok(x), Ok(y), Ok(l)) => (x, y, l),
-                    (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+        let (x_data, y_data, l_i32, filtering_criteria, selection_criteria) = match futures_try_join_result {
+            Ok((x_data_result, y_data_result, l_i32_result, filtering_criteria_result, selection_criteria_result)) => {
+                // x/y are Result<Arc<NumericData>, ArrayError>; labels are Result<Arc<Vec<i32>>, ArrayError>;
+                // criteria lists are Result<Vec<EmphasisCriteria>, ArrayError>.
+                match (x_data_result, y_data_result, l_i32_result, filtering_criteria_result, selection_criteria_result) {
+                    (Ok(x), Ok(y), Ok(l), Ok(fc), Ok(sc)) => (x, y, l, fc, sc),
+                    (Err(e), _, _, _, _) | (_, Err(e), _, _, _) | (_, _, Err(e), _, _) | (_, _, _, Err(e), _) | (_, _, _, _, Err(e)) => {
                         if is_timed_out_zarrs_error(&e) {
                             // TODO: still render something in this case?
                             return PrepareResult { bailed_early: true };
@@ -291,8 +340,8 @@ impl PreparedLayer for ZarrPointLayer {
                     self.layer_params.y_key.clone(),
                 ];
                 let extent = use_memo_vec_f32(async || {
-                    let (x_min, x_max) = reduce_extent(gpu_context, x_for_extent).await;
-                    let (y_min, y_max) = reduce_extent(gpu_context, y_for_extent).await;
+                    let (x_min, x_max) = reduce_extent(gpu_context, x_for_extent, &[], &[]).await.background;
+                    let (y_min, y_max) = reduce_extent(gpu_context, y_for_extent, &[], &[]).await.background;
                     Ok::<Vec<f32>, std::convert::Infallible>(vec![x_min, x_max, y_min, y_max])
                 }, &extent_future_deps, self.view_params.cache_enabled)
                     .await
@@ -373,6 +422,10 @@ impl PreparedLayer for ZarrPointLayer {
                 })),
                 position_x: x_data.as_ref().clone(),
                 position_y: y_data.as_ref().clone(),
+                filtering_criteria,
+                selection_criteria,
+                background_fill_color: self.layer_params.background_fill_color,
+                background_stroke_color: self.layer_params.background_stroke_color,
                 ..Default::default()
             }
         );
@@ -411,6 +464,10 @@ impl DrawToSvg for ZarrPointLayer {
         }
     }
 }
+
+impl BrushableLayer for ZarrPointLayer {}
+
+impl ExtentableLayer for ZarrPointLayer {}
 
 impl PickableLayer for ZarrPointLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
