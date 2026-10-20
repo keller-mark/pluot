@@ -513,7 +513,7 @@ async fn compute_reduce_fg_bg(
 // Each reducer runs on the input at its native dtype and casts only the scalar
 // *result* to f32 — the input array is never converted to f32 up front.
 // `ScalarToF32` provides that single-value output cast for every supported
-// element type, and `dispatch_cpu!` selects the matching `NumericData` arm.
+// element type, and `with_numeric_slice!` selects the matching `NumericData` arm.
 //
 // Every reducer additionally takes an `included: impl Fn(usize) -> bool`
 // predicate so the same functions serve both the unfiltered case (predicate
@@ -532,26 +532,6 @@ macro_rules! impl_scalar_to_f32 {
 }
 impl_scalar_to_f32!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
-/// Runs `$body` — which may reference the bound native slice `$v` — on whichever
-/// dtype the `NumericData` holds, so the CPU reducers stay dtype-generic without
-/// converting the input to f32.
-macro_rules! dispatch_cpu {
-    ($input:expr, |$v:ident| $body:expr) => {
-        match $input {
-            NumericData::Uint8($v) => $body,
-            NumericData::Uint16($v) => $body,
-            NumericData::Uint32($v) => $body,
-            NumericData::Uint64($v) => $body,
-            NumericData::Int8($v) => $body,
-            NumericData::Int16($v) => $body,
-            NumericData::Int32($v) => $body,
-            NumericData::Int64($v) => $body,
-            NumericData::Float32($v) => $body,
-            NumericData::Float64($v) => $body,
-        }
-    };
-}
-pub(super) use dispatch_cpu;
 
 fn cpu_reduce_min<T: ScalarToF32 + PartialOrd>(input: &[T], included: impl Fn(usize) -> bool) -> f32 {
     input
@@ -672,12 +652,12 @@ pub async fn reduce_min(
         }
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
-            let background = dispatch_cpu!(&input, |v| cpu_reduce_min(v, is_background));
+            let background = crate::with_numeric_slice!(&input, |v| cpu_reduce_min(v, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_min(v, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_min(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }
@@ -705,12 +685,12 @@ pub async fn reduce_max(
         }
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
-            let background = dispatch_cpu!(&input, |v| cpu_reduce_max(v, is_background));
+            let background = crate::with_numeric_slice!(&input, |v| cpu_reduce_max(v, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_max(v, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_max(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }
@@ -738,12 +718,12 @@ pub async fn reduce_sum(
         }
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
-            let background = dispatch_cpu!(&input, |v| cpu_reduce_sum(v, is_background));
+            let background = crate::with_numeric_slice!(&input, |v| cpu_reduce_sum(v, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_sum(v, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_sum(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }
@@ -770,12 +750,12 @@ pub async fn reduce_count(
         }
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
-            let background = dispatch_cpu!(&input, |v| cpu_reduce_count(v, is_background));
+            let background = crate::with_numeric_slice!(&input, |v| cpu_reduce_count(v, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_count(v, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_count(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }
@@ -808,12 +788,12 @@ pub async fn reduce_mean(
         }
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
-            let background = dispatch_cpu!(&input, |v| cpu_reduce_mean(v, is_background));
+            let background = crate::with_numeric_slice!(&input, |v| cpu_reduce_mean(v, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_mean(v, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_mean(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }
@@ -846,12 +826,12 @@ pub async fn reduce_extent(
         }
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
-            let background = dispatch_cpu!(&input, |v| cpu_reduce_extent(v, is_background));
+            let background = crate::with_numeric_slice!(&input, |v| cpu_reduce_extent(v, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_extent(v, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_extent(v, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }
@@ -886,12 +866,12 @@ pub async fn reduce_histogram_with_known_extent(
         None => {
             let is_background = |i: usize| cpu_is_included(filtering_criteria, i);
             let background =
-                dispatch_cpu!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max, is_background));
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max, is_background));
             let foreground = if selection_criteria.is_empty() {
                 background.clone()
             } else {
                 let is_foreground = |i: usize| is_background(i) && cpu_is_included(selection_criteria, i);
-                dispatch_cpu!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max, is_foreground))
+                crate::with_numeric_slice!(&input, |v| cpu_reduce_histogram(v, num_bins, data_min, data_max, is_foreground))
             };
             ForegroundBackground { background, foreground }
         }

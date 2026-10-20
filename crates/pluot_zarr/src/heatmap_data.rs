@@ -21,9 +21,10 @@ use pluot_core::compute::matrix_axis_extents::{
 };
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 use pluot_core::log;
-use pluot_core::numeric_data::NumericData;
+use pluot_core::numeric_data::{NumericData, NumericElement};
 use pluot_core::render_types::GpuContext;
 use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
+use pluot_core::{with_int_slice, with_numeric_slice};
 
 use crate::adata_io::{
     read_compressed_column, read_compressed_subset, read_dataframe_column_strings, read_dense_column_numeric,
@@ -346,55 +347,52 @@ pub async fn load_compressed_var_column(
     .await
 }
 
+fn gather_rows_as<T: NumericElement>(first: &[T], rest: &[Arc<NumericData>], rows: &[u32]) -> NumericData
+where
+    NumericData: From<Vec<T>>,
+{
+    let columns: Vec<&[T]> = std::iter::once(first)
+        .chain(rest.iter().map(|column| T::slice_of(column).expect("matrix columns must share one dtype")))
+        .collect();
+    let mut out = Vec::with_capacity(rows.len() * columns.len());
+    for &row in rows {
+        out.extend(columns.iter().map(|column| column[row as usize]));
+    }
+    NumericData::from(out)
+}
+
 /// The row-major `rows x columns.len()` matrix gathered from whole columns,
 /// in their stored dtype (which every column must share).
 pub fn gather_rows_from_columns(columns: &[Arc<NumericData>], rows: &[u32]) -> NumericData {
-    macro_rules! gather {
-        ($variant:ident) => {{
-            let columns: Vec<&[_]> = columns
-                .iter()
-                .map(|column| match column.as_ref() {
-                    NumericData::$variant(values) => values.as_slice(),
-                    _ => panic!("matrix columns must share one dtype"),
-                })
-                .collect();
-            let mut out = Vec::with_capacity(rows.len() * columns.len());
-            for &row in rows {
-                out.extend(columns.iter().map(|column| column[row as usize]));
-            }
-            NumericData::$variant(Arc::new(out))
-        }};
-    }
     let Some(first) = columns.first() else {
         return NumericData::Float32(Arc::new(vec![]));
     };
-    match first.as_ref() {
-        NumericData::Uint8(_) => gather!(Uint8),
-        NumericData::Uint16(_) => gather!(Uint16),
-        NumericData::Uint32(_) => gather!(Uint32),
-        NumericData::Uint64(_) => gather!(Uint64),
-        NumericData::Int8(_) => gather!(Int8),
-        NumericData::Int16(_) => gather!(Int16),
-        NumericData::Int32(_) => gather!(Int32),
-        NumericData::Int64(_) => gather!(Int64),
-        NumericData::Float32(_) => gather!(Float32),
-        NumericData::Float64(_) => gather!(Float64),
-    }
+    with_numeric_slice!(first.as_ref(), |first| gather_rows_as(first, &columns[1..], rows))
 }
 
-/// `(entry, row)` for each entry of `row_indices` whose row is requested, by ascending row.
+/// `(entry, row)` for each entry of `row_indices` whose row is requested.
 fn requested_entries<I: Copy + TryInto<usize>>(row_indices: &[I], is_row_requested: &[bool]) -> Vec<(usize, u32)> {
-    let mut entries: Vec<(usize, u32)> = row_indices
+    row_indices
         .iter()
         .enumerate()
         .filter_map(|(entry, &row)| {
             let row: usize = row.try_into().ok().expect("Sparse matrix row indices must be non-negative");
             is_row_requested[row].then_some((entry, row as u32))
         })
-        .collect();
-    // Non-canonical matrices may store a column's entries out of order.
-    entries.sort_by_key(|&(_, row)| row);
-    entries
+        .collect()
+}
+
+/// The values at the `kept` entries of each column, which must share the dtype of `first`.
+fn gather_entries_as<T: NumericElement>(first: &[T], rest: &[Arc<CompressedMatrix>], kept: &[Vec<(usize, u32)>]) -> NumericData
+where
+    NumericData: From<Vec<T>>,
+{
+    let columns = std::iter::once(first).chain(rest.iter().map(|column| T::slice_of(&column.data).expect("matrix columns must share one dtype")));
+    let mut out = Vec::with_capacity(kept.iter().map(Vec::len).sum());
+    for (values, column_kept) in columns.zip(kept) {
+        out.extend(column_kept.iter().map(|&(entry, _)| values[entry]));
+    }
+    NumericData::from(out)
 }
 
 /// The CSC matrix of `rows` (its `minor_subset`) and single-column `columns`,
@@ -407,16 +405,11 @@ pub fn gather_compressed_columns(columns: &[Arc<CompressedMatrix>], rows: &[u32]
     }
     let kept: Vec<Vec<(usize, u32)>> = columns
         .iter()
-        .map(|column| match &column.indices {
-            NumericData::Uint8(v) => requested_entries(v, &is_row_requested),
-            NumericData::Uint16(v) => requested_entries(v, &is_row_requested),
-            NumericData::Uint32(v) => requested_entries(v, &is_row_requested),
-            NumericData::Uint64(v) => requested_entries(v, &is_row_requested),
-            NumericData::Int8(v) => requested_entries(v, &is_row_requested),
-            NumericData::Int16(v) => requested_entries(v, &is_row_requested),
-            NumericData::Int32(v) => requested_entries(v, &is_row_requested),
-            NumericData::Int64(v) => requested_entries(v, &is_row_requested),
-            NumericData::Float32(_) | NumericData::Float64(_) => panic!("Sparse matrix indices must be integers"),
+        .map(|column| {
+            let mut entries = with_int_slice!(&column.indices, |row_indices| requested_entries(row_indices, &is_row_requested));
+            // Non-canonical matrices may store a column's entries out of order.
+            entries.sort_unstable_by_key(|&(_, row)| row);
+            entries
         })
         .collect();
 
@@ -427,30 +420,9 @@ pub fn gather_compressed_columns(columns: &[Arc<CompressedMatrix>], rows: &[u32]
     }
     let indices: Vec<u32> = kept.iter().flatten().map(|&(_, row)| row).collect();
 
-    macro_rules! gather {
-        ($variant:ident) => {{
-            let mut out = Vec::with_capacity(indices.len());
-            for (column, column_kept) in columns.iter().zip(&kept) {
-                let NumericData::$variant(values) = &column.data else {
-                    panic!("matrix columns must share one dtype");
-                };
-                out.extend(column_kept.iter().map(|&(entry, _)| values[entry]));
-            }
-            NumericData::$variant(Arc::new(out))
-        }};
-    }
-    let data = match columns.first().map(|column| &column.data) {
+    let data = match columns.first() {
         None => NumericData::Float32(Arc::new(vec![])),
-        Some(NumericData::Uint8(_)) => gather!(Uint8),
-        Some(NumericData::Uint16(_)) => gather!(Uint16),
-        Some(NumericData::Uint32(_)) => gather!(Uint32),
-        Some(NumericData::Uint64(_)) => gather!(Uint64),
-        Some(NumericData::Int8(_)) => gather!(Int8),
-        Some(NumericData::Int16(_)) => gather!(Int16),
-        Some(NumericData::Int32(_)) => gather!(Int32),
-        Some(NumericData::Int64(_)) => gather!(Int64),
-        Some(NumericData::Float32(_)) => gather!(Float32),
-        Some(NumericData::Float64(_)) => gather!(Float64),
+        Some(first) => with_numeric_slice!(&first.data, |first| gather_entries_as(first, &columns[1..], &kept)),
     };
     CompressedMatrix {
         indptr: NumericData::from(indptr),

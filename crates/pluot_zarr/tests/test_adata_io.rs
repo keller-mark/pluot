@@ -12,7 +12,7 @@ use pluot_zarr::adata_io::{find_column_entries, rows_for_entries, scatter_column
 // CSC: indptr [0, 1, 2, 3, 4], indices [2, 0, 2, 0], data [3, 5, 8, 7]
 const DENSE: [[i32; 4]; 3] = [[0, 5, 0, 7], [0, 0, 0, 0], [3, 0, 8, 0]];
 
-/// Mirrors `read_csr_column_values` over already-read arrays, traversing them in the same nested
+/// Mirrors `locate_csr_column_entries` over already-read arrays, traversing them in the same nested
 /// fixed-size steps so that the block/span boundary arithmetic is exercised. `budget` stands in for
 /// `MAX_ELEMENTS_PER_READ`; values well below the matrix size force the multi-block path that a
 /// realistic budget would only reach on a very large matrix.

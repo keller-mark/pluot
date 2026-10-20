@@ -10,7 +10,7 @@ use crate::sparse_matrix::{CompressedAxis, CompressedMatrix};
 use crate::wgpu;
 
 use super::histogram_percentile::histogram_bin;
-use super::reduce::{dispatch_cpu, ScalarToF32};
+use super::reduce::ScalarToF32;
 use super::reduce_stratified::read_back_u32;
 
 /// An axis of a row-major matrix.
@@ -68,7 +68,7 @@ pub async fn reduce_matrix_axis_extents(
             let words = gpu_axis_reduce(ctx, &matrix_value_wgsl, &[(view, dtype)], num_rows, num_cols, axis, num_segments, AxisReduction::Extents).await;
             decode_gpu_extents(&words)
         }
-        None => dispatch_cpu!(matrix, |values| cpu_axis_extents(values, num_cols, axis, num_segments)),
+        None => crate::with_numeric_slice!(matrix, |values| cpu_axis_extents(values, num_cols, axis, num_segments)),
     }
 }
 
@@ -104,7 +104,7 @@ pub async fn reduce_compressed_matrix_axis_extents(
         }
         None => {
             let num_other = if axis == MatrixAxis::Rows { num_cols } else { num_rows };
-            dispatch_cpu!(&matrix.data, |values| cpu_compressed_axis_extents(matrix, values, compressed_axis, axis, num_segments, num_other))
+            crate::with_numeric_slice!(&matrix.data, |values| cpu_compressed_axis_extents(matrix, values, compressed_axis, axis, num_segments, num_other))
         }
     }
 }
@@ -222,7 +222,7 @@ pub async fn reduce_matrix_axis_histograms(
             let reduction = AxisReduction::Histograms { ranges, num_bins };
             gpu_axis_reduce(ctx, &matrix_value_wgsl, &[(view, dtype)], num_rows, num_cols, axis, num_segments, reduction).await
         }
-        None => dispatch_cpu!(matrix, |values| {
+        None => crate::with_numeric_slice!(matrix, |values| {
             let mut counts = vec![0u32; num_segments * num_bins as usize];
             for (idx, &value) in values.iter().enumerate() {
                 let value = value.scalar_to_f32();

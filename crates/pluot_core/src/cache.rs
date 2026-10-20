@@ -118,40 +118,35 @@ pub fn get_or_init_store(name: &str, wait_for_store_gets: bool) -> Arc<AsyncZarr
     }
 }
 
+type MemoCache<T> = std::thread::LocalKey<RefCell<Option<HashMap<Vec<String>, Arc<T>>>>>;
+
+fn memo_lookup<T>(cache: &'static MemoCache<T>, keys: &[String]) -> Option<Arc<T>> {
+    cache.with(|map| map.borrow().as_ref().and_then(|m| m.get(keys).cloned()))
+}
+
+fn memo_insert<T>(cache: &'static MemoCache<T>, keys: &[String], value: Arc<T>) {
+    cache.with(|map| {
+        map.borrow_mut().get_or_insert_with(HashMap::new).insert(keys.to_vec(), value);
+    });
+}
+
+/// The initializer is awaited at a single point so that its (often large, inlined) future is
+/// compiled into each call site once rather than once per cache-enabled/disabled branch.
+async fn use_memo<T, E>(cache: &'static MemoCache<T>, initializer: impl AsyncFnOnce() -> Result<T, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<T>, E> {
+    if let Some(value) = cache_enabled.then(|| memo_lookup(cache, keys)).flatten() {
+        return Ok(value);
+    }
+    let value = Arc::new(initializer().await?);
+    if cache_enabled {
+        memo_insert(cache, keys, value.clone());
+    }
+    Ok(value)
+}
+
 // TODO: Should we also implement a non-async variant of this cacheing/memoization function?
 // Is there a downside to always using async, i.e., even if the `initializer` function never .awaits anything?
 pub async fn use_memo_vec_f32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<f32>>, E> {
-    // Initializer param
-    // Reference: https://github.com/DioxusLabs/dioxus/blob/ec8f31dece5c75371177bf080bab46dff54ffd0e/packages/core/src/global_context.rs#L284
-    if !cache_enabled {
-        return Ok(Arc::new(initializer().await?));
-    }
-    // This thread_local approach seems to work fine with futures::join!.
-    // First, check if the buffer already exists
-    let buffer_exists = USE_MEMO_CACHE_VEC_F32.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(buffer) = buffer_exists {
-        return Ok(buffer);
-    }
-
-    // Buffer doesn't exist, so create it
-    let buffer = Arc::new(initializer().await?);
-
-    // Store it in the cache
-    USE_MEMO_CACHE_VEC_F32.with(|map| {
-        let mut map_ref = map.borrow_mut();
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-        // Insert the buffer
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
-    });
-
-    Ok(buffer)
+    use_memo(&USE_MEMO_CACHE_VEC_F32, initializer, keys, cache_enabled).await
 }
 
 // TODO: is there a better way to define a generic use_memo function that works for multiple types (e.g., Vec<f32>, Vec<i32>, etc.)?
@@ -160,59 +155,11 @@ pub async fn use_memo_vec_f32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<f
 // since we don't want the downstream calling code to be doing a bunch of type casting/checking.
 // Maybe a macro could help here? Or enums, one enum per layer.data struct type?
 pub async fn use_memo_vec_i32<E>(initializer: impl AsyncFnOnce() -> Result<Vec<i32>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<i32>>, E> {
-    if !cache_enabled {
-        return Ok(Arc::new(initializer().await?));
-    }
-
-    let buffer_exists = USE_MEMO_CACHE_VEC_I32.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(buffer) = buffer_exists {
-        return Ok(buffer);
-    }
-
-    let buffer = Arc::new(initializer().await?);
-
-    USE_MEMO_CACHE_VEC_I32.with(|map| {
-        let mut map_ref = map.borrow_mut();
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
-    });
-
-    Ok(buffer)
+    use_memo(&USE_MEMO_CACHE_VEC_I32, initializer, keys, cache_enabled).await
 }
 
 pub async fn use_memo_vec_string<E>(initializer: impl AsyncFnOnce() -> Result<Vec<String>, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<Vec<String>>, E> {
-    if !cache_enabled {
-        return Ok(Arc::new(initializer().await?));
-    }
-
-    let buffer_exists = USE_MEMO_CACHE_VEC_STRING.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(buffer) = buffer_exists {
-        return Ok(buffer);
-    }
-
-    let buffer = Arc::new(initializer().await?);
-
-    USE_MEMO_CACHE_VEC_STRING.with(|map| {
-        let mut map_ref = map.borrow_mut();
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), buffer.clone());
-    });
-
-    Ok(buffer)
+    use_memo(&USE_MEMO_CACHE_VEC_STRING, initializer, keys, cache_enabled).await
 }
 
 // The initializer returns Option<CachedInternalTextLayerData> so it can short-circuit:
@@ -260,72 +207,12 @@ pub async fn use_memo_internal_text_layer_data(
     Some(data)
 }
 
-pub async fn use_memo_numeric_data<E>(
-    initializer: impl AsyncFnOnce() -> Result<NumericData, E>,
-    keys: &[String],
-    cache_enabled: bool
-) -> Result<Arc<NumericData>, E> {
-    if !cache_enabled {
-        return Ok(Arc::new(initializer().await?));
-    }
-
-    let data_exists = USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(data) = data_exists {
-        return Ok(data);
-    }
-
-    let data = Arc::new(initializer().await?);
-
-    USE_MEMO_CACHE_NUMERIC_DATA.with(|map| {
-        let mut map_ref = map.borrow_mut();
-
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
-    });
-
-    Ok(data)
+pub async fn use_memo_numeric_data<E>(initializer: impl AsyncFnOnce() -> Result<NumericData, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<NumericData>, E> {
+    use_memo(&USE_MEMO_CACHE_NUMERIC_DATA, initializer, keys, cache_enabled).await
 }
 
-pub async fn use_memo_compressed_matrix<E>(
-    initializer: impl AsyncFnOnce() -> Result<CompressedMatrix, E>,
-    keys: &[String],
-    cache_enabled: bool
-) -> Result<Arc<CompressedMatrix>, E> {
-    if !cache_enabled {
-        return Ok(Arc::new(initializer().await?));
-    }
-
-    let data_exists = USE_MEMO_CACHE_COMPRESSED_MATRIX.with(|map| {
-        map.borrow()
-            .as_ref()
-            .and_then(|m| m.get(keys).cloned())
-    });
-
-    if let Some(data) = data_exists {
-        return Ok(data);
-    }
-
-    let data = Arc::new(initializer().await?);
-
-    USE_MEMO_CACHE_COMPRESSED_MATRIX.with(|map| {
-        let mut map_ref = map.borrow_mut();
-
-        if map_ref.is_none() {
-            *map_ref = Some(HashMap::new());
-        }
-
-        map_ref.as_mut().unwrap().insert(keys.to_vec(), data.clone());
-    });
-
-    Ok(data)
+pub async fn use_memo_compressed_matrix<E>(initializer: impl AsyncFnOnce() -> Result<CompressedMatrix, E>, keys: &[String], cache_enabled: bool) -> Result<Arc<CompressedMatrix>, E> {
+    use_memo(&USE_MEMO_CACHE_COMPRESSED_MATRIX, initializer, keys, cache_enabled).await
 }
 
 // TODO: Every render, try to clear things from the use_memo cache hash maps.

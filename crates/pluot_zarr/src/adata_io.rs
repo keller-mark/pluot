@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use pluot_core::numeric_data::NumericData;
 use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
+use pluot_core::with_int_slice;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use crate::adata_metadata::AnnDataEncoding;
-use crate::zarr_numeric_data::load_arr_as_numeric_data;
+use crate::zarr_numeric_data::{load_arr_as_numeric_data, retrieve_numeric_subset};
 
 /// Upper bound on how much of a sparse matrix's `indptr`, `indices` or `data` array is read — and
 /// so held in memory — at one time.
@@ -118,30 +119,7 @@ pub async fn read_dense_column_numeric(store: Arc<dyn AsyncReadableStorageTraits
     let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
     let n_obs = array.shape()[0];
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[0..n_obs, col_index..col_index + 1]);
-
-    use zarrs::plugin::ZarrVersion;
-    let dtype_name = array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
-
-    macro_rules! load {
-        ($rust_ty:ty, $variant:ident) => {{
-            let data = array.async_retrieve_array_subset::<Vec<$rust_ty>>(&subset).await?;
-            NumericData::$variant(Arc::new(data))
-        }};
-    }
-
-    Ok(match dtype_name.as_str() {
-        "uint8" => load!(u8, Uint8),
-        "uint16" => load!(u16, Uint16),
-        "uint32" => load!(u32, Uint32),
-        "uint64" => load!(u64, Uint64),
-        "int8" => load!(i8, Int8),
-        "int16" => load!(i16, Int16),
-        "int32" => load!(i32, Int32),
-        "int64" => load!(i64, Int64),
-        "float32" => load!(f32, Float32),
-        "float64" => load!(f64, Float64),
-        other => panic!("Unsupported dtype \"{other}\" for AnnData expression array \"{array_path}\""),
-    })
+    retrieve_numeric_subset(&array, &subset).await
 }
 
 /// Reads one column (all rows) of a dense 2D numeric zarr array (e.g. AnnData
@@ -173,104 +151,35 @@ async fn read_sparse_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, ma
     }
 }
 
-/// A 1D integer zarr array, held in the dtype it was stored in.
+/// The element at `idx` of an integer array (e.g. a sparse matrix's `indptr`) widened to `u64`.
+///
+/// Reserved for the `O(1)` values that are consumed as *arguments* to zarr's `u64`-typed slicing
+/// API rather than as data — namely the `indptr` entries bounding a column's slice of
+/// `indices`/`data`. Element access over a whole array must go through [`with_int_slice`] so that
+/// it stays in the stored dtype.
+fn offset_at(offsets: &NumericData, idx: usize) -> u64 {
+    with_int_slice!(offsets, |values| u64::try_from(values[idx]).ok())
+        .expect("Sparse matrix offsets (indptr) must be non-negative")
+}
+
+/// Reads `array_path[start..stop]` of an integer-typed 1D zarr array (e.g. a sparse matrix's
+/// `indptr` or `indices`) in its native signed/unsigned width.
 ///
 /// AnnData sparse matrices store `indptr` and `indices` as `int32` or `int64` (and, rarely, as
 /// something narrower or unsigned). Normalizing those to a single `u64` representation on read
 /// would allocate a widened copy of every element, and for `indices` — which has one entry per
 /// non-zero of the whole matrix — that copy is the largest allocation in the read path. Keeping
-/// the native dtype instead means bulk access goes through [`with_int_slice`], which
-/// monomorphizes its body per dtype so elements are read at their stored width, and the only
-/// values ever converted are the handful of scalars that feed zarr's `u64`-typed slicing API
-/// (see [`IntArray::offset_at`]).
-#[derive(Debug)]
-enum IntArray {
-    Uint8(Vec<u8>),
-    Uint16(Vec<u16>),
-    Uint32(Vec<u32>),
-    Uint64(Vec<u64>),
-    Int8(Vec<i8>),
-    Int16(Vec<i16>),
-    Int32(Vec<i32>),
-    Int64(Vec<i64>),
-}
-
-/// Evaluates `$body` with `$slice` bound to an [`IntArray`]'s contents as a `&[T]` of its native
-/// Rust integer type.
-///
-/// The body is expanded (and so monomorphized) once per dtype, which is what lets downstream code
-/// stay generic over the stored dtype without either a widening pass over the array or a per-element
-/// enum dispatch. Every arm must evaluate to the same type, so `$body` is typically a call to a
-/// function generic over the element type.
-macro_rules! with_int_slice {
-    ($array:expr, |$slice:ident| $body:expr) => {
-        match $array {
-            IntArray::Uint8(v) => { let $slice: &[u8] = v; $body }
-            IntArray::Uint16(v) => { let $slice: &[u16] = v; $body }
-            IntArray::Uint32(v) => { let $slice: &[u32] = v; $body }
-            IntArray::Uint64(v) => { let $slice: &[u64] = v; $body }
-            IntArray::Int8(v) => { let $slice: &[i8] = v; $body }
-            IntArray::Int16(v) => { let $slice: &[i16] = v; $body }
-            IntArray::Int32(v) => { let $slice: &[i32] = v; $body }
-            IntArray::Int64(v) => { let $slice: &[i64] = v; $body }
-        }
-    };
-}
-
-impl From<IntArray> for NumericData {
-    fn from(array: IntArray) -> Self {
-        match array {
-            IntArray::Uint8(v) => v.into(),
-            IntArray::Uint16(v) => v.into(),
-            IntArray::Uint32(v) => v.into(),
-            IntArray::Uint64(v) => v.into(),
-            IntArray::Int8(v) => v.into(),
-            IntArray::Int16(v) => v.into(),
-            IntArray::Int32(v) => v.into(),
-            IntArray::Int64(v) => v.into(),
-        }
-    }
-}
-
-impl IntArray {
-    /// The element at `idx` widened to `u64`.
-    ///
-    /// Reserved for the `O(1)` values that are consumed as *arguments* to zarr's `u64`-typed
-    /// slicing API rather than as data — namely the `indptr` entries bounding a column's slice of
-    /// `indices`/`data`. Element access over a whole array must go through [`with_int_slice`] so
-    /// that it stays in the stored dtype.
-    fn offset_at(&self, idx: usize) -> u64 {
-        with_int_slice!(self, |values| u64::try_from(values[idx]).ok())
-            .expect("Sparse matrix offsets (indptr) must be non-negative")
-    }
-}
-
-/// Reads `array_path[start..stop]` of an integer-typed 1D zarr array (e.g. a sparse matrix's
-/// `indptr` or `indices`) in its native signed/unsigned width.
-async fn read_int_array_range(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, start: u64, stop: u64) -> Result<IntArray, zarrs::array::ArrayError> {
+/// the native dtype instead means bulk access goes through [`with_int_slice`], so elements are
+/// read at their stored width, and the only values ever converted are the handful of scalars
+/// that feed zarr's `u64`-typed slicing API (see [`offset_at`]).
+async fn read_int_array_range(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, start: u64, stop: u64) -> Result<NumericData, zarrs::array::ArrayError> {
     let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[start..stop]);
-
-    use zarrs::plugin::ZarrVersion;
-    let dtype_name = array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
-
-    macro_rules! load {
-        ($rust_ty:ty, $variant:ident) => {{
-            IntArray::$variant(array.async_retrieve_array_subset::<Vec<$rust_ty>>(&subset).await?)
-        }};
+    let values = retrieve_numeric_subset(&array, &subset).await?;
+    if matches!(values, NumericData::Float32(_) | NumericData::Float64(_)) {
+        panic!("Sparse matrix index array \"{array_path}\" must have an integer dtype");
     }
-
-    Ok(match dtype_name.as_str() {
-        "uint8" => load!(u8, Uint8),
-        "uint16" => load!(u16, Uint16),
-        "uint32" => load!(u32, Uint32),
-        "uint64" => load!(u64, Uint64),
-        "int8" => load!(i8, Int8),
-        "int16" => load!(i16, Int16),
-        "int32" => load!(i32, Int32),
-        "int64" => load!(i64, Int64),
-        other => panic!("Unsupported dtype \"{other}\" for sparse matrix index array \"{array_path}\" (expected an integer type)"),
-    })
+    Ok(values)
 }
 
 /// Scatters the non-zero `values` of a single sparse column into a dense `n_obs`-length column,
@@ -341,36 +250,96 @@ where
         .collect()
 }
 
-/// Reads the stored entries of column `col_index` of the CSR matrix at `matrix_path`, as their
-/// ascending rows and their values in the `data` array's own dtype `V`.
+/// One read of a sparse matrix's `data` array, and where each value it keeps belongs in the output.
+struct DataRead {
+    subset: zarrs::array::ArraySubset,
+    /// `(output_position, position_within_read)` of each value kept from this read. Both fit in
+    /// `u32`: a read spans at most its read budget (or a single row or column), and outputs are
+    /// indexed by `u32` sparse indices or rows.
+    placements: Vec<(u32, u32)>,
+}
+
+/// The `len`-long output holding the values that `reads` keep from `data_array`, in its stored
+/// dtype `V`, with `V::default()` wherever no value was placed. Reads are issued one at a time, so
+/// at most one is held in memory.
+async fn gather_data_reads<V>(
+    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    reads: &[DataRead],
+    len: usize,
+) -> Result<Vec<V>, zarrs::array::ArrayError>
+where
+    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
+{
+    let mut out = vec![V::default(); len];
+    for read in reads {
+        let values = data_array.async_retrieve_array_subset::<Vec<V>>(&read.subset).await?;
+        for &(output_position, position) in &read.placements {
+            out[output_position as usize] = values[position as usize];
+        }
+    }
+    Ok(out)
+}
+
+/// [`gather_data_reads`] in whichever dtype `data_array` is stored in.
+///
+/// Retrieving and placing the values is the only step that depends on the dtype, so the code that
+/// plans the reads is compiled once rather than once per dtype.
+async fn read_data_entries(
+    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    data_path: &str,
+    reads: &[DataRead],
+    len: usize,
+) -> Result<NumericData, zarrs::array::ArrayError> {
+    use zarrs::plugin::ZarrVersion;
+    let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
+
+    macro_rules! gather {
+        ($rust_ty:ty) => {
+            NumericData::from(gather_data_reads::<$rust_ty>(data_array, reads, len).await?)
+        };
+    }
+
+    Ok(match dtype_name.as_str() {
+        "uint8" => gather!(u8),
+        "uint16" => gather!(u16),
+        "uint32" => gather!(u32),
+        "uint64" => gather!(u64),
+        "int8" => gather!(i8),
+        "int16" => gather!(i16),
+        "int32" => gather!(i32),
+        "int64" => gather!(i64),
+        "float32" => gather!(f32),
+        "float64" => gather!(f64),
+        other => panic!("Unsupported dtype \"{other}\" for AnnData sparse expression matrix \"{data_path}\""),
+    })
+}
+
+/// Locates the stored entries of column `col_index` of the CSR matrix at `matrix_path`: their
+/// ascending rows, and the reads of its `data` array that fetch their values in that order.
 ///
 /// The matrix is traversed in two nested fixed-size steps, so no array is ever held whole: `indptr`
 /// is read one block of `budget` rows at a time, and each block's slice of `indices` is then read
 /// `budget` positions at a time. Block boundaries need not line up with row boundaries — every
 /// position is resolved to its row independently, by looking it up in the `indptr` block it came
-/// from — and a span's `data` is fetched only once its `indices` have shown that the span holds
-/// something for this column, which for a single gene skips nearly every span.
-async fn read_csr_column_entries<V>(
+/// from — and a span's `data` is read only if its `indices` show that the span holds something
+/// for this column, which for a single gene skips nearly every span.
+async fn locate_csr_column_entries(
     store: Arc<dyn AsyncReadableStorageTraits>,
     matrix_path: &str,
-    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
     col_index: u64,
     n_obs: usize,
     budget: u64,
-) -> Result<(Vec<u32>, Vec<V>), zarrs::array::ArrayError>
-where
-    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
-{
+) -> Result<(Vec<u32>, Vec<DataRead>), zarrs::array::ArrayError> {
     let indptr_path = format!("{matrix_path}/indptr");
     let indices_path = format!("{matrix_path}/indices");
     let elements_per_read = budget as usize;
 
-    let (mut column_rows, mut column_values) = (Vec::new(), Vec::new());
+    let (mut column_rows, mut reads) = (Vec::new(), Vec::new());
     for first_row in (0..n_obs).step_by(elements_per_read) {
         let rows_in_block = elements_per_read.min(n_obs - first_row);
         // One offset per row of the block, plus the terminating offset that closes its last row.
         let indptr_block = read_int_array_range(store.clone(), &indptr_path, first_row as u64, (first_row + rows_in_block) as u64 + 1).await?;
-        let (block_start, block_stop) = (indptr_block.offset_at(0), indptr_block.offset_at(rows_in_block));
+        let (block_start, block_stop) = (offset_at(&indptr_block, 0), offset_at(&indptr_block, rows_in_block));
 
         for span_start in (block_start..block_stop).step_by(elements_per_read) {
             let span_stop = (span_start + budget).min(block_stop);
@@ -385,32 +354,12 @@ where
             let positions: Vec<u64> = matches.iter().map(|&position| span_start + position as u64).collect();
             let rows = with_int_slice!(&indptr_block, |offsets| rows_for_entries(offsets, &positions));
 
-            let subset = zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]);
-            let values = data_array.async_retrieve_array_subset::<Vec<V>>(&subset).await?;
-            for (&position, &row) in matches.iter().zip(rows.iter()) {
-                column_rows.push((first_row + row) as u32);
-                column_values.push(values[position]);
-            }
+            let placements = matches.iter().enumerate().map(|(i, &position)| ((column_rows.len() + i) as u32, position as u32)).collect();
+            column_rows.extend(rows.iter().map(|&row| (first_row + row) as u32));
+            reads.push(DataRead { subset: zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]), placements });
         }
     }
-    Ok((column_rows, column_values))
-}
-
-/// Builds the dense `n_obs`-length column `col_index` of the CSR matrix at `matrix_path`, in the
-/// `data` array's own dtype `V`. See [`read_csr_column_entries`].
-async fn read_csr_column_values<V>(
-    store: Arc<dyn AsyncReadableStorageTraits>,
-    matrix_path: &str,
-    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
-    col_index: u64,
-    n_obs: usize,
-    budget: u64,
-) -> Result<Vec<V>, zarrs::array::ArrayError>
-where
-    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
-{
-    let (rows, values) = read_csr_column_entries::<V>(store, matrix_path, data_array, col_index, n_obs, budget).await?;
-    Ok(scatter_column(&rows, &values, n_obs))
+    Ok((column_rows, reads))
 }
 
 /// Reads the stored entries of column `col_index` of a CSR (`compressed_axis` of rows) or CSC
@@ -418,7 +367,7 @@ where
 /// entry per stored value, holding its row index and its value in the stored dtype.
 ///
 /// A CSC column is one contiguous read, whereas a CSR column traverses the whole matrix; see
-/// [`read_csr_column_entries`].
+/// [`locate_csr_column_entries`].
 pub async fn read_compressed_column(
     store: Arc<dyn AsyncReadableStorageTraits>,
     matrix_path: &str,
@@ -429,48 +378,19 @@ pub async fn read_compressed_column(
     let data_path = format!("{matrix_path}/data");
     let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
 
-    use zarrs::plugin::ZarrVersion;
-    let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
-
-    let csc_range = match compressed_axis {
+    let (indices, data) = match compressed_axis {
         CompressedAxis::Cols => {
             let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
-            Some((indptr.offset_at(0), indptr.offset_at(1)))
+            let (start, stop) = (offset_at(&indptr, 0), offset_at(&indptr, 1));
+            let rows = read_int_array_range(store.clone(), &format!("{matrix_path}/indices"), start, stop).await?;
+            let values = retrieve_numeric_subset(&data_array, &zarrs::array::ArraySubset::new_with_ranges(&[start..stop])).await?;
+            (rows, values)
         }
-        CompressedAxis::Rows => None,
-    };
-
-    macro_rules! read {
-        ($rust_ty:ty) => {{
-            match csc_range {
-                Some((start, stop)) => {
-                    let rows = read_int_array_range(store.clone(), &format!("{matrix_path}/indices"), start, stop).await?;
-                    let subset = zarrs::array::ArraySubset::new_with_ranges(&[start..stop]);
-                    let values = data_array.async_retrieve_array_subset::<Vec<$rust_ty>>(&subset).await?;
-                    (NumericData::from(rows), NumericData::from(values))
-                }
-                None => {
-                    let (rows, values) = read_csr_column_entries::<$rust_ty>(
-                        store.clone(), matrix_path, &data_array, col_index, n_obs, MAX_ELEMENTS_PER_READ,
-                    ).await?;
-                    (NumericData::from(rows), NumericData::from(values))
-                }
-            }
-        }};
-    }
-
-    let (indices, data) = match dtype_name.as_str() {
-        "uint8" => read!(u8),
-        "uint16" => read!(u16),
-        "uint32" => read!(u32),
-        "uint64" => read!(u64),
-        "int8" => read!(i8),
-        "int16" => read!(i16),
-        "int32" => read!(i32),
-        "int64" => read!(i64),
-        "float32" => read!(f32),
-        "float64" => read!(f64),
-        other => panic!("Unsupported dtype \"{other}\" for AnnData sparse expression matrix \"{data_path}\""),
+        CompressedAxis::Rows => {
+            let (rows, reads) = locate_csr_column_entries(store.clone(), matrix_path, col_index, n_obs, MAX_ELEMENTS_PER_READ).await?;
+            let values = read_data_entries(&data_array, &data_path, &reads, rows.len()).await?;
+            (NumericData::from(rows), values)
+        }
     };
     Ok(CompressedMatrix {
         indptr: NumericData::from(vec![0u32, data.len() as u32]),
@@ -491,7 +411,7 @@ pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
     let n_obs = shape[0] as usize;
 
     let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
-    let (start, stop) = (indptr.offset_at(0), indptr.offset_at(1));
+    let (start, stop) = (offset_at(&indptr, 0), offset_at(&indptr, 1));
 
     // An all-zero column has no `indices`/`data` entries to read at all.
     let row_indices = if start != stop {
@@ -541,9 +461,9 @@ pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 /// arrays. Unlike the CSC case, a CSR matrix's `indptr` is indexed by row rather than column, so
 /// the requested column's non-zero entries are scattered across every row's range: there is no
 /// contiguous slice of `indices`/`data` to target, and finding them means traversing the whole
-/// matrix. [`read_csr_column_values`] does that traversal in fixed-size pieces, discarding each as
-/// soon as the entries it contributes have been written, so peak memory stays proportional to the
-/// `n_obs`-length output rather than to the size of the matrix.
+/// matrix. [`locate_csr_column_entries`] does that traversal in fixed-size pieces, discarding each
+/// as soon as the entries it contributes have been located, so peak memory stays proportional to
+/// the `n_obs`-length output rather than to the size of the matrix.
 pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
     let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
     let n_obs = shape[0] as usize;
@@ -551,31 +471,13 @@ pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
     let data_path = format!("{matrix_path}/data");
     let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
 
-    use zarrs::plugin::ZarrVersion;
-    let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
-
-    macro_rules! extract {
-        ($rust_ty:ty, $variant:ident) => {{
-            let column = read_csr_column_values::<$rust_ty>(
-                store.clone(), matrix_path, &data_array, col_index, n_obs, MAX_ELEMENTS_PER_READ,
-            ).await?;
-            NumericData::$variant(Arc::new(column))
-        }};
+    let (rows, mut reads) = locate_csr_column_entries(store.clone(), matrix_path, col_index, n_obs, MAX_ELEMENTS_PER_READ).await?;
+    for read in &mut reads {
+        for placement in &mut read.placements {
+            placement.0 = rows[placement.0 as usize];
+        }
     }
-
-    Ok(match dtype_name.as_str() {
-        "uint8" => extract!(u8, Uint8),
-        "uint16" => extract!(u16, Uint16),
-        "uint32" => extract!(u32, Uint32),
-        "uint64" => extract!(u64, Uint64),
-        "int8" => extract!(i8, Int8),
-        "int16" => extract!(i16, Int16),
-        "int32" => extract!(i32, Int32),
-        "int64" => extract!(i64, Int64),
-        "float32" => extract!(f32, Float32),
-        "float64" => extract!(f64, Float64),
-        other => panic!("Unsupported dtype \"{other}\" for AnnData sparse expression matrix \"{data_path}\""),
-    })
+    read_data_entries(&data_array, &data_path, &reads, n_obs).await
 }
 
 /// Reads one column (single gene, all rows) of an AnnData expression matrix — `X` or a `layers`
@@ -635,14 +537,14 @@ fn group_by_chunk(array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>, a
 /// requested element, each bounded to the requested extent within that chunk.
 async fn read_dense_subset_values<V>(
     array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
-    rows: &[u32],
-    cols: &[u32],
+    row_groups: &[Vec<(usize, u64)>],
+    col_groups: &[Vec<(usize, u64)>],
+    n_rows: usize,
+    n_cols: usize,
 ) -> Result<Vec<V>, zarrs::array::ArrayError>
 where
     V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
 {
-    let row_groups = group_by_chunk(array, 0, rows);
-    let col_groups = group_by_chunk(array, 1, cols);
     let extent = |group: &[(usize, u64)]| {
         let min = group.iter().map(|&(_, index)| index).min().unwrap();
         let max = group.iter().map(|&(_, index)| index).max().unwrap();
@@ -659,12 +561,12 @@ where
     );
     let blocks = futures::future::try_join_all(reads).await?;
 
-    let mut out = vec![V::default(); rows.len() * cols.len()];
+    let mut out = vec![V::default(); n_rows * n_cols];
     for (row_group, col_group, row_range, col_range, values) in blocks {
         let block_width = col_range.end - col_range.start;
         for &(out_row, row) in row_group {
             for &(out_col, col) in col_group {
-                out[out_row * cols.len() + out_col] = values[((row - row_range.start) * block_width + (col - col_range.start)) as usize];
+                out[out_row * n_cols + out_col] = values[((row - row_range.start) * block_width + (col - col_range.start)) as usize];
             }
         }
     }
@@ -688,11 +590,12 @@ pub async fn read_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, matr
     }
 }
 
-/// The stored entries of a `rows x cols` submatrix of a CSR or CSC matrix, as
-/// `(indptr, indices, data)`: one major index per requested row (CSR) or
-/// column (CSC), in requested order, holding only the entries whose minor
-/// index was requested. Minor indices stay those of the whole matrix, in
-/// ascending order within each major index.
+/// Locates the stored entries of a `rows x cols` submatrix of a CSR or CSC
+/// matrix, as `(indptr, indices, reads)`: one major index per requested row
+/// (CSR) or column (CSC), in requested order, holding only the entries whose
+/// minor index was requested, and the reads of `data` that fetch their values
+/// in that order. Minor indices stay those of the whole matrix, in ascending
+/// order within each major index.
 ///
 /// The requested major indices are visited in ascending order and coalesced
 /// into spans of `indices`/`data` of at most `budget` entries (a single row or
@@ -700,24 +603,22 @@ pub async fn read_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, matr
 /// costs a few large reads rather than one per index.
 ///
 /// `rows` and `cols` must not contain duplicates.
-async fn read_compressed_subset_entries<V>(
+async fn locate_compressed_subset_entries(
     store: Arc<dyn AsyncReadableStorageTraits>,
     matrix_path: &str,
-    data_array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
     shape: &[u64],
     rows: &[u32],
     cols: &[u32],
     compressed_axis: CompressedAxis,
     budget: u64,
-) -> Result<(Vec<u32>, Vec<u32>, Vec<V>), zarrs::array::ArrayError>
-where
-    V: zarrs::array::ElementOwned + zarrs::storage::MaybeSend + zarrs::storage::MaybeSync + Copy + Default,
-{
+) -> Result<(Vec<u32>, Vec<u32>, Vec<DataRead>), zarrs::array::ArrayError> {
     let (major, minor, minor_len) = match compressed_axis {
         CompressedAxis::Rows => (rows, cols, shape[1]),
         CompressedAxis::Cols => (cols, rows, shape[0]),
     };
-    let mut kept: Vec<Vec<(u32, V)>> = vec![Vec::new(); major.len()];
+    // `(minor_index, read, position_within_read)` of each kept entry, per requested major index.
+    let mut kept: Vec<Vec<(u32, u32, u32)>> = vec![Vec::new(); major.len()];
+    let mut read_subsets = Vec::new();
 
     if !major.is_empty() && !minor.is_empty() {
         let mut is_minor_requested = vec![false; minor_len as usize];
@@ -730,7 +631,7 @@ where
         let first_major = sorted_major[0].0;
         let last_major = sorted_major[sorted_major.len() - 1].0;
         let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), first_major as u64, last_major as u64 + 2).await?;
-        let offset = |major_index: u32| indptr.offset_at((major_index - first_major) as usize);
+        let offset = |major_index: u32| offset_at(&indptr, (major_index - first_major) as usize);
         let indices_path = format!("{matrix_path}/indices");
 
         let mut span_first = 0;
@@ -744,8 +645,8 @@ where
 
             if span_stop > span_start {
                 let minor_indices = read_int_array_range(store.clone(), &indices_path, span_start, span_stop).await?;
-                let subset = zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]);
-                let values = data_array.async_retrieve_array_subset::<Vec<V>>(&subset).await?;
+                let read = read_subsets.len() as u32;
+                read_subsets.push(zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]));
                 for &(major_index, major_position) in &sorted_major[span_first..span_end] {
                     let entries = (offset(major_index) - span_start) as usize..(offset(major_index + 1) - span_start) as usize;
                     let major_kept = &mut kept[major_position];
@@ -753,12 +654,12 @@ where
                         for entry in entries.clone() {
                             let minor_index: usize = minor_indices[entry].try_into().ok().expect("Sparse matrix indices must be non-negative");
                             if is_minor_requested[minor_index] {
-                                major_kept.push((minor_index as u32, values[entry]));
+                                major_kept.push((minor_index as u32, read, entry as u32));
                             }
                         }
                     });
                     // Non-canonical matrices may store a major index's entries out of order.
-                    major_kept.sort_by_key(|&(minor_index, _)| minor_index);
+                    major_kept.sort_unstable_by_key(|&(minor_index, ..)| minor_index);
                 }
             }
             span_first = span_end;
@@ -766,18 +667,19 @@ where
     }
 
     let num_entries: usize = kept.iter().map(Vec::len).sum();
+    let mut reads: Vec<DataRead> = read_subsets.into_iter().map(|subset| DataRead { subset, placements: Vec::new() }).collect();
     let mut indptr = Vec::with_capacity(major.len() + 1);
     let mut indices = Vec::with_capacity(num_entries);
-    let mut data = Vec::with_capacity(num_entries);
     indptr.push(0);
     for major_kept in kept {
-        for (minor_index, value) in major_kept {
+        for (minor_index, read, position) in major_kept {
+            reads[read as usize].placements.push((indices.len() as u32, position));
             indices.push(minor_index);
-            data.push(value);
         }
         indptr.push(indices.len() as u32);
     }
-    Ok((indptr, indices, data))
+    reads.retain(|read| !read.placements.is_empty());
+    Ok((indptr, indices, reads))
 }
 
 /// Reads the `rows x cols` submatrix of a CSR (`compressed_axis` of rows) or
@@ -807,31 +709,8 @@ pub async fn read_compressed_subset_with_budget(
     let data_path = format!("{matrix_path}/data");
     let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
 
-    use zarrs::plugin::ZarrVersion;
-    let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
-
-    macro_rules! read {
-        ($rust_ty:ty) => {{
-            let (indptr, indices, data) = read_compressed_subset_entries::<$rust_ty>(
-                store.clone(), matrix_path, &data_array, &shape, rows, cols, compressed_axis, budget,
-            ).await?;
-            (indptr, indices, NumericData::from(data))
-        }};
-    }
-
-    let (indptr, indices, data) = match dtype_name.as_str() {
-        "uint8" => read!(u8),
-        "uint16" => read!(u16),
-        "uint32" => read!(u32),
-        "uint64" => read!(u64),
-        "int8" => read!(i8),
-        "int16" => read!(i16),
-        "int32" => read!(i32),
-        "int64" => read!(i64),
-        "float32" => read!(f32),
-        "float64" => read!(f64),
-        other => panic!("Unsupported dtype \"{other}\" for AnnData sparse expression matrix \"{data_path}\""),
-    };
+    let (indptr, indices, reads) = locate_compressed_subset_entries(store.clone(), matrix_path, &shape, rows, cols, compressed_axis, budget).await?;
+    let data = read_data_entries(&data_array, &data_path, &reads, indices.len()).await?;
     let minor = match compressed_axis {
         CompressedAxis::Rows => cols,
         CompressedAxis::Cols => rows,
@@ -859,9 +738,13 @@ pub async fn read_dense_subset_numeric(
     use zarrs::plugin::ZarrVersion;
     let dtype_name = values_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
 
+    let row_groups = group_by_chunk(&values_array, 0, rows);
+    let col_groups = group_by_chunk(&values_array, 1, cols);
+
     macro_rules! read {
         ($rust_ty:ty, $variant:ident) => {{
-            NumericData::$variant(Arc::new(read_dense_subset_values::<$rust_ty>(&values_array, rows, cols).await?))
+            let values = read_dense_subset_values::<$rust_ty>(&values_array, &row_groups, &col_groups, rows.len(), cols.len()).await?;
+            NumericData::$variant(Arc::new(values))
         }};
     }
 

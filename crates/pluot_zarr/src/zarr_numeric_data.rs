@@ -2,6 +2,7 @@ use std::sync::Arc;
 use pluot_core::cache::use_memo_numeric_data;
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
+use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 
@@ -34,7 +35,7 @@ pub async fn load_arr_as_numeric_data_memoized(
     store_name: &str,
     array_path: &str,
     cache_enabled: bool,
-) -> Result<Arc<NumericData>, zarrs::array::ArrayError> {
+) -> Result<Arc<NumericData>, ArrayError> {
     let keys = arr_cache_key(store_name, array_path);
     use_memo_numeric_data(
         async || {
@@ -46,56 +47,49 @@ pub async fn load_arr_as_numeric_data_memoized(
     .await
 }
 
+/// Retrieves `subset` of `array` as a [`NumericData`] in the array's native dtype, with no
+/// per-element conversion. `bool` arrays are read as `Uint8`.
+pub async fn retrieve_numeric_subset(
+    array: &zarrs::array::Array<dyn AsyncReadableStorageTraits>,
+    subset: &zarrs::array::ArraySubset,
+) -> Result<NumericData, ArrayError> {
+    use zarrs::plugin::ZarrVersion;
+    let dtype_name = array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
+
+    macro_rules! retrieve {
+        ($rust_ty:ty) => {
+            NumericData::from(array.async_retrieve_array_subset::<Vec<$rust_ty>>(subset).await?)
+        };
+    }
+
+    Ok(match dtype_name.as_str() {
+        "uint8" => retrieve!(u8),
+        "uint16" => retrieve!(u16),
+        "uint32" => retrieve!(u32),
+        "uint64" => retrieve!(u64),
+        "int8" => retrieve!(i8),
+        "int16" => retrieve!(i16),
+        "int32" => retrieve!(i32),
+        "int64" => retrieve!(i64),
+        "float32" => retrieve!(f32),
+        "float64" => retrieve!(f64),
+        "bool" => {
+            let data = array.async_retrieve_array_subset::<Vec<bool>>(subset).await?;
+            NumericData::from(data.into_iter().map(u8::from).collect::<Vec<u8>>())
+        }
+        other => panic!("Unsupported zarr data type \"{other}\" for array \"{}\"", array.path()),
+    })
+}
+
 /// Load a zarr array from the zarr store into a [`NumericData`] in the
-/// array's native dtype.
-///
-/// The whole array is retrieved directly as its native element type and wrapped
-/// in the matching `NumericData` variant — there is no per-element cast to a
-/// single dtype. `PointLayer` then uploads each dtype to the GPU at its native
-/// width.
+/// array's native dtype. See [`retrieve_numeric_subset`].
 /// TODO: extend to support loading partial slices and ND arrs as well?
 pub async fn load_arr_as_numeric_data(
     store: Arc<dyn AsyncReadableStorageTraits>,
     array_path: &str,
-) -> Result<NumericData, zarrs::array::ArrayError> {
+) -> Result<NumericData, ArrayError> {
     let array = zarrs::array::Array::async_open(store, array_path)
         .await
         .unwrap();
-    let subset = array.subset_all();
-
-    use zarrs::plugin::ZarrVersion;
-    let dtype_name = array
-        .data_type()
-        .name(ZarrVersion::V3)
-        .expect("Array data type must have a V3 name")
-        .to_string();
-
-    // Retrieve the whole array in its native dtype and wrap it in the matching
-    // `NumericData` variant — no per-element conversion.
-    macro_rules! load {
-        ($rust_ty:ty, $variant:ident) => {{
-            let data = array
-                .async_retrieve_array_subset::<Vec<$rust_ty>>(&subset)
-                .await?;
-            NumericData::$variant(Arc::new(data))
-        }};
-    }
-
-    Ok(match dtype_name.as_str() {
-        "uint8" => load!(u8, Uint8),
-        "uint16" => load!(u16, Uint16),
-        "uint32" => load!(u32, Uint32),
-        "uint64" => load!(u64, Uint64),
-        "int8" => load!(i8, Int8),
-        "int16" => load!(i16, Int16),
-        "int32" => load!(i32, Int32),
-        "int64" => load!(i64, Int64),
-        "float32" => load!(f32, Float32),
-        "float64" => load!(f64, Float64),
-        "bool" => {
-            let data = array.async_retrieve_array_subset::<Vec<bool>>(&subset).await?;
-            NumericData::Uint8(Arc::new(data.into_iter().map(u8::from).collect()))
-        }
-        _ => panic!("Unsupported zarr data type for point coordinates: {}", dtype_name),
-    })
+    retrieve_numeric_subset(&array, &array.subset_all()).await
 }
