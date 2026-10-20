@@ -2,14 +2,14 @@
 title: Heatmap (AnnData)
 description: Heatmap example.
 sidebar:
-    order: 31
+    order: 30
 ---
 import { HeatmapWrapper } from '../../../components/HeatmapWrapper.jsx';
 
 This [heatmap](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.heatmap.html) displays single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
 Each row is a cell and each column is a marker gene.
 The cells are filtered to four cell types (monocytes, B cells, NK cells, and dendritic cells) using the `bulk_labels` column of `obs`,
-the colormap is normalized separately for each gene, and the cells with at least 1,000 detected genes are selected (the others are faded).
+the colormap is normalized separately for each gene, and the cells with at least 1,050 detected genes are selected (the others are displayed with reduced opacity).
 Scroll to zoom and drag to pan; the cell and gene labels follow the camera.
 Zooming in first stretches only the cell axis until each heatmap cell is square, and the camera cannot move past the edges of the heatmap.
 
@@ -48,7 +48,7 @@ Zooming in first stretches only the cell axis until each heatmap cell is square,
               axis_criteria_params: [
                 {
                   criteria_mode: "Quantitative",
-                  criteria_params: { values_key: "/obs/n_genes", min: 1000 },
+                  criteria_params: { values_key: "/obs/n_genes", min: 1050 },
                 },
               ],
             },
@@ -57,7 +57,7 @@ Zooming in first stretches only the cell axis until each heatmap cell is square,
               colormap_params: { colormap: "Viridis" },
             },
             normalization: "PerVar",
-            background_opacity: 0.35,
+            background_opacity: 0.25,
             obs_axis_title: "Cells",
             var_axis_title: "Genes",
             hide_overlapping_obs_ticks: true,
