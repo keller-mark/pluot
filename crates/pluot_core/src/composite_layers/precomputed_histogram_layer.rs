@@ -53,8 +53,9 @@ pub struct PrecomputedHistogramLayerParams {
     /// The per-bin quantity of the "foreground" (selected) bars.
     pub quantity: Arc<Vec<f32>>,
     /// The per-bin quantity of the "background" (filter-included, but
-    /// selection-excluded) bars, drawn behind the foreground bars. When None,
-    /// only the foreground bars are drawn.
+    /// selection-excluded) bars, drawn behind the foreground bars. Should only
+    /// be provided when filtering criteria exist; when None, only the
+    /// foreground bars are drawn.
     pub background_quantity: Option<Arc<Vec<f32>>>,
 
     /// The gap between adjacent bars, in pixel units, split evenly across the
