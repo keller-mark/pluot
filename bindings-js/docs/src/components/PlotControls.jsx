@@ -153,6 +153,10 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
       label: 'Show Margins',
       hint: 'For debugging, display a 1px border indicating margin boundaries.'
     },
+    transparentBackground: {
+      value: defaultOptions.transparentBackground ?? false,
+      label: 'Transparent Background',
+    },
     /*
     'Reset Camera': button(
       get => alert(`Interactive value is ${get('interactive')}`),
