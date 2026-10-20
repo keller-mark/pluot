@@ -1,4 +1,11 @@
 
+## 0.1.24
+
+### Patch Changes
+
+- Add HeatmapLayer and AdataZarrHeatmapLayer, with per-axis filtering and selection, whole-matrix/per-obs/per-var colormap normalization with lower/upper percentile thresholds, and camera filter functions to support zoom-to-square and limit-extent modes. Heatmap data is loaded from dense, CSC- or CSR-sparse arrays, without densifying sparse data (i.e., sparse arrays are passed to the heatmap shader as-is with CSC- and CSR-specific GLSL indexing functions). (`@pluot/core`) ([#337](https://github.com/keller-mark/pluot/pull/337))
+
+
 ## 0.1.23
 
 ### Patch Changes
