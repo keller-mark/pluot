@@ -1,191 +1,129 @@
-import React, { useMemo } from "react";
-import { createRender, useModel, useModelState } from "@anywidget/react";
-import type { AnyModel } from "@anywidget/types";
-import * as uuid from "@lukeed/uuid";
+import type { AnyModel, Render } from "@anywidget/types";
+import { loadDeps, React, ReactDOMClient, type PluotReactModule } from "./deps";
 import {
-  Pluot,
-  setStoreByName,
-  type AspectRatioAlignmentMode,
-  type AspectRatioMode,
-  type CameraMatrix,
-  type GraphicsFormat,
-  type PlotParams,
-  type PlotType,
-  type StoresInput,
-  type ViewMode,
-} from "@pluot/react";
+  createKernelStore,
+  createZarrGetter,
+  useClickResult,
+  useExtentResult,
+  useModelBrush,
+  useModelValue,
+  useThrottledCameraMatrix,
+  type WidgetModel,
+} from "./hooks";
 
-type AsyncReadable = Parameters<typeof setStoreByName>[1];
-type RangeQuery = Parameters<NonNullable<AsyncReadable["getRange"]>>[1];
+function PluotWidget({ model, pluotReact }: { model: AnyModel<WidgetModel>; pluotReact: PluotReactModule }) {
+  const { Pluot, setStoreByName } = pluotReact;
+  const width = useModelValue(model, "width");
+  const height = useModelValue(model, "height");
+  const marginTop = useModelValue(model, "margin_top");
+  const marginRight = useModelValue(model, "margin_right");
+  const marginBottom = useModelValue(model, "margin_bottom");
+  const marginLeft = useModelValue(model, "margin_left");
+  const aspectRatioMode = useModelValue(model, "aspect_ratio_mode");
+  const aspectRatioAlignmentMode = useModelValue(model, "aspect_ratio_alignment_mode");
+  const viewMode = useModelValue(model, "view_mode");
+  const plotId = useModelValue(model, "plot_id");
+  const plotType = useModelValue(model, "plot_type");
+  const storesMetadata = useModelValue(model, "stores_metadata");
+  const plotParams = useModelValue(model, "plot_params");
+  const format = useModelValue(model, "format");
+  const minTimeout = useModelValue(model, "min_timeout");
+  const maxTimeout = useModelValue(model, "max_timeout");
+  const maxBailedEarlyRetries = useModelValue(model, "max_bailed_early_retries");
+  const allowSimultaneousRenders = useModelValue(model, "allow_simultaneous_renders");
+  const cameraFilter = useModelValue(model, "camera_filter");
+  const debugMargins = useModelValue(model, "debug_margins");
+  const backgroundColor = useModelValue(model, "background_color");
+  const enableClick = useModelValue(model, "enable_click");
+  const enableTooltip = useModelValue(model, "enable_tooltip");
+  const enableBrushCreate = useModelValue(model, "enable_brush_create");
+  const enableBrushEdit = useModelValue(model, "enable_brush_edit");
+  const enableBrushClear = useModelValue(model, "enable_brush_clear");
+  const brushMode = useModelValue(model, "brush_mode");
+  const brushUnitsModeX = useModelValue(model, "brush_units_mode_x");
+  const brushUnitsModeY = useModelValue(model, "brush_units_mode_y");
+  const brushMarginTop = useModelValue(model, "brush_margin_top");
+  const brushMarginRight = useModelValue(model, "brush_margin_right");
+  const brushMarginBottom = useModelValue(model, "brush_margin_bottom");
+  const brushMarginLeft = useModelValue(model, "brush_margin_left");
+  const brushColor = useModelValue(model, "brush_color");
+  const brushDelay = useModelValue(model, "brush_delay");
+  const maybeBrushDelay = useModelValue(model, "maybe_brush_delay");
 
-type ZarrGetParams = [storeName: string, key: string] | [storeName: string, key: string, rangeQuery: RangeQuery];
-type CommandResponse = { success: boolean };
-
-type WidgetModel = {
-  width: number;
-  height: number;
-  camera_view: number[];
-  margin_top: number;
-  margin_right: number;
-  margin_bottom: number;
-  margin_left: number;
-  aspect_ratio_mode: AspectRatioMode;
-  aspect_ratio_alignment_mode: AspectRatioAlignmentMode;
-  view_mode: ViewMode;
-  plot_id: string;
-  plot_type: PlotType;
-  stores_metadata: StoresInput;
-  plot_params: PlotParams;
-  format: GraphicsFormat;
-  batch_zarr_gets: boolean;
-};
-
-type PendingGet = {
-  params: ZarrGetParams;
-  resolve: (value: Uint8Array | undefined) => void;
-  reject: (reason: unknown) => void;
-};
-
-// Custom invoke matching the anywidget-command protocol implemented on the Python side.
-function invoke<T>(
-  model: AnyModel<WidgetModel>,
-  name: string,
-  msg: unknown,
-  signal: AbortSignal = AbortSignal.timeout(30000),
-): Promise<[T, DataView[]]> {
-  // crypto.randomUUID is unavailable in non-secure (http://) contexts.
-  const id = uuid.v4();
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    function handler(responseMsg: any, responseBuffers: DataView[]) {
-      if (!responseMsg || responseMsg.id !== id) return;
-      model.off("msg:custom", handler);
-      resolve([responseMsg.response, responseBuffers]);
-    }
-    signal.addEventListener("abort", () => {
-      model.off("msg:custom", handler);
-      reject(signal.reason);
-    });
-    model.on("msg:custom", handler);
-    model.send({ id, kind: "anywidget-command", name, msg }, undefined, []);
-  });
-}
-
-function bufferFromResponse(bufferData: DataView | ArrayBuffer): Uint8Array {
-  if (ArrayBuffer.isView(bufferData)) {
-    return new Uint8Array(bufferData.buffer, bufferData.byteOffset, bufferData.byteLength);
-  }
-  return new Uint8Array(bufferData);
-}
-
-function createZarrGetter(model: AnyModel<WidgetModel>) {
-  let pending: PendingGet[] = [];
-  let batchId = 0;
-
-  async function processBatch(batch: PendingGet[]) {
-    try {
-      const [dataArr, buffersArr] = await invoke<CommandResponse[]>(
-        model,
-        "_zarr_get_multi",
-        batch.map(d => d.params),
-      );
-      batch.forEach((item, i) => {
-        item.resolve(dataArr[i].success ? bufferFromResponse(buffersArr[i]) : undefined);
-      });
-    } catch (err) {
-      batch.forEach(item => item.reject(err));
-    }
-  }
-
-  function flush() {
-    const batch = pending;
-    pending = [];
-    batchId = 0;
-    processBatch(batch);
-  }
-
-  function enqueue(params: ZarrGetParams): Promise<Uint8Array | undefined> {
-    batchId = batchId || requestAnimationFrame(flush);
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array | undefined>();
-    pending.push({ params, resolve, reject });
-    return promise;
-  }
-
-  async function getOne(params: ZarrGetParams): Promise<Uint8Array | undefined> {
-    const name = params.length === 2 ? "_zarr_get" : "_zarr_get_range";
-    const [data, buffers] = await invoke<CommandResponse>(model, name, params);
-    return data.success ? bufferFromResponse(buffers[0]) : undefined;
-  }
-
-  return (params: ZarrGetParams) => model.get("batch_zarr_gets") ? enqueue(params) : getOne(params);
-}
-
-// AsyncReadable store that proxies all reads back to the Python kernel.
-function createKernelStore(zarrGet: ReturnType<typeof createZarrGetter>, storeName: string): AsyncReadable {
-  return {
-    get: (key) => zarrGet([storeName, key]),
-    getRange: (key, rangeQuery) => zarrGet([storeName, key, rangeQuery]),
-  };
-}
-
-function PluotWidget() {
-  const model = useModel<WidgetModel>();
-  const [width] = useModelState<number>("width");
-  const [height] = useModelState<number>("height");
-  const [cameraView, setCameraView] = useModelState<number[]>("camera_view");
-  const [marginTop] = useModelState<number>("margin_top");
-  const [marginRight] = useModelState<number>("margin_right");
-  const [marginBottom] = useModelState<number>("margin_bottom");
-  const [marginLeft] = useModelState<number>("margin_left");
-  const [aspectRatioMode] = useModelState<AspectRatioMode>("aspect_ratio_mode");
-  const [aspectRatioAlignmentMode] = useModelState<AspectRatioAlignmentMode>("aspect_ratio_alignment_mode");
-  const [viewMode] = useModelState<ViewMode>("view_mode");
-  const [plotId] = useModelState<string>("plot_id");
-  const [plotType] = useModelState<PlotType>("plot_type");
-  const [storesMetadata] = useModelState<StoresInput>("stores_metadata");
-  const [plotParams] = useModelState<PlotParams>("plot_params");
-  const [format] = useModelState<GraphicsFormat>("format");
-
-  const zarrGet = useMemo(() => createZarrGetter(model), [model]);
+  const zarrGet = React.useMemo(() => createZarrGetter(model), [model]);
 
   // Registered during render rather than in an effect, so that the kernel-backed
   // stores exist before <Pluot/> issues its first read.
-  useMemo(() => {
+  React.useMemo(() => {
     for (const storeName of Object.keys(storesMetadata ?? {})) {
       setStoreByName(storeName, createKernelStore(zarrGet, storeName));
     }
   }, [zarrGet, storesMetadata]);
 
-  const cameraMatrix = useMemo(() => Float32Array.from(cameraView), [cameraView]);
+  const { cameraMatrix, setCameraMatrix, extentKey } = useThrottledCameraMatrix(model);
+  const onExtent = useExtentResult(model);
+  const onClick = useClickResult(model);
+  const { brush, onBrush, onBrushEnd, onBrushClear } = useModelBrush(model);
 
-  function setCameraMatrix(next: CameraMatrix) {
-    setCameraView(Array.from(next));
-  }
-
-  return (
-    <Pluot
-      width={width}
-      height={height}
-      plotId={plotId}
-      plotType={plotType}
-      plotParams={plotParams}
-      stores={storesMetadata}
-      registerStores={false}
-      viewMode={viewMode}
-      format={format}
-      marginTop={marginTop}
-      marginRight={marginRight}
-      marginBottom={marginBottom}
-      marginLeft={marginLeft}
-      aspectRatioMode={aspectRatioMode}
-      aspectRatioAlignmentMode={aspectRatioAlignmentMode}
-      cameraMatrix={cameraMatrix}
-      setCameraMatrix={setCameraMatrix}
-    />
-  );
+  return React.createElement(Pluot, {
+    width,
+    height,
+    plotId,
+    plotType,
+    plotParams,
+    stores: storesMetadata,
+    registerStores: false,
+    viewMode,
+    format,
+    marginTop,
+    marginRight,
+    marginBottom,
+    marginLeft,
+    aspectRatioMode,
+    aspectRatioAlignmentMode,
+    cameraMatrix,
+    setCameraMatrix,
+    extentKey,
+    onExtent,
+    cameraFilter,
+    debugMargins,
+    backgroundColor: backgroundColor ?? undefined,
+    minTimeout,
+    maxTimeout,
+    maxBailedEarlyRetries,
+    allowSimultaneousRenders,
+    enableClick,
+    onClick,
+    enableTooltip,
+    enableBrushCreate,
+    enableBrushEdit,
+    enableBrushClear,
+    brushMode,
+    brushUnitsModeX,
+    brushUnitsModeY,
+    brushMarginTop: brushMarginTop ?? undefined,
+    brushMarginRight: brushMarginRight ?? undefined,
+    brushMarginBottom: brushMarginBottom ?? undefined,
+    brushMarginLeft: brushMarginLeft ?? undefined,
+    brushColor,
+    brushDelay,
+    maybeBrushDelay,
+    brush,
+    onBrush,
+    onBrushEnd,
+    onBrushClear,
+  });
 }
 
-export default { render: createRender(PluotWidget) };
+const render: Render<WidgetModel> = async ({ model, el }) => {
+  const pluotReact = await loadDeps({
+    jsDevMode: model.get("js_dev_mode"),
+    jsPackageVersion: model.get("js_package_version"),
+    customJsUrl: model.get("custom_js_url"),
+  });
+  const root = ReactDOMClient.createRoot(el);
+  root.render(React.createElement(PluotWidget, { model, pluotReact }));
+  return () => root.unmount();
+};
+
+export default { render };

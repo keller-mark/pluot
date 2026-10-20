@@ -22,7 +22,7 @@ dependencies = [
   "numpy>=2",
   "zarr>=3",
   "obstore",
-  "pillow==11.3.0"
+  "pillow==11.3.0",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +31,7 @@ dev = [
   'pytest>=6.2.4',
   'pytest-asyncio>=1.1.0',
   'jupyterlab>=3.0.0',
-  "marimo",
+  "marimo>=0.25.1",
   "pandas",
   "pluot==0.1.23",
   "pluot_widget==0.1.23",
