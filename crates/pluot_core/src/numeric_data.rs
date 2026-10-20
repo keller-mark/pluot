@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::shader_modules::{TextureDtype, WgslScalar};
 use crate::wgpu;
@@ -26,7 +27,7 @@ use crate::log;
 ///
 /// Serialized as an adjacently-tagged enum with `dtype` and `values` fields,
 /// e.g. `{"dtype": "Uint16", "values": [1, 2, 3]}`.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(tag = "dtype", content = "values")]
 pub enum NumericData {
     Uint8(Arc<Vec<u8>>),

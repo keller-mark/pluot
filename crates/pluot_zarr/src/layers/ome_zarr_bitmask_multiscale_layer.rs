@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
@@ -39,8 +40,9 @@ use crate::layers::ome_zarr_utils::{
 /// an intensity window / pseudocolor) and the addition of
 /// `stroke_width_unit_mode`, forwarded to every
 /// [`OmeZarrBitmaskLayer`] sublayer.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct OmeZarrBitmaskMultiscaleLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

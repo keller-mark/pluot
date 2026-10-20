@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
@@ -37,7 +38,7 @@ use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasis
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"axis_criteria_mode": "Identifiers", "axis_criteria_params": {"identifiers": ["CD3E"]}}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "axis_criteria_mode", content = "axis_criteria_params")]
 pub enum AxisCriteria {
     /// The entries whose identifier is listed, in the listed order. Unknown
@@ -49,16 +50,18 @@ pub enum AxisCriteria {
 }
 
 /// Parameters for [`AxisCriteria::Identifiers`].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct IdentifierCriteriaParams {
     /// The dataframe column holding the identifiers. `None` means its index.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub column: Option<String>,
     pub identifiers: Vec<String>,
 }
 
 /// One axis of the matrix, identified by its AnnData dataframe.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, TS)]
 pub enum MatrixAxis {
     Obs,
     Var,
@@ -284,7 +287,7 @@ pub async fn load_axis_selection_mask(
 }
 
 /// How the loaded matrix values are cached.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 pub enum MatrixCacheMode {
     /// Cache each row block of the filtered submatrix as a whole. Loads only
     /// the filter-included cells, but a change to either axis's filter
@@ -299,7 +302,7 @@ pub enum MatrixCacheMode {
 }
 
 /// How the quantitative colormap's domain is derived from the loaded values.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 pub enum HeatmapNormalization {
     /// One (min, max) over every loaded cell.
     #[default]

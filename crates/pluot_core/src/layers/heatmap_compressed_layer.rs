@@ -3,6 +3,7 @@
 //! the GPU, rather than densifying the matrix.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::layers::heatmap_layer::{HeatmapColormap, HeatmapCommon, HeatmapValueBlock, MATRIX_VALUE_FIRST_BINDING};
 use crate::numeric_data::NumericData;
@@ -20,8 +21,9 @@ use crate::wgpu;
 /// Layer params struct for [`HeatmapCsrLayer`] and [`HeatmapCscLayer`].
 /// Every field but `matrix` means the same as in
 /// [`HeatmapLayerParams`](crate::layers::heatmap_layer::HeatmapLayerParams).
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct CompressedHeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

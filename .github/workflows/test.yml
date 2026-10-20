@@ -191,3 +191,25 @@ jobs:
           exit 1
         fi
         echo "File size check passed ($WASM_SIZE bytes)."
+    # End WASM-specific stuff
+    # Start JS-specific stuff
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24.x'
+    - uses: pnpm/action-setup@v6
+      name: Install pnpm
+      with:
+        run_install: true
+    - name: Generate TypeScript types from Rust
+      run: pnpm run generate-types
+    - name: Check that the committed TypeScript types are up to date
+      run: |
+        if [ -n "$(git status --porcelain bindings-js/core/src/generated)" ]; then
+          git status --porcelain bindings-js/core/src/generated
+          echo "Error: bindings-js/core/src/generated is stale. Run 'pnpm run generate-types' and commit the result."
+          exit 1
+        fi
+    - name: Type-check the JS packages
+      run: pnpm exec tsc --build bindings-js/core bindings-js/react
+    - name: Run JS unit tests
+      run: pnpm --filter @pluot/core --filter @pluot/react test

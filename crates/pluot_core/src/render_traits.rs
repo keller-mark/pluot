@@ -11,6 +11,7 @@ use crate::params::{LayerParams, ZarrStoreInfo};
 use crate::registry::get_layer_from_registry;
 use crate::zarr::StoreMap;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::collections::HashMap;
 use std::sync::Arc;
 use zarrs::storage::AsyncReadableStorageTraits;
@@ -69,7 +70,7 @@ pub enum AspectRatioAlignmentMode {
 }
 
 /// Determines whether size/position values are interpreted in pixel, data, or normalized space.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum UnitsMode {
     /// Pixel units. Agnostic to camera state.
     // 0: pixels (e.g., for fixed pixel-unit sizes).
@@ -83,7 +84,7 @@ pub enum UnitsMode {
 }
 
 /// Named categorical colormap functions.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum CategoricalColormap {
     // Reference: https://vega.github.io/vega/docs/schemes/
     Accent,
@@ -104,7 +105,7 @@ pub enum CategoricalColormap {
 }
 
 /// Named quantitative colormap functions.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum QuantitativeColormap {
     // Reference: https://github.com/vitessce/vitessce/blob/main/packages/gl/src/glsl/colormaps.in.glsl
     Plasma,
@@ -135,7 +136,7 @@ pub enum QuantitativeColormap {
 pub type UniformRgbParams = (u8, u8, u8);
 
 /// Explicitly specifies an RGB color per instance.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct InstancedRgbParams {
     /// Array of red values (0 to 255). Length must be equal to the number of instances.
     pub r_values: NumericData,
@@ -146,14 +147,14 @@ pub struct InstancedRgbParams {
 }
 
 /// Interleaved analog of [`InstancedRgbParams`].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct InstancedRgbInterleavedParams {
     /// Flat array of interleaved RGB values. Length must be equal to the 3 * number of instances.
     pub rgb_values: NumericData,
 }
 
 /// Specifies a named categorical colormap and the category per instance.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct CategoricalParams {
     /// An index of a color in the colormap per instance. Length must be equal to the number of instances.
     pub codes: NumericData,
@@ -162,7 +163,7 @@ pub struct CategoricalParams {
 }
 
 /// Specifies an RGB value per category and the category per instance.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct CategoricalCustomParams {
     /// An index of a color in the colormap per instance. Length must be equal to the number of instances.
     pub values: NumericData,
@@ -175,7 +176,8 @@ fn default_false() -> bool {
 }
 
 /// Specifies a named quantitative colormap and a scalar value per instance.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct QuantitativeParams {
     /// The scalar values passed as input to the colormap function. Length must be equal to the number of instances.
     pub values: NumericData,
@@ -183,6 +185,7 @@ pub struct QuantitativeParams {
     pub colormap: QuantitativeColormap,
     /// Determines whether the colormap should be reversed (by subtracting `1 - value` before executing the colormap function). By default, false.
     #[serde(default = "default_false")]
+    #[ts(optional = nullable)]
     pub reverse: bool,
     /// Optional (min, max) normalization domain, defaulting to (0.0, 1.0).
     ///
@@ -191,6 +194,7 @@ pub struct QuantitativeParams {
     /// a CPU pass over every value. Supply it explicitly whenever `values` is not
     /// already normalized to 0..1.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub domain: Option<(f32, f32)>,
 }
 
@@ -199,7 +203,7 @@ pub struct QuantitativeParams {
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"color_mode": "UniformRgb", "color_params": [255, 0, 0]}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "color_mode", content = "color_params")]
 pub enum ColorMode {
     // 0: static color (e.g., same RGB color for all elements)
@@ -220,7 +224,7 @@ pub enum ColorMode {
 pub type UniformOpacityParams = f32;
 
 /// Per-element opacity, one value (between 0.0 and 1.0) per element.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct InstancedOpacityParams {
     /// The opacity values per instance. Length must be equal to the number of instances.
     pub values: NumericData,
@@ -230,7 +234,7 @@ pub struct InstancedOpacityParams {
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"opacity_mode": "UniformOpacity", "opacity_params": 1.0}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "opacity_mode", content = "opacity_params")]
 pub enum OpacityMode {
     UniformOpacity(UniformOpacityParams),
@@ -256,7 +260,7 @@ impl OpacityMode {
 pub type UniformSizeParams = f32;
 
 /// Per-element size (e.g., width or radius), one value per element.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct InstancedSizeParams {
     /// A size value per instance. Length must be equal to the number of instances.
     pub values: NumericData,
@@ -266,7 +270,7 @@ pub struct InstancedSizeParams {
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"size_mode": "UniformSize", "size_params": 1.0}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "size_mode", content = "size_params")]
 pub enum SizeMode {
     UniformSize(UniformSizeParams),
@@ -344,7 +348,7 @@ impl ColorMode {
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"criteria_mode": "Categorical", "criteria_params": {...}}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "criteria_mode", content = "criteria_params")]
 pub enum EmphasisCriteria {
     // A categorical column (categories+codes format with NumericData, similar to ColorMode),
@@ -390,7 +394,7 @@ impl EmphasisCriteria {
 }
 
 /// A boolean (or 0/1 integer) column, where items with a nonzero value are included.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct BooleanCriteriaParams {
     /// A boolean per item. Length must be equal to the number of instances.
     pub mask: NumericData,
@@ -399,7 +403,7 @@ pub struct BooleanCriteriaParams {
 /// A categorical column in categories+codes format (one category code per
 /// item, similar to [`ColorMode::Categorical`]), along with the set of
 /// category codes that are included.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct CategoricalCriteriaParams {
     /// A category code per item. Length must be equal to the number of instances.
     pub codes: NumericData,
@@ -410,7 +414,8 @@ pub struct CategoricalCriteriaParams {
 /// A quantitative column (one value per item), along with the included
 /// range. Omitting `min` or `max` implicitly means -infinity/+infinity in
 /// that direction.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct QuantitativeCriteriaParams {
     /// A value per item. Length must be equal to the number of instances.
     pub values: NumericData,
@@ -421,10 +426,12 @@ pub struct QuantitativeCriteriaParams {
     /// `None` (the default) means inclusive. Ignored
     /// when `min` is omitted.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub min_exclusive: Option<bool>,
     /// `None` (the default) means inclusive. Ignored
     /// when `max` is omitted.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub max_exclusive: Option<bool>,
 }
 
@@ -457,7 +464,7 @@ impl QuantitativeCriteriaParams {
 }
 
 /// Specify the font style: normal, italique, or oblique.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum FontStyle {
     Normal,
     Italic,
@@ -465,7 +472,7 @@ pub enum FontStyle {
 }
 
 /// Specify the font weight: normal or bold.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum FontWeight {
     Normal,
     Bold,
@@ -473,7 +480,8 @@ pub enum FontWeight {
 
 
 /// Define plot margins: left, right, top, bottom.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct MarginParams {
     pub margin_left: Option<f32>,
     pub margin_right: Option<f32>,

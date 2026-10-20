@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use std::sync::Arc;
 use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, SizeMode, UnitsMode, FontWeight, FontStyle};
@@ -23,7 +24,7 @@ const DEFAULT_AXIS_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const DEFAULT_LABEL_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
 /// Determines where to render an axis layer: top, right, bottom, or left.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
 pub enum AxisPosition {
     Top,
     Right,
@@ -32,8 +33,9 @@ pub enum AxisPosition {
 }
 
 /// Layer params struct for [`AxisLinearLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct AxisLinearLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,

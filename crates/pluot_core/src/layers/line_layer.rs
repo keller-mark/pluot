@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::collections::HashMap;
 use std::sync::{Arc};
 
@@ -24,8 +25,9 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::{get_point_position, get_point_size};
 
 /// Layer params struct for [`LineLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct LineLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

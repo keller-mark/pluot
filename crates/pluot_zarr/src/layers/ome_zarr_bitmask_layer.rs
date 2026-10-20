@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use pluot_core::log;
 use pluot_core::wgpu;
@@ -33,8 +34,9 @@ use pluot_core::multiscale_utils::to_y_slice;
 /// an intensity window / pseudocolor) and the addition of
 /// `stroke_width_unit_mode`, a layer-wide setting mirroring
 /// [`BitmaskLayerParams::stroke_width_unit_mode`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct OmeZarrBitmaskLayerParams {
     /// Name of the top-level store to read from (a key in `RenderParams::stores`).
     /// May be omitted when exactly one top-level store is defined.
@@ -45,6 +47,7 @@ pub struct OmeZarrBitmaskLayerParams {
     /// Pre-fetched array metadata from the parent multiscale layer, used to avoid
     /// re-opening the array from storage in `load_tile_data`. If None, the array
     /// is opened from storage via `async_open`.
+    #[ts(type = "Record<string, unknown> | null")]
     pub array_metadata: Option<zarrs::array::ArrayMetadata>,
 
     // TODO: make this layer easier to use in the absence of a parent multiscale layer

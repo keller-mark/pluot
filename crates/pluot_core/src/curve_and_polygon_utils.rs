@@ -3,13 +3,14 @@
 use earcut::Earcut;
 use kurbo::{Arc as KurboArc, CubicBez, ParamCurve, Point as KurboPoint, QuadBez, SvgArc, Vec2 as KurboVec2};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::numeric_data::NumericData;
 use crate::render_traits::MarginParams;
 
 /// A single drawing command, the post-parsed form of an SVG path segment.
 /// All coordinates are absolute.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PathCommand {
     MoveTo { x: f32, y: f32 },
@@ -20,6 +21,7 @@ pub enum PathCommand {
         rx: f32,
         ry: f32,
         #[serde(default)]
+        #[ts(optional = nullable)]
         x_axis_rotation: f32,
         large_arc: bool,
         sweep: bool,
