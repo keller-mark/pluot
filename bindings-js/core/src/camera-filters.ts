@@ -54,7 +54,7 @@ export function getFixYAxisAtXCoord(xCoord: number) {
 
 // Convenience exports which use the above functions.
 export const fixXAxisAtYZero = getFixXAxisAtYCoord(0.0);
-export const fixYAxisAtXZero = getFixXAxisAtYCoord(0.0);
+export const fixYAxisAtXZero = getFixYAxisAtXCoord(0.0);
 
 export function fixXAndFixXAxisAtYZero(prev: CameraMatrix, next: CameraMatrix): CameraMatrix {
   return fixXAxisAtYZero(prev, fixX(prev, next));

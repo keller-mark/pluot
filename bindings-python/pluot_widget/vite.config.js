@@ -1,6 +1,8 @@
+import { readFileSync } from "fs";
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
 import anywidget from "@anywidget/vite";
+
+const readVersion = (pkg) => JSON.parse(readFileSync(new URL(`./node_modules/${pkg}/package.json`, import.meta.url))).version;
 
 export default defineConfig({
   server: {
@@ -10,21 +12,17 @@ export default defineConfig({
   },
   build: {
     outDir: "src/pluot_widget/static",
+    // For the top-level await in js/deps.ts.
+    target: "es2022",
     lib: {
       entry: ["js/widget.tsx"],
       formats: ["es"],
       fileName: "widget",
     },
-    rollupOptions: {
-      // anywidget loads `_esm` as a single module, so chunks such as the
-      // lazily-imported fonts from @pluot/core cannot be resolved relative to it.
-      output: { inlineDynamicImports: true },
-    },
   },
   define: {
-    "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
-    // For 3d-view-controls.
-    global: "window",
+    __REACT_VERSION__: JSON.stringify(readVersion("react")),
+    __PLUOT_REACT_VERSION__: JSON.stringify(readVersion("@pluot/react")),
   },
-  plugins: [react(), anywidget()],
+  plugins: [anywidget()],
 });

@@ -70,6 +70,29 @@ jobs:
     - name: Compile Rust code
       run: uv run maturin develop --features python
 
+  py_widget_marimo_wasm:
+    # Renders PluotWasmWidget in a marimo-wasm notebook via Playwright.
+    # This runner lacks a GPU, so only the Vector (SVG) test runs; the Raster test skips itself.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24.x'
+    - uses: pnpm/action-setup@v6
+      name: Install pnpm
+    # Filtered to the widget, since the other workspace packages depend on the
+    # wasm-pack output (crates/pluot/pkg), which the widget loads from a CDN instead.
+    - name: Install widget JS dependencies
+      run: pnpm install --frozen-lockfile --filter pluot_widget
+    - name: Install Playwright system dependencies
+      run: uv run --no-project --python 3.12 --with playwright python -m playwright install-deps chromium
+    - name: Run widget integration test
+      run: scripts/test_widget_marimo_wasm.sh -v -rs
+
   rlang_compile:
     runs-on: ubuntu-latest
     needs: [plain_rust_unit_tests]

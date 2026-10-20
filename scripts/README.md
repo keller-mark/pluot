@@ -39,3 +39,16 @@ The environment variable (rather than a fixed path relative to the repo) is
 used because `R CMD check` runs tests against an installed copy of the
 package in an isolated temp directory, not the source tree - a relative path
 wouldn't resolve there, but an inherited environment variable does.
+
+## Widget integration test
+
+- `test_widget_marimo_wasm.sh [pytest args...]` — rebuilds the widget JS,
+  installs Playwright's Chromium, and runs
+  `bindings-python/tests/test_widget_marimo_wasm.py` (used by the
+  `py_widget_marimo_wasm` CI job). The test builds local `pluot_core` and
+  `pluot_widget` wheels, exports a notebook with `marimo export html-wasm`,
+  and checks that the widget renders in the browser. It uses
+  `uv run --no-project`, so the Rust extension is not compiled, but it needs
+  network access for the CDN-hosted Pyodide, React, and `@pluot/react`.
+  Without Playwright installed (e.g., plain `uv run pytest`), the test skips
+  itself.

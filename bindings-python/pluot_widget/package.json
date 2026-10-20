@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@anywidget/react": "^0.2.0",
-    "@lukeed/uuid": "^2.0.1",
     "@pluot/react": "workspace:*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
