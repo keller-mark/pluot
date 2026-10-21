@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
@@ -23,8 +24,9 @@ use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Layer params struct for [`ZarrPointLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrPointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

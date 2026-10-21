@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::Arc;
 
 use std::collections::HashMap;
@@ -21,8 +22,9 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::layers::point_layer::PointShapeMode;
 
 /// Layer params struct for [`Point3dLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct Point3dLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

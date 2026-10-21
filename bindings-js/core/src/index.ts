@@ -42,6 +42,13 @@ export type {
   StoresOutput,
   NormalizeStoresParam,
 } from './store-normalization.js';
+export type {
+  LayerType,
+  LayerParams,
+  LayerParamsOf,
+  PlotParams,
+} from './layer-params.js';
+export type * from './generated/index.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
 export { getBounds, getCameraMatrixFromBounds, refitCameraMatrixForViewport } from './viewport.js';
 export type {

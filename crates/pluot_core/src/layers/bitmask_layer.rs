@@ -31,6 +31,7 @@ use glam::{DMat4, DVec4, Mat4, Vec2, Vec4};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -71,13 +72,16 @@ use crate::wgpu;
 /// it would require a full CPU pass over the mask to determine all object IDs.
 ///
 /// A channel that is neither `stroked` nor `filled` draws nothing.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct BitmaskChannelSettings {
     /// Whether to stroke the bitmask outlines. Defaults to `false`.
+    #[ts(optional = nullable)]
     pub stroked: bool,
 
     /// Whether to fill the bitmask interiors. Defaults to `true`.
+    #[ts(optional = nullable)]
     pub filled: bool,
 
     /// How to color each bitmask's outline.
@@ -108,7 +112,9 @@ pub struct BitmaskChannelSettings {
     /// empty list means every object is included. A filter-excluded object is
     /// treated the same as "no object" (id 0) for this channel: not drawn, not
     /// picked.
+    #[ts(optional = nullable)]
     pub selection_criteria: Vec<EmphasisCriteria>,
+    #[ts(optional = nullable)]
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill/stroke colors used for filter-included, but selection-excluded
@@ -131,14 +137,19 @@ pub struct BitmaskChannelSettings {
 
     /// When true, "background" objects in this channel have the fill/stroke
     /// color specified via `background_fill_color`/`background_stroke_color`.
+    #[ts(optional = nullable)]
     pub enable_background_fill_color: bool,
+    #[ts(optional = nullable)]
     pub enable_background_stroke_color: bool,
     /// When true, "background" objects in this channel have the fill/stroke
     /// opacity specified via `background_fill_opacity`/`background_stroke_opacity`.
+    #[ts(optional = nullable)]
     pub enable_background_fill_opacity: bool,
+    #[ts(optional = nullable)]
     pub enable_background_stroke_opacity: bool,
     /// When true, "background" objects in this channel have the stroke width
     /// specified via `background_stroke_width`.
+    #[ts(optional = nullable)]
     pub enable_background_stroke_width: bool,
 }
 
@@ -169,8 +180,9 @@ impl Default for BitmaskChannelSettings {
 }
 
 /// Layer params struct for [`BitmaskLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct BitmaskLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

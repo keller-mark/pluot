@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::composite_layers::axis_linear_layer::format_tick_value;
@@ -33,8 +34,9 @@ const DEFAULT_ITEM_GAP_PX: f32 = 10.0;
 const DEFAULT_POINT_COLOR: (u8, u8, u8) = (120, 120, 120);
 
 /// Layer params struct for [`LegendPointSizeQuantitativeLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct LegendPointSizeQuantitativeLayerParams {
     pub layer_id: String,
     /// Margins defining the legend's overall bounding box within the viewport.

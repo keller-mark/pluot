@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
@@ -26,8 +27,9 @@ const DEFAULT_BAR_MARGIN: f32 = 1.0;
 const DEFAULT_FILL_COLOR: (u8, u8, u8) = (76, 120, 168);
 
 /// Layer params struct for [`PrecomputedHistogramLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct PrecomputedHistogramLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

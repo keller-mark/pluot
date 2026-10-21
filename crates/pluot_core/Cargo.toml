@@ -59,6 +59,7 @@ once_cell.workspace = true
 # We can use serde to deserialize JSON object parameters passed to the `render` function.
 # Reference: https://docs.rs/serde-wasm-bindgen/latest/serde_wasm_bindgen/
 serde.workspace = true
+ts-rs.workspace = true
 # For zarrs: not using features "filesystem", "blosc", or "zstd" for zarrrs.
 # Zstd and Blosc caused wasm-pack compilation to fail during usage of Snappy compression library.
 # We need to specify uuid with feature "js", which is used by zarrs.

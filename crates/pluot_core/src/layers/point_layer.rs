@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::{Arc};
 
 use std::collections::HashMap;
@@ -29,7 +30,7 @@ use crate::positioning::{get_point_position, get_point_size};
 
 
 /// Determine whether to render points as squares or circles.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum PointShapeMode {
     // 0: square (basically no-op in fragment shader)
     Square,
@@ -38,8 +39,9 @@ pub enum PointShapeMode {
 }
 
 /// Layer params struct for [`PointLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct PointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

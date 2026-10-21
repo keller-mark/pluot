@@ -35,6 +35,7 @@ inventory.workspace = true
 glam.workspace = true
 encase.workspace = true
 serde.workspace = true
+ts-rs.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true
 svg.workspace = true

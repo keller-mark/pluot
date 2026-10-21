@@ -4,6 +4,8 @@ import type {
   AspectRatioAlignmentMode,
   CameraMatrix,
   CameraFilterFunction,
+  LayerParams,
+  PlotParams,
   StoreInput,
   StoresInput,
   StoresOutput,
@@ -23,23 +25,7 @@ export type GraphicsFormat = "Raster" | "Vector";
 /** Mirrors the adjacently-tagged Rust `PlotParams` enum discriminant. */
 export type PlotType = "LayeredPlot";
 
-/**
- * One entry of `PlotParams.layers`, mirroring the adjacently-tagged Rust
- * `LayerParams` enum: `{ "layer_type": "PointLayer", "layer_params": { ... } }`.
- *
- * `layer_type` must name a registered layer (see the `LayerParams` enum in
- * `crates/pluot/src/render_params.rs`), and the shape of `layer_params`
- * depends on which layer was named.
- */
-export type LayerParams = {
-  layer_type: string;
-  layer_params: Record<string, unknown>;
-};
-
-/** Mirrors the Rust `LayeredPlotRenderParams` struct. */
-export type PlotParams = {
-  layers: LayerParams[];
-};
+export type { LayerParams, PlotParams };
 
 /**
  * The object handed to the wasm `render_wasm` / `pick_wasm` functions.
