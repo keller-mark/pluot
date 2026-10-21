@@ -327,7 +327,7 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         let bailed_early = foreground_arr.is_none();
 
-        let background_quantity = if self.layer_params.filtering_criteria.is_empty() {
+        let background_quantity = if self.layer_params.selection_criteria.is_empty() {
             None
         } else {
             Some(background_arr)
