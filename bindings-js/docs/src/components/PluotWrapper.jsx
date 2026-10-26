@@ -54,6 +54,7 @@ export function PluotWrapper(props) {
     cameraMatrix: cameraMatrixProp = null,
     cameraFilter = null,
     limitExtent = false,
+    extentKey = null,
     enableClick = true,
     enableTooltip = false,
     enableCamera = true,
@@ -292,6 +293,14 @@ export function PluotWrapper(props) {
     return plotParams;
   }, [plotParams, controlValues]);
 
+  const derivedExtentKey = typeof extentKey === 'function' ? extentKey(controlValues) : extentKey;
+
+  const [prevExtentKey, setPrevExtentKey] = useState(derivedExtentKey);
+  if (derivedExtentKey !== prevExtentKey) {
+    setPrevExtentKey(derivedExtentKey);
+    setCameraMatrix(null);
+  }
+
   const { aspectRatioMode, aspectRatioAlignmentMode, format, debugMargins, transparentBackground } = controlValues;
   const width = controlValues.size.width;
   const height = controlValues.size.height;
@@ -336,6 +345,7 @@ export function PluotWrapper(props) {
           setCameraMatrix={setCameraMatrix}
           cameraFilter={cameraFilter}
           limitExtent={limitExtent}
+          extentKey={derivedExtentKey}
           enableClick={enableClick}
           enableTooltip={enableTooltip}
           backgroundColor={transparentBackground ? undefined : "#fff"}
