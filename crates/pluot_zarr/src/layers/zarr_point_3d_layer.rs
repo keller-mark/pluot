@@ -16,6 +16,7 @@ use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, CategoricalColo
 use pluot_core::layers::point_layer::PointShapeMode;
 use pluot_core::layers::point_3d_layer::{Point3dLayer, Point3dLayerParams};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
 
@@ -191,7 +192,7 @@ impl PreparedLayer for ZarrPoint3dLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for ZarrPoint3dLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         if let Some(inner) = &self.inner {
             DrawToRasterGpu::draw(inner, gpu_context, pass).await;
         }

@@ -18,6 +18,7 @@ use pluot_core::multiscale_utils::{
     ResolutionLevel, VisibleTile, get_visible_tiles, pick_visible_tile, select_resolution_level,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
@@ -523,7 +524,7 @@ impl PreparedLayer for OmeZarrBitmaskMultiscaleLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for OmeZarrBitmaskMultiscaleLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         // level_sublayers is ordered coarsest-first.
         // Draw levels from coarsest to finest, but skip coarser tiles that are
         // fully occluded by ready finer-level tiles.

@@ -11,6 +11,7 @@ use std::sync::{Arc};
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_types::GpuContext;
@@ -221,7 +222,7 @@ const COLOR_BINDING_START: u32 = 5;
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for LineLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 

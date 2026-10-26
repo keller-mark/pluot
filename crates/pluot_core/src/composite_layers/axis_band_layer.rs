@@ -11,6 +11,7 @@ use crate::composite_layers::axis_linear_layer::AxisPosition;
 use crate::viewport::get_bounds;
 use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::d3::scale::{ScaleBand, Scaleable, Tickable};
@@ -357,7 +358,7 @@ impl PreparedLayer for AxisBandLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for AxisBandLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

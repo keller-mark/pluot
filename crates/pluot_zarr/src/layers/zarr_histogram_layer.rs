@@ -12,6 +12,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
 use pluot_core::render_traits::{BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
@@ -329,7 +330,7 @@ impl PreparedLayer for ZarrHistogramLayer {
 
         let bailed_early = foreground_arr.is_none();
 
-        let background_quantity = if self.layer_params.filtering_criteria.is_empty() {
+        let background_quantity = if self.layer_params.selection_criteria.is_empty() {
             None
         } else {
             Some(background_arr)
@@ -367,7 +368,7 @@ impl PreparedLayer for ZarrHistogramLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for ZarrHistogramLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

@@ -22,6 +22,7 @@ use pluot_core::render_traits::{
     PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::sparse_matrix::CompressedAxis;
 use pluot_core::two::svg::SvgContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
@@ -496,7 +497,7 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for AdataZarrHeatmapLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

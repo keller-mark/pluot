@@ -23,6 +23,7 @@ use crate::scalar_mode::{
 };
 use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::render_types::GpuContext;
 use crate::two::shapes::{
@@ -268,7 +269,7 @@ const FILL_COLOR_BINDING_START: u32 = 5;
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for RectLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 

@@ -15,6 +15,7 @@ use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::NumericData;
 use crate::color_mode::prepare_color_mode;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::two::shapes::TwoElement;
@@ -122,7 +123,7 @@ const COLOR_BINDING_START: u32 = 4;
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for Point3dLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 

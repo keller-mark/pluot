@@ -15,6 +15,7 @@ use crate::render_traits::{
     BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::scalar_mode::cpu_fill_opacity;
 use crate::emphasis_mode::{cpu_is_included, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
@@ -137,7 +138,7 @@ impl PreparedLayer for FilledCurveLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for FilledCurveLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         if self.fill_vertices.is_empty() {
             return;
         }

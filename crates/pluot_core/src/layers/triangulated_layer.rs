@@ -15,6 +15,7 @@ use crate::render_traits::{
     BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::numeric_data::NumericData;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
 use crate::scalar_mode::{cpu_fill_opacity, prepare_fill_opacity_mode};
@@ -162,7 +163,7 @@ const COLOR_BINDING_START: u32 = 3;
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for TriangulatedLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let Self { view_params, layer_params } = self;
 
         if layer_params.vertices.is_empty() {

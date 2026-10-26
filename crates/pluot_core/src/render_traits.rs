@@ -6,6 +6,7 @@ use crate::viewport::{DataCoord, DataVertices, ScreenCoord};
 use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::maybe::{MaybeSend, MaybeSync};
 use crate::params::{LayerParams, ZarrStoreInfo};
 use crate::registry::get_layer_from_registry;
@@ -638,7 +639,7 @@ pub trait DrawToSvg {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DrawToRasterGpu: MaybeSend + MaybeSync {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass);
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>);
 }
 
 /// Stub trait for CPU-based raster rendering (software rasterizer).
@@ -754,7 +755,7 @@ pub async fn draw_layers_to_raster(
     let out_view = out_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
     {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut render_pass = GpuRenderPass(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Layered Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &out_view,
@@ -770,7 +771,7 @@ pub async fn draw_layers_to_raster(
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
-        });
+        }));
 
         for layer in layer_refs {
             // TODO: when/where to pass view_params to each layer? during draw call? before draw call?

@@ -11,6 +11,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
 use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
@@ -437,7 +438,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for AdataZarrDotPlotLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }
