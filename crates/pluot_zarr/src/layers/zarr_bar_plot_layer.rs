@@ -10,6 +10,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::{update_svg, SvgContext};
 use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::d3::scale::{ScaleBand, Scaleable};
 use pluot_core::composite_layers::bar_plot_layer::{BarOrientation, BarPlotLayer, BarPlotLayerParams};
@@ -149,7 +150,7 @@ impl PreparedLayer for ZarrBarPlotLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for ZarrBarPlotLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         if let Some(inner) = &self.inner {
             DrawToRasterGpu::draw(inner, gpu_context, pass).await;
         }

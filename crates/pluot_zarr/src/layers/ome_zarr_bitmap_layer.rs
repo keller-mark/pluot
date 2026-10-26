@@ -19,6 +19,7 @@ use pluot_core::layers::bitmap_layer::{
 use pluot_core::numeric_data::NumericData;
 use crate::zarr_numeric_data::retrieve_numeric_subset;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
+use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::LayerPickingResult;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
@@ -345,7 +346,7 @@ impl PreparedLayer for OmeZarrBitmapLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for OmeZarrBitmapLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         if let Some(inner) = &self.inner {
             DrawToRasterGpu::draw(inner, gpu_context, pass).await;
         }

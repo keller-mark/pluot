@@ -45,6 +45,7 @@ use crate::render_traits::{
     ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::scalar_mode::{
     cpu_fill_opacity, cpu_stroke_opacity, DEFAULT_FILL_OPACITY, DEFAULT_STROKE_OPACITY,
     DEFAULT_STROKE_WIDTH,
@@ -1157,7 +1158,7 @@ const FIRST_CHANNEL_BINDING: u32 = MASK_DATA_BINDING + 1;
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for BitmaskLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 
