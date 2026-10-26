@@ -12,6 +12,7 @@ use crate::render_traits::{
     PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::sparse_matrix::{CompressedAxis, CompressedMatrix};
 use crate::two::svg::SvgContext;
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -108,7 +109,7 @@ impl CompressedHeatmapLayer {
         Self { view_params, layer_params, axis }
     }
 
-    fn draw_gpu(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    fn draw_gpu(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let layer_params = &self.layer_params;
         if layer_params.num_rows == 0 || layer_params.num_cols == 0 {
@@ -155,7 +156,7 @@ macro_rules! compressed_heatmap_layer {
         #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
         #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
         impl DrawToRasterGpu for $name {
-            async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+            async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
                 self.0.draw_gpu(gpu_context, pass);
             }
         }

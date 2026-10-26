@@ -10,6 +10,7 @@ use crate::wgpu;
 
 use super::reduce_stratified::read_back_u32;
 use super::ForegroundBackground;
+use crate::gpu_send::MaybeSendBoxFuture;
 
 const FILTERED_IN: u32 = 1;
 const SELECTED_IN: u32 = 2;
@@ -62,150 +63,152 @@ pub async fn compute_included_indices(
     ForegroundBackground { background: indices_with(FILTERED_IN), foreground: indices_with(SELECTED_IN) }
 }
 
-async fn gpu_flags(
-    gpu_context: &GpuContext<'_>,
+fn gpu_flags<'a>(
+    gpu_context: &'a GpuContext<'_>,
     len: usize,
-    filtering_criteria: &[EmphasisCriteria],
-    selection_criteria: &[EmphasisCriteria],
-) -> Vec<u32> {
-    let GpuContext { device, queue } = gpu_context;
+    filtering_criteria: &'a [EmphasisCriteria],
+    selection_criteria: &'a [EmphasisCriteria],
+) -> MaybeSendBoxFuture<'a, Vec<u32>> {
+    Box::pin(async move {
+        let GpuContext { device, queue } = gpu_context;
 
-    let filtering = prepare_emphasis_criteria(
-        device, queue, filtering_criteria, "is_filtered_in", "filter_data", CRITERIA_FIRST_BINDING,
-    );
-    let selection = prepare_emphasis_criteria(
-        device, queue, selection_criteria, "is_selected_in", "select_data",
-        CRITERIA_FIRST_BINDING + filtering.textures.len() as u32,
-    );
-    let criteria_textures: Vec<_> = filtering.textures.iter().chain(selection.textures.iter()).collect();
+        let filtering = prepare_emphasis_criteria(
+            device, queue, filtering_criteria, "is_filtered_in", "filter_data", CRITERIA_FIRST_BINDING,
+        );
+        let selection = prepare_emphasis_criteria(
+            device, queue, selection_criteria, "is_selected_in", "select_data",
+            CRITERIA_FIRST_BINDING + filtering.textures.len() as u32,
+        );
+        let criteria_textures: Vec<_> = filtering.textures.iter().chain(selection.textures.iter()).collect();
 
-    let shader_source = ShaderBuilder::new(include_str!("shaders/included_indices.wgsl"))
-        .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-        .inject_function("filtering_wgsl", &filtering.wgsl)
-        .inject_function("selection_wgsl", &selection.wgsl)
-        .build();
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("included_indices.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    });
+        let shader_source = ShaderBuilder::new(include_str!("shaders/included_indices.wgsl"))
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .inject_function("filtering_wgsl", &filtering.wgsl)
+            .inject_function("selection_wgsl", &selection.wgsl)
+            .build();
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("included_indices.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
 
-    let mut layout_entries = vec![
-        wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        let mut layout_entries = vec![
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        },
-        wgpu::BindGroupLayoutEntry {
-            binding: 1,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: NonZeroU64::new(4),
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(4),
+                },
+                count: None,
             },
-            count: None,
-        },
-    ];
-    for (i, texture) in criteria_textures.iter().enumerate() {
-        layout_entries.push(wgpu::BindGroupLayoutEntry {
-            binding: CRITERIA_FIRST_BINDING + i as u32,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Texture {
-                sample_type: texture.sample_type,
-                view_dimension: wgpu::TextureViewDimension::D2,
-                multisampled: false,
-            },
-            count: None,
-        });
-    }
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: None,
-        entries: &layout_entries,
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[Some(&bind_group_layout)],
-        immediate_size: 0,
-    });
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: Some("main"),
-        compilation_options: wgpu::PipelineCompilationOptions::default(),
-        cache: None,
-    });
-
-    let limits = device.limits();
-    let chunk_elements = (limits.max_compute_workgroups_per_dimension as usize * 64)
-        .min(limits.max_storage_buffer_binding_size as usize / 4)
-        .max(64);
-
-    let mut flags = Vec::with_capacity(len);
-    for base_offset in (0..len).step_by(chunk_elements) {
-        let chunk_len = chunk_elements.min(len - base_offset);
-        let output_size = (chunk_len * 4) as u64;
-
-        let mut uniform_contents = UniformBuffer::new(Vec::<u8>::new());
-        uniform_contents
-            .write(&IncludedIndicesUniforms { num_elements: chunk_len as u32, base_offset: base_offset as u32 })
-            .unwrap();
-        let uniform_bytes = uniform_contents.into_inner();
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("included_indices_uniforms"),
-            size: uniform_bytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("included_indices_flags"),
-            size: output_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("included_indices_download"),
-            size: output_size,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
-        let mut entries = vec![
-            wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
         ];
         for (i, texture) in criteria_textures.iter().enumerate() {
-            entries.push(wgpu::BindGroupEntry {
+            layout_entries.push(wgpu::BindGroupLayoutEntry {
                 binding: CRITERIA_FIRST_BINDING + i as u32,
-                resource: wgpu::BindingResource::TextureView(&texture.view),
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: texture.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
             });
         }
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
-            layout: &bind_group_layout,
-            entries: &entries,
+            entries: &layout_entries,
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: None,
+        let limits = device.limits();
+        let chunk_elements = (limits.max_compute_workgroups_per_dimension as usize * 64)
+            .min(limits.max_storage_buffer_binding_size as usize / 4)
+            .max(64);
+
+        let mut flags = Vec::with_capacity(len);
+        for base_offset in (0..len).step_by(chunk_elements) {
+            let chunk_len = chunk_elements.min(len - base_offset);
+            let output_size = (chunk_len * 4) as u64;
+
+            let mut uniform_contents = UniformBuffer::new(Vec::<u8>::new());
+            uniform_contents
+                .write(&IncludedIndicesUniforms { num_elements: chunk_len as u32, base_offset: base_offset as u32 })
+                .unwrap();
+            let uniform_bytes = uniform_contents.into_inner();
+            let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("included_indices_uniforms"),
+                size: uniform_bytes.len() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             });
-            compute_pass.set_pipeline(&pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups(chunk_len.div_ceil(64) as u32, 1, 1);
+            queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+
+            let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("included_indices_flags"),
+                size: output_size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("included_indices_download"),
+                size: output_size,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+
+            let mut entries = vec![
+                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: output_buffer.as_entire_binding() },
+            ];
+            for (i, texture) in criteria_textures.iter().enumerate() {
+                entries.push(wgpu::BindGroupEntry {
+                    binding: CRITERIA_FIRST_BINDING + i as u32,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                });
+            }
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &bind_group_layout,
+                entries: &entries,
+            });
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None,
+                });
+                compute_pass.set_pipeline(&pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups(chunk_len.div_ceil(64) as u32, 1, 1);
+            }
+            encoder.copy_buffer_to_buffer(&output_buffer, 0, &download_buffer, 0, output_size);
+            queue.submit([encoder.finish()]);
+            flags.extend(read_back_u32(device, &download_buffer).await);
         }
-        encoder.copy_buffer_to_buffer(&output_buffer, 0, &download_buffer, 0, output_size);
-        queue.submit([encoder.finish()]);
-        flags.extend(read_back_u32(device, &download_buffer).await);
-    }
-    flags
+        flags
+    })
 }

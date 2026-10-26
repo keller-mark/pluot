@@ -10,6 +10,7 @@ use crate::render_traits::{
     BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::numeric_data::NumericData;
 use crate::two::svg::SvgContext;
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -215,7 +216,7 @@ impl PreparedLayer for PolygonLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for PolygonLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         // Fill first so stroke renders on top.
         if let Some(fill) = &self.fill_sublayer {
             DrawToRasterGpu::draw(fill, gpu_context, pass).await;

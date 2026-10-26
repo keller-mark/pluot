@@ -9,6 +9,7 @@ use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextB
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
 use crate::wgpu;
 use crate::d3::scale::{LinearRangeable, ScaleLinear, Tickable, Scaleable};
@@ -361,7 +362,7 @@ impl PreparedLayer for AxisLinearLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for AxisLinearLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

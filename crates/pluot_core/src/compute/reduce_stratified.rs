@@ -20,6 +20,7 @@ use encase::{ShaderType, UniformBuffer};
 
 use super::reduce::{reduce_extent, ReduceMode, ReduceUniforms};
 use super::ForegroundBackground;
+use crate::gpu_send::MaybeSendBoxFuture;
 
 /// The category column to stratify by, together with the ordered set of
 /// strata to compute a result for.
@@ -78,38 +79,40 @@ fn scalar_output_identity(mode: &ReduceMode) -> (u32, u32) {
 /// then unmaps it. See `reduce.rs`'s `read_back_f32` (same shape, `u32`
 /// instead of `f32` since every value this module reads back — bit-packed
 /// floats, order-keys, or plain counts — is stored as a raw `u32`).
-pub(super) async fn read_back_u32(device: &wgpu::Device, download_buffer: &wgpu::Buffer) -> Vec<u32> {
-    let buffer_slice = download_buffer.slice(..);
+pub(super) fn read_back_u32<'a>(device: &'a wgpu::Device, download_buffer: &'a wgpu::Buffer) -> MaybeSendBoxFuture<'a, Vec<u32>> {
+    Box::pin(async move {
+        let buffer_slice = download_buffer.slice(..);
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        use futures::FutureExt;
-        use futures_intrusive::channel::shared::oneshot_channel;
-        let (sender, receiver) = oneshot_channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
-            if res.is_err() {
-                panic!("Failed to map buffer for reading");
-            }
-            sender.send(res).ok();
-        });
-        let _ = device.poll(wgpu::PollType::Poll);
-        receiver.receive().await.unwrap().unwrap();
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            if result.is_err() {
-                panic!("Failed to map buffer for reading");
-            }
-        });
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
-    }
+        #[cfg(target_arch = "wasm32")]
+        {
+            use futures::FutureExt;
+            use futures_intrusive::channel::shared::oneshot_channel;
+            let (sender, receiver) = oneshot_channel();
+            buffer_slice.map_async(wgpu::MapMode::Read, move |res| {
+                if res.is_err() {
+                    panic!("Failed to map buffer for reading");
+                }
+                sender.send(res).ok();
+            });
+            let _ = device.poll(wgpu::PollType::Poll);
+            receiver.receive().await.unwrap().unwrap();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+                if result.is_err() {
+                    panic!("Failed to map buffer for reading");
+                }
+            });
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        }
 
-    let data = buffer_slice.get_mapped_range().expect("MapRangeError");
-    let result = bytemuck::allocation::pod_collect_to_vec(&data);
-    drop(data);
-    download_buffer.unmap();
-    result
+        let data = buffer_slice.get_mapped_range().expect("MapRangeError");
+        let result = bytemuck::allocation::pod_collect_to_vec(&data);
+        drop(data);
+        download_buffer.unmap();
+        result
+    })
 }
 
 /// Dispatches the single-pass stratified reduction over `input_view`,
@@ -134,282 +137,286 @@ pub(super) async fn read_back_u32(device: &wgpu::Device, download_buffer: &wgpu:
 /// `reduce_stratified.wgsl`'s header for what each slot holds per mode);
 /// `Histogram` returns `2 * num_bins` counts per stratum — background bins
 /// then foreground bins.
-async fn dispatch_reduce_stratified(
-    gpu_context: &GpuContext<'_>,
-    input_view: &wgpu::TextureView,
+fn dispatch_reduce_stratified<'a>(
+    gpu_context: &'a GpuContext<'_>,
+    input_view: &'a wgpu::TextureView,
     input_dtype: TextureDtype,
-    stratify_view: &wgpu::TextureView,
+    stratify_view: &'a wgpu::TextureView,
     stratify_dtype: TextureDtype,
     total: usize,
-    mode: &ReduceMode,
-    stratify_by: &StratifyBy,
-    filtering_criteria: &[EmphasisCriteria],
-    selection_criteria: &[EmphasisCriteria],
-) -> Vec<u32> {
-    let GpuContext { device, queue } = gpu_context;
-    let is_histogram = mode.is_histogram();
-    let num_strata = stratify_by.included_codes.len();
+    mode: &'a ReduceMode,
+    stratify_by: &'a StratifyBy,
+    filtering_criteria: &'a [EmphasisCriteria],
+    selection_criteria: &'a [EmphasisCriteria],
+) -> MaybeSendBoxFuture<'a, Vec<u32>> {
+    Box::pin(async move {
+        let GpuContext { device, queue } = gpu_context;
+        let is_histogram = mode.is_histogram();
+        let num_strata = stratify_by.included_codes.len();
 
-    // Two independent membership predicates, injected side by side — see
-    // `reduce.rs`'s `dispatch_reduce` for the identical mechanism.
-    let filtering = prepare_emphasis_criteria(
-        device, queue, filtering_criteria, "is_filtered_in", "filter_data", CRITERIA_FIRST_BINDING,
-    );
-    let selection_first_binding = CRITERIA_FIRST_BINDING + filtering.textures.len() as u32;
-    let selection = prepare_emphasis_criteria(
-        device, queue, selection_criteria, "is_selected_in", "select_data", selection_first_binding,
-    );
+        // Two independent membership predicates, injected side by side — see
+        // `reduce.rs`'s `dispatch_reduce` for the identical mechanism.
+        let filtering = prepare_emphasis_criteria(
+            device, queue, filtering_criteria, "is_filtered_in", "filter_data", CRITERIA_FIRST_BINDING,
+        );
+        let selection_first_binding = CRITERIA_FIRST_BINDING + filtering.textures.len() as u32;
+        let selection = prepare_emphasis_criteria(
+            device, queue, selection_criteria, "is_selected_in", "select_data", selection_first_binding,
+        );
 
-    // The requested strata's codes are baked into the shader at build time
-    // (small, known ahead of time), exactly like the categorical criteria
-    // membership test's `included_codes`.
-    let strata_codes =
-        stratify_by.included_codes.iter().map(i64::to_string).collect::<Vec<_>>().join(", ");
-    let shader_source = ShaderBuilder::new(include_str!("shaders/reduce_stratified.wgsl"))
-        .inject_texture_sample_type("input", input_dtype)
-        .inject_texture_sample_type("stratify", stratify_dtype)
-        .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
-        .inject_function("filtering_wgsl", &filtering.wgsl)
-        .inject_function("selection_wgsl", &selection.wgsl)
-        .define_u32("num_strata", num_strata as u32)
-        .define("strata_codes", &strata_codes)
-        .build();
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("reduce_stratified.wgsl"),
-        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-    });
+        // The requested strata's codes are baked into the shader at build time
+        // (small, known ahead of time), exactly like the categorical criteria
+        // membership test's `included_codes`.
+        let strata_codes =
+            stratify_by.included_codes.iter().map(i64::to_string).collect::<Vec<_>>().join(", ");
+        let shader_source = ShaderBuilder::new(include_str!("shaders/reduce_stratified.wgsl"))
+            .inject_texture_sample_type("input", input_dtype)
+            .inject_texture_sample_type("stratify", stratify_dtype)
+            .inject_function("flat_texel_coord", common::FLAT_TEXEL_COORD)
+            .inject_function("filtering_wgsl", &filtering.wgsl)
+            .inject_function("selection_wgsl", &selection.wgsl)
+            .define_u32("num_strata", num_strata as u32)
+            .define("strata_codes", &strata_codes)
+            .build();
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("reduce_stratified.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
+        });
 
-    let (num_bins, data_min, data_max) = match mode {
-        ReduceMode::Histogram { num_bins, data_min, data_max } => (*num_bins, *data_min, *data_max),
-        _ => (0, 0.0, 0.0),
-    };
+        let (num_bins, data_min, data_max) = match mode {
+            ReduceMode::Histogram { num_bins, data_min, data_max } => (*num_bins, *data_min, *data_max),
+            _ => (0, 0.0, 0.0),
+        };
 
-    let limits = device.limits();
-    let max_elems_by_dispatch = (limits.max_compute_workgroups_per_dimension as usize).saturating_mul(64);
-    let chunk_elements = max_elems_by_dispatch.max(64);
+        let limits = device.limits();
+        let max_elems_by_dispatch = (limits.max_compute_workgroups_per_dimension as usize).saturating_mul(64);
+        let chunk_elements = max_elems_by_dispatch.max(64);
 
-    let uniform_size = {
-        let mut buffer = UniformBuffer::new(Vec::<u8>::new());
-        buffer
-            .write(&ReduceUniforms {
-                mode: mode.discriminant(),
-                num_elements: 0,
-                num_bins,
-                data_min,
-                data_max,
-                base_offset: 0,
-            })
-            .unwrap();
-        buffer.into_inner().len() as u64
-    };
+        let uniform_size = {
+            let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+            buffer
+                .write(&ReduceUniforms {
+                    mode: mode.discriminant(),
+                    num_elements: 0,
+                    num_bins,
+                    data_min,
+                    data_max,
+                    base_offset: 0,
+                })
+                .unwrap();
+            buffer.into_inner().len() as u64
+        };
 
-    // ── Bind group layout & pipeline ──────────────────────────────────────────
-    //
-    // main_scalar    uses bindings 0 (uniform), 1 (input), 2 (stratify), 3 (output)
-    // main_histogram uses bindings 0 (uniform), 1 (input), 2 (stratify), 4 (output_hist)
-    // Both additionally use bindings CRITERIA_FIRST_BINDING.. for the
-    // filtering criteria value textures, immediately followed by the
-    // selection criteria value textures.
+        // ── Bind group layout & pipeline ──────────────────────────────────────────
+        //
+        // main_scalar    uses bindings 0 (uniform), 1 (input), 2 (stratify), 3 (output)
+        // main_histogram uses bindings 0 (uniform), 1 (input), 2 (stratify), 4 (output_hist)
+        // Both additionally use bindings CRITERIA_FIRST_BINDING.. for the
+        // filtering criteria value textures, immediately followed by the
+        // selection criteria value textures.
 
-    let uniform_entry = wgpu::BindGroupLayoutEntry {
-        binding: 0,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            min_binding_size: NonZeroU64::new(uniform_size),
-            has_dynamic_offset: false,
-        },
-        count: None,
-    };
-    let input_entry = wgpu::BindGroupLayoutEntry {
-        binding: 1,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Texture {
-            sample_type: input_dtype.binding_sample_type(),
-            view_dimension: wgpu::TextureViewDimension::D2,
-            multisampled: false,
-        },
-        count: None,
-    };
-    let stratify_entry = wgpu::BindGroupLayoutEntry {
-        binding: 2,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Texture {
-            sample_type: stratify_dtype.binding_sample_type(),
-            view_dimension: wgpu::TextureViewDimension::D2,
-            multisampled: false,
-        },
-        count: None,
-    };
-    let output_binding = if is_histogram { 4 } else { 3 };
-    let output_size: u64 = if is_histogram {
-        (num_strata as u64) * (num_bins as u64) * 2 * 4
-    } else {
-        (num_strata as u64) * 4 * 4
-    };
-    let output_entry = wgpu::BindGroupLayoutEntry {
-        binding: output_binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only: false },
-            min_binding_size: Some(NonZeroU64::new(4).unwrap()),
-            has_dynamic_offset: false,
-        },
-        count: None,
-    };
-
-    let mut bind_group_layout_entries = vec![uniform_entry, input_entry, stratify_entry, output_entry];
-    for (i, tex) in filtering.textures.iter().chain(selection.textures.iter()).enumerate() {
-        bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-            binding: CRITERIA_FIRST_BINDING + i as u32,
+        let uniform_entry = wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                min_binding_size: NonZeroU64::new(uniform_size),
+                has_dynamic_offset: false,
+            },
+            count: None,
+        };
+        let input_entry = wgpu::BindGroupLayoutEntry {
+            binding: 1,
             visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::Texture {
-                sample_type: tex.sample_type,
+                sample_type: input_dtype.binding_sample_type(),
                 view_dimension: wgpu::TextureViewDimension::D2,
                 multisampled: false,
             },
             count: None,
+        };
+        let stratify_entry = wgpu::BindGroupLayoutEntry {
+            binding: 2,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Texture {
+                sample_type: stratify_dtype.binding_sample_type(),
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let output_binding = if is_histogram { 4 } else { 3 };
+        let output_size: u64 = if is_histogram {
+            (num_strata as u64) * (num_bins as u64) * 2 * 4
+        } else {
+            (num_strata as u64) * 4 * 4
+        };
+        let output_entry = wgpu::BindGroupLayoutEntry {
+            binding: output_binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                min_binding_size: Some(NonZeroU64::new(4).unwrap()),
+                has_dynamic_offset: false,
+            },
+            count: None,
+        };
+
+        let mut bind_group_layout_entries = vec![uniform_entry, input_entry, stratify_entry, output_entry];
+        for (i, tex) in filtering.textures.iter().chain(selection.textures.iter()).enumerate() {
+            bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: CRITERIA_FIRST_BINDING + i as u32,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: tex.sample_type,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            });
+        }
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &bind_group_layout_entries,
         });
-    }
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let entry_point = if is_histogram { "main_histogram" } else { "main_scalar" };
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some(entry_point),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: None,
-        entries: &bind_group_layout_entries,
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[Some(&bind_group_layout)],
-        immediate_size: 0,
-    });
-    let entry_point = if is_histogram { "main_histogram" } else { "main_scalar" };
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: Some(entry_point),
-        compilation_options: wgpu::PipelineCompilationOptions::default(),
-        cache: None,
-    });
+        // ── Persistent output buffer ───────────────────────────────────────────────
+        //
+        // Seeded with each mode's identity element(s) (duplicated into both the
+        // background and foreground half of each stratum's slots), then
+        // scattered into by every chunk's dispatch via atomics; read back exactly
+        // once after the last chunk.
 
-    // ── Persistent output buffer ───────────────────────────────────────────────
-    //
-    // Seeded with each mode's identity element(s) (duplicated into both the
-    // background and foreground half of each stratum's slots), then
-    // scattered into by every chunk's dispatch via atomics; read back exactly
-    // once after the last chunk.
-
-    let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("reduce_stratified_output"),
-        size: output_size,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    if !is_histogram {
-        let (id_a, id_b) = scalar_output_identity(mode);
-        let init: Vec<u32> = (0..num_strata).flat_map(|_| [id_a, id_b, id_a, id_b]).collect();
-        queue.write_buffer(&output_buffer, 0, bytemuck::cast_slice(&init));
-    }
-    // output_hist's identity is always 0, so (like reduce.rs's hist_output) it
-    // relies on WebGPU's implicit zero-initialization of new buffers.
-
-    let mut offset = 0usize;
-    while offset < total {
-        let chunk_len = (total - offset).min(chunk_elements);
-        let workgroup_count = chunk_len.div_ceil(64);
-
-        let mut uniform_buf = UniformBuffer::new(Vec::<u8>::new());
-        uniform_buf
-            .write(&ReduceUniforms {
-                mode: mode.discriminant(),
-                num_elements: chunk_len as u32,
-                num_bins,
-                data_min,
-                data_max,
-                base_offset: offset as u32,
-            })
-            .unwrap();
-        let uniform_bytes = uniform_buf.into_inner();
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("reduce_stratified_uniforms"),
-            size: uniform_bytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("reduce_stratified_output"),
+            size: output_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
-
-        let mut bind_group_entries = vec![
-            wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(input_view) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(stratify_view) },
-            wgpu::BindGroupEntry { binding: output_binding, resource: output_buffer.as_entire_binding() },
-        ];
-        for (i, tex) in filtering.textures.iter().chain(selection.textures.iter()).enumerate() {
-            bind_group_entries.push(wgpu::BindGroupEntry {
-                binding: CRITERIA_FIRST_BINDING + i as u32,
-                resource: wgpu::BindingResource::TextureView(&tex.view),
-            });
+        if !is_histogram {
+            let (id_a, id_b) = scalar_output_identity(mode);
+            let init: Vec<u32> = (0..num_strata).flat_map(|_| [id_a, id_b, id_a, id_b]).collect();
+            queue.write_buffer(&output_buffer, 0, bytemuck::cast_slice(&init));
         }
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layout,
-            entries: &bind_group_entries,
-        });
+        // output_hist's identity is always 0, so (like reduce.rs's hist_output) it
+        // relies on WebGPU's implicit zero-initialization of new buffers.
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        let mut offset = 0usize;
+        while offset < total {
+            let chunk_len = (total - offset).min(chunk_elements);
+            let workgroup_count = chunk_len.div_ceil(64);
+
+            let mut uniform_buf = UniformBuffer::new(Vec::<u8>::new());
+            uniform_buf
+                .write(&ReduceUniforms {
+                    mode: mode.discriminant(),
+                    num_elements: chunk_len as u32,
+                    num_bins,
+                    data_min,
+                    data_max,
+                    base_offset: offset as u32,
+                })
+                .unwrap();
+            let uniform_bytes = uniform_buf.into_inner();
+            let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("reduce_stratified_uniforms"),
+                size: uniform_bytes.len() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&uniform_buffer, 0, &uniform_bytes);
+
+            let mut bind_group_entries = vec![
+                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(input_view) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(stratify_view) },
+                wgpu::BindGroupEntry { binding: output_binding, resource: output_buffer.as_entire_binding() },
+            ];
+            for (i, tex) in filtering.textures.iter().chain(selection.textures.iter()).enumerate() {
+                bind_group_entries.push(wgpu::BindGroupEntry {
+                    binding: CRITERIA_FIRST_BINDING + i as u32,
+                    resource: wgpu::BindingResource::TextureView(&tex.view),
+                });
+            }
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
-                timestamp_writes: None,
+                layout: &bind_group_layout,
+                entries: &bind_group_entries,
             });
-            compute_pass.set_pipeline(&pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
+
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None,
+                });
+                compute_pass.set_pipeline(&pipeline);
+                compute_pass.set_bind_group(0, &bind_group, &[]);
+                compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
+            }
+            queue.submit([encoder.finish()]);
+
+            offset += chunk_len;
         }
+
+        let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("reduce_stratified_download"),
+            size: output_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&output_buffer, 0, &download_buffer, 0, output_size);
         queue.submit([encoder.finish()]);
-
-        offset += chunk_len;
-    }
-
-    let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("reduce_stratified_download"),
-        size: output_size,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    encoder.copy_buffer_to_buffer(&output_buffer, 0, &download_buffer, 0, output_size);
-    queue.submit([encoder.finish()]);
-    read_back_u32(device, &download_buffer).await
+        read_back_u32(device, &download_buffer).await
+    })
 }
 
 /// Uploads `input`/`stratify_by.codes` once and runs
 /// [`dispatch_reduce_stratified`], which computes every stratum's background
 /// *and* foreground result in a single dispatch.
-async fn compute_reduce_stratified(
-    gpu_context: &GpuContext<'_>,
-    input: &NumericData,
-    stratify_by: &StratifyBy,
+fn compute_reduce_stratified<'a>(
+    gpu_context: &'a GpuContext<'_>,
+    input: &'a NumericData,
+    stratify_by: &'a StratifyBy,
     mode: ReduceMode,
-    filtering_criteria: &[EmphasisCriteria],
-    selection_criteria: &[EmphasisCriteria],
-) -> Vec<u32> {
-    if stratify_by.included_codes.is_empty() {
-        // Nothing to compute (and a zero-length array is not valid WGSL), so
-        // skip touching the GPU entirely.
-        return Vec::new();
-    }
+    filtering_criteria: &'a [EmphasisCriteria],
+    selection_criteria: &'a [EmphasisCriteria],
+) -> MaybeSendBoxFuture<'a, Vec<u32>> {
+    Box::pin(async move {
+        if stratify_by.included_codes.is_empty() {
+            // Nothing to compute (and a zero-length array is not valid WGSL), so
+            // skip touching the GPU entirely.
+            return Vec::new();
+        }
 
-    let GpuContext { device, queue } = gpu_context;
-    let (input_view, input_dtype) = input.create_data_texture(device, queue, "reduce_stratified_input");
-    let (stratify_view, stratify_dtype) =
-        stratify_by.codes.create_data_texture(device, queue, "reduce_stratified_codes");
-    let total = input.len();
+        let GpuContext { device, queue } = gpu_context;
+        let (input_view, input_dtype) = input.create_data_texture(device, queue, "reduce_stratified_input");
+        let (stratify_view, stratify_dtype) =
+            stratify_by.codes.create_data_texture(device, queue, "reduce_stratified_codes");
+        let total = input.len();
 
-    dispatch_reduce_stratified(
-        gpu_context, &input_view, input_dtype, &stratify_view, stratify_dtype, total, &mode, stratify_by,
-        filtering_criteria, selection_criteria,
-    )
-    .await
+        dispatch_reduce_stratified(
+            gpu_context, &input_view, input_dtype, &stratify_view, stratify_dtype, total, &mode, stratify_by,
+            filtering_criteria, selection_criteria,
+        )
+        .await
+    })
 }
 
 // ── CPU fallback ───────────────────────────────────────────────────────────────

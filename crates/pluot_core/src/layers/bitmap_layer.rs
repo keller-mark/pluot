@@ -13,6 +13,7 @@ use std::sync::Arc;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::render_types::GpuContext;
 use crate::wgpu;
@@ -312,7 +313,7 @@ pub(crate) fn compute_strides(shape: &[u32]) -> Vec<usize> {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for BitmapLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let Self { layer_params, view_params } = self;
 

@@ -7,6 +7,7 @@ use crate::render_traits::{DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, Prepared
 use crate::wgpu;
 use crate::two::svg::SvgContext;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
 
 
@@ -29,7 +30,7 @@ pub async fn base_prepare_composite_layer(sub_layer_instances: &mut [Box<dyn Pre
 pub async fn base_draw_composite_layer(
     sub_layer_instances: &[Box<dyn PreparedAndDraw>],
     gpu_context: &GpuContext<'_>,
-    pass: &mut wgpu::RenderPass<'_>,
+    pass: &mut GpuRenderPass<'_>,
 ) {
     for sub_layer in sub_layer_instances.iter() {
         DrawToRasterGpu::draw(sub_layer.as_ref(), gpu_context, pass).await;

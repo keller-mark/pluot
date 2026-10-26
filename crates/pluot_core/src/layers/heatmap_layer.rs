@@ -45,6 +45,7 @@ use crate::render_traits::{
     PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::shader_modules::{colormaps as wgsl_colormaps, common, heatmap_cell_color, matrix_value, ShaderBuilder, TextureDtype};
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
@@ -339,7 +340,7 @@ impl HeatmapCommon<'_> {
         &self,
         view_params: &ViewParams,
         gpu_context: &GpuContext<'_>,
-        pass: &mut wgpu::RenderPass,
+        pass: &mut GpuRenderPass<'_>,
         matrix_value_wgsl: &str,
         blocks: &[HeatmapValueBlock],
     ) {
@@ -755,7 +756,7 @@ const FIRST_SELECTION_BINDING: u32 = 8;
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for HeatmapLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let GpuContext { device, queue } = gpu_context;
         let layer_params = &self.layer_params;
         if layer_params.num_rows == 0 || layer_params.num_cols == 0 {

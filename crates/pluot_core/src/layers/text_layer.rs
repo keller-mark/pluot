@@ -15,6 +15,7 @@ use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableL
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, quantitative_domain};
@@ -731,7 +732,7 @@ const COLOR_BINDING_START: u32 = 3;
 // TODO: just pass view_params and layer_params here? But layer_params contains data too, which for some layers is not provided via constructor params...
 
 pub async fn base_draw_text_layer(
-    gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass<'_>,
+    gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>,
     view_params: &ViewParams,
     layer_params: &TextLayerParams,
     internal_data: &InternalTextLayerData,
@@ -1173,7 +1174,7 @@ pub async fn base_draw_text_layer(
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for TextLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         let internal_data = self.internal_data.as_ref().expect("Internal data was not prepared. Call prepare() first.");
         base_draw_text_layer(
             gpu_context, pass,
