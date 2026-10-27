@@ -1,6 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { PluotWrapper } from './PluotWrapper.jsx';
-import { useColormapOption, resolvePlotParams } from './PlotControls.jsx';
+import { useColormapOption, resolvePlotParams, multiSelect } from './PlotControls.jsx';
+import { adataQueryClient, useAdataOptions, getExtentKey } from './adata-options.js';
 
 // The purpose of this wrapper component is to define a dotplot-specific
 // onHover function to transform the picking result into a tooltip dict.
@@ -30,37 +32,78 @@ function onHoverDotPlot(info) {
 
 const DOTPLOT_LAYER_TYPE = 'AdataZarrDotPlotLayer';
 
-function withDotPlotColormap(plotParams, cmap) {
+function withDotPlotControls(plotParams, { colormap, obsCategories, genes }) {
   return {
     ...plotParams,
     layers: plotParams.layers.map(layer => (layer.layer_type === DOTPLOT_LAYER_TYPE ? {
       ...layer,
-      layer_params: { ...layer.layer_params, cmap },
+      layer_params: {
+        ...layer.layer_params,
+        cmap: colormap,
+        categories: obsCategories,
+        var_names: genes,
+      },
     } : layer)),
   };
 }
 
-export function DotPlotWrapper(props) {
-  const { plotParams } = props;
-  const defaultColormap = plotParams?.layers
+function DotPlotWrapperInner(props) {
+  const { plotParams, storeUrl } = props;
+  const defaultLayerParams = plotParams?.layers
     ?.find(layer => layer.layer_type === DOTPLOT_LAYER_TYPE)
-    ?.layer_params?.cmap;
-  const colormapOption = useColormapOption(defaultColormap);
+    ?.layer_params;
+  const colormapOption = useColormapOption(defaultLayerParams?.cmap);
+
+  const groupby = defaultLayerParams?.groupby;
+  const adataOptions = useAdataOptions(storeUrl, groupby);
+  const categories = adataOptions.data?.categories;
+  const varNames = adataOptions.data?.varNames;
+
+  const defaultCategories = defaultLayerParams?.categories;
+  const defaultGenes = defaultLayerParams?.var_names;
+  const plotSpecificOptions = useMemo(() => ({
+    obsCategories: multiSelect({
+      selected: defaultCategories ?? categories ?? [],
+      options: categories ?? [],
+      label: groupby,
+    }),
+    genes: multiSelect({
+      selected: defaultGenes ?? [],
+      options: varNames ?? [],
+      size: 10,
+      label: 'Genes',
+    }),
+    ...colormapOption,
+  }), [groupby, categories, varNames, defaultCategories, defaultGenes, colormapOption]);
 
   const getPlotParams = useCallback(
-    controlValues => withDotPlotColormap(resolvePlotParams(plotParams, controlValues), controlValues.colormap),
+    controlValues => withDotPlotControls(resolvePlotParams(plotParams, controlValues), controlValues),
     [plotParams],
   );
+
+  if (adataOptions.isPending) {
+    return (<p>Loading...</p>);
+  }
+  if (adataOptions.isError) {
+    return (<p>Error loading AnnData: {adataOptions.error.message}</p>);
+  }
 
   return (
     <PluotWrapper
       {...props}
       plotParams={getPlotParams}
-      plotSpecificOptions={colormapOption}
+      extentKey={getExtentKey}
+      plotSpecificOptions={plotSpecificOptions}
       onHover={onHoverDotPlot}
       enableTooltip
     />
   );
 }
 
-// TODO: use anndata.js to load the cell type categories and gene list on the JS side, and display multi-select inputs, which the plot params can depend on.
+export function DotPlotWrapper(props) {
+  return (
+    <QueryClientProvider client={adataQueryClient}>
+      <DotPlotWrapperInner {...props} />
+    </QueryClientProvider>
+  );
+}
