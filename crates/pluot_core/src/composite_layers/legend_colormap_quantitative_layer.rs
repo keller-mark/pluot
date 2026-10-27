@@ -20,6 +20,7 @@ use crate::render_traits::{
     AspectRatioMode, BrushableLayer, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
 use crate::render_types::GpuContext;
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::render_traits::{DrawToRasterCpu, DrawToRasterGpu, DrawToSvg};
 use crate::two::svg::SvgContext;
@@ -317,7 +318,7 @@ impl PreparedLayer for LegendColormapQuantitativeLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for LegendColormapQuantitativeLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

@@ -15,6 +15,7 @@ use crate::numeric_data::NumericData;
 use crate::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
 use crate::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
+use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
 use crate::{log, wgpu};
 use crate::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
@@ -263,7 +264,7 @@ impl PreparedLayer for BarPlotLayer {
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for BarPlotLayer {
-    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut wgpu::RenderPass) {
+    async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
         base_draw_composite_layer(&self.sub_layer_instances, gpu_context, pass).await;
     }
 }

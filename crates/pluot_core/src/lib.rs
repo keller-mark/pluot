@@ -2,6 +2,7 @@ pub mod bindings;
 pub mod d3;
 pub mod params;
 pub mod render_types;
+pub mod gpu_send;
 pub mod cache;
 pub mod render_traits;
 pub mod colormaps_quantitative;
