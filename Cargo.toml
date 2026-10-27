@@ -93,8 +93,8 @@ pluot = { version = "0.1.24", path = "crates/pluot" }
 
 # WebGPU
 wgpu = { version = "30.0.0" }
-glam = { version = "0.33.1", features = ["encase"] }
-encase = { version = "0.12.0" }
+glam = { version = "0.34.1", features = ["encase-013"] }
+encase = { version = "0.13.0" }
 
 # Matrix multiplication for SVG rendering
 nalgebra-glm = "0.21"
@@ -104,11 +104,11 @@ fontdue = "0.9.x" # For font rasterization and text layout.
 lz-str = "0.2.1" # To compress SVG strings before passing to JS.
 
 # Dev dependencies
-resvg = "0.46.0" # For SVG rendering during unit tests to compare with raster-format outputs.
-tiny-skia = "0.11.4" # Used when rendering with resvg (Pixmap target for rendering).
+resvg = "0.49.0" # For SVG rendering during unit tests to compare with raster-format outputs.
+tiny-skia = "0.12.0" # Used when rendering with resvg (Pixmap target for rendering).
 dify = "0.8.0" # For pixel diffing in unit tests.
 image = { version = "0.25.9", default-features = false, features = ["bmp", "png"] } # For read/write to image formats like PNG in unit tests.
-base64 = "0.22.1"
+base64 = "0.23.1"
 kompari = { git = "https://github.com/linebender/kompari", rev = "63476ab", default-features = false }
 
 

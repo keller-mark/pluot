@@ -269,7 +269,9 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
-          sccache: ${{ needs.prepare_docs_site.outputs.should-release != 'true' }}
+          # sccache: ${{ needs.prepare_docs_site.outputs.should-release != 'true' }}
+          # sccache injects a stray /WX- input into cl.exe on the MSVC 14.51 runner image, breaking link-cplusplus.
+          sccache: false
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
