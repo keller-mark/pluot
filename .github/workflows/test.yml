@@ -23,6 +23,8 @@ jobs:
     - name: Run Rust unit tests
       # Rendering tests do not work on non-macos runners since they lack GPUs.
       run: cargo test --verbose --features lacks_gpu
+    - name: Check that the committed TypeScript types are up to date
+      run: scripts/check_generated_ts_types.sh
 
   plain_rust_check_examples:
     runs-on: ubuntu-latest
@@ -200,15 +202,6 @@ jobs:
       name: Install pnpm
       with:
         run_install: true
-    - name: Generate TypeScript types from Rust
-      run: pnpm run generate-types
-    - name: Check that the committed TypeScript types are up to date
-      run: |
-        if [ -n "$(git status --porcelain bindings-js/core/src/generated)" ]; then
-          git status --porcelain bindings-js/core/src/generated
-          echo "Error: bindings-js/core/src/generated is stale. Run 'pnpm run generate-types' and commit the result."
-          exit 1
-        fi
     - name: Type-check the JS packages
       run: pnpm exec tsc --build bindings-js/core bindings-js/react
     - name: Run JS unit tests
