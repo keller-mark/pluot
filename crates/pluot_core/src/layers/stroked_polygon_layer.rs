@@ -9,7 +9,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use crate::layers::filled_polygon_layer::PolygonPickingInfo;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -759,12 +759,6 @@ impl PickableLayer for StrokedPolygonLayer {
         }
 
         let idx = closest?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), idx.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, PolygonPickingInfo { index: idx }))
     }
 }

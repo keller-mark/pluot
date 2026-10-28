@@ -55,11 +55,11 @@ pub use crate::registry::{LayerRegistration, get_layer_from_registry};
 pub use crate::render::{render, stores_from_params};
 pub use crate::zarr::{AsyncZarritaStore, StoreMap};
 pub use crate::render_script::{render_to_script, render_to_script_aux};
-pub use crate::picking::{pick, PickingResult, LayerPickingResult};
+pub use crate::picking::{pick, PickingResult, LayerPickingResult, ResultInfo};
 pub use crate::brushing::{brush, BrushParams, BrushingResult, LayerBrushingResult};
 pub use crate::extent::{extent, ExtentResult, LayerExtentResult};
 pub use crate::viewport::{project, unproject, get_bounds, camera_matrix_to_zoom_and_translation};
-pub use crate::numeric_data::NumericData;
+pub use crate::numeric_data::{NumericData, NumericValue};
 
 // Export things needed by workspace packages that define other layers.
 pub use crate::cache::{get_or_init_store, use_memo_vec_f32, use_memo_vec_i32, use_memo_vec_string, use_memo_numeric_data};

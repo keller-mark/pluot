@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use pluot_core::composite_layers::curve_layer::{CurveLayer, CurveLayerParams, PathCommand};
+use pluot_core::layers::filled_curve_layer::FilledCurvePickingInfo;
+use pluot_core::layers::stroked_curve_layer::StrokedCurvePickingInfo;
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams};
@@ -39,7 +41,7 @@ fn test_pick_filled_containment() {
     // Inside the square: contained by the fill.
     let r = pick_at(&layer, 5.0, 5.0).unwrap();
     assert_eq!(r.layer_id, "test_curve_filled");
-    assert_eq!(r.info.get("subpath_index").unwrap(), "0");
+    assert_eq!(r.info_as::<FilledCurvePickingInfo>().unwrap().subpath_index, 0);
 
     // Outside the square: fill-only layer has nothing to fall back to.
     assert!(pick_at(&layer, 50.0, 50.0).is_none());
@@ -61,7 +63,7 @@ fn test_pick_stroked_nearest_segment() {
     // Near the left edge (x=0): nearest-segment picking always finds a match.
     let r = pick_at(&layer, 0.5, 5.0).unwrap();
     assert_eq!(r.layer_id, "test_curve_stroked");
-    assert_eq!(r.info.get("subpath_index").unwrap(), "0");
+    assert_eq!(r.info_as::<StrokedCurvePickingInfo>().unwrap().subpath_index, 0);
 
     // Far from the curve: still returns the nearest segment (no threshold).
     assert!(pick_at(&layer, 1000.0, 1000.0).is_some());
@@ -108,7 +110,7 @@ fn test_pick_with_scale_matrix() {
     );
 
     let r = pick_at(&layer, 10.0, 10.0).unwrap();
-    assert_eq!(r.info.get("subpath_index").unwrap(), "0");
+    assert_eq!(r.info_as::<FilledCurvePickingInfo>().unwrap().subpath_index, 0);
 
     assert!(pick_at(&layer, 30.0, 30.0).is_none());
 }

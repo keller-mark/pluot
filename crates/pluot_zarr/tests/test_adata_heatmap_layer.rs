@@ -21,7 +21,7 @@ use pluot_zarr::heatmap_data::{
     load_matrix_percentile_domain, AxisCriteria, HeatmapNormalization, IdentifierCriteriaParams, LoadedMatrixBlock, MatrixBlock,
     MatrixBlockKey, MatrixCacheMode,
 };
-use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
+use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
 use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
 
@@ -107,15 +107,18 @@ async fn check_picks_of(
                 x: display_x as f32 + 0.5,
                 y: (display_h - display_y_from_top) as f32 - 0.5,
             };
-            let info = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(data_coord)).expect("a cell is picked").info;
+            let info: AdataZarrHeatmapPickingInfo = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(data_coord))
+                .expect("a cell is picked")
+                .into_info()
+                .unwrap();
 
             let obs_index = expected.obs_indices[row];
             let var_index_of_col = var_index.iter().position(|name| *name == expected.var_names[col]).unwrap();
             let column = read_matrix_column_numeric(store.clone(), matrix_path, var_index_of_col as u64).await.unwrap();
-            assert_eq!(info["obs_index"], obs_index.to_string());
-            assert_eq!(info["obs_name"], obs_names[obs_index]);
-            assert_eq!(info["var_name"], expected.var_names[col]);
-            assert_eq!(info["value"], column.format_element(obs_index));
+            assert_eq!(info.obs_index, obs_index);
+            assert_eq!(info.obs_name, obs_names[obs_index]);
+            assert_eq!(info.var_name, expected.var_names[col]);
+            assert_eq!(info.value, column.value(obs_index));
         }
     }
 }

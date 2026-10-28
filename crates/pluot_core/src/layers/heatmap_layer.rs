@@ -29,7 +29,6 @@ use glam::{DMat4, DVec4, Mat4, Vec2};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::color_mode::create_palette_texture;
@@ -37,7 +36,7 @@ use crate::colormaps_categorical;
 use crate::colormaps_quantitative;
 use crate::compute::matrix_axis_extents::MatrixAxis;
 use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
-use crate::numeric_data::{upload_data_texture, NumericData};
+use crate::numeric_data::{upload_data_texture, NumericData, NumericValue};
 use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
@@ -675,12 +674,8 @@ impl HeatmapCommon<'_> {
     }
 
     /// The picking result for the cell at (`row`, `col`) holding `value`.
-    pub(crate) fn picking_result(&self, row: u32, col: u32, value: String) -> LayerPickingResult {
-        let mut info = HashMap::new();
-        info.insert("row".to_string(), row.to_string());
-        info.insert("col".to_string(), col.to_string());
-        info.insert("value".to_string(), value);
-        LayerPickingResult { layer_id: self.layer_id.to_string(), info }
+    pub(crate) fn picking_result(&self, row: u32, col: u32, value: NumericValue) -> LayerPickingResult {
+        LayerPickingResult::new(self.layer_id, HeatmapPickingInfo { row, col, value })
     }
 }
 
@@ -822,12 +817,19 @@ impl BrushableLayer for HeatmapLayer {}
 
 impl ExtentableLayer for HeatmapLayer {}
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+/// Shared by the dense and compressed heatmap layers.
+pub struct HeatmapPickingInfo {
+    pub row: u32,
+    pub col: u32,
+    pub value: NumericValue,
+}
+
 impl PickableLayer for HeatmapLayer {
-    /// Returns the picked cell's "row", "col" and "value".
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let common = self.layer_params.common();
         let (row, col) = common.pick_cell(data_coord)?;
-        let value = self.layer_params.data.format_element((row * self.layer_params.num_cols + col) as usize);
+        let value = self.layer_params.data.value((row * self.layer_params.num_cols + col) as usize);
         Some(common.picking_result(row, col, value))
     }
 }

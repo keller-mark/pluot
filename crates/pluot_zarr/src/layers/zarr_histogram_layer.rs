@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult, LayerExtentResult};
@@ -387,6 +386,13 @@ impl DrawToSvg for ZarrHistogramLayer {
     }
 }
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+/// The range of values covered by the brush.
+pub struct ZarrHistogramBrushingInfo {
+    pub min: f64,
+    pub max: f64,
+}
+
 impl BrushableLayer for ZarrHistogramLayer {
     fn brush(&self, brush_params: BrushParams, _data_vertices: Option<DataVertices>) -> Option<LayerBrushingResult> {
         // The value axis runs along X for a vertical histogram, and along Y
@@ -418,15 +424,10 @@ impl BrushableLayer for ZarrHistogramLayer {
         let value_b = value_scale.invert(px_max as f64);
         let (value_min, value_max) = if value_a <= value_b { (value_a, value_b) } else { (value_b, value_a) };
 
-        let mut info = HashMap::new();
-        info.insert("min".to_string(), value_min.to_string());
-        info.insert("max".to_string(), value_max.to_string());
-
-        Some(LayerBrushingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-            element_info: HashMap::new(),
-        })
+        Some(LayerBrushingResult::new(&self.layer_params.layer_id, ZarrHistogramBrushingInfo {
+            min: value_min,
+            max: value_max,
+        }))
     }
 }
 

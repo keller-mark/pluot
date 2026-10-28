@@ -2,9 +2,11 @@ import type { ReactElement } from "react";
 import type {
   AspectRatioMode,
   AspectRatioAlignmentMode,
+  BrushingInfo,
   CameraMatrix,
   CameraFilterFunction,
   LayerParams,
+  PickingInfo,
   PlotParams,
   StoreInput,
   StoresInput,
@@ -72,15 +74,17 @@ export type DataCoord =
   | { TwoD: { x: number; y: number } }
   | { ThreeD: { x: number; y: number; z: number } };
 
-/** Mirrors the Rust `LayerPickingResult` struct. */
+/**
+ * Mirrors the Rust `LayerPickingResult` struct.
+ * The shape of `info` depends on the type of the picked layer.
+ */
 export type LayerPickingResult = {
   layer_id: string;
-  info: Record<string, string>;
+  info: PickingInfo;
 };
 
 /**
- * Mirrors the Rust `PickingResult` struct, after normalization
- * of the `info` Maps (produced by serde-wasm-bindgen) to plain objects.
+ * Mirrors the Rust `PickingResult` struct.
  *
  * Note: `serde_wasm_bindgen` serializes a Rust `None` as `undefined`
  * (not `null`), so `data_coord` is absent rather than null when picking
@@ -93,48 +97,17 @@ export type PickingResult = {
 };
 
 /**
- * The un-normalized shape that `pick_wasm` actually resolves to. It is typed
- * `any` on the wasm-bindgen side, so this type is what documents the wire
- * format: `serde_wasm_bindgen` converts the Rust `HashMap` behind `info` into
- * a JS `Map`, which {@link PickingResult} flattens to a plain object.
+ * Mirrors the Rust `LayerBrushingResult` struct.
+ * The shape of `info` depends on the type of the brushed layer.
  */
-export type RawLayerPickingResult = Omit<LayerPickingResult, "info"> & {
-  info: Map<string, string>;
-};
-
-/** Mirrors the Rust `LayerBrushingResult` struct. */
 export type LayerBrushingResult = {
   layer_id: string;
-  info: Record<string, string>;
-  element_info: Record<string, string[]>;
+  info: BrushingInfo;
 };
 
-/**
- * Mirrors the Rust `BrushingResult` struct, after normalization of the `info`
- * and `element_info` maps (produced by serde-wasm-bindgen) to plain objects.
- */
+/** Mirrors the Rust `BrushingResult` struct. */
 export type BrushingResult = {
   layer_results: LayerBrushingResult[];
-};
-
-/**
- * The un-normalized shape that `brush_wasm` actually resolves to. It is typed
- * `any` on the wasm-bindgen side, so this type is what documents the wire
- * format: `serde_wasm_bindgen` converts the Rust `HashMap`s behind `info` and
- * `element_info` into JS `Map`s, which {@link BrushingResult} flattens to
- * plain objects.
- */
-export type RawLayerBrushingResult = Omit<LayerBrushingResult, "info" | "element_info"> & {
-  info: Map<string, string>;
-  element_info: Map<string, string[]>;
-};
-
-export type RawBrushingResult = Omit<BrushingResult, "layer_results"> & {
-  layer_results: RawLayerBrushingResult[];
-};
-
-export type RawPickingResult = Omit<PickingResult, "layer_results"> & {
-  layer_results: RawLayerPickingResult[];
 };
 
 // === Extent ===

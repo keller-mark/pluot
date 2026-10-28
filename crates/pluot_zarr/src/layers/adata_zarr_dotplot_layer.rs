@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -19,8 +18,8 @@ use pluot_core::composite_layers::axis_linear_layer::AxisPosition;
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation};
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::{LegendPointSizeQuantitativeLayer, LegendPointSizeQuantitativeLayerParams};
 use pluot_core::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
-use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
-use pluot_core::numeric_data::NumericData;
+use pluot_core::layers::point_layer::{PointLayer, PointLayerParams, PointPickingInfo};
+use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
@@ -461,27 +460,32 @@ impl BrushableLayer for AdataZarrDotPlotLayer {}
 
 impl ExtentableLayer for AdataZarrDotPlotLayer {}
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct AdataZarrDotPlotPickingInfo {
+    pub var_name: String,
+    pub obs_value: String,
+    pub mean_expression: NumericValue,
+    pub fraction_expressing: NumericValue,
+}
+
 impl PickableLayer for AdataZarrDotPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         // The PointLayer rendering the dots is always sub_layer_instances[0]
         // (see `prepare`); the axis sublayers are not pickable.
         let point_result = self.sub_layer_instances.first()?.pick(screen_coord, data_coord)?;
-        // `PointLayer::pick` names the picked instance's index under "index"; that index is
-        // into `gene_summaries`, since both were built from the same ordering in `prepare`.
-        let index: usize = point_result.info.get("index")?.parse().ok()?;
-        let summary = self.gene_summaries.get(index)?;
+        let layer_id = point_result.layer_id.clone();
+        // The picked point's index is into `gene_summaries`,
+        // since both were built from the same ordering in `prepare`.
+        let point: PointPickingInfo = point_result.into_info()?;
+        let summary = self.gene_summaries.get(point.index)?;
         let (mean, fraction_expressing) = summary.mean_and_fraction_expressing();
 
-        let mut info = HashMap::new();
-        info.insert("var_name".to_string(), summary.var_name.clone());
-        info.insert("obs_value".to_string(), summary.obs_value.clone());
-        info.insert("mean_expression".to_string(), mean.to_string());
-        info.insert("fraction_expressing".to_string(), fraction_expressing.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: point_result.layer_id,
-            info,
-        })
+        Some(LayerPickingResult::new(layer_id, AdataZarrDotPlotPickingInfo {
+            var_name: summary.var_name.clone(),
+            obs_value: summary.obs_value.clone(),
+            mean_expression: NumericValue::Float32(mean),
+            fraction_expressing: NumericValue::Float32(fraction_expressing),
+        }))
     }
 }
 

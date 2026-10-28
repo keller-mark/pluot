@@ -4,7 +4,7 @@
 
 use kurbo::{CubicBez, ParamCurve};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -280,6 +280,11 @@ impl BrushableLayer for FilledCurveLayer {}
 
 impl ExtentableLayer for FilledCurveLayer {}
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct FilledCurvePickingInfo {
+    pub subpath_index: usize,
+}
+
 impl PickableLayer for FilledCurveLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
@@ -317,12 +322,6 @@ impl PickableLayer for FilledCurveLayer {
         }
 
         let idx = hit_idx?;
-        let mut info = HashMap::new();
-        info.insert("subpath_index".to_string(), idx.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, FilledCurvePickingInfo { subpath_index: idx }))
     }
 }

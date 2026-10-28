@@ -1362,6 +1362,12 @@ impl BrushableLayer for TextLayer {}
 
 impl ExtentableLayer for TextLayer {}
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct TextPickingInfo {
+    pub index: usize,
+    pub text: String,
+}
+
 impl PickableLayer for TextLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let DataCoord::TwoD { x: wx, y: wy } = data_coord? else {
@@ -1408,13 +1414,9 @@ impl PickableLayer for TextLayer {
         }
 
         let closest_idx = closest_idx?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("text".to_string(), self.layer_params.text_vec[closest_idx].clone());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, TextPickingInfo {
+            index: closest_idx,
+            text: self.layer_params.text_vec[closest_idx].clone(),
+        }))
     }
 }

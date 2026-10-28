@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -15,8 +14,8 @@ use pluot_core::composite_layers::legend_colormap_quantitative_layer::{
 use pluot_core::d3::scale::ScaleLinear;
 use pluot_core::compute::matrix_axis_extents::MatrixAxis as HeatmapAxis;
 use pluot_core::layers::heatmap_compressed_layer::{CompressedHeatmapLayerParams, HeatmapCscLayer, HeatmapCsrLayer};
-use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams};
-use pluot_core::numeric_data::NumericData;
+use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams, HeatmapPickingInfo};
+use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::render_traits::{
     resolve_store_name, BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams,
     PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams,
@@ -534,24 +533,32 @@ impl ExtentableLayer for AdataZarrHeatmapLayer {
     }
 }
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct AdataZarrHeatmapPickingInfo {
+    pub obs_name: String,
+    pub var_name: String,
+    pub obs_index: usize,
+    pub var_index: usize,
+    pub value: NumericValue,
+}
+
 impl PickableLayer for AdataZarrHeatmapLayer {
-    /// Returns the picked cell's "obs_name", "var_name", "obs_index", "var_index" and "value".
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let (block_first_row, cell) = self.sub_layer_instances.iter().zip(&self.block_first_rows).find_map(|(sublayer, &first_row)| {
             sublayer.pick(screen_coord, data_coord).map(|cell| (first_row, cell))
         })?;
-        let row: usize = block_first_row + cell.info.get("row")?.parse::<usize>().ok()?;
-        let col: usize = cell.info.get("col")?.parse().ok()?;
+        let cell: HeatmapPickingInfo = cell.into_info()?;
+        let row = block_first_row + cell.row as usize;
         let axes = self.axes.as_ref()?;
         let obs_index = *axes.obs_indices.get(row)? as usize;
-        let var_index = *axes.var_indices.get(col)? as usize;
+        let var_index = *axes.var_indices.get(cell.col as usize)? as usize;
 
-        let mut info = HashMap::new();
-        info.insert("obs_name".to_string(), axes.obs_labels.get(obs_index)?.clone());
-        info.insert("var_name".to_string(), axes.var_labels.get(var_index)?.clone());
-        info.insert("obs_index".to_string(), obs_index.to_string());
-        info.insert("var_index".to_string(), var_index.to_string());
-        info.insert("value".to_string(), cell.info.get("value")?.clone());
-        Some(LayerPickingResult { layer_id: self.layer_params.layer_id.clone(), info })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, AdataZarrHeatmapPickingInfo {
+            obs_name: axes.obs_labels.get(obs_index)?.clone(),
+            var_name: axes.var_labels.get(var_index)?.clone(),
+            obs_index,
+            var_index,
+            value: cell.value,
+        }))
     }
 }

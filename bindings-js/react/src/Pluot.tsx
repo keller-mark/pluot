@@ -22,7 +22,7 @@ import { useBrush } from "./use-brush.js";
 import { useMemoCustomComparison } from "./use-memo-custom.js";
 import type {
   BrushingResult, BrushState, ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
-  PluotProps, RawBrushingResult, RawPickingResult, RenderParams, TooltipContent,
+  PluotProps, RenderParams, TooltipContent,
 } from "./types.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -95,35 +95,6 @@ type PickParamsSnapshot = RenderParamsSnapshot & {
   screenCoordX: number;
   screenCoordY: number;
 };
-
-// `pick_wasm` is typed `any` by wasm-bindgen, so `RawPickingResult` is what
-// documents its wire format (see types.ts).
-function normalizePickingResult(data: RawPickingResult): PickingResult {
-  return {
-    ...data,
-    layer_results: data.layer_results.map(({ layer_id, info }) => ({
-      layer_id,
-      // This is needed because serde-wasm-bindgen
-      // converts Rust HashMap to JS Map.
-      info: Object.fromEntries(info),
-    })),
-  };
-}
-
-// `brush_wasm` is typed `any` by wasm-bindgen, so `RawBrushingResult` is what
-// documents its wire format (see types.ts).
-function normalizeBrushingResult(data: RawBrushingResult): BrushingResult {
-  return {
-    ...data,
-    layer_results: data.layer_results.map(({ layer_id, info, element_info }) => ({
-      layer_id,
-      // This is needed because serde-wasm-bindgen
-      // converts Rust HashMap to JS Map.
-      info: Object.fromEntries(info),
-      element_info: Object.fromEntries(element_info),
-    })),
-  };
-}
 
 // The union (bounding box) of every layer's reported extent, in each axis
 // independently. `null` for an axis when no layer in the plot reports an
@@ -330,9 +301,6 @@ function PluotInner(props: PluotProps) {
 
       console.log("extent_wasm");
 
-      // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
-      // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
-      // normalization step is needed.
       const extentResult = await extent_wasm(renderParams) as ExtentResult;
       if (typeof onExtentProp === "function") {
         onExtentProp(extentResult);
@@ -665,13 +633,13 @@ function PluotInner(props: PluotProps) {
 
     // TODO: wrap pick_wasm in a try/catch
 
-    return normalizePickingResult(await pick_wasm(
+    return await pick_wasm(
       renderParams,
       // The coordinates are relative to the "layer" (the camera region), not the full width/height.
       // We also need to flip the Y coordinate so that positive is up.
       params.screenCoordX + params.marginLeft,
       params.marginBottom + (layerHeight - params.screenCoordY)
-    ));
+    ) as PickingResult;
   };
 
   // The most recently requested click/hover pick. Kept (rather than reset to

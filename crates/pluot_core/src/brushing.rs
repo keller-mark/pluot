@@ -1,5 +1,5 @@
 // The brushing analog of picking.rs
-use std::collections::HashMap;
+use std::any::Any;
 use serde::{Serialize, Deserialize};
 
 use crate::{UnitsMode, wgpu};
@@ -9,6 +9,7 @@ use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, Com
 use crate::render_traits::{MarginParams, BrushableLayer, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
 use crate::zarr::StoreMap;
+use crate::picking::ResultInfo;
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
@@ -16,17 +17,27 @@ use crate::viewport::{DataCoord, DataVertices, ScreenCoord, ScreenVertices, unpr
 
 /// Serializable representation of brushing results
 /// from a single plotted layer.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct LayerBrushingResult {
     pub layer_id: String,
-    pub info: HashMap<String, String>, // Any top-level info about the brushed region.
-    pub element_info: HashMap<String, Vec<String>>, // Per-element info about the brushed elements (e.g., index in data array, value, etc.)
+    pub info: Box<dyn ResultInfo>,
     // TODO: include "snapped vertices" as part of the picking result if relevant.
+}
+
+impl LayerBrushingResult {
+    pub fn new(layer_id: impl Into<String>, info: impl ResultInfo) -> Self {
+        Self { layer_id: layer_id.into(), info: Box::new(info) }
+    }
+
+    /// The info, if it was produced by a layer whose info type is `T`.
+    pub fn info_as<T: ResultInfo>(&self) -> Option<&T> {
+        (&*self.info as &dyn Any).downcast_ref()
+    }
 }
 
 /// Serializable representation of brushing results
 /// from one or more plotted layers.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct BrushingResult {
     pub layer_results: Vec<LayerBrushingResult>,
 }

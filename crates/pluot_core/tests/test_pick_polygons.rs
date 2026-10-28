@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use pluot_core::composite_layers::polygon_layer::{PolygonLayer, PolygonLayerParams};
+use pluot_core::layers::filled_polygon_layer::PolygonPickingInfo;
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData};
@@ -40,7 +41,7 @@ fn test_pick_filled_containment() {
     // Inside the square: contained by the fill.
     let r = pick_at(&layer, 5.0, 5.0).unwrap();
     assert_eq!(r.layer_id, "test_polygon_filled");
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     // Outside the square: fill-only layer has nothing to fall back to.
     assert!(pick_at(&layer, 50.0, 50.0).is_none());
@@ -64,11 +65,11 @@ fn test_pick_stroked_nearest_edge() {
     // Near the left edge (x=0): nearest-edge picking always finds a match.
     let r = pick_at(&layer, 0.5, 5.0).unwrap();
     assert_eq!(r.layer_id, "test_polygon_stroked");
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     // Far from the polygon: still returns the nearest edge (no threshold).
     let r = pick_at(&layer, 1000.0, 1000.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 }
 
 #[test]
@@ -116,7 +117,7 @@ fn test_pick_with_scale_matrix() {
     );
 
     let r = pick_at(&layer, 10.0, 10.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     assert!(pick_at(&layer, 30.0, 30.0).is_none());
 }
@@ -138,4 +139,8 @@ fn test_pick_pixels_units_mode_returns_none() {
         },
     );
     assert!(pick_at(&layer, 5.0, 5.0).is_none());
+}
+
+fn info(r: &LayerPickingResult) -> &PolygonPickingInfo {
+    r.info_as().unwrap()
 }
