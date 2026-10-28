@@ -2,6 +2,7 @@
 // delegating to StrokedCurveLayer and FilledCurveLayer sublayers.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -19,8 +20,9 @@ use crate::layers::filled_curve_layer::{FilledCurveLayer, FilledCurveLayerParams
 pub use crate::curve_and_polygon_utils::PathCommand;
 
 /// Layer params struct for [`CurveLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct CurveLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

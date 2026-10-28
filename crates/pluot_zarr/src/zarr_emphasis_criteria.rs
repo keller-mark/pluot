@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::numeric_data::NumericData;
@@ -13,7 +14,7 @@ use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized}
 /// is referenced by a zarr array path (`codes_key`/`values_key`) rather than
 /// an inlined [`NumericData`]. Resolve into an [`EmphasisCriteria`] (loading
 /// the referenced array) via [`resolve_zarr_emphasis_criteria`].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "criteria_mode", content = "criteria_params")]
 pub enum ZarrEmphasisCriteria {
     Categorical(ZarrCategoricalCriteriaParams),
@@ -23,7 +24,7 @@ pub enum ZarrEmphasisCriteria {
 
 /// A boolean (or 0/1 integer) column, referenced by zarr array path. Items
 /// whose value is true are included.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct ZarrBooleanCriteriaParams {
     /// Zarr array path to a boolean per item.
     pub mask_key: String,
@@ -31,7 +32,7 @@ pub struct ZarrBooleanCriteriaParams {
 
 /// A categorical column in categories+codes format, referenced by zarr array
 /// path, along with the set of category codes that are included.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct ZarrCategoricalCriteriaParams {
     /// Zarr array path to a category code per item.
     pub codes_key: String,
@@ -42,7 +43,8 @@ pub struct ZarrCategoricalCriteriaParams {
 /// A quantitative column, referenced by zarr array path, along with the
 /// included range. Omitting `min` or `max` implicitly means -infinity/+infinity
 /// in that direction.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrQuantitativeCriteriaParams {
     /// Zarr array path to a value per item.
     pub values_key: String,
@@ -55,10 +57,12 @@ pub struct ZarrQuantitativeCriteriaParams {
     /// Whether the lower bound excludes `min` itself. `None` (the default)
     /// means inclusive. See [`QuantitativeCriteriaParams::min_exclusive`].
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub min_exclusive: Option<bool>,
     /// Whether the upper bound excludes `max` itself. `None` (the default)
     /// means inclusive. See [`QuantitativeCriteriaParams::max_exclusive`].
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub max_exclusive: Option<bool>,
 }
 

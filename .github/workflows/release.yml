@@ -62,6 +62,7 @@ jobs:
         run_install: true
     - name: For JS - Build and bundle the JS packages
       run: |
+        pnpm run generate-types
         cd bindings-js/core && pnpm run copy-fonts && cd -
         pnpm run build && pnpm run bundle
 
@@ -357,6 +358,7 @@ jobs:
           run_install: true
       - name: Build the JS packages that pluot_widget bundles
         run: |
+          pnpm run generate-types
           cd bindings-js/core && pnpm run copy-fonts && cd -
           pnpm run build && pnpm run bundle
       - name: Build pluot, pluot_core, and pluot_widget

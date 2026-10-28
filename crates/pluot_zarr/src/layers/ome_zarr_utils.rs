@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use ome_zarr_metadata::v0_5::{
     Axis, AxisType, AxisUnit, AxisUnitSpace,
 };
@@ -49,7 +50,7 @@ pub fn axis_unit_space_to_coefficient_and_exponent(unit: &AxisUnitSpace) -> (f64
 // These utils are shared between ome_zarr_bitmap_layer and ome_zarr_multiscale_layer,
 // so we put them in a separate module to avoid circular dependencies.
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct OmeZarrChannelSetting {
     /// Index in the C dimension of the zarr array.
     // TODO: also support specifying channel identifiers by their string name.
@@ -120,7 +121,8 @@ fn default_channel_enable_background_stroke_width() -> bool {
 ///
 /// Only `c_index` is required -- every render setting falls back to the same
 /// default [`BitmaskChannelSettings`] uses.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+#[ts(optional_fields = nullable)]
 pub struct OmeZarrBitmaskChannelSetting {
     /// Index in the C dimension of the zarr array.
     // TODO: also support specifying channel identifiers by their string name.
@@ -128,72 +130,91 @@ pub struct OmeZarrBitmaskChannelSetting {
 
     /// Whether to stroke the outline of each object in this channel.
     #[serde(default = "default_channel_stroked")]
+    #[ts(optional = nullable)]
     pub stroked: bool,
 
     /// Whether to fill the interior of each object in this channel.
     #[serde(default = "default_channel_filled")]
+    #[ts(optional = nullable)]
     pub filled: bool,
 
     /// How to color each object's outline.
     #[serde(default = "default_channel_stroke_color")]
+    #[ts(optional = nullable)]
     pub stroke_color: Option<ColorMode>,
 
     /// Outline thickness, in the units given by the layer's
     /// `stroke_width_unit_mode`, used when `stroked` is true.
     #[serde(default = "default_channel_stroke_width")]
+    #[ts(optional = nullable)]
     pub stroke_width: Option<SizeMode>,
 
     /// Opacity multiplier for the outline (0.0 to 1.0).
     #[serde(default = "default_channel_stroke_opacity")]
+    #[ts(optional = nullable)]
     pub stroke_opacity: Option<OpacityMode>,
 
     /// How to color each object's interior.
     #[serde(default = "default_channel_fill_color")]
+    #[ts(optional = nullable)]
     pub fill_color: Option<ColorMode>,
 
     /// Opacity multiplier for the interior (0.0 to 1.0).
     #[serde(default = "default_channel_fill_opacity")]
+    #[ts(optional = nullable)]
     pub fill_opacity: Option<OpacityMode>,
 
     /// Criteria AND-ed together to determine the selected ("foreground") /
     /// filtered-in ("background") set of objects in this channel. An empty
     /// list means every object is included.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub selection_criteria: Vec<EmphasisCriteria>,
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill/stroke colors used for filter-included, but selection-excluded
     /// ("background") objects in this channel.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub background_fill_color: Option<(u8, u8, u8)>,
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub background_stroke_color: Option<(u8, u8, u8)>,
 
     /// Fill/stroke opacity and stroke width used for filter-included, but
     /// selection-excluded ("background") objects in this channel.
     #[serde(default = "default_channel_background_fill_opacity")]
+    #[ts(optional = nullable)]
     pub background_fill_opacity: Option<f32>,
     #[serde(default = "default_channel_background_stroke_opacity")]
+    #[ts(optional = nullable)]
     pub background_stroke_opacity: Option<f32>,
     #[serde(default = "default_channel_background_stroke_width")]
+    #[ts(optional = nullable)]
     pub background_stroke_width: Option<f32>,
 
     /// When true, "background" objects in this channel have the fill/stroke
     /// color specified via `background_fill_color`/`background_stroke_color`.
     #[serde(default = "default_channel_enable_background_fill_color")]
+    #[ts(optional = nullable)]
     pub enable_background_fill_color: bool,
     #[serde(default = "default_channel_enable_background_stroke_color")]
+    #[ts(optional = nullable)]
     pub enable_background_stroke_color: bool,
     /// When true, "background" objects in this channel have the fill/stroke
     /// opacity specified via `background_fill_opacity`/`background_stroke_opacity`.
     #[serde(default = "default_channel_enable_background_fill_opacity")]
+    #[ts(optional = nullable)]
     pub enable_background_fill_opacity: bool,
     #[serde(default = "default_channel_enable_background_stroke_opacity")]
+    #[ts(optional = nullable)]
     pub enable_background_stroke_opacity: bool,
     /// When true, "background" objects in this channel have the stroke width
     /// specified via `background_stroke_width`.
     #[serde(default = "default_channel_enable_background_stroke_width")]
+    #[ts(optional = nullable)]
     pub enable_background_stroke_width: bool,
 }
 
@@ -307,7 +328,8 @@ impl std::fmt::Display for OmeDim {
 /// - All elements are unique.
 /// - Both `X` and `Y` are present.
 /// - At most 5 dimensions (one of each variant).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, TS)]
+#[ts(type = "string")]
 pub struct OmeDimensionOrder(Vec<OmeDim>);
 
 impl OmeDimensionOrder {

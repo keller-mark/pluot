@@ -2,6 +2,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use crate::render_traits::{
     BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
@@ -25,14 +26,15 @@ const DEFAULT_BAR_MARGIN: f64 = 4.0;
 
 /// Determines whether bar plot should be vertical or horizontal.
 // TODO: should this be a more general/common "PlotOrientation" enum?
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
 pub enum BarOrientation {
     Vertical,
     Horizontal,
 }
 
 /// Layer params struct for [`BarPlotLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+#[ts(optional_fields = nullable)]
 pub struct BarPlotLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

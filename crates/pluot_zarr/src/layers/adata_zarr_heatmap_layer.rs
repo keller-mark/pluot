@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
@@ -42,8 +43,9 @@ use crate::heatmap_data::{
 const ELEMENTS_PER_BLOCK: usize = 1 << 22;
 
 /// Layer params struct for [`AdataZarrHeatmapLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct AdataZarrHeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

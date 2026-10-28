@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use std::sync::Arc;
 use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, PickableLayer, PreparedLayer, ViewParams, PreparedAndDraw, MarginParams, SizeMode, UnitsMode, FontWeight, FontStyle};
@@ -22,8 +23,9 @@ const DEFAULT_TITLE_PADDING: f64 = 3.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 
 /// Layer params struct for [`AxisBandLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct AxisBandLayerParams {
     pub layer_id: String,
     pub position: AxisPosition,

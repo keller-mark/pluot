@@ -7,6 +7,7 @@ use std::sync::Arc;
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
@@ -402,7 +403,7 @@ fn build_internal_text_layer_data(
 }
 
 /// Specify the horizontal alignment of a text element.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum TextAlignMode {
     /// Left-aligned.
     Start,
@@ -413,7 +414,7 @@ pub enum TextAlignMode {
 }
 
 /// Specify the vertical alignment of a text element.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum TextBaselineMode {
     Top,
     Middle,
@@ -423,8 +424,9 @@ pub enum TextBaselineMode {
 
 
 /// Layer params struct for [`TextLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct TextLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

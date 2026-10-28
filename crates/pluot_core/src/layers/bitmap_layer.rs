@@ -6,6 +6,7 @@ use encase::{ArrayLength, ShaderType, StorageBuffer, UniformBuffer};
 use glam::{DMat4, DVec4, Mat4, Vec2, Vec3, Vec4};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -25,7 +26,7 @@ use crate::numeric_data::NumericData;
 
 
 /// Specify image channel settings, including the intensity window and an RGB color.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct ChannelSettings {
     // pub c_index: u32, // Rather than using c_index, we can just assume that the channel settings are provided in-order.
     /// Channel intensity window range.
@@ -47,7 +48,7 @@ pub struct ChannelSettings {
 /// Similarly, if the original data array contains more channels than being visualized,
 /// the parent layer is responsible to slice them and provide them in the order that corresponds with
 /// the provided channel_settings c_index values.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 pub enum DimensionOrder {
     CXY,
     CYX,
@@ -84,8 +85,9 @@ impl DimensionOrder {
 }
 
 /// Layer params struct for [`BitmapLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct BitmapLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

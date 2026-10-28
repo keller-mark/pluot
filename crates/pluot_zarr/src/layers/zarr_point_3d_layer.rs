@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 use pluot_core::viewport::{DataCoord, ScreenCoord};
@@ -21,8 +22,9 @@ use pluot_core::LayerPickingResult;
 
 
 /// Layer params struct for [`ZarrPoint3dLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrPoint3dLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

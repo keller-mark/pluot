@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::numeric_data::NumericData;
 use crate::shader_modules::{matrix_value, ShaderBuilder, TextureDtype};
@@ -22,7 +23,8 @@ pub enum CompressedAxis {
 /// the entries of major index `m` (a row of a CSR matrix, a column of a CSC
 /// matrix) are `indices[indptr[m]..indptr[m + 1]]` and `data[indptr[m]..indptr[m + 1]]`.
 /// Minor indices with no entry are implicit zeros.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+#[ts(optional_fields = nullable)]
 pub struct CompressedMatrix {
     /// One offset per major index, plus a final offset equal to the number of entries.
     pub indptr: NumericData,

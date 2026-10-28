@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
@@ -27,8 +28,9 @@ use pluot_core::viewport::ScreenCoord;
 use crate::dotplot_data::{bucket_rows_by_category, load_gene_summaries_for_gene, load_obs_categorical, load_var_names, resolve_gene_columns, GeneSummary};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct AdataZarrDotPlotLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

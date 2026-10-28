@@ -23,6 +23,8 @@ jobs:
     - name: Run Rust unit tests
       # Rendering tests do not work on non-macos runners since they lack GPUs.
       run: cargo test --verbose --features lacks_gpu
+    - name: Check that the committed TypeScript types are up to date
+      run: scripts/check_generated_ts_types.sh
 
   plain_rust_check_examples:
     runs-on: ubuntu-latest
@@ -191,3 +193,16 @@ jobs:
           exit 1
         fi
         echo "File size check passed ($WASM_SIZE bytes)."
+    # End WASM-specific stuff
+    # Start JS-specific stuff
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24.x'
+    - uses: pnpm/action-setup@v6
+      name: Install pnpm
+      with:
+        run_install: true
+    - name: Type-check the JS packages
+      run: pnpm exec tsc --build bindings-js/core bindings-js/react
+    - name: Run JS unit tests
+      run: pnpm --filter @pluot/core --filter @pluot/react test

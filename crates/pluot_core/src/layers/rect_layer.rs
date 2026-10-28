@@ -4,6 +4,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::collections::HashMap;
 use std::sync::{Arc};
 
@@ -33,8 +34,9 @@ use crate::wgpu;
 
 
 /// Layer params struct for [`RectLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct RectLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.

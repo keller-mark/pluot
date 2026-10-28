@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult, LayerExtentResult};
 
 use pluot_core::wgpu;
@@ -25,8 +26,9 @@ use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasis
 
 
 /// Layer params struct for [`ZarrHistogramLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrHistogramLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use crate::render_traits::{
     BrushableLayer, ExtentableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams
 };
@@ -21,7 +22,8 @@ use super::precomputed_histogram_layer::{PrecomputedHistogramLayer, PrecomputedH
 
 
 /// Layer params struct for [`HistogramLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+#[ts(optional_fields = nullable)]
 pub struct HistogramLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

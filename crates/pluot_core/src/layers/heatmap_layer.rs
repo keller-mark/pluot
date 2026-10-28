@@ -28,6 +28,7 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{DMat4, DVec4, Mat4, Vec2};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -64,22 +65,26 @@ const IDENTITY_MATRIX: [f32; 16] = [
 ];
 
 /// Parameters for [`HeatmapColormap::Quantitative`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+#[ts(optional_fields = nullable)]
 pub struct HeatmapQuantitativeColormapParams {
     pub colormap: QuantitativeColormap,
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub reverse: bool,
     /// (min, max) normalization domain, defaulting to (0.0, 1.0). Never derived
     /// from the matrix values, since that would cost a CPU pass over them.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub domain: Option<(f32, f32)>,
     /// One (min, max) domain per row or per column, taking precedence over `domain`.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub axis_domains: Option<HeatmapAxisDomains>,
 }
 
 /// One (min, max) normalization domain per row or per column of the matrix.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct HeatmapAxisDomains {
     pub axis: MatrixAxis,
     /// One lower bound per entry along `axis`.
@@ -92,7 +97,7 @@ pub struct HeatmapAxisDomains {
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"colormap_mode": "Categorical", "colormap_params": "Tableau10"}`.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(tag = "colormap_mode", content = "colormap_params")]
 pub enum HeatmapColormap {
     /// Values are scalars, normalized against a domain.
@@ -165,8 +170,9 @@ impl HeatmapColormap {
 }
 
 /// Layer params struct for [`HeatmapLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct HeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,

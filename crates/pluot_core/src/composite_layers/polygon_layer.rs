@@ -2,6 +2,7 @@
 // interiors, or both, by delegating to StrokedPolygonLayer and FilledPolygonLayer.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -21,8 +22,9 @@ use crate::layers::filled_polygon_layer::{FilledPolygonLayer, FilledPolygonLayer
 
 
 /// Layer params struct for [`PolygonLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct PolygonLayerParams {
     pub layer_id: String,
     /// If `None`, the view-level margins are used.
