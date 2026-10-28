@@ -1,4 +1,7 @@
 // The brushing analog of picking.rs
+// TODO: remove this brushing callback entirely and its associated bindings,
+// since it is no longer used/needed for brushing.
+// Also remove other associated brushing types like Brushable.
 use std::any::Any;
 use serde::{Serialize, Deserialize};
 
