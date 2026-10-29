@@ -9,14 +9,14 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use kurbo::{CubicBez, ParamCurve};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
@@ -721,9 +721,14 @@ impl DrawToSvg for StrokedCurveLayer {
     }
 }
 
-impl BrushableLayer for StrokedCurveLayer {}
 
 impl ExtentableLayer for StrokedCurveLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct StrokedCurvePickingInfo {
+    pub subpath_index: usize,
+    pub segment_index: usize,
+}
 
 impl PickableLayer for StrokedCurveLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -768,13 +773,9 @@ impl PickableLayer for StrokedCurveLayer {
         }
 
         let (subpath_idx, segment_idx) = closest?;
-        let mut info = HashMap::new();
-        info.insert("subpath_index".to_string(), subpath_idx.to_string());
-        info.insert("segment_index".to_string(), segment_idx.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, StrokedCurvePickingInfo {
+            subpath_index: subpath_idx,
+            segment_index: segment_idx,
+        }))
     }
 }

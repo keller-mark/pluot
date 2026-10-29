@@ -27,8 +27,6 @@ The non-Rust language *calls* these.
 
 - `pick`: Perform "picking" to look-up the value at a specific plot coordinate. Used during hover and click event handling (e.g., to show tooltips).
 
-- `brush`: Perform "brushing" to select or annotate a specific plot region. Used during rectangular and polygonal (i.e., lasso) event handling.
-
 
 ### Bindings _from_ (the non-Rust program)
 
@@ -151,11 +149,7 @@ For example, the parent could update the plotting parameters passed into `<Pluot
 
 [Brushing](https://d3js.org/d3-brush) refers to drawing a shape on a plot, typically used to make selections or to author annotations of plotted regions.
 Pluot supports drawing rectangular and polygonal brushes, with the latter being used to support lasso-like interactions.
-Upon brushing interactions, the interactive adapter calls the top-level bound `brush` function, which internally calls the `brush` function of each plotted layer (similar to picking).
-The layer can return a dictionary of any values it deems relevant.
-Upon a brush interaction, the layer can also optionally return a new rectangle or polygon, which the interactive adapter can "snap to" when rendering a brush overlay.
-This type of snapping, or quantization, can be useful when brushing along a categorical/ordinal axis, in which selection of a partial rendered element is not meaningful (e.g., brushing horizontally along the x-axis of a vertical bar chart).
-
+Brushing is handled entirely by the interactive adapter, which draws the brush overlay and reports the brushed vertices (in pixel, normalized, and data units); no Rust-side function is called.
 
 How to respond to brush events is left to the parent of the interactive adapter.
 For example, the parent could listen for `onBrush`/`onBrushEnd`/`onBrushClear` events, and respond by modifying the plotting parameters in order to select or filter to the elements within the brushed region upon the subsequent render.

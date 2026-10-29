@@ -12,7 +12,7 @@ use std::sync::Arc;
 use crate::positioning::get_point_position;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -594,7 +594,6 @@ impl DrawToSvg for TriangulatedLayer {
     }
 }
 
-impl BrushableLayer for TriangulatedLayer {}
 
 impl ExtentableLayer for TriangulatedLayer {}
 

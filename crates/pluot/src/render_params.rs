@@ -1,22 +1,25 @@
-use pluot_zarr::layers::adata_zarr_dotplot_layer::AdataZarrDotPlotLayerParams;
-use pluot_zarr::layers::adata_zarr_heatmap_layer::AdataZarrHeatmapLayerParams;
+use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
+use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
-use pluot_core::layers::line_layer::{LineLayerParams};
+use pluot_core::layers::point_layer::{PointLayerParams, PointPickingInfo, PointShapeMode};
+use pluot_core::layers::line_layer::{LineLayerParams, LinePickingInfo};
 use pluot_core::composite_layers::curve_layer::{CurveLayerParams};
 use pluot_core::composite_layers::polygon_layer::PolygonLayerParams;
-use pluot_core::layers::rect_layer::{RectLayerParams};
-use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
-use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
-use pluot_core::layers::bitmask_layer::BitmaskLayerParams;
-use pluot_core::layers::heatmap_layer::HeatmapLayerParams;
+use pluot_core::layers::rect_layer::{RectLayerParams, RectPickingInfo};
+use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode, TextPickingInfo};
+use pluot_core::layers::bitmap_layer::{BitmapLayerParams, BitmapPickingInfo, ChannelSettings};
+use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskPickingInfo};
+use pluot_core::layers::heatmap_layer::{HeatmapLayerParams, HeatmapPickingInfo};
 use pluot_core::layers::heatmap_compressed_layer::{HeatmapCscLayerParams, HeatmapCsrLayerParams};
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
-use pluot_core::layers::point_3d_layer::Point3dLayerParams;
-use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
+use pluot_core::layers::point_3d_layer::{Point3dLayerParams, Point3dPickingInfo};
+use pluot_core::layers::filled_polygon_layer::PolygonPickingInfo;
+use pluot_core::layers::filled_curve_layer::FilledCurvePickingInfo;
+use pluot_core::layers::stroked_curve_layer::StrokedCurvePickingInfo;
+use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarPlotPickingInfo};
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 use pluot_core::composite_layers::precomputed_histogram_layer::PrecomputedHistogramLayerParams;
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
@@ -24,9 +27,9 @@ use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPo
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
-use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayerParams, OmeZarrBitmapPickingInfo};
 use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams;
-use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayerParams, OmeZarrBitmaskPickingInfo};
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
@@ -153,9 +156,34 @@ impl Default for RenderParams {
     }
 }
 
+/// The `info` of a `LayerPickingResult`, which depends on the picked layer.
+// Only used to generate TypeScript types.
+#[cfg(test)]
+#[derive(TS)]
+#[ts(untagged)]
+#[allow(dead_code)]
+enum PickingInfo {
+    Point(PointPickingInfo),
+    Point3d(Point3dPickingInfo),
+    Line(LinePickingInfo),
+    Rect(RectPickingInfo),
+    Text(TextPickingInfo),
+    Polygon(PolygonPickingInfo),
+    FilledCurve(FilledCurvePickingInfo),
+    StrokedCurve(StrokedCurvePickingInfo),
+    Bitmap(BitmapPickingInfo),
+    Bitmask(BitmaskPickingInfo),
+    Heatmap(HeatmapPickingInfo),
+    BarPlot(BarPlotPickingInfo),
+    OmeZarrBitmap(OmeZarrBitmapPickingInfo),
+    OmeZarrBitmask(OmeZarrBitmaskPickingInfo),
+    AdataZarrDotPlot(AdataZarrDotPlotPickingInfo),
+    AdataZarrHeatmap(AdataZarrHeatmapPickingInfo),
+}
+
 #[cfg(test)]
 mod tests {
-    use super::LayerParams;
+    use super::{LayerParams, PickingInfo};
     use pluot_core::registry::LayerRegistration;
     use std::collections::BTreeSet;
     use strum::VariantNames;
@@ -172,6 +200,7 @@ mod tests {
             .with_large_int("number");
         let _ = std::fs::remove_dir_all(out_dir);
         LayerParams::export_all(&cfg).unwrap();
+        PickingInfo::export_all(&cfg).unwrap();
 
         // LayerParams is excluded since @pluot/core wraps it to make layer_params partial.
         let mut type_names: Vec<String> = std::fs::read_dir(out_dir)

@@ -3,7 +3,7 @@
 // This layer is intended to be used as a sub-layer of PolygonLayer.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -15,7 +15,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -279,9 +279,14 @@ impl DrawToSvg for FilledPolygonLayer {
     }
 }
 
-impl BrushableLayer for FilledPolygonLayer {}
 
 impl ExtentableLayer for FilledPolygonLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+/// Shared by the fill and stroke sublayers of a polygon layer.
+pub struct PolygonPickingInfo {
+    pub index: usize,
+}
 
 impl PickableLayer for FilledPolygonLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -319,12 +324,6 @@ impl PickableLayer for FilledPolygonLayer {
         }
 
         let idx = hit_idx?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), idx.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, PolygonPickingInfo { index: idx }))
     }
 }

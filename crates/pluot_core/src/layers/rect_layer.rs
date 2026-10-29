@@ -5,15 +5,14 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use std::collections::HashMap;
 use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
+    AspectRatioAlignmentMode, AspectRatioMode, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
 use crate::positioning::{get_point_position, get_point_size};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::picking_geometry::unapply_model_matrix;
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, prepare_stroke_color, quantitative_domain};
@@ -1018,9 +1017,17 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for RectLayer {}
 
 impl ExtentableLayer for RectLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct RectPickingInfo {
+    pub index: usize,
+    pub x0: NumericValue,
+    pub y0: NumericValue,
+    pub x1: NumericValue,
+    pub y1: NumericValue,
+}
 
 impl PickableLayer for RectLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -1067,16 +1074,12 @@ impl PickableLayer for RectLayer {
         }
 
         let idx = hit_idx?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), idx.to_string());
-        info.insert("x0".to_string(), self.layer_params.position_x0.format_element(idx));
-        info.insert("y0".to_string(), self.layer_params.position_y0.format_element(idx));
-        info.insert("x1".to_string(), self.layer_params.position_x1.format_element(idx));
-        info.insert("y1".to_string(), self.layer_params.position_y1.format_element(idx));
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, RectPickingInfo {
+            index: idx,
+            x0: self.layer_params.position_x0.value(idx),
+            y0: self.layer_params.position_y0.value(idx),
+            x1: self.layer_params.position_x1.value(idx),
+            y1: self.layer_params.position_y1.value(idx),
+        }))
     }
 }

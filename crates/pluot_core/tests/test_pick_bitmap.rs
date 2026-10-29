@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use pluot_core::layers::bitmap_layer::{
-    BitmapLayer, BitmapLayerParams, ChannelSettings, DimensionOrder,
+    BitmapLayer, BitmapLayerParams, BitmapPickingInfo, ChannelSettings, DimensionOrder,
 };
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
-use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData};
+use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData, NumericValue};
 
 /// A 2x2 single-channel image with values:
 ///   array row 0 (top):    [10, 20]
@@ -48,15 +48,15 @@ fn test_pick_identity_matrix() {
     // Bottom-left quadrant --> array row 1, col 0 --> 30.
     let r = pick_at(&layer, 0.5, 0.5).unwrap();
     assert_eq!(r.layer_id, "test_bitmap");
-    assert_eq!(r.info.get("x").unwrap(), "0");
-    assert_eq!(r.info.get("y").unwrap(), "1");
-    assert_eq!(r.info.get("channel_0").unwrap(), "30");
+    assert_eq!(info(&r).x, 0);
+    assert_eq!(info(&r).y, 1);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(30));
 
     // Top-right quadrant --> array row 0, col 1 --> 20.
     let r = pick_at(&layer, 1.5, 1.5).unwrap();
-    assert_eq!(r.info.get("x").unwrap(), "1");
-    assert_eq!(r.info.get("y").unwrap(), "0");
-    assert_eq!(r.info.get("channel_0").unwrap(), "20");
+    assert_eq!(info(&r).x, 1);
+    assert_eq!(info(&r).y, 0);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(20));
 }
 
 #[test]
@@ -81,9 +81,9 @@ fn test_pick_with_scale_matrix() {
 
     // world (3, 1) --> pixel (1.5, 0.5) --> array row 1, col 1 --> 40.
     let r = pick_at(&layer, 3.0, 1.0).unwrap();
-    assert_eq!(r.info.get("x").unwrap(), "1");
-    assert_eq!(r.info.get("y").unwrap(), "1");
-    assert_eq!(r.info.get("channel_0").unwrap(), "40");
+    assert_eq!(info(&r).x, 1);
+    assert_eq!(info(&r).y, 1);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(40));
 
     // Inside [0,2]^2 pixel bounds but checked in world space, so still valid;
     // outside the scaled extent is not.
@@ -99,9 +99,9 @@ fn test_pick_with_pixel_offset() {
 
     // world (2.5, 2.5) --> local pixel (0.5, 0.5) --> array row 1, col 0 --> 30.
     let r = pick_at(&layer, 2.5, 2.5).unwrap();
-    assert_eq!(r.info.get("x").unwrap(), "0");
-    assert_eq!(r.info.get("y").unwrap(), "1");
-    assert_eq!(r.info.get("channel_0").unwrap(), "30");
+    assert_eq!(info(&r).x, 0);
+    assert_eq!(info(&r).y, 1);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(30));
 }
 
 #[test]
@@ -122,4 +122,8 @@ fn test_pick_pixels_units_mode_returns_none() {
         },
     );
     assert!(pick_at(&layer, 0.5, 0.5).is_none());
+}
+
+fn info(r: &LayerPickingResult) -> &BitmapPickingInfo {
+    r.info_as().unwrap()
 }

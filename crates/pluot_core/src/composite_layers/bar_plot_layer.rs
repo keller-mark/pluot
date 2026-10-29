@@ -4,15 +4,14 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use crate::render_traits::{
-    BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
-use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
 use crate::viewport::{get_bounds, DataCoord, ScreenCoord};
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
 use crate::two::svg::SvgContext;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParams};
 use crate::composite_layers::axis_linear_layer::{AxisLinearLayer, AxisLinearLayerParams, AxisPosition};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -295,9 +294,15 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for BarPlotLayer {}
 
 impl ExtentableLayer for BarPlotLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct BarPlotPickingInfo {
+    pub index: usize,
+    pub identifier: String,
+    pub quantity: NumericValue,
+}
 
 impl PickableLayer for BarPlotLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -372,14 +377,10 @@ impl PickableLayer for BarPlotLayer {
 
         log(&format!("bar_idx is {}.", bar_idx));
 
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), bar_idx.to_string());
-        info.insert("identifier".to_string(), self.layer_params.identifier[bar_idx].to_string());
-        info.insert("quantity".to_string(), self.layer_params.quantity[bar_idx].to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, BarPlotPickingInfo {
+            index: bar_idx,
+            identifier: self.layer_params.identifier[bar_idx].clone(),
+            quantity: NumericValue::Float32(self.layer_params.quantity[bar_idx]),
+        }))
     }
 }

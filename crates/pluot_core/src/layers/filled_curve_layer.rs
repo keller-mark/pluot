@@ -4,7 +4,7 @@
 
 use kurbo::{CubicBez, ParamCurve};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -12,7 +12,7 @@ use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -276,9 +276,13 @@ impl DrawToSvg for FilledCurveLayer {
     }
 }
 
-impl BrushableLayer for FilledCurveLayer {}
 
 impl ExtentableLayer for FilledCurveLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct FilledCurvePickingInfo {
+    pub subpath_index: usize,
+}
 
 impl PickableLayer for FilledCurveLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -317,12 +321,6 @@ impl PickableLayer for FilledCurveLayer {
         }
 
         let idx = hit_idx?;
-        let mut info = HashMap::new();
-        info.insert("subpath_index".to_string(), idx.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, FilledCurvePickingInfo { subpath_index: idx }))
     }
 }

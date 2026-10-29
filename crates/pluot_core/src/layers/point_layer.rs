@@ -7,13 +7,12 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use std::sync::{Arc};
 
-use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
 use crate::picking_geometry::unapply_model_matrix;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::color_mode::{cpu_fill_color, prepare_color_mode, prepare_stroke_color, quantitative_domain};
 use crate::scalar_mode::{
     cpu_fill_opacity, cpu_point_radius, cpu_stroke_opacity, cpu_stroke_width,
@@ -1084,9 +1083,15 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for PointLayer {}
 
 impl ExtentableLayer for PointLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct PointPickingInfo {
+    pub index: usize,
+    pub x: NumericValue,
+    pub y: NumericValue,
+}
 
 impl PickableLayer for PointLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -1201,15 +1206,10 @@ impl PickableLayer for PointLayer {
             closest_idx?
         };
 
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), closest_idx.to_string());
-        // Format in the coordinate's native dtype (integers without a decimal point).
-        info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
-        info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, PointPickingInfo {
+            index: closest_idx,
+            x: self.layer_params.position_x.value(closest_idx),
+            y: self.layer_params.position_y.value(closest_idx),
+        }))
     }
 }

@@ -12,7 +12,7 @@ use ts_rs::TS;
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -1358,9 +1358,14 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for TextLayer {}
 
 impl ExtentableLayer for TextLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct TextPickingInfo {
+    pub index: usize,
+    pub text: String,
+}
 
 impl PickableLayer for TextLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -1408,13 +1413,9 @@ impl PickableLayer for TextLayer {
         }
 
         let closest_idx = closest_idx?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("text".to_string(), self.layer_params.text_vec[closest_idx].clone());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, TextPickingInfo {
+            index: closest_idx,
+            text: self.layer_params.text_vec[closest_idx].clone(),
+        }))
     }
 }

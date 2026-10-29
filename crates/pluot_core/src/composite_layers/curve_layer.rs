@@ -6,7 +6,7 @@ use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
+use crate::render_traits::{ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
 use crate::render_types::GpuContext;
@@ -247,7 +247,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for CurveLayer {}
 
 impl ExtentableLayer for CurveLayer {}
 
