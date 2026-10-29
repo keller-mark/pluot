@@ -17,7 +17,7 @@ use pluot_core::layers::heatmap_compressed_layer::{CompressedHeatmapLayerParams,
 use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams, HeatmapPickingInfo};
 use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::render_traits::{
-    resolve_store_name, BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams,
+    resolve_store_name, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams,
     PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
@@ -515,7 +515,6 @@ impl DrawToSvg for AdataZarrHeatmapLayer {
     }
 }
 
-impl BrushableLayer for AdataZarrHeatmapLayer {}
 
 impl ExtentableLayer for AdataZarrHeatmapLayer {
     /// The number of filtered cells along x and y, i.e. var and obs counts

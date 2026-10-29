@@ -122,7 +122,7 @@ export function TaxiExample(props) {
     ];
   }, [xMinDropoff, xMaxDropoff, yMinDropoff, yMaxDropoff]);
 
-  const onBrushHour = useCallback((brush, brushResult) => {
+  const onBrushHour = useCallback((brush) => {
     if (brush && brush.vertices.length > 2) {
       const xVals = brush.vertices.map(obj => obj.x_data);
       const xMin = Math.min(...xVals);
@@ -132,7 +132,7 @@ export function TaxiExample(props) {
     }
   });
 
-  const onBrushPickup = useCallback((brush, brushResult) => {
+  const onBrushPickup = useCallback((brush) => {
     if (brush && brush.vertices.length > 2) {
       const lonLatVertices = brush.vertices.map(obj => worldToLonLat(obj.x_data, obj.y_data));
       const xVals = lonLatVertices.map(([lon, _lat]) => lon);
@@ -148,7 +148,7 @@ export function TaxiExample(props) {
     }
   });
 
-  const onBrushDropoff = useCallback((brush, brushResult) => {
+  const onBrushDropoff = useCallback((brush) => {
     if (brush && brush.vertices.length > 2) {
       const lonLatVertices = brush.vertices.map(obj => worldToLonLat(obj.x_data, obj.y_data));
       const xVals = lonLatVertices.map(([lon, _lat]) => lon);

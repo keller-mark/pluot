@@ -8,7 +8,7 @@ use ts_rs::TS;
 use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
+use crate::render_traits::{ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -888,7 +888,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for LineLayer {}
 
 impl ExtentableLayer for LineLayer {}
 

@@ -49,7 +49,7 @@ export function FlightsExample(props) {
   }, [distMin, distMax, delayMin, delayMax, timeMin, timeMax]);
 
 
-  const onBrushDelay = useCallback((brush, brushResult) => {
+  const onBrushDelay = useCallback((brush) => {
     if (brush && brush.vertices.length > 2) {
       const xVals = brush.vertices.map(obj => obj.x_data);
       const xMin = Math.min(...xVals);
@@ -59,7 +59,7 @@ export function FlightsExample(props) {
     }
   });
 
-  const onBrushTime = useCallback((brush, brushResult) => {
+  const onBrushTime = useCallback((brush) => {
     if (brush && brush.vertices.length > 2) {
       const xVals = brush.vertices.map(obj => obj.x_data);
       const xMin = Math.min(...xVals);
@@ -69,7 +69,7 @@ export function FlightsExample(props) {
     }
   });
 
-  const onBrushDist = useCallback((brush, brushResult) => {
+  const onBrushDist = useCallback((brush) => {
     if (brush && brush.vertices.length > 2) {
       const xVals = brush.vertices.map(obj => obj.x_data);
       const xMin = Math.min(...xVals);

@@ -12,7 +12,7 @@ use crate::positioning::get_point_position;
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -276,7 +276,6 @@ impl DrawToSvg for FilledCurveLayer {
     }
 }
 
-impl BrushableLayer for FilledCurveLayer {}
 
 impl ExtentableLayer for FilledCurveLayer {}
 

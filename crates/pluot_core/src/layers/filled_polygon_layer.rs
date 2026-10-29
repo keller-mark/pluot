@@ -15,7 +15,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -279,7 +279,6 @@ impl DrawToSvg for FilledPolygonLayer {
     }
 }
 
-impl BrushableLayer for FilledPolygonLayer {}
 
 impl ExtentableLayer for FilledPolygonLayer {}
 

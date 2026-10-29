@@ -40,7 +40,7 @@ use crate::numeric_data::{upload_data_texture, NumericData, NumericValue};
 use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, BooleanCriteriaParams, BrushableLayer, CategoricalColormap,
+    AspectRatioAlignmentMode, AspectRatioMode, BooleanCriteriaParams, CategoricalColormap,
     DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, ExtentableLayer, MarginParams, PickableLayer,
     PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
@@ -813,7 +813,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for HeatmapLayer {}
 
 impl ExtentableLayer for HeatmapLayer {}
 

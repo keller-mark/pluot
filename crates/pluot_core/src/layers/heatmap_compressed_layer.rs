@@ -9,7 +9,7 @@ use crate::layers::heatmap_layer::{HeatmapColormap, HeatmapCommon, HeatmapValueB
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer,
+    DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer,
     PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
@@ -177,7 +177,6 @@ macro_rules! compressed_heatmap_layer {
             }
         }
 
-        impl BrushableLayer for $name {}
 
         impl ExtentableLayer for $name {}
 

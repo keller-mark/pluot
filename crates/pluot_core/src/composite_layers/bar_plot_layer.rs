@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use crate::render_traits::{
-    BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::picking::LayerPickingResult;
 use crate::viewport::{get_bounds, DataCoord, ScreenCoord};
@@ -294,7 +294,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for BarPlotLayer {}
 
 impl ExtentableLayer for BarPlotLayer {}
 

@@ -8,7 +8,7 @@ use pluot_core::wgpu;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
@@ -456,7 +456,6 @@ impl DrawToSvg for AdataZarrDotPlotLayer {
     }
 }
 
-impl BrushableLayer for AdataZarrDotPlotLayer {}
 
 impl ExtentableLayer for AdataZarrDotPlotLayer {}
 

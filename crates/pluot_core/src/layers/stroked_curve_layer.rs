@@ -16,7 +16,7 @@ use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
@@ -721,7 +721,6 @@ impl DrawToSvg for StrokedCurveLayer {
     }
 }
 
-impl BrushableLayer for StrokedCurveLayer {}
 
 impl ExtentableLayer for StrokedCurveLayer {}
 

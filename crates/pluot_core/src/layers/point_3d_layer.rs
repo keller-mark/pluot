@@ -8,7 +8,7 @@ use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
+use crate::render_traits::{ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::{NumericData, NumericValue};
@@ -413,7 +413,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for Point3dLayer {}
 
 impl ExtentableLayer for Point3dLayer {}
 

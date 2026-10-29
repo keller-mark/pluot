@@ -1,15 +1,14 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use pluot_core::{maybe_timeout, FutureExt, Duration, log, BrushParams, LayerBrushingResult, LayerExtentResult};
+use pluot_core::{maybe_timeout, FutureExt, Duration, log, LayerExtentResult};
 
 use pluot_core::wgpu;
 use pluot_core::cache::use_memo_vec_f32;
-use pluot_core::params::BrushMode;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::SvgContext;
-use pluot_core::render_traits::{BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
@@ -17,8 +16,6 @@ use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite
 use pluot_core::compute::reduce::{reduce_extent, reduce_histogram_with_known_extent};
 use pluot_core::composite_layers::bar_plot_layer::BarOrientation;
 use pluot_core::composite_layers::precomputed_histogram_layer::{PrecomputedHistogramLayer, PrecomputedHistogramLayerParams};
-use pluot_core::d3::scale::ScaleLinear;
-use pluot_core::viewport::{get_bounds, DataVertices};
 
 use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
@@ -82,12 +79,6 @@ pub struct ZarrHistogramLayer {
     // TODO: switch to `inner: Option<BarPlotLayer>`?
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
 
-    // The linear scale backing the rendered value axis, mapping the visible
-    // portion of the value domain to the axis's pixel range. Kept around so
-    // that a brush selection along this axis can be resolved back to a data
-    // value range.
-    value_scale: Option<ScaleLinear>,
-
     // The binned value domain (data_min, data_max), which the bars span in
     // data units. Kept around so `extent` can report it.
     value_domain: Option<(f32, f32)>,
@@ -109,39 +100,9 @@ impl ZarrHistogramLayer {
             store,
             store_name,
             sub_layer_instances: Vec::new(),
-            value_scale: None,
             value_domain: None,
             max_count: None,
         }
-    }
-
-    /// Build the linear scale mapping the currently-visible portion of the value
-    /// domain to the pixel range of the value axis, matching the domain and range
-    /// that [`AxisLinearLayer`] itself would compute for this position.
-    fn build_value_scale(view_params: &ViewParams, orientation: &BarOrientation) -> ScaleLinear {
-        let margins = &view_params.margins;
-        let margin_top = margins.as_ref().and_then(|m| m.margin_top).unwrap_or(0.0) as f64;
-        let margin_right = margins.as_ref().and_then(|m| m.margin_right).unwrap_or(0.0) as f64;
-        let margin_bottom = margins.as_ref().and_then(|m| m.margin_bottom).unwrap_or(0.0) as f64;
-        let margin_left = margins.as_ref().and_then(|m| m.margin_left).unwrap_or(0.0) as f64;
-
-        let viewport_w = view_params.width as f64;
-        let viewport_h = view_params.height as f64;
-
-        let bounds = get_bounds(view_params);
-
-        let mut scale = ScaleLinear::new();
-        match orientation {
-            BarOrientation::Vertical => {
-                scale.set_domain((bounds.x_min as f64, bounds.x_max as f64));
-                scale.set_range((margin_left, viewport_w - margin_right));
-            }
-            BarOrientation::Horizontal => {
-                scale.set_domain((bounds.y_min as f64, bounds.y_max as f64));
-                scale.set_range((margin_bottom, viewport_h - margin_top));
-            }
-        }
-        scale
     }
 
     /// Unwraps one `maybe_timeout!`-wrapped memo result from `prepare`, returning
@@ -276,7 +237,6 @@ impl PreparedLayer for ZarrHistogramLayer {
         let data_max = background_data[1];
         let background_arr: Arc<Vec<f32>> = Arc::new(background_data[2..].to_vec());
 
-        self.value_scale = Some(Self::build_value_scale(&self.view_params, &self.layer_params.orientation));
         self.value_domain = Some((data_min, data_max));
         let max_count = background_arr.iter().cloned().fold(0.0f32, f32::max);
         self.max_count = Some(max_count);
@@ -383,51 +343,6 @@ impl DrawToRasterCpu for ZarrHistogramLayer {
 impl DrawToSvg for ZarrHistogramLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
         base_draw_composite_layer_svg(&self.sub_layer_instances, ctx).await
-    }
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq, TS)]
-/// The range of values covered by the brush.
-pub struct ZarrHistogramBrushingInfo {
-    pub min: f64,
-    pub max: f64,
-}
-
-impl BrushableLayer for ZarrHistogramLayer {
-    fn brush(&self, brush_params: BrushParams, _data_vertices: Option<DataVertices>) -> Option<LayerBrushingResult> {
-        // The value axis runs along X for a vertical histogram, and along Y
-        // for a horizontal one, so only a brush of the matching mode applies.
-        let expected_brush_mode = match self.layer_params.orientation {
-            BarOrientation::Vertical => BrushMode::RangeX,
-            BarOrientation::Horizontal => BrushMode::RangeY,
-        };
-        if brush_params.brush_mode != expected_brush_mode {
-            return None;
-        }
-
-        let value_scale = self.value_scale.as_ref()?;
-
-        let screen_positions: Vec<f32> = match self.layer_params.orientation {
-            BarOrientation::Vertical => brush_params.screen_vertices.iter().map(|v| v.x).collect(),
-            BarOrientation::Horizontal => brush_params.screen_vertices.iter().map(|v| v.y).collect(),
-        };
-
-        let px_min = screen_positions.iter().cloned().fold(f32::INFINITY, f32::min);
-        let px_max = screen_positions.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        if !px_min.is_finite() || !px_max.is_finite() {
-            return None;
-        }
-
-        // The scale's range may be reversed relative to the raw screen
-        // coordinates, so invert both ends and re-sort rather than assume order.
-        let value_a = value_scale.invert(px_min as f64);
-        let value_b = value_scale.invert(px_max as f64);
-        let (value_min, value_max) = if value_a <= value_b { (value_a, value_b) } else { (value_b, value_a) };
-
-        Some(LayerBrushingResult::new(&self.layer_params.layer_id, ZarrHistogramBrushingInfo {
-            min: value_min,
-            max: value_max,
-        }))
     }
 }
 

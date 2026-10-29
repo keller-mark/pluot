@@ -9,7 +9,7 @@ use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
 use crate::picking_geometry::unapply_model_matrix;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::numeric_data::{NumericData, NumericValue};
@@ -1083,7 +1083,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for PointLayer {}
 
 impl ExtentableLayer for PointLayer {}
 

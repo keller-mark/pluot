@@ -9,7 +9,7 @@ use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
+    AspectRatioAlignmentMode, AspectRatioMode, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams
 };
 use crate::positioning::{get_point_position, get_point_size};
 use crate::numeric_data::{NumericData, NumericValue};
@@ -1017,7 +1017,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for RectLayer {}
 
 impl ExtentableLayer for RectLayer {}
 

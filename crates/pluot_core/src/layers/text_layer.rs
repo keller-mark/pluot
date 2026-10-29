@@ -12,7 +12,7 @@ use ts_rs::TS;
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, FontWeight, FontStyle};
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -1358,7 +1358,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for TextLayer {}
 
 impl ExtentableLayer for TextLayer {}
 

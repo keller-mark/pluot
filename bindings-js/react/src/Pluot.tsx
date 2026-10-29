@@ -4,7 +4,7 @@ import { throttle } from "lodash-es";
 import { useQuery, useQueryClient, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   initialize, getIsWasmReady,
-  render_wasm, pick_wasm, brush_wasm, extent_wasm,
+  render_wasm, pick_wasm, extent_wasm,
   normalizeStores, getStore,
   checkWebGpuFeatureDetection,
   onMouseMove2d, onWheel2d,
@@ -21,7 +21,7 @@ import { BrushOverlay } from "./BrushOverlay.js";
 import { useBrush } from "./use-brush.js";
 import { useMemoCustomComparison } from "./use-memo-custom.js";
 import type {
-  BrushingResult, BrushState, ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
+  ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
   PluotProps, RenderParams, TooltipContent,
 } from "./types.js";
 
@@ -507,13 +507,6 @@ function PluotInner(props: PluotProps) {
 
   const progressBarId = useId();
 
-  // Runs the brush query against the wasm module for a given brush state,
-  // analogous to `pick` below (defined here, ahead of `pick`, since `useBrush`
-  // needs it immediately).
-  const runBrush = useEffectEvent(async (state: BrushState): Promise<undefined> => {
-    // TODO: remove this
-  });
-
   const {
     brushState,
     overlayRef: brushOverlayRef,
@@ -536,7 +529,7 @@ function PluotInner(props: PluotProps) {
     brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
     enableBrushCreate, enableBrushEdit, enableBrushClear,
     brushDelay, maybeBrushDelay, persistBrush, brushMode,
-    brush, onBrush, onBrushEnd, onBrushClear, runBrush,
+    brush, onBrush, onBrushEnd, onBrushClear,
   });
 
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
@@ -915,7 +908,7 @@ function PluotInner(props: PluotProps) {
     // any other thrown error (e.g. a Rust panic) is left alone.
     retry: (failureCount, error) => error instanceof RenderBailedEarlyError && failureCount < maxBailedEarlyRetries,
     // Exponential backoff, doubling on every bailed-early retry: also used as
-    // the `timeout` given to the *next* render_wasm/pick_wasm/brush_wasm call
+    // the `timeout` given to the *next* render_wasm/pick_wasm call
     // (via the shared `currentTimeout` ref), so wasm is given roughly as long
     // to wait for the underlying store fetches as react-query waits to retry.
     retryDelay: (failureCount) => {

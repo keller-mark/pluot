@@ -42,7 +42,7 @@ use crate::numeric_data::{NumericData, NumericValue};
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu,
-    BrushableLayer, ExtentableLayer, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
+    ExtentableLayer, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
     ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -1874,7 +1874,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for BitmaskLayer {}
 
 impl ExtentableLayer for BitmaskLayer {}
 

@@ -2,7 +2,6 @@ import type { ReactElement } from "react";
 import type {
   AspectRatioMode,
   AspectRatioAlignmentMode,
-  BrushingInfo,
   CameraMatrix,
   CameraFilterFunction,
   LayerParams,
@@ -94,20 +93,6 @@ export type PickingResult = {
   data_coord: DataCoord | undefined;
   screen_coord: ScreenCoord;
   layer_results: LayerPickingResult[];
-};
-
-/**
- * Mirrors the Rust `LayerBrushingResult` struct.
- * The shape of `info` depends on the type of the brushed layer.
- */
-export type LayerBrushingResult = {
-  layer_id: string;
-  info: BrushingInfo;
-};
-
-/** Mirrors the Rust `BrushingResult` struct. */
-export type BrushingResult = {
-  layer_results: LayerBrushingResult[];
 };
 
 // === Extent ===
@@ -231,14 +216,6 @@ export type BrushState = {
  */
 export const NO_BRUSH = "NoBrush";
 export type NoBrush = typeof NO_BRUSH;
-
-// TODO: On the rust side, define a Brushable.brush trait, analogous to Pickable.pick.
-export type BrushResult = {
-  // Similar to picking, upon brush, the Rust side can return a per-layer Map with essentially any data
-  // (such as the list of entity IDs within the brushed region).
-  // The rust side can also return a new rect/polygon to "snap"/quantize to.
-  // TODO: fill in the rest of this struct.
-};
 
 export type CameraOrExtent = CameraMatrix | {
   // If xLim or yLim is omitted, then we use extent_wasm to fill it in.
@@ -424,11 +401,9 @@ export type PluotProps = {
 
   // Called on drag interactions, as the user is drawing the brush rect/polygon.
   // Also called if the brushed rect/polygon is edited (e.g., by dragging a vertex of a persisted brush, if enableBrushEdit is true).
-  // `brushingResult` is the result of running the brush query (via `brush_wasm`)
-  // against the current `state`.
-  onBrush?: (state: BrushState, brushingResult: BrushingResult|undefined) => BrushResult,
+  onBrush?: (state: BrushState) => void,
   // Called at the conclusion of the drag interaction, with the final (i.e., complete) brush rect/polygon.
-  onBrushEnd?: (state: BrushState, brushingResult: BrushingResult|undefined) => BrushResult,
+  onBrushEnd?: (state: BrushState) => void,
 
   // Called upon the user cancelling the brush, e.g., by clicking a clear button which appears when hovering the drawn rect/polygon.
   onBrushClear?: (state: BrushState) => void,

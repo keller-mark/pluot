@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -854,7 +854,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for BitmapLayer {}
 
 impl ExtentableLayer for BitmapLayer {}
 

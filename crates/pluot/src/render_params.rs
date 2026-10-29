@@ -32,7 +32,7 @@ use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscal
 use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayerParams, OmeZarrBitmaskPickingInfo};
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
-use pluot_zarr::layers::zarr_histogram_layer::{ZarrHistogramLayerParams, ZarrHistogramBrushingInfo};
+use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 
 use std::collections::HashMap;
 
@@ -181,19 +181,9 @@ enum PickingInfo {
     AdataZarrHeatmap(AdataZarrHeatmapPickingInfo),
 }
 
-/// The `info` of a `LayerBrushingResult`, which depends on the brushed layer.
-// Only used to generate TypeScript types.
-#[cfg(test)]
-#[derive(TS)]
-#[ts(untagged)]
-#[allow(dead_code)]
-enum BrushingInfo {
-    ZarrHistogram(ZarrHistogramBrushingInfo),
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BrushingInfo, LayerParams, PickingInfo};
+    use super::{LayerParams, PickingInfo};
     use pluot_core::registry::LayerRegistration;
     use std::collections::BTreeSet;
     use strum::VariantNames;
@@ -211,7 +201,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(out_dir);
         LayerParams::export_all(&cfg).unwrap();
         PickingInfo::export_all(&cfg).unwrap();
-        BrushingInfo::export_all(&cfg).unwrap();
 
         // LayerParams is excluded since @pluot/core wraps it to make layer_params partial.
         let mut type_names: Vec<String> = std::fs::read_dir(out_dir)

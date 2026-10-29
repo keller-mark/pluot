@@ -21,7 +21,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -706,7 +706,6 @@ impl DrawToSvg for StrokedPolygonLayer {
     }
 }
 
-impl BrushableLayer for StrokedPolygonLayer {}
 
 impl ExtentableLayer for StrokedPolygonLayer {}
 

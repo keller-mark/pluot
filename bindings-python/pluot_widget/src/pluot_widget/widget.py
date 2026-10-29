@@ -50,8 +50,8 @@ class PluotWasmWidget(anywidget.AnyWidget):
     Every traitlet below is synced and described by its ``help``, so it can be
     passed to the constructor as a keyword argument, and changing it from Python
     updates the plot. Traitlets that the plot updates in response to user
-    interactions (``camera_view``, ``extent``, ``click_result``, ``brush``, and
-    ``brushing_result``) can be observed via ``widget.observe``.
+    interactions (``camera_view``, ``extent``, ``click_result``, and ``brush``)
+    can be observed via ``widget.observe``.
 
     Examples
     --------
@@ -228,10 +228,6 @@ class PluotWasmWidget(anywidget.AnyWidget):
             "The BrushState, updated when the user finishes drawing or editing the brush, or clears it. "
             "Can also be set from Python to draw a brush. None means nothing is brushed."
         ),
-    ).tag(sync=True)
-    brushing_result = traitlets.Dict(
-        default_value=None, allow_none=True,
-        help="The BrushingResult for brush. Only recomputed for user interactions, not when brush is set from Python.",
     ).tag(sync=True)
 
     # Plot config forwarded to render_wasm.

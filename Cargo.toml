@@ -82,7 +82,7 @@ futures-time = { version = "3.1.0", default-features = false }
 # We use this fork which relaxes things by not using serde(deny_unknown_fields).
 ome_zarr_metadata = "0.3.0"
 serde_json = "1.0.143"
-# Serializes the type-erased, per-layer picking and brushing result info.
+# Serializes the type-erased, per-layer picking result info.
 erased-serde = "0.4"
 # Generates TypeScript types for the JS bindings.
 ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
