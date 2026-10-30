@@ -10,6 +10,8 @@
 // JavaScript features that we take for granted (classes, for example),
 // it can be unclear what form the ported implementation should take.
 
+pub mod array;
 pub mod axis;
 pub mod hierarchy;
 pub mod scale;
+pub mod shape;

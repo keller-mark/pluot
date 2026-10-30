@@ -1,0 +1,47 @@
+---
+title: Violin Plot (AnnData)
+description: Violin plot example.
+sidebar:
+    order: 33
+---
+import { ViolinWrapper } from '../../../components/ViolinWrapper.jsx';
+
+This [violin plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.violin.html) displays the expression of one gene per cell type (`bulk_labels`) in single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+Each violin's width shows how many of its cells have a given expression value, after excluding outliers beyond three standard deviations from the mean.
+The line within each violin spans the interquartile range, and is crossed at the median.
+Scroll or drag to zoom and pan along the expression axis.
+Use the controls to choose another gene, or to exclude cells with zero expression.
+
+<ViolinWrapper
+    client:load
+    client:only="react"
+
+    plotId={"violin-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    varNameOptions={['CST3', 'LYZ', 'C1QA', 'PSAP', 'CD79A', 'CD79B']}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrViolinLayer",
+          layer_params: {
+            layer_id: "violin",
+            var_name: "CST3",
+            groupby: "bulk_labels",
+            orientation: "Vertical",
+            cmap: "Tableau10",
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={60}
+    marginBottom={200}
+    marginTop={10}
+    marginRight={10}
+    width={700}
+    height={600}
+    aspectRatioMode="Ignore"
+    cameraFilter="fixX"
+    limitExtent
+/>

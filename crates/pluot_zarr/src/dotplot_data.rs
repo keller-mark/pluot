@@ -122,6 +122,28 @@ fn expr_array_path(layer: Option<&str>) -> String {
     }
 }
 
+/// Loads (and caches) one gene's whole column of the expression matrix for `layer`.
+pub async fn load_gene_expression(
+    store: AdataStore,
+    store_name: &str,
+    var_colname: &str,
+    gene_name: &str,
+    col_index: u64,
+    layer: Option<&str>,
+    cache_enabled: bool,
+) -> Result<Arc<Vec<f32>>, ArrayError> {
+    let array_path = expr_array_path(layer);
+    let expr_keys = vec![
+        "dotplot_expr".to_string(),
+        store_name.to_string(),
+        array_path.clone(),
+        var_colname.to_string(),
+        gene_name.to_string(),
+    ];
+    // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
+    use_memo_vec_f32(async || read_matrix_column_f32(store, &array_path, col_index).await, &expr_keys, cache_enabled).await
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers (no I/O), factored out for direct unit testing
 // ---------------------------------------------------------------------------
@@ -231,22 +253,13 @@ pub async fn load_gene_summaries_for_gene(
     expression_cutoff: f32,
     cache_enabled: bool,
 ) -> Option<Vec<GeneSummary>> {
-    let array_path = expr_array_path(layer);
-    let expr_keys = vec![
-        "dotplot_expr".to_string(),
-        store_name.to_string(),
-        array_path.clone(),
-        var_colname.to_string(),
-        gene_name.to_string(),
-    ];
-    // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
-    let expr_values = match use_memo_vec_f32(async || read_matrix_column_f32(store.clone(), &array_path, col_index).await, &expr_keys, cache_enabled).await {
+    let expr_values = match load_gene_expression(store, store_name, var_colname, gene_name, col_index, layer, cache_enabled).await {
         Ok(expr) => expr,
         Err(error) => {
             if is_timed_out_zarrs_error(&error) {
                 return None;
             }
-            panic!("Zarrs error loading AnnData expression column for gene \"{gene_name}\" at \"{array_path}\": {error:?}");
+            panic!("Zarrs error loading AnnData expression column for gene \"{gene_name}\" at \"{}\": {error:?}", expr_array_path(layer));
         }
     };
 

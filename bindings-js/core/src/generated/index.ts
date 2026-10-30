@@ -5,6 +5,8 @@ export type { AdataZarrHeatmapLayerParams } from "./AdataZarrHeatmapLayerParams.
 export type { AdataZarrHeatmapPickingInfo } from "./AdataZarrHeatmapPickingInfo.js";
 export type { AdataZarrTreemapLayerParams } from "./AdataZarrTreemapLayerParams.js";
 export type { AdataZarrTreemapPickingInfo } from "./AdataZarrTreemapPickingInfo.js";
+export type { AdataZarrViolinLayerParams } from "./AdataZarrViolinLayerParams.js";
+export type { AdataZarrViolinPickingInfo } from "./AdataZarrViolinPickingInfo.js";
 export type { AxisBandLayerParams } from "./AxisBandLayerParams.js";
 export type { AxisCriteria } from "./AxisCriteria.js";
 export type { AxisLinearLayerParams } from "./AxisLinearLayerParams.js";
@@ -76,6 +78,8 @@ export type { PolygonPickingInfo } from "./PolygonPickingInfo.js";
 export type { PrecomputedHistogramLayerParams } from "./PrecomputedHistogramLayerParams.js";
 export type { PrecomputedTreemapLayerParams } from "./PrecomputedTreemapLayerParams.js";
 export type { PrecomputedTreemapPickingInfo } from "./PrecomputedTreemapPickingInfo.js";
+export type { PrecomputedViolinLayerParams } from "./PrecomputedViolinLayerParams.js";
+export type { PrecomputedViolinPickingInfo } from "./PrecomputedViolinPickingInfo.js";
 export type { QuantitativeColormap } from "./QuantitativeColormap.js";
 export type { QuantitativeCriteriaParams } from "./QuantitativeCriteriaParams.js";
 export type { QuantitativeParams } from "./QuantitativeParams.js";

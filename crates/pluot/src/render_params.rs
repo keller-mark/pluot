@@ -1,6 +1,7 @@
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
+use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayerParams, AdataZarrViolinPickingInfo};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -24,6 +25,7 @@ use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarPlotPi
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 use pluot_core::composite_layers::precomputed_histogram_layer::PrecomputedHistogramLayerParams;
 use pluot_core::composite_layers::precomputed_treemap_layer::{PrecomputedTreemapLayerParams, PrecomputedTreemapPickingInfo};
+use pluot_core::composite_layers::precomputed_violin_layer::{PrecomputedViolinLayerParams, PrecomputedViolinPickingInfo};
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 
@@ -75,6 +77,7 @@ pub enum LayerParams {
     HistogramLayer(HistogramLayerParams),
     PrecomputedHistogramLayer(PrecomputedHistogramLayerParams),
     PrecomputedTreemapLayer(PrecomputedTreemapLayerParams),
+    PrecomputedViolinLayer(PrecomputedViolinLayerParams),
     LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
     LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
@@ -89,6 +92,7 @@ pub enum LayerParams {
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
     AdataZarrHeatmapLayer(AdataZarrHeatmapLayerParams),
     AdataZarrTreemapLayer(AdataZarrTreemapLayerParams),
+    AdataZarrViolinLayer(AdataZarrViolinLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),
@@ -180,11 +184,13 @@ enum PickingInfo {
     Heatmap(HeatmapPickingInfo),
     BarPlot(BarPlotPickingInfo),
     PrecomputedTreemap(PrecomputedTreemapPickingInfo),
+    PrecomputedViolin(PrecomputedViolinPickingInfo),
     OmeZarrBitmap(OmeZarrBitmapPickingInfo),
     OmeZarrBitmask(OmeZarrBitmaskPickingInfo),
     AdataZarrDotPlot(AdataZarrDotPlotPickingInfo),
     AdataZarrHeatmap(AdataZarrHeatmapPickingInfo),
     AdataZarrTreemap(AdataZarrTreemapPickingInfo),
+    AdataZarrViolin(AdataZarrViolinPickingInfo),
 }
 
 #[cfg(test)]

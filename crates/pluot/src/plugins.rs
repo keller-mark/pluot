@@ -11,6 +11,7 @@ use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::{OmeZarrBitmaskMultis
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams};
+use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams};
 
 
 // Ideally we could just run inventory::submit! in the pluot_zarr crate,
@@ -121,6 +122,16 @@ inventory::submit! {
         create_layer: |value, view_params| {
             let params: AdataZarrTreemapLayerParams = serde_json::from_value(value).unwrap();
             Box::new(AdataZarrTreemapLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrViolinLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrViolinLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrViolinLayer::new(view_params.clone(), params))
         },
     }
 }
