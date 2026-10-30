@@ -19,6 +19,7 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
+use crate::heatmap_data::AxisCriteria;
 use crate::treemap_data::load_obs_group_counts;
 
 const FILL_OPACITY: f32 = 0.8;
@@ -43,6 +44,13 @@ pub struct AdataZarrTreemapLayerParams {
     /// Defaults to Tableau10.
     pub cmap: Option<CategoricalColormap>,
 
+    /// Which obs are counted. `None` includes every obs. Combinations of categories
+    /// without any included obs are omitted.
+    pub obs_filtering: Option<AxisCriteria>,
+    /// Which of the included obs to emphasize: each leaf is then grey, filled in its
+    /// color in proportion to its share of selected obs. `None` emphasizes every obs.
+    pub obs_selection: Option<AxisCriteria>,
+
     /// Defaults to `Binary`.
     pub tile: Option<TreemapTile>,
     /// The gap, in pixels, between siblings and between a parent and its children. Defaults to 1.
@@ -58,6 +66,8 @@ impl Default for AdataZarrTreemapLayerParams {
             groupby: vec![],
             color_by: None,
             cmap: None,
+            obs_filtering: None,
+            obs_selection: None,
             tile: None,
             padding: None,
         }
@@ -107,6 +117,8 @@ impl PreparedLayer for AdataZarrTreemapLayer {
             self.store.clone(),
             &self.store_name,
             &self.layer_params.groupby,
+            self.layer_params.obs_filtering.as_ref(),
+            self.layer_params.obs_selection.as_ref(),
             self.view_params.cache_enabled,
         );
         let (categories_per_column, group_counts) = match maybe_timeout!(counts_future, self.view_params.timeout).await {
@@ -129,6 +141,8 @@ impl PreparedLayer for AdataZarrTreemapLayer {
             })
             .collect();
         let values: Vec<f32> = group_counts.iter().map(|group| group.count as f32).collect();
+        let selected_values = self.layer_params.obs_selection.is_some()
+            .then(|| Arc::new(group_counts.iter().map(|group| group.selected_count as f32).collect()));
         let color_by_level = self.color_by_level();
         let color_codes: Vec<u32> = group_counts.iter().map(|group| group.codes.get(color_by_level).copied().unwrap_or(0)).collect();
 
@@ -139,6 +153,7 @@ impl PreparedLayer for AdataZarrTreemapLayer {
                 bounds: self.layer_params.bounds.clone(),
                 paths: Arc::new(paths),
                 values: Arc::new(values),
+                selected_values,
                 tile: self.layer_params.tile,
                 padding: self.layer_params.padding,
                 fill_color: Some(ColorMode::Categorical(CategoricalParams {
@@ -190,7 +205,10 @@ pub struct AdataZarrTreemapPickingInfo {
     pub groupby: Vec<String>,
     /// The picked leaf's category in each `groupby` column.
     pub obs_values: Vec<String>,
+    /// The number of filter-included obs in the picked leaf.
     pub count: u32,
+    /// The number of those obs that are selected, when there is an `obs_selection`.
+    pub selected_count: Option<u32>,
 }
 
 impl PickableLayer for AdataZarrTreemapLayer {
@@ -201,6 +219,7 @@ impl PickableLayer for AdataZarrTreemapLayer {
             groupby: self.layer_params.groupby.clone(),
             obs_values: leaf.path,
             count: leaf.value as u32,
+            selected_count: leaf.selected_value.map(|value| value as u32),
         }))
     }
 }

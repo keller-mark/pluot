@@ -16,7 +16,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::cache::{use_memo_compressed_matrix, use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::compute::reduce_stratified::StratifyBy;
 use pluot_core::compute::stratified_indices::{compute_row_mask, compute_stratified_indices, CompactionMethod, RowSource};
-use pluot_core::render_traits::{BooleanCriteriaParams, EmphasisCriteria};
+use pluot_core::render_traits::{BooleanCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 use pluot_core::compute::included_indices::compute_included_indices;
 use pluot_core::compute::histogram_percentile::{histogram_bin, PercentileSearch};
 use pluot_core::compute::matrix_axis_extents::{
@@ -34,6 +34,7 @@ use crate::adata_io::{
     read_compressed_column, read_compressed_subset, read_dataframe_column_strings, read_dense_column_numeric,
     read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, read_string_array, MatrixLayout,
 };
+use crate::dotplot_data::{expr_array_path, load_gene_expression};
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 
@@ -51,6 +52,40 @@ pub enum AxisCriteria {
     /// The entries meeting every criteria (AND-ed together), in stored order.
     /// Each criteria's array must have one element per entry along the axis.
     Criteria(Vec<ZarrEmphasisCriteria>),
+    /// The obs whose expression of one var is within a range (e.g., cells
+    /// expressing a gene above a threshold), in stored order. Only applies to
+    /// the obs axis: along the var axis, it includes nothing.
+    Expression(ExpressionCriteriaParams),
+}
+
+/// Parameters for [`AxisCriteria::Expression`].
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
+pub struct ExpressionCriteriaParams {
+    /// The var's identifier, as it appears in `var_column`. An unknown one includes nothing.
+    pub var_name: String,
+    /// The `var` column holding `var_name`. `None` means its index.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub var_column: Option<String>,
+    /// The `layers` entry holding the expression values. `None` means `X`.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub layer: Option<String>,
+    /// Lower bound of included values, inclusive unless `min_exclusive`. Omitted implies -infinity.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub min: Option<f32>,
+    /// Upper bound of included values, inclusive unless `max_exclusive`. Omitted implies +infinity.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub max: Option<f32>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub min_exclusive: Option<bool>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub max_exclusive: Option<bool>,
 }
 
 /// Parameters for [`AxisCriteria::Identifiers`].
@@ -122,6 +157,16 @@ pub fn axis_criteria_key(criteria: Option<&AxisCriteria>) -> Vec<String> {
             }
             parts
         }
+        Some(AxisCriteria::Expression(params)) => vec![
+            "expression".to_string(),
+            params.var_name.clone(),
+            params.var_column.clone().unwrap_or_else(|| "index".to_string()),
+            expr_array_path(params.layer.as_deref()),
+            format!("{:?}", params.min),
+            format!("{:?}", params.max),
+            format!("{:?}", params.min_exclusive),
+            format!("{:?}", params.max_exclusive),
+        ],
     };
     std::iter::once(parts.len().to_string()).chain(parts).collect()
 }
@@ -235,6 +280,10 @@ pub async fn load_axis_indices(
                     let resolved = resolve_zarr_emphasis_criteria(store.clone(), criteria, store_name, cache_enabled).await?;
                     compute_included_indices(gpu_context, axis_len, &resolved, &[]).await.background
                 }
+                Some(AxisCriteria::Expression(params)) => {
+                    let resolved = load_expression_criteria(store.clone(), store_name, axis, params, cache_enabled).await?;
+                    compute_included_indices(gpu_context, axis_len, &[resolved], &[]).await.background
+                }
             };
             Ok(NumericData::from(indices))
         },
@@ -269,6 +318,38 @@ pub fn index_mask(indices: &[u32], len: usize) -> Vec<bool> {
     mask
 }
 
+/// Loads (and caches) the per-obs expression of the var of `params`, as the
+/// [`EmphasisCriteria`] testing it against the range of `params`.
+pub async fn load_expression_criteria(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    axis: MatrixAxis,
+    params: &ExpressionCriteriaParams,
+    cache_enabled: bool,
+) -> Result<EmphasisCriteria, ArrayError> {
+    let matrix_path = expr_array_path(params.layer.as_deref());
+    let axis_len = load_matrix_shape(store.clone(), store_name, &matrix_path, cache_enabled).await?[axis.shape_dim()];
+    let includes_nothing = || EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: NumericData::from(vec![0u8; axis_len]) });
+    if axis == MatrixAxis::Var {
+        log("heatmap_data: expression criteria only apply to the obs axis; including no vars");
+        return Ok(includes_nothing());
+    }
+    let var_labels = load_axis_labels(store.clone(), store_name, MatrixAxis::Var, params.var_column.as_deref(), cache_enabled).await?;
+    let Some(col_index) = var_labels.iter().position(|label| label == &params.var_name) else {
+        log(&format!("heatmap_data: var \"{}\" not found; including no obs", params.var_name));
+        return Ok(includes_nothing());
+    };
+    let var_colname = params.var_column.as_deref().unwrap_or("index");
+    let values = load_gene_expression(store, store_name, var_colname, &params.var_name, col_index as u64, params.layer.as_deref(), cache_enabled).await?;
+    Ok(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+        values: NumericData::Float32(values),
+        min: params.min,
+        max: params.max,
+        min_exclusive: params.min_exclusive,
+        max_exclusive: params.max_exclusive,
+    }))
+}
+
 /// Loads (and caches) the [`EmphasisCriteria`] equivalent to `criteria` along `axis`, for
 /// evaluating it per index (e.g., on the GPU): none when `criteria` is `None`.
 pub async fn load_axis_emphasis_criteria(
@@ -283,6 +364,7 @@ pub async fn load_axis_emphasis_criteria(
     match criteria {
         None => Ok(Vec::new()),
         Some(AxisCriteria::Criteria(criteria)) => resolve_zarr_emphasis_criteria(store, criteria, store_name, cache_enabled).await,
+        Some(AxisCriteria::Expression(params)) => Ok(vec![load_expression_criteria(store, store_name, axis, params, cache_enabled).await?]),
         Some(identifiers @ AxisCriteria::Identifiers(_)) => {
             let mut keys = vec![
                 "adata_axis_identifiers_mask".to_string(),

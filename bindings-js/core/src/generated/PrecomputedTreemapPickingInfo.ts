@@ -4,4 +4,8 @@ export type PrecomputedTreemapPickingInfo = {
 /**
  * Index into `paths` and `values`.
  */
-index: number, path: Array<string>, value: number, };
+index: number, path: Array<string>, value: number, 
+/**
+ * The leaf's `selected_values` entry, if any.
+ */
+selected_value: number | null, };

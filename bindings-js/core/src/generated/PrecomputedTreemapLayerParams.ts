@@ -18,6 +18,13 @@ paths: Array<Array<string>>,
  */
 values: Array<number>, 
 /**
+ * One value per leaf, at most its `values` entry: the selected portion of the leaf (e.g., the
+ * count of selected items). When set, each leaf is drawn in `background_fill_color`, and its
+ * selected portion in `fill_color` in front, filling it from the bottom in proportion.
+ * `None` draws each whole leaf in `fill_color`.
+ */
+selected_values?: Array<number> | null, 
+/**
  * Defaults to `Binary`.
  */
 tile?: TreemapTile | null, 
@@ -29,6 +36,11 @@ padding?: number | null,
  * How to color each leaf's rect. Modes carrying `NumericData` supply one value per leaf, in the order of `paths`.
  */
 fill_color?: ColorMode | null, fill_opacity?: OpacityMode | null, 
+/**
+ * Fill color of the unselected portion of each leaf, when there are `selected_values`.
+ * Defaults to light grey.
+ */
+background_fill_color?: [number, number, number] | null, 
 /**
  * Font size of the leaf labels, in pixels. Defaults to 10.
  */

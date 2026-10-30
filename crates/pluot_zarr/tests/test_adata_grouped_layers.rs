@@ -14,8 +14,9 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::ScreenCoord;
 use pluot_core::zarr::StoreMap;
 use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_string_array};
-use pluot_zarr::heatmap_data::{AxisCriteria, IdentifierCriteriaParams};
+use pluot_zarr::heatmap_data::{AxisCriteria, ExpressionCriteriaParams, IdentifierCriteriaParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
+use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams, AdataZarrViolinPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{
     AdataZarrViolinMatrixLayer, AdataZarrViolinMatrixLayerParams, AdataZarrViolinMatrixPickingInfo,
@@ -212,6 +213,53 @@ async fn check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categor
     assert_eq!(picked_categories, expected_categories);
 }
 
+async fn check_treemap_counts_the_selected_obs_of_the_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let gene = var_names(store.clone(), &[10]).await.remove(0);
+    let values = expression(store.clone(), &gene).await;
+    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+
+    let mut layer = AdataZarrTreemapLayer::new(view_params(store.clone()), AdataZarrTreemapLayerParams {
+        store_name: Some("pbmc".to_string()),
+        groupby: vec!["bulk_labels".to_string()],
+        obs_filtering: obs_filtering(),
+        obs_selection: Some(AxisCriteria::Expression(ExpressionCriteriaParams {
+            var_name: gene,
+            var_column: None,
+            layer: None,
+            min: Some(0.0),
+            max: None,
+            min_exclusive: Some(true),
+            max_exclusive: None,
+        })),
+        ..Default::default()
+    });
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
+
+    let mut expected: HashMap<String, (u32, u32)> = HashMap::new();
+    for row in 0..codes.len() {
+        let code = codes.get_f32(row) as i64;
+        if INCLUDED_CODES.contains(&code) {
+            let (count, selected_count) = expected.entry(categories[code as usize].clone()).or_default();
+            *count += 1;
+            *selected_count += (values[row] > 0.0) as u32;
+        }
+    }
+    assert!(expected.values().all(|&(count, selected_count)| 0 < selected_count && selected_count < count), "the selection narrows every category without emptying it");
+
+    let mut picked: HashMap<String, (u32, u32)> = HashMap::new();
+    for x in band_centers(20) {
+        for y in band_centers(20) {
+            if let Some(result) = layer.pick(ScreenCoord { x, y }, None) {
+                let info: AdataZarrTreemapPickingInfo = result.into_info().unwrap();
+                picked.insert(info.obs_values[0].clone(), (info.count, info.selected_count.expect("a selected count")));
+            }
+        }
+    }
+    assert_eq!(picked, expected);
+}
+
 async fn with_cpu_and_gpu<F: AsyncFn(Option<&GpuContext<'_>>)>(check: F) {
     check(None).await;
     let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
@@ -231,4 +279,9 @@ async fn violin_summarizes_the_selected_obs_of_the_filtered_categories() {
 #[tokio::test]
 async fn violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_and_vars() {
     with_cpu_and_gpu(check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_and_vars).await;
+}
+
+#[tokio::test]
+async fn treemap_counts_the_selected_obs_of_the_filtered_categories() {
+    with_cpu_and_gpu(check_treemap_counts_the_selected_obs_of_the_filtered_categories).await;
 }

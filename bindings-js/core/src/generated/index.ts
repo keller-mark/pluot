@@ -33,6 +33,7 @@ export type { CompressedMatrix } from "./CompressedMatrix.js";
 export type { CurveLayerParams } from "./CurveLayerParams.js";
 export type { DimensionOrder } from "./DimensionOrder.js";
 export type { EmphasisCriteria } from "./EmphasisCriteria.js";
+export type { ExpressionCriteriaParams } from "./ExpressionCriteriaParams.js";
 export type { FilledCurvePickingInfo } from "./FilledCurvePickingInfo.js";
 export type { FontStyle } from "./FontStyle.js";
 export type { FontWeight } from "./FontWeight.js";

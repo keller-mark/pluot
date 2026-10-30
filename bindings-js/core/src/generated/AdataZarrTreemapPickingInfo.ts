@@ -8,4 +8,12 @@ groupby: Array<string>,
 /**
  * The picked leaf's category in each `groupby` column.
  */
-obs_values: Array<string>, count: number, };
+obs_values: Array<string>, 
+/**
+ * The number of filter-included obs in the picked leaf.
+ */
+count: number, 
+/**
+ * The number of those obs that are selected, when there is an `obs_selection`.
+ */
+selected_count: number | null, };

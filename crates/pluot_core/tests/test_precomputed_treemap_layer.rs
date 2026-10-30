@@ -1,4 +1,4 @@
-use pluot_core::composite_layers::precomputed_treemap_layer::{build_hierarchy, format_value, label_lines, layout_leaves, LeafRect};
+use pluot_core::composite_layers::precomputed_treemap_layer::{build_hierarchy, format_value, label_lines, layout_leaves, selected_rect, LeafRect};
 use pluot_core::d3::hierarchy::TreemapTile;
 
 fn paths(paths: &[&[&str]]) -> Vec<Vec<String>> {
@@ -48,5 +48,18 @@ fn values_are_formatted_with_thousands_separators() {
 
 #[test]
 fn label_lines_list_innermost_label_first_then_the_value() {
-    assert_eq!(label_lines(&["T".to_string(), "s1".to_string()], 1200.0), vec!["s1", "T", "1,200"]);
+    assert_eq!(label_lines(&["T".to_string(), "s1".to_string()], 1200.0, None), vec!["s1", "T", "1,200"]);
+}
+
+#[test]
+fn label_lines_precede_the_value_with_the_selected_value() {
+    assert_eq!(label_lines(&["T".to_string()], 1200.0, Some(30.0)), vec!["T", "30 / 1,200"]);
+}
+
+#[test]
+fn selected_rects_fill_the_bottom_of_their_leaf_in_proportion() {
+    let rect = LeafRect { x0: 2.0, y0: 10.0, x1: 6.0, y1: 30.0 };
+    assert_eq!(selected_rect(&rect, 4.0, 1.0), LeafRect { x0: 2.0, y0: 25.0, x1: 6.0, y1: 30.0 });
+    assert_eq!(selected_rect(&rect, 4.0, 8.0), rect);
+    assert_eq!(selected_rect(&rect, 0.0, 0.0).y0, rect.y1);
 }

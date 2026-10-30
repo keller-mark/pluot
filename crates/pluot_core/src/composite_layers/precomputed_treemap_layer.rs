@@ -10,6 +10,7 @@ use ts_rs::TS;
 
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
 use crate::d3::hierarchy::{HierarchyNode, Treemap, TreemapTile};
+use crate::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
 use crate::numeric_data::NumericData;
@@ -48,6 +49,11 @@ pub struct PrecomputedTreemapLayerParams {
     pub paths: Arc<Vec<Vec<String>>>,
     /// One value per leaf (e.g., a count), which determines the leaf's area.
     pub values: Arc<Vec<f32>>,
+    /// One value per leaf, at most its `values` entry: the selected portion of the leaf (e.g., the
+    /// count of selected items). When set, each leaf is drawn in `background_fill_color`, and its
+    /// selected portion in `fill_color` in front, filling it from the bottom in proportion.
+    /// `None` draws each whole leaf in `fill_color`.
+    pub selected_values: Option<Arc<Vec<f32>>>,
 
     /// Defaults to `Binary`.
     pub tile: Option<TreemapTile>,
@@ -57,6 +63,9 @@ pub struct PrecomputedTreemapLayerParams {
     /// How to color each leaf's rect. Modes carrying `NumericData` supply one value per leaf, in the order of `paths`.
     pub fill_color: Option<ColorMode>,
     pub fill_opacity: Option<OpacityMode>,
+    /// Fill color of the unselected portion of each leaf, when there are `selected_values`.
+    /// Defaults to light grey.
+    pub background_fill_color: Option<(u8, u8, u8)>,
 
     /// Font size of the leaf labels, in pixels. Defaults to 10.
     pub text_size: Option<f32>,
@@ -70,10 +79,12 @@ impl Default for PrecomputedTreemapLayerParams {
             bounds: None,
             paths: Arc::new(vec![]),
             values: Arc::new(vec![]),
+            selected_values: None,
             tile: None,
             padding: None,
             fill_color: None,
             fill_opacity: None,
+            background_fill_color: None,
             text_size: None,
             text_color: None,
         }
@@ -177,9 +188,20 @@ pub fn format_value(value: f32) -> String {
     grouped
 }
 
-/// The lines of a leaf's label, from top to bottom: its labels from innermost to outermost, then its value.
-pub fn label_lines(path: &[String], value: f32) -> Vec<String> {
-    path.iter().rev().cloned().chain(std::iter::once(format_value(value))).collect()
+/// The lines of a leaf's label, from top to bottom: its labels from innermost to outermost, then
+/// its value, preceded by its selected value if any.
+pub fn label_lines(path: &[String], value: f32, selected_value: Option<f32>) -> Vec<String> {
+    let value_line = match selected_value {
+        Some(selected_value) => format!("{} / {}", format_value(selected_value), format_value(value)),
+        None => format_value(value),
+    };
+    path.iter().rev().cloned().chain(std::iter::once(value_line)).collect()
+}
+
+/// The bottom part of `rect` whose share of its area is `selected_value / value`.
+pub fn selected_rect(rect: &LeafRect, value: f32, selected_value: f32) -> LeafRect {
+    let fraction = if value > 0.0 { (selected_value / value).clamp(0.0, 1.0) } else { 0.0 };
+    LeafRect { y0: rect.y1 - (rect.y1 - rect.y0) * fraction, ..*rect }
 }
 
 impl PrecomputedTreemapLayer {
@@ -203,10 +225,32 @@ impl PrecomputedTreemapLayer {
         (margin_left, margin_bottom, layer_w, layer_h)
     }
 
-    fn build_rect_layer(&self, layer_h: f32) -> RectLayer {
+    fn selected_value(&self, index: usize) -> Option<f32> {
+        self.layer_params.selected_values.as_ref().map(|selected_values| selected_values.get(index).copied().unwrap_or(0.0))
+    }
+
+    fn build_rect_layers(&self, layer_h: f32) -> Vec<RectLayer> {
+        let p = &self.layer_params;
+        let fill_color = p.fill_color.clone().unwrap_or(ColorMode::UniformRgb(DEFAULT_FILL_COLOR));
+        if p.selected_values.is_none() {
+            return vec![self.build_rect_layer("rect", &self.leaf_rects, fill_color, layer_h)];
+        }
+        let selected_rects: Vec<LeafRect> = self
+            .leaf_rects
+            .iter()
+            .enumerate()
+            .map(|(index, rect)| selected_rect(rect, p.values.get(index).copied().unwrap_or(0.0), self.selected_value(index).unwrap_or(0.0)))
+            .collect();
+        let background_fill_color = ColorMode::UniformRgb(p.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR));
+        vec![
+            self.build_rect_layer("background_rect", &self.leaf_rects, background_fill_color, layer_h),
+            self.build_rect_layer("rect", &selected_rects, fill_color, layer_h),
+        ]
+    }
+
+    fn build_rect_layer(&self, name: &str, rects: &[LeafRect], fill_color: ColorMode, layer_h: f32) -> RectLayer {
         let p = &self.layer_params;
         // Sublayers use pixel units with Y increasing upwards, unlike the D3-style layout.
-        let rects = &self.leaf_rects;
         let position_x0 = rects.iter().map(|r| r.x0).collect();
         let position_y0 = rects.iter().map(|r| layer_h - r.y1).collect();
         let position_x1 = rects.iter().map(|r| r.x1).collect();
@@ -215,11 +259,11 @@ impl PrecomputedTreemapLayer {
         RectLayer::new(
             self.view_params.clone(),
             RectLayerParams {
-                layer_id: format!("{}_precomputed_treemap_rect_sublayer", p.layer_id),
+                layer_id: format!("{}_precomputed_treemap_{name}_sublayer", p.layer_id),
                 bounds: p.bounds.clone(),
                 data_unit_mode_x: UnitsMode::Pixels,
                 data_unit_mode_y: UnitsMode::Pixels,
-                fill_color: Some(p.fill_color.clone().unwrap_or(ColorMode::UniformRgb(DEFAULT_FILL_COLOR))),
+                fill_color: Some(fill_color),
                 fill_opacity: p.fill_opacity.clone(),
                 position_x0: NumericData::Float32(Arc::new(position_x0)),
                 position_y0: NumericData::Float32(Arc::new(position_y0)),
@@ -239,7 +283,7 @@ impl PrecomputedTreemapLayer {
         let mut text_vec = Vec::new();
         for (index, rect) in self.leaf_rects.iter().enumerate() {
             let value = p.values.get(index).copied().unwrap_or(0.0);
-            let lines = label_lines(&p.paths[index], value);
+            let lines = label_lines(&p.paths[index], value, self.selected_value(index));
             let max_line_width = rect.x1 - rect.x0 - 2.0 * LABEL_INSET_PX;
             let last_line = lines.len() - 1;
             for (line_index, line) in lines.into_iter().enumerate() {
@@ -296,7 +340,8 @@ impl PreparedLayer for PrecomputedTreemapLayer {
             p.padding.unwrap_or(DEFAULT_PADDING),
         );
 
-        let mut sublayers: Vec<Box<dyn PreparedAndDraw>> = vec![Box::new(self.build_rect_layer(layer_h))];
+        let mut sublayers: Vec<Box<dyn PreparedAndDraw>> =
+            self.build_rect_layers(layer_h).into_iter().map(|layer| Box::new(layer) as Box<dyn PreparedAndDraw>).collect();
         if let Some(text_layer) = self.build_text_layer(layer_h) {
             sublayers.push(Box::new(text_layer));
         }
@@ -346,6 +391,8 @@ pub struct PrecomputedTreemapPickingInfo {
     pub index: usize,
     pub path: Vec<String>,
     pub value: f32,
+    /// The leaf's `selected_values` entry, if any.
+    pub selected_value: Option<f32>,
 }
 
 impl PickableLayer for PrecomputedTreemapLayer {
@@ -360,6 +407,7 @@ impl PickableLayer for PrecomputedTreemapLayer {
             index,
             path: p.paths[index].clone(),
             value: p.values.get(index).copied().unwrap_or(0.0),
+            selected_value: self.selected_value(index),
         }))
     }
 }
