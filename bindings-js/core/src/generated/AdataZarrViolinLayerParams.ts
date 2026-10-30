@@ -2,6 +2,7 @@
 import type { BarOrientation } from "./BarOrientation.js";
 import type { CategoricalColormap } from "./CategoricalColormap.js";
 import type { MarginParams } from "./MarginParams.js";
+import type { ViolinDensityNorm } from "./ViolinDensityNorm.js";
 
 /**
  * Layer params struct for [`AdataZarrViolinLayer`].
@@ -44,6 +45,10 @@ keep_zeros?: boolean | null,
  * The approximate number of bins along the value axis, which are placed at nice values. Defaults to 16.
  */
 num_bins?: number | null, 
+/**
+ * How violin widths are scaled relative to one another. Defaults to `Width`, matching scanpy's `sc.pl.violin`.
+ */
+density_norm?: ViolinDensityNorm | null, 
 /**
  * The minimum of the value axis. Defaults to the lesser of zero and the smallest expression value.
  */

@@ -13,7 +13,7 @@ use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layers::bar_plot_layer::BarOrientation;
-use pluot_core::composite_layers::precomputed_violin_layer::{PrecomputedViolinLayer, PrecomputedViolinLayerParams, PrecomputedViolinPickingInfo};
+use pluot_core::composite_layers::precomputed_violin_layer::{PrecomputedViolinLayer, PrecomputedViolinLayerParams, PrecomputedViolinPickingInfo, ViolinDensityNorm};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::LayerExtentResult;
 use pluot_core::LayerPickingResult;
@@ -56,6 +56,8 @@ pub struct AdataZarrViolinLayerParams {
     pub keep_zeros: Option<bool>,
     /// The approximate number of bins along the value axis, which are placed at nice values. Defaults to 16.
     pub num_bins: Option<u32>,
+    /// How violin widths are scaled relative to one another. Defaults to `Width`, matching scanpy's `sc.pl.violin`.
+    pub density_norm: Option<ViolinDensityNorm>,
     /// The minimum of the value axis. Defaults to the lesser of zero and the smallest expression value.
     pub value_min: Option<f32>,
     /// Colors the violins by the codes of their categories. Defaults to Tableau10.
@@ -76,6 +78,7 @@ impl Default for AdataZarrViolinLayerParams {
             gene_symbols: None,
             keep_zeros: None,
             num_bins: None,
+            density_norm: None,
             value_min: None,
             cmap: None,
         }
@@ -206,10 +209,12 @@ impl PreparedLayer for AdataZarrViolinLayer {
                 groups: Arc::new(categories),
                 bin_starts: Arc::new(bins.bin_starts),
                 bin_counts: Arc::new(bins.bin_counts),
+                density_norm: p.density_norm,
                 quartiles: Some(Arc::new(quartiles)),
                 value_domain: Some(bins.value_domain),
                 fill_colors: Some(Arc::new(fill_colors)),
                 group_axis_title: Some(p.groupby.clone()),
+                value_axis_title: Some(p.var_name.clone()),
                 ..Default::default()
             },
         );

@@ -39,6 +39,18 @@ const DEFAULT_WHISKER_COLOR: (u8, u8, u8) = (0, 0, 0);
 const WHISKER_WIDTH_PX: f32 = 2.0;
 const MEDIAN_HALF_WIDTH_PX: f64 = 4.0;
 
+/// How violin widths are scaled relative to one another.
+/// Reference: https://seaborn.pydata.org/generated/seaborn.violinplot.html (`density_norm`)
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+pub enum ViolinDensityNorm {
+    /// Every violin has the same area.
+    Area,
+    /// Each violin's peak width is proportional to its number of observations.
+    Count,
+    /// Every violin has the same peak width.
+    Width,
+}
+
 /// Layer params struct for [`PrecomputedViolinLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
@@ -57,8 +69,10 @@ pub struct PrecomputedViolinLayerParams {
     /// The lower edge of each bin along the value axis, in data units, shared by every violin, in ascending order.
     pub bin_starts: Arc<Vec<f32>>,
     /// One entry per group, holding one count per bin. A violin's width at a bin is proportional
-    /// to the bin's count, relative to the largest count across all violins.
+    /// to the bin's count, scaled according to `density_norm`.
     pub bin_counts: Arc<Vec<Vec<u32>>>,
+    /// Defaults to `Width`, matching scanpy's `sc.pl.violin`.
+    pub density_norm: Option<ViolinDensityNorm>,
     /// One (first quartile, median, third quartile) per group, drawn as a whisker. `None` draws no whiskers.
     pub quartiles: Option<Arc<Vec<Option<(f32, f32, f32)>>>>,
 
@@ -73,6 +87,7 @@ pub struct PrecomputedViolinLayerParams {
     pub whisker_color: Option<(u8, u8, u8)>,
 
     pub group_axis_title: Option<String>,
+    pub value_axis_title: Option<String>,
 }
 
 impl Default for PrecomputedViolinLayerParams {
@@ -84,12 +99,14 @@ impl Default for PrecomputedViolinLayerParams {
             groups: Arc::new(vec![]),
             bin_starts: Arc::new(vec![]),
             bin_counts: Arc::new(vec![]),
+            density_norm: None,
             quartiles: None,
             value_domain: None,
             fill_colors: None,
             fill_opacity: None,
             whisker_color: None,
             group_axis_title: None,
+            value_axis_title: None,
         }
     }
 }
@@ -124,7 +141,7 @@ impl GroupValuePoint {
 /// Positions of violins along the group axis.
 struct ViolinScales {
     group_scale: ScaleBand,
-    /// Maps a signed count to an offset within a band.
+    /// Maps a signed span (see [`normalized_spans`]) to an offset within a band.
     width_scale: ScaleLinear,
 }
 
@@ -136,9 +153,8 @@ impl ViolinScales {
         group_scale.set_padding_inner(BAND_PADDING_INNER);
         group_scale.set_padding_outer(BAND_PADDING_INNER / 2.0);
 
-        let max_count = p.bin_counts.iter().flatten().copied().max().unwrap_or(0).max(1) as f64;
         let mut width_scale = ScaleLinear::new();
-        width_scale.set_domain((-max_count, max_count));
+        width_scale.set_domain((-1.0, 1.0));
         width_scale.set_range((0.0, group_scale.bandwidth()));
 
         Self { group_scale, width_scale }
@@ -152,19 +168,45 @@ impl ViolinScales {
         self.band_start(group) + self.group_scale.bandwidth() / 2.0
     }
 
-    fn violin_outline(&self, group: &String, bin_starts: &[f32], counts: &[u32], orientation: &BarOrientation) -> Vec<PathCommand> {
+    fn violin_outline(&self, group: &String, bin_starts: &[f32], spans: &[f64], orientation: &BarOrientation) -> Vec<PathCommand> {
         let band_start = self.band_start(group);
-        let points: Vec<AreaPoint> = bin_starts.iter().zip(counts)
-            .map(|(&bin_start, &count)| {
+        let points: Vec<AreaPoint> = bin_starts.iter().zip(spans)
+            .map(|(&bin_start, &span)| {
                 let value = bin_start as f64;
-                let lower = GroupValuePoint { group_px: band_start + self.width_scale.scale(&-(count as f64)), value };
-                let upper = GroupValuePoint { group_px: band_start + self.width_scale.scale(&(count as f64)), value };
+                let lower = GroupValuePoint { group_px: band_start + self.width_scale.scale(&-span), value };
+                let upper = GroupValuePoint { group_px: band_start + self.width_scale.scale(&span), value };
                 let ((x0, y0), (x1, y1)) = (lower.to_xy(orientation), upper.to_xy(orientation));
                 AreaPoint { x0, y0, x1, y1 }
             })
             .collect();
         area(&mut CurveBasis::default(), &points)
     }
+}
+
+/// Each violin's width at each bin, as a fraction of the band's width, following seaborn's `density_norm`.
+/// Reference: https://github.com/mwaskom/seaborn/blob/v0.13.2/seaborn/categorical.py#L1007-L1016
+fn normalized_spans(bin_counts: &[Vec<u32>], density_norm: ViolinDensityNorm) -> Vec<Vec<f64>> {
+    let peak = |counts: &[u32]| counts.iter().copied().max().unwrap_or(0) as f64;
+    let total = |counts: &[u32]| counts.iter().map(|&count| count as f64).sum::<f64>();
+    let max_peak_density = bin_counts.iter()
+        .filter(|counts| total(counts) > 0.0)
+        .map(|counts| peak(counts) / total(counts))
+        .fold(0.0, f64::max);
+    let max_total = bin_counts.iter().map(|counts| total(counts)).fold(0.0, f64::max);
+    bin_counts.iter()
+        .map(|counts| {
+            let (peak, total) = (peak(counts), total(counts));
+            if peak == 0.0 {
+                return vec![0.0; counts.len()];
+            }
+            let scale = match density_norm {
+                ViolinDensityNorm::Area => 1.0 / (total * max_peak_density),
+                ViolinDensityNorm::Count => total / (peak * max_total),
+                ViolinDensityNorm::Width => 1.0 / peak,
+            };
+            counts.iter().map(|&count| count as f64 * scale).collect()
+        })
+        .collect()
 }
 
 fn resolve_value_domain(p: &PrecomputedViolinLayerParams) -> (f32, f32) {
@@ -220,8 +262,9 @@ impl PrecomputedViolinLayer {
         let p = &self.layer_params;
         let orientation = self.orientation();
         let (data_unit_mode_x, data_unit_mode_y) = self.unit_modes();
-        p.groups.iter().zip(p.bin_counts.iter()).enumerate()
-            .map(|(group_index, (group, counts))| {
+        let spans = normalized_spans(&p.bin_counts, p.density_norm.unwrap_or(ViolinDensityNorm::Width));
+        p.groups.iter().zip(spans.iter()).enumerate()
+            .map(|(group_index, (group, spans))| {
                 let fill_color = p.fill_colors.as_ref()
                     .and_then(|colors| colors.get(group_index).copied())
                     .unwrap_or_else(|| default_fill_color(group_index));
@@ -232,7 +275,7 @@ impl PrecomputedViolinLayer {
                         bounds: p.bounds.clone(),
                         data_unit_mode_x,
                         data_unit_mode_y,
-                        commands: Arc::new(scales.violin_outline(group, &p.bin_starts, counts, &orientation)),
+                        commands: Arc::new(scales.violin_outline(group, &p.bin_starts, spans, &orientation)),
                         stroked: false,
                         filled: true,
                         fill_color: Some(ColorMode::UniformRgb(fill_color)),
@@ -316,6 +359,7 @@ impl PrecomputedViolinLayer {
                 AxisLinearLayerParams {
                     layer_id: format!("{}_precomputed_violin_value_axis_sublayer", p.layer_id),
                     position: value_axis_position,
+                    title: p.value_axis_title.clone(),
                     ..Default::default()
                 },
             )),
@@ -449,11 +493,30 @@ mod tests {
     }
 
     #[test]
-    fn the_widest_bin_across_all_violins_fills_its_band() {
-        let scales = ViolinScales::new(&params(&["a", "b"], vec![vec![1, 4, 0], vec![2, 2, 2]]), 200.0);
-        let band_start = scales.band_start(&"a".to_string());
-        assert_eq!(scales.width_scale.scale(&-4.0) + band_start, band_start);
-        assert!((scales.width_scale.scale(&4.0) - scales.group_scale.bandwidth()).abs() < 1e-9);
+    fn a_full_span_fills_its_band() {
+        let scales = ViolinScales::new(&params(&["a", "b"], vec![]), 200.0);
+        assert_eq!(scales.width_scale.scale(&-1.0), 0.0);
+        assert!((scales.width_scale.scale(&1.0) - scales.group_scale.bandwidth()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn width_norm_gives_every_violin_the_same_peak_width() {
+        let spans = normalized_spans(&[vec![1, 4, 0], vec![2, 2, 2], vec![0, 0, 0]], ViolinDensityNorm::Width);
+        assert_eq!(spans, vec![vec![0.25, 1.0, 0.0], vec![1.0, 1.0, 1.0], vec![0.0, 0.0, 0.0]]);
+    }
+
+    #[test]
+    fn count_norm_scales_peak_widths_by_number_of_observations() {
+        let spans = normalized_spans(&[vec![1, 4, 0], vec![2, 2, 6]], ViolinDensityNorm::Count);
+        assert_eq!(spans, vec![vec![0.125, 0.5, 0.0], vec![1.0 / 3.0, 1.0 / 3.0, 1.0]]);
+    }
+
+    #[test]
+    fn area_norm_gives_every_violin_the_same_area() {
+        let spans = normalized_spans(&[vec![1, 4, 0], vec![20, 20, 20]], ViolinDensityNorm::Area);
+        let areas: Vec<f64> = spans.iter().map(|s| s.iter().sum()).collect();
+        assert!((areas[0] - areas[1]).abs() < 1e-9);
+        assert_eq!(spans[0][1], 1.0);
     }
 
     fn value_coords(outline: &[PathCommand], orientation: &BarOrientation) -> Vec<f32> {
@@ -473,7 +536,7 @@ mod tests {
         let p = params(&["a"], vec![vec![1, 2, 0]]);
         let scales = ViolinScales::new(&p, 100.0);
         for orientation in [BarOrientation::Vertical, BarOrientation::Horizontal] {
-            let outline = scales.violin_outline(&"a".to_string(), &p.bin_starts, &p.bin_counts[0], &orientation);
+            let outline = scales.violin_outline(&"a".to_string(), &p.bin_starts, &[0.5, 1.0, 0.0], &orientation);
             assert!(matches!(outline.last(), Some(PathCommand::Close)));
             let values = value_coords(&outline, &orientation);
             assert_eq!(values.iter().copied().fold(f32::MAX, f32::min), 0.0);

@@ -94,6 +94,7 @@ export type { TextLayerParams } from "./TextLayerParams.js";
 export type { TextPickingInfo } from "./TextPickingInfo.js";
 export type { TreemapTile } from "./TreemapTile.js";
 export type { UnitsMode } from "./UnitsMode.js";
+export type { ViolinDensityNorm } from "./ViolinDensityNorm.js";
 export type { ZarrBarPlotLayerParams } from "./ZarrBarPlotLayerParams.js";
 export type { ZarrBooleanCriteriaParams } from "./ZarrBooleanCriteriaParams.js";
 export type { ZarrCategoricalCriteriaParams } from "./ZarrCategoricalCriteriaParams.js";
