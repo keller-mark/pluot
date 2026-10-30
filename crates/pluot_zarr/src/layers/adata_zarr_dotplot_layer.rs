@@ -61,6 +61,8 @@ pub struct AdataZarrDotPlotLayerParams {
 
     /// Layer in AnnData to use for expression values. Defaults to None, which uses adata.X.
     pub layer: String,
+
+    // TODO: support multiple groupby (a list of columns from coarse to fine).
     pub groupby: String,
     /// The `groupby` categories to plot, in the order they should appear along the group axis.
     /// `None` (the default) means every category of `groupby`, in its stored order. `Some(vec![])`

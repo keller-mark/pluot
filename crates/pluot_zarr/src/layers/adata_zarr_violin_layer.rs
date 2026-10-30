@@ -49,6 +49,7 @@ pub struct AdataZarrViolinLayerParams {
     /// Layer in AnnData to use for expression values. `None` (or `"X"`) uses adata.X.
     pub layer: Option<String>,
     /// The categorical `obs` column whose categories each get one violin.
+    // TODO: support multiple groupby (a list of columns from coarse to fine).
     pub groupby: String,
     /// The `groupby` categories to plot, in order along the X axis. `None` means every category, in its stored order.
     pub categories: Option<Vec<String>>,

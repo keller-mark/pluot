@@ -60,6 +60,7 @@ pub struct AdataZarrHeatmapLayerParams {
     /// Categorical column in adata.obs by which to sort the included obs,
     /// in category order (obs with missing values last), keeping their
     /// filtered order within each category. `None` keeps the filtered order.
+    // TODO: support multiple groupby (a list of columns from coarse to fine).
     pub groupby: Option<String>,
     /// Which var (columns) to include. `None` includes every var.
     pub var_filtering: Option<AxisCriteria>,
