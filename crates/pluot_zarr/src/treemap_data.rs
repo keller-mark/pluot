@@ -1,0 +1,128 @@
+// Counts observations per combination of categories across one or more `obs` categorical columns.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use pluot_core::numeric_data::NumericData;
+use zarrs::array::ArrayError;
+
+use crate::dotplot_data::{load_obs_categorical, AdataStore};
+
+/// The number of observations sharing one combination of categories.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObsGroupCount {
+    /// One category code per `groupby` column, in the order of the columns.
+    pub codes: Vec<u32>,
+    pub count: u32,
+}
+
+thread_local! {
+    static USE_MEMO_CACHE_OBS_GROUP_COUNTS: RefCell<Option<HashMap<Vec<String>, Arc<Vec<ObsGroupCount>>>>> = const { RefCell::new(None) };
+}
+
+async fn use_memo_obs_group_counts(initializer: impl AsyncFnOnce() -> Vec<ObsGroupCount>, keys: &[String], cache_enabled: bool) -> Arc<Vec<ObsGroupCount>> {
+    if !cache_enabled {
+        return Arc::new(initializer().await);
+    }
+
+    let cached = USE_MEMO_CACHE_OBS_GROUP_COUNTS.with(|cache| cache.borrow().as_ref().and_then(|map| map.get(keys).cloned()));
+    if let Some(counts) = cached {
+        return counts;
+    }
+
+    let counts = Arc::new(initializer().await);
+    USE_MEMO_CACHE_OBS_GROUP_COUNTS.with(|cache| {
+        cache.borrow_mut().get_or_insert_with(HashMap::new).insert(keys.to_vec(), counts.clone());
+    });
+    counts
+}
+
+/// Counts the rows sharing each combination of codes across `codes_per_column`, sorted by codes.
+/// Rows with a missing value (a negative code, per the AnnData spec) in any column are not counted.
+pub fn count_obs_groups(codes_per_column: &[&NumericData]) -> Vec<ObsGroupCount> {
+    let columns: Vec<_> = codes_per_column.iter().map(|codes| codes.as_f32()).collect();
+    let num_rows = columns.iter().map(|codes| codes.len()).min().unwrap_or(0);
+
+    let mut counts: HashMap<Vec<u32>, u32> = HashMap::new();
+    let mut row_codes: Vec<u32> = Vec::with_capacity(columns.len());
+    'rows: for row in 0..num_rows {
+        row_codes.clear();
+        for codes in &columns {
+            let code = codes[row];
+            if code < 0.0 {
+                continue 'rows;
+            }
+            row_codes.push(code as u32);
+        }
+        match counts.get_mut(row_codes.as_slice()) {
+            Some(count) => *count += 1,
+            None => {
+                counts.insert(row_codes.clone(), 1);
+            }
+        }
+    }
+
+    let mut groups: Vec<ObsGroupCount> = counts.into_iter().map(|(codes, count)| ObsGroupCount { codes, count }).collect();
+    groups.sort_by(|a, b| a.codes.cmp(&b.codes));
+    groups
+}
+
+/// Loads (and caches) each `groupby` column's category labels, and the number of observations per
+/// combination of their categories. The counts are cached independently of the columns they were computed from.
+pub async fn load_obs_group_counts(
+    store: AdataStore,
+    store_name: &str,
+    groupby: &[String],
+    cache_enabled: bool,
+) -> Result<(Vec<Arc<Vec<String>>>, Arc<Vec<ObsGroupCount>>), ArrayError> {
+    let columns = futures::future::try_join_all(
+        groupby.iter().map(|column| load_obs_categorical(store.clone(), store_name, column, cache_enabled)),
+    ).await?;
+
+    let mut counts_keys = vec!["treemap_obs_group_counts".to_string(), store_name.to_string()];
+    counts_keys.extend(groupby.iter().cloned());
+    let counts = use_memo_obs_group_counts(
+        async || {
+            let codes_per_column: Vec<&NumericData> = columns.iter().map(|(_, codes)| codes.as_ref()).collect();
+            count_obs_groups(&codes_per_column)
+        },
+        &counts_keys,
+        cache_enabled,
+    ).await;
+
+    let categories_per_column = columns.into_iter().map(|(categories, _)| categories).collect();
+    Ok((categories_per_column, counts))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counts_each_combination_of_codes_skipping_missing_values() {
+        let cell_type = NumericData::Int8(Arc::new(vec![0, 0, 1, 1, 1, -1]));
+        let sample = NumericData::Int16(Arc::new(vec![0, 1, 1, 1, -1, 0]));
+        let groups = count_obs_groups(&[&cell_type, &sample]);
+        assert_eq!(groups, vec![
+            ObsGroupCount { codes: vec![0, 0], count: 1 },
+            ObsGroupCount { codes: vec![0, 1], count: 1 },
+            ObsGroupCount { codes: vec![1, 1], count: 2 },
+        ]);
+    }
+
+    #[test]
+    fn counts_a_single_column() {
+        let cell_type = NumericData::Int8(Arc::new(vec![2, 0, 2]));
+        let groups = count_obs_groups(&[&cell_type]);
+        assert_eq!(groups, vec![
+            ObsGroupCount { codes: vec![0], count: 1 },
+            ObsGroupCount { codes: vec![2], count: 2 },
+        ]);
+    }
+
+    #[test]
+    fn no_columns_yields_no_groups() {
+        assert!(count_obs_groups(&[]).is_empty());
+    }
+}

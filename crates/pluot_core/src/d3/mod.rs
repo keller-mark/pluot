@@ -11,4 +11,5 @@
 // it can be unclear what form the ported implementation should take.
 
 pub mod axis;
+pub mod hierarchy;
 pub mod scale;

@@ -9,3 +9,4 @@ pub mod ome_zarr_bitmask_layer;
 pub mod ome_zarr_bitmask_multiscale_layer;
 pub mod adata_zarr_dotplot_layer;
 pub mod adata_zarr_heatmap_layer;
+pub mod adata_zarr_treemap_layer;

@@ -1,5 +1,6 @@
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
+use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -22,6 +23,7 @@ use pluot_core::layers::stroked_curve_layer::StrokedCurvePickingInfo;
 use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarPlotPickingInfo};
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 use pluot_core::composite_layers::precomputed_histogram_layer::PrecomputedHistogramLayerParams;
+use pluot_core::composite_layers::precomputed_treemap_layer::{PrecomputedTreemapLayerParams, PrecomputedTreemapPickingInfo};
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 
@@ -72,6 +74,7 @@ pub enum LayerParams {
     BarPlotLayer(BarPlotLayerParams),
     HistogramLayer(HistogramLayerParams),
     PrecomputedHistogramLayer(PrecomputedHistogramLayerParams),
+    PrecomputedTreemapLayer(PrecomputedTreemapLayerParams),
     LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
     LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
@@ -85,6 +88,7 @@ pub enum LayerParams {
     OmeZarrBitmaskMultiscaleLayer(OmeZarrBitmaskMultiscaleLayerParams),
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
     AdataZarrHeatmapLayer(AdataZarrHeatmapLayerParams),
+    AdataZarrTreemapLayer(AdataZarrTreemapLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),
@@ -175,10 +179,12 @@ enum PickingInfo {
     Bitmask(BitmaskPickingInfo),
     Heatmap(HeatmapPickingInfo),
     BarPlot(BarPlotPickingInfo),
+    PrecomputedTreemap(PrecomputedTreemapPickingInfo),
     OmeZarrBitmap(OmeZarrBitmapPickingInfo),
     OmeZarrBitmask(OmeZarrBitmaskPickingInfo),
     AdataZarrDotPlot(AdataZarrDotPlotPickingInfo),
     AdataZarrHeatmap(AdataZarrHeatmapPickingInfo),
+    AdataZarrTreemap(AdataZarrTreemapPickingInfo),
 }
 
 #[cfg(test)]
