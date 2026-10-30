@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -14,22 +13,38 @@ use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layers::precomputed_violin_layer::ViolinDensityNorm;
 use pluot_core::composite_layers::precomputed_violin_matrix_layer::{PrecomputedViolinMatrixLayer, PrecomputedViolinMatrixLayerParams, PrecomputedViolinMatrixPickingInfo};
+use pluot_core::compute::reduce_stratified::StratifyBy;
+use pluot_core::compute::stratified_violin::{StratifiedViolinInput, ViolinStratumStats};
 use pluot_core::numeric_data::NumericData;
+use pluot_core::render_traits::EmphasisCriteria;
 use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
 use crate::dotplot_data::{
-    background_and_foreground_rows, bucket_rows_by_category, expr_array_path, filter_genes, genes_among, load_gene_expression, load_obs_categorical,
-    load_var_names, obs_rows_key, resolve_gene_columns, AdataStore,
+    categories_with_included_obs, category_strata, expr_array_path, filter_genes, genes_among, load_gene_expression, load_obs_categorical, load_var_names,
+    obs_rows_key, resolve_gene_columns, AdataStore,
 };
-use crate::heatmap_data::{indices_of, load_criteria_indices, AxisCriteria, MatrixAxis};
-use crate::violin_data::{bin_violins, load_violin_summary, ViolinSummary};
+use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_criteria_indices, AxisCriteria, MatrixAxis};
+use crate::violin_data::{empty_violin_stats, load_violin_bins, load_violin_stats, violin_bin_edges, violin_bin_starts, ViolinBinCounts, ViolinStats};
 
 const DEFAULT_NUM_BINS: u32 = 16;
 
-/// The obs rows of each category, along with their [`obs_rows_key`].
-type ObsRows<'a> = (&'a HashMap<String, Vec<u32>>, Vec<String>);
+/// The obs that every gene's violins summarize, per category.
+struct CategoryObs<'a> {
+    strata: &'a StratifyBy,
+    filtering_criteria: &'a [EmphasisCriteria],
+    selection_criteria: &'a [EmphasisCriteria],
+    /// Identifies the categories and both criteria, for caching.
+    key: Vec<String>,
+}
+
+/// One gene's expression values, and the stats of their violins.
+struct GeneViolins {
+    values: NumericData,
+    stats: Arc<ViolinStats>,
+    keys: Vec<String>,
+}
 
 /// Layer params struct for [`AdataZarrViolinMatrixLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -125,7 +140,7 @@ pub struct AdataZarrViolinMatrixLayer {
 
     inner: Option<PrecomputedViolinMatrixLayer>,
     // One per cell, in the order of the inner layer's `bin_counts`.
-    summaries: Vec<Arc<ViolinSummary>>,
+    summaries: Vec<ViolinStratumStats>,
 }
 
 impl AdataZarrViolinMatrixLayer {
@@ -151,10 +166,18 @@ impl AdataZarrViolinMatrixLayer {
         self.layer_params.gene_symbols.as_deref().unwrap_or("index")
     }
 
-    /// Summarizes one gene's expression per category, over each of `rows` (the rows of each
-    /// category, along with their [`obs_rows_key`]), or returns `None` when its data is not loaded yet.
-    async fn load_gene_summaries(&self, gene_name: &str, col_index: u64, categories: &[String], rows: &[ObsRows<'_>]) -> Option<Vec<Vec<Arc<ViolinSummary>>>> {
-        let p = &self.layer_params;
+    fn violin_input<'a>(&self, values: &'a NumericData, obs: &'a CategoryObs<'a>) -> StratifiedViolinInput<'a> {
+        StratifiedViolinInput {
+            values,
+            stratify_by: obs.strata,
+            filtering_criteria: obs.filtering_criteria,
+            selection_criteria: obs.selection_criteria,
+            keep_zeros: self.layer_params.keep_zeros.unwrap_or(true),
+        }
+    }
+
+    /// Loads one gene's expression and the stats of its violins, or returns `None` when its data is not loaded yet.
+    async fn load_gene_violins(&self, gpu_context: Option<&GpuContext<'_>>, gene_name: &str, col_index: u64, obs: &CategoryObs<'_>) -> Option<GeneViolins> {
         let cache_enabled = self.view_params.cache_enabled;
         let expression = match load_gene_expression(self.store.clone(), &self.store_name, self.var_colname(), gene_name, col_index, self.array_layer(), cache_enabled).await {
             Ok(expression) => expression,
@@ -165,60 +188,84 @@ impl AdataZarrViolinMatrixLayer {
                 panic!("Zarrs error loading expression during AdataZarrViolinMatrixLayer prepare: {:?}", e);
             }
         };
-
-        let keep_zeros = p.keep_zeros.unwrap_or(true);
-        let summaries_over = |(rows_by_category, rows_key): &ObsRows<'_>| {
-            categories.iter()
-                .map(|category| {
-                    let mut keys = vec![
-                        "violin_summary".to_string(),
-                        self.store_name.clone(),
-                        self.array_layer().unwrap_or("X").to_string(),
-                        self.var_colname().to_string(),
-                        gene_name.to_string(),
-                        p.groupby.clone(),
-                        category.clone(),
-                        keep_zeros.to_string(),
-                    ];
-                    keys.extend(rows_key.iter().cloned());
-                    load_violin_summary(&expression, &rows_by_category[category], keep_zeros, &keys, cache_enabled)
-                })
-                .collect()
-        };
-        Some(rows.iter().map(summaries_over).collect())
+        let values = NumericData::Float32(expression);
+        let input = self.violin_input(&values, obs);
+        let mut keys = vec![
+            self.store_name.clone(),
+            expr_array_path(self.array_layer()),
+            self.var_colname().to_string(),
+            gene_name.to_string(),
+            input.keep_zeros.to_string(),
+        ];
+        keys.extend(obs.key.iter().cloned());
+        let stats = load_violin_stats(gpu_context, &input, &keys, cache_enabled).await;
+        Some(GeneViolins { values, stats, keys })
     }
 
-    /// Summarizes every gene's expression per category, over each of `rows`, as one summary per
-    /// cell (see [`pluot_core::composite_layers::precomputed_violin_matrix_layer::violin_matrix_cell_index`]).
-    /// Genes that are not found, or whose data is not loaded yet, yield empty summaries.
-    /// Also returns whether any gene's data is not loaded yet.
-    async fn load_cell_summaries(&self, categories: &[String], var_names: &[String], rows: &[ObsRows<'_>], var_index_values: &[String]) -> (Vec<Vec<Arc<ViolinSummary>>>, bool) {
+    /// The violins of every gene of `var_names` per category, as one stats and one bin counts per
+    /// cell (see [`pluot_core::composite_layers::precomputed_violin_matrix_layer::violin_matrix_cell_index`]),
+    /// as background and foreground, over bins shared by every cell. Genes that are not found,
+    /// or whose data is not loaded yet, yield empty violins. Also returns whether any gene's data
+    /// is not loaded yet.
+    async fn load_cell_violins(
+        &self,
+        gpu_context: Option<&GpuContext<'_>>,
+        var_names: &[String],
+        num_categories: usize,
+        obs: &CategoryObs<'_>,
+        var_index_values: &[String],
+    ) -> (ViolinStats, ViolinBinCounts, (f32, f32), Vec<f64>, bool) {
+        let p = &self.layer_params;
         let resolved_genes = resolve_gene_columns(var_names, var_index_values);
-
-        let mut gene_results: Vec<Option<Vec<Vec<Arc<ViolinSummary>>>>> = vec![None; resolved_genes.len()];
+        let mut gene_results: Vec<Option<GeneViolins>> = (0..resolved_genes.len()).map(|_| None).collect();
         let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| async move {
-            *slot = self.load_gene_summaries(gene_name, *col_index, categories, rows).await;
+            *slot = self.load_gene_violins(gpu_context, gene_name, *col_index, obs).await;
         });
         // Whether or not the wall clock fires, each slot holds `Some` exactly when its gene finished.
         let _ = maybe_timeout!(futures::future::join_all(gene_futures), self.view_params.timeout).await;
         let genes_bailed = gene_results.iter().any(Option::is_none);
 
-        let empty = Arc::new(ViolinSummary::default());
-        let summaries_by_var: Vec<Option<&Vec<Vec<Arc<ViolinSummary>>>>> = var_names.iter()
-            .map(|var_name| {
-                let resolved_index = resolved_genes.iter().position(|(gene_name, _)| gene_name == var_name)?;
-                gene_results[resolved_index].as_ref()
-            })
-            .collect();
-        let cell_summaries = (0..rows.len())
-            .map(|rows_index| {
-                (0..categories.len())
-                    .flat_map(|category_index| summaries_by_var.iter().map(move |summaries| (category_index, summaries)))
-                    .map(|(category_index, summaries)| summaries.map_or_else(|| empty.clone(), |summaries| summaries[rows_index][category_index].clone()))
-                    .collect()
-            })
-            .collect();
-        (cell_summaries, genes_bailed)
+        let extents = gene_results.iter().flatten().flat_map(|gene| gene.stats.background.iter().chain(&gene.stats.foreground)).filter_map(|stats| stats.non_outlier_extent);
+        let (domain, thresholds) = violin_bin_edges(extents.collect::<Vec<_>>(), p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize, p.value_min);
+        let mut gene_bins: Vec<Option<Arc<ViolinBinCounts>>> = Vec::with_capacity(gene_results.len());
+        for gene in &gene_results {
+            gene_bins.push(match gene {
+                Some(gene) => {
+                    let input = self.violin_input(&gene.values, obs);
+                    Some(load_violin_bins(gpu_context, &input, &gene.stats, domain, &thresholds, &gene.keys, self.view_params.cache_enabled).await)
+                }
+                None => None,
+            });
+        }
+
+        let empty_stats = empty_violin_stats(num_categories);
+        let empty_bins = vec![vec![0; thresholds.len() + 1]; num_categories];
+        let gene_index_of_var: Vec<Option<usize>> =
+            var_names.iter().map(|var_name| resolved_genes.iter().position(|(gene_name, _)| gene_name == var_name).filter(|&index| gene_results[index].is_some())).collect();
+        let cells = |side: fn(&ViolinStats) -> &Vec<ViolinStratumStats>, bin_side: fn(&ViolinBinCounts) -> &Vec<Vec<u32>>| {
+            let mut stats = Vec::with_capacity(num_categories * var_names.len());
+            let mut bins = Vec::with_capacity(num_categories * var_names.len());
+            for category_index in 0..num_categories {
+                for gene_index in &gene_index_of_var {
+                    let (gene_stats, gene_bins) = match gene_index {
+                        Some(index) => (side(&gene_results[*index].as_ref().unwrap().stats), bin_side(gene_bins[*index].as_ref().unwrap())),
+                        None => (side(&empty_stats), &empty_bins),
+                    };
+                    stats.push(gene_stats[category_index]);
+                    bins.push(gene_bins[category_index].clone());
+                }
+            }
+            (stats, bins)
+        };
+        let (background_stats, background_bins) = cells(|stats| &stats.background, |bins| &bins.background);
+        let (foreground_stats, foreground_bins) = cells(|stats| &stats.foreground, |bins| &bins.foreground);
+        (
+            ViolinStats { background: background_stats, foreground: foreground_stats },
+            ViolinBinCounts { background: background_bins, foreground: foreground_bins },
+            domain,
+            thresholds,
+            genes_bailed,
+        )
     }
 }
 
@@ -229,57 +276,50 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
         let p = &self.layer_params;
         let cache_enabled = self.view_params.cache_enabled;
         let matrix_path = expr_array_path(self.array_layer());
-        let criteria_indices = |axis, criteria| {
-            load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, axis, criteria, cache_enabled)
-        };
         let metadata_future = async {
             futures::try_join!(
                 load_var_names(self.store.clone(), &self.store_name, p.gene_symbols.as_deref(), cache_enabled),
                 load_obs_categorical(self.store.clone(), &self.store_name, &p.groupby, cache_enabled),
-                criteria_indices(MatrixAxis::Obs, p.obs_filtering.as_ref()),
-                criteria_indices(MatrixAxis::Obs, p.obs_selection.as_ref()),
-                criteria_indices(MatrixAxis::Var, p.var_filtering.as_ref()),
-                criteria_indices(MatrixAxis::Var, p.var_selection.as_ref()),
+                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_filtering.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_selection.as_ref(), cache_enabled),
+                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Var, p.var_filtering.as_ref(), cache_enabled),
+                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Var, p.var_selection.as_ref(), cache_enabled),
             )
         };
-        let (var_index_values, (obs_categories, obs_codes), obs_filtered, obs_selected, var_filtered, var_selected) = match maybe_timeout!(metadata_future, self.view_params.timeout).await {
-            Ok(Ok(loaded)) => loaded,
-            Ok(Err(e)) => {
-                if is_timed_out_zarrs_error(&e) {
-                    return PrepareResult { bailed_early: true };
+        let (var_index_values, (obs_categories, obs_codes), obs_filtering, obs_selection, var_filtered, var_selected) =
+            match maybe_timeout!(metadata_future, self.view_params.timeout).await {
+                Ok(Ok(loaded)) => loaded,
+                Ok(Err(e)) => {
+                    if is_timed_out_zarrs_error(&e) {
+                        return PrepareResult { bailed_early: true };
+                    }
+                    panic!("Zarrs error during AdataZarrViolinMatrixLayer prepare: {:?}", e);
                 }
-                panic!("Zarrs error during AdataZarrViolinMatrixLayer prepare: {:?}", e);
-            }
-            Err(_) => return PrepareResult { bailed_early: true }, // Wall-clock timeout from maybe_timeout!
-        };
+                Err(_) => return PrepareResult { bailed_early: true }, // Wall-clock timeout from maybe_timeout!
+            };
 
+        let criteria_key = obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref());
         let mut categories = p.categories.clone().unwrap_or_else(|| obs_categories.as_ref().clone());
-        let (background_rows, foreground_rows) = background_and_foreground_rows(
-            bucket_rows_by_category(&categories, &obs_categories, &obs_codes),
-            obs_filtered.as_deref().map(indices_of),
-            obs_selected.as_deref().map(indices_of),
-            obs_codes.len(),
-        );
-        if obs_filtered.is_some() {
-            categories.retain(|category| !background_rows[category].is_empty());
+        if p.obs_filtering.is_some() {
+            categories = categories_with_included_obs(
+                gpu_context, &self.store_name, &p.groupby, categories, &obs_categories, &obs_codes, &obs_filtering, &criteria_key, cache_enabled,
+            )
+            .await;
         }
-        let mut rows = vec![(&background_rows, obs_rows_key(p.obs_filtering.as_ref(), None))];
-        if let Some(foreground_rows) = &foreground_rows {
-            rows.push((foreground_rows, obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref())));
-        }
+        let strata = category_strata(&categories, &obs_categories, &obs_codes);
+        let mut obs_key = vec![p.groupby.clone()];
+        obs_key.extend(categories.iter().cloned());
+        obs_key.extend(criteria_key);
+        let obs = CategoryObs { strata: &strata, filtering_criteria: &obs_filtering, selection_criteria: &obs_selection, key: obs_key };
+
         let var_names = filter_genes(&p.var_names, &var_index_values, var_filtered.as_deref().map(indices_of));
         let var_selection = var_selected.as_deref().map(|selected| Arc::new(genes_among(&var_names, &var_index_values, indices_of(selected))));
-        let (mut summaries_per_rows, genes_bailed) = self.load_cell_summaries(&categories, &var_names, &rows, &var_index_values).await;
+        let (stats, bins, domain, thresholds, genes_bailed) = self.load_cell_violins(gpu_context, &var_names, categories.len(), &obs, &var_index_values).await;
 
         let p = &self.layer_params;
-        // Binned together, so that the background and foreground violins share their bins.
-        let all_summaries: Vec<&ViolinSummary> = summaries_per_rows.iter().flatten().map(Arc::as_ref).collect();
-        let mut bins = bin_violins(&all_summaries, p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize, p.value_min);
-        let summaries = summaries_per_rows.pop().unwrap_or_default();
-        let bin_counts = bins.bin_counts.split_off(bins.bin_counts.len() - summaries.len());
-        let background_bin_counts = foreground_rows.is_some().then(|| Arc::new(bins.bin_counts));
-        let medians = summaries.iter()
-            .map(|summary| summary.quartiles.map(|(_, median, _)| median))
+        let has_selection = p.obs_selection.is_some();
+        let medians = stats.foreground.iter()
+            .map(|stats| stats.quartiles.map(|(_, median, _)| median))
             .collect();
 
         let mut violin_matrix_layer = PrecomputedViolinMatrixLayer::new(
@@ -290,12 +330,12 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
                 swap_axes: p.swap_axes,
                 var_names: Arc::new(var_names),
                 groups: Arc::new(categories),
-                bin_starts: Arc::new(bins.bin_starts),
-                bin_counts: Arc::new(bin_counts),
-                background_bin_counts,
+                bin_starts: Arc::new(violin_bin_starts(domain, &thresholds)),
+                bin_counts: Arc::new(bins.foreground),
+                background_bin_counts: has_selection.then(|| Arc::new(bins.background)),
                 density_norm: p.density_norm,
                 var_selection,
-                value_domain: Some(bins.value_domain),
+                value_domain: Some(domain),
                 fill_values: Some(Arc::new(medians)),
                 cmap: p.cmap,
                 fill_value_title: Some("Median expression".to_string()),
@@ -306,7 +346,7 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
         );
         let prepare_result = violin_matrix_layer.prepare(gpu_context).await;
         self.inner = Some(violin_matrix_layer);
-        self.summaries = summaries;
+        self.summaries = stats.foreground;
 
         PrepareResult { bailed_early: genes_bailed || prepare_result.bailed_early }
     }

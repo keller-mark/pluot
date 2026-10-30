@@ -29,3 +29,19 @@ fn counts_a_single_column() {
 fn no_columns_yields_no_groups() {
     assert!(count_obs_groups(&[]).is_empty());
 }
+
+#[cfg(not(feature = "lacks_gpu"))]
+#[tokio::test]
+async fn gpu_counts_match_cpu_counts() {
+    use pluot_core::render_types::GpuContext;
+    use pluot_zarr::treemap_data::count_obs_groups_on_gpu;
+
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+    let len = 100_000;
+    let cell_type = NumericData::Int8(Arc::new((0..len).map(|i| ((i * 7) % 12) as i8 - 1).collect()));
+    let sample = NumericData::Uint16(Arc::new((0..len).map(|i| ((i * 13) % 5) as u16).collect()));
+    let columns = [&cell_type, &sample];
+    assert_eq!(count_obs_groups_on_gpu(&gpu_context, &columns, &[11, 5]).await, count_obs_groups(&columns));
+    assert!(count_obs_groups_on_gpu(&gpu_context, &[], &[]).await.is_empty());
+}

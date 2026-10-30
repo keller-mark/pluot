@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -15,6 +14,8 @@ use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
 use pluot_core::composite_layers::bar_plot_layer::BarOrientation;
 use pluot_core::composite_layers::precomputed_violin_layer::{PrecomputedViolinLayer, PrecomputedViolinLayerParams, PrecomputedViolinPickingInfo, ViolinDensityNorm};
+use pluot_core::compute::stratified_violin::{StratifiedViolinInput, ViolinStratumStats};
+use pluot_core::compute::ForegroundBackground;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::LayerExtentResult;
 use pluot_core::LayerPickingResult;
@@ -22,11 +23,11 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
 use crate::dotplot_data::{
-    background_and_foreground_rows, bucket_rows_by_category, expr_array_path, load_gene_expression, load_obs_categorical, load_var_names, obs_rows_key,
+    categories_with_included_obs, category_strata, expr_array_path, load_gene_expression, load_obs_categorical, load_var_names, obs_rows_key,
     resolve_gene_columns,
 };
-use crate::heatmap_data::{indices_of, load_criteria_indices, AxisCriteria, MatrixAxis};
-use crate::violin_data::{bin_violins, load_violin_summary, ViolinSummary};
+use crate::heatmap_data::{load_axis_emphasis_criteria, AxisCriteria, MatrixAxis};
+use crate::violin_data::{empty_violin_stats, load_violin_bins, load_violin_stats, violin_bin_edges, violin_bin_starts};
 
 const DEFAULT_NUM_BINS: u32 = 16;
 
@@ -109,7 +110,7 @@ pub struct AdataZarrViolinLayer {
 
     inner: Option<PrecomputedViolinLayer>,
     // One per violin, in the order of the inner layer's groups.
-    summaries: Vec<Arc<ViolinSummary>>,
+    summaries: Vec<ViolinStratumStats>,
 }
 
 fn to_rgb8([r, g, b, _]: [f32; 4]) -> (u8, u8, u8) {
@@ -135,49 +136,24 @@ impl AdataZarrViolinLayer {
         self.layer_params.layer.as_deref().filter(|layer| *layer != "X")
     }
 
-    /// Summarizes the gene's expression per category, over each of `rows` (the rows of each
-    /// category, along with their [`obs_rows_key`]), or returns `None` when its data is not loaded yet.
-    /// A gene that is not found yields empty summaries.
-    async fn load_summaries(&self, categories: &[String], rows: &[(&HashMap<String, Vec<u32>>, Vec<String>)], var_index_values: &[String]) -> Option<Vec<Vec<Arc<ViolinSummary>>>> {
+    /// Loads the gene's expression, or returns `Err` when its data is not loaded yet, and `Ok(None)` when the gene is not found.
+    async fn load_expression(&self, var_index_values: &[String]) -> Result<Option<(String, Arc<Vec<f32>>)>, ()> {
         let p = &self.layer_params;
-        let cache_enabled = self.view_params.cache_enabled;
         let Some((gene_name, col_index)) = resolve_gene_columns(std::slice::from_ref(&p.var_name), var_index_values).pop() else {
-            return Some(vec![vec![Arc::new(ViolinSummary::default()); categories.len()]; rows.len()]);
+            return Ok(None);
         };
         let var_colname = p.gene_symbols.as_deref().unwrap_or("index");
-
-        let expression_future = load_gene_expression(self.store.clone(), &self.store_name, var_colname, &gene_name, col_index, self.array_layer(), cache_enabled);
-        let expression = match maybe_timeout!(expression_future, self.view_params.timeout).await {
-            Ok(Ok(expression)) => expression,
+        let expression_future = load_gene_expression(self.store.clone(), &self.store_name, var_colname, &gene_name, col_index, self.array_layer(), self.view_params.cache_enabled);
+        match maybe_timeout!(expression_future, self.view_params.timeout).await {
+            Ok(Ok(expression)) => Ok(Some((gene_name, expression))),
             Ok(Err(e)) => {
                 if is_timed_out_zarrs_error(&e) {
-                    return None;
+                    return Err(());
                 }
                 panic!("Zarrs error loading expression during AdataZarrViolinLayer prepare: {:?}", e);
             }
-            Err(_) => return None, // Wall-clock timeout from maybe_timeout!
-        };
-
-        let keep_zeros = p.keep_zeros.unwrap_or(true);
-        let summaries_over = |(rows_by_category, rows_key): &(&HashMap<String, Vec<u32>>, Vec<String>)| {
-            categories.iter()
-                .map(|category| {
-                    let mut keys = vec![
-                        "violin_summary".to_string(),
-                        self.store_name.clone(),
-                        self.array_layer().unwrap_or("X").to_string(),
-                        var_colname.to_string(),
-                        gene_name.clone(),
-                        p.groupby.clone(),
-                        category.clone(),
-                        keep_zeros.to_string(),
-                    ];
-                    keys.extend(rows_key.iter().cloned());
-                    load_violin_summary(&expression, &rows_by_category[category], keep_zeros, &keys, cache_enabled)
-                })
-                .collect()
-        };
-        Some(rows.iter().map(summaries_over).collect())
+            Err(_) => Err(()), // Wall-clock timeout from maybe_timeout!
+        }
     }
 }
 
@@ -192,11 +168,11 @@ impl PreparedLayer for AdataZarrViolinLayer {
             futures::try_join!(
                 load_var_names(self.store.clone(), &self.store_name, p.gene_symbols.as_deref(), cache_enabled),
                 load_obs_categorical(self.store.clone(), &self.store_name, &p.groupby, cache_enabled),
-                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_filtering.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_selection.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_filtering.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_selection.as_ref(), cache_enabled),
             )
         };
-        let (var_index_values, (obs_categories, obs_codes), obs_filtered, obs_selected) = match maybe_timeout!(metadata_future, self.view_params.timeout).await {
+        let (var_index_values, (obs_categories, obs_codes), obs_filtering, obs_selection) = match maybe_timeout!(metadata_future, self.view_params.timeout).await {
             Ok(Ok(loaded)) => loaded,
             Ok(Err(e)) => {
                 if is_timed_out_zarrs_error(&e) {
@@ -207,31 +183,55 @@ impl PreparedLayer for AdataZarrViolinLayer {
             Err(_) => return PrepareResult { bailed_early: true }, // Wall-clock timeout from maybe_timeout!
         };
 
+        let criteria_key = obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref());
         let mut categories = p.categories.clone().unwrap_or_else(|| obs_categories.as_ref().clone());
-        let (background_rows, foreground_rows) = background_and_foreground_rows(
-            bucket_rows_by_category(&categories, &obs_categories, &obs_codes),
-            obs_filtered.as_deref().map(indices_of),
-            obs_selected.as_deref().map(indices_of),
-            obs_codes.len(),
-        );
-        if obs_filtered.is_some() {
-            categories.retain(|category| !background_rows[category].is_empty());
+        if p.obs_filtering.is_some() {
+            categories = categories_with_included_obs(
+                gpu_context, &self.store_name, &p.groupby, categories, &obs_categories, &obs_codes, &obs_filtering, &criteria_key, cache_enabled,
+            )
+            .await;
         }
-        let mut rows = vec![(&background_rows, obs_rows_key(p.obs_filtering.as_ref(), None))];
-        if let Some(foreground_rows) = &foreground_rows {
-            rows.push((foreground_rows, obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref())));
-        }
-        let Some(mut summaries_per_rows) = self.load_summaries(&categories, &rows, &var_index_values).await else {
+        let Ok(expression) = self.load_expression(&var_index_values).await else {
             return PrepareResult { bailed_early: true };
         };
 
-        // Binned together, so that the background and foreground violins share their bins.
-        let all_summaries: Vec<&ViolinSummary> = summaries_per_rows.iter().flatten().map(Arc::as_ref).collect();
-        let mut bins = bin_violins(&all_summaries, p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize, p.value_min);
-        let summaries = summaries_per_rows.pop().unwrap_or_default();
-        let bin_counts = bins.bin_counts.split_off(bins.bin_counts.len() - summaries.len());
-        let background_bin_counts = foreground_rows.is_some().then(|| Arc::new(bins.bin_counts));
-        let quartiles = summaries.iter().map(|summary| summary.quartiles).collect();
+        let p = &self.layer_params;
+        let num_bins = p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize;
+        let strata = category_strata(&categories, &obs_categories, &obs_codes);
+        let (stats, domain, thresholds, bins) = match &expression {
+            Some((gene_name, expression)) => {
+                let values = NumericData::Float32(expression.clone());
+                let input = StratifiedViolinInput {
+                    values: &values,
+                    stratify_by: &strata,
+                    filtering_criteria: &obs_filtering,
+                    selection_criteria: &obs_selection,
+                    keep_zeros: p.keep_zeros.unwrap_or(true),
+                };
+                let mut keys = vec![
+                    self.store_name.clone(),
+                    matrix_path.clone(),
+                    p.gene_symbols.clone().unwrap_or_else(|| "index".to_string()),
+                    gene_name.clone(),
+                    p.groupby.clone(),
+                    input.keep_zeros.to_string(),
+                ];
+                keys.extend(categories.iter().cloned());
+                keys.extend(criteria_key.iter().cloned());
+                let stats = load_violin_stats(gpu_context, &input, &keys, cache_enabled).await;
+                let extents = stats.background.iter().chain(&stats.foreground).filter_map(|stats| stats.non_outlier_extent);
+                let (domain, thresholds) = violin_bin_edges(extents, num_bins, p.value_min);
+                let bins = load_violin_bins(gpu_context, &input, &stats, domain, &thresholds, &keys, cache_enabled).await;
+                (stats.as_ref().clone(), domain, thresholds, bins.as_ref().clone())
+            }
+            None => {
+                let (domain, thresholds) = violin_bin_edges([], num_bins, p.value_min);
+                let no_counts = vec![vec![0; thresholds.len() + 1]; categories.len()];
+                (empty_violin_stats(categories.len()), domain, thresholds, ForegroundBackground { background: no_counts.clone(), foreground: no_counts })
+            }
+        };
+        let has_selection = p.obs_selection.is_some();
+        let quartiles = stats.foreground.iter().map(|stats| stats.quartiles).collect();
 
         let cmap = p.cmap.unwrap_or(CategoricalColormap::Tableau10);
         let fill_colors = categories.iter().enumerate()
@@ -248,12 +248,12 @@ impl PreparedLayer for AdataZarrViolinLayer {
                 bounds: p.bounds.clone(),
                 orientation: p.orientation.clone(),
                 groups: Arc::new(categories),
-                bin_starts: Arc::new(bins.bin_starts),
-                bin_counts: Arc::new(bin_counts),
-                background_bin_counts,
+                bin_starts: Arc::new(violin_bin_starts(domain, &thresholds)),
+                bin_counts: Arc::new(bins.foreground),
+                background_bin_counts: has_selection.then(|| Arc::new(bins.background)),
                 density_norm: p.density_norm,
                 quartiles: Some(Arc::new(quartiles)),
-                value_domain: Some(bins.value_domain),
+                value_domain: Some(domain),
                 fill_colors: Some(Arc::new(fill_colors)),
                 group_axis_title: Some(p.groupby.clone()),
                 value_axis_title: Some(p.var_name.clone()),
@@ -262,7 +262,7 @@ impl PreparedLayer for AdataZarrViolinLayer {
         );
         let prepare_result = violin_layer.prepare(gpu_context).await;
         self.inner = Some(violin_layer);
-        self.summaries = summaries;
+        self.summaries = stats.foreground;
 
         prepare_result
     }

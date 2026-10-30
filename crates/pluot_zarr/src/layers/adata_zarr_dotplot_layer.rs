@@ -27,10 +27,10 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
 use crate::dotplot_data::{
-    background_and_foreground_rows, bucket_rows_by_category, expr_array_path, filter_genes, genes_among, load_gene_summaries_for_gene, load_obs_categorical,
-    load_var_names, obs_rows_key, resolve_gene_columns, GeneSummary,
+    categories_with_included_obs, category_strata, expr_array_path, filter_genes, genes_among, load_gene_summaries_for_gene, load_obs_categorical, load_var_names,
+    obs_rows_key, resolve_gene_columns, CategoryObs, GeneSummaries, GeneSummary,
 };
-use crate::heatmap_data::{indices_of, load_criteria_indices, AxisCriteria, MatrixAxis};
+use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_criteria_indices, AxisCriteria, MatrixAxis};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -148,10 +148,6 @@ impl AdataZarrDotPlotLayer {
     }
 }
 
-/// The background summaries (over every filter-included obs) of one gene, and its
-/// foreground summaries (over the selected ones) when there is an obs selection.
-type GeneSummaries = (Vec<GeneSummary>, Option<Vec<GeneSummary>>);
-
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for AdataZarrDotPlotLayer {
@@ -171,14 +167,15 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let expression_cutoff = params.expression_cutoff;
 
         // Stage 1: the obs groupby column, the var names/column used to resolve gene
-        // columns, and the indices included by each filtering and selection. None depends on
-        // another (`try_join`), and all are prerequisites for the axes and every gene's points below.
+        // columns, the obs filtering and selection criteria, and the var indices included by
+        // the var filtering and selection. None depends on another (`try_join`), and all are
+        // prerequisites for the axes and every gene's points below.
         let metadata_future = async {
             futures::try_join!(
                 load_var_names(store.clone(), &store_name, var_column.as_deref(), cache_enabled),
                 load_obs_categorical(store.clone(), &store_name, &groupby, cache_enabled),
-                load_criteria_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_selection.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_selection.as_ref(), cache_enabled),
                 load_criteria_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), cache_enabled),
                 load_criteria_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_selection.as_ref(), cache_enabled),
             )
@@ -195,70 +192,50 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             Err(_) => None, // Wall-clock timeout from maybe_timeout!
         };
 
-        // Stage 2: once the metadata above is ready, resolve genes to column indices and
-        // bucket obs rows by category (both pure/synchronous), then load each resolved gene's
-        // own array column independently and concurrently. Each gene's slot is mutated in
-        // place as its own future resolves to `Some(..)`; a slot left at `None` means that
-        // gene's data isn't loaded yet (either it hit zarrs's "not cached yet" condition, or
-        // the wall-clock timeout below cut the rest short before its turn) -- either way, it's
-        // simply omitted from this round's dots rather than blocking the genes that did load.
+        // Stage 2: once the metadata above is ready, resolve genes to column indices, then load
+        // each resolved gene's own array column independently and concurrently. Each gene's
+        // slot is mutated in place as its own future resolves to `Some(..)`; a slot left at
+        // `None` means that gene's data isn't loaded yet (either it hit zarrs's "not cached
+        // yet" condition, or the wall-clock timeout below cut the rest short before its turn)
+        // -- either way, it's simply omitted from this round's dots rather than blocking the
+        // genes that did load.
         let (var_names, var_selected, group_labels, background_summaries, foreground_summaries, genes_bailed) = match &metadata {
-            Some((var_index_values, (obs_categories, obs_codes), obs_filtered, obs_selected, var_filtered, var_selected)) => {
+            Some((var_index_values, (obs_categories, obs_codes), obs_filtering, obs_selection, var_filtered, var_selected)) => {
                 // A `None` `categories` param means "every category of `groupby`", in its
                 // stored order -- matching `sc.pl.dotplot`'s own default and the behavior this
                 // layer had before `categories` became an explicit list. `Some(vec![])` means
                 // no categories at all, and is passed through as-is.
                 let mut requested_categories = requested_categories.unwrap_or_else(|| obs_categories.as_ref().clone());
-                let rows_by_category = bucket_rows_by_category(&requested_categories, obs_categories, obs_codes);
-                let (background_rows, foreground_rows) = background_and_foreground_rows(
-                    rows_by_category,
-                    obs_filtered.as_deref().map(indices_of),
-                    obs_selected.as_deref().map(indices_of),
-                    obs_codes.len(),
-                );
-                if obs_filtered.is_some() {
-                    requested_categories.retain(|category| !background_rows[category].is_empty());
+                let criteria_key = obs_rows_key(params.obs_filtering.as_ref(), params.obs_selection.as_ref());
+                if params.obs_filtering.is_some() {
+                    requested_categories = categories_with_included_obs(
+                        gpu_context, &store_name, &groupby, requested_categories, obs_categories, obs_codes, obs_filtering, &criteria_key, cache_enabled,
+                    )
+                    .await;
                 }
+                let strata = category_strata(&requested_categories, obs_categories, obs_codes);
+                let obs = CategoryObs {
+                    groupby: &groupby,
+                    categories: &requested_categories,
+                    strata: &strata,
+                    filtering_criteria: obs_filtering,
+                    selection_criteria: obs_selection,
+                    criteria_key: &criteria_key,
+                };
 
                 let var_names = filter_genes(&params.var_names, var_index_values, var_filtered.as_deref().map(indices_of));
                 let var_selected = var_selected.as_deref().map(|selected| genes_among(&var_names, var_index_values, indices_of(selected)));
                 let resolved_genes = resolve_gene_columns(&var_names, var_index_values);
                 let var_colname = var_column.unwrap_or_else(|| "index".to_string());
-                let background_rows_key = obs_rows_key(params.obs_filtering.as_ref(), None);
-                let foreground_rows_key = obs_rows_key(params.obs_filtering.as_ref(), params.obs_selection.as_ref());
 
-                let mut gene_results: Vec<Option<GeneSummaries>> = vec![None; resolved_genes.len()];
+                let mut gene_results: Vec<Option<Arc<GeneSummaries>>> = vec![None; resolved_genes.len()];
                 let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| {
-                    let summaries_over = |rows_by_category, rows_key| {
-                        load_gene_summaries_for_gene(
-                            store.clone(),
-                            &store_name,
-                            &var_colname,
-                            gene_name,
-                            *col_index,
-                            array_layer.as_deref(),
-                            &groupby,
-                            &requested_categories,
-                            rows_by_category,
-                            rows_key,
-                            expression_cutoff,
-                            cache_enabled,
-                        )
-                    };
-                    let (background_rows, foreground_rows) = (&background_rows, &foreground_rows);
-                    let (background_rows_key, foreground_rows_key) = (&background_rows_key, &foreground_rows_key);
+                    let (store, store_name, var_colname, array_layer, obs) = (store.clone(), &store_name, &var_colname, array_layer.as_deref(), &obs);
                     async move {
-                        let Some(background) = summaries_over(background_rows, background_rows_key).await else {
-                            return;
-                        };
-                        let foreground = match foreground_rows {
-                            Some(foreground_rows) => match summaries_over(foreground_rows, foreground_rows_key).await {
-                                Some(foreground) => Some(foreground),
-                                None => return,
-                            },
-                            None => None,
-                        };
-                        *slot = Some((background, foreground));
+                        *slot = load_gene_summaries_for_gene(
+                            gpu_context, store, store_name, var_colname, gene_name, *col_index, array_layer, obs, expression_cutoff, cache_enabled,
+                        )
+                        .await;
                     }
                 });
 
@@ -267,9 +244,10 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 // that didn't, which is exactly what's needed below.
                 let _ = maybe_timeout!(futures::future::join_all(gene_futures), timeout).await;
                 let genes_bailed = gene_results.iter().any(Option::is_none);
-                let (background, foreground): (Vec<_>, Vec<_>) = gene_results.into_iter().flatten().unzip();
-                let background: Vec<GeneSummary> = background.into_iter().flatten().collect();
-                let foreground: Option<Vec<GeneSummary>> = foreground_rows.as_ref().map(|_| foreground.into_iter().flatten().flatten().collect());
+                let loaded: Vec<Arc<GeneSummaries>> = gene_results.into_iter().flatten().collect();
+                let background: Vec<GeneSummary> = loaded.iter().flat_map(|summaries| summaries.background.iter().cloned()).collect();
+                let foreground: Option<Vec<GeneSummary>> =
+                    params.obs_selection.is_some().then(|| loaded.iter().flat_map(|summaries| summaries.foreground.iter().cloned()).collect());
                 (var_names, var_selected, requested_categories, background, foreground, genes_bailed)
             }
             None => {

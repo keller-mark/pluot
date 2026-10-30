@@ -201,20 +201,52 @@ async fn groupby_sorts_obs_by_category() {
     obs_indices.sort_by_key(|&i| codes.get_f32(i) as i64);
     assert!(obs_indices.windows(2).any(|pair| pair[0] > pair[1]), "grouping reorders the obs");
     let expected = Expected { obs_indices, ..expected };
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
 
-    for (layer_name, matrix_path) in [("X", "/X"), ("csr", "/layers/csr"), ("csc", "/layers/csc")] {
-        for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
-            let params = AdataZarrHeatmapLayerParams {
-                layer: layer_name.to_string(),
-                obs_filtering: None,
-                groupby: Some("bulk_labels".to_string()),
-                cache_mode: Some(cache_mode),
-                ..params.clone()
-            };
-            let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
-            assert!(!layer.prepare(None).await.bailed_early, "{matrix_path} {cache_mode:?}");
-            check_picks_of(&layer, store.clone(), matrix_path, &expected, false).await;
+    for gpu in [None, Some(&gpu_context)] {
+        for (layer_name, matrix_path) in [("X", "/X"), ("csr", "/layers/csr"), ("csc", "/layers/csc")] {
+            for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
+                let params = AdataZarrHeatmapLayerParams {
+                    layer: layer_name.to_string(),
+                    obs_filtering: None,
+                    groupby: Some("bulk_labels".to_string()),
+                    cache_mode: Some(cache_mode),
+                    ..params.clone()
+                };
+                let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+                assert!(!layer.prepare(gpu).await.bailed_early, "{matrix_path} {cache_mode:?}");
+                check_picks_of(&layer, store.clone(), matrix_path, &expected, false).await;
+            }
         }
+    }
+}
+
+#[tokio::test]
+async fn groupby_keeps_the_listed_order_of_identifiers_within_each_category() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
+    let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+    let listed: Vec<usize> = (0..codes.len()).rev().step_by(3).collect();
+    let mut obs_indices = listed.clone();
+    obs_indices.sort_by_key(|&i| codes.get_f32(i) as i64);
+    let expected = Expected { obs_indices, ..expected };
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for gpu in [None, Some(&gpu_context)] {
+        let params = AdataZarrHeatmapLayerParams {
+            obs_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams {
+                column: None,
+                identifiers: listed.iter().map(|&i| obs_names[i].clone()).collect(),
+            })),
+            groupby: Some("bulk_labels".to_string()),
+            ..params.clone()
+        };
+        let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+        assert!(!layer.prepare(gpu).await.bailed_early);
+        check_picks(&layer, store.clone(), &expected, false).await;
     }
 }
 

@@ -4,7 +4,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use pluot_core::compute::code_combinations::{count_code_combinations, num_code_combinations};
 use pluot_core::numeric_data::NumericData;
+use pluot_core::render_types::GpuContext;
 use zarrs::array::ArrayError;
 
 use crate::dotplot_data::{load_obs_categorical, AdataStore};
@@ -68,9 +70,32 @@ pub fn count_obs_groups(codes_per_column: &[&NumericData]) -> Vec<ObsGroupCount>
     groups
 }
 
+/// [`count_obs_groups`], counting on the GPU. `num_categories` holds each column's number of
+/// categories, whose combinations must fit in one GPU buffer (see [`num_code_combinations`]).
+pub async fn count_obs_groups_on_gpu(gpu_context: &GpuContext<'_>, codes_per_column: &[&NumericData], num_categories: &[usize]) -> Vec<ObsGroupCount> {
+    if codes_per_column.is_empty() {
+        return Vec::new();
+    }
+    let counts = count_code_combinations(gpu_context, codes_per_column, num_categories).await;
+    counts
+        .into_iter()
+        .enumerate()
+        .filter(|&(_, count)| count > 0)
+        .map(|(mut combination, count)| {
+            let mut codes = vec![0u32; num_categories.len()];
+            for (code, &n) in codes.iter_mut().zip(num_categories).rev() {
+                *code = (combination % n) as u32;
+                combination /= n;
+            }
+            ObsGroupCount { codes, count }
+        })
+        .collect()
+}
+
 /// Loads (and caches) each `groupby` column's category labels, and the number of observations per
 /// combination of their categories. The counts are cached independently of the columns they were computed from.
 pub async fn load_obs_group_counts(
+    gpu_context: Option<&GpuContext<'_>>,
     store: AdataStore,
     store_name: &str,
     groupby: &[String],
@@ -85,7 +110,13 @@ pub async fn load_obs_group_counts(
     let counts = use_memo_obs_group_counts(
         async || {
             let codes_per_column: Vec<&NumericData> = columns.iter().map(|(_, codes)| codes.as_ref()).collect();
-            count_obs_groups(&codes_per_column)
+            let num_categories: Vec<usize> = columns.iter().map(|(categories, _)| categories.len()).collect();
+            match gpu_context {
+                Some(gpu_context) if num_code_combinations(gpu_context, &num_categories).is_some() => {
+                    count_obs_groups_on_gpu(gpu_context, &codes_per_column, &num_categories).await
+                }
+                _ => count_obs_groups(&codes_per_column),
+            }
         },
         &counts_keys,
         cache_enabled,

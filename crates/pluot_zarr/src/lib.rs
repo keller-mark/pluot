@@ -7,3 +7,4 @@ pub mod heatmap_data;
 pub mod treemap_data;
 pub mod violin_data;
 pub mod layers;
+pub mod memo;

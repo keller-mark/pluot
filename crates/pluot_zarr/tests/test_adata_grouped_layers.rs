@@ -116,8 +116,7 @@ fn band_centers(num_bands: usize) -> Vec<f32> {
     (0..num_bands).map(|band| (band as f32 + 0.5) * step).collect()
 }
 
-#[tokio::test]
-async fn dotplot_summarizes_the_selected_obs_of_the_filtered_categories_and_vars() {
+async fn check_dotplot_summarizes_the_selected_obs_of_the_filtered_categories_and_vars(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
     let requested = var_names(store.clone(), &[10, 3, 700]).await;
     let (categories, selected_rows) = selected_rows_by_category(store.clone()).await;
@@ -132,7 +131,7 @@ async fn dotplot_summarizes_the_selected_obs_of_the_filtered_categories_and_vars
         var_selection: identifiers(&[requested[0].clone()]),
         ..Default::default()
     });
-    assert!(!layer.prepare(None).await.bailed_early);
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
 
     let genes = [requested[0].clone(), requested[2].clone()];
     let mut picked_categories = Vec::new();
@@ -157,8 +156,7 @@ async fn dotplot_summarizes_the_selected_obs_of_the_filtered_categories_and_vars
     assert_eq!(picked_categories, expected_categories);
 }
 
-#[tokio::test]
-async fn violin_summarizes_the_selected_obs_of_the_filtered_categories() {
+async fn check_violin_summarizes_the_selected_obs_of_the_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
     let gene = var_names(store.clone(), &[10]).await.remove(0);
     let (categories, selected_rows) = selected_rows_by_category(store.clone()).await;
@@ -171,7 +169,7 @@ async fn violin_summarizes_the_selected_obs_of_the_filtered_categories() {
         obs_selection: obs_selection(),
         ..Default::default()
     });
-    assert!(!layer.prepare(None).await.bailed_early);
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
 
     for (category, x) in categories.iter().zip(band_centers(categories.len())) {
         let info: AdataZarrViolinPickingInfo = layer.pick(ScreenCoord { x, y: SIZE as f32 / 2.0 }, None).expect("a violin is picked").into_info().unwrap();
@@ -180,8 +178,7 @@ async fn violin_summarizes_the_selected_obs_of_the_filtered_categories() {
     }
 }
 
-#[tokio::test]
-async fn violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_and_vars() {
+async fn check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_and_vars(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
     let requested = var_names(store.clone(), &[10, 3, 700]).await;
     let (categories, selected_rows) = selected_rows_by_category(store.clone()).await;
@@ -196,7 +193,7 @@ async fn violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_an
         var_selection: identifiers(&[requested[1].clone()]),
         ..Default::default()
     });
-    assert!(!layer.prepare(None).await.bailed_early);
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
 
     let genes = [requested[1].clone(), requested[2].clone()];
     let mut picked_categories = Vec::new();
@@ -215,43 +212,23 @@ async fn violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_an
     assert_eq!(picked_categories, expected_categories);
 }
 
+async fn with_cpu_and_gpu<F: AsyncFn(Option<&GpuContext<'_>>)>(check: F) {
+    check(None).await;
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    check(Some(&GpuContext { device: &device, queue: &queue })).await;
+}
 
 #[tokio::test]
-async fn filtered_and_selected_layers_prepare_on_the_gpu() {
-    let store = pbmc_store();
-    let requested = var_names(store.clone(), &[10, 3, 700]).await;
-    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
-    let gpu_context = GpuContext { device: &device, queue: &queue };
+async fn dotplot_summarizes_the_selected_obs_of_the_filtered_categories_and_vars() {
+    with_cpu_and_gpu(check_dotplot_summarizes_the_selected_obs_of_the_filtered_categories_and_vars).await;
+}
 
-    let mut dotplot = AdataZarrDotPlotLayer::new(view_params(store.clone()), AdataZarrDotPlotLayerParams {
-        store_name: Some("pbmc".to_string()),
-        groupby: "bulk_labels".to_string(),
-        var_names: requested.clone(),
-        obs_filtering: obs_filtering(),
-        obs_selection: obs_selection(),
-        var_selection: identifiers(&[requested[0].clone()]),
-        ..Default::default()
-    });
-    assert!(!dotplot.prepare(Some(&gpu_context)).await.bailed_early);
+#[tokio::test]
+async fn violin_summarizes_the_selected_obs_of_the_filtered_categories() {
+    with_cpu_and_gpu(check_violin_summarizes_the_selected_obs_of_the_filtered_categories).await;
+}
 
-    let mut violin = AdataZarrViolinLayer::new(view_params(store.clone()), AdataZarrViolinLayerParams {
-        store_name: Some("pbmc".to_string()),
-        groupby: "bulk_labels".to_string(),
-        var_name: requested[0].clone(),
-        obs_filtering: obs_filtering(),
-        obs_selection: obs_selection(),
-        ..Default::default()
-    });
-    assert!(!violin.prepare(Some(&gpu_context)).await.bailed_early);
-
-    let mut violin_matrix = AdataZarrViolinMatrixLayer::new(view_params(store), AdataZarrViolinMatrixLayerParams {
-        store_name: Some("pbmc".to_string()),
-        groupby: "bulk_labels".to_string(),
-        var_names: requested.clone(),
-        obs_filtering: obs_filtering(),
-        obs_selection: obs_selection(),
-        var_selection: identifiers(&[requested[0].clone()]),
-        ..Default::default()
-    });
-    assert!(!violin_matrix.prepare(Some(&gpu_context)).await.bailed_early);
+#[tokio::test]
+async fn violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_and_vars() {
+    with_cpu_and_gpu(check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_and_vars).await;
 }

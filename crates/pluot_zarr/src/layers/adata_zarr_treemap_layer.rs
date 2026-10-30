@@ -103,6 +103,7 @@ impl AdataZarrTreemapLayer {
 impl PreparedLayer for AdataZarrTreemapLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let counts_future = load_obs_group_counts(
+            gpu_context,
             self.store.clone(),
             &self.store_name,
             &self.layer_params.groupby,
