@@ -18,6 +18,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 
 use crate::adata_io::{read_dataframe_column_strings, read_matrix_column_f32, read_string_array};
 use crate::adata_metadata::AnnDataEncoding;
+use crate::heatmap_data::{axis_criteria_key, index_mask, AxisCriteria};
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
 /// The store of a single AnnData-Zarr object (i.e. rooted at the `anndata`-encoded group).
@@ -115,7 +116,7 @@ pub async fn load_obs_categorical(store: AdataStore, store_name: &str, groupby: 
 }
 
 /// Path of the expression matrix for `layer`: `/X` for `None`, else `/layers/<layer>`.
-fn expr_array_path(layer: Option<&str>) -> String {
+pub fn expr_array_path(layer: Option<&str>) -> String {
     match layer {
         None => "/X".to_string(),
         Some(layer) => format!("/layers/{layer}"),
@@ -189,6 +190,53 @@ pub fn bucket_rows_by_category(requested_categories: &[String], obs_categories: 
     rows_by_category
 }
 
+/// Whether each of `genes`, looked up in `var_index_values`, is among the var `indices`. Unknown genes are not.
+pub fn genes_among(genes: &[String], var_index_values: &[String], indices: &[u32]) -> Vec<bool> {
+    let mask = index_mask(indices, var_index_values.len());
+    let lookup: HashMap<&str, usize> = var_index_values.iter().enumerate().map(|(i, name)| (name.as_str(), i)).collect();
+    genes.iter().map(|gene| lookup.get(gene.as_str()).is_some_and(|&index| mask[index])).collect()
+}
+
+/// The `genes` among the var `included` indices (see [`genes_among`]), in order, or every one when `included` is `None`.
+pub fn filter_genes(genes: &[String], var_index_values: &[String], included: Option<&[u32]>) -> Vec<String> {
+    let Some(included) = included else {
+        return genes.to_vec();
+    };
+    genes.iter().zip(genes_among(genes, var_index_values, included)).filter(|(_, kept)| *kept).map(|(gene, _)| gene.clone()).collect()
+}
+
+/// Each category's filter-included rows (the background) and, when there is a selection,
+/// the selected rows among them (the foreground). `None` indices include every row.
+pub fn background_and_foreground_rows(
+    rows_by_category: HashMap<String, Vec<u32>>,
+    filtered: Option<&[u32]>,
+    selected: Option<&[u32]>,
+    num_obs: usize,
+) -> (HashMap<String, Vec<u32>>, Option<HashMap<String, Vec<u32>>>) {
+    let background = match filtered {
+        Some(filtered) => restrict_rows_by_category(&rows_by_category, &index_mask(filtered, num_obs)),
+        None => rows_by_category,
+    };
+    let foreground = selected.map(|selected| restrict_rows_by_category(&background, &index_mask(selected, num_obs)));
+    (background, foreground)
+}
+
+/// `rows_by_category`, keeping only the rows whose entry in `mask` is true.
+pub fn restrict_rows_by_category(rows_by_category: &HashMap<String, Vec<u32>>, mask: &[bool]) -> HashMap<String, Vec<u32>> {
+    rows_by_category
+        .iter()
+        .map(|(category, rows)| (category.clone(), rows.iter().copied().filter(|&row| mask[row as usize]).collect()))
+        .collect()
+}
+
+/// Cache key parts identifying the obs rows that are summarized: those included by
+/// `filtering`, and among them, those included by `selection`.
+pub fn obs_rows_key(filtering: Option<&AxisCriteria>, selection: Option<&AxisCriteria>) -> Vec<String> {
+    let mut keys = axis_criteria_key(filtering);
+    keys.extend(axis_criteria_key(selection));
+    keys
+}
+
 /// Summarizes one gene's expression (a whole column of `X`) over one category's observation
 /// rows: the sum and count of those cells, plus how many of them exceed `expression_cutoff`.
 pub fn summarize_gene_category(
@@ -225,7 +273,8 @@ pub fn summarize_gene_category(
 // ---------------------------------------------------------------------------
 
 /// Loads one gene's `GeneSummary` per requested obs category, given the obs groupby column's
-/// already-loaded (or already-bucketed) row indices per category.
+/// already-loaded (or already-bucketed) row indices per category, which `rows_key` (see
+/// [`obs_rows_key`]) identifies.
 ///
 /// This is the independent, per-gene unit of work: it loads (and caches) just this gene's array
 /// column and then computes (and caches) its per-category summaries. Returns `None` when the
@@ -250,6 +299,7 @@ pub async fn load_gene_summaries_for_gene(
     groupby: &str,
     categories: &[String],
     rows_by_category: &HashMap<String, Vec<u32>>,
+    rows_key: &[String],
     expression_cutoff: f32,
     cache_enabled: bool,
 ) -> Option<Vec<GeneSummary>> {
@@ -267,15 +317,17 @@ pub async fn load_gene_summaries_for_gene(
     let mut summaries = Vec::with_capacity(categories.len());
     for category in categories {
         let rows = rows_by_category.get(category).unwrap_or(&empty_rows);
-        let summary_keys = vec![
+        let mut summary_keys = vec![
             "dotplot_gene_summary".to_string(),
             store_name.to_string(),
+            expr_array_path(layer),
             var_colname.to_string(),
             gene_name.to_string(),
             groupby.to_string(),
             category.clone(),
             expression_cutoff.to_string(),
         ];
+        summary_keys.extend(rows_key.iter().cloned());
         let summary = use_memo_gene_summary(
             async || summarize_gene_category(&expr_values, rows, expression_cutoff, var_colname, gene_name, groupby, category),
             &summary_keys,
@@ -315,6 +367,7 @@ pub async fn load_gene_summaries(
     let resolved_genes = resolve_gene_columns(var_names, &var_index_values);
     let rows_by_category = bucket_rows_by_category(categories, &obs_categories, &obs_codes);
     let var_colname = var_column.unwrap_or("index").to_string();
+    let rows_key = obs_rows_key(None, None);
 
     let gene_futures = resolved_genes.iter().map(|(gene_name, col_index)| {
         load_gene_summaries_for_gene(
@@ -327,6 +380,7 @@ pub async fn load_gene_summaries(
             groupby,
             categories,
             &rows_by_category,
+            &rows_key,
             expression_cutoff,
             cache_enabled,
         )

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pluot_core::composite_layers::bar_plot_layer::BarOrientation;
 use pluot_core::composite_layers::curve_layer::PathCommand;
-use pluot_core::composite_layers::precomputed_violin_layer::{normalized_spans, PrecomputedViolinLayer, PrecomputedViolinLayerParams, ViolinDensityNorm, ViolinScales};
+use pluot_core::composite_layers::precomputed_violin_layer::{foreground_and_background_spans, normalized_spans, PrecomputedViolinLayer, PrecomputedViolinLayerParams, ViolinDensityNorm, ViolinScales};
 use pluot_core::d3::scale::Scaleable;
 use pluot_core::render_traits::{ExtentableLayer, ViewParams};
 
@@ -49,6 +49,19 @@ fn area_norm_gives_every_violin_the_same_area() {
     let areas: Vec<f64> = spans.iter().map(|s| s.iter().sum()).collect();
     assert!((areas[0] - areas[1]).abs() < 1e-9);
     assert_eq!(spans[0][1], 1.0);
+}
+
+#[test]
+fn foreground_violins_are_scaled_as_their_background_violins() {
+    let foreground = [vec![1, 2, 0], vec![0, 0, 0]];
+    let background = [vec![2, 4, 1], vec![1, 1, 1]];
+    let (spans, background_spans) = foreground_and_background_spans(&foreground, Some(&background), ViolinDensityNorm::Width);
+    assert_eq!(background_spans, Some(normalized_spans(&background, ViolinDensityNorm::Width)));
+    assert_eq!(spans, vec![vec![0.25, 0.5, 0.0], vec![0.0, 0.0, 0.0]]);
+
+    let (spans, background_spans) = foreground_and_background_spans(&foreground, None, ViolinDensityNorm::Width);
+    assert_eq!(spans, normalized_spans(&foreground, ViolinDensityNorm::Width));
+    assert_eq!(background_spans, None);
 }
 
 fn value_coords(outline: &[PathCommand], orientation: &BarOrientation) -> Vec<f32> {

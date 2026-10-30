@@ -32,9 +32,21 @@ bin_starts: Array<number>,
  */
 bin_counts: Array<Array<number>>, 
 /**
+ * One entry per cell, like `bin_counts`, counting a superset of its values (e.g., every
+ * filter-included value, whereas `bin_counts` counts only the selected ones). Drawn in
+ * `background_fill_color` behind the `bin_counts` violins, which are then scaled as the
+ * background violins are, so that each is nested within its background. `None` draws none.
+ */
+background_bin_counts?: Array<Array<number>> | null, 
+/**
  * Defaults to `Width`, matching scanpy's `sc.pl.stacked_violin`.
  */
 density_norm?: ViolinDensityNorm | null, 
+/**
+ * One entry per var: whether its violins are emphasized. The violins of unselected vars
+ * are drawn in `background_fill_color`. `None` selects every var.
+ */
+var_selection?: Array<boolean> | null, 
 /**
  * The (min, max) of the value axis within each row, shared by every violin.
  * Defaults to the first and last of `bin_starts`.
@@ -65,6 +77,10 @@ fill_color?: [number, number, number] | null,
  * Defaults to 1.
  */
 fill_opacity?: number | null, 
+/**
+ * Fill color of the `background_bin_counts` violins and of unselected vars' violins. Defaults to light grey.
+ */
+background_fill_color?: [number, number, number] | null, 
 /**
  * Defaults to black.
  */

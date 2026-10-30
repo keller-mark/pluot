@@ -17,6 +17,7 @@ use crate::composite_layers::bar_plot_layer::BarOrientation;
 use crate::composite_layers::curve_layer::{CurveLayer, CurveLayerParams, PathCommand};
 use crate::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 use crate::d3::shape::{area, AreaPoint, CurveBasis};
+use crate::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
 use crate::extent::LayerExtentResult;
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
 use crate::numeric_data::NumericData;
@@ -71,6 +72,11 @@ pub struct PrecomputedViolinLayerParams {
     /// One entry per group, holding one count per bin. A violin's width at a bin is proportional
     /// to the bin's count, scaled according to `density_norm`.
     pub bin_counts: Arc<Vec<Vec<u32>>>,
+    /// One entry per group, like `bin_counts`, counting a superset of its values (e.g., every
+    /// filter-included value, whereas `bin_counts` counts only the selected ones). Drawn in
+    /// `background_fill_color` behind the `bin_counts` violins, which are then scaled as the
+    /// background violins are, so that each is nested within its background. `None` draws none.
+    pub background_bin_counts: Option<Arc<Vec<Vec<u32>>>>,
     /// Defaults to `Width`, matching scanpy's `sc.pl.violin`.
     pub density_norm: Option<ViolinDensityNorm>,
     /// One (first quartile, median, third quartile) per group, drawn as a whisker. `None` draws no whiskers.
@@ -84,6 +90,8 @@ pub struct PrecomputedViolinLayerParams {
     pub fill_colors: Option<Arc<Vec<(u8, u8, u8)>>>,
     /// Defaults to 1.
     pub fill_opacity: Option<f32>,
+    /// Fill color of the `background_bin_counts` violins. Defaults to light grey.
+    pub background_fill_color: Option<(u8, u8, u8)>,
     pub whisker_color: Option<(u8, u8, u8)>,
 
     pub group_axis_title: Option<String>,
@@ -99,11 +107,13 @@ impl Default for PrecomputedViolinLayerParams {
             groups: Arc::new(vec![]),
             bin_starts: Arc::new(vec![]),
             bin_counts: Arc::new(vec![]),
+            background_bin_counts: None,
             density_norm: None,
             quartiles: None,
             value_domain: None,
             fill_colors: None,
             fill_opacity: None,
+            background_fill_color: None,
             whisker_color: None,
             group_axis_title: None,
             value_axis_title: None,
@@ -186,6 +196,11 @@ impl ViolinScales {
 /// Each violin's width at each bin, as a fraction of the band's width, following seaborn's `density_norm`.
 /// Reference: https://github.com/mwaskom/seaborn/blob/v0.13.2/seaborn/categorical.py#L1007-L1016
 pub fn normalized_spans(bin_counts: &[Vec<u32>], density_norm: ViolinDensityNorm) -> Vec<Vec<f64>> {
+    scaled_spans(bin_counts, &span_scales(bin_counts, density_norm))
+}
+
+/// The factor by which each violin's counts are multiplied to get its [`normalized_spans`].
+fn span_scales(bin_counts: &[Vec<u32>], density_norm: ViolinDensityNorm) -> Vec<f64> {
     let peak = |counts: &[u32]| counts.iter().copied().max().unwrap_or(0) as f64;
     let total = |counts: &[u32]| counts.iter().map(|&count| count as f64).sum::<f64>();
     let max_peak_density = bin_counts.iter()
@@ -197,16 +212,37 @@ pub fn normalized_spans(bin_counts: &[Vec<u32>], density_norm: ViolinDensityNorm
         .map(|counts| {
             let (peak, total) = (peak(counts), total(counts));
             if peak == 0.0 {
-                return vec![0.0; counts.len()];
+                return 0.0;
             }
-            let scale = match density_norm {
+            match density_norm {
                 ViolinDensityNorm::Area => 1.0 / (total * max_peak_density),
                 ViolinDensityNorm::Count => total / (peak * max_total),
                 ViolinDensityNorm::Width => 1.0 / peak,
-            };
-            counts.iter().map(|&count| count as f64 * scale).collect()
+            }
         })
         .collect()
+}
+
+fn scaled_spans(bin_counts: &[Vec<u32>], scales: &[f64]) -> Vec<Vec<f64>> {
+    bin_counts.iter().zip(scales)
+        .map(|(counts, &scale)| counts.iter().map(|&count| count as f64 * scale).collect())
+        .collect()
+}
+
+/// The [`normalized_spans`] of `bin_counts` and, if any, of `background_bin_counts`. When there
+/// is a background, both are scaled as the background is, so each violin nests within its background.
+pub fn foreground_and_background_spans(
+    bin_counts: &[Vec<u32>],
+    background_bin_counts: Option<&[Vec<u32>]>,
+    density_norm: ViolinDensityNorm,
+) -> (Vec<Vec<f64>>, Option<Vec<Vec<f64>>>) {
+    match background_bin_counts {
+        None => (normalized_spans(bin_counts, density_norm), None),
+        Some(background_bin_counts) => {
+            let scales = span_scales(background_bin_counts, density_norm);
+            (scaled_spans(bin_counts, &scales), Some(scaled_spans(background_bin_counts, &scales)))
+        }
+    }
 }
 
 fn resolve_value_domain(p: &PrecomputedViolinLayerParams) -> (f32, f32) {
@@ -262,29 +298,40 @@ impl PrecomputedViolinLayer {
         let p = &self.layer_params;
         let orientation = self.orientation();
         let (data_unit_mode_x, data_unit_mode_y) = self.unit_modes();
-        let spans = normalized_spans(&p.bin_counts, p.density_norm.unwrap_or(ViolinDensityNorm::Width));
-        p.groups.iter().zip(spans.iter()).enumerate()
-            .map(|(group_index, (group, spans))| {
+        let (spans, background_spans) = foreground_and_background_spans(
+            &p.bin_counts,
+            p.background_bin_counts.as_deref().map(Vec::as_slice),
+            p.density_norm.unwrap_or(ViolinDensityNorm::Width),
+        );
+        let fill_opacity = p.fill_opacity.unwrap_or(DEFAULT_FILL_OPACITY);
+        let violin_layer = |name: &str, group_index: usize, spans: &[f64], fill_color: (u8, u8, u8)| {
+            Box::new(CurveLayer::new(
+                self.view_params.clone(),
+                CurveLayerParams {
+                    layer_id: format!("{}_precomputed_violin_{name}_sublayer_{group_index}", p.layer_id),
+                    bounds: p.bounds.clone(),
+                    data_unit_mode_x,
+                    data_unit_mode_y,
+                    commands: Arc::new(scales.violin_outline(&p.groups[group_index], &p.bin_starts, spans, &orientation)),
+                    stroked: false,
+                    filled: true,
+                    fill_color: Some(ColorMode::UniformRgb(fill_color)),
+                    fill_opacity: Some(OpacityMode::UniformOpacity(fill_opacity)),
+                    ..Default::default()
+                },
+            )) as Box<dyn PreparedAndDraw>
+        };
+        let background_fill_color = p.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR);
+        let background_layers = background_spans.iter().flatten().enumerate().take(p.groups.len())
+            .map(|(group_index, spans)| violin_layer("background_curve", group_index, spans, background_fill_color));
+        let foreground_layers = spans.iter().enumerate().take(p.groups.len())
+            .map(|(group_index, spans)| {
                 let fill_color = p.fill_colors.as_ref()
                     .and_then(|colors| colors.get(group_index).copied())
                     .unwrap_or_else(|| default_fill_color(group_index));
-                Box::new(CurveLayer::new(
-                    self.view_params.clone(),
-                    CurveLayerParams {
-                        layer_id: format!("{}_precomputed_violin_curve_sublayer_{group_index}", p.layer_id),
-                        bounds: p.bounds.clone(),
-                        data_unit_mode_x,
-                        data_unit_mode_y,
-                        commands: Arc::new(scales.violin_outline(group, &p.bin_starts, spans, &orientation)),
-                        stroked: false,
-                        filled: true,
-                        fill_color: Some(ColorMode::UniformRgb(fill_color)),
-                        fill_opacity: Some(OpacityMode::UniformOpacity(p.fill_opacity.unwrap_or(DEFAULT_FILL_OPACITY))),
-                        ..Default::default()
-                    },
-                )) as Box<dyn PreparedAndDraw>
-            })
-            .collect()
+                violin_layer("curve", group_index, spans, fill_color)
+            });
+        background_layers.chain(foreground_layers).collect()
     }
 
     /// A line along the value axis spanning each group's interquartile range, crossed by a short line at its median.

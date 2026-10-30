@@ -19,10 +19,17 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
-use crate::dotplot_data::{bucket_rows_by_category, load_gene_expression, load_obs_categorical, load_var_names, resolve_gene_columns, AdataStore};
+use crate::dotplot_data::{
+    background_and_foreground_rows, bucket_rows_by_category, expr_array_path, filter_genes, genes_among, load_gene_expression, load_obs_categorical,
+    load_var_names, obs_rows_key, resolve_gene_columns, AdataStore,
+};
+use crate::heatmap_data::{indices_of, load_criteria_indices, AxisCriteria, MatrixAxis};
 use crate::violin_data::{bin_violins, load_violin_summary, ViolinSummary};
 
 const DEFAULT_NUM_BINS: u32 = 16;
+
+/// The obs rows of each category, along with their [`obs_rows_key`].
+type ObsRows<'a> = (&'a HashMap<String, Vec<u32>>, Vec<String>);
 
 /// Layer params struct for [`AdataZarrViolinMatrixLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -51,6 +58,19 @@ pub struct AdataZarrViolinMatrixLayerParams {
     pub var_names: Vec<String>,
     /// Key in adata.var to use for gene symbols, if different from adata.var.index.
     pub gene_symbols: Option<String>,
+
+    /// Which obs are summarized. `None` includes every obs. When set, categories
+    /// without any included obs are omitted.
+    pub obs_filtering: Option<AxisCriteria>,
+    /// Which of the included obs to emphasize: each violin then summarizes only
+    /// the selected obs, in front of a grey violin summarizing every included obs.
+    /// `None` emphasizes every obs.
+    pub obs_selection: Option<AxisCriteria>,
+    /// Which of `var_names` to include. `None` includes every one.
+    pub var_filtering: Option<AxisCriteria>,
+    /// Which of the included `var_names` to emphasize. The violins of the others
+    /// are greyed out. `None` emphasizes every one.
+    pub var_selection: Option<AxisCriteria>,
 
     /// Whether zero expression values are included in each violin. Defaults to true.
     pub keep_zeros: Option<bool>,
@@ -81,6 +101,10 @@ impl Default for AdataZarrViolinMatrixLayerParams {
             categories: None,
             var_names: vec![],
             gene_symbols: None,
+            obs_filtering: None,
+            obs_selection: None,
+            var_filtering: None,
+            var_selection: None,
             keep_zeros: None,
             num_bins: None,
             density_norm: None,
@@ -126,8 +150,9 @@ impl AdataZarrViolinMatrixLayer {
         self.layer_params.gene_symbols.as_deref().unwrap_or("index")
     }
 
-    /// Summarizes one gene's expression per category, or returns `None` when its data is not loaded yet.
-    async fn load_gene_summaries(&self, gene_name: &str, col_index: u64, categories: &[String], rows_by_category: &HashMap<String, Vec<u32>>) -> Option<Vec<Arc<ViolinSummary>>> {
+    /// Summarizes one gene's expression per category, over each of `rows` (the rows of each
+    /// category, along with their [`obs_rows_key`]), or returns `None` when its data is not loaded yet.
+    async fn load_gene_summaries(&self, gene_name: &str, col_index: u64, categories: &[String], rows: &[ObsRows<'_>]) -> Option<Vec<Vec<Arc<ViolinSummary>>>> {
         let p = &self.layer_params;
         let cache_enabled = self.view_params.cache_enabled;
         let expression = match load_gene_expression(self.store.clone(), &self.store_name, self.var_colname(), gene_name, col_index, self.array_layer(), cache_enabled).await {
@@ -141,54 +166,56 @@ impl AdataZarrViolinMatrixLayer {
         };
 
         let keep_zeros = p.keep_zeros.unwrap_or(true);
-        let summaries = categories.iter()
-            .map(|category| {
-                let keys = vec![
-                    "violin_summary".to_string(),
-                    self.store_name.clone(),
-                    self.array_layer().unwrap_or("X").to_string(),
-                    self.var_colname().to_string(),
-                    gene_name.to_string(),
-                    p.groupby.clone(),
-                    category.clone(),
-                    keep_zeros.to_string(),
-                ];
-                load_violin_summary(&expression, &rows_by_category[category], keep_zeros, &keys, cache_enabled)
-            })
-            .collect();
-        Some(summaries)
+        let summaries_over = |(rows_by_category, rows_key): &ObsRows<'_>| {
+            categories.iter()
+                .map(|category| {
+                    let mut keys = vec![
+                        "violin_summary".to_string(),
+                        self.store_name.clone(),
+                        self.array_layer().unwrap_or("X").to_string(),
+                        self.var_colname().to_string(),
+                        gene_name.to_string(),
+                        p.groupby.clone(),
+                        category.clone(),
+                        keep_zeros.to_string(),
+                    ];
+                    keys.extend(rows_key.iter().cloned());
+                    load_violin_summary(&expression, &rows_by_category[category], keep_zeros, &keys, cache_enabled)
+                })
+                .collect()
+        };
+        Some(rows.iter().map(summaries_over).collect())
     }
 
-    /// Summarizes every gene's expression per category, as one summary per cell (see
-    /// [`pluot_core::composite_layers::precomputed_violin_matrix_layer::violin_matrix_cell_index`]).
+    /// Summarizes every gene's expression per category, over each of `rows`, as one summary per
+    /// cell (see [`pluot_core::composite_layers::precomputed_violin_matrix_layer::violin_matrix_cell_index`]).
     /// Genes that are not found, or whose data is not loaded yet, yield empty summaries.
     /// Also returns whether any gene's data is not loaded yet.
-    async fn load_cell_summaries(&self, categories: &[String], obs_categories: &[String], obs_codes: &NumericData, var_index_values: &[String]) -> (Vec<Arc<ViolinSummary>>, bool) {
-        let var_names = &self.layer_params.var_names;
-        let rows_by_category = bucket_rows_by_category(categories, obs_categories, obs_codes);
+    async fn load_cell_summaries(&self, categories: &[String], var_names: &[String], rows: &[ObsRows<'_>], var_index_values: &[String]) -> (Vec<Vec<Arc<ViolinSummary>>>, bool) {
         let resolved_genes = resolve_gene_columns(var_names, var_index_values);
 
-        let mut gene_results: Vec<Option<Vec<Arc<ViolinSummary>>>> = vec![None; resolved_genes.len()];
-        let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| {
-            let rows_by_category = &rows_by_category;
-            async move {
-                *slot = self.load_gene_summaries(gene_name, *col_index, categories, rows_by_category).await;
-            }
+        let mut gene_results: Vec<Option<Vec<Vec<Arc<ViolinSummary>>>>> = vec![None; resolved_genes.len()];
+        let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| async move {
+            *slot = self.load_gene_summaries(gene_name, *col_index, categories, rows).await;
         });
         // Whether or not the wall clock fires, each slot holds `Some` exactly when its gene finished.
         let _ = maybe_timeout!(futures::future::join_all(gene_futures), self.view_params.timeout).await;
         let genes_bailed = gene_results.iter().any(Option::is_none);
 
         let empty = Arc::new(ViolinSummary::default());
-        let summaries_by_var: Vec<Option<&Vec<Arc<ViolinSummary>>>> = var_names.iter()
+        let summaries_by_var: Vec<Option<&Vec<Vec<Arc<ViolinSummary>>>>> = var_names.iter()
             .map(|var_name| {
                 let resolved_index = resolved_genes.iter().position(|(gene_name, _)| gene_name == var_name)?;
                 gene_results[resolved_index].as_ref()
             })
             .collect();
-        let cell_summaries = (0..categories.len())
-            .flat_map(|category_index| summaries_by_var.iter().map(move |summaries| (category_index, summaries)))
-            .map(|(category_index, summaries)| summaries.map_or_else(|| empty.clone(), |summaries| summaries[category_index].clone()))
+        let cell_summaries = (0..rows.len())
+            .map(|rows_index| {
+                (0..categories.len())
+                    .flat_map(|category_index| summaries_by_var.iter().map(move |summaries| (category_index, summaries)))
+                    .map(|(category_index, summaries)| summaries.map_or_else(|| empty.clone(), |summaries| summaries[rows_index][category_index].clone()))
+                    .collect()
+            })
             .collect();
         (cell_summaries, genes_bailed)
     }
@@ -200,11 +227,21 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let p = &self.layer_params;
         let cache_enabled = self.view_params.cache_enabled;
-        let metadata_future = futures::future::try_join(
-            load_var_names(self.store.clone(), &self.store_name, p.gene_symbols.as_deref(), cache_enabled),
-            load_obs_categorical(self.store.clone(), &self.store_name, &p.groupby, cache_enabled),
-        );
-        let (var_index_values, (obs_categories, obs_codes)) = match maybe_timeout!(metadata_future, self.view_params.timeout).await {
+        let matrix_path = expr_array_path(self.array_layer());
+        let criteria_indices = |axis, criteria| {
+            load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, axis, criteria, cache_enabled)
+        };
+        let metadata_future = async {
+            futures::try_join!(
+                load_var_names(self.store.clone(), &self.store_name, p.gene_symbols.as_deref(), cache_enabled),
+                load_obs_categorical(self.store.clone(), &self.store_name, &p.groupby, cache_enabled),
+                criteria_indices(MatrixAxis::Obs, p.obs_filtering.as_ref()),
+                criteria_indices(MatrixAxis::Obs, p.obs_selection.as_ref()),
+                criteria_indices(MatrixAxis::Var, p.var_filtering.as_ref()),
+                criteria_indices(MatrixAxis::Var, p.var_selection.as_ref()),
+            )
+        };
+        let (var_index_values, (obs_categories, obs_codes), obs_filtered, obs_selected, var_filtered, var_selected) = match maybe_timeout!(metadata_future, self.view_params.timeout).await {
             Ok(Ok(loaded)) => loaded,
             Ok(Err(e)) => {
                 if is_timed_out_zarrs_error(&e) {
@@ -215,12 +252,31 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
             Err(_) => return PrepareResult { bailed_early: true }, // Wall-clock timeout from maybe_timeout!
         };
 
-        let categories = p.categories.clone().unwrap_or_else(|| obs_categories.as_ref().clone());
-        let (summaries, genes_bailed) = self.load_cell_summaries(&categories, &obs_categories, &obs_codes, &var_index_values).await;
+        let mut categories = p.categories.clone().unwrap_or_else(|| obs_categories.as_ref().clone());
+        let (background_rows, foreground_rows) = background_and_foreground_rows(
+            bucket_rows_by_category(&categories, &obs_categories, &obs_codes),
+            obs_filtered.as_deref().map(indices_of),
+            obs_selected.as_deref().map(indices_of),
+            obs_codes.len(),
+        );
+        if obs_filtered.is_some() {
+            categories.retain(|category| !background_rows[category].is_empty());
+        }
+        let mut rows = vec![(&background_rows, obs_rows_key(p.obs_filtering.as_ref(), None))];
+        if let Some(foreground_rows) = &foreground_rows {
+            rows.push((foreground_rows, obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref())));
+        }
+        let var_names = filter_genes(&p.var_names, &var_index_values, var_filtered.as_deref().map(indices_of));
+        let var_selection = var_selected.as_deref().map(|selected| Arc::new(genes_among(&var_names, &var_index_values, indices_of(selected))));
+        let (mut summaries_per_rows, genes_bailed) = self.load_cell_summaries(&categories, &var_names, &rows, &var_index_values).await;
 
         let p = &self.layer_params;
-        let summary_refs: Vec<&ViolinSummary> = summaries.iter().map(Arc::as_ref).collect();
-        let bins = bin_violins(&summary_refs, p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize, p.value_min);
+        // Binned together, so that the background and foreground violins share their bins.
+        let all_summaries: Vec<&ViolinSummary> = summaries_per_rows.iter().flatten().map(Arc::as_ref).collect();
+        let mut bins = bin_violins(&all_summaries, p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize, p.value_min);
+        let summaries = summaries_per_rows.pop().unwrap_or_default();
+        let bin_counts = bins.bin_counts.split_off(bins.bin_counts.len() - summaries.len());
+        let background_bin_counts = foreground_rows.is_some().then(|| Arc::new(bins.bin_counts));
         let medians = summaries.iter()
             .map(|summary| summary.quartiles.map(|(_, median, _)| median))
             .collect();
@@ -231,11 +287,13 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
                 layer_id: format!("{}_precomputed_violin_matrix_sublayer", p.layer_id),
                 bounds: p.bounds.clone(),
                 swap_axes: p.swap_axes,
-                var_names: Arc::new(p.var_names.clone()),
+                var_names: Arc::new(var_names),
                 groups: Arc::new(categories),
                 bin_starts: Arc::new(bins.bin_starts),
-                bin_counts: Arc::new(bins.bin_counts),
+                bin_counts: Arc::new(bin_counts),
+                background_bin_counts,
                 density_norm: p.density_norm,
+                var_selection,
                 value_domain: Some(bins.value_domain),
                 fill_values: Some(Arc::new(medians)),
                 cmap: p.cmap,

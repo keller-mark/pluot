@@ -241,6 +241,31 @@ pub async fn load_axis_indices(
     .await
 }
 
+/// [`load_axis_indices`] for `criteria`, or `None` (without loading anything) when there is none.
+pub async fn load_criteria_indices(
+    gpu_context: Option<&GpuContext<'_>>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    matrix_path: &str,
+    axis: MatrixAxis,
+    criteria: Option<&AxisCriteria>,
+    cache_enabled: bool,
+) -> Result<Option<Arc<NumericData>>, ArrayError> {
+    match criteria {
+        None => Ok(None),
+        Some(criteria) => load_axis_indices(gpu_context, store, store_name, matrix_path, axis, Some(criteria), cache_enabled).await.map(Some),
+    }
+}
+
+/// One entry per index below `len`: whether it is among `indices`.
+pub fn index_mask(indices: &[u32], len: usize) -> Vec<bool> {
+    let mut mask = vec![false; len];
+    for &index in indices {
+        mask[index as usize] = true;
+    }
+    mask
+}
+
 /// `indices`, stably sorted by their category code in `codes`, with missing
 /// values (negative codes) last.
 pub fn group_indices(indices: &[u32], codes: &NumericData) -> Vec<u32> {

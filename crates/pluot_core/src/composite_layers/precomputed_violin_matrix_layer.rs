@@ -13,13 +13,14 @@ use crate::composite_layers::axis_band_layer::{AxisBandLayer, AxisBandLayerParam
 use crate::composite_layers::axis_linear_layer::AxisPosition;
 use crate::composite_layers::curve_layer::{CurveLayer, CurveLayerParams, PathCommand};
 use crate::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation};
-use crate::composite_layers::precomputed_violin_layer::{default_fill_color, normalized_spans, ViolinDensityNorm};
+use crate::composite_layers::precomputed_violin_layer::{default_fill_color, foreground_and_background_spans, ViolinDensityNorm};
 use crate::d3::scale::{ScaleBand, ScaleLinear, Scaleable};
 use crate::d3::shape::{area, AreaPoint, CurveBasis};
+use crate::emphasis_mode::DEFAULT_BACKGROUND_COLOR;
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, OpacityMode, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams
+    BooleanCriteriaParams, ColorMode, DrawToRasterCpu, EmphasisCriteria, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, OpacityMode, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, QuantitativeParams, SizeMode, UnitsMode, ViewParams
 };
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
@@ -63,8 +64,16 @@ pub struct PrecomputedViolinMatrixLayerParams {
     /// index `g * var_names.len() + v`. A violin's width at a bin is proportional to the bin's
     /// count, scaled according to `density_norm`.
     pub bin_counts: Arc<Vec<Vec<u32>>>,
+    /// One entry per cell, like `bin_counts`, counting a superset of its values (e.g., every
+    /// filter-included value, whereas `bin_counts` counts only the selected ones). Drawn in
+    /// `background_fill_color` behind the `bin_counts` violins, which are then scaled as the
+    /// background violins are, so that each is nested within its background. `None` draws none.
+    pub background_bin_counts: Option<Arc<Vec<Vec<u32>>>>,
     /// Defaults to `Width`, matching scanpy's `sc.pl.stacked_violin`.
     pub density_norm: Option<ViolinDensityNorm>,
+    /// One entry per var: whether its violins are emphasized. The violins of unselected vars
+    /// are drawn in `background_fill_color`. `None` selects every var.
+    pub var_selection: Option<Arc<Vec<bool>>>,
 
     /// The (min, max) of the value axis within each row, shared by every violin.
     /// Defaults to the first and last of `bin_starts`.
@@ -83,6 +92,8 @@ pub struct PrecomputedViolinMatrixLayerParams {
     pub fill_color: Option<(u8, u8, u8)>,
     /// Defaults to 1.
     pub fill_opacity: Option<f32>,
+    /// Fill color of the `background_bin_counts` violins and of unselected vars' violins. Defaults to light grey.
+    pub background_fill_color: Option<(u8, u8, u8)>,
     /// Defaults to black.
     pub stroke_color: Option<(u8, u8, u8)>,
     /// In pixels. Defaults to 1. Zero draws no outlines.
@@ -102,7 +113,9 @@ impl Default for PrecomputedViolinMatrixLayerParams {
             groups: Arc::new(vec![]),
             bin_starts: Arc::new(vec![]),
             bin_counts: Arc::new(vec![]),
+            background_bin_counts: None,
             density_norm: None,
+            var_selection: None,
             value_domain: None,
             fill_values: None,
             fill_value_domain: None,
@@ -110,6 +123,7 @@ impl Default for PrecomputedViolinMatrixLayerParams {
             fill_value_title: None,
             fill_color: None,
             fill_opacity: None,
+            background_fill_color: None,
             stroke_color: None,
             stroke_width: None,
             var_axis_title: None,
@@ -135,17 +149,28 @@ struct ViolinOutlines {
     curve_offsets: Vec<u32>,
     /// One per violin.
     fill_values: Vec<f32>,
+    /// One per violin.
+    selected: Vec<bool>,
 }
 
 impl ViolinOutlines {
     fn new() -> Self {
-        Self { commands: Vec::new(), curve_offsets: vec![0], fill_values: Vec::new() }
+        Self { commands: Vec::new(), curve_offsets: vec![0], fill_values: Vec::new(), selected: Vec::new() }
     }
 
-    fn push(&mut self, outline: Vec<PathCommand>, fill_value: f32) {
+    fn push(&mut self, outline: Vec<PathCommand>, fill_value: f32, selected: bool) {
         self.commands.extend(outline);
         self.curve_offsets.push(self.commands.len() as u32);
         self.fill_values.push(fill_value);
+        self.selected.push(selected);
+    }
+
+    fn selection_criteria(&self) -> Vec<EmphasisCriteria> {
+        if self.selected.iter().all(|&selected| selected) {
+            return vec![];
+        }
+        let mask: Vec<u8> = self.selected.iter().map(|&selected| selected as u8).collect();
+        vec![EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: NumericData::from(mask) })]
     }
 
     fn is_empty(&self) -> bool {
@@ -157,7 +182,7 @@ impl ViolinOutlines {
 pub struct ViolinMatrixScales {
     column_scale: ScaleBand,
     row_scale: ScaleBand,
-    /// Maps a signed span (see [`normalized_spans`]) to an offset within a column.
+    /// Maps a signed span (see [`crate::composite_layers::precomputed_violin_layer::normalized_spans`]) to an offset within a column.
     width_scale: ScaleLinear,
     /// Maps a value to an offset within a row.
     value_scale: ScaleLinear,
@@ -282,6 +307,7 @@ impl PrecomputedViolinMatrixLayer {
     fn build_curve_layer(&self, name: &str, outlines: ViolinOutlines, fill_color: ColorMode) -> Box<dyn PreparedAndDraw> {
         let p = &self.layer_params;
         let stroke_width = p.stroke_width.unwrap_or(DEFAULT_STROKE_WIDTH_PX);
+        let selection_criteria = outlines.selection_criteria();
         Box::new(CurveLayer::new(
             self.view_params.clone(),
             CurveLayerParams {
@@ -297,32 +323,61 @@ impl PrecomputedViolinMatrixLayer {
                 stroke_width: Some(SizeMode::UniformSize(stroke_width)),
                 fill_color: Some(fill_color),
                 fill_opacity: Some(OpacityMode::UniformOpacity(p.fill_opacity.unwrap_or(DEFAULT_FILL_OPACITY))),
+                selection_criteria,
+                background_fill_color: p.background_fill_color,
                 ..Default::default()
             },
         ))
     }
 
-    /// One curve layer for the violins colored by their fill values, and another for those without one.
+    /// The outline of every cell's violin with a nonzero span, along with its cell index.
+    fn cell_outlines<'a>(&'a self, scales: &'a ViolinMatrixScales, spans: &'a [Vec<f64>]) -> impl Iterator<Item = (usize, Vec<PathCommand>)> + 'a {
+        let p = &self.layer_params;
+        p.groups.iter().enumerate()
+            .flat_map(move |(group_index, group)| p.var_names.iter().enumerate().map(move |(var_index, var_name)| (group_index, group, var_index, var_name)))
+            .filter_map(move |(group_index, group, var_index, var_name)| {
+                let cell_index = violin_matrix_cell_index(group_index, var_index, p.var_names.len());
+                let cell_spans = spans.get(cell_index).filter(|s| s.iter().any(|&span| span > 0.0))?;
+                Some((cell_index, scales.violin_outline(scales.cell_origin(group, var_name), &p.bin_starts, cell_spans)))
+            })
+    }
+
+    /// A curve layer for any background violins, then one for the violins colored by their
+    /// fill values, and another for those without one.
     fn build_violin_layers(&self, scales: &ViolinMatrixScales) -> Vec<Box<dyn PreparedAndDraw>> {
         let p = &self.layer_params;
-        let spans = normalized_spans(&p.bin_counts, p.density_norm.unwrap_or(ViolinDensityNorm::Width));
-        let mut colormapped = ViolinOutlines::new();
-        let mut uniform = ViolinOutlines::new();
-        for (group_index, group) in p.groups.iter().enumerate() {
-            for (var_index, var_name) in p.var_names.iter().enumerate() {
-                let cell_index = violin_matrix_cell_index(group_index, var_index, p.var_names.len());
-                let Some(cell_spans) = spans.get(cell_index).filter(|s| s.iter().any(|&span| span > 0.0)) else {
-                    continue;
-                };
-                let outline = scales.violin_outline(scales.cell_origin(group, var_name), &p.bin_starts, cell_spans);
-                match p.fill_values.as_ref().and_then(|values| values.get(cell_index).copied().flatten()) {
-                    Some(fill_value) => colormapped.push(outline, fill_value),
-                    None => uniform.push(outline, 0.0),
-                }
+        let (spans, background_spans) = foreground_and_background_spans(
+            &p.bin_counts,
+            p.background_bin_counts.as_deref().map(Vec::as_slice),
+            p.density_norm.unwrap_or(ViolinDensityNorm::Width),
+        );
+        let num_vars = p.var_names.len();
+        let is_var_selected = |cell_index: usize| {
+            p.var_selection.as_ref().is_none_or(|selection| selection.get(cell_index % num_vars.max(1)).copied().unwrap_or(true))
+        };
+
+        let mut layers = Vec::new();
+        if let Some(background_spans) = &background_spans {
+            let mut background = ViolinOutlines::new();
+            for (_, outline) in self.cell_outlines(scales, background_spans) {
+                background.push(outline, 0.0, true);
+            }
+            if !background.is_empty() {
+                let fill_color = ColorMode::UniformRgb(p.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR));
+                layers.push(self.build_curve_layer("background", background, fill_color));
             }
         }
 
-        let mut layers = Vec::new();
+        let mut colormapped = ViolinOutlines::new();
+        let mut uniform = ViolinOutlines::new();
+        for (cell_index, outline) in self.cell_outlines(scales, &spans) {
+            let selected = is_var_selected(cell_index);
+            match p.fill_values.as_ref().and_then(|values| values.get(cell_index).copied().flatten()) {
+                Some(fill_value) => colormapped.push(outline, fill_value, selected),
+                None => uniform.push(outline, 0.0, selected),
+            }
+        }
+
         if !colormapped.is_empty() {
             let fill_value_domain = resolve_fill_value_domain(p, p.fill_values.as_deref().map_or(&[], Vec::as_slice));
             let fill_color = ColorMode::Quantitative(QuantitativeParams {

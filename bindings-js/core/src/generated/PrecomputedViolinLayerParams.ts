@@ -26,6 +26,13 @@ bin_starts: Array<number>,
  */
 bin_counts: Array<Array<number>>, 
 /**
+ * One entry per group, like `bin_counts`, counting a superset of its values (e.g., every
+ * filter-included value, whereas `bin_counts` counts only the selected ones). Drawn in
+ * `background_fill_color` behind the `bin_counts` violins, which are then scaled as the
+ * background violins are, so that each is nested within its background. `None` draws none.
+ */
+background_bin_counts?: Array<Array<number>> | null, 
+/**
  * Defaults to `Width`, matching scanpy's `sc.pl.violin`.
  */
 density_norm?: ViolinDensityNorm | null, 
@@ -45,4 +52,8 @@ fill_colors?: Array<[number, number, number]> | null,
 /**
  * Defaults to 1.
  */
-fill_opacity?: number | null, whisker_color?: [number, number, number] | null, group_axis_title?: string | null, value_axis_title?: string | null, };
+fill_opacity?: number | null, 
+/**
+ * Fill color of the `background_bin_counts` violins. Defaults to light grey.
+ */
+background_fill_color?: [number, number, number] | null, whisker_color?: [number, number, number] | null, group_axis_title?: string | null, value_axis_title?: string | null, };

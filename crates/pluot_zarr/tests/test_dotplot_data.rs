@@ -1,7 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use pluot_core::numeric_data::NumericData;
-use pluot_zarr::dotplot_data::{bucket_rows_by_category, resolve_gene_columns, summarize_gene_category};
+use pluot_zarr::dotplot_data::{
+    background_and_foreground_rows, bucket_rows_by_category, filter_genes, genes_among, resolve_gene_columns, summarize_gene_category,
+};
 
 #[test]
 fn resolve_gene_columns_skips_genes_not_found() {
@@ -64,4 +67,34 @@ fn summarize_gene_category_computes_sum_count_and_num_expressing() {
     assert_eq!(summary.sum, 0.0);
     assert_eq!(summary.cell_count, 0);
     assert_eq!(summary.num_expressing, 0);
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| value.to_string()).collect()
+}
+
+#[test]
+fn genes_among_looks_up_each_gene_column() {
+    let var_index = strings(&["GeneA", "GeneB", "GeneC"]);
+    assert_eq!(genes_among(&strings(&["GeneC", "GeneX", "GeneA"]), &var_index, &[2, 1]), vec![true, false, false]);
+}
+
+#[test]
+fn filter_genes_keeps_the_included_genes_in_order() {
+    let var_index = strings(&["GeneA", "GeneB", "GeneC"]);
+    let requested = strings(&["GeneC", "GeneX", "GeneA", "GeneB"]);
+    assert_eq!(filter_genes(&requested, &var_index, Some(&[0, 2])), strings(&["GeneC", "GeneA"]));
+    assert_eq!(filter_genes(&requested, &var_index, None), requested);
+}
+
+#[test]
+fn foreground_rows_are_the_selected_background_rows() {
+    let rows_by_category = HashMap::from([("B".to_string(), vec![0, 1, 2]), ("T".to_string(), vec![3, 4])]);
+    let (background, foreground) = background_and_foreground_rows(rows_by_category.clone(), Some(&[0, 2, 3]), Some(&[2, 3, 4]), 5);
+    assert_eq!(background, HashMap::from([("B".to_string(), vec![0, 2]), ("T".to_string(), vec![3])]));
+    assert_eq!(foreground, Some(HashMap::from([("B".to_string(), vec![2]), ("T".to_string(), vec![3])])));
+
+    let (background, foreground) = background_and_foreground_rows(rows_by_category.clone(), None, None, 5);
+    assert_eq!(background, rows_by_category);
+    assert_eq!(foreground, None);
 }
