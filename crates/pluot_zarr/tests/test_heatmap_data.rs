@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
 use pluot_zarr::heatmap_data::{
-    axis_criteria_key, gather_compressed_columns, gather_rows_from_columns, resolve_identifier_indices, selection_mask, AxisCriteria,
+    axis_criteria_key, gather_compressed_columns, gather_rows_from_columns, group_indices, resolve_identifier_indices, selection_mask, AxisCriteria,
 };
 use pluot_zarr::zarr_emphasis_criteria::{ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 
@@ -43,6 +43,12 @@ fn gathers_compressed_columns_keeping_only_requested_rows() {
     assert_eq!(matrix.value_at(CompressedAxis::Cols, 0, 0), 3.0);
     assert_eq!(matrix.value_at(CompressedAxis::Cols, 1, 0), 1.0);
     assert_eq!(matrix.value_at(CompressedAxis::Cols, 0, 1), 0.0);
+}
+
+#[test]
+fn groups_indices_stably_by_code_with_missing_last() {
+    let codes = NumericData::from(vec![1i8, 0, -1, 1, 0, 2]);
+    assert_eq!(group_indices(&[5, 3, 2, 1, 0, 4], &codes), vec![1, 4, 3, 0, 5, 2]);
 }
 
 #[test]

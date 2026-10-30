@@ -31,7 +31,7 @@ use pluot_core::{maybe_timeout, Duration, FutureExt, LayerExtentResult, LayerPic
 
 use crate::adata_io::MatrixLayout;
 use crate::heatmap_data::{
-    indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_matrix_block,
+    indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_grouped_axis_indices, load_matrix_block,
     load_matrix_axis_percentile_domains, load_matrix_block_axis_extents, load_matrix_block_extent, load_matrix_layout,
     load_matrix_percentile_domain, AxisCriteria, HeatmapNormalization, LoadedMatrixBlock, MatrixAxis, MatrixBlock, MatrixBlockKey,
     MatrixCacheMode,
@@ -57,6 +57,10 @@ pub struct AdataZarrHeatmapLayerParams {
     pub obs_filtering: Option<AxisCriteria>,
     /// Which of the included obs to emphasize. `None` emphasizes every obs.
     pub obs_selection: Option<AxisCriteria>,
+    /// Categorical column in adata.obs by which to sort the included obs,
+    /// in category order (obs with missing values last), keeping their
+    /// filtered order within each category. `None` keeps the filtered order.
+    pub groupby: Option<String>,
     /// Which var (columns) to include. `None` includes every var.
     pub var_filtering: Option<AxisCriteria>,
     /// Which of the included var to emphasize. `None` emphasizes every var.
@@ -117,6 +121,7 @@ impl Default for AdataZarrHeatmapLayerParams {
             layer: "X".to_string(),
             obs_filtering: None,
             obs_selection: None,
+            groupby: None,
             var_filtering: None,
             var_selection: None,
             gene_symbols: None,
@@ -223,10 +228,10 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
 
         let axes_future = async {
             futures::try_join!(
-                load_axis_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), cache_enabled),
+                load_grouped_axis_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), params.groupby.as_deref(), cache_enabled),
                 load_axis_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), cache_enabled),
-                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), params.obs_selection.as_ref(), cache_enabled),
-                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), params.var_selection.as_ref(), cache_enabled),
+                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), params.groupby.as_deref(), params.obs_selection.as_ref(), cache_enabled),
+                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), None, params.var_selection.as_ref(), cache_enabled),
                 load_axis_labels(store.clone(), &store_name, MatrixAxis::Obs, None, cache_enabled),
                 load_axis_labels(store.clone(), &store_name, MatrixAxis::Var, params.gene_symbols.as_deref(), cache_enabled),
                 async { Ok(load_matrix_layout(store.clone(), &store_name, &matrix_path, cache_enabled).await) },
@@ -253,6 +258,7 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
             matrix_path: &matrix_path,
             cache_mode: params.cache_mode.unwrap_or_default(),
             obs_filtering: params.obs_filtering.as_ref(),
+            obs_groupby: params.groupby.as_deref(),
             var_filtering: params.var_filtering.as_ref(),
             rows_per_block,
             block_index,

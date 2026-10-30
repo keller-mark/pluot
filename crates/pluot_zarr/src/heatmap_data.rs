@@ -32,6 +32,7 @@ use crate::adata_io::{
     read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, MatrixLayout,
 };
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
+use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 
 /// Which entries along one axis of the matrix (obs rows or var columns) are
 /// included by a filter, or emphasized by a selection.
@@ -240,6 +241,59 @@ pub async fn load_axis_indices(
     .await
 }
 
+/// `indices`, stably sorted by their category code in `codes`, with missing
+/// values (negative codes) last.
+pub fn group_indices(indices: &[u32], codes: &NumericData) -> Vec<u32> {
+    let mut grouped = indices.to_vec();
+    grouped.sort_by_key(|&index| {
+        let code = codes.get_f64(index as usize) as i64;
+        (code < 0, code)
+    });
+    grouped
+}
+
+/// Loads (and caches) the indices along `axis` included by `filtering`,
+/// grouped by the categorical `groupby` column of the `axis` dataframe:
+/// ordered by category, and within each category in their filtered order.
+/// Simply the filtered indices when `groupby` is `None`.
+#[allow(clippy::too_many_arguments)]
+pub async fn load_grouped_axis_indices(
+    gpu_context: Option<&GpuContext<'_>>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    matrix_path: &str,
+    axis: MatrixAxis,
+    filtering: Option<&AxisCriteria>,
+    groupby: Option<&str>,
+    cache_enabled: bool,
+) -> Result<Arc<NumericData>, ArrayError> {
+    let Some(groupby) = groupby else {
+        return load_axis_indices(gpu_context, store, store_name, matrix_path, axis, filtering, cache_enabled).await;
+    };
+    let mut keys = vec![
+        "adata_grouped_axis_indices".to_string(),
+        store_name.to_string(),
+        matrix_path.to_string(),
+        axis.dataframe_path().to_string(),
+        groupby.to_string(),
+    ];
+    keys.extend(axis_criteria_key(filtering));
+
+    use_memo_numeric_data(
+        async || {
+            let codes_path = format!("{}/{groupby}/codes", axis.dataframe_path());
+            let (included, codes) = futures::try_join!(
+                load_axis_indices(gpu_context, store.clone(), store_name, matrix_path, axis, filtering, cache_enabled),
+                load_arr_as_numeric_data_memoized(store.clone(), store_name, &codes_path, cache_enabled),
+            )?;
+            Ok::<_, ArrayError>(NumericData::from(group_indices(indices_of(&included), &codes)))
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
+}
+
 /// One entry per `included` index: 1 if it is among `selected`, else 0.
 pub fn selection_mask(included: &[u32], selected: &[u32]) -> Vec<u8> {
     let mut selected = selected.to_vec();
@@ -248,7 +302,9 @@ pub fn selection_mask(included: &[u32], selected: &[u32]) -> Vec<u8> {
 }
 
 /// Loads (and caches) the selection mask over the `filtering`-included indices
-/// along `axis`, or `None` when there is no `selection` (i.e. everything is selected).
+/// along `axis`, in their [`load_grouped_axis_indices`] order, or `None` when
+/// there is no `selection` (i.e. everything is selected).
+#[allow(clippy::too_many_arguments)]
 pub async fn load_axis_selection_mask(
     gpu_context: Option<&GpuContext<'_>>,
     store: Arc<dyn AsyncReadableStorageTraits>,
@@ -256,6 +312,7 @@ pub async fn load_axis_selection_mask(
     matrix_path: &str,
     axis: MatrixAxis,
     filtering: Option<&AxisCriteria>,
+    groupby: Option<&str>,
     selection: Option<&AxisCriteria>,
     cache_enabled: bool,
 ) -> Result<Option<Arc<NumericData>>, ArrayError> {
@@ -267,6 +324,7 @@ pub async fn load_axis_selection_mask(
         store_name.to_string(),
         matrix_path.to_string(),
         axis.dataframe_path().to_string(),
+        format!("{groupby:?}"),
     ];
     keys.extend(axis_criteria_key(filtering));
     keys.extend(axis_criteria_key(Some(selection)));
@@ -274,7 +332,7 @@ pub async fn load_axis_selection_mask(
     let mask = use_memo_numeric_data(
         async || {
             let (included, selected) = futures::try_join!(
-                load_axis_indices(gpu_context, store.clone(), store_name, matrix_path, axis, filtering, cache_enabled),
+                load_grouped_axis_indices(gpu_context, store.clone(), store_name, matrix_path, axis, filtering, groupby, cache_enabled),
                 load_axis_indices(gpu_context, store.clone(), store_name, matrix_path, axis, Some(selection), cache_enabled),
             )?;
             Ok::<_, ArrayError>(NumericData::from(selection_mask(indices_of(&included), indices_of(&selected))))
@@ -441,6 +499,7 @@ pub struct MatrixBlockKey<'a> {
     pub matrix_path: &'a str,
     pub cache_mode: MatrixCacheMode,
     pub obs_filtering: Option<&'a AxisCriteria>,
+    pub obs_groupby: Option<&'a str>,
     pub var_filtering: Option<&'a AxisCriteria>,
     pub rows_per_block: usize,
     pub block_index: usize,
@@ -455,6 +514,7 @@ impl MatrixBlockKey<'_> {
             format!("{:?}", self.cache_mode),
         ];
         keys.extend(axis_criteria_key(self.obs_filtering));
+        keys.push(format!("{:?}", self.obs_groupby));
         keys.extend(axis_criteria_key(self.var_filtering));
         keys.push(self.rows_per_block.to_string());
         keys.push(self.block_index.to_string());
