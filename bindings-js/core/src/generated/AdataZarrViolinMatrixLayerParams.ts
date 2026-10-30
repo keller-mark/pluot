@@ -56,4 +56,12 @@ value_min?: number | null,
 /**
  * Colors each violin by its median expression. Defaults to Blues, matching scanpy's `sc.pl.stacked_violin`.
  */
-cmap?: QuantitativeColormap | null, };
+cmap?: QuantitativeColormap | null, 
+/**
+ * Title of the axis listing `var_names`. `None` draws no title.
+ */
+var_axis_title?: string | null, 
+/**
+ * Title of the axis listing the `groupby` categories. Defaults to `groupby`.
+ */
+group_axis_title?: string | null, };

@@ -82,15 +82,15 @@ impl Default for PrecomputedTreemapLayerParams {
 
 /// A leaf's rect within the layer bounds, in pixels, with Y increasing downwards (as in D3).
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct LeafRect {
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
+pub struct LeafRect {
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
 }
 
 impl LeafRect {
-    fn contains(&self, x: f32, y: f32) -> bool {
+    pub fn contains(&self, x: f32, y: f32) -> bool {
         self.x1 > self.x0 && self.y1 > self.y0 && x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
     }
 }
@@ -105,7 +105,7 @@ pub struct PrecomputedTreemapLayer {
 
 /// Groups leaves by their labels level by level, so that each distinct label prefix becomes one parent node.
 /// Each leaf node's data is its index into `paths`; parent nodes have no data.
-fn build_hierarchy(paths: &[Vec<String>]) -> HierarchyNode<Option<usize>> {
+pub fn build_hierarchy(paths: &[Vec<String>]) -> HierarchyNode<Option<usize>> {
     HierarchyNode::new(None, build_children(paths, (0..paths.len()).collect(), 0))
 }
 
@@ -137,7 +137,7 @@ fn build_children(paths: &[Vec<String>], indices: Vec<usize>, depth: usize) -> V
 }
 
 /// Returns one rect per entry of `paths`.
-fn layout_leaves(paths: &[Vec<String>], values: &[f32], size: (f32, f32), tile: TreemapTile, padding: f32) -> Vec<LeafRect> {
+pub fn layout_leaves(paths: &[Vec<String>], values: &[f32], size: (f32, f32), tile: TreemapTile, padding: f32) -> Vec<LeafRect> {
     let mut root = build_hierarchy(paths);
     root.sum(&|leaf_index| leaf_index.and_then(|i| values.get(i)).map_or(0.0, |&v| v.max(0.0) as f64))
         .sort_by(&|a, b| b.value.total_cmp(&a.value));
@@ -159,7 +159,7 @@ fn layout_leaves(paths: &[Vec<String>], values: &[f32], size: (f32, f32), tile: 
     rects
 }
 
-fn format_value(value: f32) -> String {
+pub fn format_value(value: f32) -> String {
     if value.fract() != 0.0 || value.abs() >= 1e15 {
         return value.to_string();
     }
@@ -178,7 +178,7 @@ fn format_value(value: f32) -> String {
 }
 
 /// The lines of a leaf's label, from top to bottom: its labels from innermost to outermost, then its value.
-fn label_lines(path: &[String], value: f32) -> Vec<String> {
+pub fn label_lines(path: &[String], value: f32) -> Vec<String> {
     path.iter().rev().cloned().chain(std::iter::once(format_value(value))).collect()
 }
 
@@ -361,60 +361,5 @@ impl PickableLayer for PrecomputedTreemapLayer {
             path: p.paths[index].clone(),
             value: p.values.get(index).copied().unwrap_or(0.0),
         }))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn paths(paths: &[&[&str]]) -> Vec<Vec<String>> {
-        paths.iter().map(|path| path.iter().map(|label| label.to_string()).collect()).collect()
-    }
-
-    #[test]
-    fn hierarchy_nests_leaves_by_shared_label_prefix() {
-        let root = build_hierarchy(&paths(&[&["T", "s1"], &["B", "s1"], &["T", "s2"]]));
-        assert_eq!(root.children.len(), 2);
-        let t_cells = &root.children[0];
-        assert_eq!(t_cells.data, None);
-        assert_eq!(t_cells.children.iter().map(|c| c.data).collect::<Vec<_>>(), vec![Some(0), Some(2)]);
-        assert_eq!(root.children[1].children[0].data, Some(1));
-    }
-
-    #[test]
-    fn single_level_paths_are_direct_children_of_the_root() {
-        let root = build_hierarchy(&paths(&[&["T"], &["B"]]));
-        assert_eq!(root.children.iter().map(|c| c.data).collect::<Vec<_>>(), vec![Some(0), Some(1)]);
-    }
-
-    #[test]
-    fn leaves_are_returned_in_input_order_with_areas_proportional_to_values() {
-        let rects = layout_leaves(&paths(&[&["small"], &["large"]]), &[1.0, 3.0], (400.0, 100.0), TreemapTile::Binary, 0.0);
-        let area = |r: &LeafRect| (r.x1 - r.x0) * (r.y1 - r.y0);
-        assert_eq!(area(&rects[0]) * 3.0, area(&rects[1]));
-        // Sorted by descending value, so the larger leaf is laid out first.
-        assert_eq!(rects[1].x0, 0.0);
-    }
-
-    #[test]
-    fn non_positive_values_get_empty_rects() {
-        let rects = layout_leaves(&paths(&[&["a"], &["b"]]), &[2.0, -1.0], (10.0, 10.0), TreemapTile::Binary, 0.0);
-        assert!(rects[1].x1 <= rects[1].x0 || rects[1].y1 <= rects[1].y0);
-        assert!(!rects[1].contains(rects[1].x0, rects[1].y0));
-    }
-
-    #[test]
-    fn values_are_formatted_with_thousands_separators() {
-        assert_eq!(format_value(0.0), "0");
-        assert_eq!(format_value(999.0), "999");
-        assert_eq!(format_value(1234567.0), "1,234,567");
-        assert_eq!(format_value(-1000.0), "-1,000");
-        assert_eq!(format_value(1.5), "1.5");
-    }
-
-    #[test]
-    fn label_lines_list_innermost_label_first_then_the_value() {
-        assert_eq!(label_lines(&["T".to_string(), "s1".to_string()], 1200.0), vec!["s1", "T", "1,200"]);
     }
 }

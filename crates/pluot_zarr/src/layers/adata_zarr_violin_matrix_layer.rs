@@ -62,6 +62,11 @@ pub struct AdataZarrViolinMatrixLayerParams {
     pub value_min: Option<f32>,
     /// Colors each violin by its median expression. Defaults to Blues, matching scanpy's `sc.pl.stacked_violin`.
     pub cmap: Option<QuantitativeColormap>,
+
+    /// Title of the axis listing `var_names`. `None` draws no title.
+    pub var_axis_title: Option<String>,
+    /// Title of the axis listing the `groupby` categories. Defaults to `groupby`.
+    pub group_axis_title: Option<String>,
 }
 
 impl Default for AdataZarrViolinMatrixLayerParams {
@@ -81,6 +86,8 @@ impl Default for AdataZarrViolinMatrixLayerParams {
             density_norm: None,
             value_min: None,
             cmap: None,
+            var_axis_title: None,
+            group_axis_title: None,
         }
     }
 }
@@ -233,7 +240,8 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
                 fill_values: Some(Arc::new(medians)),
                 cmap: p.cmap,
                 fill_value_title: Some("Median expression".to_string()),
-                group_axis_title: Some(p.groupby.clone()),
+                var_axis_title: p.var_axis_title.clone(),
+                group_axis_title: Some(p.group_axis_title.clone().unwrap_or_else(|| p.groupby.clone())),
                 ..Default::default()
             },
         );

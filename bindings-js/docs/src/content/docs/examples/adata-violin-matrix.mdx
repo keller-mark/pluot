@@ -26,6 +26,8 @@ Every violin shares the same expression axis.
             var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
             groupby: "bulk_labels",
             cmap: "Blues",
+            var_axis_title: "Gene",
+            group_axis_title: "Cell Type",
           },
         }
       ]
@@ -38,4 +40,5 @@ Every violin shares the same expression axis.
     width={700}
     height={700}
     enableCamera={false}
+    format="Vector"
 />
