@@ -3,6 +3,7 @@ pub mod histogram_layer;
 pub mod precomputed_histogram_layer;
 pub mod precomputed_treemap_layer;
 pub mod precomputed_violin_layer;
+pub mod precomputed_violin_matrix_layer;
 pub mod axis_linear_layer;
 pub mod axis_band_layer;
 pub mod curve_layer;

@@ -2,6 +2,7 @@
 import type { AdataZarrDotPlotPickingInfo } from "./AdataZarrDotPlotPickingInfo.js";
 import type { AdataZarrHeatmapPickingInfo } from "./AdataZarrHeatmapPickingInfo.js";
 import type { AdataZarrTreemapPickingInfo } from "./AdataZarrTreemapPickingInfo.js";
+import type { AdataZarrViolinMatrixPickingInfo } from "./AdataZarrViolinMatrixPickingInfo.js";
 import type { AdataZarrViolinPickingInfo } from "./AdataZarrViolinPickingInfo.js";
 import type { BarPlotPickingInfo } from "./BarPlotPickingInfo.js";
 import type { BitmapPickingInfo } from "./BitmapPickingInfo.js";
@@ -15,6 +16,7 @@ import type { Point3dPickingInfo } from "./Point3dPickingInfo.js";
 import type { PointPickingInfo } from "./PointPickingInfo.js";
 import type { PolygonPickingInfo } from "./PolygonPickingInfo.js";
 import type { PrecomputedTreemapPickingInfo } from "./PrecomputedTreemapPickingInfo.js";
+import type { PrecomputedViolinMatrixPickingInfo } from "./PrecomputedViolinMatrixPickingInfo.js";
 import type { PrecomputedViolinPickingInfo } from "./PrecomputedViolinPickingInfo.js";
 import type { RectPickingInfo } from "./RectPickingInfo.js";
 import type { StrokedCurvePickingInfo } from "./StrokedCurvePickingInfo.js";
@@ -23,4 +25,4 @@ import type { TextPickingInfo } from "./TextPickingInfo.js";
 /**
  * The `info` of a `LayerPickingResult`, which depends on the picked layer.
  */
-export type PickingInfo = PointPickingInfo | Point3dPickingInfo | LinePickingInfo | RectPickingInfo | TextPickingInfo | PolygonPickingInfo | FilledCurvePickingInfo | StrokedCurvePickingInfo | BitmapPickingInfo | BitmaskPickingInfo | HeatmapPickingInfo | BarPlotPickingInfo | PrecomputedTreemapPickingInfo | PrecomputedViolinPickingInfo | OmeZarrBitmapPickingInfo | OmeZarrBitmaskPickingInfo | AdataZarrDotPlotPickingInfo | AdataZarrHeatmapPickingInfo | AdataZarrTreemapPickingInfo | AdataZarrViolinPickingInfo;
+export type PickingInfo = PointPickingInfo | Point3dPickingInfo | LinePickingInfo | RectPickingInfo | TextPickingInfo | PolygonPickingInfo | FilledCurvePickingInfo | StrokedCurvePickingInfo | BitmapPickingInfo | BitmaskPickingInfo | HeatmapPickingInfo | BarPlotPickingInfo | PrecomputedTreemapPickingInfo | PrecomputedViolinPickingInfo | PrecomputedViolinMatrixPickingInfo | OmeZarrBitmapPickingInfo | OmeZarrBitmaskPickingInfo | AdataZarrDotPlotPickingInfo | AdataZarrHeatmapPickingInfo | AdataZarrTreemapPickingInfo | AdataZarrViolinPickingInfo | AdataZarrViolinMatrixPickingInfo;

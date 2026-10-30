@@ -117,7 +117,7 @@ pub struct PrecomputedViolinLayer {
     sub_layer_instances: Vec<Box<dyn PreparedAndDraw>>,
 }
 
-fn default_fill_color(group_index: usize) -> (u8, u8, u8) {
+pub(crate) fn default_fill_color(group_index: usize) -> (u8, u8, u8) {
     let [r, g, b, _] = colormaps_categorical::sample(CategoricalColormap::Tableau10, group_index);
     ((r * 255.0).round() as u8, (g * 255.0).round() as u8, (b * 255.0).round() as u8)
 }
@@ -185,7 +185,7 @@ impl ViolinScales {
 
 /// Each violin's width at each bin, as a fraction of the band's width, following seaborn's `density_norm`.
 /// Reference: https://github.com/mwaskom/seaborn/blob/v0.13.2/seaborn/categorical.py#L1007-L1016
-fn normalized_spans(bin_counts: &[Vec<u32>], density_norm: ViolinDensityNorm) -> Vec<Vec<f64>> {
+pub(crate) fn normalized_spans(bin_counts: &[Vec<u32>], density_norm: ViolinDensityNorm) -> Vec<Vec<f64>> {
     let peak = |counts: &[u32]| counts.iter().copied().max().unwrap_or(0) as f64;
     let total = |counts: &[u32]| counts.iter().map(|&count| count as f64).sum::<f64>();
     let max_peak_density = bin_counts.iter()

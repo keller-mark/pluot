@@ -12,6 +12,7 @@ use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZ
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams};
 use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams};
+use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{AdataZarrViolinMatrixLayer, AdataZarrViolinMatrixLayerParams};
 
 
 // Ideally we could just run inventory::submit! in the pluot_zarr crate,
@@ -140,3 +141,13 @@ inventory::submit! {
 // instead of using inventory.
 // But that would require moving more stuff to this crate, like the layered plot rendering code.
 // Also see https://github.com/keller-mark/pluot/issues/178
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrViolinMatrixLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrViolinMatrixLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrViolinMatrixLayer::new(view_params.clone(), params))
+        },
+    }
+}
