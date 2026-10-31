@@ -6,7 +6,7 @@ const HILBERT_HEATMAP_LAYER_TYPE = 'AdataZarrHilbertHeatmapLayer';
 const COLOR_BY_EXPRESSION = 'Expression';
 const FADE_LEVELS = [
   { opacity: 0.2, defaultPercentile: 0, control: 'percentileForOpacity20' },
-  { opacity: 0.6, defaultPercentile: 50, control: 'percentileForOpacity60' },
+  { opacity: 0.6, defaultPercentile: 75, control: 'percentileForOpacity60' },
   { opacity: 1.0, defaultPercentile: 90, control: 'percentileForOpacity100' },
 ];
 
@@ -38,7 +38,7 @@ function withHilbertHeatmapControls(plotParams, controlValues) {
           ...layer.layer_params,
           var_name: colorByExpression || fade ? layer.layer_params.var_name : null,
           color_by: colorByExpression ? null : colorBy,
-          expression_percentile_opacities: fade
+          var_percentile_opacities: fade
             ? FADE_LEVELS.map(({ opacity, control }) => ({ percentile: controlValues[control], opacity }))
             : null,
         },

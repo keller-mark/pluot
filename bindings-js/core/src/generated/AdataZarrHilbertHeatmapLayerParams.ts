@@ -57,7 +57,7 @@ categorical_colormap?: CategoricalColormap | null,
  * among the filter-included obs (the percentage of them with lower expression, estimated from histograms).
  * Obs below every threshold are not visible.
  */
-expression_percentile_opacities?: Array<PercentileOpacity> | null, 
+var_percentile_opacities?: Array<PercentileOpacity> | null, 
 /**
  * Which obs are laid out along the curve. `None` includes every obs.
  */
