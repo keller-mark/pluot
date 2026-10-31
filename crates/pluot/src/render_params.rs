@@ -1,5 +1,6 @@
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
+use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{AdataZarrHilbertHeatmapLayerParams, AdataZarrHilbertHeatmapPickingInfo};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayerParams, AdataZarrViolinPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{AdataZarrViolinMatrixLayerParams, AdataZarrViolinMatrixPickingInfo};
@@ -16,6 +17,7 @@ use pluot_core::layers::bitmap_layer::{BitmapLayerParams, BitmapPickingInfo, Cha
 use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskPickingInfo};
 use pluot_core::layers::heatmap_layer::{HeatmapLayerParams, HeatmapPickingInfo};
 use pluot_core::layers::heatmap_compressed_layer::{HeatmapCscLayerParams, HeatmapCsrLayerParams};
+use pluot_core::layers::hilbert_heatmap_layer::{HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo};
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 use pluot_core::layers::point_3d_layer::{Point3dLayerParams, Point3dPickingInfo};
@@ -67,6 +69,7 @@ pub enum LayerParams {
     HeatmapLayer(HeatmapLayerParams),
     HeatmapCsrLayer(HeatmapCsrLayerParams),
     HeatmapCscLayer(HeatmapCscLayerParams),
+    HilbertHeatmapLayer(HilbertHeatmapLayerParams),
 
     PolygonLayer(PolygonLayerParams),
     CurveLayer(CurveLayerParams),
@@ -94,6 +97,7 @@ pub enum LayerParams {
     OmeZarrBitmaskMultiscaleLayer(OmeZarrBitmaskMultiscaleLayerParams),
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
     AdataZarrHeatmapLayer(AdataZarrHeatmapLayerParams),
+    AdataZarrHilbertHeatmapLayer(AdataZarrHilbertHeatmapLayerParams),
     AdataZarrTreemapLayer(AdataZarrTreemapLayerParams),
     AdataZarrViolinLayer(AdataZarrViolinLayerParams),
     AdataZarrViolinMatrixLayer(AdataZarrViolinMatrixLayerParams),
@@ -186,6 +190,7 @@ enum PickingInfo {
     Bitmap(BitmapPickingInfo),
     Bitmask(BitmaskPickingInfo),
     Heatmap(HeatmapPickingInfo),
+    HilbertHeatmap(HilbertHeatmapPickingInfo),
     BarPlot(BarPlotPickingInfo),
     PrecomputedTreemap(PrecomputedTreemapPickingInfo),
     PrecomputedViolin(PrecomputedViolinPickingInfo),
@@ -194,6 +199,7 @@ enum PickingInfo {
     OmeZarrBitmask(OmeZarrBitmaskPickingInfo),
     AdataZarrDotPlot(AdataZarrDotPlotPickingInfo),
     AdataZarrHeatmap(AdataZarrHeatmapPickingInfo),
+    AdataZarrHilbertHeatmap(AdataZarrHilbertHeatmapPickingInfo),
     AdataZarrTreemap(AdataZarrTreemapPickingInfo),
     AdataZarrViolin(AdataZarrViolinPickingInfo),
     AdataZarrViolinMatrix(AdataZarrViolinMatrixPickingInfo),

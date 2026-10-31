@@ -4,6 +4,7 @@ pub mod adata_metadata;
 pub mod adata_io;
 pub mod dotplot_data;
 pub mod heatmap_data;
+pub mod hilbert_heatmap_data;
 pub mod treemap_data;
 pub mod violin_data;
 pub mod layers;

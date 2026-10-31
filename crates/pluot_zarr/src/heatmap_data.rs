@@ -318,6 +318,25 @@ pub fn index_mask(indices: &[u32], len: usize) -> Vec<bool> {
     mask
 }
 
+/// Loads (and caches) the per-obs expression of the var whose `var_column` (its
+/// index when `None`) is `var_name`, in the `layer` matrix (`X` when `None`), or
+/// `None` when there is no such var.
+pub async fn load_var_expression(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    var_name: &str,
+    var_column: Option<&str>,
+    layer: Option<&str>,
+    cache_enabled: bool,
+) -> Result<Option<Arc<Vec<f32>>>, ArrayError> {
+    let var_labels = load_axis_labels(store.clone(), store_name, MatrixAxis::Var, var_column, cache_enabled).await?;
+    let Some(col_index) = var_labels.iter().position(|label| label == var_name) else {
+        return Ok(None);
+    };
+    let var_colname = var_column.unwrap_or("index");
+    load_gene_expression(store, store_name, var_colname, var_name, col_index as u64, layer, cache_enabled).await.map(Some)
+}
+
 /// Loads (and caches) the per-obs expression of the var of `params`, as the
 /// [`EmphasisCriteria`] testing it against the range of `params`.
 pub async fn load_expression_criteria(
@@ -334,13 +353,10 @@ pub async fn load_expression_criteria(
         log("heatmap_data: expression criteria only apply to the obs axis; including no vars");
         return Ok(includes_nothing());
     }
-    let var_labels = load_axis_labels(store.clone(), store_name, MatrixAxis::Var, params.var_column.as_deref(), cache_enabled).await?;
-    let Some(col_index) = var_labels.iter().position(|label| label == &params.var_name) else {
+    let Some(values) = load_var_expression(store, store_name, &params.var_name, params.var_column.as_deref(), params.layer.as_deref(), cache_enabled).await? else {
         log(&format!("heatmap_data: var \"{}\" not found; including no obs", params.var_name));
         return Ok(includes_nothing());
     };
-    let var_colname = params.var_column.as_deref().unwrap_or("index");
-    let values = load_gene_expression(store, store_name, var_colname, &params.var_name, col_index as u64, params.layer.as_deref(), cache_enabled).await?;
     Ok(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
         values: NumericData::Float32(values),
         min: params.min,

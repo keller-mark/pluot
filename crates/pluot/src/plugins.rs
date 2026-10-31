@@ -10,6 +10,7 @@ use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayer, OmeZarrBit
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::{OmeZarrBitmaskMultiscaleLayer, OmeZarrBitmaskMultiscaleLayerParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
+use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{AdataZarrHilbertHeatmapLayer, AdataZarrHilbertHeatmapLayerParams};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams};
 use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams};
 use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{AdataZarrViolinMatrixLayer, AdataZarrViolinMatrixLayerParams};
@@ -113,6 +114,16 @@ inventory::submit! {
         create_layer: |value, view_params| {
             let params: AdataZarrHeatmapLayerParams = serde_json::from_value(value).unwrap();
             Box::new(AdataZarrHeatmapLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrHilbertHeatmapLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrHilbertHeatmapLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrHilbertHeatmapLayer::new(view_params.clone(), params))
         },
     }
 }

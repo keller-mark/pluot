@@ -3,6 +3,8 @@ export type { AdataZarrDotPlotLayerParams } from "./AdataZarrDotPlotLayerParams.
 export type { AdataZarrDotPlotPickingInfo } from "./AdataZarrDotPlotPickingInfo.js";
 export type { AdataZarrHeatmapLayerParams } from "./AdataZarrHeatmapLayerParams.js";
 export type { AdataZarrHeatmapPickingInfo } from "./AdataZarrHeatmapPickingInfo.js";
+export type { AdataZarrHilbertHeatmapLayerParams } from "./AdataZarrHilbertHeatmapLayerParams.js";
+export type { AdataZarrHilbertHeatmapPickingInfo } from "./AdataZarrHilbertHeatmapPickingInfo.js";
 export type { AdataZarrTreemapLayerParams } from "./AdataZarrTreemapLayerParams.js";
 export type { AdataZarrTreemapPickingInfo } from "./AdataZarrTreemapPickingInfo.js";
 export type { AdataZarrViolinLayerParams } from "./AdataZarrViolinLayerParams.js";
@@ -43,6 +45,8 @@ export type { HeatmapLayerParams } from "./HeatmapLayerParams.js";
 export type { HeatmapNormalization } from "./HeatmapNormalization.js";
 export type { HeatmapPickingInfo } from "./HeatmapPickingInfo.js";
 export type { HeatmapQuantitativeColormapParams } from "./HeatmapQuantitativeColormapParams.js";
+export type { HilbertHeatmapLayerParams } from "./HilbertHeatmapLayerParams.js";
+export type { HilbertHeatmapPickingInfo } from "./HilbertHeatmapPickingInfo.js";
 export type { HistogramLayerParams } from "./HistogramLayerParams.js";
 export type { IdentifierCriteriaParams } from "./IdentifierCriteriaParams.js";
 export type { InstancedOpacityParams } from "./InstancedOpacityParams.js";

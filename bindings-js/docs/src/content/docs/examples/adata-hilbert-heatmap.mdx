@@ -1,0 +1,46 @@
+---
+title: Hilbert Heatmap (AnnData)
+description: Hilbert curve heatmap example.
+sidebar:
+    order: 35
+---
+import { HilbertHeatmapWrapper } from '../../../components/HilbertHeatmapWrapper.jsx';
+
+This visualization is inspired by [Valdes et al. Frontiers in Bioinformatics 2023](https://doi.org/10.3389/fbinf.2023.1154588).
+
+The heatmap arranges the cells of single-cell transcriptomics data along a [generalized Hilbert curve](https://github.com/jakubcerveny/gilbert) that fills the rectangular plotted region.
+The cells along the curve are sorted by cell type (`bulk_labels`) and then by cell cycle phase (`phase`).
+Each cell is colored by its expression of the selected gene `LYZ`.
+Use the plot controls to color the cells by their cell type or other categorical labels instead.
+
+<HilbertHeatmapWrapper
+    client:load
+    client:only="react"
+
+    plotId={"hilbert-heatmap-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrHilbertHeatmapLayer",
+          layer_params: {
+            layer_id: "hilbert_heatmap",
+            groupby: ["bulk_labels", "phase"],
+            var_name: "LYZ",
+            obs_selection: null,
+            background_opacity: 0.25,
+            cell_size: 4,
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={10}
+    marginBottom={10}
+    marginTop={10}
+    marginRight={150}
+    width={700}
+    height={500}
+    enableCamera={false}
+/>

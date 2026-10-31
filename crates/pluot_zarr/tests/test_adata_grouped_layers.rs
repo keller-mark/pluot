@@ -16,6 +16,10 @@ use pluot_core::zarr::StoreMap;
 use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_string_array};
 use pluot_zarr::heatmap_data::{AxisCriteria, ExpressionCriteriaParams, IdentifierCriteriaParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
+use pluot_zarr::hilbert_heatmap_data::load_nested_grouped_obs_indices;
+use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{
+    AdataZarrHilbertHeatmapLayer, AdataZarrHilbertHeatmapLayerParams, AdataZarrHilbertHeatmapPickingInfo,
+};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams, AdataZarrViolinPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{
@@ -260,6 +264,78 @@ async fn check_treemap_counts_the_selected_obs_of_the_filtered_categories(gpu_co
     assert_eq!(picked, expected);
 }
 
+/// The filter-included obs sorted by bulk_labels, then phase, then stored order.
+async fn expected_nested_order(store: Arc<dyn AsyncReadableStorageTraits>) -> Vec<u32> {
+    let bulk_labels = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+    let phase = load_arr_as_numeric_data(store, "/obs/phase/codes").await.unwrap();
+    let sort_key = |code: f32| if code < 0.0 { i64::MAX } else { code as i64 };
+    let mut obs: Vec<u32> = (0..bulk_labels.len() as u32).filter(|&row| INCLUDED_CODES.contains(&(bulk_labels.get_f32(row as usize) as i64))).collect();
+    obs.sort_by_key(|&row| (sort_key(bulk_labels.get_f32(row as usize)), sort_key(phase.get_f32(row as usize))));
+    obs
+}
+
+async fn check_hilbert_heatmap_orders_the_filtered_obs_by_nested_groups(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let groupby = vec!["bulk_labels".to_string(), "phase".to_string()];
+    let ordered = load_nested_grouped_obs_indices(gpu_context, store.clone(), "pbmc", obs_filtering().as_ref(), &groupby, false).await.unwrap();
+    let ordered: Vec<u32> = ordered.as_f32().iter().map(|&row| row as u32).collect();
+    assert_eq!(ordered, expected_nested_order(store).await);
+}
+
+async fn check_hilbert_heatmap_colors_the_filtered_obs_by_expression(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let gene = var_names(store.clone(), &[10]).await.remove(0);
+    let values = expression(store.clone(), &gene).await;
+    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
+    let bulk_label_categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let bulk_labels = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+
+    let mut layer = AdataZarrHilbertHeatmapLayer::new(view_params(store.clone()), AdataZarrHilbertHeatmapLayerParams {
+        store_name: Some("pbmc".to_string()),
+        groupby: vec!["bulk_labels".to_string(), "phase".to_string()],
+        var_name: Some(gene.clone()),
+        obs_filtering: obs_filtering(),
+        obs_selection: obs_selection(),
+        ..Default::default()
+    });
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
+
+    let n_genes = load_arr_as_numeric_data(store.clone(), "/obs/n_genes").await.unwrap();
+    let expected_obs = expected_nested_order(store).await;
+    let mut picked_obs = std::collections::BTreeSet::new();
+    for x in 0..SIZE {
+        for y in 0..SIZE {
+            let result = layer.pick(ScreenCoord { x: x as f32 + 0.5, y: y as f32 + 0.5 }, None).expect("every pixel shows an obs");
+            let info: AdataZarrHilbertHeatmapPickingInfo = result.into_info().unwrap();
+            let obs = info.obs_index;
+            assert_eq!(info.obs_name, obs_names[obs]);
+            assert_eq!(info.obs_values[0].as_deref(), Some(bulk_label_categories[bulk_labels.get_f32(obs) as usize].as_str()));
+            assert_eq!(info.var_name.as_deref(), Some(gene.as_str()));
+            assert_eq!(info.expression, Some(values[obs]));
+            assert_eq!(info.is_selected, n_genes.get_f32(obs) >= MIN_N_GENES);
+            picked_obs.insert(obs as u32);
+        }
+    }
+    assert_eq!(picked_obs, expected_obs.into_iter().collect());
+}
+
+async fn check_hilbert_heatmap_colors_the_filtered_obs_by_category(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let mut layer = AdataZarrHilbertHeatmapLayer::new(view_params(store.clone()), AdataZarrHilbertHeatmapLayerParams {
+        store_name: Some("pbmc".to_string()),
+        groupby: vec!["bulk_labels".to_string(), "phase".to_string()],
+        color_by: Some("phase".to_string()),
+        obs_filtering: obs_filtering(),
+        ..Default::default()
+    });
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
+    let result = layer.pick(ScreenCoord { x: 10.5, y: 10.5 }, None).unwrap();
+    let info: AdataZarrHilbertHeatmapPickingInfo = result.into_info().unwrap();
+    assert_eq!(info.color_by.as_deref(), Some("phase"));
+    assert_eq!(info.color_by_value, info.obs_values[1]);
+    assert_eq!((info.expression, info.is_selected), (None, true));
+}
+
 async fn with_cpu_and_gpu<F: AsyncFn(Option<&GpuContext<'_>>)>(check: F) {
     check(None).await;
     let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
@@ -284,4 +360,19 @@ async fn violin_matrix_summarizes_the_selected_obs_of_the_filtered_categories_an
 #[tokio::test]
 async fn treemap_counts_the_selected_obs_of_the_filtered_categories() {
     with_cpu_and_gpu(check_treemap_counts_the_selected_obs_of_the_filtered_categories).await;
+}
+
+#[tokio::test]
+async fn hilbert_heatmap_orders_the_filtered_obs_by_nested_groups() {
+    with_cpu_and_gpu(check_hilbert_heatmap_orders_the_filtered_obs_by_nested_groups).await;
+}
+
+#[tokio::test]
+async fn hilbert_heatmap_colors_the_filtered_obs_by_expression() {
+    with_cpu_and_gpu(check_hilbert_heatmap_colors_the_filtered_obs_by_expression).await;
+}
+
+#[tokio::test]
+async fn hilbert_heatmap_colors_the_filtered_obs_by_category() {
+    with_cpu_and_gpu(check_hilbert_heatmap_colors_the_filtered_obs_by_category).await;
 }
