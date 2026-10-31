@@ -69,25 +69,3 @@ fn gilbert_xy2d(cell: vec2<u32>, width: u32, height: u32) -> u32 {
   return position;
 }
 
-// floor(numerator * multiplier / divisor) without overflowing 32 bits, where
-// numerator < divisor < 2^31: binary long division over the bits of `multiplier`.
-fn mul_div_floor(numerator: u32, multiplier: u32, divisor: u32) -> u32 {
-  var quotient = 0u;
-  var remainder = 0u;
-  for (var bit = 31i; bit >= 0i; bit = bit - 1i) {
-    quotient = quotient << 1u;
-    remainder = remainder << 1u;
-    if (remainder >= divisor) {
-      remainder = remainder - divisor;
-      quotient = quotient + 1u;
-    }
-    if (((multiplier >> u32(bit)) & 1u) == 1u) {
-      remainder = remainder + numerator;
-      if (remainder >= divisor) {
-        remainder = remainder - divisor;
-        quotient = quotient + 1u;
-      }
-    }
-  }
-  return quotient;
-}

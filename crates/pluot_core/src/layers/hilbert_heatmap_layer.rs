@@ -1,9 +1,9 @@
 // Lays out an ordered list of items along a generalized Hilbert ("gilbert")
-// curve filling the layer bounds, coloring each cell by the value of the item
-// it falls on. The curve keeps items that are close in the order close in 2D,
-// so contiguous groups of items (e.g., cells sorted by cell type) form blobs.
+// curve, one cell per item, coloring each cell by the value of its item. The
+// curve keeps items that are close in the order close in 2D, so contiguous
+// groups of items (e.g., cells sorted by cell type) form blobs.
 //
-// The grid is laid out in pixel units within the layer bounds, so it does not
+// The grid is stretched to fill the layer bounds in pixel units, so it does not
 // follow the camera. Each fragment computes its cell's position along the
 // curve, the item at that position, and that item's color, so no per-item or
 // per-pixel work happens on the CPU.
@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use crate::color_mode::create_palette_texture;
 use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
-use crate::gilbert::{gilbert_xy2d, item_at_curve_position};
+use crate::gilbert::gilbert_xy2d;
 use crate::layers::heatmap_layer::{HeatmapColormap, DEFAULT_BACKGROUND_OPACITY};
 use crate::numeric_data::{NumericData, NumericValue};
 use crate::picking::LayerPickingResult;
@@ -41,13 +41,10 @@ pub struct HilbertHeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
 
-    /// Side length, in pixels, of each cell of the curve's grid, which fills the
-    /// layer bounds. Defaults to 1.
-    pub cell_size: Option<f32>,
-
     /// The items to lay out along the curve, in order, each as an index into
-    /// `values` and the criteria. The items are spread evenly along the whole
-    /// curve, so list only the filter-included items to fill it without gaps.
+    /// `values` and the criteria. Each item takes up one cell of a grid shaped
+    /// like the layer bounds and sized to fit them all, so the curve may end a
+    /// few cells short of the full grid. List only the filter-included items to avoid gaps.
     pub ordered_indices: NumericData,
     /// One value per item: a scalar for a quantitative colormap, or a category
     /// code for a categorical one. NaNs and negative category codes are not drawn.
@@ -71,7 +68,6 @@ impl Default for HilbertHeatmapLayerParams {
         Self {
             layer_id: "".to_string(),
             bounds: None,
-            cell_size: None,
             ordered_indices: NumericData::Uint32(Arc::new(vec![])),
             values: NumericData::Float32(Arc::new(vec![])),
             colormap: None,
@@ -83,36 +79,33 @@ impl Default for HilbertHeatmapLayerParams {
     }
 }
 
-/// The grid of cells that the curve fills, within the layer bounds.
+/// The grid of cells that the curve runs through, stretched to fill the layer bounds.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HilbertGrid {
     pub margin_left: f32,
     pub margin_top: f32,
     pub margin_bottom: f32,
+    pub layer_width: f32,
     pub layer_height: f32,
-    pub cell_size: f32,
     pub width: u32,
     pub height: u32,
 }
 
 impl HilbertGrid {
-    pub fn new(view_params: &ViewParams, bounds: Option<&MarginParams>, cell_size: Option<f32>) -> Self {
+    pub fn new(view_params: &ViewParams, bounds: Option<&MarginParams>, num_items: usize) -> Self {
         let bounds = bounds.or(view_params.margins.as_ref());
         let margin = |get: fn(&MarginParams) -> Option<f32>| bounds.and_then(get).unwrap_or(0.0);
         let (margin_top, margin_right) = (margin(|m| m.margin_top), margin(|m| m.margin_right));
         let (margin_bottom, margin_left) = (margin(|m| m.margin_bottom), margin(|m| m.margin_left));
         let layer_width = (view_params.width as f32 - (margin_left + margin_right)).max(0.0);
         let layer_height = (view_params.height as f32 - (margin_top + margin_bottom)).max(0.0);
-        let cell_size = cell_size.unwrap_or(1.0).max(f32::EPSILON);
-        Self {
-            margin_left,
-            margin_top,
-            margin_bottom,
-            layer_height,
-            cell_size,
-            width: (layer_width / cell_size).floor() as u32,
-            height: (layer_height / cell_size).floor() as u32,
-        }
+        let (width, height) = grid_dimensions(num_items, layer_width / layer_height);
+        Self { margin_left, margin_top, margin_bottom, layer_width, layer_height, width, height }
+    }
+
+    /// The width and height, in pixels, of each cell.
+    pub fn cell_size(&self) -> (f32, f32) {
+        (self.layer_width / self.width as f32, self.layer_height / self.height as f32)
     }
 
     pub fn len(&self) -> u32 {
@@ -120,25 +113,36 @@ impl HilbertGrid {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len() == 0 || self.layer_width <= 0.0 || self.layer_height <= 0.0
     }
 
     /// The cell under `screen_coord` (whose Y increases upwards), counting rows from the top.
     pub fn cell_at(&self, screen_coord: ScreenCoord) -> Option<(u32, u32)> {
-        let x = (screen_coord.x - self.margin_left) / self.cell_size;
-        let y = (self.layer_height - (screen_coord.y - self.margin_bottom)) / self.cell_size;
+        let (cell_width, cell_height) = self.cell_size();
+        let x = (screen_coord.x - self.margin_left) / cell_width;
+        let y = (self.layer_height - (screen_coord.y - self.margin_bottom)) / cell_height;
         if x < 0.0 || y < 0.0 || x >= self.width as f32 || y >= self.height as f32 {
             return None;
         }
         Some((x.floor() as u32, y.floor() as u32))
     }
 
-    /// The position along the curve of `cell`, and the position in the order of
-    /// the item drawn there, given the number of items.
-    pub fn curve_position_and_ordinal(&self, cell: (u32, u32), num_items: usize) -> (u32, usize) {
+    /// The position along the curve of `cell`, which is also the position in the
+    /// order of the item drawn there, unless the curve has run out of items.
+    pub fn curve_position(&self, cell: (u32, u32), num_items: usize) -> Option<u32> {
         let position = gilbert_xy2d(cell.0, cell.1, self.width, self.height);
-        (position, item_at_curve_position(position, num_items as u32, self.len()) as usize)
+        ((position as usize) < num_items).then_some(position)
     }
+}
+
+/// The `(width, height)` of a grid with about `aspect_ratio` (width / height)
+/// and the fewest whole rows with a cell per item.
+pub fn grid_dimensions(num_items: usize, aspect_ratio: f32) -> (u32, u32) {
+    if num_items == 0 || !aspect_ratio.is_finite() || aspect_ratio <= 0.0 {
+        return (0, 0);
+    }
+    let width = ((num_items as f64 * aspect_ratio as f64).sqrt().round() as usize).clamp(1, num_items);
+    (width as u32, num_items.div_ceil(width) as u32)
 }
 
 fn index_at(indices: &NumericData, i: usize) -> usize {
@@ -165,7 +169,8 @@ impl HilbertHeatmapLayer {
     }
 
     pub fn grid(&self) -> HilbertGrid {
-        HilbertGrid::new(&self.view_params, self.layer_params.bounds.as_ref(), self.layer_params.cell_size)
+        let p = &self.layer_params;
+        HilbertGrid::new(&self.view_params, p.bounds.as_ref(), p.ordered_indices.len())
     }
 
     fn colormap(&self) -> HeatmapColormap {
@@ -185,7 +190,8 @@ impl HilbertHeatmapLayer {
     /// The curve position, ordinal and index of the item drawn at `cell`, unless the cell is empty.
     fn item_at(&self, grid: &HilbertGrid, cell: (u32, u32), is_categorical: bool) -> Option<(u32, usize, usize)> {
         let p = &self.layer_params;
-        let (position, ordinal) = grid.curve_position_and_ordinal(cell, p.ordered_indices.len());
+        let position = grid.curve_position(cell, p.ordered_indices.len())?;
+        let ordinal = position as usize;
         let index = index_at(&p.ordered_indices, ordinal);
         if !cpu_is_included(&p.filtering_criteria, index) {
             return None;
@@ -213,7 +219,7 @@ impl PreparedLayer for HilbertHeatmapLayer {
 #[derive(ShaderType, Debug)]
 struct HilbertHeatmapLayerUniforms {
     grid_origin: Vec2,
-    cell_size: f32,
+    cell_size: Vec2,
     grid_width: u32,
     grid_height: u32,
     num_items: u32,
@@ -360,7 +366,7 @@ impl DrawToRasterGpu for HilbertHeatmapLayer {
 
         let uniforms = HilbertHeatmapLayerUniforms {
             grid_origin: Vec2::new(grid.margin_left, grid.margin_top),
-            cell_size: grid.cell_size,
+            cell_size: Vec2::from(grid.cell_size()),
             grid_width: grid.width,
             grid_height: grid.height,
             num_items: p.ordered_indices.len() as u32,
@@ -401,10 +407,8 @@ impl DrawToRasterGpu for HilbertHeatmapLayer {
             entries: &entries,
         });
 
-        let grid_width_px = grid.width as f32 * grid.cell_size;
-        let grid_height_px = grid.height as f32 * grid.cell_size;
-        pass.set_viewport(grid.margin_left, grid.margin_top, grid_width_px, grid_height_px, 0.0, 1.0);
-        pass.set_scissor_rect(grid.margin_left as u32, grid.margin_top as u32, grid_width_px.ceil() as u32, grid_height_px.ceil() as u32);
+        pass.set_viewport(grid.margin_left, grid.margin_top, grid.layer_width, grid.layer_height, 0.0, 1.0);
+        pass.set_scissor_rect(grid.margin_left as u32, grid.margin_top as u32, grid.layer_width.ceil() as u32, grid.layer_height.ceil() as u32);
         pass.set_pipeline(&render_pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.draw(0..4, 0..1);
@@ -445,8 +449,7 @@ impl DrawToSvg for HilbertHeatmapLayer {
         PngEncoder::new(&mut png)
             .write_image(&rgba, grid.width, grid.height, ExtendedColorType::Rgba8)
             .expect("PNG encode");
-        let width = (grid.width as f32 * grid.cell_size) as f64;
-        let height = (grid.height as f32 * grid.cell_size) as f64;
+        let (width, height) = (grid.layer_width as f64, grid.layer_height as f64);
         update_svg(ctx, &[TwoElement::Group(TwoGroup {
             elements: vec![TwoElement::Image(TwoImage {
                 x: 0.0,

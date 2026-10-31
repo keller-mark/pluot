@@ -61,8 +61,7 @@ pub mod common {
     pub const FLAT_TEXEL_COORD: &str = include_str!("wgsl_functions/flat_texel_coord.wgsl");
 
     /// `fn gilbert_xy2d(cell, width, height) -> u32` — the position of a cell
-    /// along the generalized Hilbert curve (see [`crate::gilbert`]), plus
-    /// `fn mul_div_floor(numerator, multiplier, divisor) -> u32`.
+    /// along the generalized Hilbert curve (see [`crate::gilbert`]).
     pub const GILBERT_XY2D: &str = include_str!("wgsl_functions/gilbert_xy2d.wgsl");
 }
 

@@ -9,14 +9,10 @@ import type { NumericData } from "./NumericData.js";
  */
 export type HilbertHeatmapLayerParams = { layer_id: string, bounds?: MarginParams | null, 
 /**
- * Side length, in pixels, of each cell of the curve's grid, which fills the
- * layer bounds. Defaults to 1.
- */
-cell_size?: number | null, 
-/**
  * The items to lay out along the curve, in order, each as an index into
- * `values` and the criteria. The items are spread evenly along the whole
- * curve, so list only the filter-included items to fill it without gaps.
+ * `values` and the criteria. Each item takes up one cell of a grid shaped
+ * like the layer bounds and sized to fit them all, so the curve may end a
+ * few cells short of the full grid. List only the filter-included items to avoid gaps.
  */
 ordered_indices: NumericData, 
 /**

@@ -5,7 +5,8 @@
 struct Uniforms {
     // Top-left corner of the grid, in framebuffer pixels.
     grid_origin: vec2<f32>,
-    cell_size: f32,
+    // Width and height of each cell, in framebuffer pixels.
+    cell_size: vec2<f32>,
     grid_width: u32,
     grid_height: u32,
     num_items: u32,
@@ -53,10 +54,11 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     if (any(cell_f < vec2<f32>(0.0)) || cell_f.x >= f32(u.grid_width) || cell_f.y >= f32(u.grid_height)) {
         discard;
     }
-    let curve_len = u.grid_width * u.grid_height;
     let curve_position = gilbert_xy2d(vec2<u32>(cell_f), u.grid_width, u.grid_height);
-    let ordinal = mul_div_floor(curve_position, u.num_items, curve_len);
-    let item = u32(textureLoad(ordered_indices, flat_texel_coord(ordinal, textureDimensions(ordered_indices).x), 0).x);
+    if (curve_position >= u.num_items) {
+        discard;
+    }
+    let item = u32(textureLoad(ordered_indices, flat_texel_coord(curve_position,textureDimensions(ordered_indices).x), 0).x);
     if (!is_filtered_in(item)) {
         discard;
     }

@@ -1,4 +1,4 @@
-use pluot_core::gilbert::{gilbert_d2xy, gilbert_xy2d, item_at_curve_position};
+use pluot_core::gilbert::{gilbert_d2xy, gilbert_xy2d};
 
 /// A literal port of the recursive `generate2d` of the reference implementation.
 fn generate2d(x: i64, y: i64, ax: i64, ay: i64, bx: i64, by: i64, out: &mut Vec<(u32, u32)>) {
@@ -69,13 +69,4 @@ fn consecutive_cells_touch() {
             assert!(dx <= 1 && dy <= 1, "{:?} to {:?} of {width}x{height}", pair[0], pair[1]);
         }
     }
-}
-
-#[test]
-fn items_are_spread_evenly_along_the_curve() {
-    let items: Vec<u32> = (0..10).map(|position| item_at_curve_position(position, 4, 10)).collect();
-    assert_eq!(items, vec![0, 0, 0, 1, 1, 2, 2, 2, 3, 3]);
-    let items: Vec<u32> = (0..4).map(|position| item_at_curve_position(position, 10, 4)).collect();
-    assert_eq!(items, vec![0, 2, 5, 7]);
-    assert_eq!(item_at_curve_position(u32::MAX - 1, u32::MAX, u32::MAX), u32::MAX - 1);
 }

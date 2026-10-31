@@ -118,9 +118,3 @@ pub fn gilbert_xy2d(x: u32, y: u32, width: u32, height: u32) -> u32 {
     let (dx, dy) = block.step();
     (start + dx * (x - block.x) + dy * (y - block.y)) as u32
 }
-
-/// The item at curve position `position` when `num_items` items are spread
-/// evenly, in order, along a curve of `curve_len` cells.
-pub fn item_at_curve_position(position: u32, num_items: u32, curve_len: u32) -> u32 {
-    (position as u64 * num_items as u64 / curve_len.max(1) as u64) as u32
-}

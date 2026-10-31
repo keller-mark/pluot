@@ -62,10 +62,6 @@ obs_selection?: AxisCriteria | null,
  */
 background_opacity?: number | null, 
 /**
- * Side length, in pixels, of each cell of the curve's grid. Defaults to 1.
- */
-cell_size?: number | null, 
-/**
  * Title of the colormap legend. Defaults to `var_name` or `color_by`.
  */
 legend_title?: string | null, };

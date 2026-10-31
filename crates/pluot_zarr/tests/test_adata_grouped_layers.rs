@@ -306,7 +306,7 @@ async fn check_hilbert_heatmap_colors_the_filtered_obs_by_expression(gpu_context
     let mut picked_obs = std::collections::BTreeSet::new();
     for x in 0..SIZE {
         for y in 0..SIZE {
-            let result = layer.pick(ScreenCoord { x: x as f32 + 0.5, y: y as f32 + 0.5 }, None).expect("every pixel shows an obs");
+            let Some(result) = layer.pick(ScreenCoord { x: x as f32 + 0.5, y: y as f32 + 0.5 }, None) else { continue };
             let info: AdataZarrHilbertHeatmapPickingInfo = result.into_info().unwrap();
             let obs = info.obs_index;
             assert_eq!(info.obs_name, obs_names[obs]);
@@ -330,7 +330,8 @@ async fn check_hilbert_heatmap_colors_the_filtered_obs_by_category(gpu_context: 
         ..Default::default()
     });
     assert!(!layer.prepare(gpu_context).await.bailed_early);
-    let result = layer.pick(ScreenCoord { x: 10.5, y: 10.5 }, None).unwrap();
+    let curve_start = ScreenCoord { x: 0.5, y: SIZE as f32 - 0.5 };
+    let result = layer.pick(curve_start, None).unwrap();
     let info: AdataZarrHilbertHeatmapPickingInfo = result.into_info().unwrap();
     assert_eq!(info.color_by.as_deref(), Some("obs/phase"));
     assert_eq!(info.color_by_value, info.obs_values[1]);

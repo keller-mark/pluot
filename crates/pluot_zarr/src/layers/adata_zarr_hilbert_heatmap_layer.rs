@@ -1,5 +1,5 @@
-// Lays out the filter-included obs along a generalized Hilbert ("gilbert")
-// curve filling the layer bounds, sorted by one or more categorical obs
+// Lays out the filter-included obs, one cell each, along a generalized Hilbert
+// ("gilbert") curve filling the layer bounds, sorted by one or more categorical obs
 // columns so that each group forms a contiguous blob, and colors them by either
 // one var's expression or one categorical obs column.
 //
@@ -85,8 +85,6 @@ pub struct AdataZarrHilbertHeatmapLayerParams {
     /// Opacity of cells whose obs is not selected.
     pub background_opacity: Option<f32>,
 
-    /// Side length, in pixels, of each cell of the curve's grid. Defaults to 1.
-    pub cell_size: Option<f32>,
     /// Title of the colormap legend. Defaults to `var_name` or `color_by`.
     pub legend_title: Option<String>,
 }
@@ -109,7 +107,6 @@ impl Default for AdataZarrHilbertHeatmapLayerParams {
             obs_filtering: None,
             obs_selection: None,
             background_opacity: None,
-            cell_size: None,
             legend_title: None,
         }
     }
@@ -315,7 +312,6 @@ impl PreparedLayer for AdataZarrHilbertHeatmapLayer {
             HilbertHeatmapLayerParams {
                 layer_id: format!("{}_hilbert_heatmap_sublayer", p.layer_id),
                 bounds: p.bounds.clone(),
-                cell_size: p.cell_size,
                 ordered_indices: ordered_indices.as_ref().clone(),
                 values,
                 colormap: Some(colormap),

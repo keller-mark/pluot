@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use pluot_core::layers::heatmap_layer::HeatmapColormap;
-use pluot_core::layers::hilbert_heatmap_layer::{HilbertHeatmapLayer, HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo};
+use pluot_core::layers::hilbert_heatmap_layer::{grid_dimensions, HilbertHeatmapLayer, HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo};
 use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::params::{GraphicsFormat, LayerParams, LayeredPlotRenderParams, PlotParams, RenderBackend, RenderParams};
 use pluot_core::render_traits::{BooleanCriteriaParams, EmphasisCriteria, MarginParams, PickableLayer, ViewParams};
@@ -70,9 +70,10 @@ async fn gpu_cells_match_cpu_picking() {
     let params = layer_params();
     let rgba = render_rgba(&params).await;
     let layer = HilbertHeatmapLayer::new(ViewParams { width: WIDTH, height: HEIGHT, ..Default::default() }, params);
+    let grid = layer.grid();
+    assert_eq!((grid.width, grid.height, grid.cell_size()), (10, 5, (3.0, 3.2)), "50 items fill the 30x16 bounds as a 10x5 grid");
     let HeatmapColormap::CategoricalCustom(colors) = layer_params().colormap.unwrap() else { unreachable!() };
 
-    let mut num_drawn = 0;
     let mut items_seen = std::collections::BTreeSet::new();
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
@@ -91,39 +92,57 @@ async fn gpu_cells_match_cpu_picking() {
             let color_matches = pixel[..3].iter().zip([r, g, b]).all(|(&actual, expected)| actual.abs_diff(expected) <= 1);
             assert!(color_matches, "pixel ({x}, {y}) is {pixel:?} but should show item {} as {:?}", info.index, (r, g, b));
             assert!(pixel[3].abs_diff(expected_alpha) <= 1, "pixel ({x}, {y}) alpha {} for item {}", pixel[3], info.index);
-            num_drawn += 1;
             items_seen.insert(info.index);
         }
     }
     let expected_items: std::collections::BTreeSet<usize> = (0..NUM_ITEMS).filter(|i| i % 7 != 0).collect();
     assert_eq!(items_seen, expected_items);
-    assert!(num_drawn > (LAYER_WIDTH * LAYER_HEIGHT) as usize / 2);
 }
 
 #[tokio::test]
-async fn items_fill_the_curve_in_order() {
+async fn each_item_takes_one_cell_in_order_until_the_curve_ends() {
     let layer = HilbertHeatmapLayer::new(ViewParams { width: WIDTH, height: HEIGHT, ..Default::default() }, HilbertHeatmapLayerParams {
         bounds: Some(bounds()),
         ordered_indices: NumericData::from((0..NUM_ITEMS as u32).collect::<Vec<u32>>()),
         values: NumericData::Float32(Arc::new((0..NUM_ITEMS).map(|i| i as f32).collect())),
-        cell_size: Some(2.0),
         ..Default::default()
     });
     let grid = layer.grid();
-    assert_eq!((grid.width, grid.height), (LAYER_WIDTH / 2, LAYER_HEIGHT / 2));
+    let (cell_width, cell_height) = grid.cell_size();
 
     let mut by_position = Vec::new();
-    for y in 0..LAYER_HEIGHT / 2 {
-        for x in 0..LAYER_WIDTH / 2 {
-            let screen_coord = ScreenCoord { x: (MARGIN_LEFT + 2 * x) as f32 + 1.0, y: (HEIGHT - MARGIN_TOP - 2 * y) as f32 - 1.0 };
-            let info: HilbertHeatmapPickingInfo = layer.pick(screen_coord, None).unwrap().into_info().unwrap();
+    for y in 0..grid.height {
+        for x in 0..grid.width {
+            let screen_coord = ScreenCoord {
+                x: MARGIN_LEFT as f32 + (x as f32 + 0.5) * cell_width,
+                y: (HEIGHT - MARGIN_TOP) as f32 - (y as f32 + 0.5) * cell_height,
+            };
+            let Some(picked) = layer.pick(screen_coord, None) else { continue };
+            let info: HilbertHeatmapPickingInfo = picked.into_info().unwrap();
             by_position.push((info.curve_position, info.index));
         }
     }
     by_position.sort();
-    let positions: Vec<u32> = by_position.iter().map(|&(position, _)| position).collect();
-    assert_eq!(positions, (0..grid.len()).collect::<Vec<u32>>());
-    let items: Vec<usize> = by_position.iter().map(|&(_, index)| index).collect();
-    assert!(items.windows(2).all(|pair| pair[0] <= pair[1]));
-    assert_eq!((items[0], items[items.len() - 1]), (0, NUM_ITEMS - 1));
+    let expected: Vec<(u32, usize)> = (0..NUM_ITEMS).map(|i| (i as u32, i)).collect();
+    assert_eq!(by_position, expected);
+}
+
+#[test]
+fn the_grid_follows_the_aspect_ratio_with_a_cell_per_item() {
+    let square: Vec<(u32, u32)> = [0, 1, 2, 10, 49, 50, 57].into_iter().map(|n| grid_dimensions(n, 1.0)).collect();
+    assert_eq!(square, vec![(0, 0), (1, 1), (1, 2), (3, 4), (7, 7), (7, 8), (8, 8)]);
+    assert_eq!(grid_dimensions(800, 2.0), (40, 20));
+    assert_eq!(grid_dimensions(800, 0.5), (20, 40));
+    assert_eq!(grid_dimensions(3, 100.0), (3, 1));
+    assert_eq!(grid_dimensions(3, 0.0), (0, 0));
+}
+
+#[test]
+fn the_curve_ends_less_than_a_row_short_of_the_full_grid() {
+    for n in 1..500 {
+        for aspect_ratio in [0.25, 0.7, 1.0, 1.875, 4.0] {
+            let (width, height) = grid_dimensions(n, aspect_ratio);
+            assert!((width * height) as usize >= n && ((width * height) as usize - n) < width as usize, "{n} items, {aspect_ratio}");
+        }
+    }
 }
