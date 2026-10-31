@@ -119,7 +119,7 @@ impl Default for HeatmapColormap {
 }
 
 impl HeatmapColormap {
-    fn palette(&self) -> Option<Vec<[f32; 4]>> {
+    pub(crate) fn palette(&self) -> Option<Vec<[f32; 4]>> {
         match self {
             HeatmapColormap::Quantitative(_) => None,
             HeatmapColormap::Categorical(colormap) => Some(colormaps_categorical::palette(*colormap).to_vec()),
@@ -129,7 +129,7 @@ impl HeatmapColormap {
         }
     }
 
-    fn quantitative_domain_and_reverse(&self) -> ((f32, f32), bool) {
+    pub(crate) fn quantitative_domain_and_reverse(&self) -> ((f32, f32), bool) {
         match self {
             HeatmapColormap::Quantitative(params) => (params.domain.unwrap_or((0.0, 1.0)), params.reverse),
             _ => ((0.0, 1.0), false),

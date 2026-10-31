@@ -1,0 +1,42 @@
+---
+title: Treemap (AnnData)
+description: Treemap example.
+sidebar:
+    order: 32
+---
+import { TreemapWrapper } from '../../../components/TreemapWrapper.jsx';
+
+This [treemap](https://d3js.org/d3-hierarchy/treemap) displays the number of cells in each combination of categories from two `obs` columns of single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+The outer level groups the cells by cell type (`bulk_labels`) and the inner level by cell cycle phase (`phase`).
+Each rectangle's area is proportional to its number of cells, and its color corresponds to its cell type.
+Use the controls to reverse the order of the levels, to color by the cell cycle phase instead, or to change the tiling method.
+
+<TreemapWrapper
+    client:load
+    client:only="react"
+
+    plotId={"treemap-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrTreemapLayer",
+          layer_params: {
+            layer_id: "treemap",
+            groupby: ["bulk_labels", "phase"],
+            color_by: "bulk_labels",
+            cmap: "Tableau10",
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={10}
+    marginBottom={10}
+    marginTop={10}
+    marginRight={10}
+    width={700}
+    height={500}
+    enableCamera={false}
+/>

@@ -607,6 +607,36 @@ pub async fn reduce_stratified_mean(
     }
 }
 
+/// Per-stratum `(sum, count)` of included elements, from a single pass.
+pub async fn reduce_stratified_sum_and_count(
+    gpu_context: Option<&GpuContext<'_>>,
+    input: impl Into<NumericData>,
+    stratify_by: &StratifyBy,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+) -> ForegroundBackground<Vec<(f32, u32)>> {
+    let input = input.into();
+    match gpu_context {
+        Some(ctx) => {
+            let raw = compute_reduce_stratified(
+                ctx, &input, stratify_by, ReduceMode::Mean, filtering_criteria, selection_criteria,
+            )
+            .await;
+            let background = raw.chunks(4).map(|c| (f32::from_bits(c[0]), c[1])).collect();
+            let foreground = raw.chunks(4).map(|c| (f32::from_bits(c[2]), c[3])).collect();
+            ForegroundBackground { background, foreground }
+        }
+        None => cpu_stratified_fold(
+            &input, stratify_by, filtering_criteria, selection_criteria,
+            (0.0f32, 0u32),
+            |acc, v| {
+                acc.0 += v;
+                acc.1 += 1;
+            },
+        ),
+    }
+}
+
 /// Per-stratum `(min, max)` — see [`super::reduce::reduce_extent`].
 pub async fn reduce_stratified_extent(
     gpu_context: Option<&GpuContext<'_>>,

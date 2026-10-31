@@ -31,4 +31,8 @@ fit_outer_ticks: boolean,
  * otherwise derived from the visible camera bounds. When None (the
  * default), the domain is derived from `get_bounds(view_params)`.
  */
-domain?: [number, number] | null, };
+domain?: [number, number] | null, 
+/**
+ * Text centered along the axis at the outer edge of the margin. `None` draws no title.
+ */
+title?: string | null, };

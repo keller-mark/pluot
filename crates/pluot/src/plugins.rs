@@ -10,6 +10,10 @@ use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayer, OmeZarrBit
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::{OmeZarrBitmaskMultiscaleLayer, OmeZarrBitmaskMultiscaleLayerParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
+use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{AdataZarrHilbertHeatmapLayer, AdataZarrHilbertHeatmapLayerParams};
+use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams};
+use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams};
+use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{AdataZarrViolinMatrixLayer, AdataZarrViolinMatrixLayerParams};
 
 
 // Ideally we could just run inventory::submit! in the pluot_zarr crate,
@@ -114,7 +118,47 @@ inventory::submit! {
     }
 }
 
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrHilbertHeatmapLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrHilbertHeatmapLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrHilbertHeatmapLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrTreemapLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrTreemapLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrTreemapLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrViolinLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrViolinLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrViolinLayer::new(view_params.clone(), params))
+        },
+    }
+}
+
 // Consider just using crate features here to conditionally compile in the layers we want,
 // instead of using inventory.
 // But that would require moving more stuff to this crate, like the layered plot rendering code.
 // Also see https://github.com/keller-mark/pluot/issues/178
+
+inventory::submit! {
+    LayerRegistration {
+        layer_type_name: "AdataZarrViolinMatrixLayer",
+        create_layer: |value, view_params| {
+            let params: AdataZarrViolinMatrixLayerParams = serde_json::from_value(value).unwrap();
+            Box::new(AdataZarrViolinMatrixLayer::new(view_params.clone(), params))
+        },
+    }
+}

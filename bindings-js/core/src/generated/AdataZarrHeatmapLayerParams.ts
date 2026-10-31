@@ -26,6 +26,12 @@ obs_filtering?: AxisCriteria | null,
  */
 obs_selection?: AxisCriteria | null, 
 /**
+ * Categorical column in adata.obs by which to sort the included obs,
+ * in category order (obs with missing values last), keeping their
+ * filtered order within each category. `None` keeps the filtered order.
+ */
+groupby?: string | null, 
+/**
  * Which var (columns) to include. `None` includes every var.
  */
 var_filtering?: AxisCriteria | null, 

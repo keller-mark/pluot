@@ -59,6 +59,11 @@ pub mod common {
     /// index to 2D texel coordinates for a single-channel data texture (see
     /// [`crate::numeric_data::NumericData::create_data_texture`]).
     pub const FLAT_TEXEL_COORD: &str = include_str!("wgsl_functions/flat_texel_coord.wgsl");
+
+    /// `fn gilbert_xy2d(cell, width, height) -> u32` — the position of a cell
+    /// along the generalized Hilbert curve (see [`crate::gilbert`]), plus
+    /// `fn mul_div_floor(numerator, multiplier, divisor) -> u32`.
+    pub const GILBERT_XY2D: &str = include_str!("wgsl_functions/gilbert_xy2d.wgsl");
 }
 
 /// Per-[`ColorMode`](crate::render_traits::ColorMode) WGSL snippets, each

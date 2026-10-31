@@ -47,6 +47,8 @@ export function PluotWrapper(props) {
     marginBottom: defaultMarginBottom,
     aspectRatioMode: defaultAspectRatioMode,
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+    // 'Raster' | 'Vector'
+    format: defaultFormat = 'Raster',
 
     // Option to provide "plot-specific" options objects for plot types that need them
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
@@ -61,6 +63,8 @@ export function PluotWrapper(props) {
     enableVector = true,
 
     onHover = null, // Pass through to Pluot component
+    // Either a string or a function of the control values.
+    extentKey = null,
 
     // Brushing props, passed through to the Pluot component.
     brushMode,
@@ -84,6 +88,7 @@ export function PluotWrapper(props) {
     marginBottom: defaultMarginBottom,
     aspectRatioMode: defaultAspectRatioMode,
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+    format: defaultFormat,
   };
 
   // 'none' | 'fullwindow' | 'fullscreen'
@@ -217,7 +222,7 @@ export function PluotWrapper(props) {
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
-      format: controlValuesRef.current.format ?? "Raster",
+      format: controlValuesRef.current.format ?? defaultFormat,
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,
@@ -292,7 +297,18 @@ export function PluotWrapper(props) {
     return plotParams;
   }, [plotParams, controlValues]);
 
-  const { aspectRatioMode, aspectRatioAlignmentMode, format, debugMargins, transparentBackground } = controlValues;
+  const derivedExtentKey = typeof extentKey === 'function' ? extentKey(controlValues) : extentKey;
+
+  // A user-controlled camera matrix bypasses the extent query, so it must be cleared for the new extent to take effect.
+  const [prevExtentKey, setPrevExtentKey] = useState(derivedExtentKey);
+  if (derivedExtentKey !== prevExtentKey) {
+    setPrevExtentKey(derivedExtentKey);
+    setCameraMatrix(null);
+  }
+
+  const { aspectRatioMode, aspectRatioAlignmentMode, debugMargins, transparentBackground } = controlValues;
+  // The format control is absent when enableVector is false.
+  const format = controlValues.format ?? defaultFormat;
   const width = controlValues.size.width;
   const height = controlValues.size.height;
   const marginLeft = controlValues.horizontalMargins.left;
@@ -341,6 +357,7 @@ export function PluotWrapper(props) {
           backgroundColor={transparentBackground ? undefined : "#fff"}
           onHover={onHover}
           onClick={defaultOnClick}
+          extentKey={derivedExtentKey}
           brushMode={brushMode}
           brushUnitsModeX={brushUnitsModeX}
           brushUnitsModeY={brushUnitsModeY}

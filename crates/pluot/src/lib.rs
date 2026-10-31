@@ -44,6 +44,7 @@ pub use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
 pub use pluot_core::layers::point_3d_layer::Point3dLayerParams;
 pub use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarOrientation};
 pub use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
+pub use pluot_core::composite_layers::precomputed_violin_matrix_layer::PrecomputedViolinMatrixLayerParams;
 pub use pluot_core::composite_layers::legend_colormap_quantitative_layer::{LegendColormapQuantitativeLayerParams, LegendOrientation};
 pub use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 

@@ -20,6 +20,7 @@ const DEFAULT_TICK_COUNT: usize = 10;
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
 const DEFAULT_FONT_SIZE: f64 = 12.0;
+const DEFAULT_TITLE_PADDING: f64 = 3.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 const DEFAULT_AXIS_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const DEFAULT_LABEL_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
@@ -64,6 +65,9 @@ pub struct AxisLinearLayerParams {
     /// default), the domain is derived from `get_bounds(view_params)`.
     pub domain: Option<(f64, f64)>,
 
+    /// Text centered along the axis at the outer edge of the margin. `None` draws no title.
+    pub title: Option<String>,
+
     // TODO: support a data_unit_mode param.
 }
 
@@ -76,6 +80,7 @@ impl Default for AxisLinearLayerParams {
             tick_labels: None,
             fit_outer_ticks: false,
             domain: None,
+            title: None,
         }
     }
 }
@@ -300,6 +305,16 @@ impl AxisLinearLayer {
             line_params,
         )));
 
+        if let Some(title) = &self.layer_params.title {
+            sublayers.push(build_axis_title_sublayer(
+                &self.view_params,
+                format!("{}_axis_layer_title_sublayer", self.layer_params.layer_id),
+                &self.layer_params.position,
+                title,
+                bounds.clone(),
+            ));
+        }
+
         // Create TextLayer for tick labels
         if !text_strings.is_empty() {
             let text_position_x = text_positions.iter().map(|pos| pos[0]).collect();
@@ -333,6 +348,47 @@ impl AxisLinearLayer {
 
         sublayers
     }
+}
+
+pub(crate) fn build_axis_title_sublayer(
+    view_params: &ViewParams,
+    layer_id: String,
+    position: &AxisPosition,
+    title: &str,
+    sublayer_bounds: MarginParams,
+) -> Box<dyn PreparedAndDraw> {
+    let margins = view_params.margins.as_ref();
+    let margin = |f: fn(&MarginParams) -> Option<f32>| margins.and_then(f).unwrap_or(0.0);
+    let (width, height) = (view_params.width as f32, view_params.height as f32);
+    let center_x = (margin(|m| m.margin_left) + width - margin(|m| m.margin_right)) / 2.0;
+    let center_y = (margin(|m| m.margin_bottom) + height - margin(|m| m.margin_top)) / 2.0;
+    let edge_offset = (DEFAULT_TITLE_PADDING + DEFAULT_FONT_SIZE / 2.0) as f32;
+    let (x, y, rotation) = match position {
+        AxisPosition::Bottom => (center_x, edge_offset, 0.0),
+        AxisPosition::Top => (center_x, height - edge_offset, 0.0),
+        AxisPosition::Left => (edge_offset, center_y, -90.0),
+        AxisPosition::Right => (width - edge_offset, center_y, 90.0),
+    };
+    Box::new(TextLayer::new(
+        view_params.clone(),
+        TextLayerParams {
+            layer_id,
+            bounds: Some(sublayer_bounds),
+            data_unit_mode_x: UnitsMode::Pixels,
+            data_unit_mode_y: UnitsMode::Pixels,
+            text_size: DEFAULT_FONT_SIZE as f32,
+            text_size_unit_mode: UnitsMode::Pixels,
+            text_align_mode: TextAlignMode::Middle,
+            text_baseline_mode: TextBaselineMode::Middle,
+            text_rotation: Some(rotation),
+            font_weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
+            position_x: NumericData::Float32(Arc::new(vec![x])),
+            position_y: NumericData::Float32(Arc::new(vec![y])),
+            text_vec: Arc::new(vec![title.to_string()]),
+            ..Default::default()
+        },
+    ))
 }
 
 // Format a tick value for display

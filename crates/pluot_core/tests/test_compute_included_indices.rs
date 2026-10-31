@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use pluot_core::compute::included_indices::compute_included_indices;
+use pluot_core::compute::included_indices::{compute_included_indices, compute_included_indices_with};
+use pluot_core::compute::stratified_indices::CompactionMethod;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_traits::{CategoricalCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 
@@ -42,7 +43,9 @@ async fn gpu_indices_match_cpu() {
     let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
     let gpu_context = GpuContext { device: &device, queue: &queue };
     let (filtering, selection) = criteria();
-    let gpu = compute_included_indices(Some(&gpu_context), 6, &filtering, &selection).await;
     let cpu = compute_included_indices(None, 6, &filtering, &selection).await;
-    assert_eq!(gpu, cpu);
+    for method in [CompactionMethod::GpuScan, CompactionMethod::ReadBackKeys] {
+        let gpu = compute_included_indices_with(Some(&gpu_context), 6, &filtering, &selection, method).await;
+        assert_eq!(gpu, cpu, "{method:?}");
+    }
 }

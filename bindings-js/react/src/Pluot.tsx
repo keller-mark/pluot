@@ -293,7 +293,9 @@ function PluotInner(props: PluotProps) {
         stores,
         plot_params: plotParams,
         timeout: null, // Note: no timeout
-        wait_for_store_gets: false,
+        // Unlike rendering, the extent query is not re-run once pending store gets settle,
+        // so layers backed by Zarr data must wait for it to load in order to report an extent.
+        wait_for_store_gets: true,
         cache_enabled: true,
         svg_compression_enabled: true,
         svg_include_document: false,

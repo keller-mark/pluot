@@ -1,0 +1,44 @@
+---
+title: Violin Matrix (AnnData)
+description: Violin matrix example.
+sidebar:
+    order: 34
+---
+import { ViolinMatrixWrapper } from '../../../components/ViolinMatrixWrapper.jsx';
+
+This violin matrix (akin to Scanpy's [stacked violin plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.stacked_violin.html)) displays the expression of several genes per cell type (`bulk_labels`) in single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+Each violin's width shows how many of its cells have a given expression value, after excluding outliers beyond three standard deviations from the mean, and its color shows its median expression.
+Every violin shares the same expression axis.
+
+<ViolinMatrixWrapper
+    client:load
+    client:only="react"
+
+    plotId={"violin-matrix-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrViolinMatrixLayer",
+          layer_params: {
+            layer_id: "violin_matrix",
+            var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
+            groupby: "bulk_labels",
+            cmap: "Blues",
+            var_axis_title: "Gene",
+            group_axis_title: "Cell Type",
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={200}
+    marginBottom={80}
+    marginTop={60}
+    marginRight={150}
+    width={700}
+    height={700}
+    enableCamera={false}
+    format="Vector"
+/>
