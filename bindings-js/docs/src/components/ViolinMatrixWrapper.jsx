@@ -15,7 +15,7 @@ function onHoverViolinMatrix(info) {
   }
   const [q1, median, q3] = cellInfo.quartiles ?? [];
   return {
-    'Cell Type': cellInfo.obs_value,
+    'Cell Type': cellInfo.obs_values.join(' / '),
     'Gene': cellInfo.var_name,
     'Cells': valueFormatter.format(cellInfo.num_values),
     ...(cellInfo.quartiles ? {

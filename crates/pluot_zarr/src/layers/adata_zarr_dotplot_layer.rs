@@ -26,11 +26,12 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
+use crate::adata_paths::node_path;
 use crate::dotplot_data::{
-    categories_with_included_obs, category_strata, expr_array_path, filter_genes, genes_among, load_gene_summaries_for_gene, load_obs_categorical, load_var_names,
-    obs_rows_key, resolve_gene_columns, CategoryObs, GeneSummaries, GeneSummary,
+    categories_key, category_strata, combination_label, filter_genes, genes_among, load_gene_summaries_for_gene, load_nested_categories, obs_rows_key,
+    plotted_categories, resolve_gene_columns, CategoryObs, GeneSummaries, GeneSummary,
 };
-use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_criteria_indices, AxisCriteria, MatrixAxis};
+use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_axis_labels, load_criteria_indices, AdataAxis, AxisCriteria, MatrixAxis};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -56,23 +57,26 @@ pub struct AdataZarrDotPlotLayerParams {
     pub expression_cutoff: f32,
 
     // Data keys
-    /// Must point to the root of an anndata object.
     pub store_name: Option<String>,
 
-    /// Layer in AnnData to use for expression values. Defaults to None, which uses adata.X.
-    pub layer: String,
+    /// Path to the matrix of expression values, relative to the store root
+    /// (e.g., `X`, `layers/log1p`, or `mod/rna/X`). Defaults to `X`.
+    pub layer_path: String,
 
-    // TODO: support multiple groupby (a list of columns from coarse to fine).
-    pub groupby: String,
-    /// The `groupby` categories to plot, in the order they should appear along the group axis.
-    /// `None` (the default) means every category of `groupby`, in its stored order. `Some(vec![])`
-    /// means no categories at all. Each requested category is looked up independently, so an
-    /// unknown one yields an empty (zero-cell) column rather than an error.
-    pub categories: Option<Vec<String>>,
-    /// List of gene IDs from adata.var.index.
+    /// Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
+    /// Each combination of their categories gets one group of dots.
+    pub groupby: Vec<String>,
+    /// The combinations of categories to plot (each one category per `groupby` column, e.g.
+    /// `[["B cell", "sample1"]]`), in the order they should appear along the group axis.
+    /// `None` (the default) means every combination, ordered by the first column's categories,
+    /// then the second's, etc. With more than one `groupby` column, combinations without any obs
+    /// are omitted. `Some(vec![])` means no categories at all. Each requested combination is looked
+    /// up independently, so an unknown one yields an empty (zero-cell) group rather than an error.
+    pub categories: Option<Vec<Vec<String>>>,
+    /// Gene IDs, as they appear in `var_index_path`.
     pub var_names: Vec<String>,
-    /// Key in adata.var to use for gene symbols, if different from adata.var.index.
-    pub gene_symbols: Option<String>,
+    /// Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
+    pub var_index_path: Option<String>,
 
     /// Which obs are summarized. `None` includes every obs. When set, categories
     /// without any included obs are omitted.
@@ -86,11 +90,6 @@ pub struct AdataZarrDotPlotLayerParams {
     /// Which of the included `var_names` to emphasize. The dots of the others
     /// are greyed out. `None` emphasizes every one.
     pub var_selection: Option<AxisCriteria>,
-
-    // Whether to cache the full data array once loaded.
-    // If false, will only cache the histogram result, throwing away the full array.
-    // (E.g., will need to re-load the full array if num_bins changes).
-    pub cache_data: bool,
 }
 
 impl Default for AdataZarrDotPlotLayerParams {
@@ -103,16 +102,15 @@ impl Default for AdataZarrDotPlotLayerParams {
             title: None,
             expression_cutoff: 0.0,
             store_name: None,
-            layer: "X".to_string(),
-            groupby: "bulk_labels".to_string(),
+            layer_path: "X".to_string(),
+            groupby: vec![],
             categories: None,
             var_names: vec![],
-            gene_symbols: None,
+            var_index_path: None,
             obs_filtering: None,
             obs_selection: None,
             var_filtering: None,
             var_selection: None,
-            cache_data: true,
         }
     }
 }
@@ -158,26 +156,23 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let timeout = self.view_params.timeout;
 
         let params = self.layer_params.clone();
-        let var_column = params.gene_symbols.clone();
-        // The `layer` param names `adata.X` as "X", which is not a `layers` entry.
-        let array_layer = if params.layer == "X" { None } else { Some(params.layer.clone()) };
-        let matrix_path = expr_array_path(array_layer.as_deref());
-        let groupby = params.groupby.clone();
-        let requested_categories = params.categories.clone();
+        let matrix_path = node_path(&params.layer_path);
+        let obs_axis = AdataAxis::of_matrix(&matrix_path, MatrixAxis::Obs);
+        let var_axis = AdataAxis::of_matrix(&matrix_path, MatrixAxis::Var);
         let expression_cutoff = params.expression_cutoff;
 
-        // Stage 1: the obs groupby column, the var names/column used to resolve gene
+        // Stage 1: the obs groupby columns, the var labels used to resolve gene
         // columns, the obs filtering and selection criteria, and the var indices included by
         // the var filtering and selection. None depends on another (`try_join`), and all are
         // prerequisites for the axes and every gene's points below.
         let metadata_future = async {
             futures::try_join!(
-                load_var_names(store.clone(), &store_name, var_column.as_deref(), cache_enabled),
-                load_obs_categorical(store.clone(), &store_name, &groupby, cache_enabled),
-                load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), cache_enabled),
-                load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_selection.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_selection.as_ref(), cache_enabled),
+                load_axis_labels(store.clone(), &store_name, &var_axis, params.var_index_path.as_deref(), cache_enabled),
+                load_nested_categories(store.clone(), &store_name, &obs_axis, &params.groupby, cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &obs_axis, params.obs_filtering.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &obs_axis, params.obs_selection.as_ref(), cache_enabled),
+                load_criteria_indices(gpu_context, store.clone(), &store_name, &var_axis, params.var_filtering.as_ref(), cache_enabled),
+                load_criteria_indices(gpu_context, store.clone(), &store_name, &var_axis, params.var_selection.as_ref(), cache_enabled),
             )
         };
         let metadata = match maybe_timeout!(metadata_future, timeout).await {
@@ -200,40 +195,41 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         // -- either way, it's simply omitted from this round's dots rather than blocking the
         // genes that did load.
         let (var_names, var_selected, group_labels, background_summaries, foreground_summaries, genes_bailed) = match &metadata {
-            Some((var_index_values, (obs_categories, obs_codes), obs_filtering, obs_selection, var_filtered, var_selected)) => {
-                // A `None` `categories` param means "every category of `groupby`", in its
-                // stored order -- matching `sc.pl.dotplot`'s own default and the behavior this
-                // layer had before `categories` became an explicit list. `Some(vec![])` means
-                // no categories at all, and is passed through as-is.
-                let mut requested_categories = requested_categories.unwrap_or_else(|| obs_categories.as_ref().clone());
+            Some((var_index_values, nested, obs_filtering, obs_selection, var_filtered, var_selected)) => {
                 let criteria_key = obs_rows_key(params.obs_filtering.as_ref(), params.obs_selection.as_ref());
-                if params.obs_filtering.is_some() {
-                    requested_categories = categories_with_included_obs(
-                        gpu_context, &store_name, &groupby, requested_categories, obs_categories, obs_codes, obs_filtering, &criteria_key, cache_enabled,
-                    )
-                    .await;
-                }
-                let strata = category_strata(&requested_categories, obs_categories, obs_codes);
+                let categories = plotted_categories(
+                    gpu_context,
+                    &store_name,
+                    &params.groupby,
+                    params.categories.as_deref(),
+                    nested,
+                    params.obs_filtering.is_some(),
+                    obs_filtering,
+                    &criteria_key,
+                    cache_enabled,
+                )
+                .await;
+                let strata = category_strata(&categories, nested);
+                let mut obs_key = categories_key(&params.groupby, &categories);
+                obs_key.extend(criteria_key);
                 let obs = CategoryObs {
-                    groupby: &groupby,
-                    categories: &requested_categories,
+                    categories: &categories,
                     strata: &strata,
                     filtering_criteria: obs_filtering,
                     selection_criteria: obs_selection,
-                    criteria_key: &criteria_key,
+                    key: &obs_key,
                 };
 
                 let var_names = filter_genes(&params.var_names, var_index_values, var_filtered.as_deref().map(indices_of));
                 let var_selected = var_selected.as_deref().map(|selected| genes_among(&var_names, var_index_values, indices_of(selected)));
                 let resolved_genes = resolve_gene_columns(&var_names, var_index_values);
-                let var_colname = var_column.unwrap_or_else(|| "index".to_string());
 
                 let mut gene_results: Vec<Option<Arc<GeneSummaries>>> = vec![None; resolved_genes.len()];
                 let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| {
-                    let (store, store_name, var_colname, array_layer, obs) = (store.clone(), &store_name, &var_colname, array_layer.as_deref(), &obs);
+                    let (store, store_name, matrix_path, obs) = (store.clone(), &store_name, &matrix_path, &obs);
                     async move {
                         *slot = load_gene_summaries_for_gene(
-                            gpu_context, store, store_name, var_colname, gene_name, *col_index, array_layer, obs, expression_cutoff, cache_enabled,
+                            gpu_context, store, store_name, matrix_path, gene_name, *col_index, obs, expression_cutoff, cache_enabled,
                         )
                         .await;
                     }
@@ -248,7 +244,8 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 let background: Vec<GeneSummary> = loaded.iter().flat_map(|summaries| summaries.background.iter().cloned()).collect();
                 let foreground: Option<Vec<GeneSummary>> =
                     params.obs_selection.is_some().then(|| loaded.iter().flat_map(|summaries| summaries.foreground.iter().cloned()).collect());
-                (var_names, var_selected, requested_categories, background, foreground, genes_bailed)
+                let group_labels = categories.iter().map(|combination| combination_label(combination)).collect();
+                (var_names, var_selected, group_labels, background, foreground, genes_bailed)
             }
             None => {
                 let var_names = if params.var_filtering.is_none() { params.var_names.clone() } else { Vec::new() };
@@ -333,7 +330,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
             let mut position_y: Vec<f32> = Vec::with_capacity(summaries.len());
             let mut point_radius_values: Vec<f32> = Vec::with_capacity(summaries.len());
             for summary in summaries {
-                let group_pos = groups_scale.scale(&summary.obs_value) as f32 + groups_bandwidth / 2.0;
+                let group_pos = groups_scale.scale(&combination_label(&summary.obs_values)) as f32 + groups_bandwidth / 2.0;
                 let gene_pos = genes_scale.scale(&summary.var_name) as f32 + genes_bandwidth / 2.0;
                 let (x, y) = if swap_axes { (group_pos, gene_pos) } else { (gene_pos, group_pos) };
                 position_x.push(x);
@@ -529,7 +526,8 @@ impl ExtentableLayer for AdataZarrDotPlotLayer {}
 #[derive(Serialize, Debug, Clone, PartialEq, TS)]
 pub struct AdataZarrDotPlotPickingInfo {
     pub var_name: String,
-    pub obs_value: String,
+    /// The picked dot's category in each `groupby` column.
+    pub obs_values: Vec<String>,
     pub mean_expression: NumericValue,
     pub fraction_expressing: NumericValue,
 }
@@ -549,7 +547,7 @@ impl PickableLayer for AdataZarrDotPlotLayer {
 
         Some(LayerPickingResult::new(layer_id, AdataZarrDotPlotPickingInfo {
             var_name: summary.var_name.clone(),
-            obs_value: summary.obs_value.clone(),
+            obs_values: summary.obs_values.clone(),
             mean_expression: NumericValue::Float32(mean),
             fraction_expressing: NumericValue::Float32(fraction_expressing),
         }))

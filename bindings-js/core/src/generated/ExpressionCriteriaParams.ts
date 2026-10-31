@@ -5,17 +5,19 @@
  */
 export type ExpressionCriteriaParams = { 
 /**
- * The var's identifier, as it appears in `var_column`. An unknown one includes nothing.
+ * The var's identifier, as it appears in `var_index_path`. An unknown one includes nothing.
  */
 var_name: string, 
 /**
- * The `var` column holding `var_name`. `None` means its index.
+ * Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`).
+ * `None` means the index of the `var` of the matrix at `layer_path`.
  */
-var_column?: string | null, 
+var_index_path?: string | null, 
 /**
- * The `layers` entry holding the expression values. `None` means `X`.
+ * Path to the matrix holding the expression values (e.g., `X` or `layers/log1p`).
+ * `None` means the `X` of the AnnData object holding the filtered or selected axis.
  */
-layer?: string | null, 
+layer_path?: string | null, 
 /**
  * Lower bound of included values, inclusive unless `min_exclusive`. Omitted implies -infinity.
  */

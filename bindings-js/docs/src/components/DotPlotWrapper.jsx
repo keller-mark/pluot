@@ -21,7 +21,7 @@ function onHoverDotPlot(info) {
   }
   // Note: Sort the dict based on the keys, since rust returns hashmap in any order
   return {
-    'Cell Type': dotPlotInfo.obs_value,
+    'Cell Type': dotPlotInfo.obs_values.join(' / '),
     'Gene': dotPlotInfo.var_name,
     'Fraction expressing': numFormatter.format(dotPlotInfo.fraction_expressing),
     'Mean expression': numFormatter.format(dotPlotInfo.mean_expression),

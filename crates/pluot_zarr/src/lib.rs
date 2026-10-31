@@ -2,6 +2,7 @@ pub mod zarr_numeric_data;
 pub mod zarr_emphasis_criteria;
 pub mod adata_metadata;
 pub mod adata_io;
+pub mod adata_paths;
 pub mod dotplot_data;
 pub mod heatmap_data;
 pub mod hilbert_heatmap_data;

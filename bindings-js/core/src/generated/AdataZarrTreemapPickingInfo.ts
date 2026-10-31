@@ -2,7 +2,7 @@
 
 export type AdataZarrTreemapPickingInfo = { 
 /**
- * The `obs` columns of the hierarchy, from outermost to innermost.
+ * The paths to the `obs` columns of the hierarchy, from outermost to innermost.
  */
 groupby: Array<string>, 
 /**

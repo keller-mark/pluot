@@ -2,7 +2,7 @@
 
 export type AdataZarrHilbertHeatmapPickingInfo = { obs_name: string, obs_index: number, 
 /**
- * The `obs` columns the obs are ordered by, from coarsest to finest.
+ * The paths to the `obs` columns the obs are ordered by, from coarsest to finest.
  */
 groupby: Array<string>, 
 /**
@@ -10,7 +10,7 @@ groupby: Array<string>,
  */
 obs_values: Array<string | null>, 
 /**
- * The `obs` column colored by, when coloring by category.
+ * The path to the `obs` column colored by, when coloring by category.
  */
 color_by?: string | null, 
 /**

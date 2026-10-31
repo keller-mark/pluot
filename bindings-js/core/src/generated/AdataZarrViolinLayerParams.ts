@@ -13,31 +13,32 @@ export type AdataZarrViolinLayerParams = { layer_id: string, bounds?: MarginPara
  * `Vertical` (the default) lays the categories out along the X axis, with the expression values along the Y axis.
  * `Horizontal` lays the categories out along the Y axis, from bottom to top, with the expression values along the X axis.
  */
-orientation?: BarOrientation | null, 
+orientation?: BarOrientation | null, store_name?: string | null, 
 /**
- * Must point to the root of an anndata object.
+ * Path to the matrix of expression values, relative to the store root
+ * (e.g., `X`, `layers/log1p`, or `mod/rna/X`). Defaults to `X`.
  */
-store_name?: string | null, 
+layer_path: string, 
 /**
- * Layer in AnnData to use for expression values. `None` (or `"X"`) uses adata.X.
+ * Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
+ * Each combination of their categories gets one violin.
  */
-layer?: string | null, 
+groupby: Array<string>, 
 /**
- * The categorical `obs` column whose categories each get one violin.
+ * The combinations of categories to plot (each one category per `groupby` column), in order
+ * along the group axis. `None` means every combination, ordered by the first column's
+ * categories, then the second's, etc. With more than one `groupby` column, combinations
+ * without any obs are omitted.
  */
-groupby: string, 
+categories?: Array<Array<string>> | null, 
 /**
- * The `groupby` categories to plot, in order along the X axis. `None` means every category, in its stored order.
- */
-categories?: Array<string> | null, 
-/**
- * Gene ID from adata.var.index (or from the `gene_symbols` column, when set).
+ * Gene ID, as it appears in `var_index_path`.
  */
 var_name: string, 
 /**
- * Key in adata.var to use for gene symbols, if different from adata.var.index.
+ * Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`). `None` means the `var` index.
  */
-gene_symbols?: string | null, 
+var_index_path?: string | null, 
 /**
  * Which obs are summarized. `None` includes every obs. When set, categories
  * without any included obs are omitted.
@@ -66,6 +67,6 @@ density_norm?: ViolinDensityNorm | null,
  */
 value_min?: number | null, 
 /**
- * Colors the violins by the codes of their categories. Defaults to Tableau10.
+ * Colors the violins by the codes of their categories in the first `groupby` column. Defaults to Tableau10.
  */
 cmap?: CategoricalColormap | null, };

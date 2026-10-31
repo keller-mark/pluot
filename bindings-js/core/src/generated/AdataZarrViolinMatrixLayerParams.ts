@@ -13,31 +13,32 @@ export type AdataZarrViolinMatrixLayerParams = { layer_id: string, bounds?: Marg
  * When true, the X axis contains the `groupby` categories and the Y axis `var_names`.
  * Defaults to false.
  */
-swap_axes?: boolean | null, 
+swap_axes?: boolean | null, store_name?: string | null, 
 /**
- * Must point to the root of an anndata object.
+ * Path to the matrix of expression values, relative to the store root
+ * (e.g., `X`, `layers/log1p`, or `mod/rna/X`). Defaults to `X`.
  */
-store_name?: string | null, 
+layer_path: string, 
 /**
- * Layer in AnnData to use for expression values. `None` (or `"X"`) uses adata.X.
+ * Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
+ * Each combination of their categories gets one row (or column, when `swap_axes`).
  */
-layer?: string | null, 
+groupby: Array<string>, 
 /**
- * The categorical `obs` column whose categories each get one row (or column, when `swap_axes`).
+ * The combinations of categories to plot (each one category per `groupby` column), in order
+ * along the group axis. `None` means every combination, ordered by the first column's
+ * categories, then the second's, etc. With more than one `groupby` column, combinations
+ * without any obs are omitted.
  */
-groupby: string, 
+categories?: Array<Array<string>> | null, 
 /**
- * The `groupby` categories to plot, in order along the group axis. `None` means every category, in its stored order.
- */
-categories?: Array<string> | null, 
-/**
- * Gene IDs from adata.var.index (or from the `gene_symbols` column, when set), in order along the var axis.
+ * Gene IDs, as they appear in `var_index_path`, in order along the var axis.
  */
 var_names: Array<string>, 
 /**
- * Key in adata.var to use for gene symbols, if different from adata.var.index.
+ * Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
  */
-gene_symbols?: string | null, 
+var_index_path?: string | null, 
 /**
  * Which obs are summarized. `None` includes every obs. When set, categories
  * without any included obs are omitted.
@@ -83,6 +84,6 @@ cmap?: QuantitativeColormap | null,
  */
 var_axis_title?: string | null, 
 /**
- * Title of the axis listing the `groupby` categories. Defaults to `groupby`.
+ * Title of the axis listing the `groupby` categories. Defaults to the names of the `groupby` columns.
  */
 group_axis_title?: string | null, };

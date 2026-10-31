@@ -21,11 +21,12 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
+use crate::adata_paths::node_path;
 use crate::dotplot_data::{
-    categories_with_included_obs, category_strata, expr_array_path, filter_genes, genes_among, load_gene_expression, load_obs_categorical, load_var_names,
-    obs_rows_key, resolve_gene_columns, AdataStore,
+    categories_key, category_strata, combination_label, filter_genes, genes_among, groupby_title, load_gene_expression, load_nested_categories,
+    obs_rows_key, plotted_categories, resolve_gene_columns, AdataStore,
 };
-use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_criteria_indices, AxisCriteria, MatrixAxis};
+use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_axis_labels, load_criteria_indices, AdataAxis, AxisCriteria, MatrixAxis};
 use crate::violin_data::{empty_violin_stats, load_violin_bins, load_violin_stats, violin_bin_edges, violin_bin_starts, ViolinBinCounts, ViolinStats};
 
 const DEFAULT_NUM_BINS: u32 = 16;
@@ -60,20 +61,23 @@ pub struct AdataZarrViolinMatrixLayerParams {
     pub swap_axes: Option<bool>,
 
     // Data keys
-    /// Must point to the root of an anndata object.
     pub store_name: Option<String>,
 
-    /// Layer in AnnData to use for expression values. `None` (or `"X"`) uses adata.X.
-    pub layer: Option<String>,
-    /// The categorical `obs` column whose categories each get one row (or column, when `swap_axes`).
-    // TODO: support multiple groupby (a list of columns from coarse to fine).
-    pub groupby: String,
-    /// The `groupby` categories to plot, in order along the group axis. `None` means every category, in its stored order.
-    pub categories: Option<Vec<String>>,
-    /// Gene IDs from adata.var.index (or from the `gene_symbols` column, when set), in order along the var axis.
+    /// Path to the matrix of expression values, relative to the store root
+    /// (e.g., `X`, `layers/log1p`, or `mod/rna/X`). Defaults to `X`.
+    pub layer_path: String,
+    /// Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
+    /// Each combination of their categories gets one row (or column, when `swap_axes`).
+    pub groupby: Vec<String>,
+    /// The combinations of categories to plot (each one category per `groupby` column), in order
+    /// along the group axis. `None` means every combination, ordered by the first column's
+    /// categories, then the second's, etc. With more than one `groupby` column, combinations
+    /// without any obs are omitted.
+    pub categories: Option<Vec<Vec<String>>>,
+    /// Gene IDs, as they appear in `var_index_path`, in order along the var axis.
     pub var_names: Vec<String>,
-    /// Key in adata.var to use for gene symbols, if different from adata.var.index.
-    pub gene_symbols: Option<String>,
+    /// Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
+    pub var_index_path: Option<String>,
 
     /// Which obs are summarized. `None` includes every obs. When set, categories
     /// without any included obs are omitted.
@@ -101,7 +105,7 @@ pub struct AdataZarrViolinMatrixLayerParams {
 
     /// Title of the axis listing `var_names`. `None` draws no title.
     pub var_axis_title: Option<String>,
-    /// Title of the axis listing the `groupby` categories. Defaults to `groupby`.
+    /// Title of the axis listing the `groupby` categories. Defaults to the names of the `groupby` columns.
     pub group_axis_title: Option<String>,
 }
 
@@ -112,11 +116,11 @@ impl Default for AdataZarrViolinMatrixLayerParams {
             bounds: None,
             swap_axes: None,
             store_name: None,
-            layer: None,
-            groupby: "".to_string(),
+            layer_path: "X".to_string(),
+            groupby: vec![],
             categories: None,
             var_names: vec![],
-            gene_symbols: None,
+            var_index_path: None,
             obs_filtering: None,
             obs_selection: None,
             var_filtering: None,
@@ -139,6 +143,8 @@ pub struct AdataZarrViolinMatrixLayer {
     store_name: String,
 
     inner: Option<PrecomputedViolinMatrixLayer>,
+    // One per row (or column, when `swap_axes`), in the order of the inner layer's groups.
+    categories: Vec<Vec<String>>,
     // One per cell, in the order of the inner layer's `bin_counts`.
     summaries: Vec<ViolinStratumStats>,
 }
@@ -154,16 +160,13 @@ impl AdataZarrViolinMatrixLayer {
             store,
             store_name,
             inner: None,
+            categories: Vec::new(),
             summaries: Vec::new(),
         }
     }
 
-    fn array_layer(&self) -> Option<&str> {
-        self.layer_params.layer.as_deref().filter(|layer| *layer != "X")
-    }
-
-    fn var_colname(&self) -> &str {
-        self.layer_params.gene_symbols.as_deref().unwrap_or("index")
+    fn matrix_path(&self) -> String {
+        node_path(&self.layer_params.layer_path)
     }
 
     fn violin_input<'a>(&self, values: &'a NumericData, obs: &'a CategoryObs<'a>) -> StratifiedViolinInput<'a> {
@@ -177,9 +180,10 @@ impl AdataZarrViolinMatrixLayer {
     }
 
     /// Loads one gene's expression and the stats of its violins, or returns `None` when its data is not loaded yet.
-    async fn load_gene_violins(&self, gpu_context: Option<&GpuContext<'_>>, gene_name: &str, col_index: u64, obs: &CategoryObs<'_>) -> Option<GeneViolins> {
+    async fn load_gene_violins(&self, gpu_context: Option<&GpuContext<'_>>, col_index: u64, obs: &CategoryObs<'_>) -> Option<GeneViolins> {
         let cache_enabled = self.view_params.cache_enabled;
-        let expression = match load_gene_expression(self.store.clone(), &self.store_name, self.var_colname(), gene_name, col_index, self.array_layer(), cache_enabled).await {
+        let matrix_path = self.matrix_path();
+        let expression = match load_gene_expression(self.store.clone(), &self.store_name, col_index, &matrix_path, cache_enabled).await {
             Ok(expression) => expression,
             Err(e) => {
                 if is_timed_out_zarrs_error(&e) {
@@ -190,13 +194,7 @@ impl AdataZarrViolinMatrixLayer {
         };
         let values = NumericData::Float32(expression);
         let input = self.violin_input(&values, obs);
-        let mut keys = vec![
-            self.store_name.clone(),
-            expr_array_path(self.array_layer()),
-            self.var_colname().to_string(),
-            gene_name.to_string(),
-            input.keep_zeros.to_string(),
-        ];
+        let mut keys = vec![self.store_name.clone(), matrix_path, col_index.to_string(), input.keep_zeros.to_string()];
         keys.extend(obs.key.iter().cloned());
         let stats = load_violin_stats(gpu_context, &input, &keys, cache_enabled).await;
         Some(GeneViolins { values, stats, keys })
@@ -218,8 +216,8 @@ impl AdataZarrViolinMatrixLayer {
         let p = &self.layer_params;
         let resolved_genes = resolve_gene_columns(var_names, var_index_values);
         let mut gene_results: Vec<Option<GeneViolins>> = (0..resolved_genes.len()).map(|_| None).collect();
-        let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| async move {
-            *slot = self.load_gene_violins(gpu_context, gene_name, *col_index, obs).await;
+        let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((_, col_index), slot)| async move {
+            *slot = self.load_gene_violins(gpu_context, *col_index, obs).await;
         });
         // Whether or not the wall clock fires, each slot holds `Some` exactly when its gene finished.
         let _ = maybe_timeout!(futures::future::join_all(gene_futures), self.view_params.timeout).await;
@@ -275,18 +273,20 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let p = &self.layer_params;
         let cache_enabled = self.view_params.cache_enabled;
-        let matrix_path = expr_array_path(self.array_layer());
+        let matrix_path = self.matrix_path();
+        let obs_axis = AdataAxis::of_matrix(&matrix_path, MatrixAxis::Obs);
+        let var_axis = AdataAxis::of_matrix(&matrix_path, MatrixAxis::Var);
         let metadata_future = async {
             futures::try_join!(
-                load_var_names(self.store.clone(), &self.store_name, p.gene_symbols.as_deref(), cache_enabled),
-                load_obs_categorical(self.store.clone(), &self.store_name, &p.groupby, cache_enabled),
-                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_filtering.as_ref(), cache_enabled),
-                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Obs, p.obs_selection.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Var, p.var_filtering.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &matrix_path, MatrixAxis::Var, p.var_selection.as_ref(), cache_enabled),
+                load_axis_labels(self.store.clone(), &self.store_name, &var_axis, p.var_index_path.as_deref(), cache_enabled),
+                load_nested_categories(self.store.clone(), &self.store_name, &obs_axis, &p.groupby, cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &obs_axis, p.obs_filtering.as_ref(), cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, self.store.clone(), &self.store_name, &obs_axis, p.obs_selection.as_ref(), cache_enabled),
+                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &var_axis, p.var_filtering.as_ref(), cache_enabled),
+                load_criteria_indices(gpu_context, self.store.clone(), &self.store_name, &var_axis, p.var_selection.as_ref(), cache_enabled),
             )
         };
-        let (var_index_values, (obs_categories, obs_codes), obs_filtering, obs_selection, var_filtered, var_selected) =
+        let (var_index_values, nested, obs_filtering, obs_selection, var_filtered, var_selected) =
             match maybe_timeout!(metadata_future, self.view_params.timeout).await {
                 Ok(Ok(loaded)) => loaded,
                 Ok(Err(e)) => {
@@ -299,16 +299,20 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
             };
 
         let criteria_key = obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref());
-        let mut categories = p.categories.clone().unwrap_or_else(|| obs_categories.as_ref().clone());
-        if p.obs_filtering.is_some() {
-            categories = categories_with_included_obs(
-                gpu_context, &self.store_name, &p.groupby, categories, &obs_categories, &obs_codes, &obs_filtering, &criteria_key, cache_enabled,
-            )
-            .await;
-        }
-        let strata = category_strata(&categories, &obs_categories, &obs_codes);
-        let mut obs_key = vec![p.groupby.clone()];
-        obs_key.extend(categories.iter().cloned());
+        let categories = plotted_categories(
+            gpu_context,
+            &self.store_name,
+            &p.groupby,
+            p.categories.as_deref(),
+            &nested,
+            p.obs_filtering.is_some(),
+            &obs_filtering,
+            &criteria_key,
+            cache_enabled,
+        )
+        .await;
+        let strata = category_strata(&categories, &nested);
+        let mut obs_key = categories_key(&p.groupby, &categories);
         obs_key.extend(criteria_key);
         let obs = CategoryObs { strata: &strata, filtering_criteria: &obs_filtering, selection_criteria: &obs_selection, key: obs_key };
 
@@ -329,7 +333,7 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
                 bounds: p.bounds.clone(),
                 swap_axes: p.swap_axes,
                 var_names: Arc::new(var_names),
-                groups: Arc::new(categories),
+                groups: Arc::new(categories.iter().map(|combination| combination_label(combination)).collect()),
                 bin_starts: Arc::new(violin_bin_starts(domain, &thresholds)),
                 bin_counts: Arc::new(bins.foreground),
                 background_bin_counts: has_selection.then(|| Arc::new(bins.background)),
@@ -340,12 +344,13 @@ impl PreparedLayer for AdataZarrViolinMatrixLayer {
                 cmap: p.cmap,
                 fill_value_title: Some("Median expression".to_string()),
                 var_axis_title: p.var_axis_title.clone(),
-                group_axis_title: Some(p.group_axis_title.clone().unwrap_or_else(|| p.groupby.clone())),
+                group_axis_title: Some(p.group_axis_title.clone().unwrap_or_else(|| groupby_title(&p.groupby))),
                 ..Default::default()
             },
         );
         let prepare_result = violin_matrix_layer.prepare(gpu_context).await;
         self.inner = Some(violin_matrix_layer);
+        self.categories = categories;
         self.summaries = stats.foreground;
 
         PrepareResult { bailed_early: genes_bailed || prepare_result.bailed_early }
@@ -383,7 +388,8 @@ impl ExtentableLayer for AdataZarrViolinMatrixLayer {}
 #[derive(Serialize, Debug, Clone, PartialEq, TS)]
 pub struct AdataZarrViolinMatrixPickingInfo {
     pub var_name: String,
-    pub obs_value: String,
+    /// The picked cell's category in each `groupby` column.
+    pub obs_values: Vec<String>,
     /// (first quartile, median, third quartile), or `None` when the cell has no values.
     pub quartiles: Option<(f32, f32, f32)>,
     /// The number of observations in the cell, including outliers (and excluding zeros, unless `keep_zeros`).
@@ -397,7 +403,7 @@ impl PickableLayer for AdataZarrViolinMatrixLayer {
         let summary = self.summaries.get(cell.index)?;
         Some(LayerPickingResult::new(&self.layer_params.layer_id, AdataZarrViolinMatrixPickingInfo {
             var_name: cell.var_name,
-            obs_value: cell.group,
+            obs_values: self.categories.iter().find(|combination| combination_label(combination) == cell.group)?.clone(),
             quartiles: summary.quartiles,
             num_values: summary.num_values,
         }))

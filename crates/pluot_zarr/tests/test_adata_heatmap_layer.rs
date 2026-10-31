@@ -78,7 +78,7 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
             min_exclusive: None,
             max_exclusive: None,
         })])),
-        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { column: None, identifiers: var_names.clone() })),
+        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { index_path: None, identifiers: var_names.clone() })),
         ..Default::default()
     };
     (params, Expected { obs_indices, var_names })
@@ -205,12 +205,12 @@ async fn groupby_sorts_obs_by_category() {
     let gpu_context = GpuContext { device: &device, queue: &queue };
 
     for gpu in [None, Some(&gpu_context)] {
-        for (layer_name, matrix_path) in [("X", "/X"), ("csr", "/layers/csr"), ("csc", "/layers/csc")] {
+        for (layer_path, matrix_path) in [("X", "/X"), ("layers/csr", "/layers/csr"), ("layers/csc", "/layers/csc")] {
             for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
                 let params = AdataZarrHeatmapLayerParams {
-                    layer: layer_name.to_string(),
+                    layer_path: layer_path.to_string(),
                     obs_filtering: None,
-                    groupby: Some("bulk_labels".to_string()),
+                    groupby: vec!["obs/bulk_labels".to_string()],
                     cache_mode: Some(cache_mode),
                     ..params.clone()
                 };
@@ -238,10 +238,10 @@ async fn groupby_keeps_the_listed_order_of_identifiers_within_each_category() {
     for gpu in [None, Some(&gpu_context)] {
         let params = AdataZarrHeatmapLayerParams {
             obs_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams {
-                column: None,
+                index_path: None,
                 identifiers: listed.iter().map(|&i| obs_names[i].clone()).collect(),
             })),
-            groupby: Some("bulk_labels".to_string()),
+            groupby: vec!["obs/bulk_labels".to_string()],
             ..params.clone()
         };
         let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
@@ -281,7 +281,7 @@ async fn sparse_matrices_are_picked_with_their_matrix_values() {
             for swap_axes in [false, true] {
                 for gpu in [None, Some(&gpu_context)] {
                     let params = AdataZarrHeatmapLayerParams {
-                        layer: layer_name.to_string(),
+                        layer_path: format!("layers/{layer_name}"),
                         cache_mode: Some(cache_mode),
                         swap_axes,
                         ..params.clone()
@@ -306,7 +306,7 @@ async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
         for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
             for gpu in [None, Some(&gpu_context)] {
                 let params = AdataZarrHeatmapLayerParams {
-                    layer: layer_name.to_string(),
+                    layer_path: format!("layers/{layer_name}"),
                     normalization: Some(normalization),
                     normalization_upper_percentile: Some(99.0),
                     ..params.clone()
@@ -348,7 +348,7 @@ async fn sparse_block_extents_match_the_dense_cells() {
                 matrix_path,
                 cache_mode,
                 obs_filtering: None,
-                obs_groupby: None,
+                obs_groupby: &[],
                 var_filtering: None,
                 rows_per_block: num_rows,
                 block_index: 0,
@@ -398,7 +398,7 @@ async fn percentile_domains_match_the_sorted_cells() {
             matrix_path,
             cache_mode: MatrixCacheMode::RowBlocks,
             obs_filtering: None,
-            obs_groupby: None,
+            obs_groupby: &[],
             var_filtering: None,
             rows_per_block: num_rows,
             block_index: 0,

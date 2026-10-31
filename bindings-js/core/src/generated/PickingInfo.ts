@@ -11,6 +11,7 @@ import type { BitmaskPickingInfo } from "./BitmaskPickingInfo.js";
 import type { FilledCurvePickingInfo } from "./FilledCurvePickingInfo.js";
 import type { HeatmapPickingInfo } from "./HeatmapPickingInfo.js";
 import type { HilbertHeatmapPickingInfo } from "./HilbertHeatmapPickingInfo.js";
+import type { LegendColormapCategoricalPickingInfo } from "./LegendColormapCategoricalPickingInfo.js";
 import type { LinePickingInfo } from "./LinePickingInfo.js";
 import type { OmeZarrBitmapPickingInfo } from "./OmeZarrBitmapPickingInfo.js";
 import type { OmeZarrBitmaskPickingInfo } from "./OmeZarrBitmaskPickingInfo.js";
@@ -27,4 +28,4 @@ import type { TextPickingInfo } from "./TextPickingInfo.js";
 /**
  * The `info` of a `LayerPickingResult`, which depends on the picked layer.
  */
-export type PickingInfo = PointPickingInfo | Point3dPickingInfo | LinePickingInfo | RectPickingInfo | TextPickingInfo | PolygonPickingInfo | FilledCurvePickingInfo | StrokedCurvePickingInfo | BitmapPickingInfo | BitmaskPickingInfo | HeatmapPickingInfo | HilbertHeatmapPickingInfo | BarPlotPickingInfo | PrecomputedTreemapPickingInfo | PrecomputedViolinPickingInfo | PrecomputedViolinMatrixPickingInfo | OmeZarrBitmapPickingInfo | OmeZarrBitmaskPickingInfo | AdataZarrDotPlotPickingInfo | AdataZarrHeatmapPickingInfo | AdataZarrHilbertHeatmapPickingInfo | AdataZarrTreemapPickingInfo | AdataZarrViolinPickingInfo | AdataZarrViolinMatrixPickingInfo;
+export type PickingInfo = PointPickingInfo | Point3dPickingInfo | LinePickingInfo | RectPickingInfo | TextPickingInfo | PolygonPickingInfo | FilledCurvePickingInfo | StrokedCurvePickingInfo | BitmapPickingInfo | BitmaskPickingInfo | HeatmapPickingInfo | HilbertHeatmapPickingInfo | BarPlotPickingInfo | PrecomputedTreemapPickingInfo | LegendColormapCategoricalPickingInfo | PrecomputedViolinPickingInfo | PrecomputedViolinMatrixPickingInfo | OmeZarrBitmapPickingInfo | OmeZarrBitmaskPickingInfo | AdataZarrDotPlotPickingInfo | AdataZarrHeatmapPickingInfo | AdataZarrHilbertHeatmapPickingInfo | AdataZarrTreemapPickingInfo | AdataZarrViolinPickingInfo | AdataZarrViolinMatrixPickingInfo;

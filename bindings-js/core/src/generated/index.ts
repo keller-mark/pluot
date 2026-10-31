@@ -53,6 +53,8 @@ export type { InstancedOpacityParams } from "./InstancedOpacityParams.js";
 export type { InstancedRgbInterleavedParams } from "./InstancedRgbInterleavedParams.js";
 export type { InstancedRgbParams } from "./InstancedRgbParams.js";
 export type { InstancedSizeParams } from "./InstancedSizeParams.js";
+export type { LegendColormapCategoricalLayerParams } from "./LegendColormapCategoricalLayerParams.js";
+export type { LegendColormapCategoricalPickingInfo } from "./LegendColormapCategoricalPickingInfo.js";
 export type { LegendColormapQuantitativeLayerParams } from "./LegendColormapQuantitativeLayerParams.js";
 export type { LegendOrientation } from "./LegendOrientation.js";
 export type { LegendPointSizeQuantitativeLayerParams } from "./LegendPointSizeQuantitativeLayerParams.js";

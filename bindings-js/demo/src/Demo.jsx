@@ -50,8 +50,8 @@ const DEMOS = {
           layer_params: {
             layer_id: "dot_plot",
             var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
-            groupby: "bulk_labels",
-            layer: "X",
+            groupby: ["obs/bulk_labels"],
+            layer_path: "X",
             title: "My dot plot",
             cmap: "Reds",
           },

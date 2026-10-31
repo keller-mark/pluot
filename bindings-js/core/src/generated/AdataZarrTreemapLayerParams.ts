@@ -7,18 +7,15 @@ import type { TreemapTile } from "./TreemapTile.js";
 /**
  * Layer params struct for [`AdataZarrTreemapLayer`].
  */
-export type AdataZarrTreemapLayerParams = { layer_id: string, bounds?: MarginParams | null, 
+export type AdataZarrTreemapLayerParams = { layer_id: string, bounds?: MarginParams | null, store_name?: string | null, 
 /**
- * Must point to the root of an anndata object.
- */
-store_name?: string | null, 
-/**
- * Categorical `obs` columns defining the levels of the hierarchy, from outermost to innermost
- * (e.g., `["cell_type", "sample"]`). Each leaf is one combination of their categories, sized by its number of observations.
+ * Paths to categorical `obs` columns defining the levels of the hierarchy, from outermost to innermost
+ * (e.g., `["obs/cell_type", "obs/sample"]`). Each leaf is one combination of their categories, sized by its number of observations.
+ * The columns must belong to one `obs` dataframe, whose obs are counted.
  */
 groupby: Array<string>, 
 /**
- * The `groupby` column whose categories determine the fill color. Defaults to the outermost column.
+ * The `groupby` column path whose categories determine the fill color. Defaults to the outermost column.
  */
 color_by?: string | null, 
 /**

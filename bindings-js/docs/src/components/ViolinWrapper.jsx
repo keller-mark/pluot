@@ -16,7 +16,7 @@ function onHoverViolin(info) {
   const [q1, median, q3] = violinInfo.quartiles ?? [];
   return {
     'Gene': violinInfo.var_name,
-    'Group': violinInfo.obs_value,
+    'Group': violinInfo.obs_values.join(' / '),
     'Cells': valueFormatter.format(violinInfo.num_values),
     ...(violinInfo.quartiles ? {
       'Median': valueFormatter.format(median),

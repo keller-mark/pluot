@@ -19,7 +19,8 @@ use pluot_core::LayerPickingResult;
 use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
-use crate::heatmap_data::AxisCriteria;
+use crate::adata_paths::node_path;
+use crate::heatmap_data::{AdataAxis, AxisCriteria};
 use crate::treemap_data::load_obs_group_counts;
 
 const FILL_OPACITY: f32 = 0.8;
@@ -33,13 +34,13 @@ pub struct AdataZarrTreemapLayerParams {
     pub bounds: Option<MarginParams>,
 
     // Data keys
-    /// Must point to the root of an anndata object.
     pub store_name: Option<String>,
 
-    /// Categorical `obs` columns defining the levels of the hierarchy, from outermost to innermost
-    /// (e.g., `["cell_type", "sample"]`). Each leaf is one combination of their categories, sized by its number of observations.
+    /// Paths to categorical `obs` columns defining the levels of the hierarchy, from outermost to innermost
+    /// (e.g., `["obs/cell_type", "obs/sample"]`). Each leaf is one combination of their categories, sized by its number of observations.
+    /// The columns must belong to one `obs` dataframe, whose obs are counted.
     pub groupby: Vec<String>,
-    /// The `groupby` column whose categories determine the fill color. Defaults to the outermost column.
+    /// The `groupby` column path whose categories determine the fill color. Defaults to the outermost column.
     pub color_by: Option<String>,
     /// Defaults to Tableau10.
     pub cmap: Option<CategoricalColormap>,
@@ -101,7 +102,7 @@ impl AdataZarrTreemapLayer {
         let Some(color_by) = &self.layer_params.color_by else {
             return 0;
         };
-        self.layer_params.groupby.iter().position(|column| column == color_by).unwrap_or_else(|| {
+        self.layer_params.groupby.iter().position(|column| node_path(column) == node_path(color_by)).unwrap_or_else(|| {
             log(&format!("AdataZarrTreemapLayer: color_by \"{color_by}\" is not one of the groupby columns; coloring by the outermost column"));
             0
         })
@@ -112,10 +113,12 @@ impl AdataZarrTreemapLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PreparedLayer for AdataZarrTreemapLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
+        let obs_axis = AdataAxis::obs_of_columns(self.layer_params.groupby.iter().map(String::as_str));
         let counts_future = load_obs_group_counts(
             gpu_context,
             self.store.clone(),
             &self.store_name,
+            &obs_axis,
             &self.layer_params.groupby,
             self.layer_params.obs_filtering.as_ref(),
             self.layer_params.obs_selection.as_ref(),
@@ -201,7 +204,7 @@ impl ExtentableLayer for AdataZarrTreemapLayer {}
 
 #[derive(Serialize, Debug, Clone, PartialEq, TS)]
 pub struct AdataZarrTreemapPickingInfo {
-    /// The `obs` columns of the hierarchy, from outermost to innermost.
+    /// The paths to the `obs` columns of the hierarchy, from outermost to innermost.
     pub groupby: Vec<String>,
     /// The picked leaf's category in each `groupby` column.
     pub obs_values: Vec<String>,

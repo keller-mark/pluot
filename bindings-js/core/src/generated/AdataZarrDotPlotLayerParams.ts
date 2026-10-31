@@ -26,30 +26,34 @@ title?: string | null,
  * and determining the fraction of cells expressing given genes.
  * A gene is expressed only if the expression value is greater than this threshold.
  */
-expression_cutoff: number, 
+expression_cutoff: number, store_name?: string | null, 
 /**
- * Must point to the root of an anndata object.
+ * Path to the matrix of expression values, relative to the store root
+ * (e.g., `X`, `layers/log1p`, or `mod/rna/X`). Defaults to `X`.
  */
-store_name?: string | null, 
+layer_path: string, 
 /**
- * Layer in AnnData to use for expression values. Defaults to None, which uses adata.X.
+ * Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
+ * Each combination of their categories gets one group of dots.
  */
-layer: string, groupby: string, 
+groupby: Array<string>, 
 /**
- * The `groupby` categories to plot, in the order they should appear along the group axis.
- * `None` (the default) means every category of `groupby`, in its stored order. `Some(vec![])`
- * means no categories at all. Each requested category is looked up independently, so an
- * unknown one yields an empty (zero-cell) column rather than an error.
+ * The combinations of categories to plot (each one category per `groupby` column, e.g.
+ * `[["B cell", "sample1"]]`), in the order they should appear along the group axis.
+ * `None` (the default) means every combination, ordered by the first column's categories,
+ * then the second's, etc. With more than one `groupby` column, combinations without any obs
+ * are omitted. `Some(vec![])` means no categories at all. Each requested combination is looked
+ * up independently, so an unknown one yields an empty (zero-cell) group rather than an error.
  */
-categories?: Array<string> | null, 
+categories?: Array<Array<string>> | null, 
 /**
- * List of gene IDs from adata.var.index.
+ * Gene IDs, as they appear in `var_index_path`.
  */
 var_names: Array<string>, 
 /**
- * Key in adata.var to use for gene symbols, if different from adata.var.index.
+ * Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
  */
-gene_symbols?: string | null, 
+var_index_path?: string | null, 
 /**
  * Which obs are summarized. `None` includes every obs. When set, categories
  * without any included obs are omitted.
@@ -69,4 +73,4 @@ var_filtering?: AxisCriteria | null,
  * Which of the included `var_names` to emphasize. The dots of the others
  * are greyed out. `None` emphasizes every one.
  */
-var_selection?: AxisCriteria | null, cache_data: boolean, };
+var_selection?: AxisCriteria | null, };

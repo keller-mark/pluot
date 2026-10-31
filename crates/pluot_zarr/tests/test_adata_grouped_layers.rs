@@ -9,14 +9,14 @@ use zarrs::storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, S
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::numeric_data::NumericValue;
-use pluot_core::render_traits::{AspectRatioMode, PickableLayer, PreparedLayer, ViewParams};
+use pluot_core::render_traits::{AspectRatioMode, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
+use pluot_core::two::svg::init_svg;
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::ScreenCoord;
 use pluot_core::zarr::StoreMap;
 use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_string_array};
-use pluot_zarr::heatmap_data::{AxisCriteria, ExpressionCriteriaParams, IdentifierCriteriaParams};
+use pluot_zarr::heatmap_data::{load_grouped_axis_indices, AdataAxis, AxisCriteria, ExpressionCriteriaParams, IdentifierCriteriaParams, MatrixAxis};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
-use pluot_zarr::hilbert_heatmap_data::load_nested_grouped_obs_indices;
 use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{
     AdataZarrHilbertHeatmapLayer, AdataZarrHilbertHeatmapLayerParams, AdataZarrHilbertHeatmapPickingInfo,
 };
@@ -78,7 +78,7 @@ fn obs_selection() -> Option<AxisCriteria> {
 }
 
 fn identifiers(genes: &[String]) -> Option<AxisCriteria> {
-    Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { column: None, identifiers: genes.to_vec() }))
+    Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { index_path: None, identifiers: genes.to_vec() }))
 }
 
 /// The filter-included categories (in stored order), and the selected rows of each.
@@ -128,7 +128,7 @@ async fn check_dotplot_summarizes_the_selected_obs_of_the_filtered_categories_an
 
     let mut layer = AdataZarrDotPlotLayer::new(view_params(store.clone()), AdataZarrDotPlotLayerParams {
         store_name: Some("pbmc".to_string()),
-        groupby: "bulk_labels".to_string(),
+        groupby: vec!["obs/bulk_labels".to_string()],
         var_names: requested.clone(),
         obs_filtering: obs_filtering(),
         obs_selection: obs_selection(),
@@ -145,13 +145,13 @@ async fn check_dotplot_summarizes_the_selected_obs_of_the_filtered_categories_an
         for y in band_centers(categories.len()) {
             let info: AdataZarrDotPlotPickingInfo = layer.pick(ScreenCoord { x, y }, None).expect("a dot is picked").into_info().unwrap();
             assert_eq!(&info.var_name, gene);
-            let rows = &selected_rows[&info.obs_value];
+            let rows = &selected_rows[&info.obs_values[0]];
             let mean = rows.iter().map(|&row| values[row]).sum::<f32>() / rows.len() as f32;
             let fraction_expressing = rows.iter().filter(|&&row| values[row] > 0.0).count() as f32 / rows.len() as f32;
             let NumericValue::Float32(picked_mean) = info.mean_expression else { panic!("expected a Float32 mean") };
-            assert!((picked_mean - mean).abs() < 1e-4, "{gene} {}: {picked_mean} != {mean}", info.obs_value);
+            assert!((picked_mean - mean).abs() < 1e-4, "{gene} {}: {picked_mean} != {mean}", info.obs_values[0]);
             assert_eq!(info.fraction_expressing, NumericValue::Float32(fraction_expressing));
-            picked_categories.push(info.obs_value);
+            picked_categories.push(info.obs_values[0].clone());
         }
     }
     picked_categories.sort();
@@ -168,7 +168,7 @@ async fn check_violin_summarizes_the_selected_obs_of_the_filtered_categories(gpu
 
     let mut layer = AdataZarrViolinLayer::new(view_params(store.clone()), AdataZarrViolinLayerParams {
         store_name: Some("pbmc".to_string()),
-        groupby: "bulk_labels".to_string(),
+        groupby: vec!["obs/bulk_labels".to_string()],
         var_name: gene,
         obs_filtering: obs_filtering(),
         obs_selection: obs_selection(),
@@ -178,7 +178,7 @@ async fn check_violin_summarizes_the_selected_obs_of_the_filtered_categories(gpu
 
     for (category, x) in categories.iter().zip(band_centers(categories.len())) {
         let info: AdataZarrViolinPickingInfo = layer.pick(ScreenCoord { x, y: SIZE as f32 / 2.0 }, None).expect("a violin is picked").into_info().unwrap();
-        assert_eq!(&info.obs_value, category);
+        assert_eq!(&info.obs_values[0], category);
         assert_eq!(info.num_values as usize, selected_rows[category].len());
     }
 }
@@ -190,7 +190,7 @@ async fn check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categor
 
     let mut layer = AdataZarrViolinMatrixLayer::new(view_params(store.clone()), AdataZarrViolinMatrixLayerParams {
         store_name: Some("pbmc".to_string()),
-        groupby: "bulk_labels".to_string(),
+        groupby: vec!["obs/bulk_labels".to_string()],
         var_names: requested.clone(),
         obs_filtering: obs_filtering(),
         obs_selection: obs_selection(),
@@ -206,8 +206,8 @@ async fn check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categor
         for y in band_centers(categories.len()) {
             let info: AdataZarrViolinMatrixPickingInfo = layer.pick(ScreenCoord { x, y }, None).expect("a cell is picked").into_info().unwrap();
             assert_eq!(&info.var_name, gene);
-            assert_eq!(info.num_values as usize, selected_rows[&info.obs_value].len());
-            picked_categories.push(info.obs_value);
+            assert_eq!(info.num_values as usize, selected_rows[&info.obs_values[0]].len());
+            picked_categories.push(info.obs_values[0].clone());
         }
     }
     picked_categories.sort();
@@ -226,12 +226,12 @@ async fn check_treemap_counts_the_selected_obs_of_the_filtered_categories(gpu_co
 
     let mut layer = AdataZarrTreemapLayer::new(view_params(store.clone()), AdataZarrTreemapLayerParams {
         store_name: Some("pbmc".to_string()),
-        groupby: vec!["bulk_labels".to_string()],
+        groupby: vec!["obs/bulk_labels".to_string()],
         obs_filtering: obs_filtering(),
         obs_selection: Some(AxisCriteria::Expression(ExpressionCriteriaParams {
             var_name: gene,
-            var_column: None,
-            layer: None,
+            var_index_path: None,
+            layer_path: None,
             min: Some(0.0),
             max: None,
             min_exclusive: Some(true),
@@ -276,8 +276,9 @@ async fn expected_nested_order(store: Arc<dyn AsyncReadableStorageTraits>) -> Ve
 
 async fn check_hilbert_heatmap_orders_the_filtered_obs_by_nested_groups(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
-    let groupby = vec!["bulk_labels".to_string(), "phase".to_string()];
-    let ordered = load_nested_grouped_obs_indices(gpu_context, store.clone(), "pbmc", obs_filtering().as_ref(), &groupby, false).await.unwrap();
+    let groupby = vec!["obs/bulk_labels".to_string(), "obs/phase".to_string()];
+    let obs_axis = AdataAxis::of_matrix("X", MatrixAxis::Obs);
+    let ordered = load_grouped_axis_indices(gpu_context, store.clone(), "pbmc", &obs_axis, obs_filtering().as_ref(), &groupby, false).await.unwrap();
     let ordered: Vec<u32> = ordered.as_f32().iter().map(|&row| row as u32).collect();
     assert_eq!(ordered, expected_nested_order(store).await);
 }
@@ -292,7 +293,7 @@ async fn check_hilbert_heatmap_colors_the_filtered_obs_by_expression(gpu_context
 
     let mut layer = AdataZarrHilbertHeatmapLayer::new(view_params(store.clone()), AdataZarrHilbertHeatmapLayerParams {
         store_name: Some("pbmc".to_string()),
-        groupby: vec!["bulk_labels".to_string(), "phase".to_string()],
+        groupby: vec!["obs/bulk_labels".to_string(), "obs/phase".to_string()],
         var_name: Some(gene.clone()),
         obs_filtering: obs_filtering(),
         obs_selection: obs_selection(),
@@ -323,17 +324,42 @@ async fn check_hilbert_heatmap_colors_the_filtered_obs_by_category(gpu_context: 
     let store = pbmc_store();
     let mut layer = AdataZarrHilbertHeatmapLayer::new(view_params(store.clone()), AdataZarrHilbertHeatmapLayerParams {
         store_name: Some("pbmc".to_string()),
-        groupby: vec!["bulk_labels".to_string(), "phase".to_string()],
-        color_by: Some("phase".to_string()),
+        groupby: vec!["obs/bulk_labels".to_string(), "obs/phase".to_string()],
+        color_by: Some("obs/phase".to_string()),
         obs_filtering: obs_filtering(),
         ..Default::default()
     });
     assert!(!layer.prepare(gpu_context).await.bailed_early);
     let result = layer.pick(ScreenCoord { x: 10.5, y: 10.5 }, None).unwrap();
     let info: AdataZarrHilbertHeatmapPickingInfo = result.into_info().unwrap();
-    assert_eq!(info.color_by.as_deref(), Some("phase"));
+    assert_eq!(info.color_by.as_deref(), Some("obs/phase"));
     assert_eq!(info.color_by_value, info.obs_values[1]);
     assert_eq!((info.expression, info.is_selected), (None, true));
+}
+
+async fn check_hilbert_heatmap_legend_lists_the_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let mut layer = AdataZarrHilbertHeatmapLayer::new(
+        ViewParams { width: 2 * SIZE, height: 2 * SIZE, margins: Some(MarginParams { margin_top: None, margin_right: Some(SIZE as f32), margin_bottom: None, margin_left: None }), ..view_params(store) },
+        AdataZarrHilbertHeatmapLayerParams {
+            store_name: Some("pbmc".to_string()),
+            groupby: vec!["obs/bulk_labels".to_string()],
+            obs_filtering: obs_filtering(),
+            ..Default::default()
+        },
+    );
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
+    let mut ctx = init_svg((2 * SIZE) as f64, (2 * SIZE) as f64);
+    DrawToSvg::draw(&layer, &mut ctx).await;
+    let svg = ctx.to_svg_string(false);
+
+    let has_text = |text: &str| svg.contains(&format!(">\n{text}\n</text>"));
+    assert!(has_text("bulk_labels"), "the legend is titled by the colored column");
+    for (code, category) in categories.iter().enumerate() {
+        let listed = has_text(category);
+        assert_eq!(listed, INCLUDED_CODES.contains(&(code as i64)), "category {category}");
+    }
 }
 
 async fn with_cpu_and_gpu<F: AsyncFn(Option<&GpuContext<'_>>)>(check: F) {
@@ -375,4 +401,9 @@ async fn hilbert_heatmap_colors_the_filtered_obs_by_expression() {
 #[tokio::test]
 async fn hilbert_heatmap_colors_the_filtered_obs_by_category() {
     with_cpu_and_gpu(check_hilbert_heatmap_colors_the_filtered_obs_by_category).await;
+}
+
+#[tokio::test]
+async fn hilbert_heatmap_legend_lists_the_filtered_categories() {
+    with_cpu_and_gpu(check_hilbert_heatmap_legend_lists_the_filtered_categories).await;
 }

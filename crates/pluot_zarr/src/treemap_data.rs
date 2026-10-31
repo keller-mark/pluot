@@ -10,8 +10,8 @@ use pluot_core::render_traits::EmphasisCriteria;
 use pluot_core::render_types::GpuContext;
 use zarrs::array::ArrayError;
 
-use crate::dotplot_data::{expr_array_path, load_obs_categorical, obs_rows_key, AdataStore};
-use crate::heatmap_data::{load_axis_emphasis_criteria, AxisCriteria, MatrixAxis};
+use crate::dotplot_data::{load_categorical, obs_rows_key, AdataStore};
+use crate::heatmap_data::{load_axis_emphasis_criteria, AdataAxis, AxisCriteria};
 use crate::memo::use_memo_shared;
 
 /// The number of observations sharing one combination of categories.
@@ -99,27 +99,28 @@ pub async fn count_obs_groups_on_gpu(
         .collect()
 }
 
-/// Loads (and caches) each `groupby` column's category labels, and the number of observations per
-/// combination of their categories: those included by `obs_filtering`, and among them those included
-/// by `obs_selection`. The counts are cached independently of the columns they were computed from.
+/// Loads (and caches) the category labels of each `groupby` column (each a path to a categorical
+/// column of the `obs_axis` dataframe), and the number of observations per combination of their
+/// categories: those included by `obs_filtering`, and among them those included by `obs_selection`.
+/// The counts are cached independently of the columns they were computed from.
+#[allow(clippy::too_many_arguments)]
 pub async fn load_obs_group_counts(
     gpu_context: Option<&GpuContext<'_>>,
     store: AdataStore,
     store_name: &str,
+    obs_axis: &AdataAxis,
     groupby: &[String],
     obs_filtering: Option<&AxisCriteria>,
     obs_selection: Option<&AxisCriteria>,
     cache_enabled: bool,
 ) -> Result<(Vec<Arc<Vec<String>>>, Arc<Vec<ObsGroupCount>>), ArrayError> {
-    // The obs criteria only need the matrix for the number of obs, which `X` always has.
-    let matrix_path = expr_array_path(None);
     let (columns, filtering_criteria, selection_criteria) = futures::try_join!(
-        futures::future::try_join_all(groupby.iter().map(|column| load_obs_categorical(store.clone(), store_name, column, cache_enabled))),
-        load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, &matrix_path, MatrixAxis::Obs, obs_filtering, cache_enabled),
-        load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, &matrix_path, MatrixAxis::Obs, obs_selection, cache_enabled),
+        futures::future::try_join_all(groupby.iter().map(|column_path| load_categorical(store.clone(), store_name, column_path, cache_enabled))),
+        load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, obs_axis, obs_filtering, cache_enabled),
+        load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, obs_axis, obs_selection, cache_enabled),
     )?;
 
-    let mut counts_keys = vec!["treemap_obs_group_counts".to_string(), store_name.to_string(), groupby.len().to_string()];
+    let mut counts_keys = vec!["treemap_obs_group_counts".to_string(), store_name.to_string(), obs_axis.dataframe_path.clone(), groupby.len().to_string()];
     counts_keys.extend(groupby.iter().cloned());
     counts_keys.extend(obs_rows_key(obs_filtering, obs_selection));
     let counts = use_memo_shared(

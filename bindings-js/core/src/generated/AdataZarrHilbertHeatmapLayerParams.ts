@@ -7,14 +7,10 @@ import type { QuantitativeColormap } from "./QuantitativeColormap.js";
 /**
  * Layer params struct for [`AdataZarrHilbertHeatmapLayer`].
  */
-export type AdataZarrHilbertHeatmapLayerParams = { layer_id: string, bounds?: MarginParams | null, 
+export type AdataZarrHilbertHeatmapLayerParams = { layer_id: string, bounds?: MarginParams | null, store_name?: string | null, 
 /**
- * Must point to the root of an anndata object.
- */
-store_name?: string | null, 
-/**
- * Categorical `obs` columns by which to order the obs along the curve, from
- * coarsest to finest (e.g., `["cell_type", "sample"]`). Empty keeps the filtered order.
+ * Paths to categorical `obs` columns by which to order the obs along the curve, from
+ * coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`). Empty keeps the filtered order.
  */
 groupby: Array<string>, 
 /**
@@ -23,17 +19,23 @@ groupby: Array<string>,
  */
 var_name?: string | null, 
 /**
- * The `var` column holding `var_name`. `None` means its index.
+ * Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`). `None` means the `var` index.
  */
-var_column?: string | null, 
+var_index_path?: string | null, 
 /**
- * The `layers` entry holding the expression values. `None` means `X`.
+ * Path to the matrix holding the expression values (e.g., `X` or `layers/log1p`).
+ * When set, its AnnData object's `obs` are laid out. Otherwise, those of the
+ * `groupby` and `color_by` columns are, and the expression values are their AnnData object's `X`.
  */
-layer?: string | null, 
+layer_path?: string | null, 
 /**
- * Categorical `obs` column to color by when there is no `var_name`. Defaults to the first `groupby` column.
+ * Path to the categorical `obs` column to color by when there is no `var_name`. Defaults to the first `groupby` column.
  */
 color_by?: string | null, 
+/**
+ * Path to the `obs` column labeling each obs when picked. `None` means the `obs` index.
+ */
+obs_index_path?: string | null, 
 /**
  * Defaults to viridis.
  */
@@ -64,6 +66,6 @@ background_opacity?: number | null,
  */
 cell_size?: number | null, 
 /**
- * Title of the quantitative colormap legend. Defaults to `var_name`.
+ * Title of the colormap legend. Defaults to `var_name` or `color_by`.
  */
 legend_title?: string | null, };

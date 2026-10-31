@@ -27,6 +27,7 @@ use pluot_core::layers::stroked_curve_layer::StrokedCurvePickingInfo;
 use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarPlotPickingInfo};
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 use pluot_core::composite_layers::precomputed_histogram_layer::PrecomputedHistogramLayerParams;
+use pluot_core::composite_layers::legend_colormap_categorical_layer::{LegendColormapCategoricalLayerParams, LegendColormapCategoricalPickingInfo};
 use pluot_core::composite_layers::precomputed_treemap_layer::{PrecomputedTreemapLayerParams, PrecomputedTreemapPickingInfo};
 use pluot_core::composite_layers::precomputed_violin_layer::{PrecomputedViolinLayerParams, PrecomputedViolinPickingInfo};
 use pluot_core::composite_layers::precomputed_violin_matrix_layer::{PrecomputedViolinMatrixLayerParams, PrecomputedViolinMatrixPickingInfo};
@@ -84,6 +85,7 @@ pub enum LayerParams {
     PrecomputedTreemapLayer(PrecomputedTreemapLayerParams),
     PrecomputedViolinLayer(PrecomputedViolinLayerParams),
     PrecomputedViolinMatrixLayer(PrecomputedViolinMatrixLayerParams),
+    LegendColormapCategoricalLayer(LegendColormapCategoricalLayerParams),
     LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
     LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
@@ -193,6 +195,7 @@ enum PickingInfo {
     HilbertHeatmap(HilbertHeatmapPickingInfo),
     BarPlot(BarPlotPickingInfo),
     PrecomputedTreemap(PrecomputedTreemapPickingInfo),
+    LegendColormapCategorical(LegendColormapCategoricalPickingInfo),
     PrecomputedViolin(PrecomputedViolinPickingInfo),
     PrecomputedViolinMatrix(PrecomputedViolinMatrixPickingInfo),
     OmeZarrBitmap(OmeZarrBitmapPickingInfo),

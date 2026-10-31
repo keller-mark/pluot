@@ -14,6 +14,7 @@ use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg};
+use pluot_core::composite_layers::legend_colormap_categorical_layer::{LegendColormapCategoricalLayer, LegendColormapCategoricalLayerParams};
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::{
     LegendColormapQuantitativeLayer, LegendColormapQuantitativeLayerParams, LegendOrientation,
 };
@@ -34,9 +35,13 @@ use pluot_core::wgpu;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::{maybe_timeout, Duration, FutureExt, LayerPickingResult};
 
-use crate::dotplot_data::{expr_array_path, load_obs_categorical};
-use crate::heatmap_data::{load_axis_emphasis_criteria, load_axis_labels, load_var_expression, AxisCriteria, MatrixAxis};
-use crate::hilbert_heatmap_data::{load_nested_grouped_obs_indices, load_var_expression_extent};
+use crate::adata_paths::{node_path, path_name};
+use crate::dotplot_data::load_categorical;
+use crate::heatmap_data::{
+    load_axis_emphasis_criteria, load_axis_labels, load_grouped_axis_indices, load_var_expression, AdataAxis, AxisCriteria, MatrixAxis,
+};
+use crate::treemap_data::{load_obs_group_counts, ObsGroupCount};
+use crate::hilbert_heatmap_data::load_var_expression_extent;
 
 /// Layer params struct for [`AdataZarrHilbertHeatmapLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -45,22 +50,25 @@ use crate::hilbert_heatmap_data::{load_nested_grouped_obs_indices, load_var_expr
 pub struct AdataZarrHilbertHeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
-    /// Must point to the root of an anndata object.
     pub store_name: Option<String>,
 
-    /// Categorical `obs` columns by which to order the obs along the curve, from
-    /// coarsest to finest (e.g., `["cell_type", "sample"]`). Empty keeps the filtered order.
+    /// Paths to categorical `obs` columns by which to order the obs along the curve, from
+    /// coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`). Empty keeps the filtered order.
     pub groupby: Vec<String>,
 
     /// When set, colors each obs by its expression of this var, using `quantitative_colormap`.
     /// Otherwise, colors each obs by its category in `color_by`, using `categorical_colormap`.
     pub var_name: Option<String>,
-    /// The `var` column holding `var_name`. `None` means its index.
-    pub var_column: Option<String>,
-    /// The `layers` entry holding the expression values. `None` means `X`.
-    pub layer: Option<String>,
-    /// Categorical `obs` column to color by when there is no `var_name`. Defaults to the first `groupby` column.
+    /// Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`). `None` means the `var` index.
+    pub var_index_path: Option<String>,
+    /// Path to the matrix holding the expression values (e.g., `X` or `layers/log1p`).
+    /// When set, its AnnData object's `obs` are laid out. Otherwise, those of the
+    /// `groupby` and `color_by` columns are, and the expression values are their AnnData object's `X`.
+    pub layer_path: Option<String>,
+    /// Path to the categorical `obs` column to color by when there is no `var_name`. Defaults to the first `groupby` column.
     pub color_by: Option<String>,
+    /// Path to the `obs` column labeling each obs when picked. `None` means the `obs` index.
+    pub obs_index_path: Option<String>,
 
     /// Defaults to viridis.
     pub quantitative_colormap: Option<QuantitativeColormap>,
@@ -79,7 +87,7 @@ pub struct AdataZarrHilbertHeatmapLayerParams {
 
     /// Side length, in pixels, of each cell of the curve's grid. Defaults to 1.
     pub cell_size: Option<f32>,
-    /// Title of the quantitative colormap legend. Defaults to `var_name`.
+    /// Title of the colormap legend. Defaults to `var_name` or `color_by`.
     pub legend_title: Option<String>,
 }
 
@@ -91,9 +99,10 @@ impl Default for AdataZarrHilbertHeatmapLayerParams {
             store_name: None,
             groupby: vec![],
             var_name: None,
-            var_column: None,
-            layer: None,
+            var_index_path: None,
+            layer_path: None,
             color_by: None,
+            obs_index_path: None,
             quantitative_colormap: None,
             domain: None,
             categorical_colormap: None,
@@ -108,7 +117,13 @@ impl Default for AdataZarrHilbertHeatmapLayerParams {
 
 enum ObsColors {
     Expression { values: Arc<Vec<f32>>, domain: (f32, f32) },
-    Categorical { column: String, categories: Arc<Vec<String>>, codes: Arc<NumericData> },
+    Categorical {
+        column: String,
+        categories: Arc<Vec<String>>,
+        codes: Arc<NumericData>,
+        /// The filter-included obs per category, for the legend.
+        group_counts: Arc<Vec<ObsGroupCount>>,
+    },
 }
 
 /// What `pick` needs to describe an obs, kept from `prepare`.
@@ -147,18 +162,31 @@ impl AdataZarrHilbertHeatmapLayer {
         self.layer_params.color_by.as_deref().or(self.layer_params.groupby.first().map(String::as_str))
     }
 
+    fn obs_axis(&self) -> AdataAxis {
+        let p = &self.layer_params;
+        match &p.layer_path {
+            Some(layer_path) => AdataAxis::of_matrix(layer_path, MatrixAxis::Obs),
+            None => AdataAxis::obs_of_columns(p.groupby.iter().chain(&p.color_by).map(String::as_str)),
+        }
+    }
+
+    fn matrix_path(&self, obs_axis: &AdataAxis) -> String {
+        self.layer_params.layer_path.as_deref().map_or_else(|| obs_axis.default_matrix_path(), node_path)
+    }
+
     /// `None` when there is nothing to color the obs by.
-    async fn load_colors(&self, gpu_context: Option<&GpuContext<'_>>) -> Result<Option<ObsColors>, ArrayError> {
+    async fn load_colors(&self, gpu_context: Option<&GpuContext<'_>>, obs_axis: &AdataAxis) -> Result<Option<ObsColors>, ArrayError> {
         let p = &self.layer_params;
         let (store, store_name, cache_enabled) = (self.store.clone(), self.store_name.as_str(), self.view_params.cache_enabled);
         if let Some(var_name) = &p.var_name {
-            let values_future = load_var_expression(store.clone(), store_name, var_name, p.var_column.as_deref(), p.layer.as_deref(), cache_enabled);
+            let matrix_path = self.matrix_path(obs_axis);
+            let values_future = load_var_expression(store.clone(), store_name, var_name, p.var_index_path.as_deref(), &matrix_path, cache_enabled);
             let domain_future = async {
                 match p.domain {
                     Some(domain) => Ok(Some(domain)),
                     None => {
                         load_var_expression_extent(
-                            gpu_context, store.clone(), store_name, var_name, p.var_column.as_deref(), p.layer.as_deref(), p.obs_filtering.as_ref(), cache_enabled,
+                            gpu_context, store.clone(), store_name, var_name, p.var_index_path.as_deref(), &matrix_path, obs_axis, p.obs_filtering.as_ref(), cache_enabled,
                         )
                         .await
                     }
@@ -176,37 +204,63 @@ impl AdataZarrHilbertHeatmapLayer {
             log("AdataZarrHilbertHeatmapLayer: neither var_name, color_by nor groupby is set; drawing nothing");
             return Ok(None);
         };
-        let (categories, codes) = load_obs_categorical(store, store_name, column, cache_enabled).await?;
-        Ok(Some(ObsColors::Categorical { column: column.to_string(), categories, codes }))
+        let columns = [column.to_string()];
+        let ((categories, codes), (_, group_counts)) = futures::try_join!(
+            load_categorical(store.clone(), store_name, column, cache_enabled),
+            load_obs_group_counts(gpu_context, store.clone(), store_name, obs_axis, &columns, p.obs_filtering.as_ref(), p.obs_selection.as_ref(), cache_enabled),
+        )?;
+        Ok(Some(ObsColors::Categorical { column: column.to_string(), categories, codes, group_counts }))
     }
 
-    fn legend_layer(&self, colors: &ObsColors) -> Option<LegendColormapQuantitativeLayer> {
-        let ObsColors::Expression { domain: (lo, hi), .. } = colors else {
-            return None;
-        };
+    fn legend_layer(&self, colors: &ObsColors) -> Box<dyn PreparedAndDraw> {
         const LEGEND_PADDING_HORIZONTAL: f32 = 5.0;
         let p = &self.layer_params;
         let bounds = p.bounds.as_ref().or(self.view_params.margins.as_ref());
         let margin = |get: fn(&MarginParams) -> Option<f32>| bounds.and_then(get).unwrap_or(0.0);
-        let mut color_scale = ScaleLinear::new();
-        color_scale.set_domain((*lo as f64, *hi as f64));
-        Some(LegendColormapQuantitativeLayer::new(
-            self.view_params.clone(),
-            LegendColormapQuantitativeLayerParams {
-                layer_id: format!("{}_legend_sublayer", p.layer_id),
-                bounds: Some(MarginParams {
-                    margin_left: Some(self.view_params.width as f32 - margin(|m| m.margin_right) + LEGEND_PADDING_HORIZONTAL),
-                    margin_right: Some(LEGEND_PADDING_HORIZONTAL),
-                    margin_top: Some(margin(|m| m.margin_top)),
-                    margin_bottom: Some(0.0),
-                }),
-                title: p.legend_title.clone().or(p.var_name.clone()).unwrap_or_default(),
-                colormap: p.quantitative_colormap.unwrap_or(QuantitativeColormap::Viridis),
-                reverse: false,
-                scale: Some(color_scale),
-                orientation: LegendOrientation::Horizontal,
-            },
-        ))
+        let legend_bounds = MarginParams {
+            margin_left: Some(self.view_params.width as f32 - margin(|m| m.margin_right) + LEGEND_PADDING_HORIZONTAL),
+            margin_right: Some(LEGEND_PADDING_HORIZONTAL),
+            margin_top: Some(margin(|m| m.margin_top)),
+            margin_bottom: Some(margin(|m| m.margin_bottom)),
+        };
+        let layer_id = format!("{}_legend_sublayer", p.layer_id);
+        match colors {
+            ObsColors::Expression { domain: (lo, hi), .. } => {
+                let mut color_scale = ScaleLinear::new();
+                color_scale.set_domain((*lo as f64, *hi as f64));
+                Box::new(LegendColormapQuantitativeLayer::new(
+                    self.view_params.clone(),
+                    LegendColormapQuantitativeLayerParams {
+                        layer_id,
+                        bounds: Some(MarginParams { margin_bottom: Some(0.0), ..legend_bounds }),
+                        title: p.legend_title.clone().or(p.var_name.clone()).unwrap_or_default(),
+                        colormap: p.quantitative_colormap.unwrap_or(QuantitativeColormap::Viridis),
+                        reverse: false,
+                        scale: Some(color_scale),
+                        orientation: LegendOrientation::Horizontal,
+                    },
+                ))
+            }
+            ObsColors::Categorical { column, categories, group_counts, .. } => {
+                let codes: Vec<u32> = group_counts.iter().map(|group| group.codes[0]).collect();
+                let selected_codes = p.obs_selection.is_some().then(|| {
+                    group_counts.iter().filter(|group| group.selected_count > 0).map(|group| group.codes[0]).collect()
+                });
+                Box::new(LegendColormapCategoricalLayer::new(
+                    self.view_params.clone(),
+                    LegendColormapCategoricalLayerParams {
+                        layer_id,
+                        bounds: Some(legend_bounds),
+                        title: p.legend_title.clone().unwrap_or_else(|| path_name(column).to_string()),
+                        categories: categories.clone(),
+                        codes: Some(codes),
+                        selected_codes,
+                        colormap: p.categorical_colormap,
+                        background_opacity: p.background_opacity,
+                    },
+                ))
+            }
+        }
     }
 }
 
@@ -218,15 +272,14 @@ impl PreparedLayer for AdataZarrHilbertHeatmapLayer {
     async fn prepare(&mut self, gpu_context: Option<&GpuContext<'_>>) -> PrepareResult {
         let p = &self.layer_params;
         let (store, store_name, cache_enabled) = (self.store.clone(), self.store_name.as_str(), self.view_params.cache_enabled);
-        // The obs criteria only need the matrix for the number of obs, which `X` always has.
-        let matrix_path = expr_array_path(None);
+        let obs_axis = self.obs_axis();
         let obs_future = async {
             futures::try_join!(
-                load_nested_grouped_obs_indices(gpu_context, store.clone(), store_name, p.obs_filtering.as_ref(), &p.groupby, cache_enabled),
-                load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, &matrix_path, MatrixAxis::Obs, p.obs_selection.as_ref(), cache_enabled),
-                futures::future::try_join_all(p.groupby.iter().map(|column| load_obs_categorical(store.clone(), store_name, column, cache_enabled))),
-                load_axis_labels(store.clone(), store_name, MatrixAxis::Obs, None, cache_enabled),
-                self.load_colors(gpu_context),
+                load_grouped_axis_indices(gpu_context, store.clone(), store_name, &obs_axis, p.obs_filtering.as_ref(), &p.groupby, cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, &obs_axis, p.obs_selection.as_ref(), cache_enabled),
+                futures::future::try_join_all(p.groupby.iter().map(|column| load_categorical(store.clone(), store_name, column, cache_enabled))),
+                load_axis_labels(store.clone(), store_name, &obs_axis, p.obs_index_path.as_deref(), cache_enabled),
+                self.load_colors(gpu_context, &obs_axis),
             )
         };
         let loaded: ObsData = match maybe_timeout!(obs_future, self.view_params.timeout).await {
@@ -271,9 +324,7 @@ impl PreparedLayer for AdataZarrHilbertHeatmapLayer {
                 ..Default::default()
             },
         ))];
-        if let Some(legend_layer) = self.legend_layer(&colors) {
-            sub_layer_instances.push(Box::new(legend_layer));
-        }
+        sub_layer_instances.push(self.legend_layer(&colors));
         for sub_layer in &mut sub_layer_instances {
             sub_layer.prepare(gpu_context).await;
         }
@@ -313,11 +364,11 @@ impl ExtentableLayer for AdataZarrHilbertHeatmapLayer {}
 pub struct AdataZarrHilbertHeatmapPickingInfo {
     pub obs_name: String,
     pub obs_index: usize,
-    /// The `obs` columns the obs are ordered by, from coarsest to finest.
+    /// The paths to the `obs` columns the obs are ordered by, from coarsest to finest.
     pub groupby: Vec<String>,
     /// The picked obs's category in each `groupby` column, or `None` where missing.
     pub obs_values: Vec<Option<String>>,
-    /// The `obs` column colored by, when coloring by category.
+    /// The path to the `obs` column colored by, when coloring by category.
     pub color_by: Option<String>,
     /// The picked obs's category in `color_by`, when coloring by category.
     pub color_by_value: Option<String>,
@@ -340,7 +391,7 @@ impl PickableLayer for AdataZarrHilbertHeatmapLayer {
         let obs_index = cell.index;
         let (color_by, color_by_value, expression) = match &obs.colors {
             ObsColors::Expression { values, .. } => (None, None, values.get(obs_index).copied()),
-            ObsColors::Categorical { column, categories, codes } => (Some(column.clone()), category_of(categories, codes, obs_index), None),
+            ObsColors::Categorical { column, categories, codes, .. } => (Some(column.clone()), category_of(categories, codes, obs_index), None),
         };
         Some(LayerPickingResult::new(&self.layer_params.layer_id, AdataZarrHilbertHeatmapPickingInfo {
             obs_name: obs.obs_labels.get(obs_index)?.clone(),

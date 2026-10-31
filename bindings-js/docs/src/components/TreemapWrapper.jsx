@@ -14,7 +14,7 @@ function onHoverTreemap(info) {
     return undefined;
   }
   return {
-    ...Object.fromEntries(treemapInfo.groupby.map((column, i) => [column, treemapInfo.obs_values[i]])),
+    ...Object.fromEntries(treemapInfo.groupby.map((columnPath, i) => [columnPath.split('/').pop(), treemapInfo.obs_values[i]])),
     'count': countFormatter.format(treemapInfo.count),
   };
 }

@@ -12,7 +12,7 @@ function onHoverHilbertHeatmap(info) {
   }
   return {
     'cell': cellInfo.obs_name,
-    ...Object.fromEntries(cellInfo.groupby.map((column, i) => [column, cellInfo.obs_values[i] ?? 'NA'])),
+    ...Object.fromEntries(cellInfo.groupby.map((columnPath, i) => [columnPath.split('/').pop(), cellInfo.obs_values[i] ?? 'NA'])),
     ...(cellInfo.var_name ? { [cellInfo.var_name]: cellInfo.expression?.toFixed(2) } : {}),
   };
 }
