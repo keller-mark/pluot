@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use pluot_core::layers::heatmap_layer::HeatmapColormap;
-use pluot_core::layers::hilbert_heatmap_layer::{grid_dimensions, HilbertHeatmapLayer, HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo};
+use pluot_core::layers::hilbert_heatmap_layer::{
+    grid_dimensions, threshold_opacity, HilbertHeatmapLayer, HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo, OpacityThreshold, OpacityThresholds,
+};
 use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::params::{GraphicsFormat, LayerParams, LayeredPlotRenderParams, PlotParams, RenderBackend, RenderParams};
 use pluot_core::render_traits::{BooleanCriteriaParams, EmphasisCriteria, MarginParams, PickableLayer, ViewParams};
@@ -27,7 +29,7 @@ fn bounds() -> MarginParams {
 }
 
 /// Items listed in reverse, each colored by its own index, where items divisible by 7 are
-/// filtered out and odd items are unselected.
+/// filtered out, odd items are unselected, and items divisible by 3 only reach the 75% opacity threshold.
 fn layer_params() -> HilbertHeatmapLayerParams {
     let ordered_indices: Vec<u32> = (0..NUM_ITEMS as u32).rev().collect();
     let codes: Vec<i16> = (0..NUM_ITEMS as i16).collect();
@@ -44,8 +46,19 @@ fn layer_params() -> HilbertHeatmapLayerParams {
             mask: NumericData::from((0..NUM_ITEMS).map(|i| (i % 2 == 0) as u8).collect::<Vec<u8>>()),
         })],
         background_opacity: Some(0.5),
+        opacity_thresholds: Some(OpacityThresholds {
+            values: NumericData::Float32(Arc::new((0..NUM_ITEMS).map(|i| if i % 3 == 0 { 0.0 } else { 1.0 }).collect())),
+            thresholds: vec![
+                OpacityThreshold { percentile: 50.0, value: 0.5, opacity: 1.0 },
+                OpacityThreshold { percentile: 0.0, value: f32::MIN, opacity: 0.75 },
+            ],
+        }),
         ..Default::default()
     }
+}
+
+fn item_opacity(item: usize) -> f32 {
+    if item % 3 == 0 { 0.75 } else { 1.0 }
 }
 
 async fn render_rgba(params: &HilbertHeatmapLayerParams) -> Vec<u8> {
@@ -87,9 +100,10 @@ async fn gpu_cells_match_cpu_picking() {
             assert_eq!(info.value, NumericValue::Int(info.index as i64));
             assert!(info.index % 7 != 0);
             let (r, g, b) = colors[info.index];
-            let expected_alpha = if info.is_selected { 255 } else { 128 };
-            // Un-premultiplying semi-transparent pixels can round each channel by one.
-            let color_matches = pixel[..3].iter().zip([r, g, b]).all(|(&actual, expected)| actual.abs_diff(expected) <= 1);
+            let expected_alpha = (255.0 * item_opacity(info.index) * if info.is_selected { 1.0 } else { 0.5 }).round() as u8;
+            // Un-premultiplying semi-transparent pixels can round each channel by up to 255 / alpha.
+            let tolerance = 255u8.div_ceil(pixel[3].max(1));
+            let color_matches = pixel[..3].iter().zip([r, g, b]).all(|(&actual, expected)| actual.abs_diff(expected) <= tolerance);
             assert!(color_matches, "pixel ({x}, {y}) is {pixel:?} but should show item {} as {:?}", info.index, (r, g, b));
             assert!(pixel[3].abs_diff(expected_alpha) <= 1, "pixel ({x}, {y}) alpha {} for item {}", pixel[3], info.index);
             items_seen.insert(info.index);
@@ -125,6 +139,17 @@ async fn each_item_takes_one_cell_in_order_until_the_curve_ends() {
     by_position.sort();
     let expected: Vec<(u32, usize)> = (0..NUM_ITEMS).map(|i| (i as u32, i)).collect();
     assert_eq!(by_position, expected);
+}
+
+#[test]
+fn opacity_is_that_of_the_highest_percentile_threshold_exceeded() {
+    let thresholds = [
+        OpacityThreshold { percentile: 0.0, value: f32::MIN, opacity: 0.1 },
+        OpacityThreshold { percentile: 50.0, value: 1.5, opacity: 0.5 },
+        OpacityThreshold { percentile: 90.0, value: 3.0, opacity: 1.0 },
+    ];
+    let opacities: Vec<f32> = [0.0, 1.5, 2.0, 3.0, 3.5, f32::NAN].iter().map(|&value| threshold_opacity(value, &thresholds)).collect();
+    assert_eq!(opacities, vec![0.1, 0.1, 0.5, 0.5, 1.0, 0.0]);
 }
 
 #[test]

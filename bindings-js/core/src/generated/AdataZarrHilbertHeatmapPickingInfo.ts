@@ -18,10 +18,10 @@ color_by?: string | null,
  */
 color_by_value?: string | null, 
 /**
- * The var colored by, when coloring by expression.
+ * The var colored (or faded) by, when coloring by expression or by its percentile opacities.
  */
 var_name?: string | null, 
 /**
- * The picked obs's expression of `var_name`, when coloring by expression.
+ * The picked obs's expression of `var_name`, when coloring by expression or by its percentile opacities.
  */
 expression?: number | null, is_selected: boolean, };

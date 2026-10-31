@@ -32,6 +32,8 @@ struct Uniforms {
 
 {{selection}}
 
+{{item_opacity}}
+
 const QUAD: array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(-1.0, -1.0),
     vec2<f32>(1.0, -1.0),
@@ -69,6 +71,6 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
         discard;
     }
 
-    let alpha = u.opacity * select(u.background_opacity, 1.0, is_selected_in(item));
+    let alpha = u.opacity * get_item_opacity(item) * select(u.background_opacity, 1.0, is_selected_in(item));
     return vec4<f32>(get_cell_color(value, item, 0u), alpha);
 }

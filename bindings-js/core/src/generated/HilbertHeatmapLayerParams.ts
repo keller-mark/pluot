@@ -3,6 +3,7 @@ import type { EmphasisCriteria } from "./EmphasisCriteria.js";
 import type { HeatmapColormap } from "./HeatmapColormap.js";
 import type { MarginParams } from "./MarginParams.js";
 import type { NumericData } from "./NumericData.js";
+import type { OpacityThresholds } from "./OpacityThresholds.js";
 
 /**
  * Layer params struct for [`HilbertHeatmapLayer`].
@@ -35,4 +36,8 @@ selection_criteria: Array<EmphasisCriteria>,
 /**
  * Opacity multiplier for cells whose item is not selected.
  */
-background_opacity?: number | null, opacity: number, };
+background_opacity?: number | null, 
+/**
+ * Fades each item by where its value falls among thresholds. `None` draws every item fully opaque.
+ */
+opacity_thresholds?: OpacityThresholds | null, opacity: number, };

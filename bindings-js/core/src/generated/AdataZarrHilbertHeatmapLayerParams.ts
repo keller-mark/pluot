@@ -2,6 +2,7 @@
 import type { AxisCriteria } from "./AxisCriteria.js";
 import type { CategoricalColormap } from "./CategoricalColormap.js";
 import type { MarginParams } from "./MarginParams.js";
+import type { PercentileOpacity } from "./PercentileOpacity.js";
 import type { QuantitativeColormap } from "./QuantitativeColormap.js";
 
 /**
@@ -14,8 +15,9 @@ export type AdataZarrHilbertHeatmapLayerParams = { layer_id: string, bounds?: Ma
  */
 groupby: Array<string>, 
 /**
- * When set, colors each obs by its expression of this var, using `quantitative_colormap`.
- * Otherwise, colors each obs by its category in `color_by`, using `categorical_colormap`.
+ * When set without `expression_percentile_opacities`, colors each obs by its expression of
+ * this var, using `quantitative_colormap`. Otherwise, colors each obs by its category in
+ * `color_by`, using `categorical_colormap`.
  */
 var_name?: string | null, 
 /**
@@ -49,6 +51,13 @@ domain?: [number, number] | null,
  * Defaults to Tableau10.
  */
 categorical_colormap?: CategoricalColormap | null, 
+/**
+ * When set along with `var_name`, colors each obs by its category in `color_by`, at the
+ * opacity of the highest threshold reached by the percentile of its expression of `var_name`
+ * among the filter-included obs (the percentage of them with lower expression, estimated from histograms).
+ * Obs below every threshold are not visible.
+ */
+expression_percentile_opacities?: Array<PercentileOpacity> | null, 
 /**
  * Which obs are laid out along the curve. `None` includes every obs.
  */

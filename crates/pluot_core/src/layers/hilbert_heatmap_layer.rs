@@ -27,7 +27,7 @@ use crate::render_traits::{
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
-use crate::shader_modules::{colormaps as wgsl_colormaps, common, heatmap_cell_color, ShaderBuilder};
+use crate::shader_modules::{colormaps as wgsl_colormaps, common, heatmap_cell_color, ShaderBuilder, TextureDtype};
 use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle};
 use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -59,8 +59,40 @@ pub struct HilbertHeatmapLayerParams {
     pub selection_criteria: Vec<EmphasisCriteria>,
     /// Opacity multiplier for cells whose item is not selected.
     pub background_opacity: Option<f32>,
+    /// Fades each item by where its value falls among thresholds. `None` draws every item fully opaque.
+    pub opacity_thresholds: Option<OpacityThresholds>,
 
     pub opacity: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+pub struct OpacityThreshold {
+    /// The percentile, from 0 to 100, of the item values that `value` is at.
+    pub percentile: f32,
+    /// Items whose value is above this reach the threshold. Use `f32::MIN`, not negative
+    /// infinity (which JSON cannot represent), for a threshold that every item reaches.
+    pub value: f32,
+    pub opacity: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+pub struct OpacityThresholds {
+    /// One value per item, compared against the thresholds.
+    pub values: NumericData,
+    /// Each item is drawn at the opacity of the highest-percentile threshold it reaches,
+    /// or not at all when it reaches none (or its value is NaN).
+    pub thresholds: Vec<OpacityThreshold>,
+}
+
+impl OpacityThresholds {
+    pub fn opacity_of(&self, item: usize) -> f32 {
+        threshold_opacity(self.values.get_f32(item), &self.thresholds)
+    }
+}
+
+/// The opacity of the highest-percentile threshold of `thresholds` (ordered by percentile) that `value` reaches.
+pub fn threshold_opacity(value: f32, thresholds: &[OpacityThreshold]) -> f32 {
+    thresholds.iter().rev().find(|threshold| value > threshold.value).map_or(0.0, |threshold| threshold.opacity)
 }
 
 impl Default for HilbertHeatmapLayerParams {
@@ -74,6 +106,7 @@ impl Default for HilbertHeatmapLayerParams {
             filtering_criteria: vec![],
             selection_criteria: vec![],
             background_opacity: None,
+            opacity_thresholds: None,
             opacity: 1.0,
         }
     }
@@ -160,10 +193,14 @@ pub struct HilbertHeatmapLayer {
 }
 
 impl HilbertHeatmapLayer {
-    pub fn new(view_params: ViewParams, layer_params: HilbertHeatmapLayerParams) -> Self {
+    pub fn new(view_params: ViewParams, mut layer_params: HilbertHeatmapLayerParams) -> Self {
         let num_items = layer_params.values.len();
         for criteria in layer_params.filtering_criteria.iter().chain(&layer_params.selection_criteria) {
             criteria.validate_len(num_items);
+        }
+        if let Some(opacity_thresholds) = &mut layer_params.opacity_thresholds {
+            assert_eq!(opacity_thresholds.values.len(), num_items, "opacity_thresholds.values must have one entry per item");
+            opacity_thresholds.thresholds.sort_by(|a, b| a.percentile.total_cmp(&b.percentile));
         }
         Self { view_params, layer_params }
     }
@@ -203,6 +240,10 @@ impl HilbertHeatmapLayer {
         Some((position, ordinal, index))
     }
 
+    fn item_opacity(&self, item: usize) -> f32 {
+        self.layer_params.opacity_thresholds.as_ref().map_or(1.0, |opacity_thresholds| opacity_thresholds.opacity_of(item))
+    }
+
     fn is_drawable(&self) -> bool {
         !self.layer_params.ordered_indices.is_empty() && !self.grid().is_empty()
     }
@@ -233,7 +274,35 @@ struct HilbertHeatmapLayerUniforms {
 const ORDERED_INDICES_BINDING: u32 = 1;
 const ITEM_VALUES_BINDING: u32 = 2;
 const PALETTE_BINDING: u32 = 3;
-const FIRST_CRITERIA_BINDING: u32 = 4;
+const OPACITY_VALUES_BINDING: u32 = 4;
+const OPACITY_THRESHOLDS_BINDING: u32 = 5;
+const FIRST_CRITERIA_BINDING: u32 = 6;
+
+const ITEM_OPACITY_FROM_THRESHOLDS: &str = "
+@group(0) @binding({{opacity_values_bidx}}) var opacity_values: texture_2d<{{opacity_values_dtype}}>;
+// Interleaved (value, opacity) pairs, ordered by percentile.
+@group(0) @binding({{opacity_thresholds_bidx}}) var opacity_thresholds: texture_2d<f32>;
+
+fn get_item_opacity(item: u32) -> f32 {
+    let value = f32(textureLoad(opacity_values, flat_texel_coord(item, textureDimensions(opacity_values).x), 0).x);
+    if (is_nan(value)) {
+        return 0.0;
+    }
+    let width = textureDimensions(opacity_thresholds).x;
+    var opacity = 0.0;
+    for (var i = 0u; i < {{num_opacity_thresholds}}u; i++) {
+        if (value > textureLoad(opacity_thresholds, flat_texel_coord(2u * i, width), 0).x) {
+            opacity = textureLoad(opacity_thresholds, flat_texel_coord(2u * i + 1u, width), 0).x;
+        }
+    }
+    return opacity;
+}
+";
+const ITEM_OPACITY_CONSTANT: &str = "
+fn get_item_opacity(item: u32) -> f32 {
+    return 1.0;
+}
+";
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -251,6 +320,14 @@ impl DrawToRasterGpu for HilbertHeatmapLayer {
         let (ordered_indices_view, ordered_indices_dtype) = p.ordered_indices.create_data_texture(device, queue, "Hilbert Heatmap Ordered Indices Texture");
         let (values_view, values_dtype) = p.values.create_data_texture(device, queue, "Hilbert Heatmap Values Texture");
         let palette_view = colormap.palette().map(|colors| create_palette_texture(device, queue, &colors));
+        let opacity_textures = p.opacity_thresholds.as_ref().map(|opacity_thresholds| {
+            // Infinite thresholds are clamped, since fast math (e.g., on Metal) may assume there are none.
+            let pairs: Vec<f32> = opacity_thresholds.thresholds.iter().flat_map(|threshold| [threshold.value.clamp(f32::MIN, f32::MAX), threshold.opacity]).collect();
+            (
+                opacity_thresholds.values.create_data_texture(device, queue, "Hilbert Heatmap Opacity Values Texture"),
+                NumericData::from(pairs).create_data_texture(device, queue, "Hilbert Heatmap Opacity Thresholds Texture").0,
+            )
+        });
         let filtering = prepare_emphasis_criteria(device, queue, &p.filtering_criteria, "is_filtered_in", "filter_data", FIRST_CRITERIA_BINDING);
         let selection = prepare_emphasis_criteria(
             device, queue, &p.selection_criteria, "is_selected_in", "select_data",
@@ -276,6 +353,11 @@ impl DrawToRasterGpu for HilbertHeatmapLayer {
             .inject_function("cell_color", cell_color_wgsl)
             .define("colormap_fn_name", colormap_fn_name)
             .define_bidx("palette", PALETTE_BINDING)
+            .inject_function("item_opacity", if opacity_textures.is_some() { ITEM_OPACITY_FROM_THRESHOLDS } else { ITEM_OPACITY_CONSTANT })
+            .define_bidx("opacity_values", OPACITY_VALUES_BINDING)
+            .inject_texture_sample_type("opacity_values", opacity_textures.as_ref().map_or(TextureDtype::F32, |((_, dtype), _)| *dtype))
+            .define_bidx("opacity_thresholds", OPACITY_THRESHOLDS_BINDING)
+            .define_u32("num_opacity_thresholds", p.opacity_thresholds.as_ref().map_or(0, |opacity_thresholds| opacity_thresholds.thresholds.len() as u32))
             .inject_function("filtering", &filtering.wgsl)
             .inject_function("selection", &selection.wgsl)
             .build();
@@ -310,6 +392,10 @@ impl DrawToRasterGpu for HilbertHeatmapLayer {
         ];
         if palette_view.is_some() {
             layout_entries.push(texture_entry(PALETTE_BINDING, wgpu::TextureSampleType::Float { filterable: false }));
+        }
+        if let Some(((_, opacity_values_dtype), _)) = &opacity_textures {
+            layout_entries.push(texture_entry(OPACITY_VALUES_BINDING, opacity_values_dtype.binding_sample_type()));
+            layout_entries.push(texture_entry(OPACITY_THRESHOLDS_BINDING, wgpu::TextureSampleType::Float { filterable: false }));
         }
         let criteria_textures: Vec<_> = filtering.textures.iter().chain(selection.textures.iter()).collect();
         for (i, texture) in criteria_textures.iter().enumerate() {
@@ -395,6 +481,10 @@ impl DrawToRasterGpu for HilbertHeatmapLayer {
         if let Some(palette_view) = &palette_view {
             entries.push(wgpu::BindGroupEntry { binding: PALETTE_BINDING, resource: wgpu::BindingResource::TextureView(palette_view) });
         }
+        if let Some(((opacity_values_view, _), opacity_thresholds_view)) = &opacity_textures {
+            entries.push(wgpu::BindGroupEntry { binding: OPACITY_VALUES_BINDING, resource: wgpu::BindingResource::TextureView(opacity_values_view) });
+            entries.push(wgpu::BindGroupEntry { binding: OPACITY_THRESHOLDS_BINDING, resource: wgpu::BindingResource::TextureView(opacity_thresholds_view) });
+        }
         for (i, texture) in criteria_textures.iter().enumerate() {
             entries.push(wgpu::BindGroupEntry {
                 binding: FIRST_CRITERIA_BINDING + i as u32,
@@ -438,7 +528,7 @@ impl DrawToSvg for HilbertHeatmapLayer {
         for y in 0..grid.height {
             for x in 0..grid.width {
                 let Some((_, _, item)) = self.item_at(&grid, (x, y), is_categorical) else { continue };
-                let alpha = p.opacity * if cpu_is_included(&p.selection_criteria, item) { 1.0 } else { background_alpha };
+                let alpha = p.opacity * self.item_opacity(item) * if cpu_is_included(&p.selection_criteria, item) { 1.0 } else { background_alpha };
                 let pixel = ((y * grid.width + x) * 4) as usize;
                 rgba[pixel..pixel + 3].copy_from_slice(&colormap.cpu_color(p.values.get_f32(item), item as u32, 0));
                 rgba[pixel + 3] = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;

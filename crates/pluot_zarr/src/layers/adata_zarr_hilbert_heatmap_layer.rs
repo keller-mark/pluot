@@ -1,7 +1,8 @@
 // Lays out the filter-included obs, one cell each, along a generalized Hilbert
 // ("gilbert") curve filling the layer bounds, sorted by one or more categorical obs
 // columns so that each group forms a contiguous blob, and colors them by either
-// one var's expression or one categorical obs column.
+// one var's expression or one categorical obs column, optionally fading each
+// category color by the percentile of the obs's expression.
 //
 // References:
 // - https://github.com/keller-mark/scplx/blob/main/src/scplx/gilbert.py
@@ -21,7 +22,9 @@ use pluot_core::composite_layers::legend_colormap_quantitative_layer::{
 use pluot_core::d3::scale::ScaleLinear;
 use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::layers::heatmap_layer::{HeatmapColormap, HeatmapQuantitativeColormapParams};
-use pluot_core::layers::hilbert_heatmap_layer::{HilbertHeatmapLayer, HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo};
+use pluot_core::layers::hilbert_heatmap_layer::{
+    HilbertHeatmapLayer, HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo, OpacityThreshold, OpacityThresholds,
+};
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_traits::{
@@ -41,7 +44,7 @@ use crate::heatmap_data::{
     load_axis_emphasis_criteria, load_axis_labels, load_grouped_axis_indices, load_var_expression, AdataAxis, AxisCriteria, MatrixAxis,
 };
 use crate::treemap_data::{load_obs_group_counts, ObsGroupCount};
-use crate::hilbert_heatmap_data::load_var_expression_extent;
+use crate::hilbert_heatmap_data::{load_var_expression_extent, load_var_value_opacity_thresholds};
 
 /// Layer params struct for [`AdataZarrHilbertHeatmapLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -56,8 +59,9 @@ pub struct AdataZarrHilbertHeatmapLayerParams {
     /// coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`). Empty keeps the filtered order.
     pub groupby: Vec<String>,
 
-    /// When set, colors each obs by its expression of this var, using `quantitative_colormap`.
-    /// Otherwise, colors each obs by its category in `color_by`, using `categorical_colormap`.
+    /// When set without `expression_percentile_opacities`, colors each obs by its expression of
+    /// this var, using `quantitative_colormap`. Otherwise, colors each obs by its category in
+    /// `color_by`, using `categorical_colormap`.
     pub var_name: Option<String>,
     /// Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`). `None` means the `var` index.
     pub var_index_path: Option<String>,
@@ -77,6 +81,15 @@ pub struct AdataZarrHilbertHeatmapLayerParams {
     pub domain: Option<(f32, f32)>,
     /// Defaults to Tableau10.
     pub categorical_colormap: Option<CategoricalColormap>,
+
+    /// When set along with `var_name`, colors each obs by its category in `color_by`, at the
+    /// opacity of the highest threshold reached by the percentile of its expression of `var_name`
+    /// among the filter-included obs (the percentage of them with lower expression, estimated from histograms).
+    /// Obs below every threshold are not visible.
+    // TODO: rather than mapping opacities to percentile thresholds, should we just plot each observation
+    // with the opacity value betwen 0-1 corresponding to its percentile 0-100 of its expression?
+    // TODO: render a legend for these percentile opacity thresholds.
+    pub var_percentile_opacities: Option<Vec<PercentileOpacity>>,
 
     /// Which obs are laid out along the curve. `None` includes every obs.
     pub obs_filtering: Option<AxisCriteria>,
@@ -104,12 +117,26 @@ impl Default for AdataZarrHilbertHeatmapLayerParams {
             quantitative_colormap: None,
             domain: None,
             categorical_colormap: None,
+            var_percentile_opacities: None,
             obs_filtering: None,
             obs_selection: None,
             background_opacity: None,
             legend_title: None,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
+pub struct PercentileOpacity {
+    /// From 0 to 100.
+    pub percentile: f32,
+    pub opacity: f32,
+}
+
+/// Per-obs expression of `var_name`, and the opacity thresholds at its percentiles.
+struct ExpressionOpacities {
+    values: Arc<Vec<f32>>,
+    thresholds: Vec<OpacityThreshold>,
 }
 
 enum ObsColors {
@@ -120,6 +147,7 @@ enum ObsColors {
         codes: Arc<NumericData>,
         /// The filter-included obs per category, for the legend.
         group_counts: Arc<Vec<ObsGroupCount>>,
+        expression_opacities: Option<ExpressionOpacities>,
     },
 }
 
@@ -175,7 +203,7 @@ impl AdataZarrHilbertHeatmapLayer {
     async fn load_colors(&self, gpu_context: Option<&GpuContext<'_>>, obs_axis: &AdataAxis) -> Result<Option<ObsColors>, ArrayError> {
         let p = &self.layer_params;
         let (store, store_name, cache_enabled) = (self.store.clone(), self.store_name.as_str(), self.view_params.cache_enabled);
-        if let Some(var_name) = &p.var_name {
+        if let (Some(var_name), None) = (&p.var_name, &p.var_percentile_opacities) {
             let matrix_path = self.matrix_path(obs_axis);
             let values_future = load_var_expression(store.clone(), store_name, var_name, p.var_index_path.as_deref(), &matrix_path, cache_enabled);
             let domain_future = async {
@@ -202,11 +230,36 @@ impl AdataZarrHilbertHeatmapLayer {
             return Ok(None);
         };
         let columns = [column.to_string()];
-        let ((categories, codes), (_, group_counts)) = futures::try_join!(
+        let ((categories, codes), (_, group_counts), expression_opacities) = futures::try_join!(
             load_categorical(store.clone(), store_name, column, cache_enabled),
             load_obs_group_counts(gpu_context, store.clone(), store_name, obs_axis, &columns, p.obs_filtering.as_ref(), p.obs_selection.as_ref(), cache_enabled),
+            self.load_var_value_opacities(gpu_context, obs_axis),
         )?;
-        Ok(Some(ObsColors::Categorical { column: column.to_string(), categories, codes, group_counts }))
+        let expression_opacities = match (&p.var_name, expression_opacities) {
+            (Some(var_name), None) => {
+                log(&format!("AdataZarrHilbertHeatmapLayer: var \"{var_name}\" not found; drawing nothing"));
+                return Ok(None);
+            }
+            (_, expression_opacities) => expression_opacities,
+        };
+        Ok(Some(ObsColors::Categorical { column: column.to_string(), categories, codes, group_counts, expression_opacities }))
+    }
+
+    /// `None` unless both `var_name` and `expression_percentile_opacities` are set and the var exists.
+    async fn load_var_value_opacities(&self, gpu_context: Option<&GpuContext<'_>>, obs_axis: &AdataAxis) -> Result<Option<ExpressionOpacities>, ArrayError> {
+        let p = &self.layer_params;
+        let (Some(var_name), Some(thresholds)) = (&p.var_name, &p.var_percentile_opacities) else {
+            return Ok(None);
+        };
+        let (store, store_name, cache_enabled) = (self.store.clone(), self.store_name.as_str(), self.view_params.cache_enabled);
+        let matrix_path = self.matrix_path(obs_axis);
+        let (values, thresholds) = futures::try_join!(
+            load_var_expression(store.clone(), store_name, var_name, p.var_index_path.as_deref(), &matrix_path, cache_enabled),
+            load_var_value_opacity_thresholds(
+                gpu_context, store.clone(), store_name, var_name, p.var_index_path.as_deref(), &matrix_path, obs_axis, p.obs_filtering.as_ref(), thresholds, cache_enabled,
+            ),
+        )?;
+        Ok(values.zip(thresholds).map(|(values, thresholds)| ExpressionOpacities { values, thresholds }))
     }
 
     fn legend_layer(&self, colors: &ObsColors) -> Box<dyn PreparedAndDraw> {
@@ -292,7 +345,7 @@ impl PreparedLayer for AdataZarrHilbertHeatmapLayer {
             return PrepareResult { bailed_early: false };
         };
 
-        let (values, colormap) = match &colors {
+        let (values, colormap, opacity_thresholds) = match &colors {
             ObsColors::Expression { values, domain } => (
                 NumericData::Float32(values.clone()),
                 HeatmapColormap::Quantitative(HeatmapQuantitativeColormapParams {
@@ -301,10 +354,15 @@ impl PreparedLayer for AdataZarrHilbertHeatmapLayer {
                     domain: Some(*domain),
                     axis_domains: None,
                 }),
+                None,
             ),
-            ObsColors::Categorical { codes, .. } => (
+            ObsColors::Categorical { codes, expression_opacities, .. } => (
                 codes.as_ref().clone(),
                 HeatmapColormap::Categorical(p.categorical_colormap.unwrap_or(CategoricalColormap::Tableau10)),
+                expression_opacities.as_ref().map(|expression| OpacityThresholds {
+                    values: NumericData::Float32(expression.values.clone()),
+                    thresholds: expression.thresholds.clone(),
+                }),
             ),
         };
         let mut sub_layer_instances: Vec<Box<dyn PreparedAndDraw>> = vec![Box::new(HilbertHeatmapLayer::new(
@@ -317,6 +375,7 @@ impl PreparedLayer for AdataZarrHilbertHeatmapLayer {
                 colormap: Some(colormap),
                 selection_criteria,
                 background_opacity: p.background_opacity,
+                opacity_thresholds,
                 ..Default::default()
             },
         ))];
@@ -368,9 +427,9 @@ pub struct AdataZarrHilbertHeatmapPickingInfo {
     pub color_by: Option<String>,
     /// The picked obs's category in `color_by`, when coloring by category.
     pub color_by_value: Option<String>,
-    /// The var colored by, when coloring by expression.
+    /// The var colored (or faded) by, when coloring by expression or by its percentile opacities.
     pub var_name: Option<String>,
-    /// The picked obs's expression of `var_name`, when coloring by expression.
+    /// The picked obs's expression of `var_name`, when coloring by expression or by its percentile opacities.
     pub expression: Option<f32>,
     pub is_selected: bool,
 }
@@ -387,7 +446,11 @@ impl PickableLayer for AdataZarrHilbertHeatmapLayer {
         let obs_index = cell.index;
         let (color_by, color_by_value, expression) = match &obs.colors {
             ObsColors::Expression { values, .. } => (None, None, values.get(obs_index).copied()),
-            ObsColors::Categorical { column, categories, codes, .. } => (Some(column.clone()), category_of(categories, codes, obs_index), None),
+            ObsColors::Categorical { column, categories, codes, expression_opacities, .. } => (
+                Some(column.clone()),
+                category_of(categories, codes, obs_index),
+                expression_opacities.as_ref().and_then(|expression| expression.values.get(obs_index).copied()),
+            ),
         };
         Some(LayerPickingResult::new(&self.layer_params.layer_id, AdataZarrHilbertHeatmapPickingInfo {
             obs_name: obs.obs_labels.get(obs_index)?.clone(),

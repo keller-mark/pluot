@@ -75,7 +75,10 @@ export type { OmeZarrBitmaskMultiscaleLayerParams } from "./OmeZarrBitmaskMultis
 export type { OmeZarrBitmaskPickingInfo } from "./OmeZarrBitmaskPickingInfo.js";
 export type { OmeZarrChannelSetting } from "./OmeZarrChannelSetting.js";
 export type { OpacityMode } from "./OpacityMode.js";
+export type { OpacityThreshold } from "./OpacityThreshold.js";
+export type { OpacityThresholds } from "./OpacityThresholds.js";
 export type { PathCommand } from "./PathCommand.js";
+export type { PercentileOpacity } from "./PercentileOpacity.js";
 export type { PickingInfo } from "./PickingInfo.js";
 export type { Point3dLayerParams } from "./Point3dLayerParams.js";
 export type { Point3dPickingInfo } from "./Point3dPickingInfo.js";

@@ -18,7 +18,7 @@ use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_st
 use pluot_zarr::heatmap_data::{load_grouped_axis_indices, AdataAxis, AxisCriteria, ExpressionCriteriaParams, IdentifierCriteriaParams, MatrixAxis};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{
-    AdataZarrHilbertHeatmapLayer, AdataZarrHilbertHeatmapLayerParams, AdataZarrHilbertHeatmapPickingInfo,
+    AdataZarrHilbertHeatmapLayer, AdataZarrHilbertHeatmapLayerParams, AdataZarrHilbertHeatmapPickingInfo, PercentileOpacity,
 };
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
 use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZarrViolinLayerParams, AdataZarrViolinPickingInfo};
@@ -338,6 +338,28 @@ async fn check_hilbert_heatmap_colors_the_filtered_obs_by_category(gpu_context: 
     assert_eq!((info.expression, info.is_selected), (None, true));
 }
 
+async fn check_hilbert_heatmap_fades_categories_by_expression_percentile(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let gene = var_names(store.clone(), &[10]).await.remove(0);
+    let values = expression(store.clone(), &gene).await;
+    let mut layer = AdataZarrHilbertHeatmapLayer::new(view_params(store.clone()), AdataZarrHilbertHeatmapLayerParams {
+        store_name: Some("pbmc".to_string()),
+        groupby: vec!["obs/bulk_labels".to_string(), "obs/phase".to_string()],
+        color_by: Some("obs/phase".to_string()),
+        var_name: Some(gene.clone()),
+        var_percentile_opacities: Some(vec![PercentileOpacity { percentile: 0.0, opacity: 0.5 }]),
+        obs_filtering: obs_filtering(),
+        ..Default::default()
+    });
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
+    let curve_start = ScreenCoord { x: 0.5, y: SIZE as f32 - 0.5 };
+    let info: AdataZarrHilbertHeatmapPickingInfo = layer.pick(curve_start, None).unwrap().into_info().unwrap();
+    assert_eq!(info.color_by.as_deref(), Some("obs/phase"));
+    assert_eq!(info.color_by_value, info.obs_values[1]);
+    assert_eq!(info.var_name.as_deref(), Some(gene.as_str()));
+    assert_eq!(info.expression, Some(values[info.obs_index]));
+}
+
 async fn check_hilbert_heatmap_legend_lists_the_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
     let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
@@ -402,6 +424,11 @@ async fn hilbert_heatmap_colors_the_filtered_obs_by_expression() {
 #[tokio::test]
 async fn hilbert_heatmap_colors_the_filtered_obs_by_category() {
     with_cpu_and_gpu(check_hilbert_heatmap_colors_the_filtered_obs_by_category).await;
+}
+
+#[tokio::test]
+async fn hilbert_heatmap_fades_categories_by_expression_percentile() {
+    with_cpu_and_gpu(check_hilbert_heatmap_fades_categories_by_expression_percentile).await;
 }
 
 #[tokio::test]

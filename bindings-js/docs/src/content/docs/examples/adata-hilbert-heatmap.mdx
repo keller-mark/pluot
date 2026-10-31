@@ -12,6 +12,8 @@ The heatmap arranges the cells of single-cell transcriptomics data along a [gene
 The cells along the curve are sorted by cell type (`bulk_labels`) and then by cell cycle phase (`phase`).
 Each cell is colored by its expression of the selected gene `LYZ`.
 Use the plot controls to color the cells by their cell type or other categorical labels instead.
+When coloring by a categorical label, enable _Fade By LYZ_ to also set each cell's opacity by the percentile of its `LYZ` expression among the plotted cells, using the sliders to set the percentile from which cells are drawn at each opacity (0.2, 0.6, and 1.0).
+This uses the `expression_percentile_opacities` layer parameter.
 
 <HilbertHeatmapWrapper
     client:load
