@@ -22,7 +22,7 @@ use pluot_zarr::heatmap_data::{
     MatrixBlockKey, MatrixCacheMode,
 };
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
-use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
+use pluot_zarr::zarr_emphasis_criteria::{IncludedCategories, ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
 
 struct TokioSpawnBlocking;
@@ -69,7 +69,8 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
         store_name: Some("pbmc".to_string()),
         obs_filtering: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/bulk_labels/codes".to_string(),
-            included_codes: vec![2],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![2]),
         })])),
         obs_selection: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Quantitative(ZarrQuantitativeCriteriaParams {
             values_key: "/obs/n_genes".to_string(),

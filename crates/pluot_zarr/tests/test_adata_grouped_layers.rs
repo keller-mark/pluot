@@ -9,7 +9,7 @@ use zarrs::storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, S
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::numeric_data::NumericValue;
-use pluot_core::render_traits::{AspectRatioMode, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
+use pluot_core::render_traits::{AspectRatioMode, EmphasisCriteria, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
 use pluot_core::two::svg::init_svg;
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::ScreenCoord;
@@ -25,7 +25,7 @@ use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayer, AdataZar
 use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{
     AdataZarrViolinMatrixLayer, AdataZarrViolinMatrixLayerParams, AdataZarrViolinMatrixPickingInfo,
 };
-use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
+use pluot_zarr::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, IncludedCategories, ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
 
 const SIZE: u32 = 200;
@@ -63,7 +63,8 @@ const MIN_N_GENES: f32 = 1300.0;
 fn obs_filtering() -> Option<AxisCriteria> {
     Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
         codes_key: "/obs/bulk_labels/codes".to_string(),
-        included_codes: INCLUDED_CODES.to_vec(),
+        categories_key: None,
+        included_categories: IncludedCategories::Codes(INCLUDED_CODES.to_vec()),
     })]))
 }
 
@@ -434,4 +435,51 @@ async fn hilbert_heatmap_fades_categories_by_expression_percentile() {
 #[tokio::test]
 async fn hilbert_heatmap_legend_lists_the_filtered_categories() {
     with_cpu_and_gpu(check_hilbert_heatmap_legend_lists_the_filtered_categories).await;
+}
+
+#[tokio::test]
+async fn categorical_criteria_resolve_category_labels_to_their_codes() {
+    let store = pbmc_store();
+    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let labels: Vec<String> = INCLUDED_CODES.iter().rev().map(|&code| categories[code as usize].clone()).chain(["Not a category".to_string()]).collect();
+    let criteria = [ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
+        codes_key: "/obs/bulk_labels/codes".to_string(),
+        categories_key: None,
+        included_categories: IncludedCategories::Labels(labels),
+    })];
+    let resolved = resolve_zarr_emphasis_criteria(store, &criteria, "pbmc", false).await.unwrap();
+    let [EmphasisCriteria::Categorical(params)] = resolved.as_slice() else {
+        panic!("expected one categorical criteria");
+    };
+    assert_eq!(params.included_codes, INCLUDED_CODES.iter().rev().copied().collect::<Vec<_>>());
+}
+
+async fn check_violins_follow_the_order_of_the_groupby_columns_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
+    let store = pbmc_store();
+    let gene = var_names(store.clone(), &[10]).await.remove(0);
+    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let ordered: Vec<String> = [4, 0, 2].iter().map(|&code: &usize| categories[code].clone()).collect();
+
+    let mut layer = AdataZarrViolinLayer::new(view_params(store), AdataZarrViolinLayerParams {
+        store_name: Some("pbmc".to_string()),
+        groupby: vec!["obs/bulk_labels".to_string()],
+        var_name: gene,
+        obs_filtering: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
+            codes_key: "/obs/bulk_labels/codes".to_string(),
+            categories_key: None,
+            included_categories: IncludedCategories::Labels(ordered.clone()),
+        })])),
+        ..Default::default()
+    });
+    assert!(!layer.prepare(gpu_context).await.bailed_early);
+
+    for (category, x) in ordered.iter().zip(band_centers(ordered.len())) {
+        let info: AdataZarrViolinPickingInfo = layer.pick(ScreenCoord { x, y: SIZE as f32 / 2.0 }, None).expect("a violin is picked").into_info().unwrap();
+        assert_eq!(&info.obs_values[0], category);
+    }
+}
+
+#[tokio::test]
+async fn violins_follow_the_order_of_the_groupby_columns_filtered_categories() {
+    with_cpu_and_gpu(check_violins_follow_the_order_of_the_groupby_columns_filtered_categories).await;
 }

@@ -34,18 +34,11 @@ expression_cutoff: number, store_name?: string | null,
 layer_path: string, 
 /**
  * Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
- * Each combination of their categories gets one group of dots.
+ * Each combination of their categories gets one group of dots, ordered by the first column's
+ * categories, then the second's, etc. (see `obs_filtering` to reorder them). With more than
+ * one `groupby` column, combinations without any obs are omitted.
  */
 groupby: Array<string>, 
-/**
- * The combinations of categories to plot (each one category per `groupby` column, e.g.
- * `[["B cell", "sample1"]]`), in the order they should appear along the group axis.
- * `None` (the default) means every combination, ordered by the first column's categories,
- * then the second's, etc. With more than one `groupby` column, combinations without any obs
- * are omitted. `Some(vec![])` means no categories at all. Each requested combination is looked
- * up independently, so an unknown one yields an empty (zero-cell) group rather than an error.
- */
-categories?: Array<Array<string>> | null, 
 /**
  * Gene IDs, as they appear in `var_index_path`.
  */
@@ -56,7 +49,8 @@ var_names: Array<string>,
 var_index_path?: string | null, 
 /**
  * Which obs are summarized. `None` includes every obs. When set, categories
- * without any included obs are omitted.
+ * without any included obs are omitted, so e.g. a `Categorical` criteria on a
+ * `groupby` column's codes plots only its `included_categories`, in their order.
  */
 obs_filtering?: AxisCriteria | null, 
 /**

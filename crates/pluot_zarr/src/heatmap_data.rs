@@ -166,7 +166,8 @@ pub fn axis_criteria_key(criteria: Option<&AxisCriteria>) -> Vec<String> {
                     ZarrEmphasisCriteria::Categorical(params) => {
                         parts.push("categorical".to_string());
                         parts.push(params.codes_key.clone());
-                        parts.push(params.included_codes.iter().map(i64::to_string).collect::<Vec<_>>().join(","));
+                        parts.push(params.categories_path());
+                        parts.push(format!("{:?}", params.included_categories));
                     }
                     ZarrEmphasisCriteria::Quantitative(params) => {
                         parts.push("quantitative".to_string());

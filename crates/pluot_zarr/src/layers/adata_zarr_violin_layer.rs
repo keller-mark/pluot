@@ -24,7 +24,7 @@ use pluot_core::viewport::ScreenCoord;
 
 use crate::adata_paths::node_path;
 use crate::dotplot_data::{
-    categories_key, category_strata, combination_label, groupby_title, load_gene_expression, load_nested_categories, obs_rows_key, plotted_categories,
+    categories_key, combination_label, groupby_title, load_gene_expression, load_nested_categories, obs_rows_key, plotted_categories,
     resolve_gene_columns,
 };
 use crate::heatmap_data::{load_axis_emphasis_criteria, load_axis_labels, AdataAxis, AxisCriteria, MatrixAxis};
@@ -51,20 +51,18 @@ pub struct AdataZarrViolinLayerParams {
     /// (e.g., `X`, `layers/log1p`, or `mod/rna/X`). Defaults to `X`.
     pub layer_path: String,
     /// Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
-    /// Each combination of their categories gets one violin.
+    /// Each combination of their categories gets one violin, ordered by the first column's
+    /// categories, then the second's, etc. (see `obs_filtering` to reorder them). With more than
+    /// one `groupby` column, combinations without any obs are omitted.
     pub groupby: Vec<String>,
-    /// The combinations of categories to plot (each one category per `groupby` column), in order
-    /// along the group axis. `None` means every combination, ordered by the first column's
-    /// categories, then the second's, etc. With more than one `groupby` column, combinations
-    /// without any obs are omitted.
-    pub categories: Option<Vec<Vec<String>>>,
     /// Gene ID, as it appears in `var_index_path`.
     pub var_name: String,
     /// Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`). `None` means the `var` index.
     pub var_index_path: Option<String>,
 
     /// Which obs are summarized. `None` includes every obs. When set, categories
-    /// without any included obs are omitted.
+    /// without any included obs are omitted, so e.g. a `Categorical` criteria on a
+    /// `groupby` column's codes plots only its `included_categories`, in their order.
     pub obs_filtering: Option<AxisCriteria>,
     /// Which of the included obs to emphasize: each violin then summarizes only
     /// the selected obs, in front of a grey violin summarizing every included obs.
@@ -92,7 +90,6 @@ impl Default for AdataZarrViolinLayerParams {
             store_name: None,
             layer_path: "X".to_string(),
             groupby: vec![],
-            categories: None,
             var_name: "".to_string(),
             var_index_path: None,
             obs_filtering: None,
@@ -192,13 +189,12 @@ impl PreparedLayer for AdataZarrViolinLayer {
         };
 
         let criteria_key = obs_rows_key(p.obs_filtering.as_ref(), p.obs_selection.as_ref());
-        let categories = plotted_categories(
+        let category_codes = plotted_categories(
             gpu_context,
             &self.store_name,
             &p.groupby,
-            p.categories.as_deref(),
             &nested,
-            p.obs_filtering.is_some(),
+            p.obs_filtering.as_ref(),
             &obs_filtering,
             &criteria_key,
             cache_enabled,
@@ -210,7 +206,8 @@ impl PreparedLayer for AdataZarrViolinLayer {
 
         let p = &self.layer_params;
         let num_bins = p.num_bins.unwrap_or(DEFAULT_NUM_BINS) as usize;
-        let strata = category_strata(&categories, &nested);
+        let categories: Vec<Vec<String>> = category_codes.iter().map(|&code| nested.combination(code)).collect();
+        let strata = nested.strata(&category_codes);
         let (stats, domain, thresholds, bins) = match &expression {
             Some((col_index, expression)) => {
                 let values = NumericData::Float32(expression.clone());
@@ -222,7 +219,7 @@ impl PreparedLayer for AdataZarrViolinLayer {
                     keep_zeros: p.keep_zeros.unwrap_or(true),
                 };
                 let mut keys = vec![self.store_name.clone(), matrix_path.clone(), col_index.to_string(), input.keep_zeros.to_string()];
-                keys.extend(categories_key(&p.groupby, &categories));
+                keys.extend(categories_key(&p.groupby, &category_codes));
                 keys.extend(criteria_key.iter().cloned());
                 let stats = load_violin_stats(gpu_context, &input, &keys, cache_enabled).await;
                 let extents = stats.background.iter().chain(&stats.foreground).filter_map(|stats| stats.non_outlier_extent);
@@ -240,8 +237,8 @@ impl PreparedLayer for AdataZarrViolinLayer {
         let quartiles = stats.foreground.iter().map(|stats| stats.quartiles).collect();
 
         let cmap = p.cmap.unwrap_or(CategoricalColormap::Tableau10);
-        let fill_colors = categories.iter().enumerate()
-            .map(|(index, combination)| to_rgb8(colormaps_categorical::sample(cmap, nested.first_column_code(combination).unwrap_or(index))))
+        let fill_colors = category_codes.iter().enumerate()
+            .map(|(index, &code)| to_rgb8(colormaps_categorical::sample(cmap, nested.first_column_code(code).unwrap_or(index))))
             .collect();
 
         let mut violin_layer = PrecomputedViolinLayer::new(

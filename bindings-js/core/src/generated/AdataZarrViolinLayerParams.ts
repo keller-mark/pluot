@@ -21,16 +21,11 @@ orientation?: BarOrientation | null, store_name?: string | null,
 layer_path: string, 
 /**
  * Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
- * Each combination of their categories gets one violin.
+ * Each combination of their categories gets one violin, ordered by the first column's
+ * categories, then the second's, etc. (see `obs_filtering` to reorder them). With more than
+ * one `groupby` column, combinations without any obs are omitted.
  */
 groupby: Array<string>, 
-/**
- * The combinations of categories to plot (each one category per `groupby` column), in order
- * along the group axis. `None` means every combination, ordered by the first column's
- * categories, then the second's, etc. With more than one `groupby` column, combinations
- * without any obs are omitted.
- */
-categories?: Array<Array<string>> | null, 
 /**
  * Gene ID, as it appears in `var_index_path`.
  */
@@ -41,7 +36,8 @@ var_name: string,
 var_index_path?: string | null, 
 /**
  * Which obs are summarized. `None` includes every obs. When set, categories
- * without any included obs are omitted.
+ * without any included obs are omitted, so e.g. a `Categorical` criteria on a
+ * `groupby` column's codes plots only its `included_categories`, in their order.
  */
 obs_filtering?: AxisCriteria | null, 
 /**

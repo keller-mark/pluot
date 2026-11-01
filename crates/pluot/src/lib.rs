@@ -59,7 +59,7 @@ pub use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 pub use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
 pub use pluot_zarr::layers::adata_zarr_heatmap_layer::AdataZarrHeatmapLayerParams;
 pub use pluot_zarr::heatmap_data::{AxisCriteria, IdentifierCriteriaParams, MatrixCacheMode, HeatmapNormalization};
-pub use pluot_zarr::zarr_emphasis_criteria::{ZarrEmphasisCriteria, ZarrCategoricalCriteriaParams, ZarrQuantitativeCriteriaParams, ZarrBooleanCriteriaParams};
+pub use pluot_zarr::zarr_emphasis_criteria::{ZarrEmphasisCriteria, ZarrCategoricalCriteriaParams, IncludedCategories, ZarrQuantitativeCriteriaParams, ZarrBooleanCriteriaParams};
 
 mod render_params;
 

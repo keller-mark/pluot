@@ -19,7 +19,7 @@ use pluot_zarr::heatmap_data::AxisCriteria;
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
-use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria};
+use pluot_zarr::zarr_emphasis_criteria::{IncludedCategories, ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
 
 const SIZE: u32 = 200;
@@ -94,7 +94,8 @@ async fn check_dotplot_groups_by_each_combination_of_nested_categories(gpu_conte
         var_index_path: Some("var/index".to_string()),
         obs_filtering: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/bulk_labels/codes".to_string(),
-            included_codes: INCLUDED_BULK_LABELS.to_vec(),
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(INCLUDED_BULK_LABELS.to_vec()),
         })])),
         ..Default::default()
     });

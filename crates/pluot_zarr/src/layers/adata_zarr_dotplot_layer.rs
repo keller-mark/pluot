@@ -28,7 +28,7 @@ use pluot_core::viewport::ScreenCoord;
 
 use crate::adata_paths::node_path;
 use crate::dotplot_data::{
-    categories_key, category_strata, combination_label, filter_genes, genes_among, load_gene_summaries_for_gene, load_nested_categories, obs_rows_key,
+    categories_key, combination_label, filter_genes, genes_among, load_gene_summaries_for_gene, load_nested_categories, obs_rows_key,
     plotted_categories, resolve_gene_columns, CategoryObs, GeneSummaries, GeneSummary,
 };
 use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_axis_labels, load_criteria_indices, AdataAxis, AxisCriteria, MatrixAxis};
@@ -64,22 +64,18 @@ pub struct AdataZarrDotPlotLayerParams {
     pub layer_path: String,
 
     /// Paths to categorical `obs` columns, from coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`).
-    /// Each combination of their categories gets one group of dots.
+    /// Each combination of their categories gets one group of dots, ordered by the first column's
+    /// categories, then the second's, etc. (see `obs_filtering` to reorder them). With more than
+    /// one `groupby` column, combinations without any obs are omitted.
     pub groupby: Vec<String>,
-    /// The combinations of categories to plot (each one category per `groupby` column, e.g.
-    /// `[["B cell", "sample1"]]`), in the order they should appear along the group axis.
-    /// `None` (the default) means every combination, ordered by the first column's categories,
-    /// then the second's, etc. With more than one `groupby` column, combinations without any obs
-    /// are omitted. `Some(vec![])` means no categories at all. Each requested combination is looked
-    /// up independently, so an unknown one yields an empty (zero-cell) group rather than an error.
-    pub categories: Option<Vec<Vec<String>>>,
     /// Gene IDs, as they appear in `var_index_path`.
     pub var_names: Vec<String>,
     /// Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
     pub var_index_path: Option<String>,
 
     /// Which obs are summarized. `None` includes every obs. When set, categories
-    /// without any included obs are omitted.
+    /// without any included obs are omitted, so e.g. a `Categorical` criteria on a
+    /// `groupby` column's codes plots only its `included_categories`, in their order.
     pub obs_filtering: Option<AxisCriteria>,
     /// Which of the included obs to emphasize: each dot then summarizes only the
     /// selected obs, in front of a grey dot summarizing every included obs.
@@ -104,7 +100,6 @@ impl Default for AdataZarrDotPlotLayerParams {
             store_name: None,
             layer_path: "X".to_string(),
             groupby: vec![],
-            categories: None,
             var_names: vec![],
             var_index_path: None,
             obs_filtering: None,
@@ -197,20 +192,20 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
         let (var_names, var_selected, group_labels, background_summaries, foreground_summaries, genes_bailed) = match &metadata {
             Some((var_index_values, nested, obs_filtering, obs_selection, var_filtered, var_selected)) => {
                 let criteria_key = obs_rows_key(params.obs_filtering.as_ref(), params.obs_selection.as_ref());
-                let categories = plotted_categories(
+                let category_codes = plotted_categories(
                     gpu_context,
                     &store_name,
                     &params.groupby,
-                    params.categories.as_deref(),
                     nested,
-                    params.obs_filtering.is_some(),
+                    params.obs_filtering.as_ref(),
                     obs_filtering,
                     &criteria_key,
                     cache_enabled,
                 )
                 .await;
-                let strata = category_strata(&categories, nested);
-                let mut obs_key = categories_key(&params.groupby, &categories);
+                let categories: Vec<Vec<String>> = category_codes.iter().map(|&code| nested.combination(code)).collect();
+                let strata = nested.strata(&category_codes);
+                let mut obs_key = categories_key(&params.groupby, &category_codes);
                 obs_key.extend(criteria_key);
                 let obs = CategoryObs {
                     categories: &categories,

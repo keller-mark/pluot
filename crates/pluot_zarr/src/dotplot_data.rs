@@ -20,9 +20,10 @@ use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use crate::adata_io::{read_matrix_column_f32, read_string_array};
-use crate::adata_paths::{node_path, path_name};
+use crate::adata_paths::{join_path, node_path, path_name};
 use crate::heatmap_data::{axis_criteria_key, index_mask, load_axis_len, AdataAxis, AxisCriteria};
 use crate::memo::use_memo_shared;
+use crate::zarr_emphasis_criteria::ZarrEmphasisCriteria;
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
 /// The store holding an AnnData object, possibly nested within a MuData or SpatialData object.
@@ -93,7 +94,7 @@ pub async fn load_gene_expression(store: AdataStore, store_name: &str, col_index
 /// The combinations of the categories of one or more categorical `obs` columns, from coarsest to finest.
 pub struct NestedCategories {
     pub categories_per_column: Vec<Arc<Vec<String>>>,
-    /// One code per obs: the position of its combination among [`NestedCategories::combinations`],
+    /// One code per obs: the position of its combination among [`NestedCategories::combination_codes`],
     /// or -1 when it is missing a category in any column.
     pub codes: Arc<NumericData>,
 }
@@ -103,35 +104,50 @@ impl NestedCategories {
         self.categories_per_column.iter().map(|categories| categories.len()).product()
     }
 
-    /// Every combination of categories, ordered by the first column's categories, then the second's, etc.
-    pub fn combinations(&self) -> Vec<Vec<String>> {
-        (0..self.num_combinations()).map(|code| self.combination(code)).collect()
+    /// The code of every combination, ordered by the first column's categories, then the second's, etc.
+    pub fn combination_codes(&self) -> Vec<i64> {
+        (0..self.num_combinations() as i64).collect()
     }
 
-    fn combination(&self, mut code: usize) -> Vec<String> {
-        let mut combination = vec![String::new(); self.categories_per_column.len()];
-        for (category, categories) in combination.iter_mut().zip(&self.categories_per_column).rev() {
-            *category = categories[code % categories.len()].clone();
-            code /= categories.len();
+    /// The code of each column's category in the combination with `code`.
+    pub fn column_codes(&self, code: i64) -> Vec<i64> {
+        let mut code = code;
+        let mut column_codes = vec![0; self.categories_per_column.len()];
+        for (column_code, categories) in column_codes.iter_mut().zip(&self.categories_per_column).rev() {
+            *column_code = code % categories.len() as i64;
+            code /= categories.len() as i64;
         }
-        combination
+        column_codes
     }
 
-    /// The code of `combination`, or `None` when any of its categories is unknown.
-    pub fn code_of(&self, combination: &[String]) -> Option<i64> {
-        if combination.len() != self.categories_per_column.len() {
-            return None;
-        }
-        combination.iter().zip(&self.categories_per_column).try_fold(0i64, |code, (category, categories)| {
-            let column_code = categories.iter().position(|c| c == category)?;
-            Some(code * categories.len() as i64 + column_code as i64)
-        })
+    /// The categories of the combination with `code`, one per column.
+    pub fn combination(&self, code: i64) -> Vec<String> {
+        self.column_codes(code).iter().zip(&self.categories_per_column).map(|(&column_code, categories)| categories[column_code as usize].clone()).collect()
     }
 
-    /// The code of the first column's category in `combination`, if any.
-    pub fn first_column_code(&self, combination: &[String]) -> Option<usize> {
-        let (first_categories, first_category) = self.categories_per_column.first().zip(combination.first())?;
-        first_categories.iter().position(|c| c == first_category)
+    /// The code of the first column's category in the combination with `code`, if any.
+    pub fn first_column_code(&self, code: i64) -> Option<usize> {
+        self.column_codes(code).first().map(|&column_code| column_code as usize)
+    }
+
+    /// Sorts the combinations with `codes` by each column's category, from coarsest to finest:
+    /// by its position in that column's `column_orders` entry when given, or else by its code.
+    pub fn sort_by_column_orders(&self, codes: &mut [i64], column_orders: &[Option<&[i64]>]) {
+        codes.sort_by_cached_key(|&code| {
+            self.column_codes(code)
+                .into_iter()
+                .zip(column_orders)
+                .map(|(column_code, order)| match order {
+                    Some(order) => order.iter().position(|&ordered| ordered == column_code).map_or((1, column_code), |position| (0, position as i64)),
+                    None => (0, column_code),
+                })
+                .collect::<Vec<_>>()
+        });
+    }
+
+    /// The combinations with `codes`, as strata to reduce over.
+    pub fn strata(&self, codes: &[i64]) -> StratifyBy {
+        StratifyBy { codes: self.codes.as_ref().clone(), included_codes: codes.to_vec() }
     }
 }
 
@@ -226,23 +242,6 @@ pub fn filter_genes(genes: &[String], var_index_values: &[String], included: Opt
     genes.iter().zip(genes_among(genes, var_index_values, included)).filter(|(_, kept)| *kept).map(|(gene, _)| gene.clone()).collect()
 }
 
-/// The code of each of `requested_categories` in `nested`, as strata to reduce over.
-/// Unknown combinations are logged, and given distinct codes below -1 that no obs has.
-pub fn category_strata(requested_categories: &[Vec<String>], nested: &NestedCategories) -> StratifyBy {
-    let mut num_unknown = 0;
-    let included_codes = requested_categories
-        .iter()
-        .map(|combination| {
-            nested.code_of(combination).unwrap_or_else(|| {
-                log(&format!("dotplot_data: obs categories {combination:?} not found; skipping"));
-                num_unknown += 1;
-                -1 - num_unknown
-            })
-        })
-        .collect();
-    StratifyBy { codes: nested.codes.as_ref().clone(), included_codes }
-}
-
 /// Cache key parts identifying the obs rows that are summarized: those included by
 /// `filtering`, and among them, those included by `selection`.
 pub fn obs_rows_key(filtering: Option<&AxisCriteria>, selection: Option<&AxisCriteria>) -> Vec<String> {
@@ -251,12 +250,12 @@ pub fn obs_rows_key(filtering: Option<&AxisCriteria>, selection: Option<&AxisCri
     keys
 }
 
-/// Cache key parts identifying `groupby` and the combinations of its `categories`.
-pub fn categories_key(groupby: &[String], categories: &[Vec<String>]) -> Vec<String> {
+/// Cache key parts identifying `groupby` and the `codes` of combinations of its categories.
+pub fn categories_key(groupby: &[String], codes: &[i64]) -> Vec<String> {
     let mut keys = vec![groupby.len().to_string()];
     keys.extend(groupby.iter().cloned());
-    keys.push(categories.len().to_string());
-    keys.extend(categories.iter().flatten().cloned());
+    keys.push(codes.len().to_string());
+    keys.extend(codes.iter().map(i64::to_string));
     keys
 }
 
@@ -268,7 +267,7 @@ pub fn categories_key(groupby: &[String], categories: &[Vec<String>]) -> Vec<Str
 /// (the background), and among them those meeting `selection_criteria` (the foreground).
 pub struct CategoryObs<'a> {
     pub categories: &'a [Vec<String>],
-    /// One stratum per combination of categories (see [`category_strata`]).
+    /// One stratum per combination of categories (see [`NestedCategories::strata`]).
     pub strata: &'a StratifyBy,
     pub filtering_criteria: &'a [EmphasisCriteria],
     pub selection_criteria: &'a [EmphasisCriteria],
@@ -276,33 +275,71 @@ pub struct CategoryObs<'a> {
     pub key: &'a [String],
 }
 
-/// The combinations of categories to plot: the `requested` ones, or else every one, in nested
-/// order. When `is_filtered`, or with more than one `groupby` column, those without any obs
-/// included by `filtering_criteria` (which `criteria_key` identifies) are omitted, counting (and
-/// caching) each combination's included obs.
+/// The order of each `groupby` column's categories given by the first `Categorical` criteria of
+/// `filtering` on that column's codes, as resolved into `filtering_criteria`, if any.
+pub fn groupby_column_orders<'a>(groupby: &[String], filtering: Option<&AxisCriteria>, filtering_criteria: &'a [EmphasisCriteria]) -> Vec<Option<&'a [i64]>> {
+    let Some(AxisCriteria::Criteria(criteria)) = filtering else {
+        return vec![None; groupby.len()];
+    };
+    let categorical_orders: Vec<(String, &[i64])> = criteria
+        .iter()
+        .zip(filtering_criteria)
+        .filter_map(|(criterion, resolved)| match (criterion, resolved) {
+            (ZarrEmphasisCriteria::Categorical(params), EmphasisCriteria::Categorical(resolved)) => Some((node_path(&params.codes_key), resolved.included_codes.as_slice())),
+            _ => None,
+        })
+        .collect();
+    groupby
+        .iter()
+        .map(|column_path| {
+            let codes_path = join_path(column_path, "codes");
+            categorical_orders.iter().find(|(codes_key, _)| *codes_key == codes_path).map(|&(_, order)| order)
+        })
+        .collect()
+}
+
+/// The codes of the combinations of categories to plot. When `filtering` is set, or with more than
+/// one `groupby` column, those without any obs included by `filtering_criteria` (which
+/// `criteria_key` identifies) are omitted, counting (and caching) each combination's included obs.
+/// They are in nested order, except that the categories of a `groupby` column filtered by a
+/// `Categorical` criteria follow the order of its `included_categories`.
 #[allow(clippy::too_many_arguments)]
 pub async fn plotted_categories(
     gpu_context: Option<&GpuContext<'_>>,
     store_name: &str,
     groupby: &[String],
-    requested: Option<&[Vec<String>]>,
+    nested: &NestedCategories,
+    filtering: Option<&AxisCriteria>,
+    filtering_criteria: &[EmphasisCriteria],
+    criteria_key: &[String],
+    cache_enabled: bool,
+) -> Vec<i64> {
+    let mut codes = included_combination_codes(gpu_context, store_name, groupby, nested, filtering.is_some(), filtering_criteria, criteria_key, cache_enabled).await;
+    nested.sort_by_column_orders(&mut codes, &groupby_column_orders(groupby, filtering, filtering_criteria));
+    codes
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn included_combination_codes(
+    gpu_context: Option<&GpuContext<'_>>,
+    store_name: &str,
+    groupby: &[String],
     nested: &NestedCategories,
     is_filtered: bool,
     filtering_criteria: &[EmphasisCriteria],
     criteria_key: &[String],
     cache_enabled: bool,
-) -> Vec<Vec<String>> {
-    let categories = requested.map_or_else(|| nested.combinations(), <[_]>::to_vec);
+) -> Vec<i64> {
+    let codes = nested.combination_codes();
     if !is_filtered && groupby.len() <= 1 {
-        return categories;
+        return codes;
     }
-    let mut keys = vec!["dotplot_category_counts".to_string(), store_name.to_string()];
-    keys.extend(categories_key(groupby, &categories));
+    let mut keys = vec!["dotplot_category_counts".to_string(), store_name.to_string(), groupby.len().to_string()];
+    keys.extend(groupby.iter().cloned());
     keys.extend(criteria_key.iter().cloned());
     let counts = use_memo_vec_f32(
         async || {
-            let strata = category_strata(&categories, nested);
-            let counts = reduce_stratified_count(gpu_context, nested.codes.as_ref().clone(), &strata, filtering_criteria, &[]).await;
+            let counts = reduce_stratified_count(gpu_context, nested.codes.as_ref().clone(), &nested.strata(&codes), filtering_criteria, &[]).await;
             Ok::<_, std::convert::Infallible>(counts.background)
         },
         &keys,
@@ -310,7 +347,7 @@ pub async fn plotted_categories(
     )
     .await
     .expect("infallible");
-    categories.into_iter().zip(counts.iter()).filter(|(_, &count)| count > 0.0).map(|(category, _)| category).collect()
+    codes.into_iter().zip(counts.iter()).filter(|(_, &count)| count > 0.0).map(|(code, _)| code).collect()
 }
 
 /// Each category's background and foreground summaries of one gene.

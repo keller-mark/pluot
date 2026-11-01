@@ -49,6 +49,7 @@ export type { HilbertHeatmapLayerParams } from "./HilbertHeatmapLayerParams.js";
 export type { HilbertHeatmapPickingInfo } from "./HilbertHeatmapPickingInfo.js";
 export type { HistogramLayerParams } from "./HistogramLayerParams.js";
 export type { IdentifierCriteriaParams } from "./IdentifierCriteriaParams.js";
+export type { IncludedCategories } from "./IncludedCategories.js";
 export type { InstancedOpacityParams } from "./InstancedOpacityParams.js";
 export type { InstancedRgbInterleavedParams } from "./InstancedRgbInterleavedParams.js";
 export type { InstancedRgbParams } from "./InstancedRgbParams.js";
