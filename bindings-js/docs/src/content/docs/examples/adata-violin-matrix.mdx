@@ -9,6 +9,7 @@ import { ViolinMatrixWrapper } from '../../../components/ViolinMatrixWrapper.jsx
 This violin matrix (akin to Scanpy's [stacked violin plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.stacked_violin.html)) displays the expression of several genes per cell type (`bulk_labels`) in single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
 Each violin's width shows how many of its cells have a given expression value, after excluding outliers beyond three standard deviations from the mean, and its color shows its median expression.
 Every violin shares the same expression axis.
+Use the plot controls to choose the genes and cell types (in the order they are selected), and how violin widths are scaled relative to one another (`density_norm`).
 
 <ViolinMatrixWrapper
     client:load

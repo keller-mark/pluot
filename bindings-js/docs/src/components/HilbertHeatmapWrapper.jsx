@@ -23,7 +23,7 @@ function onHoverHilbertHeatmap(info) {
 }
 
 function withHilbertHeatmapControls(plotParams, controlValues) {
-  const { colorBy, fadeByExpression } = controlValues;
+  const { varName, colorBy, fadeByExpression } = controlValues;
   return {
     ...plotParams,
     layers: plotParams.layers.map((layer) => {
@@ -36,7 +36,7 @@ function withHilbertHeatmapControls(plotParams, controlValues) {
         ...layer,
         layer_params: {
           ...layer.layer_params,
-          var_name: colorByExpression || fade ? layer.layer_params.var_name : null,
+          var_name: colorByExpression || fade ? varName : null,
           color_by: colorByExpression ? null : colorBy,
           var_percentile_opacities: fade
             ? FADE_LEVELS.map(({ opacity, control }) => ({ percentile: controlValues[control], opacity }))
@@ -48,26 +48,34 @@ function withHilbertHeatmapControls(plotParams, controlValues) {
 }
 
 export function HilbertHeatmapWrapper(props) {
-  const { plotParams } = props;
+  const { plotParams, varNameOptions } = props;
   const defaultLayerParams = plotParams?.layers
     ?.find(layer => layer.layer_type === HILBERT_HEATMAP_LAYER_TYPE)
     ?.layer_params;
   const groupby = defaultLayerParams?.groupby ?? [];
-  const varName = defaultLayerParams?.var_name;
+  const defaultVarName = defaultLayerParams?.var_name;
+  const varNames = varNameOptions ?? [defaultVarName];
 
   const plotSpecificOptions = useMemo(() => {
     const isColoredByCategory = get => get('Plot-Specific Options.colorBy') !== COLOR_BY_EXPRESSION;
     return {
+      ...(defaultVarName ? {
+        varName: {
+          value: defaultVarName,
+          options: varNames,
+          label: 'Gene',
+        },
+      } : {}),
       colorBy: {
         value: COLOR_BY_EXPRESSION,
         options: [COLOR_BY_EXPRESSION, ...groupby],
         label: 'Color By',
       },
-      ...(varName ? {
+      ...(defaultVarName ? {
         fadeByExpression: {
           value: false,
-          label: `Fade By ${varName}`,
-          hint: `Set each cell's opacity by the percentile of its ${varName} expression among the plotted cells.`,
+          label: 'Fade By Gene',
+          hint: "Set each cell's opacity by the percentile of its expression of the selected gene among the plotted cells.",
           render: isColoredByCategory,
         },
         ...Object.fromEntries(FADE_LEVELS.map(({ opacity, defaultPercentile, control }) => [control, {
@@ -76,12 +84,12 @@ export function HilbertHeatmapWrapper(props) {
           max: 100,
           step: 1,
           label: `Opacity ${opacity.toFixed(1)} From`,
-          hint: `The ${varName} expression percentile from which cells are drawn at opacity ${opacity.toFixed(1)}, unless they reach a higher threshold. Cells below every threshold are hidden.`,
+          hint: `The selected gene's expression percentile from which cells are drawn at opacity ${opacity.toFixed(1)}, unless they reach a higher threshold. Cells below every threshold are hidden.`,
           render: get => isColoredByCategory(get) && get('Plot-Specific Options.fadeByExpression'),
         }])),
       } : {}),
     };
-  }, [groupby.join(','), varName]);
+  }, [groupby.join(','), varNames.join(','), defaultVarName]);
 
   const getPlotParams = useCallback(
     controlValues => withHilbertHeatmapControls(resolvePlotParams(plotParams, controlValues), controlValues),
