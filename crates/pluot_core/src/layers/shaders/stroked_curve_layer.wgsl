@@ -1,5 +1,5 @@
 // StrokedCurveLayer shader.
-// Renders a pre-flattened polyline with round joins and round caps, eliminating
+// Renders pre-flattened polylines with round joins and round caps, eliminating
 // the transparent gaps that appear when adjacent rectangle quads meet at an angle.
 //
 // Approach: 4-point window instancing (adapted from webgpu-instanced-lines).
@@ -15,7 +15,8 @@
 //
 // CPU side: all sub-paths are packed into a single flat points buffer. A
 // companion segments buffer holds one entry per segment: [poly_start, poly_end,
-// local_b], where local_b is the 0-based segment index within its polyline.
+// local_b, curve_index], where local_b is the 0-based segment index within its
+// polyline, and curve_index resolves the per-curve color/width/opacity/criteria.
 // Instance i draws the segment from points[poly_start+local_b] to
 // points[poly_start+local_b+1].
 
@@ -57,11 +58,12 @@ struct StrokedCurveLayerUniforms {
 }
 
 // Per-segment metadata: indices into the flat points buffer.
-// Stride = 12 bytes (3 × u32); matches the CPU-side Vec<u32> layout.
+// Stride = 16 bytes (4 × u32); matches the CPU-side Vec<u32> layout.
 struct SegmentEntry {
     poly_start: u32,   // index of the first point of this polyline in `points`
     poly_end: u32,     // index of the last point (inclusive)
     local_b: u32,      // 0-based segment index within its polyline (B = poly_start + local_b)
+    curve_index: u32,  // index of the curve this polyline belongs to
 }
 
 @group(0) @binding(0) var<uniform> u: StrokedCurveLayerUniforms;
@@ -70,9 +72,7 @@ struct SegmentEntry {
 
 // Color module: any per-element color value/palette texture bindings (from
 // binding 3 onward) plus `fn get_stroke_color(instance_index: u32) -> vec3<f32>`.
-// Assembled per color mode by `crate::color_mode::prepare_stroke_color`. A
-// `StrokedCurveLayer` renders a single shape, so the shader always resolves
-// element 0.
+// Assembled per color mode by `crate::color_mode::prepare_stroke_color`.
 {{stroke_color_module}}
 
 // Stroke width module: an optional value texture (instanced mode) plus
@@ -100,6 +100,7 @@ struct SegmentEntry {
 
 struct VSOut {
     @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(flat) curve_index: u32,
 }
 struct FSOut {
     @location(0) color: vec4<f32>,
@@ -193,12 +194,11 @@ fn vs_main(
     var pC = ndc_to_px(project_point(points[u32(clamp(C_idx, poly_start, poly_end))], aspect));
     var pD = ndc_to_px(project_point(points[u32(clamp(D_idx, poly_start, poly_end))], aspect));
 
-    // Stroke width (uniform or instanced; a single shape always resolves
-    // element 0), resolved to pixels here. Background points use
-    // `background_stroke_width` instead when `enable_background_stroke_width`
-    // is set.
-    let is_selected = is_selected_in(0u);
-    var stroke_width = get_stroke_width(0u);
+    // Stroke width (uniform or per-curve), resolved to pixels here. Background
+    // curves use `background_stroke_width` instead when
+    // `enable_background_stroke_width` is set.
+    let is_selected = is_selected_in(seg.curve_index);
+    var stroke_width = get_stroke_width(seg.curve_index);
     if (!is_selected && u.enable_background_stroke_width == 1u) {
         stroke_width = u.background_stroke_width;
     }
@@ -327,30 +327,30 @@ fn vs_main(
     let pos_ndc = px_to_ndc(pos_px);
 
     out.position = vec4<f32>(pos_ndc.x, pos_ndc.y, 0.0, 1.0);
+    out.curve_index = seg.curve_index;
     return out;
 }
 
 @fragment
 fn fs_main(
     @builtin(position) frag_coord: vec4<f32>,
+    @location(0) @interpolate(flat) curve_index: u32,
 ) -> FSOut {
-    // The shape is not rendered at all when filter-excluded.
-    if (!is_filtered_in(0u)) {
+    // The curve is not rendered at all when filter-excluded.
+    if (!is_filtered_in(curve_index)) {
         discard;
     }
 
-    // A single shape shares one color / opacity, so this always resolves element 0.
-    //
-    // Filter-included but selection-excluded ("background") shapes still
+    // Filter-included but selection-excluded ("background") curves still
     // render, but may be de-emphasized in place of the configured stroke color
     // and opacity — each only overridden when its `enable_background_*` flag
     // is set (see `StrokedCurveLayerParams`).
-    let is_selected = is_selected_in(0u);
-    var out_color = get_stroke_color(0u);
+    let is_selected = is_selected_in(curve_index);
+    var out_color = get_stroke_color(curve_index);
     if (!is_selected && u.enable_background_stroke_color == 1u) {
         out_color = u.background_stroke_color.rgb;
     }
-    var stroke_opacity = get_stroke_opacity(0u);
+    var stroke_opacity = get_stroke_opacity(curve_index);
     if (!is_selected && u.enable_background_stroke_opacity == 1u) {
         stroke_opacity = u.background_stroke_opacity;
     }

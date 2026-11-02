@@ -3,10 +3,13 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use pluot_core::numeric_data::NumericData;
+use pluot_core::cache::use_memo_vec_string;
+use pluot_core::log;
 use pluot_core::render_traits::{BooleanCriteriaParams, CategoricalCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 
-use crate::zarr_numeric_data::{arr_cache_key, load_arr_as_numeric_data_memoized};
+use crate::adata_io::read_string_array;
+use crate::adata_paths::{join_path, parent_path};
+use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 
 /// Filtering or selection criteria for a zarr-backed layer's data items.
 ///
@@ -31,13 +34,67 @@ pub struct ZarrBooleanCriteriaParams {
 }
 
 /// A categorical column in categories+codes format, referenced by zarr array
-/// path, along with the set of category codes that are included.
+/// path, along with the set of categories that are included.
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrCategoricalCriteriaParams {
     /// Zarr array path to a category code per item.
     pub codes_key: String,
-    /// The category codes to include. An explicit empty list means nothing is included.
-    pub included_codes: Vec<i64>,
+    /// Zarr array path to the label of each category code, used to look up
+    /// `included_categories` given as labels. Defaults to the `categories` array
+    /// alongside `codes_key`, as in AnnData's categorical encoding
+    /// (e.g., `/obs/cell_type/categories` for `/obs/cell_type/codes`).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub categories_key: Option<String>,
+    /// The categories to include, as codes (e.g., `[0, 2]`) or as labels
+    /// (e.g., `["B cell", "T cell"]`). An explicit empty list means nothing is included.
+    pub included_categories: IncludedCategories,
+}
+
+/// A set of categories of a categorical column.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+pub enum IncludedCategories {
+    Codes(Vec<i64>),
+    Labels(Vec<String>),
+}
+
+impl ZarrCategoricalCriteriaParams {
+    pub fn categories_path(&self) -> String {
+        self.categories_key.clone().unwrap_or_else(|| join_path(&parent_path(&self.codes_key), "categories"))
+    }
+}
+
+/// The codes of `labels` among `categories`. Unknown labels are logged and skipped.
+pub fn codes_of_labels(labels: &[String], categories: &[String]) -> Vec<i64> {
+    labels
+        .iter()
+        .filter_map(|label| {
+            let code = categories.iter().position(|category| category == label);
+            if code.is_none() {
+                log(&format!("ZarrCategoricalCriteriaParams: category \"{label}\" not found; skipping"));
+            }
+            code.map(|code| code as i64)
+        })
+        .collect()
+}
+
+async fn resolve_included_codes(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    params: &ZarrCategoricalCriteriaParams,
+    store_name: &str,
+    cache_enabled: bool,
+) -> Result<Vec<i64>, zarrs::array::ArrayError> {
+    match &params.included_categories {
+        IncludedCategories::Codes(codes) => Ok(codes.clone()),
+        IncludedCategories::Labels(labels) => {
+            let categories_path = params.categories_path();
+            let keys = vec!["zarr_categories".to_string(), store_name.to_string(), categories_path.clone()];
+            let categories = use_memo_vec_string(async || read_string_array(store, &categories_path).await, &keys, cache_enabled).await?;
+            Ok(codes_of_labels(labels, &categories))
+        }
+    }
 }
 
 /// A quantitative column, referenced by zarr array path, along with the
@@ -88,45 +145,42 @@ pub async fn resolve_zarr_emphasis_criteria(
     cache_enabled: bool,
 ) -> Result<Vec<EmphasisCriteria>, zarrs::array::ArrayError> {
     let futures = criteria.iter().map(|c| {
-        load_arr_as_numeric_data_memoized(store.clone(), store_name, c.array_path(), cache_enabled)
+        let store = store.clone();
+        async move {
+            let data = load_arr_as_numeric_data_memoized(store.clone(), store_name, c.array_path(), cache_enabled).await?;
+            Ok(match c {
+                ZarrEmphasisCriteria::Categorical(params) => EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                    codes: data.as_ref().clone(),
+                    included_codes: resolve_included_codes(store, params, store_name, cache_enabled).await?,
+                }),
+                ZarrEmphasisCriteria::Quantitative(params) => EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                    values: data.as_ref().clone(),
+                    min: params.min,
+                    max: params.max,
+                    min_exclusive: params.min_exclusive,
+                    max_exclusive: params.max_exclusive,
+                }),
+                ZarrEmphasisCriteria::Boolean(_) => EmphasisCriteria::Boolean(BooleanCriteriaParams {
+                    mask: data.as_ref().clone(),
+                }),
+            })
+        }
     });
 
-    let resolved_data: Vec<Arc<NumericData>> = futures::future::join_all(futures)
-        .await
-        .into_iter()
-        .collect::<Result<_, _>>()?;
-
-    Ok(criteria
-        .iter()
-        .zip(resolved_data)
-        .map(|(c, data)| match c {
-            ZarrEmphasisCriteria::Categorical(params) => EmphasisCriteria::Categorical(CategoricalCriteriaParams {
-                codes: data.as_ref().clone(),
-                included_codes: params.included_codes.clone(),
-            }),
-            ZarrEmphasisCriteria::Quantitative(params) => EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
-                values: data.as_ref().clone(),
-                min: params.min,
-                max: params.max,
-                min_exclusive: params.min_exclusive,
-                max_exclusive: params.max_exclusive,
-            }),
-            ZarrEmphasisCriteria::Boolean(_) => EmphasisCriteria::Boolean(BooleanCriteriaParams {
-                mask: data.as_ref().clone(),
-            }),
-        })
-        .collect())
+    futures::future::join_all(futures).await.into_iter().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::zarr_numeric_data::arr_cache_key;
 
     #[test]
     fn categorical_serializes_to_adjacently_tagged_json() {
         let criteria = ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/n_1000000/class_labels".to_string(),
-            included_codes: vec![0, 2, 4],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![0, 2, 4]),
         });
 
         let value = serde_json::to_value(&criteria).unwrap();
@@ -136,13 +190,46 @@ mod tests {
                 "criteria_mode": "Categorical",
                 "criteria_params": {
                     "codes_key": "/n_1000000/class_labels",
-                    "included_codes": [0, 2, 4],
+                    "categories_key": null,
+                    "included_categories": [0, 2, 4],
                 },
             })
         );
 
         let round_tripped: ZarrEmphasisCriteria = serde_json::from_value(value).unwrap();
         assert_eq!(round_tripped.array_path(), "/n_1000000/class_labels");
+    }
+
+    #[test]
+    fn categorical_included_categories_deserialize_as_codes_or_labels() {
+        let criteria: ZarrEmphasisCriteria = serde_json::from_value(serde_json::json!({
+            "criteria_mode": "Categorical",
+            "criteria_params": { "codes_key": "/obs/cell_type/codes", "included_categories": ["B cell", "T cell"] },
+        }))
+        .unwrap();
+        let ZarrEmphasisCriteria::Categorical(params) = &criteria else {
+            panic!("expected a categorical criteria");
+        };
+        assert!(matches!(&params.included_categories, IncludedCategories::Labels(labels) if labels == &["B cell", "T cell"]));
+        assert_eq!(params.categories_path(), "/obs/cell_type/categories");
+
+        let criteria: ZarrEmphasisCriteria = serde_json::from_value(serde_json::json!({
+            "criteria_mode": "Categorical",
+            "criteria_params": { "codes_key": "/obs/cell_type/codes", "categories_key": "/uns/cell_type_labels", "included_categories": [1, 3] },
+        }))
+        .unwrap();
+        let ZarrEmphasisCriteria::Categorical(params) = &criteria else {
+            panic!("expected a categorical criteria");
+        };
+        assert!(matches!(&params.included_categories, IncludedCategories::Codes(codes) if codes == &[1, 3]));
+        assert_eq!(params.categories_path(), "/uns/cell_type_labels");
+    }
+
+    #[test]
+    fn codes_of_labels_skips_unknown_labels() {
+        let categories: Vec<String> = ["B cell", "T cell", "NK"].map(String::from).to_vec();
+        let labels: Vec<String> = ["NK", "Unknown", "B cell"].map(String::from).to_vec();
+        assert_eq!(codes_of_labels(&labels, &categories), vec![2, 0]);
     }
 
     #[test]
@@ -235,11 +322,13 @@ mod tests {
         // Likewise for a categorical column as its included codes change.
         let some_codes = ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/CARRIER".to_string(),
-            included_codes: vec![0, 2],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![0, 2]),
         });
         let other_codes = ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/CARRIER".to_string(),
-            included_codes: vec![],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![]),
         });
         assert_eq!(
             arr_cache_key("store", some_codes.array_path()),
@@ -263,7 +352,8 @@ mod tests {
     fn array_path_selects_the_variants_key() {
         let categorical = ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "codes".to_string(),
-            included_codes: vec![],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![]),
         });
         assert_eq!(categorical.array_path(), "codes");
 

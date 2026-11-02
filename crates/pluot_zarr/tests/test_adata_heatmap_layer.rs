@@ -22,7 +22,7 @@ use pluot_zarr::heatmap_data::{
     MatrixBlockKey, MatrixCacheMode,
 };
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
-use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
+use pluot_zarr::zarr_emphasis_criteria::{IncludedCategories, ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
 
 struct TokioSpawnBlocking;
@@ -69,7 +69,8 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
         store_name: Some("pbmc".to_string()),
         obs_filtering: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/bulk_labels/codes".to_string(),
-            included_codes: vec![2],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![2]),
         })])),
         obs_selection: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Quantitative(ZarrQuantitativeCriteriaParams {
             values_key: "/obs/n_genes".to_string(),
@@ -78,7 +79,7 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
             min_exclusive: None,
             max_exclusive: None,
         })])),
-        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { column: None, identifiers: var_names.clone() })),
+        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { index_path: None, identifiers: var_names.clone() })),
         ..Default::default()
     };
     (params, Expected { obs_indices, var_names })
@@ -193,6 +194,64 @@ async fn every_normalization_prepares_on_cpu_and_gpu() {
 }
 
 #[tokio::test]
+async fn groupby_sorts_obs_by_category() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+    let mut obs_indices: Vec<usize> = (0..codes.len()).collect();
+    obs_indices.sort_by_key(|&i| codes.get_f32(i) as i64);
+    assert!(obs_indices.windows(2).any(|pair| pair[0] > pair[1]), "grouping reorders the obs");
+    let expected = Expected { obs_indices, ..expected };
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for gpu in [None, Some(&gpu_context)] {
+        for (layer_path, matrix_path) in [("X", "/X"), ("layers/csr", "/layers/csr"), ("layers/csc", "/layers/csc")] {
+            for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
+                let params = AdataZarrHeatmapLayerParams {
+                    layer_path: layer_path.to_string(),
+                    obs_filtering: None,
+                    groupby: vec!["obs/bulk_labels".to_string()],
+                    cache_mode: Some(cache_mode),
+                    ..params.clone()
+                };
+                let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+                assert!(!layer.prepare(gpu).await.bailed_early, "{matrix_path} {cache_mode:?}");
+                check_picks_of(&layer, store.clone(), matrix_path, &expected, false).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn groupby_keeps_the_listed_order_of_identifiers_within_each_category() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
+    let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+    let listed: Vec<usize> = (0..codes.len()).rev().step_by(3).collect();
+    let mut obs_indices = listed.clone();
+    obs_indices.sort_by_key(|&i| codes.get_f32(i) as i64);
+    let expected = Expected { obs_indices, ..expected };
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for gpu in [None, Some(&gpu_context)] {
+        let params = AdataZarrHeatmapLayerParams {
+            obs_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams {
+                index_path: None,
+                identifiers: listed.iter().map(|&i| obs_names[i].clone()).collect(),
+            })),
+            groupby: vec!["obs/bulk_labels".to_string()],
+            ..params.clone()
+        };
+        let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+        assert!(!layer.prepare(gpu).await.bailed_early);
+        check_picks(&layer, store.clone(), &expected, false).await;
+    }
+}
+
+#[tokio::test]
 async fn extent_is_the_filtered_cell_counts() {
     let store = pbmc_store();
     let (params, expected) = layer_params_and_expected(store.clone()).await;
@@ -223,7 +282,7 @@ async fn sparse_matrices_are_picked_with_their_matrix_values() {
             for swap_axes in [false, true] {
                 for gpu in [None, Some(&gpu_context)] {
                     let params = AdataZarrHeatmapLayerParams {
-                        layer: layer_name.to_string(),
+                        layer_path: format!("layers/{layer_name}"),
                         cache_mode: Some(cache_mode),
                         swap_axes,
                         ..params.clone()
@@ -248,7 +307,7 @@ async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
         for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
             for gpu in [None, Some(&gpu_context)] {
                 let params = AdataZarrHeatmapLayerParams {
-                    layer: layer_name.to_string(),
+                    layer_path: format!("layers/{layer_name}"),
                     normalization: Some(normalization),
                     normalization_upper_percentile: Some(99.0),
                     ..params.clone()
@@ -290,6 +349,7 @@ async fn sparse_block_extents_match_the_dense_cells() {
                 matrix_path,
                 cache_mode,
                 obs_filtering: None,
+                obs_groupby: &[],
                 var_filtering: None,
                 rows_per_block: num_rows,
                 block_index: 0,
@@ -339,6 +399,7 @@ async fn percentile_domains_match_the_sorted_cells() {
             matrix_path,
             cache_mode: MatrixCacheMode::RowBlocks,
             obs_filtering: None,
+            obs_groupby: &[],
             var_filtering: None,
             rows_per_block: num_rows,
             block_index: 0,

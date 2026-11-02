@@ -1,4 +1,4 @@
-// FilledCurveLayer accepts path commands as input, internally converts the path to triangles,
+// FilledCurveLayer accepts path commands for one or more curves as input, internally converts them to triangles,
 // and ultimately renders a TriangulatedLayer as a sub-layer.
 // This layer is intended to be used as a sub-layer of CurveLayer.
 
@@ -25,7 +25,7 @@ use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
 use crate::curve_and_polygon_utils::{
-    commands_to_subpaths, compute_fill_vertices, flatten_subpath, resolve_margins, PathCommand,
+    compute_fill_vertices, curves_to_subpaths, flatten_subpath, resolve_margins, split_curves, PathCommand,
 };
 use crate::picking_geometry::{point_in_polygon, unapply_model_matrix};
 use super::triangulated_layer::{TriangulatedLayer, TriangulatedLayerParams};
@@ -40,21 +40,20 @@ pub struct FilledCurveLayerParams {
     pub data_unit_mode_y: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
+    /// See `CurveLayerParams::curve_offsets`. `None` means a single curve.
+    pub curve_offsets: Option<Arc<Vec<u32>>>,
     pub subdivisions: u32,
-    /// How to color the fill. See [`ColorMode`]. `FilledCurveLayer` renders a
-    /// single shape, so modes carrying `NumericData` are expected to supply a
-    /// single (length-1) value.
+    /// How to color the fill. See [`ColorMode`]. Modes carrying `NumericData`
+    /// supply one value per curve.
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the fill. See [`OpacityMode`]. `FilledCurveLayer`
-    /// renders a single shape, so instanced modes supply a single (length-1)
-    /// value. Defaults to 1.
+    /// Opacity multiplier for the fill. See [`OpacityMode`]. Instanced modes
+    /// supply one value per curve. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
 
-    /// Criteria AND-ed together to determine whether the single shape is
-    /// selected ("foreground") / filtered-in ("background"). `FilledCurveLayer`
-    /// renders a single shape, so modes carrying `NumericData` are expected to
-    /// supply a single (length-1) value. An empty list means the shape is
-    /// included.
+    /// Criteria AND-ed together to determine whether each curve is selected
+    /// ("foreground") / filtered-in ("background"). Modes carrying
+    /// `NumericData` supply one value per curve. An empty list means every
+    /// curve is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
@@ -88,6 +87,7 @@ impl Default for FilledCurveLayerParams {
             data_unit_mode_y: UnitsMode::Data,
             model_matrix: None,
             commands: Arc::new(vec![]),
+            curve_offsets: None,
             subdivisions: 32,
             fill_color: None,
             fill_opacity: Some(OpacityMode::UniformOpacity(1.0)),
@@ -105,10 +105,11 @@ pub struct FilledCurveLayer {
     view_params: ViewParams,
     layer_params: FilledCurveLayerParams,
     subpaths: Vec<Vec<CubicBez>>,
+    /// The index of the curve each of `subpaths` belongs to.
+    subpath_curve_indices: Vec<u32>,
     /// Triangulated fill geometry as a flat interleaved [x, y, …] f32 array.
     fill_vertices: NumericData,
-    /// Per-vertex color index (all zero: a single shape uses one color),
-    /// parallel to `fill_vertices`.
+    /// Per-vertex curve index, parallel to `fill_vertices`.
     vertex_color_index: NumericData,
 }
 
@@ -116,13 +117,24 @@ impl FilledCurveLayer {
     pub fn new(view_params: ViewParams, layer_params: FilledCurveLayerParams) -> Self {
         // TODO: move the triangulation into the prepare() function?
         // TODO: only do the triangulation in the raster drawing case?
-        let subpaths = commands_to_subpaths(&layer_params.commands);
+        let curve_offsets = layer_params.curve_offsets.as_deref().map(Vec::as_slice);
+        let num_curves = split_curves(&layer_params.commands, curve_offsets).len();
+        if let Some(fill_color) = &layer_params.fill_color {
+            fill_color.validate_len(num_curves);
+        }
+        if let Some(fill_opacity) = &layer_params.fill_opacity {
+            fill_opacity.validate_len(num_curves);
+        }
+        for criteria in layer_params.selection_criteria.iter().chain(&layer_params.filtering_criteria) {
+            criteria.validate_len(num_curves);
+        }
+
+        let (subpaths, subpath_curve_indices) = curves_to_subpaths(&layer_params.commands, curve_offsets);
         let subdivisions = layer_params.subdivisions.max(1);
-        let fill_vertices_raw = compute_fill_vertices(&subpaths, subdivisions);
-        let num_vertices = fill_vertices_raw.len() / 2;
+        let (fill_vertices_raw, vertex_curve_indices) = compute_fill_vertices(&subpaths, &subpath_curve_indices, subdivisions);
         let fill_vertices = NumericData::Float32(Arc::new(fill_vertices_raw));
-        let vertex_color_index = NumericData::Uint32(Arc::new(vec![0u32; num_vertices]));
-        Self { view_params, layer_params, subpaths, fill_vertices, vertex_color_index }
+        let vertex_color_index = NumericData::Uint32(Arc::new(vertex_curve_indices));
+        Self { view_params, layer_params, subpaths, subpath_curve_indices, fill_vertices, vertex_color_index }
     }
 }
 
@@ -176,7 +188,7 @@ impl DrawToRasterCpu for FilledCurveLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for FilledCurveLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
-        let Self { layer_params, view_params, subpaths, .. } = self;
+        let Self { layer_params, view_params, subpaths, subpath_curve_indices, .. } = self;
 
         let camera_view = view_params.camera_view.unwrap_or([
             1.0, 0.0, 0.0, 0.0,
@@ -209,36 +221,34 @@ impl DrawToSvg for FilledCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        // Filter-excluded shapes are not rendered at all.
-        let is_filtered_in = cpu_is_included(&layer_params.filtering_criteria, 0);
-        // Filter-included but selection-excluded ("background") shapes still
-        // render, but de-emphasized with `background_fill_color` in place of
-        // the configured fill color.
-        let is_selected = cpu_is_included(&layer_params.selection_criteria, 0);
-
-        // A single shape uses one color, resolved from element 0.
         let quant_domain = match layer_params.fill_color.as_ref() {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
-            cpu_fill_color(layer_params.fill_color.as_ref(), 0, quant_domain)
-        } else {
-            layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
-        });
-        // A single shape uses one fill opacity, resolved from element 0.
-        let fill_opacity = resolve_background_scalar(
-            is_selected,
-            layer_params.enable_background_fill_opacity,
-            layer_params.background_fill_opacity,
-            cpu_fill_opacity(layer_params.fill_opacity.as_ref(), 0),
-        ) as f64;
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
-        for subpath in subpaths {
-            if !is_filtered_in || subpath.is_empty() {
+        for (subpath, &curve_index) in subpaths.iter().zip(subpath_curve_indices) {
+            let curve_index = curve_index as usize;
+            // Filter-excluded curves are not rendered at all.
+            if !cpu_is_included(&layer_params.filtering_criteria, curve_index) || subpath.is_empty() {
                 continue;
             }
+            // Filter-included but selection-excluded ("background") curves still
+            // render, but de-emphasized with `background_fill_color` in place of
+            // the configured fill color.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, curve_index);
+            let fill = TwoColor::Rgb(if is_selected || !layer_params.enable_background_fill_color {
+                cpu_fill_color(layer_params.fill_color.as_ref(), curve_index, quant_domain)
+            } else {
+                layer_params.background_fill_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            });
+            let fill_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_fill_opacity,
+                layer_params.background_fill_opacity,
+                cpu_fill_opacity(layer_params.fill_opacity.as_ref(), curve_index),
+            ) as f64;
+
             let mut d = String::new();
             let first = subpath[0].p0;
             let (fx, fy) = to_px(first.x as f32, first.y as f32);
@@ -254,7 +264,7 @@ impl DrawToSvg for FilledCurveLayer {
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
                 stroke: None,
-                fill: Some(fill.clone()),
+                fill: Some(fill),
                 linewidth: 0.0,
                 opacity: 1.0,
                 fill_opacity,
@@ -281,6 +291,9 @@ impl ExtentableLayer for FilledCurveLayer {}
 
 #[derive(Serialize, Debug, Clone, PartialEq, TS)]
 pub struct FilledCurvePickingInfo {
+    /// Index into `curve_offsets` (always 0 when it is `None`).
+    pub curve_index: usize,
+    /// Index of the sub-path among those of every curve.
     pub subpath_index: usize,
 }
 
@@ -299,11 +312,6 @@ impl PickableLayer for FilledCurveLayer {
             return None;
         }
 
-        // Filter-excluded shapes are ignored in picking.
-        if !cpu_is_included(&self.layer_params.filtering_criteria, 0) {
-            return None;
-        }
-
         // Map the world coordinate into model space by inverting the
         // model_matrix; the vertex shader computes
         // world = model_matrix * vec4(position, 0, 1).
@@ -313,7 +321,11 @@ impl PickableLayer for FilledCurveLayer {
         // the last (topmost, since later sub-paths draw on top) match.
         let subdivisions = self.layer_params.subdivisions.max(1);
         let mut hit_idx: Option<usize> = None;
-        for (i, subpath) in self.subpaths.iter().enumerate() {
+        for (i, (subpath, &curve_index)) in self.subpaths.iter().zip(&self.subpath_curve_indices).enumerate() {
+            // Filter-excluded curves are ignored in picking.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, curve_index as usize) {
+                continue;
+            }
             let ring = flatten_subpath(subpath, subdivisions);
             if point_in_polygon(cx, cy, &ring) {
                 hit_idx = Some(i);
@@ -321,6 +333,9 @@ impl PickableLayer for FilledCurveLayer {
         }
 
         let idx = hit_idx?;
-        Some(LayerPickingResult::new(&self.layer_params.layer_id, FilledCurvePickingInfo { subpath_index: idx }))
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, FilledCurvePickingInfo {
+            curve_index: self.subpath_curve_indices[idx] as usize,
+            subpath_index: idx,
+        }))
     }
 }

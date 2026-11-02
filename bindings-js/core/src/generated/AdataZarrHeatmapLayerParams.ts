@@ -8,15 +8,13 @@ import type { MatrixCacheMode } from "./MatrixCacheMode.js";
 /**
  * Layer params struct for [`AdataZarrHeatmapLayer`].
  */
-export type AdataZarrHeatmapLayerParams = { layer_id: string, bounds?: MarginParams | null, 
+export type AdataZarrHeatmapLayerParams = { layer_id: string, bounds?: MarginParams | null, store_name?: string | null, 
 /**
- * Must point to the root of an anndata object.
+ * Path to the matrix of values, relative to the store root
+ * (e.g., `X`, `layers/log1p`, or `tables/table/X`). Defaults to `X`.
+ * Its AnnData object's `obs` and `var` are the matrix's rows and columns.
  */
-store_name?: string | null, 
-/**
- * Layer in AnnData to use for matrix values: "X" for `adata.X`, else a `layers` key.
- */
-layer: string, 
+layer_path: string, 
 /**
  * Which obs (rows) to include. `None` includes every obs.
  */
@@ -26,6 +24,13 @@ obs_filtering?: AxisCriteria | null,
  */
 obs_selection?: AxisCriteria | null, 
 /**
+ * Paths to categorical `obs` columns by which to sort the included obs, from
+ * coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`). Within each
+ * column, obs follow its category order (missing values last), and obs that tie
+ * on every column keep their filtered order. Empty keeps the filtered order.
+ */
+groupby: Array<string>, 
+/**
  * Which var (columns) to include. `None` includes every var.
  */
 var_filtering?: AxisCriteria | null, 
@@ -34,9 +39,13 @@ var_filtering?: AxisCriteria | null,
  */
 var_selection?: AxisCriteria | null, 
 /**
- * Key in adata.var to use for gene symbols in axis labels, if different from adata.var.index.
+ * Path to the `obs` column labeling the obs axis. `None` means the `obs` index.
  */
-gene_symbols?: string | null, 
+obs_index_path?: string | null, 
+/**
+ * Path to the `var` column labeling the var axis (e.g., `var/gene_symbols`). `None` means the `var` index.
+ */
+var_index_path?: string | null, 
 /**
  * When false, obs run top-to-bottom along the y axis and var left-to-right along the x axis.
  */

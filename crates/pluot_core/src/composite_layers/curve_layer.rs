@@ -1,4 +1,4 @@
-// CurveLayer renders SVG-like vector paths as stroked and/or filled curves,
+// CurveLayer renders one or more SVG-like vector paths as stroked and/or filled curves,
 // delegating to StrokedCurveLayer and FilledCurveLayer sublayers.
 
 use serde::{Deserialize, Serialize};
@@ -32,44 +32,49 @@ pub struct CurveLayerParams {
     pub stroke_width_unit_mode: UnitsMode,
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
+    /// Arrow-style offsets into `commands` with `num_curves + 1` entries: curve `c`
+    /// consists of `commands[curve_offsets[c]..curve_offsets[c + 1]]`, and must start
+    /// with a `MoveTo`. Each curve may have several sub-paths. `None` (the default)
+    /// means `commands` is a single curve.
+    pub curve_offsets: Option<Arc<Vec<u32>>>,
     pub subdivisions: u32,
     pub stroked: bool,
     pub filled: bool,
-    /// How to color the stroke. See [`ColorMode`]. `CurveLayer` renders a single
-    /// shape, so modes carrying `NumericData` are expected to supply a single
-    /// (length-1) value.
+    /// How to color each curve's stroke. See [`ColorMode`]: modes carrying
+    /// `NumericData` supply one value per curve.
     pub stroke_color: Option<ColorMode>,
-    /// Stroke width. See [`SizeMode`]: `UniformSize` and `InstancedSize` (a
-    /// single, length-1 value for this single-shape layer) are both accepted.
-    /// Interpreted in the units given by `stroke_width_unit_mode`. Defaults to 1.
+    /// Stroke width. See [`SizeMode`]: `UniformSize` shares one width across all
+    /// curves, `InstancedSize` supplies one per curve. Interpreted in the units
+    /// given by `stroke_width_unit_mode`. Defaults to 1.
     pub stroke_width: Option<SizeMode>,
-    /// How to color the fill. See [`ColorMode`]. Same single-shape caveat as
-    /// `stroke_color`.
+    /// How to color each curve's fill. See [`ColorMode`]: modes carrying
+    /// `NumericData` supply one value per curve.
     pub fill_color: Option<ColorMode>,
-    /// Opacity multiplier for the stroke. See [`OpacityMode`]. Defaults to 1.
+    /// Opacity multiplier for the stroke. See [`OpacityMode`]: `InstancedOpacity`
+    /// supplies one value per curve. Defaults to 1.
     pub stroke_opacity: Option<OpacityMode>,
-    /// Opacity multiplier for the fill. See [`OpacityMode`]. Defaults to 1.
+    /// Opacity multiplier for the fill. See [`OpacityMode`]: `InstancedOpacity`
+    /// supplies one value per curve. Defaults to 1.
     pub fill_opacity: Option<OpacityMode>,
 
-    /// Criteria AND-ed together to determine whether the single shape is
-    /// selected ("foreground") / filtered-in ("background"). `CurveLayer`
-    /// renders a single shape, so modes carrying `NumericData` are expected to
-    /// supply a single (length-1) value. An empty list means the shape is
+    /// Criteria AND-ed together to determine the selected ("foreground") /
+    /// filtered-in ("background") set of curves. Modes carrying `NumericData`
+    /// supply one value per curve. An empty list means every curve is
     /// included. Forwarded to both the stroke and fill sub-layers.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
-    /// Stroke/fill colors used when the shape is filter-included, but
+    /// Stroke/fill colors used when a curve is filter-included, but
     /// selection-excluded ("background"), in place of `stroke_color` /
     /// `fill_color`.
     pub background_stroke_color: Option<(u8, u8, u8)>,
     pub background_fill_color: Option<(u8, u8, u8)>,
 
-    /// Stroke/fill opacity and stroke width used when the shape is
+    /// Stroke/fill opacity and stroke width used when a curve is
     /// filter-included, but selection-excluded ("background"), in place of
     /// `stroke_opacity`/`fill_opacity`/`stroke_width`. Only applied when the
     /// corresponding `enable_background_*` flag is set AND a value is
-    /// provided here; otherwise the shape's normal value is used unchanged
+    /// provided here; otherwise a curve's normal value is used unchanged
     /// (there is no universal "de-emphasized" default for these, unlike
     /// `background_stroke_color`/`background_fill_color`, which fall back to
     /// `DEFAULT_BACKGROUND_COLOR`).
@@ -77,17 +82,17 @@ pub struct CurveLayerParams {
     pub background_fill_opacity: Option<f32>,
     pub background_stroke_width: Option<f32>,
 
-    /// When true, the shape has the stroke/fill color specified via
+    /// When true, a curve has the stroke/fill color specified via
     /// `background_stroke_color`/`background_fill_color` when
     /// selection-excluded.
     pub enable_background_stroke_color: bool,
     pub enable_background_fill_color: bool,
-    /// When true, the shape has the stroke/fill opacity specified via
+    /// When true, a curve has the stroke/fill opacity specified via
     /// `background_stroke_opacity`/`background_fill_opacity` when
     /// selection-excluded.
     pub enable_background_stroke_opacity: bool,
     pub enable_background_fill_opacity: bool,
-    /// When true, the shape has the stroke width specified via
+    /// When true, a curve has the stroke width specified via
     /// `background_stroke_width` when selection-excluded. Only affects the
     /// stroke's width, not whether it is drawn at all (that is `stroked`).
     pub enable_background_stroke_width: bool,
@@ -103,6 +108,7 @@ impl Default for CurveLayerParams {
             stroke_width_unit_mode: UnitsMode::Pixels,
             model_matrix: None,
             commands: Arc::new(vec![]),
+            curve_offsets: None,
             subdivisions: 32,
             stroked: true,
             filled: false,
@@ -152,6 +158,7 @@ impl CurveLayer {
                 stroke_width_unit_mode: layer_params.stroke_width_unit_mode,
                 model_matrix: layer_params.model_matrix,
                 commands: Arc::clone(&layer_params.commands),
+                curve_offsets: layer_params.curve_offsets.clone(),
                 subdivisions: layer_params.subdivisions,
                 stroke_color: layer_params.stroke_color.clone(),
                 stroke_opacity: layer_params.stroke_opacity.clone(),
@@ -176,6 +183,7 @@ impl CurveLayer {
                 data_unit_mode_y: layer_params.data_unit_mode_y,
                 model_matrix: layer_params.model_matrix,
                 commands: Arc::clone(&layer_params.commands),
+                curve_offsets: layer_params.curve_offsets.clone(),
                 subdivisions: layer_params.subdivisions,
                 fill_color: layer_params.fill_color.clone(),
                 fill_opacity: layer_params.fill_opacity.clone(),

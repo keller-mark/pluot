@@ -2,6 +2,9 @@
 pub mod reduce;
 pub mod reduce_stratified;
 pub mod included_indices;
+pub mod stratified_indices;
+pub mod stratified_violin;
+pub mod code_combinations;
 pub mod matrix_axis_extents;
 pub mod histogram_percentile;
 

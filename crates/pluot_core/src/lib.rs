@@ -28,6 +28,7 @@ pub mod composite_layers;
 pub mod shader_modules;
 pub mod registry;
 pub mod compute;
+pub mod gilbert;
 
 pub(crate) mod timeout;
 pub mod two;

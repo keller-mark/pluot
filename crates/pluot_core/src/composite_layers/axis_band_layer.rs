@@ -7,7 +7,7 @@ use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_laye
 use crate::two::svg::SvgContext;
 use crate::layers::text_layer::{TextLayer, TextLayerParams, TextAlignMode, TextBaselineMode};
 use crate::layers::line_layer::{LineLayer, LineLayerParams};
-use crate::composite_layers::axis_linear_layer::AxisPosition;
+use crate::composite_layers::axis_linear_layer::{build_axis_title_sublayer, AxisPosition};
 use crate::viewport::get_bounds;
 use crate::numeric_data::NumericData;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
@@ -19,7 +19,6 @@ use crate::d3::scale::{ScaleBand, Scaleable, Tickable};
 const DEFAULT_TICK_SIZE: f64 = 6.0;
 const DEFAULT_TICK_PADDING: f64 = 3.0;
 const DEFAULT_FONT_SIZE: f64 = 12.0;
-const DEFAULT_TITLE_PADDING: f64 = 3.0;
 const DEFAULT_LINE_WIDTH: f32 = 1.0;
 
 /// Layer params struct for [`AxisBandLayer`].
@@ -84,39 +83,14 @@ impl AxisBandLayer {
     }
 
     fn build_title_sublayer(&self, sublayer_bounds: MarginParams) -> Option<Box<dyn PreparedAndDraw>> {
-        let title = self.layer_params.title.clone()?;
-        let bounds = self.view_params.margins.as_ref();
-        let margin = |f: fn(&MarginParams) -> Option<f32>| bounds.and_then(f).unwrap_or(0.0);
-        let (width, height) = (self.view_params.width as f32, self.view_params.height as f32);
-        let center_x = (margin(|m| m.margin_left) + width - margin(|m| m.margin_right)) / 2.0;
-        let center_y = (margin(|m| m.margin_bottom) + height - margin(|m| m.margin_top)) / 2.0;
-        let edge_offset = (DEFAULT_TITLE_PADDING + DEFAULT_FONT_SIZE / 2.0) as f32;
-        let (x, y, rotation) = match self.layer_params.position {
-            AxisPosition::Bottom => (center_x, edge_offset, 0.0),
-            AxisPosition::Top => (center_x, height - edge_offset, 0.0),
-            AxisPosition::Left => (edge_offset, center_y, -90.0),
-            AxisPosition::Right => (width - edge_offset, center_y, 90.0),
-        };
-        Some(Box::new(TextLayer::new(
-            self.view_params.clone(),
-            TextLayerParams {
-                layer_id: format!("{}_axis_band_layer_title_sublayer", self.layer_params.layer_id),
-                bounds: Some(sublayer_bounds),
-                data_unit_mode_x: UnitsMode::Pixels,
-                data_unit_mode_y: UnitsMode::Pixels,
-                text_size: DEFAULT_FONT_SIZE as f32,
-                text_size_unit_mode: UnitsMode::Pixels,
-                text_align_mode: TextAlignMode::Middle,
-                text_baseline_mode: TextBaselineMode::Middle,
-                text_rotation: Some(rotation),
-                font_weight: FontWeight::Normal,
-                font_style: FontStyle::Normal,
-                position_x: NumericData::Float32(Arc::new(vec![x])),
-                position_y: NumericData::Float32(Arc::new(vec![y])),
-                text_vec: Arc::new(vec![title]),
-                ..Default::default()
-            },
-        )))
+        let title = self.layer_params.title.as_ref()?;
+        Some(build_axis_title_sublayer(
+            &self.view_params,
+            format!("{}_axis_band_layer_title_sublayer", self.layer_params.layer_id),
+            &self.layer_params.position,
+            title,
+            sublayer_bounds,
+        ))
     }
 
     fn build_sublayers(&self) -> Vec<Box<dyn PreparedAndDraw>> {

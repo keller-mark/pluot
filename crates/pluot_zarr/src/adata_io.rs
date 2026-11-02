@@ -51,40 +51,44 @@ pub async fn read_string_array(store: Arc<dyn AsyncReadableStorageTraits>, path:
     array.async_retrieve_array_subset::<Vec<String>>(&subset).await
 }
 
-/// Reads the row labels of an AnnData dataframe (e.g. `obs` or `var`), i.e.
-/// the column named by its `_index` attribute. Handles both `string-array`-
-/// and `nullable-string-array`-encoded index columns; the `mask` sibling of
-/// the latter is ignored, since a dataframe index is not expected to have
-/// missing values.
-/// TODO: also support integer and range-type indices
-pub async fn read_dataframe_index(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
-    let index_column = match read_encoding(store.clone(), dataframe_path).await {
-        AnnDataEncoding::DataFrame { index, .. } => index,
+/// The path of the column named by the `_index` attribute of the AnnData dataframe at `dataframe_path`.
+pub async fn read_dataframe_index_path(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str) -> String {
+    match read_encoding(store, dataframe_path).await {
+        AnnDataEncoding::DataFrame { index, .. } => format!("{dataframe_path}/{index}"),
         other => panic!("Expected a dataframe encoding at \"{dataframe_path}\", got {other:?}"),
-    };
-    let index_path = format!("{dataframe_path}/{index_column}");
-    let values_path = match read_encoding(store.clone(), &index_path).await {
-        AnnDataEncoding::NullableStringArray { .. } => format!("{index_path}/values"),
-        AnnDataEncoding::StringArray { .. } => index_path,
-        other => panic!("Unsupported dataframe index encoding at \"{index_path}\": {other:?}"),
+    }
+}
+
+/// Reads a `string-array` or `nullable-string-array` column of an AnnData
+/// dataframe, ignoring the latter's mask.
+pub async fn read_string_column(store: Arc<dyn AsyncReadableStorageTraits>, column_path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
+    let values_path = match read_encoding(store.clone(), column_path).await {
+        AnnDataEncoding::NullableStringArray { .. } => format!("{column_path}/values"),
+        AnnDataEncoding::StringArray { .. } => column_path.to_string(),
+        other => panic!("Unsupported string column encoding at \"{column_path}\": {other:?}"),
     };
     read_string_array(store, &values_path).await
 }
 
-/// Reads a string column of an AnnData dataframe (e.g. `obs` or `var`): its
-/// index when `column` is `None`, else the named `string-array` or
-/// `nullable-string-array` column (ignoring the latter's mask).
-pub async fn read_dataframe_column_strings(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str, column: Option<&str>) -> Result<Vec<String>, zarrs::array::ArrayError> {
-    let Some(column) = column else {
-        return read_dataframe_index(store, dataframe_path).await;
+/// Reads the row labels of an AnnData dataframe (e.g. `obs` or `var`), i.e.
+/// the column named by its `_index` attribute (see [`read_string_column`]).
+/// TODO: also support integer and range-type indices
+pub async fn read_dataframe_index(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
+    let index_path = read_dataframe_index_path(store.clone(), dataframe_path).await;
+    read_string_column(store, &index_path).await
+}
+
+/// Reads the number of rows of the AnnData dataframe at `dataframe_path`, from the shape of its index.
+pub async fn read_dataframe_len(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str) -> u64 {
+    let index_path = read_dataframe_index_path(store.clone(), dataframe_path).await;
+    let array_path = match read_encoding(store.clone(), &index_path).await {
+        AnnDataEncoding::NullableStringArray { .. } => format!("{index_path}/values"),
+        _ => index_path,
     };
-    let column_path = format!("{dataframe_path}/{column}");
-    let values_path = match read_encoding(store.clone(), &column_path).await {
-        AnnDataEncoding::NullableStringArray { .. } => format!("{column_path}/values"),
-        AnnDataEncoding::StringArray { .. } => column_path,
-        other => panic!("Unsupported string column encoding at \"{column_path}\": {other:?}"),
-    };
-    read_string_array(store, &values_path).await
+    let array = zarrs::array::Array::async_open(store, &array_path)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to open dataframe index at \"{array_path}\": {e}"));
+    array.shape()[0]
 }
 
 /// Reads the `[n_obs, n_var]` shape of an AnnData expression matrix stored as a

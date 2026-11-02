@@ -26,7 +26,8 @@ Zooming in first stretches only the cell axis until each heatmap cell is square,
           layer_type: "AdataZarrHeatmapLayer",
           layer_params: {
             layer_id: "heatmap",
-            layer: "X",
+            layer_path: "X",
+            groupby: ["obs/bulk_labels"],
             var_filtering: {
               axis_criteria_mode: "Identifiers",
               axis_criteria_params: {
@@ -39,7 +40,7 @@ Zooming in first stretches only the cell axis until each heatmap cell is square,
                 {
                   criteria_mode: "Categorical",
                   // CD14+ Monocyte, CD19+ B, CD56+ NK, Dendritic
-                  criteria_params: { codes_key: "/obs/bulk_labels/codes", included_codes: [5, 6, 8, 9] },
+                  criteria_params: { codes_key: "/obs/bulk_labels/codes", included_categories: [5, 6, 8, 9] },
                 },
               ],
             },

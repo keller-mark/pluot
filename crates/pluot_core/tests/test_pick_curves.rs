@@ -5,6 +5,8 @@ use pluot_core::layers::filled_curve_layer::FilledCurvePickingInfo;
 use pluot_core::layers::stroked_curve_layer::StrokedCurvePickingInfo;
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
+use pluot_core::numeric_data::NumericData;
+use pluot_core::render_traits::{CategoricalCriteriaParams, EmphasisCriteria};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams};
 
 /// A single 10x10 closed square path: (0,0) -> (10,0) -> (10,10) -> (0,10) -> close.
@@ -130,4 +132,59 @@ fn test_pick_pixels_units_mode_returns_none() {
         },
     );
     assert!(pick_at(&layer, 5.0, 5.0).is_none());
+}
+
+/// Two curves: the first is two squares at x in [0, 10] and [20, 30]; the second is a square at x in [40, 50].
+fn multi_curve_layer(stroked: bool, filled: bool, filtering_criteria: Vec<EmphasisCriteria>) -> CurveLayer {
+    let square_at = |x0: f32| vec![
+        PathCommand::MoveTo { x: x0, y: 0.0 },
+        PathCommand::LineTo { x: x0 + 10.0, y: 0.0 },
+        PathCommand::LineTo { x: x0 + 10.0, y: 10.0 },
+        PathCommand::LineTo { x: x0, y: 10.0 },
+        PathCommand::Close,
+    ];
+    let commands: Vec<PathCommand> = [square_at(0.0), square_at(20.0), square_at(40.0)].concat();
+    CurveLayer::new(
+        ViewParams::default(),
+        CurveLayerParams {
+            layer_id: "test_curve".to_string(),
+            commands: Arc::new(commands),
+            curve_offsets: Some(Arc::new(vec![0, 10, 15])),
+            stroked,
+            filled,
+            filtering_criteria,
+            ..CurveLayerParams::default()
+        },
+    )
+}
+
+#[test]
+fn test_pick_filled_multiple_curves() {
+    let layer = multi_curve_layer(false, true, vec![]);
+    let info = |x| pick_at(&layer, x, 5.0).unwrap().into_info::<FilledCurvePickingInfo>().unwrap();
+    assert_eq!((info(5.0).curve_index, info(5.0).subpath_index), (0, 0));
+    assert_eq!((info(25.0).curve_index, info(25.0).subpath_index), (0, 1));
+    assert_eq!((info(45.0).curve_index, info(45.0).subpath_index), (1, 2));
+    assert!(pick_at(&layer, 15.0, 5.0).is_none());
+}
+
+#[test]
+fn test_pick_stroked_multiple_curves() {
+    let layer = multi_curve_layer(true, false, vec![]);
+    let info = pick_at(&layer, 50.5, 5.0).unwrap().into_info::<StrokedCurvePickingInfo>().unwrap();
+    assert_eq!((info.curve_index, info.subpath_index), (1, 2));
+}
+
+#[test]
+fn test_pick_ignores_filtered_out_curves() {
+    let filter_out_first_curve = vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+        codes: NumericData::Int32(Arc::new(vec![0, 1])),
+        included_codes: vec![1],
+    })];
+    let filled = multi_curve_layer(false, true, filter_out_first_curve.clone());
+    assert!(pick_at(&filled, 5.0, 5.0).is_none());
+    assert_eq!(pick_at(&filled, 45.0, 5.0).unwrap().info_as::<FilledCurvePickingInfo>().unwrap().curve_index, 1);
+
+    let stroked = multi_curve_layer(true, false, filter_out_first_curve);
+    assert_eq!(pick_at(&stroked, 0.5, 5.0).unwrap().info_as::<StrokedCurvePickingInfo>().unwrap().curve_index, 1);
 }

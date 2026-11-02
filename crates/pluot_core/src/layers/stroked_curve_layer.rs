@@ -1,4 +1,4 @@
-// StrokedCurveLayer accepts path commands as input.
+// StrokedCurveLayer accepts path commands for one or more curves as input.
 // This layer is intended to be used as a sub-layer of CurveLayer.
 // In the vector drawing case, rendering is performed by simply defining an SVG path element.
 // In the raster drawing case, we use the approach from rreusser/webgpu-instanced-lines
@@ -29,7 +29,7 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 
-use crate::curve_and_polygon_utils::{commands_to_subpaths, flatten_subpath, resolve_margins, PathCommand};
+use crate::curve_and_polygon_utils::{curves_to_subpaths, flatten_subpath, resolve_margins, split_curves, PathCommand};
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 
 // Must match VERTS_PER_INSTANCE_F = 38 in stroked_curve_layer.wgsl.
@@ -50,18 +50,18 @@ pub struct StrokedCurveLayerParams {
     pub stroke_width: Option<SizeMode>,
     pub model_matrix: Option<[f32; 16]>,
     pub commands: Arc<Vec<PathCommand>>,
+    /// See `CurveLayerParams::curve_offsets`. `None` means a single curve.
+    pub curve_offsets: Option<Arc<Vec<u32>>>,
     pub subdivisions: u32,
-    /// How to color the stroke. See [`ColorMode`]. `StrokedCurveLayer` renders a
-    /// single shape, so modes carrying `NumericData` are expected to supply a
-    /// single (length-1) value.
+    /// How to color the stroke. See [`ColorMode`]. Modes carrying `NumericData`
+    /// supply one value per curve.
     pub stroke_color: Option<ColorMode>,
     pub stroke_opacity: Option<OpacityMode>,
 
-    /// Criteria AND-ed together to determine whether the single shape is
-    /// selected ("foreground") / filtered-in ("background"). `StrokedCurveLayer`
-    /// renders a single shape, so modes carrying `NumericData` are expected to
-    /// supply a single (length-1) value. An empty list means the shape is
-    /// included.
+    /// Criteria AND-ed together to determine whether each curve is selected
+    /// ("foreground") / filtered-in ("background"). Modes carrying
+    /// `NumericData` supply one value per curve. An empty list means every
+    /// curve is included.
     pub selection_criteria: Vec<EmphasisCriteria>,
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
@@ -85,8 +85,6 @@ pub struct StrokedCurveLayerParams {
     // When true, a "background" shape has the stroke opacity specified via `background_stroke_opacity`.
     pub enable_background_stroke_opacity: bool,
     // When true, a "background" shape has the stroke width specified via `background_stroke_width`.
-    // Note: `StrokedCurveLayer` renders a single shape, so this applies uniformly
-    // (see the `0u`-indexed `is_selected_in`/`get_stroke_width` calls in the shader).
     pub enable_background_stroke_width: bool,
 }
 
@@ -101,6 +99,7 @@ impl Default for StrokedCurveLayerParams {
             stroke_width: Some(SizeMode::UniformSize(1.0)),
             model_matrix: None,
             commands: Arc::new(vec![]),
+            curve_offsets: None,
             subdivisions: 32,
             stroke_color: None,
             stroke_opacity: Some(OpacityMode::UniformOpacity(1.0)),
@@ -121,36 +120,36 @@ pub struct StrokedCurveLayer {
     layer_params: StrokedCurveLayerParams,
     subpaths: Vec<Vec<CubicBez>>,
     polylines: Vec<Vec<(f32, f32)>>,
+    /// The index of the curve each of `subpaths` and `polylines` belongs to.
+    subpath_curve_indices: Vec<u32>,
 }
 
 impl StrokedCurveLayer {
     pub fn new(view_params: ViewParams, layer_params: StrokedCurveLayerParams) -> Self {
-        // Validate the lengths of things. StrokedCurveLayer renders a single
-        // shape (see `cpu_fill_color`/`cpu_stroke_width`/`cpu_stroke_opacity`
-        // calls below, which always read index 0), so any instanced values
-        // must have exactly one element.
+        let curve_offsets = layer_params.curve_offsets.as_deref().map(Vec::as_slice);
+        let num_curves = split_curves(&layer_params.commands, curve_offsets).len();
         if let Some(stroke_color) = &layer_params.stroke_color {
-            stroke_color.validate_len(1);
+            stroke_color.validate_len(num_curves);
         }
         if let Some(stroke_width) = &layer_params.stroke_width {
-            stroke_width.validate_len(1);
+            stroke_width.validate_len(num_curves);
         }
         if let Some(stroke_opacity) = &layer_params.stroke_opacity {
-            stroke_opacity.validate_len(1);
+            stroke_opacity.validate_len(num_curves);
         }
         for selection_criteria in &layer_params.selection_criteria {
-            selection_criteria.validate_len(1);
+            selection_criteria.validate_len(num_curves);
         }
         for filtering_criteria in &layer_params.filtering_criteria {
-            filtering_criteria.validate_len(1);
+            filtering_criteria.validate_len(num_curves);
         }
 
         // TODO: move this logic to the prepare() function?
         // TODO: only do these computations in the raster drawing case?
-        let subpaths = commands_to_subpaths(&layer_params.commands);
+        let (subpaths, subpath_curve_indices) = curves_to_subpaths(&layer_params.commands, curve_offsets);
         let subdivisions = layer_params.subdivisions.max(1);
         let polylines = subpaths.iter().map(|s| flatten_subpath(s, subdivisions)).collect();
-        Self { view_params, layer_params, subpaths, polylines }
+        Self { view_params, layer_params, subpaths, polylines, subpath_curve_indices }
     }
 }
 
@@ -200,7 +199,7 @@ const COLOR_BINDING_START: u32 = 3;
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToRasterGpu for StrokedCurveLayer {
     async fn draw(&self, gpu_context: &GpuContext<'_>, pass: &mut GpuRenderPass<'_>) {
-        let Self { view_params, layer_params, polylines, .. } = self;
+        let Self { view_params, layer_params, polylines, subpath_curve_indices, .. } = self;
 
         let has_work = polylines.iter().any(|p| p.len() >= 2);
         if !has_work {
@@ -235,7 +234,7 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         let mut seg_data: Vec<u32> = Vec::new();
         let mut total_segments: u32 = 0;
 
-        for polyline in polylines {
+        for (polyline, &curve_index) in polylines.iter().zip(subpath_curve_indices) {
             if polyline.len() < 2 {
                 continue;
             }
@@ -249,6 +248,7 @@ impl DrawToRasterGpu for StrokedCurveLayer {
                 seg_data.push(poly_start);
                 seg_data.push(poly_end);
                 seg_data.push(local_b);
+                seg_data.push(curve_index);
                 total_segments += 1;
             }
         }
@@ -261,9 +261,9 @@ impl DrawToRasterGpu for StrokedCurveLayer {
 
         // Build the GPU-side width and opacity resources. Like the color mode,
         // the instanced variants upload a value texture; those bindings follow
-        // the color textures. `CurveLayer` renders a single shape, so the shader
-        // always resolves element 0. The width texture is read in the vertex
-        // stage, the opacity texture in the fragment stage.
+        // the color textures, and the shader resolves each segment's curve index.
+        // The width texture is read in the vertex stage, the opacity texture in
+        // the fragment stage.
         let width_binding_start = COLOR_BINDING_START + color.textures.len() as u32;
         let width = prepare_stroke_width_mode(device, queue, layer_params.stroke_width.as_ref(), width_binding_start);
         let opacity_binding_start = width_binding_start + width.texture.is_some() as u32;
@@ -272,8 +272,6 @@ impl DrawToRasterGpu for StrokedCurveLayer {
         // Filtering and selection criteria (fragment stage only: the shape is
         // discarded when filter-excluded, and re-colored with
         // `background_stroke_color` when selection-excluded; see fs_main).
-        // `StrokedCurveLayer` renders a single shape, so the shader always
-        // resolves element 0.
         let filter_binding_start = opacity_binding_start + opacity.texture.is_some() as u32;
         let filtering = prepare_emphasis_criteria(
             device, queue, &layer_params.filtering_criteria, "is_filtered_in", "filter_data", filter_binding_start,
@@ -589,7 +587,7 @@ impl DrawToRasterCpu for StrokedCurveLayer {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DrawToSvg for StrokedCurveLayer {
     async fn draw(&self, ctx: &mut SvgContext) {
-        let Self { layer_params, view_params, subpaths, .. } = self;
+        let Self { layer_params, view_params, subpaths, subpath_curve_indices, .. } = self;
 
         let camera_view = view_params.camera_view.unwrap_or([
             1.0, 0.0, 0.0, 0.0,
@@ -619,39 +617,10 @@ impl DrawToSvg for StrokedCurveLayer {
             (px as f64, (layer_h - py) as f64)
         };
 
-        // Filter-excluded shapes are not rendered at all.
-        let is_filtered_in = cpu_is_included(&layer_params.filtering_criteria, 0);
-        // Filter-included but selection-excluded ("background") shapes still
-        // render, but de-emphasized with `background_stroke_color` in place of
-        // the configured stroke color.
-        let is_selected = cpu_is_included(&layer_params.selection_criteria, 0);
-
-        // A single shape uses one color, resolved from element 0.
         let quant_domain = match layer_params.stroke_color.as_ref() {
             Some(ColorMode::Quantitative(params)) => quantitative_domain(params),
             _ => [0.0, 1.0],
         };
-        let stroke = TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
-            cpu_fill_color(layer_params.stroke_color.as_ref(), 0, quant_domain)
-        } else {
-            layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
-        });
-
-        // A single shape uses one width / opacity, resolved from element 0.
-        // The background overrides (when enabled) replace these before the
-        // width's unit conversion below.
-        let width_value = resolve_background_scalar(
-            is_selected,
-            layer_params.enable_background_stroke_width,
-            layer_params.background_stroke_width,
-            cpu_stroke_width(layer_params.stroke_width.as_ref(), 0),
-        );
-        let stroke_opacity = resolve_background_scalar(
-            is_selected,
-            layer_params.enable_background_stroke_opacity,
-            layer_params.background_stroke_opacity,
-            cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), 0),
-        ) as f64;
 
         // Stroke width in pixels. In pixel mode it is used directly; in data mode
         // it is transformed through the same pipeline as positions (with w=0, so
@@ -659,7 +628,7 @@ impl DrawToSvg for StrokedCurveLayer {
         // measured relative to the Y axis, so use the Y screen extent. In
         // normalized mode it is a fraction (0 to 1) of the layer size, also
         // treated as height-relative.
-        let stroke_width_px = if layer_params.stroke_width_unit_mode == UnitsMode::Data {
+        let to_stroke_width_px = |width_value: f32| if layer_params.stroke_width_unit_mode == UnitsMode::Data {
             let (_sx, sy) = get_point_size(
                 width_value,
                 width_value,
@@ -680,10 +649,35 @@ impl DrawToSvg for StrokedCurveLayer {
         };
 
         let mut svg_elements: Vec<TwoElement> = Vec::with_capacity(subpaths.len());
-        for subpath in subpaths {
-            if !is_filtered_in || subpath.is_empty() {
+        for (subpath, &curve_index) in subpaths.iter().zip(subpath_curve_indices) {
+            let curve_index = curve_index as usize;
+            // Filter-excluded curves are not rendered at all.
+            if !cpu_is_included(&layer_params.filtering_criteria, curve_index) || subpath.is_empty() {
                 continue;
             }
+            // Filter-included but selection-excluded ("background") curves still
+            // render, but de-emphasized with `background_stroke_color` in place of
+            // the configured stroke color. The background overrides (when enabled)
+            // replace the width before its unit conversion.
+            let is_selected = cpu_is_included(&layer_params.selection_criteria, curve_index);
+            let stroke = TwoColor::Rgb(if is_selected || !layer_params.enable_background_stroke_color {
+                cpu_fill_color(layer_params.stroke_color.as_ref(), curve_index, quant_domain)
+            } else {
+                layer_params.background_stroke_color.unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            });
+            let stroke_width_px = to_stroke_width_px(resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_stroke_width,
+                layer_params.background_stroke_width,
+                cpu_stroke_width(layer_params.stroke_width.as_ref(), curve_index),
+            ));
+            let stroke_opacity = resolve_background_scalar(
+                is_selected,
+                layer_params.enable_background_stroke_opacity,
+                layer_params.background_stroke_opacity,
+                cpu_stroke_opacity(layer_params.stroke_opacity.as_ref(), curve_index),
+            ) as f64;
+
             let mut d = String::new();
             let first = subpath[0].p0;
             let (fx, fy) = to_px(first.x as f32, first.y as f32);
@@ -698,7 +692,7 @@ impl DrawToSvg for StrokedCurveLayer {
             }
             svg_elements.push(TwoElement::Path(TwoPath {
                 d,
-                stroke: Some(stroke.clone()),
+                stroke: Some(stroke),
                 fill: None,
                 linewidth: stroke_width_px as f64,
                 opacity: 1.0,
@@ -726,6 +720,9 @@ impl ExtentableLayer for StrokedCurveLayer {}
 
 #[derive(Serialize, Debug, Clone, PartialEq, TS)]
 pub struct StrokedCurvePickingInfo {
+    /// Index into `curve_offsets` (always 0 when it is `None`).
+    pub curve_index: usize,
+    /// Index of the sub-path among those of every curve.
     pub subpath_index: usize,
     pub segment_index: usize,
 }
@@ -745,11 +742,6 @@ impl PickableLayer for StrokedCurveLayer {
             return None;
         }
 
-        // Filter-excluded shapes are ignored in picking.
-        if !cpu_is_included(&self.layer_params.filtering_criteria, 0) {
-            return None;
-        }
-
         // Map the world coordinate into model space by inverting the
         // model_matrix; the vertex shader computes
         // world = model_matrix * vec4(position, 0, 1).
@@ -760,7 +752,11 @@ impl PickableLayer for StrokedCurveLayer {
         // threshold), mirroring PointLayer's nearest-neighbor approach.
         let mut min_dist_sq = f32::MAX;
         let mut closest: Option<(usize, usize)> = None;
-        for (subpath_idx, points) in self.polylines.iter().enumerate() {
+        for (subpath_idx, (points, &curve_index)) in self.polylines.iter().zip(&self.subpath_curve_indices).enumerate() {
+            // Filter-excluded curves are ignored in picking.
+            if !cpu_is_included(&self.layer_params.filtering_criteria, curve_index as usize) {
+                continue;
+            }
             for i in 0..points.len().saturating_sub(1) {
                 let (ax, ay) = points[i];
                 let (bx, by) = points[i + 1];
@@ -774,6 +770,7 @@ impl PickableLayer for StrokedCurveLayer {
 
         let (subpath_idx, segment_idx) = closest?;
         Some(LayerPickingResult::new(&self.layer_params.layer_id, StrokedCurvePickingInfo {
+            curve_index: self.subpath_curve_indices[subpath_idx] as usize,
             subpath_index: subpath_idx,
             segment_index: segment_idx,
         }))
