@@ -352,12 +352,12 @@ export function PluotWrapper(props) {
           setCameraMatrix={setCameraMatrix}
           cameraFilter={cameraFilter}
           limitExtent={limitExtent}
+          extentKey={derivedExtentKey}
           enableClick={enableClick}
           enableTooltip={enableTooltip}
           backgroundColor={transparentBackground ? undefined : "#fff"}
           onHover={onHover}
           onClick={defaultOnClick}
-          extentKey={derivedExtentKey}
           brushMode={brushMode}
           brushUnitsModeX={brushUnitsModeX}
           brushUnitsModeY={brushUnitsModeY}

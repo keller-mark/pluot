@@ -17,15 +17,16 @@
     "@astrojs/starlight": "^0.39.2",
     "@pluot/react": "workspace:*",
     "@tanstack/react-query": "^5.99.0",
+    "anndata.js": "^0.0.3",
     "astro": "^6.3.3",
-    "tslib": "^2.8.1",
     "leva": "0.10.1",
     "lodash-es": "^4.18.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sharp": "^0.34.2",
+    "tslib": "^2.8.1",
     "use-coordination": "^1.0.1",
-    "zarrita": "^0.7.3",
+    "zarrita": "^0.7.5",
     "zod-ome-ngff": "0.3.0"
   }
 }

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useControls, Leva, button, folder } from 'leva';
+import { createPlugin, useInputContext, Components } from 'leva/plugin';
 
 const titleBar = {
   title: "Plot Controls",
@@ -56,6 +57,50 @@ export function useColormapOption(defaultColormap) {
     },
   }), [defaultColormap]);
 }
+
+function MultiSelect() {
+  const { id, label, value, onUpdate, settings } = useInputContext();
+  const onChange = (event) => {
+    const selected = Array.from(event.target.selectedOptions, option => option.value);
+    // Keep previously-selected values in their existing order (e.g., the gene order of heatmap columns),
+    // rather than the order of the options list.
+    onUpdate([
+      ...value.filter(v => selected.includes(v)),
+      ...selected.filter(v => !value.includes(v)),
+    ]);
+  };
+  return (
+    <Components.Row input>
+      <Components.Label>{label}</Components.Label>
+      <select
+        id={id}
+        multiple
+        size={settings.size}
+        value={value}
+        onChange={onChange}
+        style={{
+          width: '100%',
+          font: 'inherit',
+          color: 'var(--leva-colors-highlight3)',
+          backgroundColor: 'var(--leva-colors-elevation3)',
+          border: 'none',
+          borderRadius: 'var(--leva-radii-sm)',
+        }}
+      >
+        {settings.options.map(option => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    </Components.Row>
+  );
+}
+
+// The initial value is passed as `selected` rather than `value` because Leva
+// only forwards `input.value` to normalize when a custom input has a `value` key, dropping the other settings.
+export const multiSelect = createPlugin({
+  normalize: ({ selected, options, size = 6 }) => ({ value: selected, settings: { options, size } }),
+  component: MultiSelect,
+});
 
 export function resolvePlotParams(plotParams, controlValues) {
   return typeof plotParams === 'function' ? plotParams(controlValues) : plotParams;
