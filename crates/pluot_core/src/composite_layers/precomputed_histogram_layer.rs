@@ -15,7 +15,7 @@ use crate::extent::LayerExtentResult;
 use crate::layers::rect_layer::{RectLayer, RectLayerParams};
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
-    BrushableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
+    ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams
 };
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
@@ -293,7 +293,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for PrecomputedHistogramLayer {}
 
 impl PickableLayer for PrecomputedHistogramLayer {}
 

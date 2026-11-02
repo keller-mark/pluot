@@ -8,11 +8,10 @@ use image::{codecs::png::PngEncoder, ExtendedColorType, ImageBuffer, ImageEncode
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, BrushableLayer, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
+use crate::render_traits::{AspectRatioMode, AspectRatioAlignmentMode, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -22,7 +21,7 @@ use crate::two::shapes::{TwoElement, TwoGroup, TwoImage, TwoImageRenderingStyle}
 use crate::two::svg::{update_svg, SvgContext};
 use crate::positioning::{get_point_position, get_point_size};
 use crate::shader_modules::{common, ShaderBuilder};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 
 
 /// Specify image channel settings, including the intensity window and an RGB color.
@@ -855,9 +854,18 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for BitmapLayer {}
 
 impl ExtentableLayer for BitmapLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct BitmapPickingInfo {
+    /// Column index of the picked pixel within the data array.
+    pub x: usize,
+    /// Row index of the picked pixel within the data array.
+    pub y: usize,
+    /// The picked pixel's value, per channel.
+    pub channels: Vec<NumericValue>,
+}
 
 impl PickableLayer for BitmapLayer {
     /// Pick the image pixel under the given data coordinate.
@@ -925,22 +933,16 @@ impl PickableLayer for BitmapLayer {
         let y_stride = strides[y_dim_idx];
         let c_stride = strides[c_dim_idx];
 
-        let mut info = HashMap::new();
-        info.insert("x".to_string(), texel_x.to_string());
-        info.insert("y".to_string(), texel_y.to_string());
-        for channel_index in 0..self.layer_params.channel_settings.len() {
-            let idx = texel_y * y_stride + texel_x * x_stride + channel_index * c_stride;
-            if idx < self.layer_params.data.len() {
-                info.insert(
-                    format!("channel_{}", channel_index),
-                    self.layer_params.data.get_f32(idx).to_string(),
-                );
-            }
-        }
+        let channels = (0..self.layer_params.channel_settings.len())
+            .map(|channel_index| texel_y * y_stride + texel_x * x_stride + channel_index * c_stride)
+            .filter(|&idx| idx < self.layer_params.data.len())
+            .map(|idx| self.layer_params.data.value(idx))
+            .collect();
 
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, BitmapPickingInfo {
+            x: texel_x,
+            y: texel_y,
+            channels,
+        }))
     }
 }

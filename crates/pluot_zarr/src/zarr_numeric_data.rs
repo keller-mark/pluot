@@ -15,7 +15,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 ///   filtering `codes_key`, a selection `values_key` — so an array used in
 ///   several roles is fetched once;
 /// - the calling layer and, for criteria, the criterion's position in its list
-///   and its thresholds (`included_codes`/`min`/`max`), so re-tuning a filter
+///   and its thresholds (`included_categories`/`min`/`max`), so re-tuning a filter
 ///   or dragging a brush re-uses the already-loaded array.
 pub fn arr_cache_key(store_name: &str, array_path: &str) -> Vec<String> {
     vec![

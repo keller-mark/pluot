@@ -89,7 +89,7 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
     // Currently, need to conditionally show the Format selector, hiding when the plot renders > ~10,000 points.
     ...(enableVector ? ({
       format: {
-        value: 'Raster',
+        value: defaultOptions.format ?? 'Raster',
         options: {
           Raster: 'Raster',
           Vector: 'Vector',

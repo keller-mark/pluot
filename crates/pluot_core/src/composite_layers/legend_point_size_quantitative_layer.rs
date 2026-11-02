@@ -13,7 +13,7 @@ use crate::layers::point_layer::{PointLayer, PointLayerParams, PointShapeMode};
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
-    BrushableLayer, ExtentableLayer, ColorMode, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    ExtentableLayer, ColorMode, InstancedSizeParams, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::GpuContext;
 use crate::gpu_send::GpuRenderPass;
@@ -296,7 +296,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for LegendPointSizeQuantitativeLayer {}
 
 impl ExtentableLayer for LegendPointSizeQuantitativeLayer {}
 

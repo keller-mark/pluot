@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use std::any::Any;
+use serde::Serialize;
 
 use crate::wgpu;
 use crate::wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages};
@@ -8,38 +8,53 @@ use crate::params::{GraphicsFormat, PlotParams, RenderParams, RenderBackend, Com
 use crate::render_traits::{MarginParams, PickableLayer, ViewParams, get_layers, draw_layers_to_vector, draw_layers_to_raster};
 use crate::cache::get_or_init_gpu_context;
 use crate::zarr::StoreMap;
+use crate::maybe::{MaybeSend, MaybeSync};
 
 use futures_intrusive::channel::shared::oneshot_channel;
 
 use crate::viewport::{DataCoord, ScreenCoord, unproject};
 
+/// Layer-specific details about a picked or brushed element.
+///
+/// Each layer defines its own struct, which is serialized as-is
+/// (e.g., to be rendered as a tooltip on the frontend).
+pub trait ResultInfo: erased_serde::Serialize + Any + MaybeSend + MaybeSync {}
+
+impl<T: Serialize + Any + MaybeSend + MaybeSync> ResultInfo for T {}
+
+erased_serde::serialize_trait_object!(ResultInfo);
+
 /// Serializable representation of picking results
 /// from a single plotted layer.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct LayerPickingResult {
     pub layer_id: String,
-    pub info: HashMap<String, String>, // Additional info about the picked element (e.g., index in data array, value, etc.)
+    pub info: Box<dyn ResultInfo>,
     // TODO: include a "picking result type" as part of the picking result:
     // Whether the picked item was a data point, axis element, axis label,
     // axis category, axis quantity, legend element, legend label,
     // legend category, legend quantity, title element, etc.
 }
 
-/// Serializable representation of brushing results
-/// from a single plotted layer.
-#[derive(Serialize, Deserialize)]
-pub struct LayerBrushingResult {
-    pub layer_id: String,
-    pub info: HashMap<String, String>, // Additional info about the picked elements (e.g., index in data array, value, etc.)
-    // TODO: include a "picking result type" as part of the picking result:
-    // Whether the picked item was a data point, axis element, axis label,
-    // axis category, axis quantity, legend element, legend label,
-    // legend category, legend quantity, title element, etc.
+impl LayerPickingResult {
+    pub fn new(layer_id: impl Into<String>, info: impl ResultInfo) -> Self {
+        Self { layer_id: layer_id.into(), info: Box::new(info) }
+    }
+
+    /// The info, if it was produced by a layer whose info type is `T`.
+    pub fn info_as<T: ResultInfo>(&self) -> Option<&T> {
+        (&*self.info as &dyn Any).downcast_ref()
+    }
+
+    pub fn into_info<T: ResultInfo>(self) -> Option<T> {
+        let info: Box<dyn Any> = self.info;
+        info.downcast().ok().map(|info| *info)
+    }
 }
 
 /// Serializable representation of picking results
 /// from one or more plotted layers.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct PickingResult {
     pub data_coord: Option<DataCoord>,
     pub screen_coord: ScreenCoord,

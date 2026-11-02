@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pluot_core::layers::line_layer::{LineLayer, LineLayerParams};
+use pluot_core::layers::line_layer::{LineLayer, LineLayerParams, LinePickingInfo};
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData};
@@ -35,11 +35,11 @@ fn test_pick_identity_matrix() {
     // Closest to segment 0 (y=0).
     let r = pick_at(&layer, 5.0, 1.0).unwrap();
     assert_eq!(r.layer_id, "test_line");
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     // Closest to segment 1 (y=20).
     let r = pick_at(&layer, 5.0, 19.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 }
 
 #[test]
@@ -54,10 +54,10 @@ fn test_pick_with_scale_matrix() {
     let layer = make_layer(Some(model_matrix));
 
     let r = pick_at(&layer, 10.0, 1.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     let r = pick_at(&layer, 10.0, 39.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 }
 
 #[test]
@@ -76,4 +76,8 @@ fn test_pick_pixels_units_mode_returns_none() {
         },
     );
     assert!(pick_at(&layer, 5.0, 0.0).is_none());
+}
+
+fn info(r: &LayerPickingResult) -> &LinePickingInfo {
+    r.info_as().unwrap()
 }

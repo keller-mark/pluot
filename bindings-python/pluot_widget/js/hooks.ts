@@ -3,9 +3,7 @@ import type {
   setStoreByName,
   AspectRatioAlignmentMode,
   AspectRatioMode,
-  BrushingResult,
   BrushMode,
-  BrushResult,
   BrushState,
   BrushUnitsMode,
   CameraMatrix,
@@ -67,7 +65,6 @@ export type WidgetModel = {
   // Milliseconds.
   maybe_brush_delay: number;
   brush: BrushState | null;
-  brushing_result: BrushingResult | null;
   plot_id: string;
   plot_type: PlotType;
   stores_metadata: StoresInput;
@@ -216,8 +213,8 @@ export function useClickResult(model: AnyModel<WidgetModel>): (result: PickingRe
 
 type ModelBrush = {
   brush: BrushState | NoBrush;
-  onBrush: (state: BrushState) => BrushResult;
-  onBrushEnd: (state: BrushState, brushingResult: BrushingResult | undefined) => BrushResult;
+  onBrush: (state: BrushState) => void;
+  onBrushEnd: (state: BrushState) => void;
   onBrushClear: () => void;
 };
 
@@ -236,21 +233,17 @@ export function useModelBrush(model: AnyModel<WidgetModel>): ModelBrush {
 
   const onBrush = React.useCallback((state: BrushState) => {
     setBrush(state);
-    return {};
   }, []);
 
-  const onBrushEnd = React.useCallback((state: BrushState, brushingResult: BrushingResult | undefined) => {
+  const onBrushEnd = React.useCallback((state: BrushState) => {
     setBrush(state);
     model.set("brush", state);
-    model.set("brushing_result", brushingResult ?? null);
     model.save_changes();
-    return {};
   }, [model]);
 
   const onBrushClear = React.useCallback(() => {
     setBrush(NO_BRUSH);
     model.set("brush", null);
-    model.set("brushing_result", null);
     model.save_changes();
   }, [model]);
 

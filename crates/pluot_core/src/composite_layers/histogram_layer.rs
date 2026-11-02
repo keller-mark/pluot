@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use crate::render_traits::{
-    BrushableLayer, ExtentableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams
+    ExtentableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, ViewParams
 };
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
@@ -169,7 +169,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for HistogramLayer {}
 
 impl ExtentableLayer for HistogramLayer {}
 

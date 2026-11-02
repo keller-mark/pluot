@@ -5,6 +5,7 @@
  */
 export type IdentifierCriteriaParams = { 
 /**
- * The dataframe column holding the identifiers. `None` means its index.
+ * Path to the dataframe column holding the identifiers (e.g., `var/gene_symbols`).
+ * `None` means the index of the filtered or selected axis's dataframe.
  */
-column?: string | null, identifiers: Array<string>, };
+index_path?: string | null, identifiers: Array<string>, };

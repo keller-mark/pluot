@@ -14,71 +14,78 @@ export type CurveLayerParams = { layer_id: string, bounds?: MarginParams | null,
 /**
  * Whether `stroke_width` is measured in pixels or in data-coordinate units.
  */
-stroke_width_unit_mode: UnitsMode, model_matrix?: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] | null, commands: Array<PathCommand>, subdivisions: number, stroked: boolean, filled: boolean, 
+stroke_width_unit_mode: UnitsMode, model_matrix?: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] | null, commands: Array<PathCommand>, 
 /**
- * How to color the stroke. See [`ColorMode`]. `CurveLayer` renders a single
- * shape, so modes carrying `NumericData` are expected to supply a single
- * (length-1) value.
+ * Arrow-style offsets into `commands` with `num_curves + 1` entries: curve `c`
+ * consists of `commands[curve_offsets[c]..curve_offsets[c + 1]]`, and must start
+ * with a `MoveTo`. Each curve may have several sub-paths. `None` (the default)
+ * means `commands` is a single curve.
+ */
+curve_offsets?: Array<number> | null, subdivisions: number, stroked: boolean, filled: boolean, 
+/**
+ * How to color each curve's stroke. See [`ColorMode`]: modes carrying
+ * `NumericData` supply one value per curve.
  */
 stroke_color?: ColorMode | null, 
 /**
- * Stroke width. See [`SizeMode`]: `UniformSize` and `InstancedSize` (a
- * single, length-1 value for this single-shape layer) are both accepted.
- * Interpreted in the units given by `stroke_width_unit_mode`. Defaults to 1.
+ * Stroke width. See [`SizeMode`]: `UniformSize` shares one width across all
+ * curves, `InstancedSize` supplies one per curve. Interpreted in the units
+ * given by `stroke_width_unit_mode`. Defaults to 1.
  */
 stroke_width?: SizeMode | null, 
 /**
- * How to color the fill. See [`ColorMode`]. Same single-shape caveat as
- * `stroke_color`.
+ * How to color each curve's fill. See [`ColorMode`]: modes carrying
+ * `NumericData` supply one value per curve.
  */
 fill_color?: ColorMode | null, 
 /**
- * Opacity multiplier for the stroke. See [`OpacityMode`]. Defaults to 1.
+ * Opacity multiplier for the stroke. See [`OpacityMode`]: `InstancedOpacity`
+ * supplies one value per curve. Defaults to 1.
  */
 stroke_opacity?: OpacityMode | null, 
 /**
- * Opacity multiplier for the fill. See [`OpacityMode`]. Defaults to 1.
+ * Opacity multiplier for the fill. See [`OpacityMode`]: `InstancedOpacity`
+ * supplies one value per curve. Defaults to 1.
  */
 fill_opacity?: OpacityMode | null, 
 /**
- * Criteria AND-ed together to determine whether the single shape is
- * selected ("foreground") / filtered-in ("background"). `CurveLayer`
- * renders a single shape, so modes carrying `NumericData` are expected to
- * supply a single (length-1) value. An empty list means the shape is
+ * Criteria AND-ed together to determine the selected ("foreground") /
+ * filtered-in ("background") set of curves. Modes carrying `NumericData`
+ * supply one value per curve. An empty list means every curve is
  * included. Forwarded to both the stroke and fill sub-layers.
  */
 selection_criteria: Array<EmphasisCriteria>, filtering_criteria: Array<EmphasisCriteria>, 
 /**
- * Stroke/fill colors used when the shape is filter-included, but
+ * Stroke/fill colors used when a curve is filter-included, but
  * selection-excluded ("background"), in place of `stroke_color` /
  * `fill_color`.
  */
 background_stroke_color?: [number, number, number] | null, background_fill_color?: [number, number, number] | null, 
 /**
- * Stroke/fill opacity and stroke width used when the shape is
+ * Stroke/fill opacity and stroke width used when a curve is
  * filter-included, but selection-excluded ("background"), in place of
  * `stroke_opacity`/`fill_opacity`/`stroke_width`. Only applied when the
  * corresponding `enable_background_*` flag is set AND a value is
- * provided here; otherwise the shape's normal value is used unchanged
+ * provided here; otherwise a curve's normal value is used unchanged
  * (there is no universal "de-emphasized" default for these, unlike
  * `background_stroke_color`/`background_fill_color`, which fall back to
  * `DEFAULT_BACKGROUND_COLOR`).
  */
 background_stroke_opacity?: number | null, background_fill_opacity?: number | null, background_stroke_width?: number | null, 
 /**
- * When true, the shape has the stroke/fill color specified via
+ * When true, a curve has the stroke/fill color specified via
  * `background_stroke_color`/`background_fill_color` when
  * selection-excluded.
  */
 enable_background_stroke_color: boolean, enable_background_fill_color: boolean, 
 /**
- * When true, the shape has the stroke/fill opacity specified via
+ * When true, a curve has the stroke/fill opacity specified via
  * `background_stroke_opacity`/`background_fill_opacity` when
  * selection-excluded.
  */
 enable_background_stroke_opacity: boolean, enable_background_fill_opacity: boolean, 
 /**
- * When true, the shape has the stroke width specified via
+ * When true, a curve has the stroke width specified via
  * `background_stroke_width` when selection-excluded. Only affects the
  * stroke's width, not whether it is drawn at all (that is `stroked`).
  */

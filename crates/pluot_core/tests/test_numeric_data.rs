@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use pluot_core::layers::point_layer::PointLayerParams;
-use pluot_core::numeric_data::NumericData;
+use pluot_core::numeric_data::{NumericData, NumericValue};
 
 // Guards the JSON contract exercised by the layer registry
 // (`serde_json::from_value` in `PointLayer`'s `inventory::submit!`): coordinate
@@ -61,9 +61,17 @@ fn accessors_convert_and_format_across_dtypes() {
     assert!(!u.is_empty());
     assert_eq!(u.get_f32(1), 300.0);
     assert_eq!(u.get_f64(0), 7.0);
-    // Integers format without a decimal point (used by picking display).
-    assert_eq!(u.format_element(1), "300");
+    assert_eq!(u.value(1), NumericValue::Uint(300));
 
     let f = NumericData::Float32(Arc::new(vec![1.5]));
-    assert_eq!(f.format_element(0), "1.5");
+    assert_eq!(f.value(0), NumericValue::Float32(1.5));
+}
+
+#[test]
+fn numeric_values_serialize_as_plain_numbers() {
+    let json = |v: NumericValue| serde_json::to_value(v).unwrap();
+    assert_eq!(json(NumericValue::Uint(300)), serde_json::json!(300));
+    assert_eq!(json(NumericValue::Int(-3)), serde_json::json!(-3));
+    assert_eq!(json(NumericValue::Float32(0.1)), serde_json::json!(0.1f64));
+    assert_eq!(json(NumericValue::Uint(u64::MAX)), serde_json::json!(u64::MAX as f64));
 }

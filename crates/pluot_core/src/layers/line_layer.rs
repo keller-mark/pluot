@@ -5,11 +5,10 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use std::collections::HashMap;
 use std::sync::{Arc};
 
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
+use crate::render_traits::{ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, EmphasisCriteria, PickableLayer, PreparedLayer, ViewParams, AspectRatioMode, AspectRatioAlignmentMode, OpacityMode, SizeMode, UnitsMode, MarginParams};
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
 use crate::viewport::{DataCoord, ScreenCoord};
@@ -17,7 +16,7 @@ use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_types::GpuContext;
 use crate::shader_modules::{common, ShaderBuilder};
 use crate::color_mode::{cpu_fill_color, prepare_stroke_color, quantitative_domain};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::scalar_mode::{cpu_stroke_opacity, cpu_stroke_width, prepare_stroke_opacity_mode, prepare_stroke_width_mode};
 use crate::emphasis_mode::{background_color_vec4, cpu_is_included, prepare_emphasis_criteria, resolve_background_scalar, DEFAULT_BACKGROUND_COLOR};
 use crate::wgpu;
@@ -889,9 +888,17 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for LineLayer {}
 
 impl ExtentableLayer for LineLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct LinePickingInfo {
+    pub index: usize,
+    pub source_x: NumericValue,
+    pub source_y: NumericValue,
+    pub target_x: NumericValue,
+    pub target_y: NumericValue,
+}
 
 impl PickableLayer for LineLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -940,16 +947,12 @@ impl PickableLayer for LineLayer {
         }
 
         let closest_idx = closest_idx?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("source_x".to_string(), self.layer_params.source_position_x.format_element(closest_idx));
-        info.insert("source_y".to_string(), self.layer_params.source_position_y.format_element(closest_idx));
-        info.insert("target_x".to_string(), self.layer_params.target_position_x.format_element(closest_idx));
-        info.insert("target_y".to_string(), self.layer_params.target_position_y.format_element(closest_idx));
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, LinePickingInfo {
+            index: closest_idx,
+            source_x: self.layer_params.source_position_x.value(closest_idx),
+            source_y: self.layer_params.source_position_y.value(closest_idx),
+            target_x: self.layer_params.target_position_x.value(closest_idx),
+            target_y: self.layer_params.target_position_y.value(closest_idx),
+        }))
     }
 }

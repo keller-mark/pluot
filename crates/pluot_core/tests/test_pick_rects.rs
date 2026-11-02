@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pluot_core::layers::rect_layer::{RectLayer, RectLayerParams};
+use pluot_core::layers::rect_layer::{RectLayer, RectLayerParams, RectPickingInfo};
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData};
@@ -34,10 +34,10 @@ fn test_pick_identity_matrix() {
 
     let r = pick_at(&layer, 5.0, 5.0).unwrap();
     assert_eq!(r.layer_id, "test_rect");
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     let r = pick_at(&layer, 25.0, 25.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 }
 
 #[test]
@@ -59,10 +59,10 @@ fn test_pick_with_scale_matrix() {
     let layer = make_layer(Some(model_matrix));
 
     let r = pick_at(&layer, 10.0, 10.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     let r = pick_at(&layer, 50.0, 50.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 
     assert!(pick_at(&layer, 30.0, 30.0).is_none());
 }
@@ -83,4 +83,8 @@ fn test_pick_pixels_units_mode_returns_none() {
         },
     );
     assert!(pick_at(&layer, 5.0, 5.0).is_none());
+}
+
+fn info(r: &LayerPickingResult) -> &RectPickingInfo {
+    r.info_as().unwrap()
 }

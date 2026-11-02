@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::shader_modules::{matrix_value, ShaderBuilder, TextureDtype};
 use crate::wgpu;
 
@@ -102,12 +102,12 @@ impl CompressedMatrix {
         self.entry_at(major, minor_position).map_or(0.0, |entry| self.data.get_f32(entry))
     }
 
-    /// Like [`value_at`](Self::value_at), formatted in the stored dtype.
-    pub fn format_value_at(&self, axis: CompressedAxis, row: usize, col: usize) -> String {
+    /// Like [`value_at`](Self::value_at), in the stored dtype.
+    pub fn native_value_at(&self, axis: CompressedAxis, row: usize, col: usize) -> NumericValue {
         let (major, minor_position) = if axis == CompressedAxis::Rows { (row, col) } else { (col, row) };
         match self.entry_at(major, minor_position) {
-            Some(entry) => self.data.format_element(entry),
-            None => "0".to_string(),
+            Some(entry) => self.data.value(entry),
+            None => self.data.zero_value(),
         }
     }
 

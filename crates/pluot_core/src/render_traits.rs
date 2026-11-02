@@ -1,8 +1,7 @@
 use crate::picking::LayerPickingResult;
-use crate::brushing::{LayerBrushingResult, BrushParams};
 use crate::extent::LayerExtentResult;
 use crate::numeric_data::NumericData;
-use crate::viewport::{DataCoord, DataVertices, ScreenCoord};
+use crate::viewport::{DataCoord, ScreenCoord};
 use crate::wgpu;
 use crate::two::svg::{init_svg, SvgContext};
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -660,17 +659,6 @@ pub trait PickableLayer {
     }
 }
 
-/// Identify which data point(s) are located within the given brushed region (rect or polygon).
-#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
-pub trait BrushableLayer {
-    // TODO: should this be async?
-    fn brush(&self, brush_params: BrushParams, data_vertices: Option<DataVertices>) -> Option<LayerBrushingResult> {
-        // Default implementation: not brushable, return empty result.
-        None
-    }
-}
-
 /// Report the layer's data extent: the min/max bounds along the x and y axes (and z, if 3D).
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
@@ -709,8 +697,8 @@ pub trait PreparedAndDrawToRasterCpu: PreparedLayer + DrawToRasterCpu + MaybeSen
 impl<T: PreparedLayer + DrawToRasterCpu + MaybeSend + MaybeSync> PreparedAndDrawToRasterCpu for T {}
 
 // Trait for layers that can prepare and render to all output formats.
-pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + BrushableLayer + ExtentableLayer + MaybeSend + MaybeSync {}
-impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + BrushableLayer + ExtentableLayer + MaybeSend + MaybeSync> PreparedAndDraw for T {}
+pub trait PreparedAndDraw: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + ExtentableLayer + MaybeSend + MaybeSync {}
+impl<T: PreparedLayer + DrawToSvg + DrawToRasterGpu + DrawToRasterCpu + PickableLayer + ExtentableLayer + MaybeSend + MaybeSync> PreparedAndDraw for T {}
 
 
 

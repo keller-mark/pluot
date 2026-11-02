@@ -10,7 +10,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
+use pluot_core::render_traits::{ExtentableLayer, CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -468,7 +468,6 @@ impl DrawToSvg for ZarrPointLayer {
     }
 }
 
-impl BrushableLayer for ZarrPointLayer {}
 
 impl ExtentableLayer for ZarrPointLayer {}
 

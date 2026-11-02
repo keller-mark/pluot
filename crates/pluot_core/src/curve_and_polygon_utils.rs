@@ -108,6 +108,34 @@ pub(crate) fn commands_to_subpaths(commands: &[PathCommand]) -> Vec<Vec<CubicBez
     subpaths
 }
 
+/// Splits `commands` into curves using Arrow-style `curve_offsets`, where curve `c` spans
+/// `commands[curve_offsets[c]..curve_offsets[c + 1]]`. `None` means a single curve.
+pub(crate) fn split_curves<'a>(commands: &'a [PathCommand], curve_offsets: Option<&[u32]>) -> Vec<&'a [PathCommand]> {
+    let Some(offsets) = curve_offsets else {
+        return vec![commands];
+    };
+    offsets.windows(2)
+        .map(|window| {
+            let (start, end) = (window[0] as usize, window[1] as usize);
+            assert!(start <= end && end <= commands.len(), "curve_offsets must be non-decreasing and at most commands.len()");
+            &commands[start..end]
+        })
+        .collect()
+}
+
+/// Converts every curve's commands to sub-paths, returning them alongside the index of the curve each belongs to.
+pub(crate) fn curves_to_subpaths(commands: &[PathCommand], curve_offsets: Option<&[u32]>) -> (Vec<Vec<CubicBez>>, Vec<u32>) {
+    let mut subpaths = Vec::new();
+    let mut subpath_curve_indices = Vec::new();
+    for (curve_index, curve_commands) in split_curves(commands, curve_offsets).into_iter().enumerate() {
+        for subpath in commands_to_subpaths(curve_commands) {
+            subpaths.push(subpath);
+            subpath_curve_indices.push(curve_index as u32);
+        }
+    }
+    (subpaths, subpath_curve_indices)
+}
+
 fn subpath_to_ring(subpath: &[CubicBez], subdivisions: u32) -> Vec<(f32, f32)> {
     let mut points: Vec<(f32, f32)> = Vec::new();
     if subpath.is_empty() {
@@ -150,12 +178,14 @@ fn ring_area_2x(points: &[(f32, f32)]) -> f32 {
 
 /// Triangulate a collection of curve sub-paths into a flat, interleaved list of
 /// triangle-vertex coordinates `[x0, y0, x1, y1, …]` (3 consecutive vertices per
-/// triangle), ready to hand to a `TriangulatedLayer`.
-pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u32) -> Vec<f32> {
+/// triangle), ready to hand to a `TriangulatedLayer`, plus a parallel per-vertex
+/// array giving the index of the curve (from `subpath_curve_indices`) each vertex belongs to.
+pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subpath_curve_indices: &[u32], subdivisions: u32) -> (Vec<f32>, Vec<u32>) {
     let mut verts: Vec<f32> = Vec::new();
+    let mut vertex_curve_indices: Vec<u32> = Vec::new();
     let mut ec: Earcut<f32> = Earcut::new();
     let mut indices: Vec<u32> = Vec::new();
-    for subpath in subpaths {
+    for (subpath, &curve_index) in subpaths.iter().zip(subpath_curve_indices) {
         let ring = subpath_to_ring(subpath, subdivisions);
         if ring.len() < 3 || ring_area_2x(&ring).abs() <= 1e-12 {
             continue;
@@ -165,9 +195,10 @@ pub(crate) fn compute_fill_vertices(subpaths: &[Vec<CubicBez>], subdivisions: u3
             let (x, y) = ring[i as usize];
             verts.push(x);
             verts.push(y);
+            vertex_curve_indices.push(curve_index);
         }
     }
-    verts
+    (verts, vertex_curve_indices)
 }
 
 /// Triangulate a collection of polygon rings into a flat, interleaved list of

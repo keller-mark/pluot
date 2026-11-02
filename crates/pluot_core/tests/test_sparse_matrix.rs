@@ -1,4 +1,4 @@
-use pluot_core::numeric_data::NumericData;
+use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
 
 /// [[0, 5, 0, 7], [0, 0, 0, 0], [3, 0, 8, 0]] as CSR.
@@ -25,7 +25,7 @@ fn minor_subset_reorders_the_minor_axis() {
     matrix.validate(CompressedAxis::Rows, 3, 2);
     assert_eq!(matrix.value_at(CompressedAxis::Rows, 0, 0), 7.0);
     assert_eq!(matrix.value_at(CompressedAxis::Rows, 0, 1), 5.0);
-    assert_eq!(matrix.format_value_at(CompressedAxis::Rows, 2, 0), "0");
+    assert_eq!(matrix.native_value_at(CompressedAxis::Rows, 2, 0), matrix.data.zero_value());
 }
 
 #[test]
