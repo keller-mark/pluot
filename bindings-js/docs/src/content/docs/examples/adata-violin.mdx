@@ -6,11 +6,9 @@ sidebar:
 ---
 import { ViolinWrapper } from '../../../components/ViolinWrapper.jsx';
 
-This [violin plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.violin.html) displays the expression of one gene per cell type (`bulk_labels`) in single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
-Each violin's width shows how many of its cells have a given expression value, after excluding outliers beyond three standard deviations from the mean.
-The line within each violin spans the interquartile range, and is crossed at the median.
-Scroll or drag to zoom and pan along the expression axis.
-Use the controls to choose another gene, or to exclude cells with zero expression.
+This violin plot displays the expression of the selected gene stratified by cell type, using a single-cell transcriptomics dataset obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+This plot is inspired by the [sc.pl.violin](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.violin.html) function.
+Use the plot controls to select a different gene.
 
 <ViolinWrapper
     client:load

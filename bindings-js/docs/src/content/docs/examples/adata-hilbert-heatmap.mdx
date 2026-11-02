@@ -6,14 +6,12 @@ sidebar:
 ---
 import { HilbertHeatmapWrapper } from '../../../components/HilbertHeatmapWrapper.jsx';
 
-This visualization is inspired by [Valdes et al. Frontiers in Bioinformatics 2023](https://doi.org/10.3389/fbinf.2023.1154588).
+This heatmap arranges the cells of a single-cell transcriptomics dataset along a [generalized Hilbert](https://github.com/jakubcerveny/gilbert) ("gilbert") curve, inspired by the work of [Valdes et al., Frontiers in Bioinformatics 2023](https://doi.org/10.3389/fbinf.2023.1154588).
+The cells along the curve are sorted by cell type, and each cell is colored by its expression of the selected gene (`LYZ` by default).
+Use the plot controls to choose another gene, or to color the cells by a different categorical label instead.
 
-The heatmap arranges the cells of single-cell transcriptomics data along a [generalized Hilbert curve](https://github.com/jakubcerveny/gilbert) that fills the rectangular plotted region.
-The cells along the curve are sorted by cell type (`bulk_labels`) and then by cell cycle phase (`phase`).
-Each cell is colored by its expression of the selected gene (`LYZ` by default).
-Use the plot controls to choose another gene, or to color the cells by their cell type or other categorical labels instead.
-When coloring by a categorical label, enable _Fade By Gene_ to also set each cell's opacity by the percentile of its expression of the selected gene among the plotted cells, using the sliders to set the percentile from which cells are drawn at each opacity (0.2, 0.6, and 1.0).
-This uses the `var_percentile_opacities` layer parameter.
+
+When coloring by a categorical label, enable _Fade By Gene_ to use opacity to visualize where each cell lies along the distribution of expression values (percentile-based) for the selected gene.
 
 <HilbertHeatmapWrapper
     client:load
@@ -30,7 +28,7 @@ This uses the `var_percentile_opacities` layer parameter.
           layer_params: {
             layer_id: "hilbert_heatmap",
             groupby: ["obs/bulk_labels", "obs/phase"],
-            var_name: "LYZ",
+            var_name: "CD79A",
             obs_selection: null,
             background_opacity: 0.25,
           },
@@ -46,3 +44,5 @@ This uses the `var_percentile_opacities` layer parameter.
     height={500}
     enableCamera={false}
 />
+
+Note that the gilbert curve may not entirely fill the rectangular plotted region, depending on the aspect ratio and the number of cells in the dataset.

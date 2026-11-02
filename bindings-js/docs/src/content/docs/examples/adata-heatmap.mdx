@@ -6,12 +6,9 @@ sidebar:
 ---
 import { HeatmapWrapper } from '../../../components/HeatmapWrapper.jsx';
 
-This [heatmap](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.heatmap.html) displays single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
-Each row is a cell and each column is a marker gene.
-The cells are filtered to four cell types (monocytes, B cells, NK cells, and dendritic cells) using the `bulk_labels` column of `obs`,
-the colormap is normalized separately for each gene, and the cells with at least 1,050 detected genes are selected (the others are displayed with reduced opacity).
-Scroll to zoom and drag to pan; the cell and gene labels follow the camera.
-Zooming in first stretches only the cell axis until each heatmap cell is square, and the camera cannot move past the edges of the heatmap.
+This heatmap displays single-cell transcriptomics data obtained from a Scanpy [example dataset](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+This plot is inspired by the [sc.pl.heatmap](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.heatmap.html) function.
+Use the plot controls to select cell types and genes (command+click or use the shift key to multi-select).
 
 <HeatmapWrapper
     client:load
