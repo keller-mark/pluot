@@ -38,6 +38,8 @@ pub struct ZarrBooleanCriteriaParams {
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[ts(optional_fields = nullable)]
 pub struct ZarrCategoricalCriteriaParams {
+    // TODO: update this so that the user does not need to know about the /categories and /codes suffixes
+
     /// Zarr array path to a category code per item.
     pub codes_key: String,
     /// Zarr array path to the label of each category code, used to look up
