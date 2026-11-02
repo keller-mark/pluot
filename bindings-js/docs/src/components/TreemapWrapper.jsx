@@ -21,7 +21,21 @@ function onHoverTreemap(info) {
 
 const TREEMAP_LAYER_TYPE = 'AdataZarrTreemapLayer';
 
-function withTreemapControls(plotParams, { reverseLevels, colorBy, tile }) {
+const EXPRESSION_MODES = ['None', 'Filter', 'Select'];
+
+function isExpressionModeActive(get) {
+  return get('Plot-Specific Options.expressionMode') !== 'None';
+}
+
+function expressedAbove(varName, threshold) {
+  return {
+    axis_criteria_mode: 'Expression',
+    axis_criteria_params: { var_name: varName, min: threshold, min_exclusive: true },
+  };
+}
+
+function withTreemapControls(plotParams, { reverseLevels, colorBy, tile, expressionMode, varName, expressionThreshold }) {
+  const expressionCriteria = expressionMode !== 'None' && varName ? expressedAbove(varName, expressionThreshold) : null;
   return {
     ...plotParams,
     layers: plotParams.layers.map((layer) => {
@@ -36,6 +50,9 @@ function withTreemapControls(plotParams, { reverseLevels, colorBy, tile }) {
           groupby: reverseLevels ? [...groupby].reverse() : groupby,
           color_by: colorBy,
           tile,
+          ...(expressionCriteria ? {
+            [expressionMode === 'Filter' ? 'obs_filtering' : 'obs_selection']: expressionCriteria,
+          } : {}),
         },
       };
     }),
@@ -43,7 +60,7 @@ function withTreemapControls(plotParams, { reverseLevels, colorBy, tile }) {
 }
 
 export function TreemapWrapper(props) {
-  const { plotParams } = props;
+  const { plotParams, varNameOptions = [] } = props;
   const defaultLayerParams = plotParams?.layers
     ?.find(layer => layer.layer_type === TREEMAP_LAYER_TYPE)
     ?.layer_params;
@@ -66,7 +83,29 @@ export function TreemapWrapper(props) {
       options: ['Binary', 'Dice', 'Slice'],
       label: 'Tiling',
     },
-  }), [groupby.join(','), defaultColorBy, defaultTile]);
+    ...(varNameOptions.length > 0 ? {
+      expressionMode: {
+        value: 'None',
+        options: EXPRESSION_MODES,
+        label: 'Gene Expression',
+        hint: 'Filter: count only the cells expressing the gene above the threshold. Select: fill each rectangle in proportion to its share of such cells.',
+      },
+      varName: {
+        value: varNameOptions[0],
+        options: varNameOptions,
+        label: 'Gene',
+        render: isExpressionModeActive,
+      },
+      expressionThreshold: {
+        value: 0,
+        min: -3,
+        max: 3,
+        step: 0.1,
+        label: 'Threshold',
+        render: isExpressionModeActive,
+      },
+    } : {}),
+  }), [groupby.join(','), defaultColorBy, defaultTile, varNameOptions.join(',')]);
 
   const getPlotParams = useCallback(
     controlValues => withTreemapControls(resolvePlotParams(plotParams, controlValues), controlValues),
