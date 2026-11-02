@@ -28,10 +28,10 @@ use pluot_core::viewport::ScreenCoord;
 
 use crate::adata_paths::node_path;
 use crate::dotplot_data::{
-    categories_key, combination_label, filter_genes, genes_among, load_gene_summaries_for_gene, load_nested_categories, obs_rows_key,
-    plotted_categories, resolve_gene_columns, CategoryObs, GeneSummaries, GeneSummary,
+    categories_key, combination_label, genes_selected, included_genes, load_gene_summaries_for_gene, load_nested_categories, obs_rows_key,
+    plotted_categories, CategoryObs, GeneSummaries, GeneSummary,
 };
-use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_axis_labels, load_criteria_indices, AdataAxis, AxisCriteria, MatrixAxis};
+use crate::heatmap_data::{indices_of, load_axis_emphasis_criteria, load_axis_indices, load_axis_labels, load_criteria_indices, AdataAxis, AxisCriteria, MatrixAxis};
 
 /// Layer params struct for [`AdataZarrDotPlotLayer`].
 #[derive(Serialize, Deserialize, Debug, Clone, TS)]
@@ -68,9 +68,7 @@ pub struct AdataZarrDotPlotLayerParams {
     /// categories, then the second's, etc. (see `obs_filtering` to reorder them). With more than
     /// one `groupby` column, combinations without any obs are omitted.
     pub groupby: Vec<String>,
-    /// Gene IDs, as they appear in `var_index_path`.
-    pub var_names: Vec<String>,
-    /// Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
+    /// Path to the `var` column labeling the genes (e.g., `var/gene_symbols`). `None` means the `var` index.
     pub var_index_path: Option<String>,
 
     /// Which obs are summarized. `None` includes every obs. When set, categories
@@ -81,9 +79,9 @@ pub struct AdataZarrDotPlotLayerParams {
     /// selected obs, in front of a grey dot summarizing every included obs.
     /// `None` emphasizes every obs.
     pub obs_selection: Option<AxisCriteria>,
-    /// Which of `var_names` to include. `None` includes every one.
+    /// Which var (genes) to include, in order along the gene axis. `None` includes every var.
     pub var_filtering: Option<AxisCriteria>,
-    /// Which of the included `var_names` to emphasize. The dots of the others
+    /// Which of the included var to emphasize. The dots of the others
     /// are greyed out. `None` emphasizes every one.
     pub var_selection: Option<AxisCriteria>,
 }
@@ -100,7 +98,6 @@ impl Default for AdataZarrDotPlotLayerParams {
             store_name: None,
             layer_path: "X".to_string(),
             groupby: vec![],
-            var_names: vec![],
             var_index_path: None,
             obs_filtering: None,
             obs_selection: None,
@@ -166,7 +163,7 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 load_nested_categories(store.clone(), &store_name, &obs_axis, &params.groupby, cache_enabled),
                 load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &obs_axis, params.obs_filtering.as_ref(), cache_enabled),
                 load_axis_emphasis_criteria(gpu_context, store.clone(), &store_name, &obs_axis, params.obs_selection.as_ref(), cache_enabled),
-                load_criteria_indices(gpu_context, store.clone(), &store_name, &var_axis, params.var_filtering.as_ref(), cache_enabled),
+                load_axis_indices(gpu_context, store.clone(), &store_name, &var_axis, params.var_filtering.as_ref(), cache_enabled),
                 load_criteria_indices(gpu_context, store.clone(), &store_name, &var_axis, params.var_selection.as_ref(), cache_enabled),
             )
         };
@@ -215,9 +212,10 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                     key: &obs_key,
                 };
 
-                let var_names = filter_genes(&params.var_names, var_index_values, var_filtered.as_deref().map(indices_of));
-                let var_selected = var_selected.as_deref().map(|selected| genes_among(&var_names, var_index_values, indices_of(selected)));
-                let resolved_genes = resolve_gene_columns(&var_names, var_index_values);
+                let var_included = indices_of(var_filtered);
+                let resolved_genes = included_genes(var_index_values, var_included);
+                let var_names: Vec<String> = resolved_genes.iter().map(|(gene_name, _)| gene_name.clone()).collect();
+                let var_selected = var_selected.as_deref().map(|selected| genes_selected(var_included, indices_of(selected), var_index_values.len()));
 
                 let mut gene_results: Vec<Option<Arc<GeneSummaries>>> = vec![None; resolved_genes.len()];
                 let gene_futures = resolved_genes.iter().zip(gene_results.iter_mut()).map(|((gene_name, col_index), slot)| {
@@ -242,17 +240,14 @@ impl PreparedLayer for AdataZarrDotPlotLayer {
                 let group_labels = categories.iter().map(|combination| combination_label(combination)).collect();
                 (var_names, var_selected, group_labels, background, foreground, genes_bailed)
             }
-            None => {
-                let var_names = if params.var_filtering.is_none() { params.var_names.clone() } else { Vec::new() };
-                (var_names, None, Vec::new(), Vec::new(), None, true)
-            }
+            None => (Vec::new(), None, Vec::new(), Vec::new(), None, true),
         };
         // Per the dot plot's contract, bailed_early stays true until every requested gene's
         // data and summaries have loaded -- not merely until this call's wall clock runs out.
         let bailed_early = metadata.is_none() || genes_bailed;
 
         // --- Everything from here is pure/synchronous layout, using whatever loaded above:
-        // `var_names` (the gene axis) is always the full requested list; `group_labels` and
+        // `var_names` (the gene axis) is every filter-included gene; `group_labels` and
         // `gene_summaries` (the group axis and the dots) reflect only what stages 1/2 above
         // managed to load within their timeouts. ---
 

@@ -227,19 +227,15 @@ pub fn resolve_gene_columns(requested: &[String], var_index_values: &[String]) -
     resolved
 }
 
-/// Whether each of `genes`, looked up in `var_index_values`, is among the var `indices`. Unknown genes are not.
-pub fn genes_among(genes: &[String], var_index_values: &[String], indices: &[u32]) -> Vec<bool> {
-    let mask = index_mask(indices, var_index_values.len());
-    let lookup: HashMap<&str, usize> = var_index_values.iter().enumerate().map(|(i, name)| (name.as_str(), i)).collect();
-    genes.iter().map(|gene| lookup.get(gene.as_str()).is_some_and(|&index| mask[index])).collect()
+/// The label (from `var_index_values`) and column index of each of the var `included` indices, in order.
+pub fn included_genes(var_index_values: &[String], included: &[u32]) -> Vec<(String, u64)> {
+    included.iter().map(|&index| (var_index_values[index as usize].clone(), index as u64)).collect()
 }
 
-/// The `genes` among the var `included` indices (see [`genes_among`]), in order, or every one when `included` is `None`.
-pub fn filter_genes(genes: &[String], var_index_values: &[String], included: Option<&[u32]>) -> Vec<String> {
-    let Some(included) = included else {
-        return genes.to_vec();
-    };
-    genes.iter().zip(genes_among(genes, var_index_values, included)).filter(|(_, kept)| *kept).map(|(gene, _)| gene.clone()).collect()
+/// Whether each of the var `included` indices is among the var `selected` indices.
+pub fn genes_selected(included: &[u32], selected: &[u32], num_var: usize) -> Vec<bool> {
+    let mask = index_mask(selected, num_var);
+    included.iter().map(|&index| mask[index as usize]).collect()
 }
 
 /// Cache key parts identifying the obs rows that are summarized: those included by

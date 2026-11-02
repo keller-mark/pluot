@@ -49,7 +49,10 @@ function withViolinMatrixControls(plotParams, { colormap, densityNorm, obsCatego
         ...(groupbyColumnPath ? {
           obs_filtering: withIncludedCategories(layer.layer_params.obs_filtering, groupbyColumnPath, obsCategories),
         } : {}),
-        var_names: genes,
+        var_filtering: {
+          axis_criteria_mode: 'Identifiers',
+          axis_criteria_params: { identifiers: genes },
+        },
       },
     } : layer)),
   };
@@ -72,7 +75,7 @@ function ViolinMatrixWrapperInner(props) {
     () => includedCategoryLabels(findCategoricalCriterion(defaultLayerParams?.obs_filtering, groupbyColumnPath), categories),
     [defaultLayerParams, groupbyColumnPath, categories],
   );
-  const defaultGenes = defaultLayerParams?.var_names;
+  const defaultGenes = defaultLayerParams?.var_filtering?.axis_criteria_params?.identifiers;
   const defaultDensityNorm = defaultLayerParams?.density_norm ?? 'Width';
   const plotSpecificOptions = useMemo(() => ({
     ...(groupbyColumnPath ? {

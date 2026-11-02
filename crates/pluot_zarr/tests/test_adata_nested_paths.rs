@@ -15,7 +15,7 @@ use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::zarr::StoreMap;
 use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_matrix_column_numeric, read_string_array, NamedStore};
-use pluot_zarr::heatmap_data::AxisCriteria;
+use pluot_zarr::heatmap_data::{AxisCriteria, IdentifierCriteriaParams};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
 use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayer, AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
@@ -90,8 +90,8 @@ async fn check_dotplot_groups_by_each_combination_of_nested_categories(gpu_conte
     let mut layer = AdataZarrDotPlotLayer::new(view_params(store.clone()), AdataZarrDotPlotLayerParams {
         store_name: Some("store".to_string()),
         groupby: columns.iter().map(|column| format!("obs/{column}")).collect(),
-        var_names: vec![gene.clone()],
         var_index_path: Some("var/index".to_string()),
+        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { index_path: Some("var/index".to_string()), identifiers: vec![gene.clone()] })),
         obs_filtering: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/bulk_labels/codes".to_string(),
             categories_key: None,

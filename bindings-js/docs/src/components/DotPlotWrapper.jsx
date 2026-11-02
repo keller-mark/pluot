@@ -51,7 +51,10 @@ function withDotPlotControls(plotParams, { colormap, obsCategories, genes }, gro
         ...(groupbyColumnPath ? {
           obs_filtering: withIncludedCategories(layer.layer_params.obs_filtering, groupbyColumnPath, obsCategories),
         } : {}),
-        var_names: genes,
+        var_filtering: {
+          axis_criteria_mode: 'Identifiers',
+          axis_criteria_params: { identifiers: genes },
+        },
       },
     } : layer)),
   };
@@ -74,7 +77,7 @@ function DotPlotWrapperInner(props) {
     () => includedCategoryLabels(findCategoricalCriterion(defaultLayerParams?.obs_filtering, groupbyColumnPath), categories),
     [defaultLayerParams, groupbyColumnPath, categories],
   );
-  const defaultGenes = defaultLayerParams?.var_names;
+  const defaultGenes = defaultLayerParams?.var_filtering?.axis_criteria_params?.identifiers;
   const plotSpecificOptions = useMemo(() => ({
     ...(groupbyColumnPath ? {
       obsCategories: multiSelect({

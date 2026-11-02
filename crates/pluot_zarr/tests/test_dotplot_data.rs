@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_traits::{CategoricalCriteriaParams, EmphasisCriteria};
-use pluot_zarr::dotplot_data::{combine_codes, filter_genes, genes_among, groupby_column_orders, resolve_gene_columns, NestedCategories};
+use pluot_zarr::dotplot_data::{combine_codes, genes_selected, groupby_column_orders, included_genes, resolve_gene_columns, NestedCategories};
 use pluot_zarr::heatmap_data::AxisCriteria;
 use pluot_zarr::zarr_emphasis_criteria::{IncludedCategories, ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria};
 
@@ -44,17 +44,14 @@ fn combined_codes_are_missing_when_any_column_is() {
 }
 
 #[test]
-fn genes_among_looks_up_each_gene_column() {
-    let var_index = strings(&["GeneA", "GeneB", "GeneC"]);
-    assert_eq!(genes_among(&strings(&["GeneC", "GeneX", "GeneA"]), &var_index, &[2, 1]), vec![true, false, false]);
+fn genes_selected_looks_up_each_included_gene_column() {
+    assert_eq!(genes_selected(&[2, 0, 1], &[1, 2], 3), vec![true, false, true]);
 }
 
 #[test]
-fn filter_genes_keeps_the_included_genes_in_order() {
+fn included_genes_keep_the_included_order() {
     let var_index = strings(&["GeneA", "GeneB", "GeneC"]);
-    let requested = strings(&["GeneC", "GeneX", "GeneA", "GeneB"]);
-    assert_eq!(filter_genes(&requested, &var_index, Some(&[0, 2])), strings(&["GeneC", "GeneA"]));
-    assert_eq!(filter_genes(&requested, &var_index, None), requested);
+    assert_eq!(included_genes(&var_index, &[2, 0]), vec![("GeneC".to_string(), 2), ("GeneA".to_string(), 0)]);
 }
 
 #[test]

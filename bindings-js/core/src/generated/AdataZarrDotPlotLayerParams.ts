@@ -40,11 +40,7 @@ layer_path: string,
  */
 groupby: Array<string>, 
 /**
- * Gene IDs, as they appear in `var_index_path`.
- */
-var_names: Array<string>, 
-/**
- * Path to the `var` column holding `var_names` (e.g., `var/gene_symbols`). `None` means the `var` index.
+ * Path to the `var` column labeling the genes (e.g., `var/gene_symbols`). `None` means the `var` index.
  */
 var_index_path?: string | null, 
 /**
@@ -60,11 +56,11 @@ obs_filtering?: AxisCriteria | null,
  */
 obs_selection?: AxisCriteria | null, 
 /**
- * Which of `var_names` to include. `None` includes every one.
+ * Which var (genes) to include, in order along the gene axis. `None` includes every var.
  */
 var_filtering?: AxisCriteria | null, 
 /**
- * Which of the included `var_names` to emphasize. The dots of the others
+ * Which of the included var to emphasize. The dots of the others
  * are greyed out. `None` emphasizes every one.
  */
 var_selection?: AxisCriteria | null, };

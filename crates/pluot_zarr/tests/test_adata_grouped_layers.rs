@@ -130,7 +130,6 @@ async fn check_dotplot_summarizes_the_selected_obs_of_the_filtered_categories_an
     let mut layer = AdataZarrDotPlotLayer::new(view_params(store.clone()), AdataZarrDotPlotLayerParams {
         store_name: Some("pbmc".to_string()),
         groupby: vec!["obs/bulk_labels".to_string()],
-        var_names: requested.clone(),
         obs_filtering: obs_filtering(),
         obs_selection: obs_selection(),
         var_filtering: identifiers(&[requested[2].clone(), requested[0].clone()]),
@@ -139,7 +138,7 @@ async fn check_dotplot_summarizes_the_selected_obs_of_the_filtered_categories_an
     });
     assert!(!layer.prepare(gpu_context).await.bailed_early);
 
-    let genes = [requested[0].clone(), requested[2].clone()];
+    let genes = [requested[2].clone(), requested[0].clone()];
     let mut picked_categories = Vec::new();
     for (gene, x) in genes.iter().zip(band_centers(genes.len())) {
         let values = expression(store.clone(), gene).await;
@@ -192,7 +191,6 @@ async fn check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categor
     let mut layer = AdataZarrViolinMatrixLayer::new(view_params(store.clone()), AdataZarrViolinMatrixLayerParams {
         store_name: Some("pbmc".to_string()),
         groupby: vec!["obs/bulk_labels".to_string()],
-        var_names: requested.clone(),
         obs_filtering: obs_filtering(),
         obs_selection: obs_selection(),
         var_filtering: identifiers(&[requested[2].clone(), requested[1].clone()]),
@@ -201,7 +199,7 @@ async fn check_violin_matrix_summarizes_the_selected_obs_of_the_filtered_categor
     });
     assert!(!layer.prepare(gpu_context).await.bailed_early);
 
-    let genes = [requested[1].clone(), requested[2].clone()];
+    let genes = [requested[2].clone(), requested[1].clone()];
     let mut picked_categories = Vec::new();
     for (gene, x) in genes.iter().zip(band_centers(genes.len())) {
         for y in band_centers(categories.len()) {
