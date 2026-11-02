@@ -27,12 +27,12 @@ function onHoverViolin(info) {
 
 const VIOLIN_LAYER_TYPE = 'AdataZarrViolinLayer';
 
-// The value axis domain depends on the gene's expression values (and on whether zeros are kept).
-function getViolinExtentKey({ varName, keepZeros }) {
-  return JSON.stringify([varName, keepZeros]);
+// The value axis domain depends on the gene's expression values.
+function getViolinExtentKey({ varName }) {
+  return JSON.stringify([varName]);
 }
 
-function withViolinControls(plotParams, { varName, keepZeros, densityNorm }) {
+function withViolinControls(plotParams, { varName, densityNorm }) {
   return {
     ...plotParams,
     layers: plotParams.layers.map((layer) => {
@@ -44,7 +44,6 @@ function withViolinControls(plotParams, { varName, keepZeros, densityNorm }) {
         layer_params: {
           ...layer.layer_params,
           var_name: varName,
-          keep_zeros: keepZeros,
           density_norm: densityNorm,
         },
       };
@@ -58,7 +57,6 @@ export function ViolinWrapper(props) {
     ?.find(layer => layer.layer_type === VIOLIN_LAYER_TYPE)
     ?.layer_params;
   const defaultVarName = defaultLayerParams?.var_name;
-  const defaultKeepZeros = defaultLayerParams?.keep_zeros ?? true;
   const defaultDensityNorm = defaultLayerParams?.density_norm ?? 'Width';
   const varNames = varNameOptions ?? [defaultVarName];
 
@@ -68,16 +66,12 @@ export function ViolinWrapper(props) {
       options: varNames,
       label: 'Gene',
     },
-    keepZeros: {
-      value: defaultKeepZeros,
-      label: 'Keep Zeros',
-    },
     densityNorm: {
       value: defaultDensityNorm,
       options: ['Width', 'Area', 'Count'],
       label: 'Density Norm',
     },
-  }), [varNames.join(','), defaultVarName, defaultKeepZeros, defaultDensityNorm]);
+  }), [varNames.join(','), defaultVarName, defaultDensityNorm]);
 
   const getPlotParams = useCallback(
     controlValues => withViolinControls(resolvePlotParams(plotParams, controlValues), controlValues),
