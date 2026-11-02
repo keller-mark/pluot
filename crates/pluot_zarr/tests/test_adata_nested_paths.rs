@@ -14,7 +14,7 @@ use pluot_core::render_traits::{AspectRatioMode, ExtentableLayer, PickableLayer,
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::zarr::StoreMap;
-use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_matrix_column_numeric, read_string_array};
+use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_matrix_column_numeric, read_string_array, NamedStore};
 use pluot_zarr::heatmap_data::AxisCriteria;
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
@@ -67,14 +67,14 @@ const INCLUDED_BULK_LABELS: [i64; 2] = [1, 4];
 
 async fn check_dotplot_groups_by_each_combination_of_nested_categories(gpu_context: Option<&GpuContext<'_>>) {
     let store = store("../../data/out/pbmc68k.adata.zarr");
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let gene = var_index[10].clone();
-    let values = read_matrix_column_f32(store.clone(), "/X", 10).await.unwrap();
+    let values = read_matrix_column_f32(&NamedStore::new(store.clone(), "test", false), "/X", 10).await.unwrap();
     let columns = ["bulk_labels", "phase"];
     let mut categories = Vec::new();
     let mut codes = Vec::new();
     for column in columns {
-        categories.push(read_string_array(store.clone(), &format!("/obs/{column}/categories")).await.unwrap());
+        categories.push(read_string_array(&NamedStore::new(store.clone(), "test", false), &format!("/obs/{column}/categories")).await.unwrap());
         codes.push(load_arr_as_numeric_data(store.clone(), &format!("/obs/{column}/codes")).await.unwrap());
     }
     let mut expected_rows: HashMap<Vec<String>, Vec<usize>> = HashMap::new();
@@ -125,8 +125,8 @@ fn blobs_store() -> Arc<dyn AsyncReadableStorageTraits> {
 #[tokio::test]
 async fn heatmap_reads_a_spatialdata_table() {
     let store = blobs_store();
-    let obs_names = read_dataframe_index(store.clone(), &format!("/{TABLE}/obs")).await.unwrap();
-    let var_names = read_dataframe_index(store.clone(), &format!("/{TABLE}/var")).await.unwrap();
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), &format!("/{TABLE}/obs")).await.unwrap();
+    let var_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), &format!("/{TABLE}/var")).await.unwrap();
 
     let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), AdataZarrHeatmapLayerParams {
         store_name: Some("store".to_string()),
@@ -138,7 +138,7 @@ async fn heatmap_reads_a_spatialdata_table() {
     let extent = layer.extent().unwrap();
     assert_eq!((extent.x, extent.y), ((0.0, var_names.len() as f32), (0.0, obs_names.len() as f32)));
 
-    let column = read_matrix_column_numeric(store, &format!("/{TABLE}/X"), 1).await.unwrap();
+    let column = read_matrix_column_numeric(&NamedStore::new(store, "test", false), &format!("/{TABLE}/X"), 1).await.unwrap();
     let data_coord = DataCoord::TwoD { x: 1.5, y: obs_names.len() as f32 - 0.5 };
     let info: AdataZarrHeatmapPickingInfo = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(data_coord)).expect("a cell is picked").into_info().unwrap();
     assert_eq!((info.obs_name.as_str(), info.var_name.as_str()), (obs_names[0].as_str(), var_names[1].as_str()));
@@ -148,8 +148,8 @@ async fn heatmap_reads_a_spatialdata_table() {
 #[tokio::test]
 async fn treemap_counts_the_obs_of_a_spatialdata_table() {
     let store = blobs_store();
-    let obs_names = read_dataframe_index(store.clone(), &format!("/{TABLE}/obs")).await.unwrap();
-    let regions = read_string_array(store.clone(), &format!("/{TABLE}/obs/region/categories")).await.unwrap();
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), &format!("/{TABLE}/obs")).await.unwrap();
+    let regions = read_string_array(&NamedStore::new(store.clone(), "test", false), &format!("/{TABLE}/obs/region/categories")).await.unwrap();
 
     let mut layer = AdataZarrTreemapLayer::new(view_params(store), AdataZarrTreemapLayerParams {
         store_name: Some("store".to_string()),

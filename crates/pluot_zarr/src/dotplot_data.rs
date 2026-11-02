@@ -19,7 +19,7 @@ use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use crate::adata_io::{read_matrix_column_f32, read_string_array};
+use crate::adata_io::{read_matrix_column_f32, read_string_array, NamedStore};
 use crate::adata_paths::{join_path, node_path, path_name};
 use crate::heatmap_data::{axis_criteria_key, index_mask, load_axis_len, AdataAxis, AxisCriteria};
 use crate::memo::use_memo_shared;
@@ -68,7 +68,7 @@ pub async fn load_categorical(store: AdataStore, store_name: &str, column_path: 
 
     let categories_keys = vec!["adata_categories".to_string(), store_name.to_string(), column_path.clone()];
     let categories_future = use_memo_vec_string(
-        async || read_string_array(store.clone(), &format!("{column_path}/categories")).await,
+        async || read_string_array(&NamedStore::new(store.clone(), store_name, cache_enabled), &format!("{column_path}/categories")).await,
         &categories_keys,
         cache_enabled,
     );
@@ -88,7 +88,7 @@ pub async fn load_gene_expression(store: AdataStore, store_name: &str, col_index
     let array_path = node_path(matrix_path);
     let expr_keys = vec!["adata_matrix_column".to_string(), store_name.to_string(), array_path.clone(), col_index.to_string()];
     // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
-    use_memo_vec_f32(async || read_matrix_column_f32(store, &array_path, col_index).await, &expr_keys, cache_enabled).await
+    use_memo_vec_f32(async || read_matrix_column_f32(&NamedStore::new(store, store_name, cache_enabled), &array_path, col_index).await, &expr_keys, cache_enabled).await
 }
 
 /// The combinations of the categories of one or more categorical `obs` columns, from coarsest to finest.

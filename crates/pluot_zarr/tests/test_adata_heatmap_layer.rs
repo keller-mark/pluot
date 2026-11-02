@@ -12,7 +12,7 @@ use pluot_core::render_traits::{AspectRatioMode, ExtentableLayer, PickableLayer,
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::zarr::StoreMap;
-use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_numeric};
+use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_numeric, NamedStore};
 use pluot_core::compute::matrix_axis_extents::{reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
 use pluot_core::numeric_data::NumericData;
 use pluot_zarr::adata_io::read_matrix_layout;
@@ -58,7 +58,7 @@ struct Expected {
 }
 
 async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -> (AdataZarrHeatmapLayerParams, Expected) {
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let var_names: Vec<String> = vec![var_index[10].clone(), var_index[3].clone(), var_index[700].clone()];
 
     let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
@@ -97,8 +97,8 @@ async fn check_picks_of(
     expected: &Expected,
     swap_axes: bool,
 ) {
-    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/obs").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let (num_rows, num_cols) = (expected.obs_indices.len(), expected.var_names.len());
     for row in (0..num_rows).step_by(7) {
         for col in 0..num_cols {
@@ -115,7 +115,7 @@ async fn check_picks_of(
 
             let obs_index = expected.obs_indices[row];
             let var_index_of_col = var_index.iter().position(|name| *name == expected.var_names[col]).unwrap();
-            let column = read_matrix_column_numeric(store.clone(), matrix_path, var_index_of_col as u64).await.unwrap();
+            let column = read_matrix_column_numeric(&NamedStore::new(store.clone(), "test", false), matrix_path, var_index_of_col as u64).await.unwrap();
             assert_eq!(info.obs_index, obs_index);
             assert_eq!(info.obs_name, obs_names[obs_index]);
             assert_eq!(info.var_name, expected.var_names[col]);
@@ -227,7 +227,7 @@ async fn groupby_sorts_obs_by_category() {
 async fn groupby_keeps_the_listed_order_of_identifiers_within_each_category() {
     let store = pbmc_store();
     let (params, expected) = layer_params_and_expected(store.clone()).await;
-    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/obs").await.unwrap();
     let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
     let listed: Vec<usize> = (0..codes.len()).rev().step_by(3).collect();
     let mut obs_indices = listed.clone();
@@ -324,7 +324,7 @@ async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
 async fn sparse_block_extents_match_the_dense_cells() {
     let store = pbmc_store();
     let (_, expected) = layer_params_and_expected(store.clone()).await;
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let rows: Vec<u32> = expected.obs_indices.iter().map(|&i| i as u32).collect();
     let cols: Vec<u32> = expected.var_names.iter().map(|name| var_index.iter().position(|v| v == name).unwrap() as u32).collect();
     let (num_rows, num_cols) = (rows.len(), cols.len());
@@ -333,7 +333,8 @@ async fn sparse_block_extents_match_the_dense_cells() {
 
     let matrix_path = "/layers/csr";
     let mut dense_cells = Vec::with_capacity(num_rows * num_cols);
-    let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(store.clone(), matrix_path, col as u64))).await;
+    let uncached_store = NamedStore::new(store.clone(), "test", false);
+    let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(&uncached_store, matrix_path, col as u64))).await;
     let columns: Vec<_> = columns.into_iter().map(Result::unwrap).collect();
     for &row in &rows {
         dense_cells.extend(columns.iter().map(|column| column.get_f32(row as usize)));
@@ -342,7 +343,7 @@ async fn sparse_block_extents_match_the_dense_cells() {
     let dense_extent = dense.as_f32().iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)));
 
     for matrix_path in ["/layers/csr", "/layers/csc"] {
-        let layout = read_matrix_layout(store.clone(), matrix_path).await;
+        let layout = read_matrix_layout(&NamedStore::new(store.clone(), "test", false), matrix_path).await;
         for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
             let key = MatrixBlockKey {
                 store_name: "pbmc",
@@ -384,7 +385,7 @@ fn assert_near_percentile(values: &[f32], percentile: f32, estimate: f32, num_bi
 async fn percentile_domains_match_the_sorted_cells() {
     let store = pbmc_store();
     let (_, expected) = layer_params_and_expected(store.clone()).await;
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let rows: Vec<u32> = expected.obs_indices.iter().map(|&i| i as u32).collect();
     let cols: Vec<u32> = expected.var_names.iter().map(|name| var_index.iter().position(|v| v == name).unwrap() as u32).collect();
     let (num_rows, num_cols) = (rows.len(), cols.len());
@@ -393,7 +394,7 @@ async fn percentile_domains_match_the_sorted_cells() {
     let percentiles = (5.0, 95.0);
 
     for matrix_path in ["/X", "/layers/csr", "/layers/csc"] {
-        let layout = read_matrix_layout(store.clone(), matrix_path).await;
+        let layout = read_matrix_layout(&NamedStore::new(store.clone(), "test", false), matrix_path).await;
         let key = MatrixBlockKey {
             store_name: "pbmc",
             matrix_path,
@@ -405,7 +406,8 @@ async fn percentile_domains_match_the_sorted_cells() {
             block_index: 0,
         };
         let block = load_matrix_block(store.clone(), &key, layout, &rows, &cols, false).await.unwrap();
-        let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(store.clone(), matrix_path, col as u64))).await;
+        let uncached_store = NamedStore::new(store.clone(), "test", false);
+        let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(&uncached_store, matrix_path, col as u64))).await;
         let columns: Vec<_> = columns.into_iter().map(Result::unwrap).collect();
         let cell = |row: usize, col: usize| columns[col].get_f32(rows[row] as usize);
         let cells: Vec<f32> = (0..num_rows).flat_map(|row| (0..num_cols).map(move |col| (row, col))).map(|(row, col)| cell(row, col)).collect();

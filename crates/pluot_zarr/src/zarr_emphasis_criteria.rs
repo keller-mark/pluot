@@ -7,7 +7,7 @@ use pluot_core::cache::use_memo_vec_string;
 use pluot_core::log;
 use pluot_core::render_traits::{BooleanCriteriaParams, CategoricalCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 
-use crate::adata_io::read_string_array;
+use crate::adata_io::{read_string_array, NamedStore};
 use crate::adata_paths::{join_path, parent_path};
 use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 
@@ -91,7 +91,7 @@ async fn resolve_included_codes(
         IncludedCategories::Labels(labels) => {
             let categories_path = params.categories_path();
             let keys = vec!["zarr_categories".to_string(), store_name.to_string(), categories_path.clone()];
-            let categories = use_memo_vec_string(async || read_string_array(store, &categories_path).await, &keys, cache_enabled).await?;
+            let categories = use_memo_vec_string(async || read_string_array(&NamedStore::new(store, store_name, cache_enabled), &categories_path).await, &keys, cache_enabled).await?;
             Ok(codes_of_labels(labels, &categories))
         }
     }

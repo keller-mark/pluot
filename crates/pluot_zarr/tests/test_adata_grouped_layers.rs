@@ -14,7 +14,7 @@ use pluot_core::two::svg::init_svg;
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::ScreenCoord;
 use pluot_core::zarr::StoreMap;
-use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_string_array};
+use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_f32, read_string_array, NamedStore};
 use pluot_zarr::heatmap_data::{load_grouped_axis_indices, AdataAxis, AxisCriteria, ExpressionCriteriaParams, IdentifierCriteriaParams, MatrixAxis};
 use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayer, AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
 use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{
@@ -84,7 +84,7 @@ fn identifiers(genes: &[String]) -> Option<AxisCriteria> {
 
 /// The filter-included categories (in stored order), and the selected rows of each.
 async fn selected_rows_by_category(store: Arc<dyn AsyncReadableStorageTraits>) -> (Vec<String>, HashMap<String, Vec<usize>>) {
-    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let categories = read_string_array(&NamedStore::new(store.clone(), "test", false), "/obs/bulk_labels/categories").await.unwrap();
     let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
     let n_genes = load_arr_as_numeric_data(store, "/obs/n_genes").await.unwrap();
     let included: Vec<String> = INCLUDED_CODES.iter().map(|&code| categories[code as usize].clone()).collect();
@@ -106,14 +106,14 @@ async fn selected_rows_by_category(store: Arc<dyn AsyncReadableStorageTraits>) -
 }
 
 async fn var_names(store: Arc<dyn AsyncReadableStorageTraits>, indices: &[usize]) -> Vec<String> {
-    let var_index = read_dataframe_index(store, "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store, "test", false), "/var").await.unwrap();
     indices.iter().map(|&index| var_index[index].clone()).collect()
 }
 
 async fn expression(store: Arc<dyn AsyncReadableStorageTraits>, gene: &str) -> Vec<f32> {
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let col_index = var_index.iter().position(|name| name == gene).unwrap();
-    read_matrix_column_f32(store, "/X", col_index as u64).await.unwrap()
+    read_matrix_column_f32(&NamedStore::new(store, "test", false), "/X", col_index as u64).await.unwrap()
 }
 
 /// The center of each of `num_bands` equal bands along `SIZE` pixels.
@@ -222,7 +222,7 @@ async fn check_treemap_counts_the_selected_obs_of_the_filtered_categories(gpu_co
     let store = pbmc_store();
     let gene = var_names(store.clone(), &[10]).await.remove(0);
     let values = expression(store.clone(), &gene).await;
-    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let categories = read_string_array(&NamedStore::new(store.clone(), "test", false), "/obs/bulk_labels/categories").await.unwrap();
     let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
 
     let mut layer = AdataZarrTreemapLayer::new(view_params(store.clone()), AdataZarrTreemapLayerParams {
@@ -288,8 +288,8 @@ async fn check_hilbert_heatmap_colors_the_filtered_obs_by_expression(gpu_context
     let store = pbmc_store();
     let gene = var_names(store.clone(), &[10]).await.remove(0);
     let values = expression(store.clone(), &gene).await;
-    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
-    let bulk_label_categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/obs").await.unwrap();
+    let bulk_label_categories = read_string_array(&NamedStore::new(store.clone(), "test", false), "/obs/bulk_labels/categories").await.unwrap();
     let bulk_labels = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
 
     let mut layer = AdataZarrHilbertHeatmapLayer::new(view_params(store.clone()), AdataZarrHilbertHeatmapLayerParams {
@@ -363,7 +363,7 @@ async fn check_hilbert_heatmap_fades_categories_by_expression_percentile(gpu_con
 
 async fn check_hilbert_heatmap_legend_lists_the_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
-    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let categories = read_string_array(&NamedStore::new(store.clone(), "test", false), "/obs/bulk_labels/categories").await.unwrap();
     let mut layer = AdataZarrHilbertHeatmapLayer::new(
         ViewParams { width: 2 * SIZE, height: 2 * SIZE, margins: Some(MarginParams { margin_top: None, margin_right: Some(SIZE as f32), margin_bottom: None, margin_left: None }), ..view_params(store) },
         AdataZarrHilbertHeatmapLayerParams {
@@ -440,7 +440,7 @@ async fn hilbert_heatmap_legend_lists_the_filtered_categories() {
 #[tokio::test]
 async fn categorical_criteria_resolve_category_labels_to_their_codes() {
     let store = pbmc_store();
-    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let categories = read_string_array(&NamedStore::new(store.clone(), "test", false), "/obs/bulk_labels/categories").await.unwrap();
     let labels: Vec<String> = INCLUDED_CODES.iter().rev().map(|&code| categories[code as usize].clone()).chain(["Not a category".to_string()]).collect();
     let criteria = [ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
         codes_key: "/obs/bulk_labels/codes".to_string(),
@@ -457,7 +457,7 @@ async fn categorical_criteria_resolve_category_labels_to_their_codes() {
 async fn check_violins_follow_the_order_of_the_groupby_columns_filtered_categories(gpu_context: Option<&GpuContext<'_>>) {
     let store = pbmc_store();
     let gene = var_names(store.clone(), &[10]).await.remove(0);
-    let categories = read_string_array(store.clone(), "/obs/bulk_labels/categories").await.unwrap();
+    let categories = read_string_array(&NamedStore::new(store.clone(), "test", false), "/obs/bulk_labels/categories").await.unwrap();
     let ordered: Vec<String> = [4, 0, 2].iter().map(|&code: &usize| categories[code].clone()).collect();
 
     let mut layer = AdataZarrViolinLayer::new(view_params(store), AdataZarrViolinLayerParams {

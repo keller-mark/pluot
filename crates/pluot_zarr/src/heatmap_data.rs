@@ -32,7 +32,7 @@ use pluot_core::{with_int_slice, with_numeric_slice};
 
 use crate::adata_io::{
     read_compressed_column, read_compressed_subset, read_dataframe_index, read_dataframe_len, read_dense_column_numeric,
-    read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, read_string_column, MatrixLayout,
+    read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, read_string_column, MatrixLayout, NamedStore,
 };
 use crate::adata_paths::{adata_path_of_dataframe, adata_path_of_matrix, join_path, node_path, parent_path};
 use crate::dotplot_data::{load_categorical, load_gene_expression};
@@ -211,7 +211,7 @@ pub fn indices_of(data: &NumericData) -> &[u32] {
 pub async fn load_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, matrix_path: &str, cache_enabled: bool) -> Result<[usize; 2], ArrayError> {
     let keys = vec!["adata_matrix_shape".to_string(), store_name.to_string(), matrix_path.to_string()];
     let shape = use_memo_numeric_data(
-        async || Ok::<_, ArrayError>(NumericData::from(read_matrix_shape(store, matrix_path).await)),
+        async || Ok::<_, ArrayError>(NumericData::from(read_matrix_shape(&NamedStore::new(store, store_name, cache_enabled), matrix_path).await)),
         &keys,
         cache_enabled,
     )
@@ -227,7 +227,7 @@ pub async fn load_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, stor
     let keys = vec!["adata_matrix_layout".to_string(), store_name.to_string(), matrix_path.to_string()];
     let layout = use_memo_vec_string(
         async || {
-            let layout = match read_matrix_layout(store, matrix_path).await {
+            let layout = match read_matrix_layout(&NamedStore::new(store, store_name, cache_enabled), matrix_path).await {
                 MatrixLayout::Dense => "dense",
                 MatrixLayout::Compressed(CompressedAxis::Rows) => "csr",
                 MatrixLayout::Compressed(CompressedAxis::Cols) => "csc",
@@ -250,7 +250,7 @@ pub async fn load_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, stor
 pub async fn load_axis_len(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, axis: &AdataAxis, cache_enabled: bool) -> Result<usize, ArrayError> {
     let keys = vec!["adata_dataframe_len".to_string(), store_name.to_string(), axis.key()];
     let len = use_memo_numeric_data(
-        async || Ok::<_, ArrayError>(NumericData::from(vec![read_dataframe_len(store, &axis.dataframe_path).await])),
+        async || Ok::<_, ArrayError>(NumericData::from(vec![read_dataframe_len(&NamedStore::new(store, store_name, cache_enabled), &axis.dataframe_path).await])),
         &keys,
         cache_enabled,
     )
@@ -271,10 +271,11 @@ pub async fn load_axis_labels(
     cache_enabled: bool,
 ) -> Result<Arc<Vec<String>>, ArrayError> {
     let keys = vec!["adata_dataframe_labels".to_string(), store_name.to_string(), axis.key(), format!("{index_path:?}")];
+    let store = NamedStore::new(store, store_name, cache_enabled);
     use_memo_vec_string(
         async || match index_path {
-            Some(index_path) => read_string_column(store, &node_path(index_path)).await,
-            None => read_dataframe_index(store, &axis.dataframe_path).await,
+            Some(index_path) => read_string_column(&store, &node_path(index_path)).await,
+            None => read_dataframe_index(&store, &axis.dataframe_path).await,
         },
         &keys,
         cache_enabled,
@@ -571,7 +572,7 @@ pub async fn load_var_column(
 ) -> Result<Arc<NumericData>, ArrayError> {
     let keys = vec!["adata_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
     use_memo_numeric_data(
-        async || read_dense_column_numeric(store, matrix_path, var_index as u64).await,
+        async || read_dense_column_numeric(&NamedStore::new(store, store_name, cache_enabled), matrix_path, var_index as u64).await,
         &keys,
         cache_enabled,
     )
@@ -590,7 +591,7 @@ pub async fn load_compressed_var_column(
 ) -> Result<Arc<CompressedMatrix>, ArrayError> {
     let keys = vec!["adata_compressed_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
     use_memo_compressed_matrix(
-        async || read_compressed_column(store, matrix_path, compressed_axis, var_index as u64).await,
+        async || read_compressed_column(&NamedStore::new(store, store_name, cache_enabled), matrix_path, compressed_axis, var_index as u64).await,
         &keys,
         cache_enabled,
     )
@@ -736,7 +737,7 @@ pub async fn load_matrix_block(
     // does not cancel the others, which are then cached for the next attempt.
     match (layout, key.cache_mode) {
         (MatrixLayout::Dense, MatrixCacheMode::RowBlocks) => {
-            let block = use_memo_numeric_data(async || read_dense_subset_numeric(store, key.matrix_path, rows, cols).await, &keys, cache_enabled).await?;
+            let block = use_memo_numeric_data(async || read_dense_subset_numeric(&NamedStore::new(store, key.store_name, cache_enabled), key.matrix_path, rows, cols).await, &keys, cache_enabled).await?;
             Ok(MatrixBlock::Dense(block))
         }
         (MatrixLayout::Dense, MatrixCacheMode::VarColumns) => {
@@ -758,7 +759,7 @@ pub async fn load_matrix_block(
         }
         (MatrixLayout::Compressed(axis), MatrixCacheMode::RowBlocks) => {
             let block = use_memo_compressed_matrix(
-                async || read_compressed_subset(store, key.matrix_path, axis, rows, cols).await,
+                async || read_compressed_subset(&NamedStore::new(store, key.store_name, cache_enabled), key.matrix_path, axis, rows, cols).await,
                 &keys,
                 cache_enabled,
             )
