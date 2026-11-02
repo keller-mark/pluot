@@ -2,7 +2,15 @@ import React, { useCallback, useMemo } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PluotWrapper } from './PluotWrapper.jsx';
 import { useColormapOption, resolvePlotParams, multiSelect } from './PlotControls.jsx';
-import { adataQueryClient, useAdataOptions, getExtentKey } from './adata-options.js';
+import {
+  adataQueryClient,
+  useAdataOptions,
+  getExtentKey,
+  obsColumnName,
+  findCategoricalCriterion,
+  includedCategoryLabels,
+  withIncludedCategories,
+} from './adata-options.js';
 
 // The purpose of this wrapper component is to define a dotplot-specific
 // onHover function to transform the picking result into a tooltip dict.
@@ -32,7 +40,7 @@ function onHoverDotPlot(info) {
 
 const DOTPLOT_LAYER_TYPE = 'AdataZarrDotPlotLayer';
 
-function withDotPlotControls(plotParams, { colormap, obsCategories, genes }) {
+function withDotPlotControls(plotParams, { colormap, obsCategories, genes }, groupbyColumnPath) {
   return {
     ...plotParams,
     layers: plotParams.layers.map(layer => (layer.layer_type === DOTPLOT_LAYER_TYPE ? {
@@ -40,7 +48,9 @@ function withDotPlotControls(plotParams, { colormap, obsCategories, genes }) {
       layer_params: {
         ...layer.layer_params,
         cmap: colormap,
-        categories: obsCategories,
+        ...(groupbyColumnPath ? {
+          obs_filtering: withIncludedCategories(layer.layer_params.obs_filtering, groupbyColumnPath, obsCategories),
+        } : {}),
         var_names: genes,
       },
     } : layer)),
@@ -54,19 +64,25 @@ function DotPlotWrapperInner(props) {
     ?.layer_params;
   const colormapOption = useColormapOption(defaultLayerParams?.cmap);
 
-  const groupby = defaultLayerParams?.groupby;
-  const adataOptions = useAdataOptions(storeUrl, groupby);
+  // Only the categories of the first (coarsest) groupby column are selectable.
+  const groupbyColumnPath = defaultLayerParams?.groupby?.[0];
+  const adataOptions = useAdataOptions(storeUrl, groupbyColumnPath);
   const categories = adataOptions.data?.categories;
   const varNames = adataOptions.data?.varNames;
 
-  const defaultCategories = defaultLayerParams?.categories;
+  const defaultCategories = useMemo(
+    () => includedCategoryLabels(findCategoricalCriterion(defaultLayerParams?.obs_filtering, groupbyColumnPath), categories),
+    [defaultLayerParams, groupbyColumnPath, categories],
+  );
   const defaultGenes = defaultLayerParams?.var_names;
   const plotSpecificOptions = useMemo(() => ({
-    obsCategories: multiSelect({
-      selected: defaultCategories ?? categories ?? [],
-      options: categories ?? [],
-      label: groupby,
-    }),
+    ...(groupbyColumnPath ? {
+      obsCategories: multiSelect({
+        selected: defaultCategories ?? categories ?? [],
+        options: categories ?? [],
+        label: obsColumnName(groupbyColumnPath),
+      }),
+    } : {}),
     genes: multiSelect({
       selected: defaultGenes ?? [],
       options: varNames ?? [],
@@ -74,11 +90,11 @@ function DotPlotWrapperInner(props) {
       label: 'Genes',
     }),
     ...colormapOption,
-  }), [groupby, categories, varNames, defaultCategories, defaultGenes, colormapOption]);
+  }), [groupbyColumnPath, categories, varNames, defaultCategories, defaultGenes, colormapOption]);
 
   const getPlotParams = useCallback(
-    controlValues => withDotPlotControls(resolvePlotParams(plotParams, controlValues), controlValues),
-    [plotParams],
+    controlValues => withDotPlotControls(resolvePlotParams(plotParams, controlValues), controlValues, groupbyColumnPath),
+    [plotParams, groupbyColumnPath],
   );
 
   if (adataOptions.isPending) {
