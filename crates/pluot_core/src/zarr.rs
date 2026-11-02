@@ -58,6 +58,22 @@ fn normalize_key(key: &str, byte_range: Option<ByteRange>) -> String {
     }
 }
 
+/// Whether the request that `peek_status` starts (or checks on) is still pending.
+///
+/// Requests are often made by sibling futures polled together (e.g., one per chunk, by zarrs'
+/// `try_for_each_concurrent` or our own `try_join_all`), which stop at the first error, and which
+/// may re-poll an already-pending sibling before polling the next new one. Failing on the first
+/// poll, or after merely yielding, therefore lets only about one sibling start its request per
+/// render. Sleeping instead keeps this future pending without waking it, so that every sibling
+/// starts its request before any of them fails.
+async fn is_still_pending(peek_status: impl Fn() -> ZarrPeekResult) -> bool {
+    if peek_status() != ZarrPeekResult::Pending {
+        return false;
+    }
+    futures_time::task::sleep(futures_time::time::Duration::from_millis(1)).await;
+    peek_status() == ZarrPeekResult::Pending
+}
+
 fn make_storage_error() -> StorageError {
     return StorageError::IOError(Arc::new(io::Error::new(io::ErrorKind::TimedOut, "too slow")));
 }
@@ -143,18 +159,10 @@ impl AsyncZarritaStore {
         match byte_range {
             ByteRange::FromStart(start, Some(len)) => {
                 // This is the getRange({ offset, length }) case.
-                if !self.wait_for_store_gets {
-                    let promise_status = zarr_get_range_from_offset_status(
-                        &self.store_name,
-                        key,
-                        start as u32,
-                        len as u32,
-                    );
-                    if promise_status == ZarrPeekResult::Pending {
-                        // We cannot await and the promise is still pending.
-                        return Err(make_storage_error());
-                    }
-                    // We cannot await but the promise is either fulfilled or rejected.
+                if !self.wait_for_store_gets
+                    && is_still_pending(|| zarr_get_range_from_offset_status(&self.store_name, key, start as u32, len as u32)).await
+                {
+                    return Err(make_storage_error());
                 }
                 // We can await (or the promise is already settled).
                 Ok(zarr_get_range_from_offset(
@@ -167,17 +175,10 @@ impl AsyncZarritaStore {
             }
             ByteRange::Suffix(suffix_length) => {
                 // This is the getRange({ suffixLength }) case.
-                if !self.wait_for_store_gets {
-                    let promise_status = zarr_get_range_from_end_status(
-                        &self.store_name,
-                        key,
-                        suffix_length as u32,
-                    );
-                    if promise_status == ZarrPeekResult::Pending {
-                        // We cannot await and the promise is still pending.
-                        return Err(make_storage_error());
-                    }
-                    // We cannot await but the promise is either fulfilled or rejected.
+                if !self.wait_for_store_gets
+                    && is_still_pending(|| zarr_get_range_from_end_status(&self.store_name, key, suffix_length as u32)).await
+                {
+                    return Err(make_storage_error());
                 }
                 // We can await (or the promise is already settled).
                 Ok(zarr_get_range_from_end(
@@ -192,11 +193,8 @@ impl AsyncZarritaStore {
     }
 
     pub async fn has(&self, key: &StoreKey) -> Result<bool, StorageError> {
-        if !self.wait_for_store_gets {
-            let promise_status = zarr_has_status(&self.store_name, key.as_str());
-            if promise_status == ZarrPeekResult::Pending {
-                return Err(make_storage_error());
-            }
+        if !self.wait_for_store_gets && is_still_pending(|| zarr_has_status(&self.store_name, key.as_str())).await {
+            return Err(make_storage_error());
         }
 
         let has = zarr_has(&self.store_name, key.as_str()).await;
@@ -231,11 +229,8 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
             return Ok(None);
         }
 
-        if !self.wait_for_store_gets {
-            let promise_status = zarr_get_status(&self.store_name, key.as_str());
-            if promise_status == ZarrPeekResult::Pending {
-                return Err(make_storage_error());
-            }
+        if !self.wait_for_store_gets && is_still_pending(|| zarr_get_status(&self.store_name, key.as_str())).await {
+            return Err(make_storage_error());
         }
 
         // Use the zarr_get_js function to fetch the data
@@ -252,32 +247,22 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
         key: &StoreKey,
         byte_ranges: ByteRangeIterator<'a>,
     ) -> Result<AsyncMaybeBytesIterator<'a>, StorageError> {
-        let mut results = Vec::new();
         let cache = ZARR_CACHE_ENABLED.then(|| get_or_init_store_cache(&self.store_name));
-
-        // Iterate over the requested byte ranges (potentially multiple).
-        for byte_range in byte_ranges {
-            // Normalize the key similar to lru_cache.ts
-            // considering potential Range info.
-            let key_str = normalize_key(key.as_str(), Some(byte_range));
-
-            // Check the cache first (if enabled).
-            if let Some(cached) = cache.as_ref().and_then(|c| c.get(&key_str)) {
-                results.push(Ok(cached.clone()));
-                continue;
+        let fetches = byte_ranges.map(|byte_range| {
+            let cache = cache.clone();
+            async move {
+                let key_str = normalize_key(key.as_str(), Some(byte_range));
+                if let Some(cached) = cache.as_ref().and_then(|c| c.get(&key_str)) {
+                    return Ok(cached);
+                }
+                let bytes_result = self.fetch_byte_range(key.as_str(), byte_range).await;
+                if let (Some(cache), Ok(bytes)) = (&cache, &bytes_result) {
+                    cache.insert(key_str, bytes.clone());
+                }
+                bytes_result
             }
-
-            // Use the zarr_get_js function to fetch the data
-            let bytes_result = self.fetch_byte_range(key.as_str(), byte_range).await;
-
-            // Store in cache on success (if enabled).
-            if let (Some(cache), Ok(bytes)) = (&cache, &bytes_result) {
-                cache.insert(key_str, bytes.clone());
-            }
-
-            // Append to results
-            results.push(bytes_result);
-        }
+        });
+        let results = futures::future::join_all(fetches).await;
         Ok(Some(Box::pin(stream::iter(results))))
     }
 
@@ -293,5 +278,27 @@ impl AsyncReadableStorageTraits for AsyncZarritaStore {
 
     fn supports_get_partial(&self) -> bool {
         true
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn pending_requests_all_start_before_any_fails() {
+        let started = AtomicUsize::new(0);
+        let request = async |_chunk: usize| {
+            let still_pending = is_still_pending(|| {
+                started.fetch_add(1, Ordering::SeqCst);
+                ZarrPeekResult::Pending
+            })
+            .await;
+            if still_pending { Err(make_storage_error()) } else { Ok(()) }
+        };
+        let result = stream::iter(0..8).map(Ok).try_for_each_concurrent(Some(8), request).await;
+        assert!(result.is_err());
+        assert!(started.load(Ordering::SeqCst) >= 8);
     }
 }
