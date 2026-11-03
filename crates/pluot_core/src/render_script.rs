@@ -42,6 +42,8 @@ pub fn render_to_script_aux(params: &RenderParams, format: &CodeFormat, ensure_s
 
         CodeFormat::ExpressionPython => format!("{}\n", python_call(&value, 0)),
         CodeFormat::ScriptPython => python_script(&value),
+        CodeFormat::ScriptIpynb => ipynb_script(&value),
+        CodeFormat::ScriptMoPy => marimo_script(&value),
 
         CodeFormat::ExpressionR => format!("{}\n", r_call(&value)),
         CodeFormat::ScriptR => r_script(&value),
@@ -201,33 +203,45 @@ fn python_render_func(value: &Value) -> &'static str {
 /// and `plot_params` are already separate keys thanks to the flattened enum).
 fn python_call(value: &Value, level: usize) -> String {
     let obj = value.as_object().expect("RenderParams serializes to an object");
-    let inner = PYTHON_SYNTAX.indent.repeat(level + 1);
-    let close = PYTHON_SYNTAX.indent.repeat(level);
-    let args: Vec<String> = obj
+    let kwargs: Vec<(&str, String)> = obj
         .iter()
         .filter(|(k, _)| k.as_str() != "format")
-        .map(|(k, v)| format!("{inner}{k}={},", emit_curly(v, level + 1, &PYTHON_SYNTAX)))
+        .map(|(k, v)| (k.as_str(), emit_curly(v, level + 1, &PYTHON_SYNTAX)))
         .collect();
-    format!("{}(\n{}\n{close})", python_render_func(value), args.join("\n"))
+    python_kwargs_call(python_render_func(value), &kwargs, level)
+}
+
+/// A multi-line `func(name=value, ...)` call, with each value already emitted as Python source.
+fn python_kwargs_call(func: &str, kwargs: &[(&str, String)], level: usize) -> String {
+    let inner = PYTHON_SYNTAX.indent.repeat(level + 1);
+    let close = PYTHON_SYNTAX.indent.repeat(level);
+    let args: Vec<String> = kwargs
+        .iter()
+        .map(|(k, v)| format!("{inner}{k}={v},"))
+        .collect();
+    format!("{func}(\n{}\n{close})", args.join("\n"))
+}
+
+/// The `pluot` package requirement, with the given extra (e.g., `bindings` or `widget`).
+fn python_pluot_requirement(value: &Value, extra: &str) -> String {
+    match value.get("schema_version").and_then(Value::as_str) {
+        Some(schema_version) => format!("pluot[{extra}]=={schema_version}"),
+        None => format!("pluot[{extra}]"),
+    }
 }
 
 fn python_script(value: &Value) -> String {
     let func = python_render_func(value);
+    let requirement = python_pluot_requirement(value, "bindings");
     // We use PEP 723 inline script metadata to declare dependencies.
 
     // TODO: use block_on in Rust to implement a non-async render function for python, to avoid the asyncio stuff here.
-
-    let schema_version = value.get("schema_version").and_then(Value::as_str);
-    let version_suffix = match schema_version {
-        Some(schema_version) => format!("=={}", schema_version),
-        None => "".to_string(),
-    };
 
     format!(
         "# /// script\n\
          # requires-python = \">=3.12\"\n\
          # dependencies = [\n\
-         #     \"pluot[bindings]{version_suffix}\",\n\
+         #     \"{requirement}\",\n\
          # ]\n\
          # ///\n\
          from pluot import {func}\n\
@@ -240,6 +254,133 @@ fn python_script(value: &Value) -> String {
          if __name__ == \"__main__\":\n\
          \x20   asyncio.run(main())\n",
         python_call(value, 1),
+    )
+}
+
+// === Notebook widget ===
+
+/// `RenderParams` fields that `render_to_widget` (and the `PluotWasmWidget` constructor) accepts under
+/// the same name (see `bindings-python/pluot_widget/src/pluot_widget/widget.py`).
+const WIDGET_KWARGS: &[&str] = &[
+    "width",
+    "height",
+    "camera_view",
+    "margin_top",
+    "margin_right",
+    "margin_bottom",
+    "margin_left",
+    "aspect_ratio_mode",
+    "aspect_ratio_alignment_mode",
+    "view_mode",
+    "plot_id",
+    "plot_type",
+    "plot_params",
+    "stores",
+    "format",
+];
+
+/// The `render_to_widget(...)` call. Null values are dropped so that
+/// the widget's own traitlet defaults apply (e.g., its margins are not nullable).
+fn widget_call(value: &Value, level: usize) -> String {
+    let resolved = with_resolved_format(value);
+    let obj = resolved.as_object().expect("RenderParams serializes to an object");
+    let kwargs: Vec<(&str, String)> = obj
+        .iter()
+        .filter(|(k, v)| WIDGET_KWARGS.contains(&k.as_str()) && !v.is_null())
+        .map(|(k, v)| (k.as_str(), emit_curly(v, level + 1, &PYTHON_SYNTAX)))
+        .collect();
+    python_kwargs_call("render_to_widget", &kwargs, level)
+}
+
+// === Jupyter notebook ===
+
+fn ipynb_code_cell(id: &str, code: &str) -> Value {
+    let source: Vec<&str> = code.trim_end_matches('\n').split_inclusive('\n').collect();
+    serde_json::json!({
+        "cell_type": "code",
+        "execution_count": null,
+        "id": id,
+        "metadata": {},
+        "outputs": [],
+        "source": source,
+    })
+}
+
+fn ipynb_script(value: &Value) -> String {
+    let requirement = python_pluot_requirement(value, "widget");
+
+    let notebook = serde_json::json!({
+        "cells": [
+            ipynb_code_cell("install", &format!("%pip install \"{requirement}\"")),
+            ipynb_code_cell("imports", "from pluot import render_to_widget"),
+            ipynb_code_cell("widget", &format!("widget = {}\nwidget", widget_call(value, 0))),
+        ],
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3 (ipykernel)",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "name": "python",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    });
+
+    // One-space indentation matches what Jupyter itself writes.
+    let mut out = Vec::new();
+    let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
+    let mut serializer = serde_json::Serializer::with_formatter(&mut out, formatter);
+    serde::Serialize::serialize(&notebook, &mut serializer).expect("notebook JSON should serialize");
+    let mut out = String::from_utf8(out).expect("serde_json emits UTF-8");
+    out.push('\n');
+    out
+}
+
+// === Marimo notebook ===
+
+fn marimo_script(value: &Value) -> String {
+    let requirement = python_pluot_requirement(value, "widget");
+
+    format!(
+        "# /// script\n\
+         # requires-python = \">=3.12\"\n\
+         # dependencies = [\n\
+         #     \"marimo\",\n\
+         #     \"{requirement}\",\n\
+         # ]\n\
+         # ///\n\
+         \n\
+         # Launch with: uvx marimo edit --sandbox notebook.mo.py\n\
+         # (--sandbox installs the dependencies listed above into an isolated environment.)\n\
+         #\n\
+         # Alternatively, to use an existing uv project environment:\n\
+         #   uv add marimo \"{requirement}\"\n\
+         #   uv run marimo edit notebook.mo.py\n\
+         \n\
+         import marimo\n\
+         \n\
+         app = marimo.App(width=\"medium\")\n\
+         \n\
+         \n\
+         @app.cell\n\
+         def _():\n\
+         \x20   from pluot import render_to_widget\n\
+         \x20   return (render_to_widget,)\n\
+         \n\
+         \n\
+         @app.cell\n\
+         def _(render_to_widget):\n\
+         \x20   widget = {}\n\
+         \x20   widget\n\
+         \x20   return (widget,)\n\
+         \n\
+         \n\
+         if __name__ == \"__main__\":\n\
+         \x20   app.run()\n",
+        widget_call(value, 1),
     )
 }
 
@@ -860,6 +1001,68 @@ mod tests {
         let out = render_to_script(&params, &CodeFormat::ScriptPython);
         assert!(out.contains("from pluot import render_to_svg"));
         assert!(out.contains("plot = await render_to_svg("));
+        assert!(!out.contains("render_to_image"));
+    }
+
+    fn ipynb_cell_sources(out: &str) -> Vec<String> {
+        let notebook: Value = serde_json::from_str(out).expect("output should be valid JSON");
+        assert_eq!(notebook["nbformat"], Value::Number(4.into()));
+        notebook["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|cell| {
+                cell["source"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|line| line.as_str().unwrap())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ipynb_installs_widget_and_displays_it() {
+        let params = sample_params(GraphicsFormat::Raster);
+        let sources = ipynb_cell_sources(&render_to_script(&params, &CodeFormat::ScriptIpynb));
+        assert!(sources[0].starts_with("%pip install \"pluot[widget]=="));
+        assert_eq!(sources[1], "from pluot import render_to_widget");
+        assert!(sources[2].starts_with("widget = render_to_widget(\n"));
+        assert!(sources[2].contains("    stores={\n"));
+        assert!(sources[2].contains("\"url\": \"https://example.com/my_store.zarr\""));
+        assert!(sources[2].contains("    format=\"Raster\",\n"));
+        assert!(sources[2].ends_with(")\nwidget"));
+        assert!(!sources[2].contains("schema_version="));
+        assert!(!sources[2].contains("device_pixel_ratio="));
+        assert!(!sources[2].contains("=None"));
+    }
+
+    #[test]
+    fn notebooks_omit_stores_when_there_are_none() {
+        let mut params = sample_params(GraphicsFormat::Vector);
+        params.stores = None;
+        let ipynb = render_to_script(&params, &CodeFormat::ScriptIpynb);
+        assert!(!ipynb.contains("stores="));
+        assert!(ipynb.contains("    format=\\\"Vector\\\",\\n"));
+        let marimo = render_to_script(&params, &CodeFormat::ScriptMoPy);
+        assert!(!marimo.contains("stores="));
+    }
+
+    #[test]
+    fn marimo_script_defines_widget_cells() {
+        let params = sample_params(GraphicsFormat::Raster);
+        let out = render_to_script(&params, &CodeFormat::ScriptMoPy);
+        assert!(out.contains("#     \"marimo\",\n#     \"pluot[widget]=="));
+        assert!(out.contains("# Launch with: uvx marimo edit --sandbox notebook.mo.py\n"));
+        assert!(out.contains("#   uv add marimo \"pluot[widget]=="));
+        assert!(out.contains("#   uv run marimo edit notebook.mo.py\n"));
+        assert!(out.contains("app = marimo.App("));
+        assert!(out.contains("    from pluot import render_to_widget\n    return (render_to_widget,)\n"));
+        assert!(out.contains("def _(render_to_widget):\n    widget = render_to_widget(\n"));
+        assert!(out.contains("        stores={\n"));
+        assert!(out.contains("    )\n    widget\n    return (widget,)\n"));
+        assert!(out.contains("if __name__ == \"__main__\":\n    app.run()\n"));
         assert!(!out.contains("render_to_image"));
     }
 

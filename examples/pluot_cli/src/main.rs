@@ -403,7 +403,8 @@ fn parse_code_format(s: &str) -> Result<CodeFormat, String> {
         format!(
             "Unknown code_format '{}'. Expected one of: ExpressionRust, ScriptRust, \
              ExpressionPython, ScriptPython, ExpressionR, ScriptR, ExpressionJs, ScriptJs, \
-             ExpressionJsx, ScriptReact, ScriptHtml, Json, ScriptBash.",
+             ExpressionJsx, ScriptReact, ScriptHtml, ScriptHtmlReact, Json, ScriptBash, \
+             ScriptIpynb, ScriptMoPy.",
             s
         )
     })

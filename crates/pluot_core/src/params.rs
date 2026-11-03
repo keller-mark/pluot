@@ -58,8 +58,9 @@ pub enum CodeFormat {
     // Uses the pluot_cli from examples/pluot_cli
     ScriptBash,
 
-    // TODO: jupyter nb?
-    // TODO: marimo nb?
+    ScriptIpynb,
+    ScriptMoPy,
+
     // TODO: rmarkdown?
 }
 

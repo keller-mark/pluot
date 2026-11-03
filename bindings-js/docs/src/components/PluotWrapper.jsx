@@ -8,6 +8,8 @@ const SCRIPT_EXTENSIONS = {
   ScriptBash: 'sh',
   ScriptRust: 'rs',
   ScriptPython: 'py',
+  ScriptIpynb: 'ipynb',
+  ScriptMoPy: 'mo.py',
   ScriptR: 'R',
   ScriptHtml: 'html',
   ScriptHtmlReact: 'html',

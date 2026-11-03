@@ -228,6 +228,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
         'Shell script': 'ScriptBash',
         'Rust script': 'ScriptRust',
         'Python script': 'ScriptPython',
+        'Jupyter notebook': 'ScriptIpynb',
+        'Marimo notebook': 'ScriptMoPy',
         'R script': 'ScriptR',
         'HTML file (static)': 'ScriptHtml',
         'HTML file (React)': 'ScriptHtmlReact',

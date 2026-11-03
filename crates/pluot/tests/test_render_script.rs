@@ -212,6 +212,28 @@ async fn test_render_script_rust() {
     .await;
 }
 
+// ── Notebooks ─────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_render_script_ipynb() {
+    render_and_check_script_snapshot(
+        sample_params(GraphicsFormat::Raster),
+        CodeFormat::ScriptIpynb,
+        "test_render_code_script.ipynb",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_render_script_marimo() {
+    render_and_check_script_snapshot(
+        sample_params(GraphicsFormat::Raster),
+        CodeFormat::ScriptMoPy,
+        "test_render_code_script.mo.py",
+    )
+    .await;
+}
+
 // ── Bash ──────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
