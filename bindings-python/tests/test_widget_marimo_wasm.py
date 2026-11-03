@@ -6,10 +6,13 @@ Run via scripts/test_widget_marimo_wasm.sh, which installs the extra dependencie
 """
 
 import io
+import json
 import shutil
 import subprocess
 import sys
 import threading
+import urllib.error
+import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -83,6 +86,25 @@ def _():
 if __name__ == "__main__":
     app.run()
 '''
+
+
+def is_published_on_npm(package: str, version: str) -> bool:
+    try:
+        with urllib.request.urlopen(f"https://registry.npmjs.org/{package}/{version}", timeout=30):
+            return True
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return False
+        raise
+
+
+@pytest.fixture(scope="module", autouse=True)
+def require_published_pluot_react():
+    # The widget imports @pluot/react from a CDN at the version it was built against, so on a
+    # version-bump commit this test cannot pass until the release workflow publishes that version.
+    version = json.loads((REPO_ROOT / "bindings-js" / "react" / "package.json").read_text())["version"]
+    if not is_published_on_npm("@pluot/react", version):
+        pytest.skip(f"@pluot/react@{version} is not yet published to npm, where the widget loads it from")
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
