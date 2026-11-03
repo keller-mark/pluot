@@ -1,4 +1,15 @@
 
+## 0.1.26
+
+### Patch Changes
+
+- `ZarrCategoricalCriteriaParams.included_codes` is renamed to `included_categories`, which accepts either category codes or category labels (looked up in the new optional `categories_key`, defaulting to the `categories` array alongside `codes_key`). The `categories` param of the `AdataZarrDotPlotLayer`, `AdataZarrViolinLayer`, and `AdataZarrViolinMatrixLayer` is removed: to plot only some categories, use `obs_filtering` with a `Categorical` criteria on a `groupby` column's codes, whose `included_categories` also determine the order of that column's categories. (`@pluot/core`, `@pluot/react`) ([#357](https://github.com/keller-mark/pluot/pull/357))
+
+- Remove the unused Rust-side brush query: `brush_wasm`, `brush_py`, the `BrushableLayer` trait, and the `BrushingResult`/`LayerBrushingResult`/`BrushingInfo`/`BrushResult` types. `onBrush` and `onBrushEnd` now receive only the brush state. (`@pluot/core`, `@pluot/react`) ([#356](https://github.com/keller-mark/pluot/pull/356))
+
+- Strongly type the per-layer picking and brushing results: `info` is now a layer-specific struct (e.g., `PointPickingInfo`) with TypeScript types generated via ts-rs, rather than a string-to-string map. Numeric values are now numbers in their native dtype, bitmap/bitmask channel values are returned as a `channels` array instead of `channel_<i>` keys, and `LayerBrushingResult.element_info` is removed. (`@pluot/core`, `@pluot/react`) ([#356](https://github.com/keller-mark/pluot/pull/356))
+
+
 ## 0.1.25
 
 ### Patch Changes
