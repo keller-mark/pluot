@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use pluot_core::layers::bitmap_layer::DimensionOrder;
-use pluot_core::layers::bitmask_layer::{BitmaskChannelSettings, BitmaskLayer, BitmaskLayerParams};
+use pluot_core::layers::bitmask_layer::{BitmaskChannelSettings, BitmaskLayer, BitmaskLayerParams, BitmaskPickingInfo};
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
-use pluot_core::{LayerPickingResult, NumericData, UnitsMode, ViewParams};
+use pluot_core::{LayerPickingResult, NumericData, NumericValue, UnitsMode, ViewParams};
 
 /// A 2x2 single-channel mask (shape [1, 2, 2] in CYX order) with object ids:
 ///   array row 0 (top):    [1, 2]
@@ -44,19 +44,19 @@ fn test_pick_identity_matrix() {
     // Bottom-left quadrant --> array row 1, col 0 --> object id 0 (background).
     let r = pick_at(&layer, 0.5, 0.5).unwrap();
     assert_eq!(r.layer_id, "test_bitmask");
-    assert_eq!(r.info.get("x").unwrap(), "0");
-    assert_eq!(r.info.get("y").unwrap(), "1");
-    assert_eq!(r.info.get("channel_0").unwrap(), "0");
+    assert_eq!(info(&r).x, 0);
+    assert_eq!(info(&r).y, 1);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(0));
 
     // Top-right quadrant --> array row 0, col 1 --> object id 2.
     let r = pick_at(&layer, 1.5, 1.5).unwrap();
-    assert_eq!(r.info.get("x").unwrap(), "1");
-    assert_eq!(r.info.get("y").unwrap(), "0");
-    assert_eq!(r.info.get("channel_0").unwrap(), "2");
+    assert_eq!(info(&r).x, 1);
+    assert_eq!(info(&r).y, 0);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(2));
 
     // Bottom-right quadrant --> array row 1, col 1 --> object id 3.
     let r = pick_at(&layer, 1.5, 0.5).unwrap();
-    assert_eq!(r.info.get("channel_0").unwrap(), "3");
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(3));
 }
 
 #[test]
@@ -81,9 +81,9 @@ fn test_pick_with_scale_matrix() {
 
     // world (3, 1) --> pixel (1.5, 0.5) --> array row 1, col 1 --> object id 3.
     let r = pick_at(&layer, 3.0, 1.0).unwrap();
-    assert_eq!(r.info.get("x").unwrap(), "1");
-    assert_eq!(r.info.get("y").unwrap(), "1");
-    assert_eq!(r.info.get("channel_0").unwrap(), "3");
+    assert_eq!(info(&r).x, 1);
+    assert_eq!(info(&r).y, 1);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(3));
 
     assert!(pick_at(&layer, 4.5, 1.0).is_none());
 }
@@ -97,9 +97,9 @@ fn test_pick_with_pixel_offset() {
 
     // world (2.5, 2.5) --> local pixel (0.5, 0.5) --> array row 1, col 0 --> object id 0.
     let r = pick_at(&layer, 2.5, 2.5).unwrap();
-    assert_eq!(r.info.get("x").unwrap(), "0");
-    assert_eq!(r.info.get("y").unwrap(), "1");
-    assert_eq!(r.info.get("channel_0").unwrap(), "0");
+    assert_eq!(info(&r).x, 0);
+    assert_eq!(info(&r).y, 1);
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(0));
 }
 
 #[test]
@@ -171,11 +171,15 @@ fn test_pick_multi_channel() {
 
     // Bottom-left quadrant --> array row 1, col 0.
     let r = pick_at(&layer, 0.5, 0.5).unwrap();
-    assert_eq!(r.info.get("channel_0").unwrap(), "0");
-    assert_eq!(r.info.get("channel_1").unwrap(), "2");
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(0));
+    assert_eq!(info(&r).channels[1], NumericValue::Uint(2));
 
     // Top-right quadrant --> array row 0, col 1.
     let r = pick_at(&layer, 1.5, 1.5).unwrap();
-    assert_eq!(r.info.get("channel_0").unwrap(), "2");
-    assert_eq!(r.info.get("channel_1").unwrap(), "1");
+    assert_eq!(info(&r).channels[0], NumericValue::Uint(2));
+    assert_eq!(info(&r).channels[1], NumericValue::Uint(1));
+}
+
+fn info(r: &LayerPickingResult) -> &BitmaskPickingInfo {
+    r.info_as().unwrap()
 }

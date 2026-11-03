@@ -116,6 +116,20 @@ Open to http://localhost:3005/www/
 
 -->
 
+### Generate TypeScript types
+
+The TypeScript types for `plot_params.layers` in `@pluot/core` are generated from the Rust `LayerParams` enum (`crates/pluot/src/render_params.rs`) using [ts-rs](https://github.com/Aleph-Alpha/ts-rs).
+The output is committed to `bindings-js/core/src/generated/`.
+After changing a layer params struct (or any type that it references), regenerate the types and commit the result:
+
+```sh
+pnpm run generate-types
+```
+
+This runs the `export_layer_params_typescript` Rust test.
+Any new type that a layer params struct references must derive `ts_rs::TS`.
+CI fails if the committed types are out of date.
+
 ### Test in Headless Browsers with `wasm-pack test`
 
 ```sh

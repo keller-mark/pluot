@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use pluot_core::log;
 use pluot_core::wgpu;
@@ -10,11 +11,11 @@ use pluot_core::cache::use_memo_numeric_data;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::render_traits::{
-    BrushableLayer, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
+    ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, UnitsMode, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::layers::bitmask_layer::{
-    BitmaskLayer, BitmaskLayerParams, BitmaskChannelSettings,
+    BitmaskChannelSettings, BitmaskLayer, BitmaskLayerParams, BitmaskPickingInfo,
 };
 use pluot_core::layers::bitmap_layer::DimensionOrder;
 use pluot_core::numeric_data::NumericData;
@@ -34,8 +35,9 @@ use pluot_core::multiscale_utils::to_y_slice;
 /// an intensity window / pseudocolor) and the addition of
 /// `stroke_width_unit_mode`, a layer-wide setting mirroring
 /// [`BitmaskLayerParams::stroke_width_unit_mode`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct OmeZarrBitmaskLayerParams {
     /// Name of the top-level store to read from (a key in `RenderParams::stores`).
     /// May be omitted when exactly one top-level store is defined.
@@ -46,6 +48,7 @@ pub struct OmeZarrBitmaskLayerParams {
     /// Pre-fetched array metadata from the parent multiscale layer, used to avoid
     /// re-opening the array from storage in `load_tile_data`. If None, the array
     /// is opened from storage via `async_open`.
+    #[ts(type = "Record<string, unknown> | null")]
     pub array_metadata: Option<zarrs::array::ArrayMetadata>,
 
     // TODO: make this layer easier to use in the absence of a parent multiscale layer
@@ -387,28 +390,32 @@ impl DrawToSvg for OmeZarrBitmaskLayer {
     }
 }
 
-impl BrushableLayer for OmeZarrBitmaskLayer {}
 
 impl ExtentableLayer for OmeZarrBitmaskLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct OmeZarrBitmaskPickingInfo {
+    /// Indices local to this tile's data slice.
+    #[serde(flatten)]
+    pub bitmask: BitmaskPickingInfo,
+    /// Column index into the full array at this resolution level.
+    pub array_x: u64,
+    /// Row index into the full array at this resolution level.
+    pub array_y: u64,
+}
 
 impl PickableLayer for OmeZarrBitmaskLayer {
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         // Delegate to the inner BitmaskLayer (constructed during prepare).
-        // Its "x"/"y" indices are local to this tile's data slice; add the
-        // slice offsets so the result also carries indices into the full
-        // array at this resolution level.
         let inner = self.inner.as_ref()?;
-        let mut result = PickableLayer::pick(inner, screen_coord, data_coord)?;
+        let bitmask: BitmaskPickingInfo = PickableLayer::pick(inner, screen_coord, data_coord)?.into_info()?;
 
         let (x_start, _) = self.layer_params.slice_x.unwrap_or((0, 0));
         let (y_start, _) = self.layer_params.slice_y.unwrap_or((0, 0));
-        if let Some(x) = result.info.get("x").and_then(|v| v.parse::<u64>().ok()) {
-            result.info.insert("array_x".to_string(), (x_start + x).to_string());
-        }
-        if let Some(y) = result.info.get("y").and_then(|v| v.parse::<u64>().ok()) {
-            result.info.insert("array_y".to_string(), (y_start + y).to_string());
-        }
-
-        Some(result)
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, OmeZarrBitmaskPickingInfo {
+            array_x: x_start + bitmask.x as u64,
+            array_y: y_start + bitmask.y as u64,
+            bitmask,
+        }))
     }
 }

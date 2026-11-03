@@ -1,0 +1,44 @@
+---
+title: Treemap (AnnData)
+description: Treemap example.
+sidebar:
+    order: 32
+---
+import { TreemapWrapper } from '../../../components/TreemapWrapper.jsx';
+
+This [treemap](https://d3js.org/d3-hierarchy/treemap) displays the number of cells in each category, using a single-cell transcriptomics dataset obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+
+
+Each rectangle's area is proportional to its number of cells.
+Use the plot controls to filter or select subsets of cells corresponding to those expressing a selected gene above a certain threshold.
+
+<TreemapWrapper
+    client:load
+    client:only="react"
+
+    plotId={"treemap-example"}
+    plotType={"LayeredPlot"}
+    storeUrl={"https://pub-adb3658c8ed642caa534fdc612cd1c0c.r2.dev/pbmc68k.adata.zarr"}
+    varNameOptions={['CST3', 'LYZ', 'C1QA', 'PSAP', 'CD79A', 'CD79B']}
+    plotParams={{
+      layers: [
+        {
+          layer_type: "AdataZarrTreemapLayer",
+          layer_params: {
+            layer_id: "treemap",
+            groupby: ["obs/bulk_labels", "obs/phase"],
+            color_by: "obs/bulk_labels",
+            cmap: "Tableau10",
+          },
+        }
+      ]
+    }}
+    viewMode={"2d"}
+    marginLeft={10}
+    marginBottom={10}
+    marginTop={10}
+    marginRight={10}
+    width={700}
+    height={500}
+    enableCamera={false}
+/>

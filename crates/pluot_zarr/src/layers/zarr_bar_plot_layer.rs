@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
@@ -8,7 +9,7 @@ use pluot_core::cache::{use_memo_vec_f32, use_memo_vec_string};
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
+use pluot_core::render_traits::{ExtentableLayer, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams, resolve_store_name};
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult};
 use pluot_core::gpu_send::GpuRenderPass;
 use pluot_core::render_types::GpuContext;
@@ -19,8 +20,9 @@ use pluot_core::viewport::DataCoord;
 use pluot_core::viewport::ScreenCoord;
 
 /// Layer params struct for [`ZarrBarPlotLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrBarPlotLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -173,7 +175,6 @@ impl DrawToSvg for ZarrBarPlotLayer {
     }
 }
 
-impl BrushableLayer for ZarrBarPlotLayer {}
 
 impl ExtentableLayer for ZarrBarPlotLayer {}
 

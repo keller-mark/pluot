@@ -2,12 +2,13 @@
 // interiors, or both, by delegating to StrokedPolygonLayer and FilledPolygonLayer.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
 use crate::gpu_send::GpuRenderPass;
@@ -21,8 +22,9 @@ use crate::layers::filled_polygon_layer::{FilledPolygonLayer, FilledPolygonLayer
 
 
 /// Layer params struct for [`PolygonLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct PolygonLayerParams {
     pub layer_id: String,
     /// If `None`, the view-level margins are used.
@@ -257,7 +259,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for PolygonLayer {}
 
 impl ExtentableLayer for PolygonLayer {}
 

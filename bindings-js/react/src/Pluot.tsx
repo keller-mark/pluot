@@ -4,11 +4,11 @@ import { throttle } from "lodash-es";
 import { useQuery, useQueryClient, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   initialize, getIsWasmReady,
-  render_wasm, pick_wasm, brush_wasm, extent_wasm,
+  render_wasm, pick_wasm, extent_wasm,
   normalizeStores, getStore,
   checkWebGpuFeatureDetection,
-  onMouseMove2d, onWheel2d,
-  onMouseMove3d, onWheel3d,
+  onMouseMove2d, onWheel2d, onPinch2d,
+  onMouseMove3d, onWheel3d, onPinch3d,
   getCameraMatrixFromBounds, refitCameraMatrixForViewport,
   fixX, fixY, fixXAxisAtYZero, fixYAxisAtXZero,
   fixXAndFixXAxisAtYZero, fixYAndFixYAxisAtXZero,
@@ -21,8 +21,8 @@ import { BrushOverlay } from "./BrushOverlay.js";
 import { useBrush } from "./use-brush.js";
 import { useMemoCustomComparison } from "./use-memo-custom.js";
 import type {
-  BrushingResult, BrushState, ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
-  PluotProps, RawBrushingResult, RawPickingResult, RenderParams, TooltipContent,
+  ExtentResult, GraphicsFormat, HoverInfo, PickingResult, PlotParams, PlotType,
+  PluotProps, RenderParams, TooltipContent,
 } from "./types.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
@@ -51,6 +51,37 @@ const noop = () => { };
 // Mouse movement (in pixels) beyond which a mousedown-to-click is
 // considered a drag rather than a click, so that picking is skipped.
 const DRAG_THRESHOLD_PX = 3;
+
+const MOUSE_BUTTONS_LEFT = 1;
+const MOUSE_BUTTONS_RIGHT = 2;
+
+type TouchGesture = {
+  touchCount: number;
+  // Midpoint of the touches, relative to the camera element.
+  offsetX: number;
+  offsetY: number;
+  // Distance between the first two touches (0 for a single touch).
+  spread: number;
+};
+
+function summarizeTouches(touches: TouchList, cameraEl: HTMLElement): TouchGesture {
+  const rect = cameraEl.getBoundingClientRect();
+  let sumX = 0;
+  let sumY = 0;
+  for (let i = 0; i < touches.length; i++) {
+    sumX += touches[i].clientX;
+    sumY += touches[i].clientY;
+  }
+  const spread = touches.length > 1
+    ? Math.hypot(touches[1].clientX - touches[0].clientX, touches[1].clientY - touches[0].clientY)
+    : 0;
+  return {
+    touchCount: touches.length,
+    offsetX: sumX / touches.length - rect.left - cameraEl.clientLeft,
+    offsetY: sumY / touches.length - rect.top - cameraEl.clientTop,
+    spread,
+  };
+}
 
 // How often rapid-fire prop changes (e.g. `cameraMatrix` while dragging) are
 // coalesced into a single render_wasm call; see `throttledSetRenderParamsSnapshot`.
@@ -95,35 +126,6 @@ type PickParamsSnapshot = RenderParamsSnapshot & {
   screenCoordX: number;
   screenCoordY: number;
 };
-
-// `pick_wasm` is typed `any` by wasm-bindgen, so `RawPickingResult` is what
-// documents its wire format (see types.ts).
-function normalizePickingResult(data: RawPickingResult): PickingResult {
-  return {
-    ...data,
-    layer_results: data.layer_results.map(({ layer_id, info }) => ({
-      layer_id,
-      // This is needed because serde-wasm-bindgen
-      // converts Rust HashMap to JS Map.
-      info: Object.fromEntries(info),
-    })),
-  };
-}
-
-// `brush_wasm` is typed `any` by wasm-bindgen, so `RawBrushingResult` is what
-// documents its wire format (see types.ts).
-function normalizeBrushingResult(data: RawBrushingResult): BrushingResult {
-  return {
-    ...data,
-    layer_results: data.layer_results.map(({ layer_id, info, element_info }) => ({
-      layer_id,
-      // This is needed because serde-wasm-bindgen
-      // converts Rust HashMap to JS Map.
-      info: Object.fromEntries(info),
-      element_info: Object.fromEntries(element_info),
-    })),
-  };
-}
 
 // The union (bounding box) of every layer's reported extent, in each axis
 // independently. `null` for an axis when no layer in the plot reports an
@@ -322,7 +324,9 @@ function PluotInner(props: PluotProps) {
         stores,
         plot_params: plotParams,
         timeout: null, // Note: no timeout
-        wait_for_store_gets: false,
+        // Unlike rendering, the extent query is not re-run once pending store gets settle,
+        // so layers backed by Zarr data must wait for it to load in order to report an extent.
+        wait_for_store_gets: true,
         cache_enabled: true,
         svg_compression_enabled: true,
         svg_include_document: false,
@@ -330,9 +334,6 @@ function PluotInner(props: PluotProps) {
 
       console.log("extent_wasm");
 
-      // Unlike `pick_wasm`/`brush_wasm`, `ExtentResult` has no `HashMap` fields,
-      // so `serde_wasm_bindgen` produces plain objects/arrays directly and no
-      // normalization step is needed.
       const extentResult = await extent_wasm(renderParams) as ExtentResult;
       if (typeof onExtentProp === "function") {
         onExtentProp(extentResult);
@@ -529,6 +530,8 @@ function PluotInner(props: PluotProps) {
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const didDragRef = useRef(false);
 
+  const touchGestureRef = useRef<TouchGesture | null>(null);
+
 
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
@@ -538,13 +541,6 @@ function PluotInner(props: PluotProps) {
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
 
   const progressBarId = useId();
-
-  // Runs the brush query against the wasm module for a given brush state,
-  // analogous to `pick` below (defined here, ahead of `pick`, since `useBrush`
-  // needs it immediately).
-  const runBrush = useEffectEvent(async (state: BrushState): Promise<undefined> => {
-    // TODO: remove this
-  });
 
   const {
     brushState,
@@ -568,8 +564,21 @@ function PluotInner(props: PluotProps) {
     brushMarginTop, brushMarginRight, brushMarginBottom, brushMarginLeft,
     enableBrushCreate, enableBrushEdit, enableBrushClear,
     brushDelay, maybeBrushDelay, persistBrush, brushMode,
-    brush, onBrush, onBrushEnd, onBrushClear, runBrush,
+    brush, onBrush, onBrushEnd, onBrushClear,
   });
+
+  const cameraViewportParams = {
+    width,
+    height,
+    aspectRatioMode,
+    aspectRatioAlignmentMode,
+    margins: {
+      marginTop,
+      marginBottom,
+      marginLeft,
+      marginRight,
+    },
+  };
 
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
     if (!cameraMatrix) {
@@ -577,18 +586,7 @@ function PluotInner(props: PluotProps) {
       return;
     }
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
-    const nextCameraMatrix = onWheel({
-        width,
-        height,
-        aspectRatioMode,
-        aspectRatioAlignmentMode,
-        margins: {
-          marginTop,
-          marginBottom,
-          marginLeft,
-          marginRight,
-        },
-      }, cameraMatrix, event);
+    const nextCameraMatrix = onWheel(cameraViewportParams, cameraMatrix, event);
     setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
   });
 
@@ -603,18 +601,50 @@ function PluotInner(props: PluotProps) {
       return;
     }
     const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
-    const nextCameraMatrix = onMouseMove({
-        width,
-        height,
-        aspectRatioMode,
-        aspectRatioAlignmentMode,
-        margins: {
-          marginTop,
-          marginBottom,
-          marginLeft,
-          marginRight,
-        },
-      }, cameraMatrix, event);
+    const nextCameraMatrix = onMouseMove(cameraViewportParams, cameraMatrix, event);
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
+  });
+
+  const touchStartOrEndHandler = useEffectEvent((event: TouchEvent) => {
+    const cameraEl = cameraElementRef.current;
+    touchGestureRef.current = cameraEl && event.touches.length > 0
+      ? summarizeTouches(event.touches, cameraEl)
+      : null;
+  });
+
+  // One finger pans (2D) or rotates (3D), mirroring a left-button mouse drag.
+  // Two fingers pinch to zoom, while moving their midpoint pans in both modes.
+  const touchMoveHandler = useEffectEvent((event: TouchEvent) => {
+    const cameraEl = cameraElementRef.current;
+    const prevGesture = touchGestureRef.current;
+    if (!cameraEl || !prevGesture || event.touches.length === 0) {
+      return;
+    }
+    const gesture = summarizeTouches(event.touches, cameraEl);
+    touchGestureRef.current = gesture;
+
+    if (!cameraMatrix || isBrushingRef.current || gesture.touchCount !== prevGesture.touchCount) {
+      return;
+    }
+    const isMultiTouch = gesture.touchCount > 1;
+    const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
+    let nextCameraMatrix = onMouseMove(cameraViewportParams, cameraMatrix, {
+      buttons: viewMode === "3d" && isMultiTouch ? MOUSE_BUTTONS_RIGHT : MOUSE_BUTTONS_LEFT,
+      movementX: gesture.offsetX - prevGesture.offsetX,
+      movementY: gesture.offsetY - prevGesture.offsetY,
+      offsetX: gesture.offsetX,
+      offsetY: gesture.offsetY,
+      altKey: false,
+      shiftKey: false,
+    });
+    if (isMultiTouch && prevGesture.spread > 0) {
+      const onPinch = viewMode === "3d" ? onPinch3d : onPinch2d;
+      nextCameraMatrix = onPinch(cameraViewportParams, nextCameraMatrix, {
+        scale: gesture.spread / prevGesture.spread,
+        offsetX: gesture.offsetX,
+        offsetY: gesture.offsetY,
+      });
+    }
     setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
   });
 
@@ -665,13 +695,13 @@ function PluotInner(props: PluotProps) {
 
     // TODO: wrap pick_wasm in a try/catch
 
-    return normalizePickingResult(await pick_wasm(
+    return await pick_wasm(
       renderParams,
       // The coordinates are relative to the "layer" (the camera region), not the full width/height.
       // We also need to flip the Y coordinate so that positive is up.
       params.screenCoordX + params.marginLeft,
       params.marginBottom + (layerHeight - params.screenCoordY)
-    ));
+    ) as PickingResult;
   };
 
   // The most recently requested click/hover pick. Kept (rather than reset to
@@ -765,6 +795,14 @@ function PluotInner(props: PluotProps) {
     cameraEl.addEventListener("mousemove", mouseMoveHandler);
     cameraEl.addEventListener("wheel", wheelHandler);
 
+    // Passive, since `touch-action: none` on the camera element already stops
+    // the browser from scrolling/zooming the page. Not calling preventDefault
+    // keeps the compatibility mouse events (and thus click-picking) for taps.
+    cameraEl.addEventListener("touchstart", touchStartOrEndHandler, { passive: true });
+    cameraEl.addEventListener("touchmove", touchMoveHandler, { passive: true });
+    cameraEl.addEventListener("touchend", touchStartOrEndHandler, { passive: true });
+    cameraEl.addEventListener("touchcancel", touchStartOrEndHandler, { passive: true });
+
     // Track mousedown -> mousemove distance so that a drag (e.g. panning)
     // that ends on the camera element does not also trigger a click/pick.
     const mouseDownHandler = (event: MouseEvent) => {
@@ -821,6 +859,10 @@ function PluotInner(props: PluotProps) {
     return () => {
       cameraEl.removeEventListener("mousemove", mouseMoveHandler);
       cameraEl.removeEventListener("wheel", wheelHandler);
+      cameraEl.removeEventListener("touchstart", touchStartOrEndHandler);
+      cameraEl.removeEventListener("touchmove", touchMoveHandler);
+      cameraEl.removeEventListener("touchend", touchStartOrEndHandler);
+      cameraEl.removeEventListener("touchcancel", touchStartOrEndHandler);
       cameraEl.removeEventListener("mousedown", mouseDownHandler);
       cameraEl.removeEventListener("mousemove", dragDetectHandler);
       cameraEl.removeEventListener("click", clickHandler);
@@ -947,7 +989,7 @@ function PluotInner(props: PluotProps) {
     // any other thrown error (e.g. a Rust panic) is left alone.
     retry: (failureCount, error) => error instanceof RenderBailedEarlyError && failureCount < maxBailedEarlyRetries,
     // Exponential backoff, doubling on every bailed-early retry: also used as
-    // the `timeout` given to the *next* render_wasm/pick_wasm/brush_wasm call
+    // the `timeout` given to the *next* render_wasm/pick_wasm call
     // (via the shared `currentTimeout` ref), so wasm is given roughly as long
     // to wait for the underlying store fetches as react-query waits to retry.
     retryDelay: (failureCount) => {
@@ -1060,6 +1102,7 @@ function PluotInner(props: PluotProps) {
             width: width - marginLeft - marginRight,
             height: height - marginTop - marginBottom,
             border: `${debugMargins ? 1 : 0}px solid red`,
+            touchAction: "none",
           }}
         />
         {bailedEarly || cameraMatrix === undefined ? (

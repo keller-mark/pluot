@@ -2,6 +2,7 @@ use std::num::NonZeroU64;
 
 use encase::{ShaderType, UniformBuffer};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::numeric_data::NumericData;
 use crate::render_types::GpuContext;
@@ -15,7 +16,7 @@ use super::reduce_stratified::read_back_u32;
 use crate::gpu_send::MaybeSendBoxFuture;
 
 /// An axis of a row-major matrix.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, TS)]
 pub enum MatrixAxis {
     Rows,
     Cols,

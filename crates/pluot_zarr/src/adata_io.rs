@@ -10,6 +10,7 @@ use pluot_core::with_int_slice;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use crate::adata_metadata::AnnDataEncoding;
+use crate::memo::use_memo_shared;
 use crate::zarr_numeric_data::{load_arr_as_numeric_data, retrieve_numeric_subset};
 
 /// Upper bound on how much of a sparse matrix's `indptr`, `indices` or `data` array is read — and
@@ -25,74 +26,110 @@ const MAX_BYTES_PER_READ: u64 = 36 << 20;
 /// accept. Narrower dtypes therefore read below the byte budget rather than above it.
 const MAX_ELEMENTS_PER_READ: u64 = MAX_BYTES_PER_READ / 8;
 
+/// A store, named so that the metadata of the zarr nodes read from it can be memoized (when
+/// `cache_enabled`) and shared across renders, layers and reads, instead of being re-fetched
+/// each time a node is opened.
+#[derive(Clone)]
+pub struct NamedStore {
+    pub store: Arc<dyn AsyncReadableStorageTraits>,
+    pub store_name: String,
+    pub cache_enabled: bool,
+}
+
+impl NamedStore {
+    pub fn new(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, cache_enabled: bool) -> Self {
+        Self { store, store_name: store_name.to_string(), cache_enabled }
+    }
+
+    /// Opens (and caches) the zarr array at `path`.
+    pub async fn open_array(&self, path: &str) -> Arc<zarrs::array::Array<dyn AsyncReadableStorageTraits>> {
+        let keys = vec!["zarr_array".to_string(), self.store_name.clone(), path.to_string()];
+        use_memo_shared(
+            async || {
+                zarrs::array::Array::async_open(self.store.clone(), path)
+                    .await
+                    .unwrap_or_else(|e| panic!("Failed to open zarr array at \"{path}\": {e}"))
+            },
+            &keys,
+            self.cache_enabled,
+        )
+        .await
+    }
+}
 
 /// Reads the `attributes` of the zarr group or array at `path` and
 /// deserializes them into an [`AnnDataEncoding`], regardless of whether the
 /// element is a group (e.g. `dataframe`, `categorical`, `dict`) or an array
 /// (e.g. `array`, `string-array`).
-pub async fn read_encoding(store: Arc<dyn AsyncReadableStorageTraits>, path: &str) -> AnnDataEncoding {
-    let attributes = if let Ok(group) = zarrs::group::Group::async_open(store.clone(), path).await {
-        group.attributes().clone()
-    } else {
-        zarrs::array::Array::async_open(store, path)
-            .await
-            .unwrap_or_else(|e| panic!("Failed to open AnnData element at \"{path}\": {e}"))
-            .attributes()
-            .clone()
-    };
-    serde_json::from_value(serde_json::Value::Object(attributes))
-        .unwrap_or_else(|e| panic!("Invalid AnnData encoding attributes at \"{path}\": {e}"))
+pub async fn read_encoding(store: &NamedStore, path: &str) -> AnnDataEncoding {
+    let keys = vec!["adata_encoding".to_string(), store.store_name.clone(), path.to_string()];
+    let encoding = use_memo_shared(
+        async || {
+            let attributes = match zarrs::group::Group::async_open(store.store.clone(), path).await {
+                Ok(group) => group.attributes().clone(),
+                Err(_) => store.open_array(path).await.attributes().clone(),
+            };
+            serde_json::from_value(serde_json::Value::Object(attributes))
+                .unwrap_or_else(|e| panic!("Invalid AnnData encoding attributes at \"{path}\": {e}"))
+        },
+        &keys,
+        store.cache_enabled,
+    )
+    .await;
+    AnnDataEncoding::clone(&encoding)
 }
 
 /// Reads a whole `string-array`-encoded zarr array.
-pub async fn read_string_array(store: Arc<dyn AsyncReadableStorageTraits>, path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, path).await.unwrap();
+pub async fn read_string_array(store: &NamedStore, path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
+    let array = store.open_array(path).await;
     let subset = array.subset_all();
     array.async_retrieve_array_subset::<Vec<String>>(&subset).await
 }
 
-/// Reads the row labels of an AnnData dataframe (e.g. `obs` or `var`), i.e.
-/// the column named by its `_index` attribute. Handles both `string-array`-
-/// and `nullable-string-array`-encoded index columns; the `mask` sibling of
-/// the latter is ignored, since a dataframe index is not expected to have
-/// missing values.
-/// TODO: also support integer and range-type indices
-pub async fn read_dataframe_index(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
-    let index_column = match read_encoding(store.clone(), dataframe_path).await {
-        AnnDataEncoding::DataFrame { index, .. } => index,
+/// The path of the column named by the `_index` attribute of the AnnData dataframe at `dataframe_path`.
+pub async fn read_dataframe_index_path(store: &NamedStore, dataframe_path: &str) -> String {
+    match read_encoding(store, dataframe_path).await {
+        AnnDataEncoding::DataFrame { index, .. } => format!("{dataframe_path}/{index}"),
         other => panic!("Expected a dataframe encoding at \"{dataframe_path}\", got {other:?}"),
-    };
-    let index_path = format!("{dataframe_path}/{index_column}");
-    let values_path = match read_encoding(store.clone(), &index_path).await {
-        AnnDataEncoding::NullableStringArray { .. } => format!("{index_path}/values"),
-        AnnDataEncoding::StringArray { .. } => index_path,
-        other => panic!("Unsupported dataframe index encoding at \"{index_path}\": {other:?}"),
-    };
-    read_string_array(store, &values_path).await
+    }
 }
 
-/// Reads a string column of an AnnData dataframe (e.g. `obs` or `var`): its
-/// index when `column` is `None`, else the named `string-array` or
-/// `nullable-string-array` column (ignoring the latter's mask).
-pub async fn read_dataframe_column_strings(store: Arc<dyn AsyncReadableStorageTraits>, dataframe_path: &str, column: Option<&str>) -> Result<Vec<String>, zarrs::array::ArrayError> {
-    let Some(column) = column else {
-        return read_dataframe_index(store, dataframe_path).await;
-    };
-    let column_path = format!("{dataframe_path}/{column}");
-    let values_path = match read_encoding(store.clone(), &column_path).await {
+/// Reads a `string-array` or `nullable-string-array` column of an AnnData
+/// dataframe, ignoring the latter's mask.
+pub async fn read_string_column(store: &NamedStore, column_path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
+    let values_path = match read_encoding(store, column_path).await {
         AnnDataEncoding::NullableStringArray { .. } => format!("{column_path}/values"),
-        AnnDataEncoding::StringArray { .. } => column_path,
+        AnnDataEncoding::StringArray { .. } => column_path.to_string(),
         other => panic!("Unsupported string column encoding at \"{column_path}\": {other:?}"),
     };
     read_string_array(store, &values_path).await
 }
 
+/// Reads the row labels of an AnnData dataframe (e.g. `obs` or `var`), i.e.
+/// the column named by its `_index` attribute (see [`read_string_column`]).
+/// TODO: also support integer and range-type indices
+pub async fn read_dataframe_index(store: &NamedStore, dataframe_path: &str) -> Result<Vec<String>, zarrs::array::ArrayError> {
+    let index_path = read_dataframe_index_path(store, dataframe_path).await;
+    read_string_column(store, &index_path).await
+}
+
+/// Reads the number of rows of the AnnData dataframe at `dataframe_path`, from the shape of its index.
+pub async fn read_dataframe_len(store: &NamedStore, dataframe_path: &str) -> u64 {
+    let index_path = read_dataframe_index_path(store, dataframe_path).await;
+    let array_path = match read_encoding(store, &index_path).await {
+        AnnDataEncoding::NullableStringArray { .. } => format!("{index_path}/values"),
+        _ => index_path,
+    };
+    let array = store.open_array(&array_path).await;
+    array.shape()[0]
+}
+
 /// Reads the `[n_obs, n_var]` shape of an AnnData expression matrix stored as a
 /// dense `array`, `csr_matrix` or `csc_matrix`.
-pub async fn read_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str) -> Vec<u64> {
-    match read_encoding(store.clone(), matrix_path).await {
+pub async fn read_matrix_shape(store: &NamedStore, matrix_path: &str) -> Vec<u64> {
+    match read_encoding(store, matrix_path).await {
         AnnDataEncoding::CsrMatrix { shape, .. } | AnnDataEncoding::CscMatrix { shape, .. } => shape,
-        _ => zarrs::array::Array::async_open(store, matrix_path).await.unwrap().shape().to_vec(),
+        _ => store.open_array(matrix_path).await.shape().to_vec(),
     }
 }
 
@@ -100,23 +137,23 @@ pub async fn read_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, matri
 /// its `categories` labels and per-observation `codes` (the category index of
 /// each row; `-1` denotes a missing value, per the AnnData spec).
 /// TODO: also support non-string categories
-pub async fn read_categorical_column(store: Arc<dyn AsyncReadableStorageTraits>, column_path: &str) -> Result<(Vec<String>, NumericData), zarrs::array::ArrayError> {
-    let categories = read_string_array(store.clone(), &format!("{column_path}/categories")).await?;
-    let codes = load_arr_as_numeric_data(store, &format!("{column_path}/codes")).await?;
+pub async fn read_categorical_column(store: &NamedStore, column_path: &str) -> Result<(Vec<String>, NumericData), zarrs::array::ArrayError> {
+    let categories = read_string_array(store, &format!("{column_path}/categories")).await?;
+    let codes = load_arr_as_numeric_data(store.store.clone(), &format!("{column_path}/codes")).await?;
     Ok((categories, codes))
 }
 
 /// Reads a numeric column of an AnnData dataframe (e.g., a column of `obs` or `var`).
-pub async fn read_numeric_column(store: Arc<dyn AsyncReadableStorageTraits>, column_path: &str) -> Result<NumericData, zarrs::array::ArrayError> {
-    let values = load_arr_as_numeric_data(store, column_path).await?;
+pub async fn read_numeric_column(store: &NamedStore, column_path: &str) -> Result<NumericData, zarrs::array::ArrayError> {
+    let values = load_arr_as_numeric_data(store.store.clone(), column_path).await?;
     Ok(values)
 }
 
 /// Reads one column (all rows) of a dense 2D numeric zarr array (e.g. AnnData
 /// `X` or a `layers` entry) in its native dtype, given the zero-based column
 /// index. See [`load_arr_as_numeric_data`] for the whole-array equivalent.
-pub async fn read_dense_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
+pub async fn read_dense_column_numeric(store: &NamedStore, array_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let array = store.open_array(array_path).await;
     let n_obs = array.shape()[0];
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[0..n_obs, col_index..col_index + 1]);
     retrieve_numeric_subset(&array, &subset).await
@@ -124,8 +161,8 @@ pub async fn read_dense_column_numeric(store: Arc<dyn AsyncReadableStorageTraits
 
 /// Reads one column (all rows) of a dense 2D numeric zarr array (e.g. AnnData
 /// `X` or a `layers` entry) as `f32`, given the zero-based column index.
-pub async fn read_dense_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
+pub async fn read_dense_column_f32(store: &NamedStore, array_path: &str, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
+    let array = store.open_array(array_path).await;
     let n_obs = array.shape()[0];
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[0..n_obs, col_index..col_index + 1]);
 
@@ -144,7 +181,7 @@ pub async fn read_dense_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, a
 
 /// Reads the logical `[n_obs, n_var]` shape of a CSR- or CSC-encoded sparse matrix from its
 /// group's AnnData encoding attributes.
-async fn read_sparse_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str) -> Vec<u64> {
+async fn read_sparse_matrix_shape(store: &NamedStore, matrix_path: &str) -> Vec<u64> {
     match read_encoding(store, matrix_path).await {
         AnnDataEncoding::CsrMatrix { shape, .. } | AnnDataEncoding::CscMatrix { shape, .. } => shape,
         other => panic!("Expected a csr_matrix or csc_matrix encoding at \"{matrix_path}\", got {other:?}"),
@@ -172,8 +209,8 @@ fn offset_at(offsets: &NumericData, idx: usize) -> u64 {
 /// the native dtype instead means bulk access goes through [`with_int_slice`], so elements are
 /// read at their stored width, and the only values ever converted are the handful of scalars
 /// that feed zarr's `u64`-typed slicing API (see [`offset_at`]).
-async fn read_int_array_range(store: Arc<dyn AsyncReadableStorageTraits>, array_path: &str, start: u64, stop: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let array = zarrs::array::Array::async_open(store, array_path).await.unwrap();
+async fn read_int_array_range(store: &NamedStore, array_path: &str, start: u64, stop: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let array = store.open_array(array_path).await;
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[start..stop]);
     let values = retrieve_numeric_subset(&array, &subset).await?;
     if matches!(values, NumericData::Float32(_) | NumericData::Float64(_)) {
@@ -324,7 +361,7 @@ async fn read_data_entries(
 /// from — and a span's `data` is read only if its `indices` show that the span holds something
 /// for this column, which for a single gene skips nearly every span.
 async fn locate_csr_column_entries(
-    store: Arc<dyn AsyncReadableStorageTraits>,
+    store: &NamedStore,
     matrix_path: &str,
     col_index: u64,
     n_obs: usize,
@@ -338,12 +375,12 @@ async fn locate_csr_column_entries(
     for first_row in (0..n_obs).step_by(elements_per_read) {
         let rows_in_block = elements_per_read.min(n_obs - first_row);
         // One offset per row of the block, plus the terminating offset that closes its last row.
-        let indptr_block = read_int_array_range(store.clone(), &indptr_path, first_row as u64, (first_row + rows_in_block) as u64 + 1).await?;
+        let indptr_block = read_int_array_range(store, &indptr_path, first_row as u64, (first_row + rows_in_block) as u64 + 1).await?;
         let (block_start, block_stop) = (offset_at(&indptr_block, 0), offset_at(&indptr_block, rows_in_block));
 
         for span_start in (block_start..block_stop).step_by(elements_per_read) {
             let span_stop = (span_start + budget).min(block_stop);
-            let indices_span = read_int_array_range(store.clone(), &indices_path, span_start, span_stop).await?;
+            let indices_span = read_int_array_range(store, &indices_path, span_start, span_stop).await?;
             let matches = with_int_slice!(&indices_span, |indices| find_column_entries(indices, col_index));
             if matches.is_empty() {
                 continue;
@@ -369,25 +406,25 @@ async fn locate_csr_column_entries(
 /// A CSC column is one contiguous read, whereas a CSR column traverses the whole matrix; see
 /// [`locate_csr_column_entries`].
 pub async fn read_compressed_column(
-    store: Arc<dyn AsyncReadableStorageTraits>,
+    store: &NamedStore,
     matrix_path: &str,
     compressed_axis: CompressedAxis,
     col_index: u64,
 ) -> Result<CompressedMatrix, zarrs::array::ArrayError> {
-    let n_obs = read_sparse_matrix_shape(store.clone(), matrix_path).await[0] as usize;
+    let n_obs = read_sparse_matrix_shape(store, matrix_path).await[0] as usize;
     let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
+    let data_array = store.open_array(&data_path).await;
 
     let (indices, data) = match compressed_axis {
         CompressedAxis::Cols => {
-            let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
+            let indptr = read_int_array_range(store, &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
             let (start, stop) = (offset_at(&indptr, 0), offset_at(&indptr, 1));
-            let rows = read_int_array_range(store.clone(), &format!("{matrix_path}/indices"), start, stop).await?;
+            let rows = read_int_array_range(store, &format!("{matrix_path}/indices"), start, stop).await?;
             let values = retrieve_numeric_subset(&data_array, &zarrs::array::ArraySubset::new_with_ranges(&[start..stop])).await?;
             (rows, values)
         }
         CompressedAxis::Rows => {
-            let (rows, reads) = locate_csr_column_entries(store.clone(), matrix_path, col_index, n_obs, MAX_ELEMENTS_PER_READ).await?;
+            let (rows, reads) = locate_csr_column_entries(store, matrix_path, col_index, n_obs, MAX_ELEMENTS_PER_READ).await?;
             let values = read_data_entries(&data_array, &data_path, &reads, rows.len()).await?;
             (NumericData::from(rows), values)
         }
@@ -406,23 +443,23 @@ pub async fn read_compressed_column(
 /// arrays. Since a CSC matrix's `indptr` is indexed by column, the requested column's non-zero
 /// entries live in one contiguous range of `indices`/`data`, so only that range is read (unlike
 /// [`read_csr_column_numeric`]). See [`read_dense_column_numeric`] for the dense equivalent.
-pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
+pub async fn read_csc_column_numeric(store: &NamedStore, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let shape = read_sparse_matrix_shape(store, matrix_path).await;
     let n_obs = shape[0] as usize;
 
-    let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
+    let indptr = read_int_array_range(store, &format!("{matrix_path}/indptr"), col_index, col_index + 2).await?;
     let (start, stop) = (offset_at(&indptr, 0), offset_at(&indptr, 1));
 
     // An all-zero column has no `indices`/`data` entries to read at all.
     let row_indices = if start != stop {
-        Some(read_int_array_range(store.clone(), &format!("{matrix_path}/indices"), start, stop).await?)
+        Some(read_int_array_range(store, &format!("{matrix_path}/indices"), start, stop).await?)
     } else {
         None
     };
     let subset = zarrs::array::ArraySubset::new_with_ranges(&[start..stop]);
 
     let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
+    let data_array = store.open_array(&data_path).await;
 
     use zarrs::plugin::ZarrVersion;
     let dtype_name = data_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();
@@ -464,14 +501,14 @@ pub async fn read_csc_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 /// matrix. [`locate_csr_column_entries`] does that traversal in fixed-size pieces, discarding each
 /// as soon as the entries it contributes have been located, so peak memory stays proportional to
 /// the `n_obs`-length output rather than to the size of the matrix.
-pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
+pub async fn read_csr_column_numeric(store: &NamedStore, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    let shape = read_sparse_matrix_shape(store, matrix_path).await;
     let n_obs = shape[0] as usize;
 
     let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
+    let data_array = store.open_array(&data_path).await;
 
-    let (rows, mut reads) = locate_csr_column_entries(store.clone(), matrix_path, col_index, n_obs, MAX_ELEMENTS_PER_READ).await?;
+    let (rows, mut reads) = locate_csr_column_entries(store, matrix_path, col_index, n_obs, MAX_ELEMENTS_PER_READ).await?;
     for read in &mut reads {
         for placement in &mut read.placements {
             placement.0 = rows[placement.0 as usize];
@@ -484,8 +521,8 @@ pub async fn read_csr_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>,
 /// entry, stored as a dense `array`, `csr_matrix` or `csc_matrix` — in its native dtype.
 ///
 /// For a CSR matrix this traverses the whole matrix; see [`read_csr_column_numeric`].
-pub async fn read_matrix_column_numeric(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
-    match read_encoding(store.clone(), matrix_path).await {
+pub async fn read_matrix_column_numeric(store: &NamedStore, matrix_path: &str, col_index: u64) -> Result<NumericData, zarrs::array::ArrayError> {
+    match read_encoding(store, matrix_path).await {
         AnnDataEncoding::Array { .. } => read_dense_column_numeric(store, matrix_path, col_index).await,
         AnnDataEncoding::CsrMatrix { .. } => read_csr_column_numeric(store, matrix_path, col_index).await,
         AnnDataEncoding::CscMatrix { .. } => read_csc_column_numeric(store, matrix_path, col_index).await,
@@ -504,8 +541,8 @@ pub async fn read_matrix_column_numeric(store: Arc<dyn AsyncReadableStorageTrait
 /// Values are converted to `f32` because that is what the GPU consumes; use
 /// [`read_dense_column_numeric`], [`read_csr_column_numeric`] or [`read_csc_column_numeric`]
 /// directly to keep a column in its stored dtype.
-pub async fn read_matrix_column_f32(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
-    match read_encoding(store.clone(), matrix_path).await {
+pub async fn read_matrix_column_f32(store: &NamedStore, matrix_path: &str, col_index: u64) -> Result<Vec<f32>, zarrs::array::ArrayError> {
+    match read_encoding(store, matrix_path).await {
         AnnDataEncoding::Array { .. } => read_dense_column_f32(store, matrix_path, col_index).await,
         AnnDataEncoding::CsrMatrix { .. } => Ok(read_csr_column_numeric(store, matrix_path, col_index).await?.as_f32().into_owned()),
         AnnDataEncoding::CscMatrix { .. } => Ok(read_csc_column_numeric(store, matrix_path, col_index).await?.as_f32().into_owned()),
@@ -581,7 +618,7 @@ pub enum MatrixLayout {
 }
 
 /// Reads how the AnnData expression matrix at `matrix_path` is stored.
-pub async fn read_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, matrix_path: &str) -> MatrixLayout {
+pub async fn read_matrix_layout(store: &NamedStore, matrix_path: &str) -> MatrixLayout {
     match read_encoding(store, matrix_path).await {
         AnnDataEncoding::Array { .. } => MatrixLayout::Dense,
         AnnDataEncoding::CsrMatrix { .. } => MatrixLayout::Compressed(CompressedAxis::Rows),
@@ -604,7 +641,7 @@ pub async fn read_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, matr
 ///
 /// `rows` and `cols` must not contain duplicates.
 async fn locate_compressed_subset_entries(
-    store: Arc<dyn AsyncReadableStorageTraits>,
+    store: &NamedStore,
     matrix_path: &str,
     shape: &[u64],
     rows: &[u32],
@@ -630,7 +667,7 @@ async fn locate_compressed_subset_entries(
         sorted_major.sort_unstable();
         let first_major = sorted_major[0].0;
         let last_major = sorted_major[sorted_major.len() - 1].0;
-        let indptr = read_int_array_range(store.clone(), &format!("{matrix_path}/indptr"), first_major as u64, last_major as u64 + 2).await?;
+        let indptr = read_int_array_range(store, &format!("{matrix_path}/indptr"), first_major as u64, last_major as u64 + 2).await?;
         let offset = |major_index: u32| offset_at(&indptr, (major_index - first_major) as usize);
         let indices_path = format!("{matrix_path}/indices");
 
@@ -644,7 +681,7 @@ async fn locate_compressed_subset_entries(
             let span_stop = offset(sorted_major[span_end - 1].0 + 1);
 
             if span_stop > span_start {
-                let minor_indices = read_int_array_range(store.clone(), &indices_path, span_start, span_stop).await?;
+                let minor_indices = read_int_array_range(store, &indices_path, span_start, span_stop).await?;
                 let read = read_subsets.len() as u32;
                 read_subsets.push(zarrs::array::ArraySubset::new_with_ranges(&[span_start..span_stop]));
                 for &(major_index, major_position) in &sorted_major[span_first..span_end] {
@@ -688,7 +725,7 @@ async fn locate_compressed_subset_entries(
 /// `minor_subset` is `cols` (CSR) or `rows` (CSC). `rows` and `cols` must not
 /// contain duplicates.
 pub async fn read_compressed_subset(
-    store: Arc<dyn AsyncReadableStorageTraits>,
+    store: &NamedStore,
     matrix_path: &str,
     compressed_axis: CompressedAxis,
     rows: &[u32],
@@ -698,18 +735,18 @@ pub async fn read_compressed_subset(
 }
 
 pub async fn read_compressed_subset_with_budget(
-    store: Arc<dyn AsyncReadableStorageTraits>,
+    store: &NamedStore,
     matrix_path: &str,
     compressed_axis: CompressedAxis,
     rows: &[u32],
     cols: &[u32],
     budget: u64,
 ) -> Result<CompressedMatrix, zarrs::array::ArrayError> {
-    let shape = read_sparse_matrix_shape(store.clone(), matrix_path).await;
+    let shape = read_sparse_matrix_shape(store, matrix_path).await;
     let data_path = format!("{matrix_path}/data");
-    let data_array = zarrs::array::Array::async_open(store.clone(), &data_path).await.unwrap();
+    let data_array = store.open_array(&data_path).await;
 
-    let (indptr, indices, reads) = locate_compressed_subset_entries(store.clone(), matrix_path, &shape, rows, cols, compressed_axis, budget).await?;
+    let (indptr, indices, reads) = locate_compressed_subset_entries(store, matrix_path, &shape, rows, cols, compressed_axis, budget).await?;
     let data = read_data_entries(&data_array, &data_path, &reads, indices.len()).await?;
     let minor = match compressed_axis {
         CompressedAxis::Rows => cols,
@@ -728,12 +765,12 @@ pub async fn read_compressed_subset_with_budget(
 /// row-major array. The output follows the order of `rows` and `cols`, which
 /// must not contain duplicates. See [`read_compressed_subset`] for sparse matrices.
 pub async fn read_dense_subset_numeric(
-    store: Arc<dyn AsyncReadableStorageTraits>,
+    store: &NamedStore,
     matrix_path: &str,
     rows: &[u32],
     cols: &[u32],
 ) -> Result<NumericData, zarrs::array::ArrayError> {
-    let values_array = zarrs::array::Array::async_open(store.clone(), matrix_path).await.unwrap();
+    let values_array = store.open_array(matrix_path).await;
 
     use zarrs::plugin::ZarrVersion;
     let dtype_name = values_array.data_type().name(ZarrVersion::V3).expect("Array data type must have a V3 name").to_string();

@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::shader_modules::{TextureDtype, WgslScalar};
 use crate::wgpu;
@@ -26,7 +27,7 @@ use crate::log;
 ///
 /// Serialized as an adjacently-tagged enum with `dtype` and `values` fields,
 /// e.g. `{"dtype": "Uint16", "values": [1, 2, 3]}`.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(tag = "dtype", content = "values")]
 pub enum NumericData {
     Uint8(Arc<Vec<u8>>),
@@ -39,6 +40,37 @@ pub enum NumericData {
     Int64(Arc<Vec<i64>>),
     Float32(Arc<Vec<f32>>),
     Float64(Arc<Vec<f64>>),
+}
+
+/// A single element of a [`NumericData`] array, in its native dtype.
+///
+/// Serializes as a plain number.
+#[derive(Clone, Copy, Debug, PartialEq, TS)]
+#[ts(type = "number")]
+pub enum NumericValue {
+    Uint(u64),
+    Int(i64),
+    Float32(f32),
+    Float64(f64),
+}
+
+/// Larger integers are not exactly representable as JS numbers,
+/// and serde_wasm_bindgen refuses to serialize them as such.
+const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
+
+impl Serialize for NumericValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match *self {
+            NumericValue::Uint(v) if v <= MAX_SAFE_INTEGER => serializer.serialize_u64(v),
+            NumericValue::Uint(v) => serializer.serialize_f64(v as f64),
+            NumericValue::Int(v) if v.unsigned_abs() <= MAX_SAFE_INTEGER => serializer.serialize_i64(v),
+            NumericValue::Int(v) => serializer.serialize_f64(v as f64),
+            // Widening via the shortest decimal representation reports
+            // e.g. 0.1f32 as 0.1 rather than 0.10000000149011612.
+            NumericValue::Float32(v) => serializer.serialize_f64(v.to_string().parse().unwrap_or(v as f64)),
+            NumericValue::Float64(v) => serializer.serialize_f64(v),
+        }
+    }
 }
 
 /// Implement `From<Vec<T>>` and `From<Arc<Vec<T>>>` for every supported dtype.
@@ -215,22 +247,31 @@ impl NumericData {
         }
     }
 
-    /// Format the element at `idx` in its native dtype, for display (e.g. the
-    /// value shown by picking). Integer dtypes render without a decimal point,
-    /// avoiding the lossy detour through a float that
-    /// [`get_f32`](Self::get_f32) would impose.
-    pub fn format_element(&self, idx: usize) -> String {
+    /// The element at `idx` in its native dtype, for reporting (e.g. the
+    /// value returned by picking), avoiding the lossy detour through a float
+    /// that [`get_f32`](Self::get_f32) would impose on integers.
+    pub fn value(&self, idx: usize) -> NumericValue {
         match self {
-            NumericData::Uint8(v) => v[idx].to_string(),
-            NumericData::Uint16(v) => v[idx].to_string(),
-            NumericData::Uint32(v) => v[idx].to_string(),
-            NumericData::Uint64(v) => v[idx].to_string(),
-            NumericData::Int8(v) => v[idx].to_string(),
-            NumericData::Int16(v) => v[idx].to_string(),
-            NumericData::Int32(v) => v[idx].to_string(),
-            NumericData::Int64(v) => v[idx].to_string(),
-            NumericData::Float32(v) => v[idx].to_string(),
-            NumericData::Float64(v) => v[idx].to_string(),
+            NumericData::Uint8(v) => NumericValue::Uint(v[idx] as u64),
+            NumericData::Uint16(v) => NumericValue::Uint(v[idx] as u64),
+            NumericData::Uint32(v) => NumericValue::Uint(v[idx] as u64),
+            NumericData::Uint64(v) => NumericValue::Uint(v[idx]),
+            NumericData::Int8(v) => NumericValue::Int(v[idx] as i64),
+            NumericData::Int16(v) => NumericValue::Int(v[idx] as i64),
+            NumericData::Int32(v) => NumericValue::Int(v[idx] as i64),
+            NumericData::Int64(v) => NumericValue::Int(v[idx]),
+            NumericData::Float32(v) => NumericValue::Float32(v[idx]),
+            NumericData::Float64(v) => NumericValue::Float64(v[idx]),
+        }
+    }
+
+    /// Zero in this array's dtype, e.g. for implicit zeros of a sparse matrix.
+    pub fn zero_value(&self) -> NumericValue {
+        match self {
+            NumericData::Uint8(_) | NumericData::Uint16(_) | NumericData::Uint32(_) | NumericData::Uint64(_) => NumericValue::Uint(0),
+            NumericData::Int8(_) | NumericData::Int16(_) | NumericData::Int32(_) | NumericData::Int64(_) => NumericValue::Int(0),
+            NumericData::Float32(_) => NumericValue::Float32(0.0),
+            NumericData::Float64(_) => NumericValue::Float64(0.0),
         }
     }
 

@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::colormaps_quantitative::sample;
 use crate::composite_layer::{base_draw_composite_layer, base_draw_composite_layer_svg, base_prepare_composite_layer};
@@ -17,7 +18,7 @@ use crate::layers::bitmap_layer::{BitmapLayer, BitmapLayerParams, ChannelSetting
 use crate::layers::text_layer::{TextAlignMode, TextBaselineMode, TextLayer, TextLayerParams};
 use crate::numeric_data::NumericData;
 use crate::render_traits::{
-    AspectRatioMode, BrushableLayer, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
+    AspectRatioMode, ExtentableLayer, MarginParams, PickableLayer, PreparedAndDraw, PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
 use crate::render_types::GpuContext;
 use crate::gpu_send::GpuRenderPass;
@@ -39,15 +40,16 @@ const DEFAULT_GRADIENT_AXIS_GAP_PX: f32 = 2.0;
 
 /// Determines whether legend should be vertical (left to right colormap)
 /// or horizontal (bottom to top colormap).
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
 pub enum LegendOrientation {
     Vertical,
     Horizontal,
 }
 
 /// Layer params struct for [`LegendColormapQuantitativeLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct LegendColormapQuantitativeLayerParams {
     pub layer_id: String,
     /// Margins defining the legend's overall bounding box within the viewport.
@@ -347,7 +349,6 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for LegendColormapQuantitativeLayer {}
 
 impl ExtentableLayer for LegendColormapQuantitativeLayer {}
 

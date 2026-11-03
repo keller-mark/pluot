@@ -9,10 +9,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
 use pluot_core::cache::{use_memo_compressed_matrix, use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
+use pluot_core::compute::reduce_stratified::StratifyBy;
+use pluot_core::compute::stratified_indices::{compute_row_mask, compute_stratified_indices, CompactionMethod, RowSource};
+use pluot_core::render_traits::{BooleanCriteriaParams, EmphasisCriteria, QuantitativeCriteriaParams};
 use pluot_core::compute::included_indices::compute_included_indices;
 use pluot_core::compute::histogram_percentile::{histogram_bin, PercentileSearch};
 use pluot_core::compute::matrix_axis_extents::{
@@ -27,9 +31,11 @@ use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
 use pluot_core::{with_int_slice, with_numeric_slice};
 
 use crate::adata_io::{
-    read_compressed_column, read_compressed_subset, read_dataframe_column_strings, read_dense_column_numeric,
-    read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, MatrixLayout,
+    read_compressed_column, read_compressed_subset, read_dataframe_index, read_dataframe_len, read_dense_column_numeric,
+    read_dense_subset_numeric, read_matrix_layout, read_matrix_shape, read_string_column, MatrixLayout, NamedStore,
 };
+use crate::adata_paths::{adata_path_of_dataframe, adata_path_of_matrix, join_path, node_path, parent_path};
+use crate::dotplot_data::{load_categorical, load_gene_expression};
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Which entries along one axis of the matrix (obs rows or var columns) are
@@ -37,7 +43,7 @@ use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasis
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"axis_criteria_mode": "Identifiers", "axis_criteria_params": {"identifiers": ["CD3E"]}}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "axis_criteria_mode", content = "axis_criteria_params")]
 pub enum AxisCriteria {
     /// The entries whose identifier is listed, in the listed order. Unknown
@@ -46,37 +52,100 @@ pub enum AxisCriteria {
     /// The entries meeting every criteria (AND-ed together), in stored order.
     /// Each criteria's array must have one element per entry along the axis.
     Criteria(Vec<ZarrEmphasisCriteria>),
+    /// The obs whose expression of one var is within a range (e.g., cells
+    /// expressing a gene above a threshold), in stored order. Only applies to
+    /// the obs axis: along the var axis, it includes nothing.
+    Expression(ExpressionCriteriaParams),
+}
+
+/// Parameters for [`AxisCriteria::Expression`].
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
+pub struct ExpressionCriteriaParams {
+    /// The var's identifier, as it appears in `var_index_path`. An unknown one includes nothing.
+    pub var_name: String,
+    /// Path to the `var` column holding `var_name` (e.g., `var/gene_symbols`).
+    /// `None` means the index of the `var` of the matrix at `layer_path`.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub var_index_path: Option<String>,
+    /// Path to the matrix holding the expression values (e.g., `X` or `layers/log1p`).
+    /// `None` means the `X` of the AnnData object holding the filtered or selected axis.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub layer_path: Option<String>,
+    /// Lower bound of included values, inclusive unless `min_exclusive`. Omitted implies -infinity.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub min: Option<f32>,
+    /// Upper bound of included values, inclusive unless `max_exclusive`. Omitted implies +infinity.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub max: Option<f32>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub min_exclusive: Option<bool>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub max_exclusive: Option<bool>,
 }
 
 /// Parameters for [`AxisCriteria::Identifiers`].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[ts(optional_fields = nullable)]
 pub struct IdentifierCriteriaParams {
-    /// The dataframe column holding the identifiers. `None` means its index.
+    /// Path to the dataframe column holding the identifiers (e.g., `var/gene_symbols`).
+    /// `None` means the index of the filtered or selected axis's dataframe.
     #[serde(default)]
-    pub column: Option<String>,
+    #[ts(optional = nullable)]
+    pub index_path: Option<String>,
     pub identifiers: Vec<String>,
 }
 
-/// One axis of the matrix, identified by its AnnData dataframe.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One axis of an AnnData matrix.
+#[derive(Clone, Copy, Debug, PartialEq, TS)]
 pub enum MatrixAxis {
     Obs,
     Var,
 }
 
 impl MatrixAxis {
-    pub fn dataframe_path(self) -> &'static str {
+    fn dataframe_name(self) -> &'static str {
         match self {
-            MatrixAxis::Obs => "/obs",
-            MatrixAxis::Var => "/var",
+            MatrixAxis::Obs => "obs",
+            MatrixAxis::Var => "var",
         }
     }
+}
 
-    fn shape_dim(self) -> usize {
-        match self {
-            MatrixAxis::Obs => 0,
-            MatrixAxis::Var => 1,
-        }
+/// One axis of an AnnData object, identified by its dataframe (its `obs` or `var`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdataAxis {
+    pub axis: MatrixAxis,
+    /// The node path of the dataframe.
+    pub dataframe_path: String,
+}
+
+impl AdataAxis {
+    /// The axis of the AnnData object holding the matrix at `matrix_path`.
+    pub fn of_matrix(matrix_path: &str, axis: MatrixAxis) -> Self {
+        Self { axis, dataframe_path: join_path(&adata_path_of_matrix(matrix_path), axis.dataframe_name()) }
+    }
+
+    /// The obs axis of the AnnData object holding the first of `column_paths`
+    /// (each a path to an `obs` column), or else of the store root.
+    pub fn obs_of_columns<'a>(column_paths: impl IntoIterator<Item = &'a str>) -> Self {
+        let dataframe_path = column_paths.into_iter().next().map_or_else(|| node_path("obs"), parent_path);
+        Self { axis: MatrixAxis::Obs, dataframe_path }
+    }
+
+    /// The `X` of the AnnData object holding this axis.
+    pub fn default_matrix_path(&self) -> String {
+        join_path(&adata_path_of_dataframe(&self.dataframe_path), "X")
+    }
+
+    fn key(&self) -> String {
+        self.dataframe_path.clone()
     }
 }
 
@@ -86,7 +155,7 @@ pub fn axis_criteria_key(criteria: Option<&AxisCriteria>) -> Vec<String> {
     let parts: Vec<String> = match criteria {
         None => vec!["all".to_string()],
         Some(AxisCriteria::Identifiers(params)) => {
-            let mut parts = vec!["identifiers".to_string(), params.column.clone().unwrap_or_else(|| "index".to_string())];
+            let mut parts = vec!["identifiers".to_string(), format!("{:?}", params.index_path)];
             parts.extend(params.identifiers.iter().cloned());
             parts
         }
@@ -97,7 +166,8 @@ pub fn axis_criteria_key(criteria: Option<&AxisCriteria>) -> Vec<String> {
                     ZarrEmphasisCriteria::Categorical(params) => {
                         parts.push("categorical".to_string());
                         parts.push(params.codes_key.clone());
-                        parts.push(params.included_codes.iter().map(i64::to_string).collect::<Vec<_>>().join(","));
+                        parts.push(params.categories_path());
+                        parts.push(format!("{:?}", params.included_categories));
                     }
                     ZarrEmphasisCriteria::Quantitative(params) => {
                         parts.push("quantitative".to_string());
@@ -115,6 +185,16 @@ pub fn axis_criteria_key(criteria: Option<&AxisCriteria>) -> Vec<String> {
             }
             parts
         }
+        Some(AxisCriteria::Expression(params)) => vec![
+            "expression".to_string(),
+            params.var_name.clone(),
+            format!("{:?}", params.var_index_path),
+            format!("{:?}", params.layer_path),
+            format!("{:?}", params.min),
+            format!("{:?}", params.max),
+            format!("{:?}", params.min_exclusive),
+            format!("{:?}", params.max_exclusive),
+        ],
     };
     std::iter::once(parts.len().to_string()).chain(parts).collect()
 }
@@ -131,7 +211,7 @@ pub fn indices_of(data: &NumericData) -> &[u32] {
 pub async fn load_matrix_shape(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, matrix_path: &str, cache_enabled: bool) -> Result<[usize; 2], ArrayError> {
     let keys = vec!["adata_matrix_shape".to_string(), store_name.to_string(), matrix_path.to_string()];
     let shape = use_memo_numeric_data(
-        async || Ok::<_, ArrayError>(NumericData::from(read_matrix_shape(store, matrix_path).await)),
+        async || Ok::<_, ArrayError>(NumericData::from(read_matrix_shape(&NamedStore::new(store, store_name, cache_enabled), matrix_path).await)),
         &keys,
         cache_enabled,
     )
@@ -147,7 +227,7 @@ pub async fn load_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, stor
     let keys = vec!["adata_matrix_layout".to_string(), store_name.to_string(), matrix_path.to_string()];
     let layout = use_memo_vec_string(
         async || {
-            let layout = match read_matrix_layout(store, matrix_path).await {
+            let layout = match read_matrix_layout(&NamedStore::new(store, store_name, cache_enabled), matrix_path).await {
                 MatrixLayout::Dense => "dense",
                 MatrixLayout::Compressed(CompressedAxis::Rows) => "csr",
                 MatrixLayout::Compressed(CompressedAxis::Cols) => "csc",
@@ -166,15 +246,41 @@ pub async fn load_matrix_layout(store: Arc<dyn AsyncReadableStorageTraits>, stor
     }
 }
 
-/// Loads (and caches) a string column of the `axis` dataframe: its index when `column` is `None`.
-pub async fn load_axis_labels(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, axis: MatrixAxis, column: Option<&str>, cache_enabled: bool) -> Result<Arc<Vec<String>>, ArrayError> {
-    let keys = vec![
-        "adata_dataframe_labels".to_string(),
-        store_name.to_string(),
-        axis.dataframe_path().to_string(),
-        column.unwrap_or("index").to_string(),
-    ];
-    use_memo_vec_string(async || read_dataframe_column_strings(store, axis.dataframe_path(), column).await, &keys, cache_enabled).await
+/// Loads (and caches) the number of entries along `axis`.
+pub async fn load_axis_len(store: Arc<dyn AsyncReadableStorageTraits>, store_name: &str, axis: &AdataAxis, cache_enabled: bool) -> Result<usize, ArrayError> {
+    let keys = vec!["adata_dataframe_len".to_string(), store_name.to_string(), axis.key()];
+    let len = use_memo_numeric_data(
+        async || Ok::<_, ArrayError>(NumericData::from(vec![read_dataframe_len(&NamedStore::new(store, store_name, cache_enabled), &axis.dataframe_path).await])),
+        &keys,
+        cache_enabled,
+    )
+    .await?;
+    let NumericData::Uint64(len) = len.as_ref() else {
+        unreachable!("dataframe lengths are memoized as Uint64");
+    };
+    Ok(len[0] as usize)
+}
+
+/// Loads (and caches) the labels of the entries along `axis`: the string
+/// column at `index_path`, or the index of its dataframe when `None`.
+pub async fn load_axis_labels(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    axis: &AdataAxis,
+    index_path: Option<&str>,
+    cache_enabled: bool,
+) -> Result<Arc<Vec<String>>, ArrayError> {
+    let keys = vec!["adata_dataframe_labels".to_string(), store_name.to_string(), axis.key(), format!("{index_path:?}")];
+    let store = NamedStore::new(store, store_name, cache_enabled);
+    use_memo_vec_string(
+        async || match index_path {
+            Some(index_path) => read_string_column(&store, &node_path(index_path)).await,
+            None => read_dataframe_index(&store, &axis.dataframe_path).await,
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
 }
 
 /// The position in `labels` of each of `identifiers`, in order, skipping (and
@@ -202,31 +308,29 @@ pub async fn load_axis_indices(
     gpu_context: Option<&GpuContext<'_>>,
     store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: &str,
-    matrix_path: &str,
-    axis: MatrixAxis,
+    axis: &AdataAxis,
     criteria: Option<&AxisCriteria>,
     cache_enabled: bool,
 ) -> Result<Arc<NumericData>, ArrayError> {
-    let mut keys = vec![
-        "adata_axis_indices".to_string(),
-        store_name.to_string(),
-        matrix_path.to_string(),
-        axis.dataframe_path().to_string(),
-    ];
+    let mut keys = vec!["adata_axis_indices".to_string(), store_name.to_string(), axis.key()];
     keys.extend(axis_criteria_key(criteria));
 
     use_memo_numeric_data(
         async || {
-            let axis_len = load_matrix_shape(store.clone(), store_name, matrix_path, cache_enabled).await?[axis.shape_dim()];
+            let axis_len = load_axis_len(store.clone(), store_name, axis, cache_enabled).await?;
             let indices: Vec<u32> = match criteria {
                 None => (0..axis_len as u32).collect(),
                 Some(AxisCriteria::Identifiers(params)) => {
-                    let labels = load_axis_labels(store.clone(), store_name, axis, params.column.as_deref(), cache_enabled).await?;
+                    let labels = load_axis_labels(store.clone(), store_name, axis, params.index_path.as_deref(), cache_enabled).await?;
                     resolve_identifier_indices(&params.identifiers, &labels)
                 }
                 Some(AxisCriteria::Criteria(criteria)) => {
                     let resolved = resolve_zarr_emphasis_criteria(store.clone(), criteria, store_name, cache_enabled).await?;
                     compute_included_indices(gpu_context, axis_len, &resolved, &[]).await.background
+                }
+                Some(AxisCriteria::Expression(params)) => {
+                    let resolved = load_expression_criteria(store.clone(), store_name, axis, params, cache_enabled).await?;
+                    compute_included_indices(gpu_context, axis_len, &[resolved], &[]).await.background
                 }
             };
             Ok(NumericData::from(indices))
@@ -237,44 +341,191 @@ pub async fn load_axis_indices(
     .await
 }
 
-/// One entry per `included` index: 1 if it is among `selected`, else 0.
-pub fn selection_mask(included: &[u32], selected: &[u32]) -> Vec<u8> {
-    let mut selected = selected.to_vec();
-    selected.sort_unstable();
-    included.iter().map(|index| selected.binary_search(index).is_ok() as u8).collect()
+/// [`load_axis_indices`] for `criteria`, or `None` (without loading anything) when there is none.
+pub async fn load_criteria_indices(
+    gpu_context: Option<&GpuContext<'_>>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    axis: &AdataAxis,
+    criteria: Option<&AxisCriteria>,
+    cache_enabled: bool,
+) -> Result<Option<Arc<NumericData>>, ArrayError> {
+    match criteria {
+        None => Ok(None),
+        Some(criteria) => load_axis_indices(gpu_context, store, store_name, axis, Some(criteria), cache_enabled).await.map(Some),
+    }
+}
+
+/// One entry per index below `len`: whether it is among `indices`.
+pub fn index_mask(indices: &[u32], len: usize) -> Vec<bool> {
+    let mut mask = vec![false; len];
+    for &index in indices {
+        mask[index as usize] = true;
+    }
+    mask
+}
+
+/// Loads (and caches) the per-obs expression, in the matrix at `matrix_path`,
+/// of the var labeled `var_name` (see [`load_axis_labels`]), or `None` when there is no such var.
+pub async fn load_var_expression(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    var_name: &str,
+    var_index_path: Option<&str>,
+    matrix_path: &str,
+    cache_enabled: bool,
+) -> Result<Option<Arc<Vec<f32>>>, ArrayError> {
+    let var_axis = AdataAxis::of_matrix(matrix_path, MatrixAxis::Var);
+    let var_labels = load_axis_labels(store.clone(), store_name, &var_axis, var_index_path, cache_enabled).await?;
+    let Some(col_index) = var_labels.iter().position(|label| label == var_name) else {
+        return Ok(None);
+    };
+    load_gene_expression(store, store_name, col_index as u64, matrix_path, cache_enabled).await.map(Some)
+}
+
+/// Loads (and caches) the per-obs expression of the var of `params`, as the
+/// [`EmphasisCriteria`] testing it against the range of `params`.
+pub async fn load_expression_criteria(
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    axis: &AdataAxis,
+    params: &ExpressionCriteriaParams,
+    cache_enabled: bool,
+) -> Result<EmphasisCriteria, ArrayError> {
+    let axis_len = load_axis_len(store.clone(), store_name, axis, cache_enabled).await?;
+    let includes_nothing = || EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: NumericData::from(vec![0u8; axis_len]) });
+    if axis.axis == MatrixAxis::Var {
+        log("heatmap_data: expression criteria only apply to the obs axis; including no vars");
+        return Ok(includes_nothing());
+    }
+    let matrix_path = params.layer_path.as_deref().map_or_else(|| axis.default_matrix_path(), node_path);
+    let Some(values) = load_var_expression(store, store_name, &params.var_name, params.var_index_path.as_deref(), &matrix_path, cache_enabled).await? else {
+        log(&format!("heatmap_data: var \"{}\" not found; including no obs", params.var_name));
+        return Ok(includes_nothing());
+    };
+    Ok(EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+        values: NumericData::Float32(values),
+        min: params.min,
+        max: params.max,
+        min_exclusive: params.min_exclusive,
+        max_exclusive: params.max_exclusive,
+    }))
+}
+
+/// Loads (and caches) the [`EmphasisCriteria`] equivalent to `criteria` along `axis`, for
+/// evaluating it per index (e.g., on the GPU): none when `criteria` is `None`.
+pub async fn load_axis_emphasis_criteria(
+    gpu_context: Option<&GpuContext<'_>>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    axis: &AdataAxis,
+    criteria: Option<&AxisCriteria>,
+    cache_enabled: bool,
+) -> Result<Vec<EmphasisCriteria>, ArrayError> {
+    match criteria {
+        None => Ok(Vec::new()),
+        Some(AxisCriteria::Criteria(criteria)) => resolve_zarr_emphasis_criteria(store, criteria, store_name, cache_enabled).await,
+        Some(AxisCriteria::Expression(params)) => Ok(vec![load_expression_criteria(store, store_name, axis, params, cache_enabled).await?]),
+        Some(identifiers @ AxisCriteria::Identifiers(_)) => {
+            let mut keys = vec!["adata_axis_identifiers_mask".to_string(), store_name.to_string(), axis.key()];
+            keys.extend(axis_criteria_key(Some(identifiers)));
+            // Identifiers are matched against the axis labels on the CPU, so they are only
+            // converted to a mask, to evaluate along with any other criteria.
+            let mask = use_memo_numeric_data(
+                async || {
+                    let (axis_len, indices) = futures::try_join!(
+                        load_axis_len(store.clone(), store_name, axis, cache_enabled),
+                        load_axis_indices(gpu_context, store.clone(), store_name, axis, Some(identifiers), cache_enabled),
+                    )?;
+                    let mask: Vec<u8> = index_mask(indices_of(&indices), axis_len).into_iter().map(u8::from).collect();
+                    Ok::<_, ArrayError>(NumericData::from(mask))
+                },
+                &keys,
+                cache_enabled,
+            )
+            .await?;
+            Ok(vec![EmphasisCriteria::Boolean(BooleanCriteriaParams { mask: mask.as_ref().clone() })])
+        }
+    }
+}
+
+/// The codes of a categorical column with `num_categories` categories, as strata in category
+/// order, followed by missing values.
+pub fn categories_then_missing(codes: NumericData, num_categories: usize) -> StratifyBy {
+    StratifyBy { codes, included_codes: (0..num_categories as i64).chain([-1]).collect() }
+}
+
+/// Loads (and caches) the indices along `axis` included by `filtering`, sorted
+/// by the categories of each `groupby` column (each a path to a categorical
+/// column of the `axis` dataframe), from the coarsest (first) to the finest
+/// (last). Within each column, indices follow its category order, with missing
+/// values last. Indices that tie on every column keep their filtered order
+/// (stored order, or listed order for identifiers).
+pub async fn load_grouped_axis_indices(
+    gpu_context: Option<&GpuContext<'_>>,
+    store: Arc<dyn AsyncReadableStorageTraits>,
+    store_name: &str,
+    axis: &AdataAxis,
+    filtering: Option<&AxisCriteria>,
+    groupby: &[String],
+    cache_enabled: bool,
+) -> Result<Arc<NumericData>, ArrayError> {
+    if groupby.is_empty() {
+        return load_axis_indices(gpu_context, store, store_name, axis, filtering, cache_enabled).await;
+    }
+    let mut keys = vec!["adata_grouped_axis_indices".to_string(), store_name.to_string(), axis.key(), groupby.len().to_string()];
+    keys.extend(groupby.iter().cloned());
+    keys.extend(axis_criteria_key(filtering));
+
+    use_memo_numeric_data(
+        async || {
+            let (included, columns) = futures::try_join!(
+                load_axis_indices(gpu_context, store.clone(), store_name, axis, filtering, cache_enabled),
+                futures::future::try_join_all(groupby.iter().map(|column_path| load_categorical(store.clone(), store_name, column_path, cache_enabled))),
+            )?;
+            // A stable sort by each column, from the finest to the coarsest, is a sort by all of them.
+            let mut indices = indices_of(&included).to_vec();
+            for (categories, codes) in columns.iter().rev() {
+                let stratify_by = categories_then_missing(codes.as_ref().clone(), categories.len());
+                indices = compute_stratified_indices(gpu_context, RowSource::Rows(&indices), Some(&stratify_by), &[], CompactionMethod::default()).await.indices;
+            }
+            Ok::<_, ArrayError>(NumericData::from(indices))
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
 }
 
 /// Loads (and caches) the selection mask over the `filtering`-included indices
-/// along `axis`, or `None` when there is no `selection` (i.e. everything is selected).
+/// along `axis`, in their [`load_grouped_axis_indices`] order, or `None` when
+/// there is no `selection` (i.e. everything is selected).
+#[allow(clippy::too_many_arguments)]
 pub async fn load_axis_selection_mask(
     gpu_context: Option<&GpuContext<'_>>,
     store: Arc<dyn AsyncReadableStorageTraits>,
     store_name: &str,
-    matrix_path: &str,
-    axis: MatrixAxis,
+    axis: &AdataAxis,
     filtering: Option<&AxisCriteria>,
+    groupby: &[String],
     selection: Option<&AxisCriteria>,
     cache_enabled: bool,
 ) -> Result<Option<Arc<NumericData>>, ArrayError> {
     let Some(selection) = selection else {
         return Ok(None);
     };
-    let mut keys = vec![
-        "adata_axis_selection_mask".to_string(),
-        store_name.to_string(),
-        matrix_path.to_string(),
-        axis.dataframe_path().to_string(),
-    ];
+    let mut keys = vec!["adata_axis_selection_mask".to_string(), store_name.to_string(), axis.key(), groupby.len().to_string()];
+    keys.extend(groupby.iter().cloned());
     keys.extend(axis_criteria_key(filtering));
     keys.extend(axis_criteria_key(Some(selection)));
 
     let mask = use_memo_numeric_data(
         async || {
-            let (included, selected) = futures::try_join!(
-                load_axis_indices(gpu_context, store.clone(), store_name, matrix_path, axis, filtering, cache_enabled),
-                load_axis_indices(gpu_context, store.clone(), store_name, matrix_path, axis, Some(selection), cache_enabled),
+            let (included, criteria) = futures::try_join!(
+                load_grouped_axis_indices(gpu_context, store.clone(), store_name, axis, filtering, groupby, cache_enabled),
+                load_axis_emphasis_criteria(gpu_context, store.clone(), store_name, axis, Some(selection), cache_enabled),
             )?;
-            Ok::<_, ArrayError>(NumericData::from(selection_mask(indices_of(&included), indices_of(&selected))))
+            Ok::<_, ArrayError>(NumericData::from(compute_row_mask(gpu_context, RowSource::Rows(indices_of(&included)), &criteria).await))
         },
         &keys,
         cache_enabled,
@@ -284,7 +535,7 @@ pub async fn load_axis_selection_mask(
 }
 
 /// How the loaded matrix values are cached.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 pub enum MatrixCacheMode {
     /// Cache each row block of the filtered submatrix as a whole. Loads only
     /// the filter-included cells, but a change to either axis's filter
@@ -299,7 +550,7 @@ pub enum MatrixCacheMode {
 }
 
 /// How the quantitative colormap's domain is derived from the loaded values.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, TS)]
 pub enum HeatmapNormalization {
     /// One (min, max) over every loaded cell.
     #[default]
@@ -321,7 +572,7 @@ pub async fn load_var_column(
 ) -> Result<Arc<NumericData>, ArrayError> {
     let keys = vec!["adata_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
     use_memo_numeric_data(
-        async || read_dense_column_numeric(store, matrix_path, var_index as u64).await,
+        async || read_dense_column_numeric(&NamedStore::new(store, store_name, cache_enabled), matrix_path, var_index as u64).await,
         &keys,
         cache_enabled,
     )
@@ -340,7 +591,7 @@ pub async fn load_compressed_var_column(
 ) -> Result<Arc<CompressedMatrix>, ArrayError> {
     let keys = vec!["adata_compressed_var_column".to_string(), store_name.to_string(), matrix_path.to_string(), var_index.to_string()];
     use_memo_compressed_matrix(
-        async || read_compressed_column(store, matrix_path, compressed_axis, var_index as u64).await,
+        async || read_compressed_column(&NamedStore::new(store, store_name, cache_enabled), matrix_path, compressed_axis, var_index as u64).await,
         &keys,
         cache_enabled,
     )
@@ -438,6 +689,7 @@ pub struct MatrixBlockKey<'a> {
     pub matrix_path: &'a str,
     pub cache_mode: MatrixCacheMode,
     pub obs_filtering: Option<&'a AxisCriteria>,
+    pub obs_groupby: &'a [String],
     pub var_filtering: Option<&'a AxisCriteria>,
     pub rows_per_block: usize,
     pub block_index: usize,
@@ -452,6 +704,8 @@ impl MatrixBlockKey<'_> {
             format!("{:?}", self.cache_mode),
         ];
         keys.extend(axis_criteria_key(self.obs_filtering));
+        keys.push(self.obs_groupby.len().to_string());
+        keys.extend(self.obs_groupby.iter().cloned());
         keys.extend(axis_criteria_key(self.var_filtering));
         keys.push(self.rows_per_block.to_string());
         keys.push(self.block_index.to_string());
@@ -483,7 +737,7 @@ pub async fn load_matrix_block(
     // does not cancel the others, which are then cached for the next attempt.
     match (layout, key.cache_mode) {
         (MatrixLayout::Dense, MatrixCacheMode::RowBlocks) => {
-            let block = use_memo_numeric_data(async || read_dense_subset_numeric(store, key.matrix_path, rows, cols).await, &keys, cache_enabled).await?;
+            let block = use_memo_numeric_data(async || read_dense_subset_numeric(&NamedStore::new(store, key.store_name, cache_enabled), key.matrix_path, rows, cols).await, &keys, cache_enabled).await?;
             Ok(MatrixBlock::Dense(block))
         }
         (MatrixLayout::Dense, MatrixCacheMode::VarColumns) => {
@@ -505,7 +759,7 @@ pub async fn load_matrix_block(
         }
         (MatrixLayout::Compressed(axis), MatrixCacheMode::RowBlocks) => {
             let block = use_memo_compressed_matrix(
-                async || read_compressed_subset(store, key.matrix_path, axis, rows, cols).await,
+                async || read_compressed_subset(&NamedStore::new(store, key.store_name, cache_enabled), key.matrix_path, axis, rows, cols).await,
                 &keys,
                 cache_enabled,
             )

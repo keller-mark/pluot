@@ -6,7 +6,9 @@ sidebar:
 ---
 import { DotPlotWrapper } from '../../../components/DotPlotWrapper.jsx';
 
-This [dot plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.dotplot.html) displays single-cell transcriptomics data obtained from Scanpy's [example datasets](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+This dot plot displays single-cell transcriptomics data obtained from a Scanpy [example dataset](https://scanpy.readthedocs.io/en/stable/generated/scanpy.datasets.pbmc68k_reduced.html).
+This plot is inspired by the [sc.pl.dotplot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.dotplot.html) function.
+Use the plot controls to select cell types and genes (command+click or use the shift key to multi-select).
 
 <DotPlotWrapper
     client:load
@@ -21,9 +23,14 @@ This [dot plot](https://scanpy.readthedocs.io/en/stable/generated/scanpy.pl.dotp
           layer_type: "AdataZarrDotPlotLayer",
           layer_params: {
             layer_id: "dot_plot",
-            var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
-            groupby: "bulk_labels",
-            layer: "X",
+            var_filtering: {
+              axis_criteria_mode: "Identifiers",
+              axis_criteria_params: {
+                identifiers: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
+              },
+            },
+            groupby: ["obs/bulk_labels"],
+            layer_path: "X",
             title: "My dot plot",
             cmap: "Reds",
           },

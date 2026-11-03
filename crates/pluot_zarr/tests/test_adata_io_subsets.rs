@@ -1,6 +1,7 @@
 //! Reads dense, CSR and CSC encodings of the same matrix from an in-memory store.
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use serde_json::json;
@@ -8,13 +9,14 @@ use zarrs::array::{data_type, ArrayBuilder};
 use zarrs::group::GroupBuilder;
 use zarrs::storage::storage_adapter::sync_to_async::{SyncToAsyncSpawnBlocking, SyncToAsyncStorageAdapter};
 use zarrs::storage::store::MemoryStore;
-use zarrs::storage::AsyncReadableStorageTraits;
+use zarrs::storage::byte_range::ByteRangeIterator;
+use zarrs::storage::{AsyncMaybeBytesIterator, AsyncReadableStorageTraits, MaybeBytes, StorageError, StoreKey};
 
 use pluot_core::numeric_data::NumericData;
 use pluot_core::sparse_matrix::{CompressedAxis, CompressedMatrix};
 use pluot_zarr::adata_io::{
-    read_compressed_column, read_compressed_subset, read_compressed_subset_with_budget, read_dense_subset_numeric, read_matrix_layout,
-    MatrixLayout,
+    read_compressed_column, read_compressed_subset, read_matrix_column_numeric, read_compressed_subset_with_budget, read_dense_subset_numeric, read_matrix_layout,
+    MatrixLayout, NamedStore,
 };
 
 struct TokioSpawnBlocking;
@@ -83,7 +85,7 @@ async fn compressed_columns_hold_only_the_stored_entries() {
     let store = fixture();
     for (path, axis) in [("/csr", CompressedAxis::Rows), ("/csc", CompressedAxis::Cols)] {
         for col in 0..4u32 {
-            let column = read_compressed_column(store.clone(), path, axis, col as u64).await.unwrap();
+            let column = read_compressed_column(&NamedStore::new(store.clone(), "test", false), path, axis, col as u64).await.unwrap();
             let stored = DENSE.iter().filter(|row| row[col as usize] != 0).count();
             assert_eq!(column.data.len(), stored, "{path} col {col}");
             assert_eq!(densify(&column, CompressedAxis::Cols, &[0, 1, 2], &[0]).as_f32().to_vec(), expected(&[0, 1, 2], &[col]).iter().map(|&v| v as f32).collect::<Vec<_>>());
@@ -96,9 +98,9 @@ async fn subsets_match_the_dense_matrix_for_every_encoding() {
     let store = fixture();
     for path in ["/dense", "/csr", "/csc"] {
         for (rows, cols) in CASES {
-            let values = match read_matrix_layout(store.clone(), path).await {
-                MatrixLayout::Dense => read_dense_subset_numeric(store.clone(), path, rows, cols).await.unwrap(),
-                MatrixLayout::Compressed(axis) => densify(&read_compressed_subset(store.clone(), path, axis, rows, cols).await.unwrap(), axis, rows, cols),
+            let values = match read_matrix_layout(&NamedStore::new(store.clone(), "test", false), path).await {
+                MatrixLayout::Dense => read_dense_subset_numeric(&NamedStore::new(store.clone(), "test", false), path, rows, cols).await.unwrap(),
+                MatrixLayout::Compressed(axis) => densify(&read_compressed_subset(&NamedStore::new(store.clone(), "test", false), path, axis, rows, cols).await.unwrap(), axis, rows, cols),
             };
             let NumericData::Int32(values) = values else {
                 panic!("expected the stored int32 dtype");
@@ -114,12 +116,62 @@ async fn compressed_subsets_match_at_every_budget() {
     for (path, axis) in [("/csr", CompressedAxis::Rows), ("/csc", CompressedAxis::Cols)] {
         for budget in 1..=5 {
             for (rows, cols) in CASES {
-                let matrix = read_compressed_subset_with_budget(store.clone(), path, axis, rows, cols, budget).await.unwrap();
+                let matrix = read_compressed_subset_with_budget(&NamedStore::new(store.clone(), "test", false), path, axis, rows, cols, budget).await.unwrap();
                 let NumericData::Int32(values) = densify(&matrix, axis, rows, cols) else {
                     panic!("expected the stored int32 dtype");
                 };
                 assert_eq!(*values, expected(rows, cols), "{path} budget {budget} rows {rows:?} cols {cols:?}");
             }
         }
+    }
+}
+
+/// Forwards to `inner`, counting the fetches of each node's `zarr.json`.
+struct MetadataCountingStore {
+    inner: Arc<dyn AsyncReadableStorageTraits>,
+    metadata_gets: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl AsyncReadableStorageTraits for MetadataCountingStore {
+    async fn get(&self, key: &StoreKey) -> Result<MaybeBytes, StorageError> {
+        if key.as_str().ends_with("zarr.json") {
+            self.metadata_gets.fetch_add(1, Ordering::SeqCst);
+        }
+        self.inner.get(key).await
+    }
+
+    async fn get_partial_many<'a>(&'a self, key: &StoreKey, byte_ranges: ByteRangeIterator<'a>) -> Result<AsyncMaybeBytesIterator<'a>, StorageError> {
+        self.inner.get_partial_many(key, byte_ranges).await
+    }
+
+    async fn size_key(&self, key: &StoreKey) -> Result<Option<u64>, StorageError> {
+        self.inner.size_key(key).await
+    }
+
+    fn supports_get_partial(&self) -> bool {
+        self.inner.supports_get_partial()
+    }
+}
+
+#[tokio::test]
+async fn metadata_is_fetched_once_per_node_across_reads() {
+    for (path, axis) in [("/csr", CompressedAxis::Rows), ("/csc", CompressedAxis::Cols)] {
+        let counting = Arc::new(MetadataCountingStore { inner: fixture(), metadata_gets: AtomicUsize::new(0) });
+        let store = NamedStore::new(counting.clone(), &format!("metadata_counting_{path}"), true);
+
+        let read_every_column = async || {
+            for col in 0..4u64 {
+                read_compressed_column(&store, path, axis, col).await.unwrap();
+                read_matrix_column_numeric(&store, path, col).await.unwrap();
+            }
+        };
+        read_every_column().await;
+        let gets_after_first_pass = counting.metadata_gets.load(Ordering::SeqCst);
+        read_every_column().await;
+
+        // The group, `indptr`, `indices` and `data`.
+        assert_eq!(gets_after_first_pass, 4, "{path}");
+        assert_eq!(counting.metadata_gets.load(Ordering::SeqCst), gets_after_first_pass, "{path}");
     }
 }

@@ -45,6 +45,14 @@ export default defineConfig({
       },
 		}),
 	],
+	vite: {
+		optimizeDeps: {
+			// Pre-bundle these together up front: when `leva/plugin` is only discovered on a page that uses it,
+			// Vite re-optimizes it into a separate chunk, so `createPlugin` registers custom inputs
+			// in a different `Plugins` registry than the one `useControls` reads ("Plugins[type] is undefined").
+			include: ['leva', 'leva/plugin'],
+		},
+	},
 	markdown: {
 		// Opt-out of "smart quotes". We do not want our normal quotes to be changed.
 		smartypants: false,

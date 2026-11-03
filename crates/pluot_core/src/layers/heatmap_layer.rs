@@ -28,7 +28,7 @@ use encase::{ShaderType, UniformBuffer};
 use glam::{DMat4, DVec4, Mat4, Vec2};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use ts_rs::TS;
 use std::sync::Arc;
 
 use crate::color_mode::create_palette_texture;
@@ -36,11 +36,11 @@ use crate::colormaps_categorical;
 use crate::colormaps_quantitative;
 use crate::compute::matrix_axis_extents::MatrixAxis;
 use crate::emphasis_mode::{cpu_is_included, prepare_emphasis_criteria};
-use crate::numeric_data::{upload_data_texture, NumericData};
+use crate::numeric_data::{upload_data_texture, NumericData, NumericValue};
 use crate::picking::LayerPickingResult;
 use crate::positioning::{get_point_position, get_point_size};
 use crate::render_traits::{
-    AspectRatioAlignmentMode, AspectRatioMode, BooleanCriteriaParams, BrushableLayer, CategoricalColormap,
+    AspectRatioAlignmentMode, AspectRatioMode, BooleanCriteriaParams, CategoricalColormap,
     DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, EmphasisCriteria, ExtentableLayer, MarginParams, PickableLayer,
     PreparedLayer, QuantitativeColormap, UnitsMode, ViewParams,
 };
@@ -64,22 +64,26 @@ const IDENTITY_MATRIX: [f32; 16] = [
 ];
 
 /// Parameters for [`HeatmapColormap::Quantitative`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
+#[ts(optional_fields = nullable)]
 pub struct HeatmapQuantitativeColormapParams {
     pub colormap: QuantitativeColormap,
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub reverse: bool,
     /// (min, max) normalization domain, defaulting to (0.0, 1.0). Never derived
     /// from the matrix values, since that would cost a CPU pass over them.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub domain: Option<(f32, f32)>,
     /// One (min, max) domain per row or per column, taking precedence over `domain`.
     #[serde(default)]
+    #[ts(optional = nullable)]
     pub axis_domains: Option<HeatmapAxisDomains>,
 }
 
 /// One (min, max) normalization domain per row or per column of the matrix.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 pub struct HeatmapAxisDomains {
     pub axis: MatrixAxis,
     /// One lower bound per entry along `axis`.
@@ -92,7 +96,7 @@ pub struct HeatmapAxisDomains {
 ///
 /// Serialized as an adjacently-tagged enum, e.g.
 /// `{"colormap_mode": "Categorical", "colormap_params": "Tableau10"}`.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(tag = "colormap_mode", content = "colormap_params")]
 pub enum HeatmapColormap {
     /// Values are scalars, normalized against a domain.
@@ -115,7 +119,7 @@ impl Default for HeatmapColormap {
 }
 
 impl HeatmapColormap {
-    fn palette(&self) -> Option<Vec<[f32; 4]>> {
+    pub(crate) fn palette(&self) -> Option<Vec<[f32; 4]>> {
         match self {
             HeatmapColormap::Quantitative(_) => None,
             HeatmapColormap::Categorical(colormap) => Some(colormaps_categorical::palette(*colormap).to_vec()),
@@ -125,7 +129,7 @@ impl HeatmapColormap {
         }
     }
 
-    fn quantitative_domain_and_reverse(&self) -> ((f32, f32), bool) {
+    pub(crate) fn quantitative_domain_and_reverse(&self) -> ((f32, f32), bool) {
         match self {
             HeatmapColormap::Quantitative(params) => (params.domain.unwrap_or((0.0, 1.0)), params.reverse),
             _ => ((0.0, 1.0), false),
@@ -165,8 +169,9 @@ impl HeatmapColormap {
 }
 
 /// Layer params struct for [`HeatmapLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct HeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -669,12 +674,8 @@ impl HeatmapCommon<'_> {
     }
 
     /// The picking result for the cell at (`row`, `col`) holding `value`.
-    pub(crate) fn picking_result(&self, row: u32, col: u32, value: String) -> LayerPickingResult {
-        let mut info = HashMap::new();
-        info.insert("row".to_string(), row.to_string());
-        info.insert("col".to_string(), col.to_string());
-        info.insert("value".to_string(), value);
-        LayerPickingResult { layer_id: self.layer_id.to_string(), info }
+    pub(crate) fn picking_result(&self, row: u32, col: u32, value: NumericValue) -> LayerPickingResult {
+        LayerPickingResult::new(self.layer_id, HeatmapPickingInfo { row, col, value })
     }
 }
 
@@ -812,16 +813,22 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for HeatmapLayer {}
 
 impl ExtentableLayer for HeatmapLayer {}
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+/// Shared by the dense and compressed heatmap layers.
+pub struct HeatmapPickingInfo {
+    pub row: u32,
+    pub col: u32,
+    pub value: NumericValue,
+}
+
 impl PickableLayer for HeatmapLayer {
-    /// Returns the picked cell's "row", "col" and "value".
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let common = self.layer_params.common();
         let (row, col) = common.pick_cell(data_coord)?;
-        let value = self.layer_params.data.format_element((row * self.layer_params.num_cols + col) as usize);
+        let value = self.layer_params.data.value((row * self.layer_params.num_cols + col) as usize);
         Some(common.picking_result(row, col, value))
     }
 }

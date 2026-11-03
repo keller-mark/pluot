@@ -4,7 +4,6 @@ export {
   render_wasm,
   render_to_script_wasm,
   pick_wasm,
-  brush_wasm,
   extent_wasm,
   setStore,
   setStoreByName,
@@ -42,6 +41,13 @@ export type {
   StoresOutput,
   NormalizeStoresParam,
 } from './store-normalization.js';
+export type {
+  LayerType,
+  LayerParams,
+  LayerParamsOf,
+  PlotParams,
+} from './layer-params.js';
+export type * from './generated/index.js';
 export { checkWebGpuFeatureDetection } from './feature-detection.js';
 export { getBounds, getCameraMatrixFromBounds, refitCameraMatrixForViewport } from './viewport.js';
 export type {
@@ -51,9 +57,9 @@ export type {
   ViewportParams,
   Bounds,
 } from './viewport.js';
-export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';
-export type { CameraMatrix } from './functional-dom-2d-camera.js';
-export { onMouseMove as onMouseMove3d, onWheel as onWheel3d } from './functional-3d-view-controls.js';
+export { onMouseMove as onMouseMove2d, onWheel as onWheel2d, onPinch as onPinch2d } from './functional-dom-2d-camera.js';
+export type { CameraMatrix, PointerMoveInput, PinchInput } from './functional-dom-2d-camera.js';
+export { onMouseMove as onMouseMove3d, onWheel as onWheel3d, onPinch as onPinch3d } from './functional-3d-view-controls.js';
 export type { CameraFilterFunction, CameraFilterContext } from "./camera-filters.js";
 export {
   fixX,

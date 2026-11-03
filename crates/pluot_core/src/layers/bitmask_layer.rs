@@ -31,17 +31,18 @@ use glam::{DMat4, DVec4, Mat4, Vec2, Vec4};
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageBuffer, ImageEncoder, Rgba};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use ts_rs::TS;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::color_mode::{cpu_fill_color, quantitative_domain};
 use crate::colormaps_categorical;
 use crate::layers::bitmap_layer::{compute_strides, parse_dimensions, DimensionOrder};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu,
-    BrushableLayer, ExtentableLayer, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
+    ExtentableLayer, DrawToSvg, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode,
     ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
@@ -72,13 +73,16 @@ use crate::wgpu;
 /// it would require a full CPU pass over the mask to determine all object IDs.
 ///
 /// A channel that is neither `stroked` nor `filled` draws nothing.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct BitmaskChannelSettings {
     /// Whether to stroke the bitmask outlines. Defaults to `false`.
+    #[ts(optional = nullable)]
     pub stroked: bool,
 
     /// Whether to fill the bitmask interiors. Defaults to `true`.
+    #[ts(optional = nullable)]
     pub filled: bool,
 
     /// How to color each bitmask's outline.
@@ -109,7 +113,9 @@ pub struct BitmaskChannelSettings {
     /// empty list means every object is included. A filter-excluded object is
     /// treated the same as "no object" (id 0) for this channel: not drawn, not
     /// picked.
+    #[ts(optional = nullable)]
     pub selection_criteria: Vec<EmphasisCriteria>,
+    #[ts(optional = nullable)]
     pub filtering_criteria: Vec<EmphasisCriteria>,
 
     /// Fill/stroke colors used for filter-included, but selection-excluded
@@ -132,14 +138,19 @@ pub struct BitmaskChannelSettings {
 
     /// When true, "background" objects in this channel have the fill/stroke
     /// color specified via `background_fill_color`/`background_stroke_color`.
+    #[ts(optional = nullable)]
     pub enable_background_fill_color: bool,
+    #[ts(optional = nullable)]
     pub enable_background_stroke_color: bool,
     /// When true, "background" objects in this channel have the fill/stroke
     /// opacity specified via `background_fill_opacity`/`background_stroke_opacity`.
+    #[ts(optional = nullable)]
     pub enable_background_fill_opacity: bool,
+    #[ts(optional = nullable)]
     pub enable_background_stroke_opacity: bool,
     /// When true, "background" objects in this channel have the stroke width
     /// specified via `background_stroke_width`.
+    #[ts(optional = nullable)]
     pub enable_background_stroke_width: bool,
 }
 
@@ -170,8 +181,9 @@ impl Default for BitmaskChannelSettings {
 }
 
 /// Layer params struct for [`BitmaskLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct BitmaskLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -1862,9 +1874,18 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for BitmaskLayer {}
 
 impl ExtentableLayer for BitmaskLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct BitmaskPickingInfo {
+    /// Column index of the picked pixel within the data array.
+    pub x: usize,
+    /// Row index of the picked pixel within the data array.
+    pub y: usize,
+    /// The picked object's label (0 for none), per channel.
+    pub channels: Vec<NumericValue>,
+}
 
 impl PickableLayer for BitmaskLayer {
     /// Pick the object id under the given data coordinate, for each channel.
@@ -1928,30 +1949,28 @@ impl PickableLayer for BitmaskLayer {
         let y_stride = strides[y_dim_idx];
         let c_stride = strides[c_dim_idx];
 
-        let mut info = HashMap::new();
-        info.insert("x".to_string(), texel_x.to_string());
-        info.insert("y".to_string(), texel_y.to_string());
-        for (i, channel) in self.layer_params.channel_settings.iter().enumerate() {
-            let idx = texel_y * y_stride + texel_x * x_stride + i * c_stride;
-            if idx < self.layer_params.data.len() {
+        let channels = self.layer_params.channel_settings.iter().enumerate()
+            .map(|(i, channel)| (texel_y * y_stride + texel_x * x_stride + i * c_stride, channel))
+            .filter(|&(idx, _)| idx < self.layer_params.data.len())
+            .map(|(idx, channel)| {
                 // Filter-excluded objects are ignored in picking: reported as
                 // "no object" (id 0), the same as background.
                 let raw_label = self.layer_params.data.get_f32(idx) as i64;
                 let is_filtered_in = raw_label == 0
                     || cpu_is_included(&channel.filtering_criteria, (raw_label - 1) as usize);
-                let value = if is_filtered_in {
-                    self.layer_params.data.format_element(idx)
+                if is_filtered_in {
+                    self.layer_params.data.value(idx)
                 } else {
-                    "0".to_string()
-                };
-                info.insert(format!("channel_{i}"), value);
-            }
-        }
+                    NumericValue::Uint(0)
+                }
+            })
+            .collect();
 
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, BitmaskPickingInfo {
+            x: texel_x,
+            y: texel_y,
+            channels,
+        }))
     }
 }
 

@@ -9,7 +9,7 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use crate::layers::filled_polygon_layer::PolygonPickingInfo;
 use std::sync::Arc;
 
 use crate::picking::LayerPickingResult;
@@ -21,7 +21,7 @@ use crate::curve_and_polygon_utils::{
 use crate::picking_geometry::{dist_sq_to_segment, unapply_model_matrix};
 use crate::render_traits::{
     AspectRatioAlignmentMode, AspectRatioMode, ColorMode, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg,
-    BrushableLayer, ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
+    ExtentableLayer, EmphasisCriteria, MarginParams, OpacityMode, PickableLayer, PreparedLayer, SizeMode, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -706,7 +706,6 @@ impl DrawToSvg for StrokedPolygonLayer {
     }
 }
 
-impl BrushableLayer for StrokedPolygonLayer {}
 
 impl ExtentableLayer for StrokedPolygonLayer {}
 
@@ -759,12 +758,6 @@ impl PickableLayer for StrokedPolygonLayer {
         }
 
         let idx = closest?;
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), idx.to_string());
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, PolygonPickingInfo { index: idx }))
     }
 }

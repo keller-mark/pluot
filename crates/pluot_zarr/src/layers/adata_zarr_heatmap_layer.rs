@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
@@ -14,10 +14,10 @@ use pluot_core::composite_layers::legend_colormap_quantitative_layer::{
 use pluot_core::d3::scale::ScaleLinear;
 use pluot_core::compute::matrix_axis_extents::MatrixAxis as HeatmapAxis;
 use pluot_core::layers::heatmap_compressed_layer::{CompressedHeatmapLayerParams, HeatmapCscLayer, HeatmapCsrLayer};
-use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams};
-use pluot_core::numeric_data::NumericData;
+use pluot_core::layers::heatmap_layer::{HeatmapAxisDomains, HeatmapColormap, HeatmapLayer, HeatmapLayerParams, HeatmapPickingInfo};
+use pluot_core::numeric_data::{NumericData, NumericValue};
 use pluot_core::render_traits::{
-    resolve_store_name, BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams,
+    resolve_store_name, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams,
     PickableLayer, PreparedAndDraw, PreparedLayer, UnitsMode, ViewParams,
 };
 use pluot_core::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
@@ -30,11 +30,12 @@ use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::{maybe_timeout, Duration, FutureExt, LayerExtentResult, LayerPickingResult};
 
 use crate::adata_io::MatrixLayout;
+use crate::adata_paths::node_path;
 use crate::heatmap_data::{
-    indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_matrix_block,
+    indices_of, load_axis_indices, load_axis_labels, load_axis_selection_mask, load_grouped_axis_indices, load_matrix_block,
     load_matrix_axis_percentile_domains, load_matrix_block_axis_extents, load_matrix_block_extent, load_matrix_layout,
-    load_matrix_percentile_domain, AxisCriteria, HeatmapNormalization, LoadedMatrixBlock, MatrixAxis, MatrixBlock, MatrixBlockKey,
-    MatrixCacheMode,
+    load_matrix_percentile_domain, AdataAxis, AxisCriteria, HeatmapNormalization, LoadedMatrixBlock, MatrixAxis, MatrixBlock,
+    MatrixBlockKey, MatrixCacheMode,
 };
 
 /// Upper bound on the number of matrix elements loaded (and cached) per row
@@ -42,27 +43,36 @@ use crate::heatmap_data::{
 const ELEMENTS_PER_BLOCK: usize = 1 << 22;
 
 /// Layer params struct for [`AdataZarrHeatmapLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct AdataZarrHeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
-    /// Must point to the root of an anndata object.
     pub store_name: Option<String>,
-    /// Layer in AnnData to use for matrix values: "X" for `adata.X`, else a `layers` key.
-    pub layer: String,
+    /// Path to the matrix of values, relative to the store root
+    /// (e.g., `X`, `layers/log1p`, or `tables/table/X`). Defaults to `X`.
+    /// Its AnnData object's `obs` and `var` are the matrix's rows and columns.
+    pub layer_path: String,
 
     /// Which obs (rows) to include. `None` includes every obs.
     pub obs_filtering: Option<AxisCriteria>,
     /// Which of the included obs to emphasize. `None` emphasizes every obs.
     pub obs_selection: Option<AxisCriteria>,
+    /// Paths to categorical `obs` columns by which to sort the included obs, from
+    /// coarsest to finest (e.g., `["obs/cell_type", "obs/sample"]`). Within each
+    /// column, obs follow its category order (missing values last), and obs that tie
+    /// on every column keep their filtered order. Empty keeps the filtered order.
+    pub groupby: Vec<String>,
     /// Which var (columns) to include. `None` includes every var.
     pub var_filtering: Option<AxisCriteria>,
     /// Which of the included var to emphasize. `None` emphasizes every var.
     pub var_selection: Option<AxisCriteria>,
 
-    /// Key in adata.var to use for gene symbols in axis labels, if different from adata.var.index.
-    pub gene_symbols: Option<String>,
+    /// Path to the `obs` column labeling the obs axis. `None` means the `obs` index.
+    pub obs_index_path: Option<String>,
+    /// Path to the `var` column labeling the var axis (e.g., `var/gene_symbols`). `None` means the `var` index.
+    pub var_index_path: Option<String>,
 
     /// When false, obs run top-to-bottom along the y axis and var left-to-right along the x axis.
     pub swap_axes: bool,
@@ -113,12 +123,14 @@ impl Default for AdataZarrHeatmapLayerParams {
             layer_id: "".to_string(),
             bounds: None,
             store_name: None,
-            layer: "X".to_string(),
+            layer_path: "X".to_string(),
             obs_filtering: None,
             obs_selection: None,
+            groupby: vec![],
             var_filtering: None,
             var_selection: None,
-            gene_symbols: None,
+            obs_index_path: None,
+            var_index_path: None,
             swap_axes: false,
             colormap: None,
             background_opacity: None,
@@ -177,7 +189,7 @@ impl AdataZarrHeatmapLayer {
     }
 
     fn matrix_path(&self) -> String {
-        if self.layer_params.layer == "X" { "/X".to_string() } else { format!("/layers/{}", self.layer_params.layer) }
+        node_path(&self.layer_params.layer_path)
     }
 
     fn margins(&self) -> (f32, f32, f32, f32) {
@@ -219,15 +231,17 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
         let timeout = self.view_params.timeout;
         let matrix_path = self.matrix_path();
         let params = self.layer_params.clone();
+        let obs_axis = AdataAxis::of_matrix(&matrix_path, MatrixAxis::Obs);
+        let var_axis = AdataAxis::of_matrix(&matrix_path, MatrixAxis::Var);
 
         let axes_future = async {
             futures::try_join!(
-                load_axis_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), cache_enabled),
-                load_axis_indices(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), cache_enabled),
-                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Obs, params.obs_filtering.as_ref(), params.obs_selection.as_ref(), cache_enabled),
-                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &matrix_path, MatrixAxis::Var, params.var_filtering.as_ref(), params.var_selection.as_ref(), cache_enabled),
-                load_axis_labels(store.clone(), &store_name, MatrixAxis::Obs, None, cache_enabled),
-                load_axis_labels(store.clone(), &store_name, MatrixAxis::Var, params.gene_symbols.as_deref(), cache_enabled),
+                load_grouped_axis_indices(gpu_context, store.clone(), &store_name, &obs_axis, params.obs_filtering.as_ref(), &params.groupby, cache_enabled),
+                load_axis_indices(gpu_context, store.clone(), &store_name, &var_axis, params.var_filtering.as_ref(), cache_enabled),
+                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &obs_axis, params.obs_filtering.as_ref(), &params.groupby, params.obs_selection.as_ref(), cache_enabled),
+                load_axis_selection_mask(gpu_context, store.clone(), &store_name, &var_axis, params.var_filtering.as_ref(), &[], params.var_selection.as_ref(), cache_enabled),
+                load_axis_labels(store.clone(), &store_name, &obs_axis, params.obs_index_path.as_deref(), cache_enabled),
+                load_axis_labels(store.clone(), &store_name, &var_axis, params.var_index_path.as_deref(), cache_enabled),
                 async { Ok(load_matrix_layout(store.clone(), &store_name, &matrix_path, cache_enabled).await) },
             )
         };
@@ -252,6 +266,7 @@ impl PreparedLayer for AdataZarrHeatmapLayer {
             matrix_path: &matrix_path,
             cache_mode: params.cache_mode.unwrap_or_default(),
             obs_filtering: params.obs_filtering.as_ref(),
+            obs_groupby: &params.groupby,
             var_filtering: params.var_filtering.as_ref(),
             rows_per_block,
             block_index,
@@ -514,7 +529,6 @@ impl DrawToSvg for AdataZarrHeatmapLayer {
     }
 }
 
-impl BrushableLayer for AdataZarrHeatmapLayer {}
 
 impl ExtentableLayer for AdataZarrHeatmapLayer {
     /// The number of filtered cells along x and y, i.e. var and obs counts
@@ -532,24 +546,32 @@ impl ExtentableLayer for AdataZarrHeatmapLayer {
     }
 }
 
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct AdataZarrHeatmapPickingInfo {
+    pub obs_name: String,
+    pub var_name: String,
+    pub obs_index: usize,
+    pub var_index: usize,
+    pub value: NumericValue,
+}
+
 impl PickableLayer for AdataZarrHeatmapLayer {
-    /// Returns the picked cell's "obs_name", "var_name", "obs_index", "var_index" and "value".
     fn pick(&self, screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let (block_first_row, cell) = self.sub_layer_instances.iter().zip(&self.block_first_rows).find_map(|(sublayer, &first_row)| {
             sublayer.pick(screen_coord, data_coord).map(|cell| (first_row, cell))
         })?;
-        let row: usize = block_first_row + cell.info.get("row")?.parse::<usize>().ok()?;
-        let col: usize = cell.info.get("col")?.parse().ok()?;
+        let cell: HeatmapPickingInfo = cell.into_info()?;
+        let row = block_first_row + cell.row as usize;
         let axes = self.axes.as_ref()?;
         let obs_index = *axes.obs_indices.get(row)? as usize;
-        let var_index = *axes.var_indices.get(col)? as usize;
+        let var_index = *axes.var_indices.get(cell.col as usize)? as usize;
 
-        let mut info = HashMap::new();
-        info.insert("obs_name".to_string(), axes.obs_labels.get(obs_index)?.clone());
-        info.insert("var_name".to_string(), axes.var_labels.get(var_index)?.clone());
-        info.insert("obs_index".to_string(), obs_index.to_string());
-        info.insert("var_index".to_string(), var_index.to_string());
-        info.insert("value".to_string(), cell.info.get("value")?.clone());
-        Some(LayerPickingResult { layer_id: self.layer_params.layer_id.clone(), info })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, AdataZarrHeatmapPickingInfo {
+            obs_name: axes.obs_labels.get(obs_index)?.clone(),
+            var_name: axes.var_labels.get(var_index)?.clone(),
+            obs_index,
+            var_index,
+            value: cell.value,
+        }))
     }
 }

@@ -1,31 +1,44 @@
-use pluot_zarr::layers::adata_zarr_dotplot_layer::AdataZarrDotPlotLayerParams;
-use pluot_zarr::layers::adata_zarr_heatmap_layer::AdataZarrHeatmapLayerParams;
+use pluot_zarr::layers::adata_zarr_dotplot_layer::{AdataZarrDotPlotLayerParams, AdataZarrDotPlotPickingInfo};
+use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
+use pluot_zarr::layers::adata_zarr_hilbert_heatmap_layer::{AdataZarrHilbertHeatmapLayerParams, AdataZarrHilbertHeatmapPickingInfo};
+use pluot_zarr::layers::adata_zarr_treemap_layer::{AdataZarrTreemapLayerParams, AdataZarrTreemapPickingInfo};
+use pluot_zarr::layers::adata_zarr_violin_layer::{AdataZarrViolinLayerParams, AdataZarrViolinPickingInfo};
+use pluot_zarr::layers::adata_zarr_violin_matrix_layer::{AdataZarrViolinMatrixLayerParams, AdataZarrViolinMatrixPickingInfo};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-use pluot_core::layers::point_layer::{PointLayerParams, PointShapeMode};
-use pluot_core::layers::line_layer::{LineLayerParams};
+use pluot_core::layers::point_layer::{PointLayerParams, PointPickingInfo, PointShapeMode};
+use pluot_core::layers::line_layer::{LineLayerParams, LinePickingInfo};
 use pluot_core::composite_layers::curve_layer::{CurveLayerParams};
 use pluot_core::composite_layers::polygon_layer::PolygonLayerParams;
-use pluot_core::layers::rect_layer::{RectLayerParams};
-use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode};
-use pluot_core::layers::bitmap_layer::{BitmapLayerParams, ChannelSettings};
-use pluot_core::layers::bitmask_layer::BitmaskLayerParams;
-use pluot_core::layers::heatmap_layer::HeatmapLayerParams;
+use pluot_core::layers::rect_layer::{RectLayerParams, RectPickingInfo};
+use pluot_core::layers::text_layer::{TextLayerParams, TextAlignMode, TextBaselineMode, TextPickingInfo};
+use pluot_core::layers::bitmap_layer::{BitmapLayerParams, BitmapPickingInfo, ChannelSettings};
+use pluot_core::layers::bitmask_layer::{BitmaskLayerParams, BitmaskPickingInfo};
+use pluot_core::layers::heatmap_layer::{HeatmapLayerParams, HeatmapPickingInfo};
 use pluot_core::layers::heatmap_compressed_layer::{HeatmapCscLayerParams, HeatmapCsrLayerParams};
+use pluot_core::layers::hilbert_heatmap_layer::{HilbertHeatmapLayerParams, HilbertHeatmapPickingInfo};
 use pluot_core::composite_layers::axis_linear_layer::{AxisLinearLayerParams, AxisPosition};
 use pluot_core::composite_layers::axis_band_layer::{AxisBandLayerParams};
-use pluot_core::layers::point_3d_layer::Point3dLayerParams;
-use pluot_core::composite_layers::bar_plot_layer::BarPlotLayerParams;
+use pluot_core::layers::point_3d_layer::{Point3dLayerParams, Point3dPickingInfo};
+use pluot_core::layers::filled_polygon_layer::PolygonPickingInfo;
+use pluot_core::layers::filled_curve_layer::FilledCurvePickingInfo;
+use pluot_core::layers::stroked_curve_layer::StrokedCurvePickingInfo;
+use pluot_core::composite_layers::bar_plot_layer::{BarPlotLayerParams, BarPlotPickingInfo};
 use pluot_core::composite_layers::histogram_layer::HistogramLayerParams;
 use pluot_core::composite_layers::precomputed_histogram_layer::PrecomputedHistogramLayerParams;
+use pluot_core::composite_layers::legend_colormap_categorical_layer::{LegendColormapCategoricalLayerParams, LegendColormapCategoricalPickingInfo};
+use pluot_core::composite_layers::precomputed_treemap_layer::{PrecomputedTreemapLayerParams, PrecomputedTreemapPickingInfo};
+use pluot_core::composite_layers::precomputed_violin_layer::{PrecomputedViolinLayerParams, PrecomputedViolinPickingInfo};
+use pluot_core::composite_layers::precomputed_violin_matrix_layer::{PrecomputedViolinMatrixLayerParams, PrecomputedViolinMatrixPickingInfo};
 use pluot_core::composite_layers::legend_colormap_quantitative_layer::LegendColormapQuantitativeLayerParams;
 use pluot_core::composite_layers::legend_point_size_quantitative_layer::LegendPointSizeQuantitativeLayerParams;
 
 use pluot_zarr::layers::zarr_point_layer::ZarrPointLayerParams;
 use pluot_zarr::layers::zarr_point_3d_layer::ZarrPoint3dLayerParams;
-use pluot_zarr::layers::ome_zarr_bitmap_layer::OmeZarrBitmapLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmap_layer::{OmeZarrBitmapLayerParams, OmeZarrBitmapPickingInfo};
 use pluot_zarr::layers::ome_zarr_bitmap_multiscale_layer::OmeZarrBitmapMultiscaleLayerParams;
-use pluot_zarr::layers::ome_zarr_bitmask_layer::OmeZarrBitmaskLayerParams;
+use pluot_zarr::layers::ome_zarr_bitmask_layer::{OmeZarrBitmaskLayerParams, OmeZarrBitmaskPickingInfo};
 use pluot_zarr::layers::ome_zarr_bitmask_multiscale_layer::OmeZarrBitmaskMultiscaleLayerParams;
 use pluot_zarr::layers::zarr_bar_plot_layer::ZarrBarPlotLayerParams;
 use pluot_zarr::layers::zarr_histogram_layer::ZarrHistogramLayerParams;
@@ -40,7 +53,7 @@ use pluot_core::render_traits::AspectRatioMode;
 /// Strongly-typed layer params.
 ///
 /// Serializes to `{"layer_type": "PointLayer", "layer_params": {...}}`
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[cfg_attr(test, derive(strum::VariantNames))]
 #[serde(tag = "layer_type", content = "layer_params")]
 pub enum LayerParams {
@@ -57,6 +70,7 @@ pub enum LayerParams {
     HeatmapLayer(HeatmapLayerParams),
     HeatmapCsrLayer(HeatmapCsrLayerParams),
     HeatmapCscLayer(HeatmapCscLayerParams),
+    HilbertHeatmapLayer(HilbertHeatmapLayerParams),
 
     PolygonLayer(PolygonLayerParams),
     CurveLayer(CurveLayerParams),
@@ -68,6 +82,10 @@ pub enum LayerParams {
     BarPlotLayer(BarPlotLayerParams),
     HistogramLayer(HistogramLayerParams),
     PrecomputedHistogramLayer(PrecomputedHistogramLayerParams),
+    PrecomputedTreemapLayer(PrecomputedTreemapLayerParams),
+    PrecomputedViolinLayer(PrecomputedViolinLayerParams),
+    PrecomputedViolinMatrixLayer(PrecomputedViolinMatrixLayerParams),
+    LegendColormapCategoricalLayer(LegendColormapCategoricalLayerParams),
     LegendColormapQuantitativeLayer(LegendColormapQuantitativeLayerParams),
     LegendPointSizeQuantitativeLayer(LegendPointSizeQuantitativeLayerParams),
 
@@ -81,6 +99,10 @@ pub enum LayerParams {
     OmeZarrBitmaskMultiscaleLayer(OmeZarrBitmaskMultiscaleLayerParams),
     AdataZarrDotPlotLayer(AdataZarrDotPlotLayerParams),
     AdataZarrHeatmapLayer(AdataZarrHeatmapLayerParams),
+    AdataZarrHilbertHeatmapLayer(AdataZarrHilbertHeatmapLayerParams),
+    AdataZarrTreemapLayer(AdataZarrTreemapLayerParams),
+    AdataZarrViolinLayer(AdataZarrViolinLayerParams),
+    AdataZarrViolinMatrixLayer(AdataZarrViolinMatrixLayerParams),
 
     // 3D
     Point3dLayer(Point3dLayerParams),
@@ -152,12 +174,74 @@ impl Default for RenderParams {
     }
 }
 
+/// The `info` of a `LayerPickingResult`, which depends on the picked layer.
+// Only used to generate TypeScript types.
+#[cfg(test)]
+#[derive(TS)]
+#[ts(untagged)]
+#[allow(dead_code)]
+enum PickingInfo {
+    Point(PointPickingInfo),
+    Point3d(Point3dPickingInfo),
+    Line(LinePickingInfo),
+    Rect(RectPickingInfo),
+    Text(TextPickingInfo),
+    Polygon(PolygonPickingInfo),
+    FilledCurve(FilledCurvePickingInfo),
+    StrokedCurve(StrokedCurvePickingInfo),
+    Bitmap(BitmapPickingInfo),
+    Bitmask(BitmaskPickingInfo),
+    Heatmap(HeatmapPickingInfo),
+    HilbertHeatmap(HilbertHeatmapPickingInfo),
+    BarPlot(BarPlotPickingInfo),
+    PrecomputedTreemap(PrecomputedTreemapPickingInfo),
+    LegendColormapCategorical(LegendColormapCategoricalPickingInfo),
+    PrecomputedViolin(PrecomputedViolinPickingInfo),
+    PrecomputedViolinMatrix(PrecomputedViolinMatrixPickingInfo),
+    OmeZarrBitmap(OmeZarrBitmapPickingInfo),
+    OmeZarrBitmask(OmeZarrBitmaskPickingInfo),
+    AdataZarrDotPlot(AdataZarrDotPlotPickingInfo),
+    AdataZarrHeatmap(AdataZarrHeatmapPickingInfo),
+    AdataZarrHilbertHeatmap(AdataZarrHilbertHeatmapPickingInfo),
+    AdataZarrTreemap(AdataZarrTreemapPickingInfo),
+    AdataZarrViolin(AdataZarrViolinPickingInfo),
+    AdataZarrViolinMatrix(AdataZarrViolinMatrixPickingInfo),
+}
+
 #[cfg(test)]
 mod tests {
-    use super::LayerParams;
+    use super::{LayerParams, PickingInfo};
     use pluot_core::registry::LayerRegistration;
     use std::collections::BTreeSet;
     use strum::VariantNames;
+    use ts_rs::{Config, TS};
+
+    /// Regenerates the TypeScript types consumed by `@pluot/core`.
+    #[test]
+    fn export_layer_params_typescript() {
+        let out_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../bindings-js/core/src/generated");
+        let cfg = Config::new()
+            .with_out_dir(out_dir)
+            .with_import_extension(Some("js"))
+            // serde_wasm_bindgen accepts plain JS numbers for 64-bit integers.
+            .with_large_int("number");
+        let _ = std::fs::remove_dir_all(out_dir);
+        LayerParams::export_all(&cfg).unwrap();
+        PickingInfo::export_all(&cfg).unwrap();
+
+        // LayerParams is excluded since @pluot/core wraps it to make layer_params partial.
+        let mut type_names: Vec<String> = std::fs::read_dir(out_dir)
+            .unwrap()
+            .filter_map(|entry| entry.unwrap().path().file_stem()?.to_str().map(String::from))
+            .filter(|name| name != "LayerParams")
+            .collect();
+        type_names.sort();
+        let mut index = String::from("// This file was generated by `export_layer_params_typescript`. Do not edit this file manually.\n");
+        for name in type_names {
+            index.push_str(&format!("export type {{ {name} }} from \"./{name}.js\";\n"));
+        }
+        std::fs::write(format!("{out_dir}/index.ts"), index).unwrap();
+    }
 
     /// Verifies that every layer registered via `inventory::submit!`
     /// has a matching variant in [`LayerParams`], and vice versa.

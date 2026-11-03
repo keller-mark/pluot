@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pluot_core::layers::text_layer::{TextLayer, TextLayerParams};
+use pluot_core::layers::text_layer::{TextLayer, TextLayerParams, TextPickingInfo};
 use pluot_core::render_traits::PickableLayer;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::{LayerPickingResult, UnitsMode, ViewParams, NumericData};
@@ -32,12 +32,12 @@ fn test_pick_identity_matrix() {
 
     let r = pick_at(&layer, 0.5, 0.5).unwrap();
     assert_eq!(r.layer_id, "test_text");
-    assert_eq!(r.info.get("index").unwrap(), "0");
-    assert_eq!(r.info.get("text").unwrap(), "a");
+    assert_eq!(info(&r).index, 0);
+    assert_eq!(info(&r).text, "a");
 
     let r = pick_at(&layer, 9.0, 9.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
-    assert_eq!(r.info.get("text").unwrap(), "b");
+    assert_eq!(info(&r).index, 1);
+    assert_eq!(info(&r).text, "b");
 }
 
 #[test]
@@ -53,11 +53,11 @@ fn test_pick_with_scale_matrix() {
 
     // world (19, 19) --> model (9.5, 9.5) --> closest to label 1.
     let r = pick_at(&layer, 19.0, 19.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 
     // world (1, 1) --> model (0.5, 0.5) --> closest to label 0.
     let r = pick_at(&layer, 1.0, 1.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 }
 
 #[test]
@@ -75,4 +75,8 @@ fn test_pick_pixels_units_mode_returns_none() {
         },
     );
     assert!(pick_at(&layer, 0.0, 0.0).is_none());
+}
+
+fn info(r: &LayerPickingResult) -> &TextPickingInfo {
+    r.info_as().unwrap()
 }

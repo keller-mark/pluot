@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
 use pluot_core::log;
@@ -9,7 +10,7 @@ use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::compute::reduce::reduce_extent;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use pluot_core::two::svg::{update_svg, SvgContext};
-use pluot_core::render_traits::{BrushableLayer, ExtentableLayer, CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
+use pluot_core::render_traits::{ExtentableLayer, CategoricalColormap, CategoricalParams, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, OpacityMode, PickableLayer, PreparedLayer, SizeMode, ViewParams, AspectRatioMode, UnitsMode, MarginParams, resolve_store_name};
 use pluot_core::layers::point_layer::{PointLayer, PointShapeMode, PointLayerParams};
 use pluot_core::numeric_data::NumericData;
 use pluot_core::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
@@ -24,8 +25,9 @@ use crate::zarr_numeric_data::load_arr_as_numeric_data_memoized;
 use crate::zarr_emphasis_criteria::{resolve_zarr_emphasis_criteria, ZarrEmphasisCriteria};
 
 /// Layer params struct for [`ZarrPointLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct ZarrPointLayerParams {
     pub layer_id: String,
     // If None, assume margin: 0 in all directions.
@@ -466,7 +468,6 @@ impl DrawToSvg for ZarrPointLayer {
     }
 }
 
-impl BrushableLayer for ZarrPointLayer {}
 
 impl ExtentableLayer for ZarrPointLayer {}
 

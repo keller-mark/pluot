@@ -1,39 +1,41 @@
 // Loads gene x obs-category expression summaries from an AnnData-Zarr store.
 //
-// Every loaded/computed piece is cached independently (var names, the obs groupby column, each
-// gene's expression column, each gene x category summary), so that none of them block or
-// invalidate one another: changing one gene or one category does not require re-fetching or
-// recomputing anything for the others.
+// Every loaded/computed piece is cached independently (var names, the obs groupby columns, each
+// gene's expression column, each gene's per-category summaries), so that none of them block or
+// invalidate one another: changing one gene does not require re-fetching or recomputing
+// anything for the others. Per-category reductions run on the GPU when a GPU context is given.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use pluot_core::cache::{use_memo_numeric_data, use_memo_vec_f32, use_memo_vec_string};
+use pluot_core::compute::reduce_stratified::{reduce_stratified_count, reduce_stratified_sum_and_count, StratifyBy};
+use pluot_core::compute::ForegroundBackground;
 use pluot_core::log;
 use pluot_core::numeric_data::NumericData;
+use pluot_core::render_traits::{EmphasisCriteria, QuantitativeCriteriaParams};
+use pluot_core::render_types::GpuContext;
 use pluot_core::zarr::is_timed_out_zarrs_error;
 use zarrs::array::ArrayError;
 use zarrs::storage::AsyncReadableStorageTraits;
 
-use crate::adata_io::{read_dataframe_column_strings, read_matrix_column_f32, read_string_array};
-use crate::adata_metadata::AnnDataEncoding;
+use crate::adata_io::{read_matrix_column_f32, read_string_array, NamedStore};
+use crate::adata_paths::{join_path, node_path, path_name};
+use crate::heatmap_data::{axis_criteria_key, index_mask, load_axis_len, AdataAxis, AxisCriteria};
+use crate::memo::use_memo_shared;
+use crate::zarr_emphasis_criteria::ZarrEmphasisCriteria;
 use crate::zarr_numeric_data::load_arr_as_numeric_data;
 
-/// The store of a single AnnData-Zarr object (i.e. rooted at the `anndata`-encoded group).
+/// The store holding an AnnData object, possibly nested within a MuData or SpatialData object.
 pub type AdataStore = Arc<dyn AsyncReadableStorageTraits>;
 
-/// One gene's expression summary over one obs category's cells.
+/// One gene's expression summary over one combination of obs categories' cells.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GeneSummary {
-    /// `var` column the gene was resolved from: `"index"` for `var.index`, else the column name.
-    pub var_colname: String,
-    /// The gene's ID, as it appears in `var_colname`.
+    /// The gene's ID, as it appears in the var labels it was resolved from.
     pub var_name: String,
-    /// The `obs` categorical column the cells were grouped by.
-    pub obs_colname: String,
-    /// The category label this summary was computed over.
-    pub obs_value: String,
+    /// The combination of categories (one per `groupby` column) this summary was computed over.
+    pub obs_values: Vec<String>,
 
     /// Sum of expression values across the category's cells.
     pub sum: f32,
@@ -56,55 +58,22 @@ impl GeneSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Memoization (plain thread-local cache; no recursive re-entrancy here, so no
-// need for the nested-borrow-safe macro pattern used elsewhere in the crate)
-// ---------------------------------------------------------------------------
-
-thread_local! {
-    static USE_MEMO_CACHE_GENE_SUMMARY: RefCell<Option<HashMap<Vec<String>, Arc<GeneSummary>>>> = const { RefCell::new(None) };
-}
-
-async fn use_memo_gene_summary(initializer: impl AsyncFnOnce() -> GeneSummary, keys: &[String], cache_enabled: bool) -> Arc<GeneSummary> {
-    if !cache_enabled {
-        return Arc::new(initializer().await);
-    }
-
-    let cached = USE_MEMO_CACHE_GENE_SUMMARY.with(|cache| cache.borrow().as_ref().and_then(|map| map.get(keys).cloned()));
-    if let Some(summary) = cached {
-        return summary;
-    }
-
-    let summary = Arc::new(initializer().await);
-    USE_MEMO_CACHE_GENE_SUMMARY.with(|cache| {
-        cache.borrow_mut().get_or_insert_with(HashMap::new).insert(keys.to_vec(), summary.clone());
-    });
-    summary
-}
-
-// ---------------------------------------------------------------------------
 // Independent single-element loads
 // ---------------------------------------------------------------------------
 
-/// Loads (and caches) the gene IDs: `var.index` when `var_column` is `None`, else the named
-/// `var` column (in its entirety).
-pub async fn load_var_names(store: AdataStore, store_name: &str, var_column: Option<&str>, cache_enabled: bool) -> Result<Arc<Vec<String>>, ArrayError> {
-    let keys = vec!["dotplot_var_names".to_string(), store_name.to_string(), var_column.unwrap_or("index").to_string()];
-    use_memo_vec_string(async || read_dataframe_column_strings(store, "/var", var_column).await, &keys, cache_enabled).await
-}
+/// Loads (and caches) the category labels and per-observation codes of the
+/// categorical column at `column_path`. The two arrays are cached independently of each other.
+pub async fn load_categorical(store: AdataStore, store_name: &str, column_path: &str, cache_enabled: bool) -> Result<(Arc<Vec<String>>, Arc<NumericData>), ArrayError> {
+    let column_path = node_path(column_path);
 
-/// Loads (and caches) the `obs` groupby column's category labels and per-observation codes.
-/// The two arrays are cached independently of each other.
-pub async fn load_obs_categorical(store: AdataStore, store_name: &str, groupby: &str, cache_enabled: bool) -> Result<(Arc<Vec<String>>, Arc<NumericData>), ArrayError> {
-    let column_path = format!("/obs/{groupby}");
-
-    let categories_keys = vec!["dotplot_obs_categories".to_string(), store_name.to_string(), groupby.to_string()];
+    let categories_keys = vec!["adata_categories".to_string(), store_name.to_string(), column_path.clone()];
     let categories_future = use_memo_vec_string(
-        async || read_string_array(store.clone(), &format!("{column_path}/categories")).await,
+        async || read_string_array(&NamedStore::new(store.clone(), store_name, cache_enabled), &format!("{column_path}/categories")).await,
         &categories_keys,
         cache_enabled,
     );
 
-    let codes_keys = vec!["dotplot_obs_codes".to_string(), store_name.to_string(), groupby.to_string()];
+    let codes_keys = vec!["adata_codes".to_string(), store_name.to_string(), column_path.clone()];
     let codes_future = use_memo_numeric_data(
         async || load_arr_as_numeric_data(store.clone(), &format!("{column_path}/codes")).await,
         &codes_keys,
@@ -114,12 +83,130 @@ pub async fn load_obs_categorical(store: AdataStore, store_name: &str, groupby: 
     futures::try_join!(categories_future, codes_future)
 }
 
-/// Path of the expression matrix for `layer`: `/X` for `None`, else `/layers/<layer>`.
-fn expr_array_path(layer: Option<&str>) -> String {
-    match layer {
-        None => "/X".to_string(),
-        Some(layer) => format!("/layers/{layer}"),
+/// Loads (and caches) the column at `col_index` of the expression matrix at `matrix_path`.
+pub async fn load_gene_expression(store: AdataStore, store_name: &str, col_index: u64, matrix_path: &str, cache_enabled: bool) -> Result<Arc<Vec<f32>>, ArrayError> {
+    let array_path = node_path(matrix_path);
+    let expr_keys = vec!["adata_matrix_column".to_string(), store_name.to_string(), array_path.clone(), col_index.to_string()];
+    // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
+    use_memo_vec_f32(async || read_matrix_column_f32(&NamedStore::new(store, store_name, cache_enabled), &array_path, col_index).await, &expr_keys, cache_enabled).await
+}
+
+/// The combinations of the categories of one or more categorical `obs` columns, from coarsest to finest.
+pub struct NestedCategories {
+    pub categories_per_column: Vec<Arc<Vec<String>>>,
+    /// One code per obs: the position of its combination among [`NestedCategories::combination_codes`],
+    /// or -1 when it is missing a category in any column.
+    pub codes: Arc<NumericData>,
+}
+
+impl NestedCategories {
+    fn num_combinations(&self) -> usize {
+        self.categories_per_column.iter().map(|categories| categories.len()).product()
     }
+
+    /// The code of every combination, ordered by the first column's categories, then the second's, etc.
+    pub fn combination_codes(&self) -> Vec<i64> {
+        (0..self.num_combinations() as i64).collect()
+    }
+
+    /// The code of each column's category in the combination with `code`.
+    pub fn column_codes(&self, code: i64) -> Vec<i64> {
+        let mut code = code;
+        let mut column_codes = vec![0; self.categories_per_column.len()];
+        for (column_code, categories) in column_codes.iter_mut().zip(&self.categories_per_column).rev() {
+            *column_code = code % categories.len() as i64;
+            code /= categories.len() as i64;
+        }
+        column_codes
+    }
+
+    /// The categories of the combination with `code`, one per column.
+    pub fn combination(&self, code: i64) -> Vec<String> {
+        self.column_codes(code).iter().zip(&self.categories_per_column).map(|(&column_code, categories)| categories[column_code as usize].clone()).collect()
+    }
+
+    /// The code of the first column's category in the combination with `code`, if any.
+    pub fn first_column_code(&self, code: i64) -> Option<usize> {
+        self.column_codes(code).first().map(|&column_code| column_code as usize)
+    }
+
+    /// Sorts the combinations with `codes` by each column's category, from coarsest to finest:
+    /// by its position in that column's `column_orders` entry when given, or else by its code.
+    pub fn sort_by_column_orders(&self, codes: &mut [i64], column_orders: &[Option<&[i64]>]) {
+        codes.sort_by_cached_key(|&code| {
+            self.column_codes(code)
+                .into_iter()
+                .zip(column_orders)
+                .map(|(column_code, order)| match order {
+                    Some(order) => order.iter().position(|&ordered| ordered == column_code).map_or((1, column_code), |position| (0, position as i64)),
+                    None => (0, column_code),
+                })
+                .collect::<Vec<_>>()
+        });
+    }
+
+    /// The combinations with `codes`, as strata to reduce over.
+    pub fn strata(&self, codes: &[i64]) -> StratifyBy {
+        StratifyBy { codes: self.codes.as_ref().clone(), included_codes: codes.to_vec() }
+    }
+}
+
+/// The text labeling a combination of categories, e.g. on an axis.
+pub fn combination_label(combination: &[String]) -> String {
+    combination.join(" / ")
+}
+
+/// The text titling an axis of the combinations of categories of the `groupby` columns.
+pub fn groupby_title(groupby: &[String]) -> String {
+    groupby.iter().map(|column_path| path_name(column_path)).collect::<Vec<_>>().join(" / ")
+}
+
+/// The combination code of each row of `codes_per_column` (see [`NestedCategories::codes`]).
+pub fn combine_codes(codes_per_column: &[&NumericData], num_categories: &[usize]) -> Vec<i32> {
+    let columns: Vec<_> = codes_per_column.iter().map(|codes| codes.as_f32()).collect();
+    let num_rows = columns.iter().map(|codes| codes.len()).min().unwrap_or(0);
+    (0..num_rows)
+        .map(|row| {
+            columns.iter().zip(num_categories).try_fold(0i32, |code, (codes, &n)| {
+                let column_code = codes[row];
+                (column_code >= 0.0).then(|| code * n as i32 + column_code as i32)
+            })
+            .unwrap_or(-1)
+        })
+        .collect()
+}
+
+/// Loads (and caches) the [`NestedCategories`] of the `groupby` columns (each a path to a categorical
+/// column of the `obs_axis` dataframe). Without any column, every obs has the one empty combination.
+pub async fn load_nested_categories(
+    store: AdataStore,
+    store_name: &str,
+    obs_axis: &AdataAxis,
+    groupby: &[String],
+    cache_enabled: bool,
+) -> Result<NestedCategories, ArrayError> {
+    let columns = futures::future::try_join_all(groupby.iter().map(|column_path| load_categorical(store.clone(), store_name, column_path, cache_enabled))).await?;
+    let (categories_per_column, codes_per_column): (Vec<_>, Vec<_>) = columns.into_iter().unzip();
+    if let [codes] = codes_per_column.as_slice() {
+        return Ok(NestedCategories { categories_per_column, codes: codes.clone() });
+    }
+    let mut keys = vec!["adata_nested_codes".to_string(), store_name.to_string(), obs_axis.dataframe_path.clone(), groupby.len().to_string()];
+    keys.extend(groupby.iter().cloned());
+    let codes = use_memo_numeric_data(
+        async || {
+            if groupby.is_empty() {
+                let num_obs = load_axis_len(store.clone(), store_name, obs_axis, cache_enabled).await?;
+                return Ok::<_, ArrayError>(NumericData::from(vec![0i32; num_obs]));
+            }
+            let codes: Vec<&NumericData> = codes_per_column.iter().map(Arc::as_ref).collect();
+            let num_categories: Vec<usize> = categories_per_column.iter().map(|categories| categories.len()).collect();
+            Ok(NumericData::from(combine_codes(&codes, &num_categories)))
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await?;
+    Ok(NestedCategories { categories_per_column, codes })
 }
 
 // ---------------------------------------------------------------------------
@@ -140,256 +227,206 @@ pub fn resolve_gene_columns(requested: &[String], var_index_values: &[String]) -
     resolved
 }
 
-/// Buckets observation row indices by requested obs category, given the `obs` groupby column's
-/// stored categories and per-observation codes (`-1` denotes a missing value, per the AnnData
-/// spec). Requested categories not present in `obs_categories` are logged and yield no rows.
-pub fn bucket_rows_by_category(requested_categories: &[String], obs_categories: &[String], obs_codes: &NumericData) -> HashMap<String, Vec<u32>> {
-    let category_position: HashMap<&str, usize> = obs_categories.iter().enumerate().map(|(i, category)| (category.as_str(), i)).collect();
-    let mut code_to_requested: HashMap<usize, &str> = HashMap::new();
-    for category in requested_categories {
-        match category_position.get(category.as_str()) {
-            Some(&position) => {
-                code_to_requested.insert(position, category.as_str());
-            }
-            None => log(&format!("dotplot_data: obs category \"{category}\" not found; skipping")),
-        }
-    }
-
-    let mut rows_by_category: HashMap<String, Vec<u32>> = requested_categories.iter().map(|category| (category.clone(), Vec::new())).collect();
-    for (row, code) in obs_codes.as_f32().iter().enumerate() {
-        if *code < 0.0 {
-            continue;
-        }
-        if let Some(&category) = code_to_requested.get(&(*code as usize)) {
-            rows_by_category.get_mut(category).unwrap().push(row as u32);
-        }
-    }
-    rows_by_category
+/// The label (from `var_index_values`) and column index of each of the var `included` indices, in order.
+pub fn included_genes(var_index_values: &[String], included: &[u32]) -> Vec<(String, u64)> {
+    included.iter().map(|&index| (var_index_values[index as usize].clone(), index as u64)).collect()
 }
 
-/// Summarizes one gene's expression (a whole column of `X`) over one category's observation
-/// rows: the sum and count of those cells, plus how many of them exceed `expression_cutoff`.
-fn summarize_gene_category(
-    values: &[f32],
-    rows: &[u32],
-    expression_cutoff: f32,
-    var_colname: &str,
-    var_name: &str,
-    obs_colname: &str,
-    obs_value: &str,
-) -> GeneSummary {
-    let mut sum = 0.0f32;
-    let mut num_expressing = 0u32;
-    for &row in rows {
-        let value = values[row as usize];
-        sum += value;
-        if value > expression_cutoff {
-            num_expressing += 1;
-        }
-    }
-    GeneSummary {
-        var_colname: var_colname.to_string(),
-        var_name: var_name.to_string(),
-        obs_colname: obs_colname.to_string(),
-        obs_value: obs_value.to_string(),
-        sum,
-        cell_count: rows.len() as u32,
-        num_expressing,
-    }
+/// Whether each of the var `included` indices is among the var `selected` indices.
+pub fn genes_selected(included: &[u32], selected: &[u32], num_var: usize) -> Vec<bool> {
+    let mask = index_mask(selected, num_var);
+    included.iter().map(|&index| mask[index as usize]).collect()
+}
+
+/// Cache key parts identifying the obs rows that are summarized: those included by
+/// `filtering`, and among them, those included by `selection`.
+pub fn obs_rows_key(filtering: Option<&AxisCriteria>, selection: Option<&AxisCriteria>) -> Vec<String> {
+    let mut keys = axis_criteria_key(filtering);
+    keys.extend(axis_criteria_key(selection));
+    keys
+}
+
+/// Cache key parts identifying `groupby` and the `codes` of combinations of its categories.
+pub fn categories_key(groupby: &[String], codes: &[i64]) -> Vec<String> {
+    let mut keys = vec![groupby.len().to_string()];
+    keys.extend(groupby.iter().cloned());
+    keys.push(codes.len().to_string());
+    keys.extend(codes.iter().map(i64::to_string));
+    keys
 }
 
 // ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
 
-/// Loads one gene's `GeneSummary` per requested obs category, given the obs groupby column's
-/// already-loaded (or already-bucketed) row indices per category.
+/// The obs to summarize per combination of categories: those meeting `filtering_criteria`
+/// (the background), and among them those meeting `selection_criteria` (the foreground).
+pub struct CategoryObs<'a> {
+    pub categories: &'a [Vec<String>],
+    /// One stratum per combination of categories (see [`NestedCategories::strata`]).
+    pub strata: &'a StratifyBy,
+    pub filtering_criteria: &'a [EmphasisCriteria],
+    pub selection_criteria: &'a [EmphasisCriteria],
+    /// Cache key parts identifying the categories and both criteria (see [`categories_key`] and [`obs_rows_key`]).
+    pub key: &'a [String],
+}
+
+/// The order of each `groupby` column's categories given by the first `Categorical` criteria of
+/// `filtering` on that column's codes, as resolved into `filtering_criteria`, if any.
+pub fn groupby_column_orders<'a>(groupby: &[String], filtering: Option<&AxisCriteria>, filtering_criteria: &'a [EmphasisCriteria]) -> Vec<Option<&'a [i64]>> {
+    let Some(AxisCriteria::Criteria(criteria)) = filtering else {
+        return vec![None; groupby.len()];
+    };
+    let categorical_orders: Vec<(String, &[i64])> = criteria
+        .iter()
+        .zip(filtering_criteria)
+        .filter_map(|(criterion, resolved)| match (criterion, resolved) {
+            (ZarrEmphasisCriteria::Categorical(params), EmphasisCriteria::Categorical(resolved)) => Some((node_path(&params.codes_key), resolved.included_codes.as_slice())),
+            _ => None,
+        })
+        .collect();
+    groupby
+        .iter()
+        .map(|column_path| {
+            let codes_path = join_path(column_path, "codes");
+            categorical_orders.iter().find(|(codes_key, _)| *codes_key == codes_path).map(|&(_, order)| order)
+        })
+        .collect()
+}
+
+/// The codes of the combinations of categories to plot. When `filtering` is set, or with more than
+/// one `groupby` column, those without any obs included by `filtering_criteria` (which
+/// `criteria_key` identifies) are omitted, counting (and caching) each combination's included obs.
+/// They are in nested order, except that the categories of a `groupby` column filtered by a
+/// `Categorical` criteria follow the order of its `included_categories`.
+#[allow(clippy::too_many_arguments)]
+pub async fn plotted_categories(
+    gpu_context: Option<&GpuContext<'_>>,
+    store_name: &str,
+    groupby: &[String],
+    nested: &NestedCategories,
+    filtering: Option<&AxisCriteria>,
+    filtering_criteria: &[EmphasisCriteria],
+    criteria_key: &[String],
+    cache_enabled: bool,
+) -> Vec<i64> {
+    let mut codes = included_combination_codes(gpu_context, store_name, groupby, nested, filtering.is_some(), filtering_criteria, criteria_key, cache_enabled).await;
+    nested.sort_by_column_orders(&mut codes, &groupby_column_orders(groupby, filtering, filtering_criteria));
+    codes
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn included_combination_codes(
+    gpu_context: Option<&GpuContext<'_>>,
+    store_name: &str,
+    groupby: &[String],
+    nested: &NestedCategories,
+    is_filtered: bool,
+    filtering_criteria: &[EmphasisCriteria],
+    criteria_key: &[String],
+    cache_enabled: bool,
+) -> Vec<i64> {
+    let codes = nested.combination_codes();
+    if !is_filtered && groupby.len() <= 1 {
+        return codes;
+    }
+    let mut keys = vec!["dotplot_category_counts".to_string(), store_name.to_string(), groupby.len().to_string()];
+    keys.extend(groupby.iter().cloned());
+    keys.extend(criteria_key.iter().cloned());
+    let counts = use_memo_vec_f32(
+        async || {
+            let counts = reduce_stratified_count(gpu_context, nested.codes.as_ref().clone(), &nested.strata(&codes), filtering_criteria, &[]).await;
+            Ok::<_, std::convert::Infallible>(counts.background)
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await
+    .expect("infallible");
+    codes.into_iter().zip(counts.iter()).filter(|(_, &count)| count > 0.0).map(|(code, _)| code).collect()
+}
+
+/// Each category's background and foreground summaries of one gene.
+pub type GeneSummaries = ForegroundBackground<Vec<GeneSummary>>;
+
+/// Loads one gene's [`GeneSummaries`], or `None` when its data isn't loaded *yet*, rather than
+/// propagating an error.
 ///
 /// This is the independent, per-gene unit of work: it loads (and caches) just this gene's array
-/// column and then computes (and caches) its per-category summaries. Returns `None` when the
-/// gene's data isn't loaded *yet* rather than propagating an error: under `wait_for_store_gets:
+/// column and then computes (and caches) its per-category summaries. Under `wait_for_store_gets:
 /// false`, a chunk not already in memory returns a "timed out" zarrs error immediately while the
 /// store fetches it in the background, which is an expected, transient condition (see
 /// `is_timed_out_zarrs_error`), not a failure — the same distinction other layers in this crate
 /// make (e.g. `ZarrHistogramLayer::prepare`). Any other zarrs error is a genuine, unexpected
 /// failure and panics, matching that same convention. Because a pending gene never propagates an
 /// error, many of these can run concurrently (e.g. via `join_all`) without one slow or pending
-/// gene cancelling or blocking the others. Exposed directly (rather than only via
-/// [`load_gene_summaries`]) so a caller doing progressive/incremental rendering can render
-/// whichever genes' futures resolved to `Some` so far, while treating any `None` as "not ready
-/// yet, try again" (see `AdataZarrDotPlotLayer::prepare` for an example).
+/// gene cancelling or blocking the others, so a caller can render whichever genes have loaded so
+/// far (see `AdataZarrDotPlotLayer::prepare` for an example).
+#[allow(clippy::too_many_arguments)]
 pub async fn load_gene_summaries_for_gene(
+    gpu_context: Option<&GpuContext<'_>>,
     store: AdataStore,
     store_name: &str,
-    var_colname: &str,
+    matrix_path: &str,
     gene_name: &str,
     col_index: u64,
-    layer: Option<&str>,
-    groupby: &str,
-    categories: &[String],
-    rows_by_category: &HashMap<String, Vec<u32>>,
+    obs: &CategoryObs<'_>,
     expression_cutoff: f32,
     cache_enabled: bool,
-) -> Option<Vec<GeneSummary>> {
-    let array_path = expr_array_path(layer);
-    let expr_keys = vec![
-        "dotplot_expr".to_string(),
-        store_name.to_string(),
-        array_path.clone(),
-        var_colname.to_string(),
-        gene_name.to_string(),
-    ];
-    // Whether the matrix is dense, CSR or CSC is the reader's business, not ours.
-    let expr_values = match use_memo_vec_f32(async || read_matrix_column_f32(store.clone(), &array_path, col_index).await, &expr_keys, cache_enabled).await {
+) -> Option<Arc<GeneSummaries>> {
+    let expr_values = match load_gene_expression(store, store_name, col_index, matrix_path, cache_enabled).await {
         Ok(expr) => expr,
         Err(error) => {
             if is_timed_out_zarrs_error(&error) {
                 return None;
             }
-            panic!("Zarrs error loading AnnData expression column for gene \"{gene_name}\" at \"{array_path}\": {error:?}");
+            panic!("Zarrs error loading AnnData expression column for gene \"{gene_name}\" at \"{matrix_path}\": {error:?}");
         }
     };
 
-    let empty_rows: Vec<u32> = Vec::new();
-    let mut summaries = Vec::with_capacity(categories.len());
-    for category in categories {
-        let rows = rows_by_category.get(category).unwrap_or(&empty_rows);
-        let summary_keys = vec![
-            "dotplot_gene_summary".to_string(),
-            store_name.to_string(),
-            var_colname.to_string(),
-            gene_name.to_string(),
-            groupby.to_string(),
-            category.clone(),
-            expression_cutoff.to_string(),
-        ];
-        let summary = use_memo_gene_summary(
-            async || summarize_gene_category(&expr_values, rows, expression_cutoff, var_colname, gene_name, groupby, category),
-            &summary_keys,
-            cache_enabled,
-        )
-        .await;
-        summaries.push((*summary).clone());
-    }
+    let mut keys = vec![
+        "dotplot_gene_summaries".to_string(),
+        store_name.to_string(),
+        node_path(matrix_path),
+        col_index.to_string(),
+        gene_name.to_string(),
+        expression_cutoff.to_string(),
+    ];
+    keys.extend(obs.key.iter().cloned());
+    let summaries = use_memo_shared(
+        async || {
+            let values = NumericData::Float32(expr_values.clone());
+            let is_expressing = EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: values.clone(),
+                min: Some(expression_cutoff),
+                max: None,
+                min_exclusive: Some(true),
+                max_exclusive: None,
+            });
+            let expressing_criteria = [obs.filtering_criteria, &[is_expressing]].concat();
+            let sums_and_counts = reduce_stratified_sum_and_count(gpu_context, values.clone(), obs.strata, obs.filtering_criteria, obs.selection_criteria).await;
+            let num_expressing = reduce_stratified_count(gpu_context, values, obs.strata, &expressing_criteria, obs.selection_criteria).await;
+            let summarize = |sums_and_counts: &[(f32, u32)], num_expressing: &[f32]| {
+                obs.categories
+                    .iter()
+                    .zip(sums_and_counts.iter().zip(num_expressing))
+                    .map(|(combination, (&(sum, cell_count), &num_expressing))| GeneSummary {
+                        var_name: gene_name.to_string(),
+                        obs_values: combination.clone(),
+                        sum,
+                        cell_count,
+                        num_expressing: num_expressing as u32,
+                    })
+                    .collect()
+            };
+            ForegroundBackground {
+                background: summarize(&sums_and_counts.background, &num_expressing.background),
+                foreground: summarize(&sums_and_counts.foreground, &num_expressing.foreground),
+            }
+        },
+        &keys,
+        cache_enabled,
+    )
+    .await;
     Some(summaries)
-}
-
-/// Loads one [`GeneSummary`] per (resolved gene, resolved obs category) pair, all at once.
-///
-/// The var names and the obs groupby column are loaded in parallel (`try_join!`), since neither
-/// depends on the other. Once both are ready, each resolved gene is handled by its own
-/// [`load_gene_summaries_for_gene`] future; these run concurrently via `join_all` rather than
-/// `try_join_all`, so one gene's failed or slow read can never cancel another gene's in-flight
-/// read. This waits for every gene before returning; a caller that wants to render whatever has
-/// loaded so far without waiting for the rest should drive [`load_gene_summaries_for_gene`]
-/// directly instead (see `AdataZarrDotPlotLayer::prepare` for an example).
-pub async fn load_gene_summaries(
-    store: AdataStore,
-    store_name: &str,
-    var_names: &[String],
-    var_column: Option<&str>,
-    layer: Option<&str>,
-    groupby: &str,
-    categories: &[String],
-    expression_cutoff: f32,
-    cache_enabled: bool,
-) -> Result<Vec<GeneSummary>, ArrayError> {
-    let (var_index_values, (obs_categories, obs_codes)) = futures::try_join!(
-        load_var_names(store.clone(), store_name, var_column, cache_enabled),
-        load_obs_categorical(store.clone(), store_name, groupby, cache_enabled),
-    )?;
-
-    let resolved_genes = resolve_gene_columns(var_names, &var_index_values);
-    let rows_by_category = bucket_rows_by_category(categories, &obs_categories, &obs_codes);
-    let var_colname = var_column.unwrap_or("index").to_string();
-
-    let gene_futures = resolved_genes.iter().map(|(gene_name, col_index)| {
-        load_gene_summaries_for_gene(
-            store.clone(),
-            store_name,
-            &var_colname,
-            gene_name,
-            *col_index,
-            layer,
-            groupby,
-            categories,
-            &rows_by_category,
-            expression_cutoff,
-            cache_enabled,
-        )
-    });
-
-    // A `None` here means that gene's data wasn't loaded yet (see `load_gene_summaries_for_gene`);
-    // since this function makes only one pass and has no bail/retry mechanism of its own, such a
-    // gene is simply omitted rather than waited on.
-    let results = futures::future::join_all(gene_futures).await;
-    Ok(results.into_iter().flatten().flatten().collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn resolve_gene_columns_skips_genes_not_found() {
-        let var_index = vec!["GeneA".to_string(), "GeneB".to_string(), "GeneC".to_string()];
-        let requested = vec!["GeneC".to_string(), "GeneX".to_string(), "GeneA".to_string()];
-        let resolved = resolve_gene_columns(&requested, &var_index);
-        assert_eq!(resolved, vec![("GeneC".to_string(), 2), ("GeneA".to_string(), 0)]);
-    }
-
-    #[test]
-    fn bucket_rows_by_category_groups_by_requested_categories_only() {
-        let obs_categories = vec!["B".to_string(), "T".to_string(), "NK".to_string()];
-        // Cell 5 has a missing category (-1); cell 2 belongs to "NK", which is not requested.
-        let obs_codes = NumericData::Int32(Arc::new(vec![0, 0, 2, 1, 1, -1]));
-        let requested = vec!["T".to_string(), "B".to_string()];
-
-        let buckets = bucket_rows_by_category(&requested, &obs_categories, &obs_codes);
-        assert_eq!(buckets.get("B"), Some(&vec![0, 1]));
-        assert_eq!(buckets.get("T"), Some(&vec![3, 4]));
-        assert_eq!(buckets.len(), 2);
-    }
-
-    #[test]
-    fn bucket_rows_by_category_with_no_requested_categories_is_empty() {
-        let obs_categories = vec!["B".to_string(), "T".to_string()];
-        let obs_codes = NumericData::Int32(Arc::new(vec![0, 1]));
-        let buckets = bucket_rows_by_category(&[], &obs_categories, &obs_codes);
-        assert!(buckets.is_empty());
-    }
-
-    #[test]
-    fn bucket_rows_by_category_logs_and_skips_unknown_category() {
-        let obs_categories = vec!["B".to_string()];
-        let obs_codes = NumericData::Int32(Arc::new(vec![0, 0]));
-        let requested = vec!["B".to_string(), "Unknown".to_string()];
-        let buckets = bucket_rows_by_category(&requested, &obs_categories, &obs_codes);
-        assert_eq!(buckets.get("B"), Some(&vec![0, 1]));
-        assert_eq!(buckets.get("Unknown"), Some(&vec![]));
-    }
-
-    #[test]
-    fn summarize_gene_category_computes_sum_count_and_num_expressing() {
-        let values = [0.0, 1.0, 2.0, 9.0];
-
-        let summary = summarize_gene_category(&values, &[0, 1, 2], 0.0, "index", "GeneA", "celltype", "T");
-        assert_eq!(summary.cell_count, 3);
-        assert_eq!(summary.sum, 3.0);
-        // The cutoff is exclusive, so the 0.0 value does not count as expressing.
-        assert_eq!(summary.num_expressing, 2);
-        assert_eq!(summary.var_name, "GeneA");
-        assert_eq!(summary.obs_value, "T");
-
-        // Only the given rows contribute, in any order.
-        let summary = summarize_gene_category(&values, &[3, 1], 1.5, "index", "GeneA", "celltype", "T");
-        assert_eq!(summary.sum, 10.0);
-        assert_eq!(summary.num_expressing, 1);
-
-        // An empty group is all zeros rather than NaN.
-        let summary = summarize_gene_category(&values, &[], 0.0, "index", "GeneA", "celltype", "T");
-        assert_eq!(summary.sum, 0.0);
-        assert_eq!(summary.cell_count, 0);
-        assert_eq!(summary.num_expressing, 0);
-    }
 }

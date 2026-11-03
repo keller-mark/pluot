@@ -4,14 +4,14 @@
 use encase::{ShaderType, UniformBuffer};
 use glam::{Mat4, Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::Arc;
 
-use std::collections::HashMap;
 use crate::picking::LayerPickingResult;
-use crate::render_traits::{BrushableLayer, ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
+use crate::render_traits::{ExtentableLayer, ColorMode, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams};
 use crate::viewport::{DataCoord, ScreenCoord};
 use crate::shader_modules::{common, ShaderBuilder};
-use crate::numeric_data::NumericData;
+use crate::numeric_data::{NumericData, NumericValue};
 use crate::color_mode::prepare_color_mode;
 use crate::render_types::{CpuContext, CpuRenderPass, PrepareResult, RenderResult};
 use crate::gpu_send::GpuRenderPass;
@@ -22,8 +22,9 @@ use crate::two::svg::{update_svg, SvgContext};
 use crate::layers::point_layer::PointShapeMode;
 
 /// Layer params struct for [`Point3dLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct Point3dLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -412,9 +413,16 @@ inventory::submit! {
     }
 }
 
-impl BrushableLayer for Point3dLayer {}
 
 impl ExtentableLayer for Point3dLayer {}
+
+#[derive(Serialize, Debug, Clone, PartialEq, TS)]
+pub struct Point3dPickingInfo {
+    pub index: usize,
+    pub x: NumericValue,
+    pub y: NumericValue,
+    pub z: NumericValue,
+}
 
 impl PickableLayer for Point3dLayer {
     fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
@@ -441,15 +449,11 @@ impl PickableLayer for Point3dLayer {
             }
         }
 
-        let mut info = HashMap::new();
-        info.insert("index".to_string(), closest_idx.to_string());
-        info.insert("x".to_string(), self.layer_params.position_x.format_element(closest_idx));
-        info.insert("y".to_string(), self.layer_params.position_y.format_element(closest_idx));
-        info.insert("z".to_string(), self.layer_params.position_z.format_element(closest_idx));
-
-        Some(LayerPickingResult {
-            layer_id: self.layer_params.layer_id.clone(),
-            info,
-        })
+        Some(LayerPickingResult::new(&self.layer_params.layer_id, Point3dPickingInfo {
+            index: closest_idx,
+            x: self.layer_params.position_x.value(closest_idx),
+            y: self.layer_params.position_y.value(closest_idx),
+            z: self.layer_params.position_z.value(closest_idx),
+        }))
     }
 }

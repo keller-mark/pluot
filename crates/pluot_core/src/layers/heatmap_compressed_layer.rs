@@ -3,12 +3,13 @@
 //! the GPU, rather than densifying the matrix.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::layers::heatmap_layer::{HeatmapColormap, HeatmapCommon, HeatmapValueBlock, MATRIX_VALUE_FIRST_BINDING};
 use crate::numeric_data::NumericData;
 use crate::picking::LayerPickingResult;
 use crate::render_traits::{
-    BrushableLayer, DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer,
+    DrawToRasterCpu, DrawToRasterGpu, DrawToSvg, ExtentableLayer, MarginParams, PickableLayer,
     PreparedLayer, UnitsMode, ViewParams,
 };
 use crate::render_types::{CpuContext, CpuRenderPass, GpuContext, PrepareResult};
@@ -21,8 +22,9 @@ use crate::wgpu;
 /// Layer params struct for [`HeatmapCsrLayer`] and [`HeatmapCscLayer`].
 /// Every field but `matrix` means the same as in
 /// [`HeatmapLayerParams`](crate::layers::heatmap_layer::HeatmapLayerParams).
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct CompressedHeatmapLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -129,7 +131,7 @@ impl CompressedHeatmapLayer {
     fn pick(&self, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
         let common = self.layer_params.common();
         let (row, col) = common.pick_cell(data_coord)?;
-        let value = self.layer_params.matrix.format_value_at(self.axis, row as usize, col as usize);
+        let value = self.layer_params.matrix.native_value_at(self.axis, row as usize, col as usize);
         Some(common.picking_result(row, col, value))
     }
 }
@@ -175,12 +177,11 @@ macro_rules! compressed_heatmap_layer {
             }
         }
 
-        impl BrushableLayer for $name {}
 
         impl ExtentableLayer for $name {}
 
         impl PickableLayer for $name {
-            /// Returns the picked cell's "row", "col" and "value".
+            /// Returns a [`HeatmapPickingInfo`](crate::layers::heatmap_layer::HeatmapPickingInfo).
             fn pick(&self, _screen_coord: ScreenCoord, data_coord: Option<DataCoord>) -> Option<LayerPickingResult> {
                 self.0.pick(data_coord)
             }

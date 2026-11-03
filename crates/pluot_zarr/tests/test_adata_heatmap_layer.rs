@@ -12,7 +12,7 @@ use pluot_core::render_traits::{AspectRatioMode, ExtentableLayer, PickableLayer,
 use pluot_core::render_types::GpuContext;
 use pluot_core::viewport::{DataCoord, ScreenCoord};
 use pluot_core::zarr::StoreMap;
-use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_numeric};
+use pluot_zarr::adata_io::{read_dataframe_index, read_matrix_column_numeric, NamedStore};
 use pluot_core::compute::matrix_axis_extents::{reduce_matrix_axis_extents, MatrixAxis as HeatmapAxis};
 use pluot_core::numeric_data::NumericData;
 use pluot_zarr::adata_io::read_matrix_layout;
@@ -21,8 +21,8 @@ use pluot_zarr::heatmap_data::{
     load_matrix_percentile_domain, AxisCriteria, HeatmapNormalization, IdentifierCriteriaParams, LoadedMatrixBlock, MatrixBlock,
     MatrixBlockKey, MatrixCacheMode,
 };
-use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams};
-use pluot_zarr::zarr_emphasis_criteria::{ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
+use pluot_zarr::layers::adata_zarr_heatmap_layer::{AdataZarrHeatmapLayer, AdataZarrHeatmapLayerParams, AdataZarrHeatmapPickingInfo};
+use pluot_zarr::zarr_emphasis_criteria::{IncludedCategories, ZarrCategoricalCriteriaParams, ZarrEmphasisCriteria, ZarrQuantitativeCriteriaParams};
 use pluot_zarr::zarr_numeric_data::load_arr_as_numeric_data;
 
 struct TokioSpawnBlocking;
@@ -58,7 +58,7 @@ struct Expected {
 }
 
 async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -> (AdataZarrHeatmapLayerParams, Expected) {
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let var_names: Vec<String> = vec![var_index[10].clone(), var_index[3].clone(), var_index[700].clone()];
 
     let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
@@ -69,7 +69,8 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
         store_name: Some("pbmc".to_string()),
         obs_filtering: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Categorical(ZarrCategoricalCriteriaParams {
             codes_key: "/obs/bulk_labels/codes".to_string(),
-            included_codes: vec![2],
+            categories_key: None,
+            included_categories: IncludedCategories::Codes(vec![2]),
         })])),
         obs_selection: Some(AxisCriteria::Criteria(vec![ZarrEmphasisCriteria::Quantitative(ZarrQuantitativeCriteriaParams {
             values_key: "/obs/n_genes".to_string(),
@@ -78,7 +79,7 @@ async fn layer_params_and_expected(store: Arc<dyn AsyncReadableStorageTraits>) -
             min_exclusive: None,
             max_exclusive: None,
         })])),
-        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { column: None, identifiers: var_names.clone() })),
+        var_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams { index_path: None, identifiers: var_names.clone() })),
         ..Default::default()
     };
     (params, Expected { obs_indices, var_names })
@@ -96,8 +97,8 @@ async fn check_picks_of(
     expected: &Expected,
     swap_axes: bool,
 ) {
-    let obs_names = read_dataframe_index(store.clone(), "/obs").await.unwrap();
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/obs").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let (num_rows, num_cols) = (expected.obs_indices.len(), expected.var_names.len());
     for row in (0..num_rows).step_by(7) {
         for col in 0..num_cols {
@@ -107,15 +108,18 @@ async fn check_picks_of(
                 x: display_x as f32 + 0.5,
                 y: (display_h - display_y_from_top) as f32 - 0.5,
             };
-            let info = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(data_coord)).expect("a cell is picked").info;
+            let info: AdataZarrHeatmapPickingInfo = layer.pick(ScreenCoord { x: 0.0, y: 0.0 }, Some(data_coord))
+                .expect("a cell is picked")
+                .into_info()
+                .unwrap();
 
             let obs_index = expected.obs_indices[row];
             let var_index_of_col = var_index.iter().position(|name| *name == expected.var_names[col]).unwrap();
-            let column = read_matrix_column_numeric(store.clone(), matrix_path, var_index_of_col as u64).await.unwrap();
-            assert_eq!(info["obs_index"], obs_index.to_string());
-            assert_eq!(info["obs_name"], obs_names[obs_index]);
-            assert_eq!(info["var_name"], expected.var_names[col]);
-            assert_eq!(info["value"], column.format_element(obs_index));
+            let column = read_matrix_column_numeric(&NamedStore::new(store.clone(), "test", false), matrix_path, var_index_of_col as u64).await.unwrap();
+            assert_eq!(info.obs_index, obs_index);
+            assert_eq!(info.obs_name, obs_names[obs_index]);
+            assert_eq!(info.var_name, expected.var_names[col]);
+            assert_eq!(info.value, column.value(obs_index));
         }
     }
 }
@@ -190,6 +194,64 @@ async fn every_normalization_prepares_on_cpu_and_gpu() {
 }
 
 #[tokio::test]
+async fn groupby_sorts_obs_by_category() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+    let mut obs_indices: Vec<usize> = (0..codes.len()).collect();
+    obs_indices.sort_by_key(|&i| codes.get_f32(i) as i64);
+    assert!(obs_indices.windows(2).any(|pair| pair[0] > pair[1]), "grouping reorders the obs");
+    let expected = Expected { obs_indices, ..expected };
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for gpu in [None, Some(&gpu_context)] {
+        for (layer_path, matrix_path) in [("X", "/X"), ("layers/csr", "/layers/csr"), ("layers/csc", "/layers/csc")] {
+            for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
+                let params = AdataZarrHeatmapLayerParams {
+                    layer_path: layer_path.to_string(),
+                    obs_filtering: None,
+                    groupby: vec!["obs/bulk_labels".to_string()],
+                    cache_mode: Some(cache_mode),
+                    ..params.clone()
+                };
+                let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+                assert!(!layer.prepare(gpu).await.bailed_early, "{matrix_path} {cache_mode:?}");
+                check_picks_of(&layer, store.clone(), matrix_path, &expected, false).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn groupby_keeps_the_listed_order_of_identifiers_within_each_category() {
+    let store = pbmc_store();
+    let (params, expected) = layer_params_and_expected(store.clone()).await;
+    let obs_names = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/obs").await.unwrap();
+    let codes = load_arr_as_numeric_data(store.clone(), "/obs/bulk_labels/codes").await.unwrap();
+    let listed: Vec<usize> = (0..codes.len()).rev().step_by(3).collect();
+    let mut obs_indices = listed.clone();
+    obs_indices.sort_by_key(|&i| codes.get_f32(i) as i64);
+    let expected = Expected { obs_indices, ..expected };
+    let (device, queue) = pluot_core::cache::get_or_init_gpu_context().await.expect("GPU context");
+    let gpu_context = GpuContext { device: &device, queue: &queue };
+
+    for gpu in [None, Some(&gpu_context)] {
+        let params = AdataZarrHeatmapLayerParams {
+            obs_filtering: Some(AxisCriteria::Identifiers(IdentifierCriteriaParams {
+                index_path: None,
+                identifiers: listed.iter().map(|&i| obs_names[i].clone()).collect(),
+            })),
+            groupby: vec!["obs/bulk_labels".to_string()],
+            ..params.clone()
+        };
+        let mut layer = AdataZarrHeatmapLayer::new(view_params(store.clone()), params);
+        assert!(!layer.prepare(gpu).await.bailed_early);
+        check_picks(&layer, store.clone(), &expected, false).await;
+    }
+}
+
+#[tokio::test]
 async fn extent_is_the_filtered_cell_counts() {
     let store = pbmc_store();
     let (params, expected) = layer_params_and_expected(store.clone()).await;
@@ -220,7 +282,7 @@ async fn sparse_matrices_are_picked_with_their_matrix_values() {
             for swap_axes in [false, true] {
                 for gpu in [None, Some(&gpu_context)] {
                     let params = AdataZarrHeatmapLayerParams {
-                        layer: layer_name.to_string(),
+                        layer_path: format!("layers/{layer_name}"),
                         cache_mode: Some(cache_mode),
                         swap_axes,
                         ..params.clone()
@@ -245,7 +307,7 @@ async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
         for normalization in [HeatmapNormalization::Matrix, HeatmapNormalization::PerObs, HeatmapNormalization::PerVar] {
             for gpu in [None, Some(&gpu_context)] {
                 let params = AdataZarrHeatmapLayerParams {
-                    layer: layer_name.to_string(),
+                    layer_path: format!("layers/{layer_name}"),
                     normalization: Some(normalization),
                     normalization_upper_percentile: Some(99.0),
                     ..params.clone()
@@ -262,7 +324,7 @@ async fn every_normalization_of_a_sparse_matrix_prepares_on_cpu_and_gpu() {
 async fn sparse_block_extents_match_the_dense_cells() {
     let store = pbmc_store();
     let (_, expected) = layer_params_and_expected(store.clone()).await;
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let rows: Vec<u32> = expected.obs_indices.iter().map(|&i| i as u32).collect();
     let cols: Vec<u32> = expected.var_names.iter().map(|name| var_index.iter().position(|v| v == name).unwrap() as u32).collect();
     let (num_rows, num_cols) = (rows.len(), cols.len());
@@ -271,7 +333,8 @@ async fn sparse_block_extents_match_the_dense_cells() {
 
     let matrix_path = "/layers/csr";
     let mut dense_cells = Vec::with_capacity(num_rows * num_cols);
-    let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(store.clone(), matrix_path, col as u64))).await;
+    let uncached_store = NamedStore::new(store.clone(), "test", false);
+    let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(&uncached_store, matrix_path, col as u64))).await;
     let columns: Vec<_> = columns.into_iter().map(Result::unwrap).collect();
     for &row in &rows {
         dense_cells.extend(columns.iter().map(|column| column.get_f32(row as usize)));
@@ -280,13 +343,14 @@ async fn sparse_block_extents_match_the_dense_cells() {
     let dense_extent = dense.as_f32().iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)));
 
     for matrix_path in ["/layers/csr", "/layers/csc"] {
-        let layout = read_matrix_layout(store.clone(), matrix_path).await;
+        let layout = read_matrix_layout(&NamedStore::new(store.clone(), "test", false), matrix_path).await;
         for cache_mode in [MatrixCacheMode::RowBlocks, MatrixCacheMode::VarColumns] {
             let key = MatrixBlockKey {
                 store_name: "pbmc",
                 matrix_path,
                 cache_mode,
                 obs_filtering: None,
+                obs_groupby: &[],
                 var_filtering: None,
                 rows_per_block: num_rows,
                 block_index: 0,
@@ -321,7 +385,7 @@ fn assert_near_percentile(values: &[f32], percentile: f32, estimate: f32, num_bi
 async fn percentile_domains_match_the_sorted_cells() {
     let store = pbmc_store();
     let (_, expected) = layer_params_and_expected(store.clone()).await;
-    let var_index = read_dataframe_index(store.clone(), "/var").await.unwrap();
+    let var_index = read_dataframe_index(&NamedStore::new(store.clone(), "test", false), "/var").await.unwrap();
     let rows: Vec<u32> = expected.obs_indices.iter().map(|&i| i as u32).collect();
     let cols: Vec<u32> = expected.var_names.iter().map(|name| var_index.iter().position(|v| v == name).unwrap() as u32).collect();
     let (num_rows, num_cols) = (rows.len(), cols.len());
@@ -330,18 +394,20 @@ async fn percentile_domains_match_the_sorted_cells() {
     let percentiles = (5.0, 95.0);
 
     for matrix_path in ["/X", "/layers/csr", "/layers/csc"] {
-        let layout = read_matrix_layout(store.clone(), matrix_path).await;
+        let layout = read_matrix_layout(&NamedStore::new(store.clone(), "test", false), matrix_path).await;
         let key = MatrixBlockKey {
             store_name: "pbmc",
             matrix_path,
             cache_mode: MatrixCacheMode::RowBlocks,
             obs_filtering: None,
+            obs_groupby: &[],
             var_filtering: None,
             rows_per_block: num_rows,
             block_index: 0,
         };
         let block = load_matrix_block(store.clone(), &key, layout, &rows, &cols, false).await.unwrap();
-        let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(store.clone(), matrix_path, col as u64))).await;
+        let uncached_store = NamedStore::new(store.clone(), "test", false);
+        let columns = futures::future::join_all(cols.iter().map(|&col| read_matrix_column_numeric(&uncached_store, matrix_path, col as u64))).await;
         let columns: Vec<_> = columns.into_iter().map(Result::unwrap).collect();
         let cell = |row: usize, col: usize| columns[col].get_f32(rows[row] as usize);
         let cells: Vec<f32> = (0..num_rows).flat_map(|row| (0..num_cols).map(move |col| (row, col))).map(|(row, col)| cell(row, col)).collect();

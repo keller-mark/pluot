@@ -70,7 +70,7 @@ export function ScatterplotSelectFilterWrapper(props) {
               criteria_mode: "Categorical",
               criteria_params: {
                 codes_key: colorKey,
-                included_codes: filterValues,
+                included_categories: filterValues,
               },
             },
           ],
@@ -79,7 +79,7 @@ export function ScatterplotSelectFilterWrapper(props) {
               criteria_mode: "Categorical",
               criteria_params: {
                 codes_key: colorKey,
-                included_codes: selectValues,
+                included_categories: selectValues,
               },
             },
           ],

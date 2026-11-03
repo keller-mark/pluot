@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use pluot_core::layers::point_layer::{PointLayer, PointLayerParams};
+use pluot_core::layers::point_layer::{PointLayer, PointLayerParams, PointPickingInfo};
 use pluot_core::render_traits::{PickableLayer, UnitsMode};
 use pluot_core::viewport::{DataCoord, ScreenCoord};
-use pluot_core::{LayerPickingResult, ViewParams, NumericData};
+use pluot_core::{LayerPickingResult, ViewParams, NumericData, NumericValue};
 
 fn make_layer(model_matrix: Option<[f32; 16]>) -> PointLayer {
     PointLayer::new(
@@ -31,10 +31,10 @@ fn test_pick_identity_matrix() {
 
     let r = pick_at(&layer, 0.5, 0.5).unwrap();
     assert_eq!(r.layer_id, "test_point");
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     let r = pick_at(&layer, 9.0, 9.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 }
 
 #[test]
@@ -50,11 +50,11 @@ fn test_pick_with_scale_matrix() {
 
     // world (19, 19) --> model (9.5, 9.5) --> closest to point 1.
     let r = pick_at(&layer, 19.0, 19.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 
     // world (1, 1) --> model (0.5, 0.5) --> closest to point 0.
     let r = pick_at(&layer, 1.0, 1.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 }
 
 #[test]
@@ -69,10 +69,10 @@ fn test_pick_with_translation_matrix() {
     let layer = make_layer(Some(model_matrix));
 
     let r = pick_at(&layer, 100.5, 0.5).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     let r = pick_at(&layer, 109.0, 9.0).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
 }
 
 #[test]
@@ -96,9 +96,26 @@ fn test_pick_normalized_units() {
 
     // Point 0 is at normalized (0,0) -> pixel (0,0) (bottom-left, Y-up).
     let r = layer.pick(ScreenCoord { x: 2.0, y: 2.0 }, None).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "0");
+    assert_eq!(info(&r).index, 0);
 
     // Point 1 is at normalized (1,1) -> pixel (100,100) (top-right, Y-up).
     let r = layer.pick(ScreenCoord { x: 98.0, y: 98.0 }, None).unwrap();
-    assert_eq!(r.info.get("index").unwrap(), "1");
+    assert_eq!(info(&r).index, 1);
+}
+
+#[test]
+fn picking_info_serializes_as_an_object() {
+    let result = LayerPickingResult::new("points", PointPickingInfo {
+        index: 1,
+        x: NumericValue::Uint(2),
+        y: NumericValue::Float32(0.5),
+    });
+    assert_eq!(
+        serde_json::to_value(&result).unwrap(),
+        serde_json::json!({ "layer_id": "points", "info": { "index": 1, "x": 2, "y": 0.5 } }),
+    );
+}
+
+fn info(r: &LayerPickingResult) -> &PointPickingInfo {
+    r.info_as().unwrap()
 }

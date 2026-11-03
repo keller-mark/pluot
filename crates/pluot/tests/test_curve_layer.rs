@@ -764,10 +764,9 @@ async fn test_curve_layer_square_contain_closed_curve_quantitative_fill() {
 }
 
 // ── Filtering and selection criteria ─────────────────────────────────────────
-// `CurveLayer` renders a single shape, so `filtering_criteria`/
-// `selection_criteria` (each carrying a single, length-1 value per criteria)
-// act as an all-or-nothing toggle for the whole shape rather than selecting a
-// subset of many items. Filter-excluded means the shape (both stroke and
+// Without `curve_offsets`, `CurveLayer` renders a single curve, so
+// `filtering_criteria`/`selection_criteria` (each carrying a single, length-1
+// value per criteria) act as an all-or-nothing toggle for the whole shape. Filter-excluded means the shape (both stroke and
 // fill sub-layers) is not rendered at all; filter-included but
 // selection-excluded means it still renders, but re-colored with
 // `background_stroke_color`/`background_fill_color` in place of its
@@ -1204,4 +1203,96 @@ async fn test_curve_layer_square_contain_selection_background_overrides_none_val
         ..Default::default()
     };
     render_and_check_both_snapshots(params, "test_curve_layer_square_contain_selection_background_overrides_none_value_is_noop").await;
+}
+
+// ── Multiple curves ──────────────────────────────────────────────────────────
+
+fn rect_commands(x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<PathCommand> {
+    vec![
+        PathCommand::MoveTo { x: x0, y: y0 },
+        PathCommand::LineTo { x: x1, y: y0 },
+        PathCommand::LineTo { x: x1, y: y1 },
+        PathCommand::LineTo { x: x0, y: y1 },
+        PathCommand::Close,
+    ]
+}
+
+// Three curves: a rectangle, a closed curve with arcs, and a curve made of two
+// separate rectangle sub-paths, which share that curve's visual properties.
+fn multi_curve_data() -> CurveLayerParams {
+    let mut commands = rect_commands(0.05, 0.6, 0.35, 0.9);
+    let second_start = commands.len() as u32;
+    commands.extend([
+        PathCommand::MoveTo { x: 0.45, y: 0.6 },
+        PathCommand::LineTo { x: 0.95, y: 0.6 },
+        PathCommand::ArcTo { rx: 0.25, ry: 0.15, x_axis_rotation: 0.0, large_arc: false, sweep: true, x: 0.45, y: 0.6 },
+        PathCommand::Close,
+    ]);
+    let third_start = commands.len() as u32;
+    commands.extend(rect_commands(0.1, 0.1, 0.4, 0.4));
+    commands.extend(rect_commands(0.6, 0.1, 0.9, 0.4));
+    let num_commands = commands.len() as u32;
+    CurveLayerParams {
+        commands: Arc::new(commands),
+        curve_offsets: Some(Arc::new(vec![0, second_start, third_start, num_commands])),
+        stroked: true,
+        filled: true,
+        stroke_color: Some(ColorMode::UniformRgb((0, 0, 0))),
+        ..wave_curve_data()
+    }
+}
+
+#[tokio::test]
+async fn test_curve_layer_square_contain_multiple_curves_instanced_properties() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            fill_color: Some(ColorMode::Quantitative(QuantitativeParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 0.5, 1.0])),
+                colormap: QuantitativeColormap::Viridis,
+                reverse: false,
+                domain: Some((0.0, 1.0)),
+            })),
+            fill_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![1.0, 0.6, 0.3])),
+            })),
+            stroke_width: Some(SizeMode::InstancedSize(InstancedSizeParams {
+                values: NumericData::Float32(Arc::new(vec![1.0, 3.0, 5.0])),
+            })),
+            stroke_opacity: Some(OpacityMode::InstancedOpacity(InstancedOpacityParams {
+                values: NumericData::Float32(Arc::new(vec![1.0, 0.5, 1.0])),
+            })),
+            ..multi_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_multiple_curves_instanced_properties").await;
+}
+
+// The first curve is filtered out, and the second is de-emphasized with the background colors.
+#[tokio::test]
+async fn test_curve_layer_square_contain_multiple_curves_filtering_and_selection() {
+    let params = RenderParams {
+        width: 100,
+        height: 100,
+        layers: layer_params(CurveLayerParams {
+            filtering_criteria: vec![EmphasisCriteria::Categorical(CategoricalCriteriaParams {
+                codes: NumericData::Int32(Arc::new(vec![0, 1, 1])),
+                included_codes: vec![1],
+            })],
+            selection_criteria: vec![EmphasisCriteria::Quantitative(QuantitativeCriteriaParams {
+                values: NumericData::Float32(Arc::new(vec![0.0, 0.2, 0.8])),
+                min: Some(0.5),
+                max: None,
+                min_exclusive: None,
+                max_exclusive: None,
+            })],
+            ..multi_curve_data()
+        }),
+        aspect_ratio_mode: AspectRatioMode::Contain,
+        ..Default::default()
+    };
+    render_and_check_both_snapshots(params, "test_curve_layer_square_contain_multiple_curves_filtering_and_selection").await;
 }

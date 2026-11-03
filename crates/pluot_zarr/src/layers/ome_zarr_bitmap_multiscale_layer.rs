@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use pluot_core::{maybe_timeout, FutureExt, Duration};
 
@@ -10,7 +11,7 @@ use pluot_core::log;
 use pluot_core::wgpu;
 use zarrs::storage::AsyncReadableStorageTraits;
 use pluot_core::render_traits::{
-    BrushableLayer, ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams, resolve_store_name,
+    ExtentableLayer, DrawToRasterGpu, DrawToRasterCpu, DrawToSvg, MarginParams, PickableLayer, PreparedLayer, ViewParams, resolve_store_name,
 };
 use pluot_core::two::svg::SvgContext;
 use pluot_core::multiscale_utils::{
@@ -34,8 +35,9 @@ use crate::layers::ome_zarr_utils::{
 };
 
 /// Layer params struct for [`OmeZarrBitmapMultiscaleLayer`].
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, TS)]
 #[serde(default)]
+#[ts(optional_fields = nullable)]
 pub struct OmeZarrBitmapMultiscaleLayerParams {
     pub layer_id: String,
     pub bounds: Option<MarginParams>,
@@ -587,7 +589,6 @@ impl DrawToSvg for OmeZarrBitmapMultiscaleLayer {
     }
 }
 
-impl BrushableLayer for OmeZarrBitmapMultiscaleLayer {}
 
 impl ExtentableLayer for OmeZarrBitmapMultiscaleLayer {}
 

@@ -49,9 +49,14 @@ const DEMOS = {
           layer_type: "AdataZarrDotPlotLayer",
           layer_params: {
             layer_id: "dot_plot",
-            var_names: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
-            groupby: "bulk_labels",
-            layer: "X",
+            var_filtering: {
+              axis_criteria_mode: "Identifiers",
+              axis_criteria_params: {
+                identifiers: ['C1QA', 'PSAP', 'CD79A', 'CD79B', 'CST3', 'LYZ'],
+              },
+            },
+            groupby: ["obs/bulk_labels"],
+            layer_path: "X",
             title: "My dot plot",
             cmap: "Reds",
           },

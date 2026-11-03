@@ -9,6 +9,7 @@ use crate::shader_modules::{common, ShaderBuilder};
 use crate::wgpu;
 
 use super::reduce_stratified::read_back_u32;
+use super::stratified_indices::{compute_stratified_indices, CompactionMethod, RowSource};
 use super::ForegroundBackground;
 use crate::gpu_send::MaybeSendBoxFuture;
 
@@ -34,12 +35,36 @@ pub async fn compute_included_indices(
     filtering_criteria: &[EmphasisCriteria],
     selection_criteria: &[EmphasisCriteria],
 ) -> ForegroundBackground<Vec<u32>> {
+    compute_included_indices_with(gpu_context, len, filtering_criteria, selection_criteria, CompactionMethod::default()).await
+}
+
+/// [`compute_included_indices`], compacting the GPU's results with `method`.
+pub async fn compute_included_indices_with(
+    gpu_context: Option<&GpuContext<'_>>,
+    len: usize,
+    filtering_criteria: &[EmphasisCriteria],
+    selection_criteria: &[EmphasisCriteria],
+    method: CompactionMethod,
+) -> ForegroundBackground<Vec<u32>> {
     for criteria in filtering_criteria.iter().chain(selection_criteria) {
         criteria.validate_len(len);
     }
     if filtering_criteria.is_empty() && selection_criteria.is_empty() {
         let all: Vec<u32> = (0..len as u32).collect();
         return ForegroundBackground { background: all.clone(), foreground: all };
+    }
+
+    if let (Some(gpu_context), CompactionMethod::GpuScan) = (gpu_context, method) {
+        let compact = async |criteria: &[EmphasisCriteria]| {
+            compute_stratified_indices(Some(gpu_context), RowSource::All(len), None, criteria, method).await.indices
+        };
+        let background = compact(filtering_criteria).await;
+        let foreground = if selection_criteria.is_empty() {
+            background.clone()
+        } else {
+            compact(&[filtering_criteria, selection_criteria].concat()).await
+        };
+        return ForegroundBackground { background, foreground };
     }
 
     let flags = match gpu_context {

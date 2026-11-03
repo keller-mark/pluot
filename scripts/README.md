@@ -52,3 +52,10 @@ wouldn't resolve there, but an inherited environment variable does.
   network access for the CDN-hosted Pyodide, React, and `@pluot/react`.
   Without Playwright installed (e.g., plain `uv run pytest`), the test skips
   itself.
+
+## Generated TypeScript types check
+
+- `check_generated_ts_types.sh` — regenerates the ts-rs types in
+  `bindings-js/core/src/generated` (same as `pnpm run generate-types`) and
+  fails if the result differs from what is committed (used by the
+  `plain_rust_unit_tests` CI job).

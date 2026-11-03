@@ -47,6 +47,8 @@ export function PluotWrapper(props) {
     marginBottom: defaultMarginBottom,
     aspectRatioMode: defaultAspectRatioMode,
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+    // 'Raster' | 'Vector'
+    format: defaultFormat = 'Raster',
 
     // Option to provide "plot-specific" options objects for plot types that need them
     // (e.g., with pointSize option for scatterplots, channel controls for bioimaging, etc.)
@@ -54,7 +56,6 @@ export function PluotWrapper(props) {
     cameraMatrix: cameraMatrixProp = null,
     cameraFilter = null,
     limitExtent = false,
-    extentKey = null,
     enableClick = true,
     enableTooltip = false,
     enableCamera = true,
@@ -62,6 +63,8 @@ export function PluotWrapper(props) {
     enableVector = true,
 
     onHover = null, // Pass through to Pluot component
+    // Either a string or a function of the control values.
+    extentKey = null,
 
     // Brushing props, passed through to the Pluot component.
     brushMode,
@@ -85,12 +88,12 @@ export function PluotWrapper(props) {
     marginBottom: defaultMarginBottom,
     aspectRatioMode: defaultAspectRatioMode,
     aspectRatioAlignmentMode: defaultAspectRatioAlignmentMode,
+    format: defaultFormat,
   };
 
   // 'none' | 'fullwindow' | 'fullscreen'
   const [mode, setMode] = useState('none');
-  const [fsWidth, setFsWidth] = useState(null);
-  const [fsHeight, setFsHeight] = useState(null);
+  const [containerSize, setContainerSize] = useState(null);
 
   const [cameraMatrix, setCameraMatrix] = useState(cameraMatrixProp);
 
@@ -112,8 +115,6 @@ export function PluotWrapper(props) {
       // this exit is instead part of a controlled fullscreen -> full-window
       // transition (see onFullwindow below), so leave it alone.
       setMode('none');
-      setFsWidth(null);
-      setFsHeight(null);
     }
   });
 
@@ -125,13 +126,10 @@ export function PluotWrapper(props) {
     };
   }, []);
 
-  // While in full-window or full-screen mode, the parent div is resized
-  // (either by our own fixed-position styles, or by the browser's native
-  // fullscreen layout), so observe it and keep fsWidth/fsHeight in sync.
+  // In full-window/full-screen mode the plot fills this div; otherwise its width
+  // caps the plot width so the plot fits narrow screens. The div is remounted
+  // (via the portal) when the mode changes, so re-observe on each change.
   useEffect(() => {
-    if (!isFullscreenOrWindow) {
-      return undefined;
-    }
     const divEl = divRef.current;
     if (!divEl) {
       return undefined;
@@ -143,8 +141,7 @@ export function PluotWrapper(props) {
         return;
       }
       const { width, height } = entry.contentRect;
-      setFsWidth(width);
-      setFsHeight(height);
+      setContainerSize({ width, height });
     });
     observer.observe(divEl);
 
@@ -176,8 +173,6 @@ export function PluotWrapper(props) {
     } else {
       // Otherwise exit.
       setMode('none');
-      setFsWidth(null);
-      setFsHeight(null);
       if (document.fullscreenElement) {
         document.exitFullscreen?.();
       }
@@ -192,8 +187,6 @@ export function PluotWrapper(props) {
         const isEscape = ["Escape", "Esc"].includes(event.key) || event.keyCode === 27;
         if (isEscape) {
           setMode('none');
-          setFsHeight(null);
-          setFsWidth(null);
           if (document.fullscreenElement) {
             // Guard against the (transient) case where full-window mode was
             // entered directly from full-screen mode and the native exit is
@@ -218,7 +211,7 @@ export function PluotWrapper(props) {
   const [scriptResult, setScriptResult] = useState(null);
   const onRenderToScript = useEffectEvent(async () => {
     const renderParams = {
-      format: controlValuesRef.current.format ?? "Raster",
+      format: controlValuesRef.current.format ?? defaultFormat,
 
       stores: normalizeStores({ store: storeUrl, plotId, register: false }),
       plot_params: derivedPlotParamsRef.current,
@@ -295,19 +288,32 @@ export function PluotWrapper(props) {
 
   const derivedExtentKey = typeof extentKey === 'function' ? extentKey(controlValues) : extentKey;
 
+  // A user-controlled camera matrix bypasses the extent query, so it must be cleared for the new extent to take effect.
   const [prevExtentKey, setPrevExtentKey] = useState(derivedExtentKey);
   if (derivedExtentKey !== prevExtentKey) {
     setPrevExtentKey(derivedExtentKey);
     setCameraMatrix(null);
   }
 
-  const { aspectRatioMode, aspectRatioAlignmentMode, format, debugMargins, transparentBackground } = controlValues;
+  const { aspectRatioMode, aspectRatioAlignmentMode, debugMargins, transparentBackground } = controlValues;
+  // The format control is absent when enableVector is false.
+  const format = controlValues.format ?? defaultFormat;
   const width = controlValues.size.width;
   const height = controlValues.size.height;
   const marginLeft = controlValues.horizontalMargins.left;
   const marginRight = controlValues.horizontalMargins.right;
   const marginTop = controlValues.verticalMargins.top;
   const marginBottom = controlValues.verticalMargins.bottom;
+
+  let plotWidth = width;
+  let plotHeight = height;
+  if (isFullscreenOrWindow && containerSize) {
+    plotWidth = containerSize.width;
+    plotHeight = containerSize.height;
+  } else if (containerSize && containerSize.width > 0 && containerSize.width < width) {
+    plotWidth = Math.floor(containerSize.width);
+    plotHeight = Math.floor(height * plotWidth / width);
+  }
 
   controlValuesRef.current = { ...controlValues };
   derivedPlotParamsRef.current = { ...derivedPlotParams };
@@ -327,8 +333,8 @@ export function PluotWrapper(props) {
       <div>
         <Pluot
           store={storeUrl}
-          width={fsWidth ?? width}
-          height={fsHeight ?? height}
+          width={plotWidth}
+          height={plotHeight}
           plotId={plotId}
           plotType={plotType}
           plotParams={derivedPlotParams}

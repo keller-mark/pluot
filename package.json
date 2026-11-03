@@ -11,6 +11,7 @@
     "build": "pnpm -r astro-sync && pnpm -r build",
     "start-tsc": "tsc -b --watch",
     "build-tsc": "tsc --build",
+    "generate-types": "cargo test -p pluot --lib --features lacks_gpu export_layer_params_typescript",
     "bundle:ci": "pnpm -r --workspace-concurrency 1 bundle",
     "bundle": "pnpm -r bundle",
     "test": "pnpm -r --workspace-concurrency 1 test",

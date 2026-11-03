@@ -55,6 +55,7 @@ pluot_zarr = { workspace = true }
 
 inventory.workspace = true
 serde.workspace = true
+ts-rs.workspace = true
 serde_json.workspace = true
 
 # Python-specific dependencies

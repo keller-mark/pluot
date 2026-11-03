@@ -2,7 +2,15 @@ import React, { useCallback, useMemo } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PluotWrapper } from './PluotWrapper.jsx';
 import { useColormapOption, resolvePlotParams, multiSelect } from './PlotControls.jsx';
-import { adataQueryClient, useAdataOptions, getExtentKey } from './adata-options.js';
+import {
+  adataQueryClient,
+  useAdataOptions,
+  getExtentKey,
+  obsColumnName,
+  findCategoricalCriterion,
+  includedCategoryLabels,
+  withIncludedCategories,
+} from './adata-options.js';
 
 // The purpose of this wrapper component is to define a heatmap-specific
 // onHover function to transform the picking result into a tooltip dict.
@@ -27,29 +35,7 @@ function onHoverHeatmap(info) {
 
 const HEATMAP_LAYER_TYPE = 'AdataZarrHeatmapLayer';
 
-const CATEGORICAL_CODES_KEY_REGEX = /^\/obs\/(.+)\/codes$/;
-
-function findCategoricalObsFilter(layerParams) {
-  const criteria = layerParams?.obs_filtering?.axis_criteria_params;
-  if (!Array.isArray(criteria)) {
-    return undefined;
-  }
-  return criteria.find(criterion => criterion.criteria_mode === 'Categorical')?.criteria_params;
-}
-
-function withSelectedObsCodes(obsFiltering, includedCodes) {
-  return {
-    ...obsFiltering,
-    axis_criteria_params: obsFiltering.axis_criteria_params.map(criterion => (
-      criterion.criteria_mode === 'Categorical' ? {
-        ...criterion,
-        criteria_params: { ...criterion.criteria_params, included_codes: includedCodes },
-      } : criterion
-    )),
-  };
-}
-
-function withHeatmapControls(plotParams, controlValues, categories) {
+function withHeatmapControls(plotParams, controlValues, obsColumnPath) {
   const { colormap, reverseColormap, normalization, lowerPercentile, upperPercentile, obsCategories, genes } = controlValues;
   return {
     ...plotParams,
@@ -66,10 +52,7 @@ function withHeatmapControls(plotParams, controlValues, categories) {
         layer_params: {
           ...layer.layer_params,
           ...(obsCategories ? {
-            obs_filtering: withSelectedObsCodes(
-              layer.layer_params.obs_filtering,
-              obsCategories.map(category => categories.indexOf(category)),
-            ),
+            obs_filtering: withIncludedCategories(layer.layer_params.obs_filtering, obsColumnPath, obsCategories),
           } : {}),
           var_filtering: {
             axis_criteria_mode: 'Identifiers',
@@ -99,10 +82,10 @@ function HeatmapWrapperInner(props) {
     ?.layer_params;
   const colormapOption = useColormapOption(defaultLayerParams?.colormap?.colormap_params?.colormap);
 
-  const categoricalObsFilter = findCategoricalObsFilter(defaultLayerParams);
-  const obsColumn = categoricalObsFilter?.codes_key?.match(CATEGORICAL_CODES_KEY_REGEX)?.[1];
+  const categoricalObsFilter = findCategoricalCriterion(defaultLayerParams?.obs_filtering);
+  const obsColumnPath = categoricalObsFilter?.codes_key;
 
-  const adataOptions = useAdataOptions(storeUrl, obsColumn);
+  const adataOptions = useAdataOptions(storeUrl, obsColumnPath);
   const categories = adataOptions.data?.categories;
   const varNames = adataOptions.data?.varNames;
 
@@ -110,14 +93,17 @@ function HeatmapWrapperInner(props) {
   const defaultNormalization = defaultLayerParams?.normalization ?? 'Matrix';
   const defaultLowerPercentile = defaultLayerParams?.normalization_lower_percentile ?? 0;
   const defaultUpperPercentile = defaultLayerParams?.normalization_upper_percentile ?? 100;
-  const defaultIncludedCodes = categoricalObsFilter?.included_codes;
+  const defaultObsCategories = useMemo(
+    () => includedCategoryLabels(categoricalObsFilter, categories),
+    [categoricalObsFilter, categories],
+  );
   const defaultGenes = defaultLayerParams?.var_filtering?.axis_criteria_params?.identifiers;
   const plotSpecificOptions = useMemo(() => ({
-    ...(obsColumn ? {
+    ...(obsColumnPath ? {
       obsCategories: multiSelect({
-        selected: (defaultIncludedCodes ?? []).map(code => categories?.[code]),
+        selected: defaultObsCategories ?? [],
         options: categories ?? [],
-        label: obsColumn,
+        label: obsColumnName(obsColumnPath),
       }),
     } : {}),
     genes: multiSelect({
@@ -142,11 +128,11 @@ function HeatmapWrapperInner(props) {
     },
     lowerPercentile: percentileOption(defaultLowerPercentile, 'Lower Percentile'),
     upperPercentile: percentileOption(defaultUpperPercentile, 'Upper Percentile'),
-  }), [obsColumn, categories, varNames, defaultIncludedCodes, defaultGenes, colormapOption, defaultReverseColormap, defaultNormalization, defaultLowerPercentile, defaultUpperPercentile]);
+  }), [obsColumnPath, categories, varNames, defaultObsCategories, defaultGenes, colormapOption, defaultReverseColormap, defaultNormalization, defaultLowerPercentile, defaultUpperPercentile]);
 
   const getPlotParams = useCallback(
-    controlValues => withHeatmapControls(resolvePlotParams(plotParams, controlValues), controlValues, categories),
-    [plotParams, categories],
+    controlValues => withHeatmapControls(resolvePlotParams(plotParams, controlValues), controlValues, obsColumnPath),
+    [plotParams, obsColumnPath],
   );
 
   if (adataOptions.isPending) {

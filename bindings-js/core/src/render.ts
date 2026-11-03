@@ -2,6 +2,7 @@
 import lzs from "lz-string";
 import { initialize, render_wasm } from "./core.js";
 import { normalizeStores, type NormalizeStoresParam } from "./store-normalization.js";
+import type { PlotParams } from "./layer-params.js";
 
 // Needed due to "SyntaxError: Named export 'decompressFromUint8Array' not found.
 // The requested module 'lz-string' is a CommonJS module,
@@ -17,6 +18,8 @@ type RenderOptions = {
   height: number,
   timeout?: number,
   wait_for_store_gets: boolean,
+  plot_type: "LayeredPlot",
+  plot_params: PlotParams,
 } & NormalizeStoresParam;
 
 // Analogous to the python render_raw, render_to_image, render_to_svg.
