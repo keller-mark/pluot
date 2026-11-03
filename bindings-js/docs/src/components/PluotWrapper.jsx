@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useCallback, useEffect, useEffectEvent, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Pluot, render_to_script_wasm, normalizeStores } from '@pluot/react';
+import { Pluot, render_to_script_wasm, renderToString, renderToImageData, normalizeStores } from '@pluot/react';
 import { PlotControls, usePlotControls } from './PlotControls.jsx';
 
 const SCRIPT_EXTENSIONS = {
@@ -8,6 +8,8 @@ const SCRIPT_EXTENSIONS = {
   ScriptBash: 'sh',
   ScriptRust: 'rs',
   ScriptPython: 'py',
+  ScriptIpynb: 'ipynb',
+  ScriptMoPy: 'mo.py',
   ScriptR: 'R',
   ScriptHtml: 'html',
   ScriptHtmlReact: 'html',
@@ -25,6 +27,25 @@ const NOOP = () => { };
 
 function defaultOnClick(obj) {
   window.alert(JSON.stringify(obj, null, 2));
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function imageDataToPngBlob(imageData) {
+  const canvas = document.createElement('canvas');
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+  canvas.getContext('2d').putImageData(imageData, 0, 0);
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
 }
 
 export function PluotWrapper(props) {
@@ -209,42 +230,42 @@ export function PluotWrapper(props) {
   const controlValuesRef = useRef(null);
   const derivedPlotParamsRef = useRef(null);
   const [scriptResult, setScriptResult] = useState(null);
+  const getStaticRenderParams = () => ({
+    format: controlValuesRef.current.format ?? defaultFormat,
+
+    stores: normalizeStores({ store: storeUrl, plotId, register: false }),
+    plot_params: derivedPlotParamsRef.current,
+    camera_view: cameraMatrix,
+
+    width: controlValuesRef.current.size.width,
+    height: controlValuesRef.current.size.height,
+    margin_left: controlValuesRef.current.horizontalMargins.left,
+    margin_right: controlValuesRef.current.horizontalMargins.right,
+    margin_top: controlValuesRef.current.verticalMargins.top,
+    margin_bottom: controlValuesRef.current.verticalMargins.bottom,
+    aspect_ratio_mode: controlValuesRef.current.aspectRatioMode,
+    aspect_ratio_alignment_mode: controlValuesRef.current.aspectRatioAlignmentMode,
+
+    device_pixel_ratio: window.devicePixelRatio,
+    view_mode: viewMode,
+    pickable: false,
+    plot_id: plotId,
+    plot_type: plotType,
+    // Note: the below settings are optimized for static plotting.
+    timeout: null, // Note: will not have any effect when wait_for_store_gets is false.
+    wait_for_store_gets: true,
+    cache_enabled: true,
+    svg_compression_enabled: false,
+    svg_include_document: true,
+  });
+
   const onRenderToScript = useEffectEvent(async () => {
-    const renderParams = {
-      format: controlValuesRef.current.format ?? defaultFormat,
-
-      stores: normalizeStores({ store: storeUrl, plotId, register: false }),
-      plot_params: derivedPlotParamsRef.current,
-      camera_view: cameraMatrix,
-
-      width: controlValuesRef.current.size.width,
-      height: controlValuesRef.current.size.height,
-      margin_left: controlValuesRef.current.horizontalMargins.left,
-      margin_right: controlValuesRef.current.horizontalMargins.right,
-      margin_top: controlValuesRef.current.verticalMargins.top,
-      margin_bottom: controlValuesRef.current.verticalMargins.bottom,
-      aspect_ratio_mode: controlValuesRef.current.aspectRatioMode,
-      aspect_ratio_alignment_mode: controlValuesRef.current.aspectRatioAlignmentMode,
-
-      device_pixel_ratio: window.devicePixelRatio,
-      view_mode: viewMode,
-      pickable: false,
-      plot_id: plotId,
-      plot_type: plotType,
-      // Note: the below settings are optimized for static plotting.
-      timeout: null, // Note: will not have any effect when wait_for_store_gets is false.
-      wait_for_store_gets: true,
-      cache_enabled: true,
-      svg_compression_enabled: false,
-      svg_include_document: true,
-    };
-
     const codeFormat = controlValuesRef.current.renderToScriptType;
 
     // Wrap render_wasm in try/catch, to handle Rust panics.
     let codeStringResult;
     try {
-      codeStringResult = await render_to_script_wasm(renderParams, codeFormat);
+      codeStringResult = await render_to_script_wasm(getStaticRenderParams(), codeFormat);
 
     } catch (error) {
       console.error("Error during wasm.render_wasm (rendering to script):", error);
@@ -262,18 +283,27 @@ export function PluotWrapper(props) {
     }
 
     const ext = SCRIPT_EXTENSIONS[scriptFormat] ?? 'txt';
-    const blob = new Blob([scriptResult], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${plotId}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([scriptResult], { type: 'text/plain' }), `${plotId}.${ext}`);
   });
 
-  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onRenderToScript, enableVector });
+  const onDownloadPlot = useEffectEvent(async () => {
+    const renderParams = { ...getStaticRenderParams(), plotId, register: false };
+
+    // Wrap rendering in try/catch, to handle Rust panics.
+    try {
+      if (renderParams.format === 'Vector') {
+        const { plot: svgString } = await renderToString(renderParams);
+        downloadBlob(new Blob([svgString], { type: 'image/svg+xml' }), `${plotId}.svg`);
+      } else {
+        const { plot: imageData } = await renderToImageData(renderParams);
+        downloadBlob(await imageDataToPngBlob(imageData), `${plotId}.png`);
+      }
+    } catch (error) {
+      console.error("Error during rendering for download:", error);
+    }
+  });
+
+  const controlValues = usePlotControls(defaultOptions, plotSpecificOptions, { onFullscreen, onFullwindow, onDownloadPlot, onRenderToScript, enableVector });
   console.log(controlValues);
 
   const derivedPlotParams = useMemo(() => {
@@ -295,7 +325,7 @@ export function PluotWrapper(props) {
     setCameraMatrix(null);
   }
 
-  const { aspectRatioMode, aspectRatioAlignmentMode, debugMargins, transparentBackground } = controlValues;
+  const { aspectRatioMode, aspectRatioAlignmentMode, debugMargins } = controlValues;
   // The format control is absent when enableVector is false.
   const format = controlValues.format ?? defaultFormat;
   const width = controlValues.size.width;
@@ -354,7 +384,7 @@ export function PluotWrapper(props) {
           extentKey={derivedExtentKey}
           enableClick={enableClick}
           enableTooltip={enableTooltip}
-          backgroundColor={transparentBackground ? undefined : "#fff"}
+          backgroundColor={"#fff"}
           onHover={onHover}
           onClick={defaultOnClick}
           brushMode={brushMode}

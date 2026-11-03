@@ -17,7 +17,7 @@ import uuid
 from typing import Any
 
 import anywidget
-from pluot_core.zarr import store_instance_to_metadata
+from pluot_core.zarr import store_instance_to_metadata, store_metadata_to_instance
 import traitlets
 from zarr.abc.store import RangeByteRequest, Store, SuffixByteRequest
 from zarr.core.buffer.core import default_buffer_prototype
@@ -37,6 +37,10 @@ DEFAULT_CAMERA_MATRIX_3D: list[float] = [
     0.0,  0.0, 1.0, 0.0,
     0.0,  0.0, -10.0, 1.0,
 ]
+
+def _is_store_metadata(value: Any) -> bool:
+    return isinstance(value, dict) and "store_type" in value
+
 
 if os.getenv("ANYWIDGET_HMR"):
     _ESM = "http://localhost:5183/js/widget.tsx?anywidget"
@@ -285,31 +289,53 @@ class PluotWasmWidget(anywidget.AnyWidget):
         ),
     ).tag(sync=True)
 
-    def __init__(self, stores: dict | None = None, store: Store | None = None, **kwargs: Any) -> None:
+    def __init__(self, stores: dict | None = None, store: Store | dict | None = None, **kwargs: Any) -> None:
         """Create the widget and register the zarr stores that its layers read from.
 
         Parameters
         ----------
-        stores : dict of str to zarr.abc.store.Store, optional
-            Zarr stores keyed by store name.
-        store : zarr.abc.store.Store, optional
-            A single zarr store, registered in addition to ``stores``. It is
-            registered under ``store_name`` if given, and otherwise under a
-            generated name, which is then available as ``widget.store_name``.
+        stores : dict of str to zarr.abc.store.Store or dict, optional
+            Zarr stores keyed by store name. Each value is either a store
+            instance or portable ``ZarrStoreInfo`` metadata (e.g.,
+            ``{"store_type": "HttpStore", "store_params": {"url": ...}}``),
+            from which a store instance is constructed.
+        store : zarr.abc.store.Store or dict, optional
+            A single zarr store (or its ``ZarrStoreInfo`` metadata), registered
+            in addition to ``stores``. It is registered under ``store_name`` if
+            given, and otherwise under a generated name, which is then
+            available as ``widget.store_name``.
         **kwargs
             Initial values for any of the traitlets defined on the class,
             e.g., ``width``, ``height``, or ``plot_params``. Use ``help(PluotWasmWidget)``
             to list the available kwargs and their descriptions.
+
+        Examples
+        --------
+        >>> widget = PluotWasmWidget(
+        ...     stores={
+        ...         "my_store": {
+        ...             "store_type": "HttpStore",
+        ...             "store_params": {"url": "https://example.com/my_store.zarr"},
+        ...         },
+        ...     },
+        ...     plot_params=make_plot_params(3.0),
+        ... )
         """
-        self._stores: dict = dict(stores or {})
+        stores = dict(stores or {})
         if store is not None:
             store_name = kwargs.get("store_name") if "store_name" in kwargs else str(id(store))
-            self._stores[store_name] = store
+            stores[store_name] = store
             self.store_name = store_name
 
+        self._stores: dict = {}
         stores_metadata = {}
-        for store_key, store_instance in self._stores.items():
-            stores_metadata[store_key] = store_instance_to_metadata(store_instance)
+        for store_key, store_or_metadata in stores.items():
+            if _is_store_metadata(store_or_metadata):
+                self._stores[store_key] = store_metadata_to_instance(store_or_metadata)
+                stores_metadata[store_key] = store_or_metadata
+            else:
+                self._stores[store_key] = store_or_metadata
+                stores_metadata[store_key] = store_instance_to_metadata(store_or_metadata)
 
         # We need to call the anywidget/ipywidgets constructor _after_
         # defining stores_metadata, so that we can pass it as the initial traitlet value.
@@ -328,15 +354,15 @@ class PluotWasmWidget(anywidget.AnyWidget):
         ----------
         name : str
             The store name, which layer parameters can use to refer to it.
-        store : zarr.abc.store.Store
-            The zarr store.
+        store : zarr.abc.store.Store or dict
+            The zarr store, or its ``ZarrStoreInfo`` metadata.
 
         Notes
         -----
         This does not update ``stores_metadata``, so the browser only reads from
         this store if it already knows the name, e.g., from the constructor.
         """
-        self._stores[name] = store
+        self._stores[name] = store_metadata_to_instance(store) if _is_store_metadata(store) else store
 
     def _handle_msg(self, *args) -> None:
         if len(args) == 1:
@@ -443,3 +469,27 @@ class PluotWasmWidget(anywidget.AnyWidget):
             for result_dict, result_buffer_arr in results
         ]
         return result_dicts, result_buffers
+
+
+def render_to_widget(stores: dict | None = None, store: Store | dict | None = None, **kwargs: Any) -> PluotWasmWidget:
+    """Render a plot to an interactive ``PluotWasmWidget``.
+
+    Named to parallel ``render_to_image`` and ``render_to_svg``, and accepts the
+    same arguments as the ``PluotWasmWidget`` constructor.
+
+    Examples
+    --------
+    >>> widget = render_to_widget(
+    ...     stores={
+    ...         "my_store": {
+    ...             "store_type": "HttpStore",
+    ...             "store_params": {"url": "https://example.com/my_store.zarr"},
+    ...         },
+    ...     },
+    ...     width=600,
+    ...     height=400,
+    ...     plot_params=make_plot_params(3.0),
+    ... )
+    >>> widget  # Display it as the last expression of a notebook cell.
+    """
+    return PluotWasmWidget(stores=stores, store=store, **kwargs)

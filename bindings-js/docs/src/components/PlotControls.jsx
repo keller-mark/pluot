@@ -107,7 +107,7 @@ export function resolvePlotParams(plotParams, controlValues) {
 }
 
 export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) {
-  const { onFullscreen, onFullwindow, onRenderToScript, enableVector = true } = callbacks ?? {};
+  const { onFullscreen, onFullwindow, onDownloadPlot, onRenderToScript, enableVector = true } = callbacks ?? {};
   // TODO: If defaultOptions are provided, use them to populate the default values here.
   // plotSpecificOptions will be an object like
   /*
@@ -198,16 +198,15 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
       label: 'Show Margins',
       hint: 'For debugging, display a 1px border indicating margin boundaries.'
     },
-    transparentBackground: {
+    /*transparentBackground: {
       value: defaultOptions.transparentBackground ?? false,
       label: 'Transparent Background',
-    },
+    },*/
     /*
     'Reset Camera': button(
       get => alert(`Interactive value is ${get('interactive')}`),
       { disabled: false }
     ),
-    // TODO: download button
     */
     ...(typeof onFullwindow === 'function' ? ({
       'Full Window': button(
@@ -221,6 +220,12 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
         { disabled: false }
       ),
     }) : {}),
+    ...(typeof onDownloadPlot === 'function' ? ({
+      'Download Plot': button(
+        onDownloadPlot,
+        { disabled: false }
+      ),
+    }) : {}),
     renderToScriptType: {
       value: defaultOptions.renderToScriptType ?? 'Json',
       options: {
@@ -228,6 +233,8 @@ export function usePlotControls(defaultOptions, plotSpecificOptions, callbacks) 
         'Shell script': 'ScriptBash',
         'Rust script': 'ScriptRust',
         'Python script': 'ScriptPython',
+        'Jupyter notebook': 'ScriptIpynb',
+        'Marimo notebook': 'ScriptMoPy',
         'R script': 'ScriptR',
         'HTML file (static)': 'ScriptHtml',
         'HTML file (React)': 'ScriptHtmlReact',

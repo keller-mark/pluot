@@ -2015,7 +2015,7 @@ wheels = [
 
 [[package]]
 name = "pluot"
-version = "0.1.23"
+version = "0.1.26"
 source = { editable = "bindings-python/pluot" }
 dependencies = [
     { name = "pluot-core" },
@@ -2080,7 +2080,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "pluot-core"
-version = "0.1.23"
+version = "0.1.26"
 source = { editable = "bindings-python/pluot_core" }
 dependencies = [
     { name = "aiohttp" },
@@ -2101,7 +2101,7 @@ requires-dist = [
 
 [[package]]
 name = "pluot-widget"
-version = "0.1.23"
+version = "0.1.26"
 source = { editable = "bindings-python/pluot_widget" }
 dependencies = [
     { name = "anywidget" },

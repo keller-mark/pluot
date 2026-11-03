@@ -22,13 +22,13 @@ except ModuleNotFoundError as e:
         raise
 
 if importlib.util.find_spec("pluot_widget") is not None:
-    __all__ += ["PluotWasmWidget"]
+    __all__ += ["PluotWasmWidget", "render_to_widget"]
 
 
 # Deferred so that `import pluot` does not require the widget's built JS bundle
 # (absent in editable installs without the pnpm/wasm toolchain).
 def __getattr__(name):
-    if name == "PluotWasmWidget":
-        from pluot_widget import PluotWasmWidget
-        return PluotWasmWidget
+    if name in ("PluotWasmWidget", "render_to_widget"):
+        import pluot_widget
+        return getattr(pluot_widget, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
