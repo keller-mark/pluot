@@ -93,8 +93,7 @@ export function PluotWrapper(props) {
 
   // 'none' | 'fullwindow' | 'fullscreen'
   const [mode, setMode] = useState('none');
-  const [fsWidth, setFsWidth] = useState(null);
-  const [fsHeight, setFsHeight] = useState(null);
+  const [containerSize, setContainerSize] = useState(null);
 
   const [cameraMatrix, setCameraMatrix] = useState(cameraMatrixProp);
 
@@ -116,8 +115,6 @@ export function PluotWrapper(props) {
       // this exit is instead part of a controlled fullscreen -> full-window
       // transition (see onFullwindow below), so leave it alone.
       setMode('none');
-      setFsWidth(null);
-      setFsHeight(null);
     }
   });
 
@@ -129,13 +126,10 @@ export function PluotWrapper(props) {
     };
   }, []);
 
-  // While in full-window or full-screen mode, the parent div is resized
-  // (either by our own fixed-position styles, or by the browser's native
-  // fullscreen layout), so observe it and keep fsWidth/fsHeight in sync.
+  // In full-window/full-screen mode the plot fills this div; otherwise its width
+  // caps the plot width so the plot fits narrow screens. The div is remounted
+  // (via the portal) when the mode changes, so re-observe on each change.
   useEffect(() => {
-    if (!isFullscreenOrWindow) {
-      return undefined;
-    }
     const divEl = divRef.current;
     if (!divEl) {
       return undefined;
@@ -147,8 +141,7 @@ export function PluotWrapper(props) {
         return;
       }
       const { width, height } = entry.contentRect;
-      setFsWidth(width);
-      setFsHeight(height);
+      setContainerSize({ width, height });
     });
     observer.observe(divEl);
 
@@ -180,8 +173,6 @@ export function PluotWrapper(props) {
     } else {
       // Otherwise exit.
       setMode('none');
-      setFsWidth(null);
-      setFsHeight(null);
       if (document.fullscreenElement) {
         document.exitFullscreen?.();
       }
@@ -196,8 +187,6 @@ export function PluotWrapper(props) {
         const isEscape = ["Escape", "Esc"].includes(event.key) || event.keyCode === 27;
         if (isEscape) {
           setMode('none');
-          setFsHeight(null);
-          setFsWidth(null);
           if (document.fullscreenElement) {
             // Guard against the (transient) case where full-window mode was
             // entered directly from full-screen mode and the native exit is
@@ -316,6 +305,16 @@ export function PluotWrapper(props) {
   const marginTop = controlValues.verticalMargins.top;
   const marginBottom = controlValues.verticalMargins.bottom;
 
+  let plotWidth = width;
+  let plotHeight = height;
+  if (isFullscreenOrWindow && containerSize) {
+    plotWidth = containerSize.width;
+    plotHeight = containerSize.height;
+  } else if (containerSize && containerSize.width > 0 && containerSize.width < width) {
+    plotWidth = Math.floor(containerSize.width);
+    plotHeight = Math.floor(height * plotWidth / width);
+  }
+
   controlValuesRef.current = { ...controlValues };
   derivedPlotParamsRef.current = { ...derivedPlotParams };
 
@@ -334,8 +333,8 @@ export function PluotWrapper(props) {
       <div>
         <Pluot
           store={storeUrl}
-          width={fsWidth ?? width}
-          height={fsHeight ?? height}
+          width={plotWidth}
+          height={plotHeight}
           plotId={plotId}
           plotType={plotType}
           plotParams={derivedPlotParams}
