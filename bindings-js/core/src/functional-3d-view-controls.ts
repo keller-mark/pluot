@@ -26,7 +26,7 @@
 
 import { mat4, vec3, quat } from 'gl-matrix';
 import { ViewportParams } from './viewport.js';
-import { type CameraMatrix } from './functional-dom-2d-camera.js';
+import { type CameraMatrix, type PointerMoveInput, type PinchInput } from './functional-dom-2d-camera.js';
 
 // Camera settings matching 3d-view-controls.js defaults
 const ROTATE_SPEED = 1.0;
@@ -436,7 +436,7 @@ export function onWheel3dTurntable(viewportParams: ViewportParams, prevCameraMat
   }
 }
 
-export function onMouseMove3dTurntable(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: MouseEvent): CameraMatrix {
+export function onMouseMove3dTurntable(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: PointerMoveInput): CameraMatrix {
   const { height } = viewportParams;
   const scale = 1.0 / height;
   const dx = scale * event.movementX;
@@ -488,7 +488,7 @@ export function onWheel3dOrbit(viewportParams: ViewportParams, prevCameraMatrix:
   }
 }
 
-export function onMouseMove3dOrbit(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: MouseEvent): CameraMatrix {
+export function onMouseMove3dOrbit(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: PointerMoveInput): CameraMatrix {
   const { height } = viewportParams;
   const scale = 1.0 / height;
   const dx = scale * event.movementX;
@@ -540,7 +540,7 @@ export function onWheel3dMatrix(viewportParams: ViewportParams, prevCameraMatrix
   }
 }
 
-export function onMouseMove3dMatrix(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: MouseEvent): CameraMatrix {
+export function onMouseMove3dMatrix(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: PointerMoveInput): CameraMatrix {
   const { height } = viewportParams;
   const scale = 1.0 / height;
   const dx = scale * event.movementX;
@@ -570,12 +570,23 @@ export function onMouseMove3dMatrix(viewportParams: ViewportParams, prevCameraMa
   return prevCameraMatrix;
 }
 
+export function onPinch3dOrbit(_viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, pinch: PinchInput): CameraMatrix {
+  if (!(pinch.scale > 0) || pinch.scale === 1) return prevCameraMatrix;
+  const [, , logRadius] = orbitStateFrom(prevCameraMatrix);
+  const distance = Math.exp(logRadius);
+  return orbitPan(prevCameraMatrix, 0, 0, distance * (1 / pinch.scale - 1));
+}
+
 // Default 3D handlers (orbit controller)
+
+export function onPinch(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, pinch: PinchInput): CameraMatrix {
+  return onPinch3dOrbit(viewportParams, prevCameraMatrix, pinch);
+}
 
 export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: WheelEvent): CameraMatrix {
   return onWheel3dOrbit(viewportParams, prevCameraMatrix, event);
 }
 
-export function onMouseMove(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: MouseEvent): CameraMatrix {
+export function onMouseMove(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: PointerMoveInput): CameraMatrix {
   return onMouseMove3dOrbit(viewportParams, prevCameraMatrix, event);
 }

@@ -7,8 +7,8 @@ import {
   render_wasm, pick_wasm, extent_wasm,
   normalizeStores, getStore,
   checkWebGpuFeatureDetection,
-  onMouseMove2d, onWheel2d,
-  onMouseMove3d, onWheel3d,
+  onMouseMove2d, onWheel2d, onPinch2d,
+  onMouseMove3d, onWheel3d, onPinch3d,
   getCameraMatrixFromBounds, refitCameraMatrixForViewport,
   fixX, fixY, fixXAxisAtYZero, fixYAxisAtXZero,
   fixXAndFixXAxisAtYZero, fixYAndFixYAxisAtXZero,
@@ -51,6 +51,37 @@ const noop = () => { };
 // Mouse movement (in pixels) beyond which a mousedown-to-click is
 // considered a drag rather than a click, so that picking is skipped.
 const DRAG_THRESHOLD_PX = 3;
+
+const MOUSE_BUTTONS_LEFT = 1;
+const MOUSE_BUTTONS_RIGHT = 2;
+
+type TouchGesture = {
+  touchCount: number;
+  // Midpoint of the touches, relative to the camera element.
+  offsetX: number;
+  offsetY: number;
+  // Distance between the first two touches (0 for a single touch).
+  spread: number;
+};
+
+function summarizeTouches(touches: TouchList, cameraEl: HTMLElement): TouchGesture {
+  const rect = cameraEl.getBoundingClientRect();
+  let sumX = 0;
+  let sumY = 0;
+  for (let i = 0; i < touches.length; i++) {
+    sumX += touches[i].clientX;
+    sumY += touches[i].clientY;
+  }
+  const spread = touches.length > 1
+    ? Math.hypot(touches[1].clientX - touches[0].clientX, touches[1].clientY - touches[0].clientY)
+    : 0;
+  return {
+    touchCount: touches.length,
+    offsetX: sumX / touches.length - rect.left - cameraEl.clientLeft,
+    offsetY: sumY / touches.length - rect.top - cameraEl.clientTop,
+    spread,
+  };
+}
 
 // How often rapid-fire prop changes (e.g. `cameraMatrix` while dragging) are
 // coalesced into a single render_wasm call; see `throttledSetRenderParamsSnapshot`.
@@ -499,6 +530,8 @@ function PluotInner(props: PluotProps) {
   const dragStartRef = useRef<{ x: number, y: number } | null>(null);
   const didDragRef = useRef(false);
 
+  const touchGestureRef = useRef<TouchGesture | null>(null);
+
 
   const [didFirstRender, setDidFirstRender] = useState(false);
   const [bailedEarly, setBailedEarly] = useState(true);
@@ -534,24 +567,26 @@ function PluotInner(props: PluotProps) {
     brush, onBrush, onBrushEnd, onBrushClear,
   });
 
+  const cameraViewportParams = {
+    width,
+    height,
+    aspectRatioMode,
+    aspectRatioAlignmentMode,
+    margins: {
+      marginTop,
+      marginBottom,
+      marginLeft,
+      marginRight,
+    },
+  };
+
   const wheelHandler = useEffectEvent((event: WheelEvent) => {
     if (!cameraMatrix) {
       // Still awaiting extent_wasm.
       return;
     }
     const onWheel = viewMode === "3d" ? onWheel3d : onWheel2d;
-    const nextCameraMatrix = onWheel({
-        width,
-        height,
-        aspectRatioMode,
-        aspectRatioAlignmentMode,
-        margins: {
-          marginTop,
-          marginBottom,
-          marginLeft,
-          marginRight,
-        },
-      }, cameraMatrix, event);
+    const nextCameraMatrix = onWheel(cameraViewportParams, cameraMatrix, event);
     setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
   });
 
@@ -566,18 +601,50 @@ function PluotInner(props: PluotProps) {
       return;
     }
     const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
-    const nextCameraMatrix = onMouseMove({
-        width,
-        height,
-        aspectRatioMode,
-        aspectRatioAlignmentMode,
-        margins: {
-          marginTop,
-          marginBottom,
-          marginLeft,
-          marginRight,
-        },
-      }, cameraMatrix, event);
+    const nextCameraMatrix = onMouseMove(cameraViewportParams, cameraMatrix, event);
+    setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
+  });
+
+  const touchStartOrEndHandler = useEffectEvent((event: TouchEvent) => {
+    const cameraEl = cameraElementRef.current;
+    touchGestureRef.current = cameraEl && event.touches.length > 0
+      ? summarizeTouches(event.touches, cameraEl)
+      : null;
+  });
+
+  // One finger pans (2D) or rotates (3D), mirroring a left-button mouse drag.
+  // Two fingers pinch to zoom, while moving their midpoint pans in both modes.
+  const touchMoveHandler = useEffectEvent((event: TouchEvent) => {
+    const cameraEl = cameraElementRef.current;
+    const prevGesture = touchGestureRef.current;
+    if (!cameraEl || !prevGesture || event.touches.length === 0) {
+      return;
+    }
+    const gesture = summarizeTouches(event.touches, cameraEl);
+    touchGestureRef.current = gesture;
+
+    if (!cameraMatrix || isBrushingRef.current || gesture.touchCount !== prevGesture.touchCount) {
+      return;
+    }
+    const isMultiTouch = gesture.touchCount > 1;
+    const onMouseMove = viewMode === "3d" ? onMouseMove3d : onMouseMove2d;
+    let nextCameraMatrix = onMouseMove(cameraViewportParams, cameraMatrix, {
+      buttons: viewMode === "3d" && isMultiTouch ? MOUSE_BUTTONS_RIGHT : MOUSE_BUTTONS_LEFT,
+      movementX: gesture.offsetX - prevGesture.offsetX,
+      movementY: gesture.offsetY - prevGesture.offsetY,
+      offsetX: gesture.offsetX,
+      offsetY: gesture.offsetY,
+      altKey: false,
+      shiftKey: false,
+    });
+    if (isMultiTouch && prevGesture.spread > 0) {
+      const onPinch = viewMode === "3d" ? onPinch3d : onPinch2d;
+      nextCameraMatrix = onPinch(cameraViewportParams, nextCameraMatrix, {
+        scale: gesture.spread / prevGesture.spread,
+        offsetX: gesture.offsetX,
+        offsetY: gesture.offsetY,
+      });
+    }
     setCameraMatrix(cameraFilter(cameraMatrix, nextCameraMatrix, cameraFilterContext));
   });
 
@@ -728,6 +795,14 @@ function PluotInner(props: PluotProps) {
     cameraEl.addEventListener("mousemove", mouseMoveHandler);
     cameraEl.addEventListener("wheel", wheelHandler);
 
+    // Passive, since `touch-action: none` on the camera element already stops
+    // the browser from scrolling/zooming the page. Not calling preventDefault
+    // keeps the compatibility mouse events (and thus click-picking) for taps.
+    cameraEl.addEventListener("touchstart", touchStartOrEndHandler, { passive: true });
+    cameraEl.addEventListener("touchmove", touchMoveHandler, { passive: true });
+    cameraEl.addEventListener("touchend", touchStartOrEndHandler, { passive: true });
+    cameraEl.addEventListener("touchcancel", touchStartOrEndHandler, { passive: true });
+
     // Track mousedown -> mousemove distance so that a drag (e.g. panning)
     // that ends on the camera element does not also trigger a click/pick.
     const mouseDownHandler = (event: MouseEvent) => {
@@ -784,6 +859,10 @@ function PluotInner(props: PluotProps) {
     return () => {
       cameraEl.removeEventListener("mousemove", mouseMoveHandler);
       cameraEl.removeEventListener("wheel", wheelHandler);
+      cameraEl.removeEventListener("touchstart", touchStartOrEndHandler);
+      cameraEl.removeEventListener("touchmove", touchMoveHandler);
+      cameraEl.removeEventListener("touchend", touchStartOrEndHandler);
+      cameraEl.removeEventListener("touchcancel", touchStartOrEndHandler);
       cameraEl.removeEventListener("mousedown", mouseDownHandler);
       cameraEl.removeEventListener("mousemove", dragDetectHandler);
       cameraEl.removeEventListener("click", clickHandler);
@@ -1023,6 +1102,7 @@ function PluotInner(props: PluotProps) {
             width: width - marginLeft - marginRight,
             height: height - marginTop - marginBottom,
             border: `${debugMargins ? 1 : 0}px solid red`,
+            touchAction: "none",
           }}
         />
         {bailedEarly || cameraMatrix === undefined ? (

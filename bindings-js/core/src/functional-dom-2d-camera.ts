@@ -28,6 +28,17 @@ import { ViewportParams } from './viewport.js';
 
 export type CameraMatrix = Float32Array;
 
+// The subset of a MouseEvent read by the onMouseMove handlers, so that
+// equivalent input can be synthesized from touch gestures.
+export type PointerMoveInput = Pick<MouseEvent, 'buttons' | 'movementX' | 'movementY' | 'offsetX' | 'offsetY' | 'altKey' | 'shiftKey'>;
+
+export type PinchInput = {
+  // Ratio of the current to the previous distance between the two touches.
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
 // Camera configuration constants (matching dom-2d-camera defaults)
 const isFixed = false;
 const isNdc = true;
@@ -101,26 +112,37 @@ export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: Camera
   event.preventDefault();
   if ((!isZoomX && !isZoomY) || isFixed) return prevCameraMatrix;
 
-  const { width: plotWidth, height: plotHeight, margins } = viewportParams;
-  const width = plotWidth - ((margins?.marginLeft ?? 0) + (margins?.marginRight ?? 0));
+  const { height: plotHeight, margins } = viewportParams;
   const height = plotHeight - ((margins?.marginBottom ?? 0) + (margins?.marginTop ?? 0));
-  const { xFactor, yFactor, xAlignTranslation, yAlignTranslation } = computeAspectRatioFactors(viewportParams);
 
   const deltaModeScale = event.deltaMode === 1 ? 12 : 1;
   const scrollDist = deltaModeScale * (event.deltaY || event.deltaX || 0);
   if (!scrollDist) return prevCameraMatrix;
 
   const dZ = zoomSpeed * Math.exp(scrollDist / height);
+  return zoomAboutPoint(viewportParams, prevCameraMatrix, 1 / dZ, event.offsetX, event.offsetY);
+}
+
+export function onPinch(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, pinch: PinchInput): CameraMatrix {
+  if ((!isZoomX && !isZoomY) || isFixed) return prevCameraMatrix;
+  return zoomAboutPoint(viewportParams, prevCameraMatrix, pinch.scale, pinch.offsetX, pinch.offsetY);
+}
+
+function zoomAboutPoint(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, scale: number, offsetX: number, offsetY: number): CameraMatrix {
+  const { width: plotWidth, height: plotHeight, margins } = viewportParams;
+  const width = plotWidth - ((margins?.marginLeft ?? 0) + (margins?.marginRight ?? 0));
+  const height = plotHeight - ((margins?.marginBottom ?? 0) + (margins?.marginTop ?? 0));
+  const { xFactor, yFactor, xAlignTranslation, yAlignTranslation } = computeAspectRatioFactors(viewportParams);
 
   const px = isNdc
-    ? ((-1 + (event.offsetX / width) * 2) - xAlignTranslation) * (1.0 / xFactor)
-    : event.offsetX;
+    ? ((-1 + (offsetX / width) * 2) - xAlignTranslation) * (1.0 / xFactor)
+    : offsetX;
   const py = isNdc
-    ? ((1 - (event.offsetY / height) * 2) - yAlignTranslation) * (1.0 / yFactor)
-    : event.offsetY;
+    ? ((1 - (offsetY / height) * 2) - yAlignTranslation) * (1.0 / yFactor)
+    : offsetY;
 
-  let dx = isZoomX ? 1 / dZ : 1;
-  let dy = isZoomY ? 1 / dZ : 1;
+  let dx = isZoomX ? scale : 1;
+  let dy = isZoomY ? scale : 1;
 
   if (dx <= 0 || dy <= 0 || (dx === 1 && dy === 1)) return prevCameraMatrix;
 
@@ -138,7 +160,7 @@ export function onWheel(viewportParams: ViewportParams, prevCameraMatrix: Camera
   return view as unknown as CameraMatrix;
 }
 
-export function onMouseMove(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: MouseEvent): CameraMatrix {
+export function onMouseMove(viewportParams: ViewportParams, prevCameraMatrix: CameraMatrix, event: PointerMoveInput): CameraMatrix {
   const { width: plotWidth, height: plotHeight, margins } = viewportParams;
   const width = plotWidth - ((margins?.marginLeft ?? 0) + (margins?.marginRight ?? 0));
   const height = plotHeight - ((margins?.marginBottom ?? 0) + (margins?.marginTop ?? 0));

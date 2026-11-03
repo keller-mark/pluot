@@ -57,9 +57,9 @@ export type {
   ViewportParams,
   Bounds,
 } from './viewport.js';
-export { onMouseMove as onMouseMove2d, onWheel as onWheel2d } from './functional-dom-2d-camera.js';
-export type { CameraMatrix } from './functional-dom-2d-camera.js';
-export { onMouseMove as onMouseMove3d, onWheel as onWheel3d } from './functional-3d-view-controls.js';
+export { onMouseMove as onMouseMove2d, onWheel as onWheel2d, onPinch as onPinch2d } from './functional-dom-2d-camera.js';
+export type { CameraMatrix, PointerMoveInput, PinchInput } from './functional-dom-2d-camera.js';
+export { onMouseMove as onMouseMove3d, onWheel as onWheel3d, onPinch as onPinch3d } from './functional-3d-view-controls.js';
 export type { CameraFilterFunction, CameraFilterContext } from "./camera-filters.js";
 export {
   fixX,
