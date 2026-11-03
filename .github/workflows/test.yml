@@ -158,7 +158,17 @@ jobs:
       run: echo "AR=$(brew --prefix llvm)/bin/llvm-ar" >> $GITHUB_ENV
     # End troubleshooting zfp-sys and zstd.
     - uses: Swatinem/rust-cache@v2
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '24.x'
+    - uses: pnpm/action-setup@v6
+      name: Install pnpm
     # Python-specific stuff
+    # test_widget_stores.py imports PluotWasmWidget, which requires the built static/widget.js.
+    - name: Build widget JS
+      run: |
+        pnpm install --frozen-lockfile --filter pluot_widget
+        pnpm -C bindings-python/pluot_widget run build
     - name: Install dependencies
       run: uv sync --extra dev
     - name: Compile Rust code
@@ -195,13 +205,8 @@ jobs:
         echo "File size check passed ($WASM_SIZE bytes)."
     # End WASM-specific stuff
     # Start JS-specific stuff
-    - uses: actions/setup-node@v6
-      with:
-        node-version: '24.x'
-    - uses: pnpm/action-setup@v6
-      name: Install pnpm
-      with:
-        run_install: true
+    - name: Install JS dependencies
+      run: pnpm install --frozen-lockfile
     - name: Type-check the JS packages
       run: pnpm exec tsc --build bindings-js/core bindings-js/react
     - name: Run JS unit tests
