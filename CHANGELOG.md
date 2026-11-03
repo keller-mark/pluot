@@ -1,4 +1,11 @@
 
+## 0.1.27
+
+### Patch Changes
+
+- Fix CI workflows, add render-to-notebook support, and add a download button to PlotControls in docs site. (`@pluot/core`) ([#361](https://github.com/keller-mark/pluot/pull/361))
+
+
 ## 0.1.26
 
 ### Patch Changes
